@@ -7,6 +7,8 @@
 
 struct cj_object;
 
+
+
 typedef union cj_value
 {
     int64_t smi_value;
@@ -34,6 +36,10 @@ static inline struct CJObject *value_get_oop(cj_value val)
     assert(value_is_oop(val));
     return (struct CJObject *)(val.smi_value - 1);
 }
+
+extern cj_value cj_nil;
+extern cj_value cj_true;
+extern cj_value cj_false;
 
 
 #endif //CJ_VALUE_H
