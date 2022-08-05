@@ -21,5 +21,9 @@ static inline void object_init(cj_object *obj, struct cj_class *klass, uint32_t 
     obj->size_in_cells = size_in_cells;
 }
 
+static inline void object_init_all_cells(cj_object *obj, struct cj_class *klass, uint32_t n_cells)
+{
+    object_init(obj, klass, n_cells, n_cells);
+}
 
 #endif //CJ_OBJECT_H

@@ -9,32 +9,41 @@ struct cj_object;
 
 
 
-typedef union cj_value
+typedef struct cj_value
 {
-    int64_t smi_value;
-    struct cj_object *ptr_value;
-
+    int64_t v;
 } cj_value;
 
 static inline bool value_is_smi(cj_value val)
 {
-    return (val.smi_value &0x1) == 0;
+    return (val.v &0x1) == 0;
 }
 static inline bool value_is_oop(cj_value val)
 {
-    return (val.smi_value &0x1) == 1;
+    return (val.v &0x1) == 1;
 }
 
 static inline int64_t value_get_smi(cj_value val)
 {
     assert(value_is_smi(val));
-    return val.smi_value >> 1;
+    return val.v >> 1;
+}
+
+static inline cj_value value_make_smi(int64_t v)
+{
+    return (cj_value){.v = v<<1};
+
+}
+
+static inline cj_value value_make_oop(cj_object *obj)
+{
+    return (cj_value){.v = (int64_t)(obj) + 1};
 }
 
 static inline struct CJObject *value_get_oop(cj_value val)
 {
     assert(value_is_oop(val));
-    return (struct CJObject *)(val.smi_value - 1);
+    return (struct CJObject *)(val.v - 1);
 }
 
 extern cj_value cj_nil;
