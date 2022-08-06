@@ -2,6 +2,7 @@
 #define CJ_PERSISTENT_LIST_H
 
 #include "cj_object.h"
+#include "cj_alloc.h"
 #include "cj_value.h"
 #include <stdint.h>
 
@@ -21,6 +22,14 @@ static inline void persistent_list_init(cj_persistent_list *lst, cj_value first,
     lst->count = count;
 }
 
+static inline cj_value persistent_list_make(cj_value first, cj_value rest, cj_value count)
+{
+    cj_persistent_list *lst = CJ_ALLOC_OBJ(cj_persistent_list);
+    persistent_list_init(lst, first, rest, count);
+    return value_make_oop(&lst->obj);
+}
+
+
 static inline cj_value persistent_list_first(const cj_persistent_list *lst)
 {
     return lst->first;
@@ -28,7 +37,7 @@ static inline cj_value persistent_list_first(const cj_persistent_list *lst)
 
 static inline cj_value persistent_list_next(const cj_persistent_list *lst)
 {
-    if(lst->count.v == value_make_smi(1).v) return cj_nil;
+    if(lst->count.v <= value_make_smi(1).v) return cj_nil;
     return lst->rest;
 }
 

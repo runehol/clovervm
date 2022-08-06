@@ -7,7 +7,7 @@ void *cj_alloc(size_t n_bytes)
 {
     return malloc(n_bytes);
 }
-#define CJ_ALLOC_OBJ(obj_type) cj_alloc(sizeof(obj_type))
+#define CJ_ALLOC_OBJ(obj_type) ((obj_type *)cj_alloc(sizeof(obj_type)))
 
 void cj_free(void *obj)
 {

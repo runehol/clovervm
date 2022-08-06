@@ -5,6 +5,7 @@
 #include "cj_value.h"
 #include <stdint.h>
 #include <assert.h>
+#include "cj_alloc.h"
 
 typedef struct cj_short_vector
 {
@@ -19,6 +20,13 @@ static inline void short_vector_init(cj_short_vector *vec, cj_value count)
     assert(value_is_smi(count));
     object_init_all_cells(&vec->obj, NULL, value_get_smi(count));
     vec->count = count;
+}
+
+static inline cj_value short_vector_make(cj_value count)
+{
+    cj_short_vector *vec = CJ_ALLOC_OBJ(cj_short_vector);
+    short_vector_init(vec, count);
+    return value_make_oop(&vec->obj);
 }
 
 
