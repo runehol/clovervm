@@ -10,13 +10,15 @@ struct cl_class;
 typedef struct cl_object
 {
     struct cl_class *klass;
-    uint32_t n_cells;
-    uint32_t size_in_cells;
+    int32_t refcount;
+    uint16_t n_cells;
+    uint16_t size_in_cells;
 } cl_object;
 
 static inline void object_init(cl_object *obj, struct cl_class *klass, uint32_t n_cells, uint32_t size_in_cells)
 {
     obj->klass = klass;
+    obj->refcount = 1;
     obj->n_cells = n_cells;
     obj->size_in_cells = size_in_cells;
 }
