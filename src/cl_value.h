@@ -91,6 +91,7 @@ static inline bool value_is_falsy(cl_value val)
 static const cl_value cl_nil = (cl_value){.v=0x43};
 static const cl_value cl_true = (cl_value){.v=0x21};
 static const cl_value cl_false = (cl_value){.v=0x23};
+static const cl_value cl_exception_marker = (cl_value){.v=0x81}; // special value to return if an exception has been thrown.
 
 
 #endif //CL_VALUE_H
