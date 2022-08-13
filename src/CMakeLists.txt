@@ -1,21 +1,21 @@
 find_package(Threads)
 
 
-add_executable(clojit
-	clojit.c
+add_executable(clovervm
+	clovervm.c
     )
 
 # add project sources to include path
-target_include_directories(clojit PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
+target_include_directories(clovervm PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
 
 
-target_link_libraries(clojit PRIVATE ${CMAKE_THREAD_LIBS_INIT})
-target_link_libraries(clojit PRIVATE project_options project_warnings)
+target_link_libraries(clovervm PRIVATE ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(clovervm PRIVATE project_options project_warnings)
 
 
 
 
 
-install (TARGETS clojit DESTINATION bin)
+install (TARGETS clovervm DESTINATION bin)
 
-enable_sanitizers(clojit)
+enable_sanitizers(clovervm)

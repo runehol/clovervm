@@ -1,7 +1,7 @@
 
 # Preamble
 cmake_minimum_required (VERSION 3.13)
-project (clojit LANGUAGES CXX C)
+project (clovervm LANGUAGES CXX C)
 
 
 # Project wide setup
