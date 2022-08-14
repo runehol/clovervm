@@ -3,6 +3,9 @@ find_package(Threads)
 
 add_executable(clovervm
 	clovervm.c
+    cl_klass.c
+    cl_klass.h
+    
     )
 
 # add project sources to include path

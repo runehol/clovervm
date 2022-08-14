@@ -32,6 +32,11 @@ static inline cl_value string_make(const cl_wchar *data, cl_value count)
     return value_make_oop(&s->obj);
 }
 
+static inline cl_value string_make_z(const cl_wchar *data)
+{
+    return string_make(data, value_make_smi(wcslen(data)));
+}
+
 
 
 
