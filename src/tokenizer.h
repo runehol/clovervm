@@ -11,11 +11,15 @@ typedef enum token_kind
     TK_STRING,
     TK_SYMBOL,
     TK_EOF
-}
+} token_kind;
 
 typedef struct token
 {
-
+    token_kind kind;
+    uint32_t source_offset;
+    uint32_t size;
+    uint32_t line;
+    uint32_t column;
 } token;
 
 
