@@ -18,10 +18,13 @@ typedef struct cl_string
 
 } cl_string;
 
+extern struct cl_klass cl_string_klass;
+
+
 static inline void string_init(cl_string *vec, const cl_wchar *data, cl_value count)
 {
     assert(value_is_smi(count));
-    object_init(&vec->obj, NULL, 1, 1 + value_get_smi(count)*sizeof(cl_wchar));
+    object_init(&vec->obj, &cl_string_klass, 1, 1 + value_get_smi(count)*sizeof(cl_wchar));
     vec->count = count;
 }
 

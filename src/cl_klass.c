@@ -9,8 +9,5 @@ static cl_value klass_str(cl_value v)
     return res;
 }
 
-cl_klass cl_klass_klass = (cl_klass)
-    {.klass=&cl_klass_klass,
-     .klass_name=L"class",
-     .str=klass_str,
-    };
+
+cl_klass cl_klass_klass = MAKE_KLASS(L"class", klass_str);

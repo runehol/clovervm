@@ -7,6 +7,8 @@
 #include "cl_value.h"
 #include <stdint.h>
 
+
+
 typedef struct cl_persistent_list
 {
     cl_object obj;
@@ -15,9 +17,11 @@ typedef struct cl_persistent_list
     cl_value count;
 } cl_persistent_list;
 
+extern struct cl_klass cl_persistent_list_klass;
+
 static inline void persistent_list_init(cl_persistent_list *lst, cl_value first, cl_value rest, cl_value count)
 {
-    object_init_all_cells(&lst->obj, NULL, 3);
+    object_init_all_cells(&lst->obj, &cl_persistent_list_klass, 3);
     lst->first = first;
     lst->rest = rest;
     lst->count = count;

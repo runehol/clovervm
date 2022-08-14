@@ -5,7 +5,17 @@ add_executable(clovervm
 	clovervm.c
     cl_klass.c
     cl_klass.h
-    
+    cl_object.h
+    cl_persistent_list.c
+    cl_persistent_list.h
+    cl_refcount.h
+    cl_short_vector.c
+    cl_short_vector.h
+    cl_string.c
+    cl_string.h
+    cl_value.h
+    tokenizer.h
+
     )
 
 # add project sources to include path
