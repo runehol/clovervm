@@ -56,6 +56,11 @@ static inline bool value_is_ptr(cl_value val)
     return (val.v &cl_ptr_mask) != 0;
 }
 
+static inline bool value_is_refcounted_ptr(cl_value val)
+{
+    return (val.v &cl_ptr_mask) != 0;
+}
+
 static inline int64_t value_get_smi(cl_value val)
 {
     assert(value_is_smi(val));

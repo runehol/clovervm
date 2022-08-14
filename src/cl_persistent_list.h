@@ -3,6 +3,7 @@
 
 #include "cl_object.h"
 #include "cl_alloc.h"
+#include "cl_refcount.h"
 #include "cl_value.h"
 #include <stdint.h>
 
@@ -32,13 +33,13 @@ static inline cl_value persistent_list_make(cl_value first, cl_value rest, cl_va
 
 static inline cl_value persistent_list_first(const cl_persistent_list *lst)
 {
-    return lst->first;
+    return cl_incref(lst->first);
 }
 
 static inline cl_value persistent_list_next(const cl_persistent_list *lst)
 {
     if(lst->count.v <= value_make_smi(1).v) return cl_nil;
-    return lst->rest;
+    return cl_incref(lst->rest);
 }
 
 

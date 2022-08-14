@@ -5,6 +5,7 @@
 #include "cl_alloc.h"
 #include "cl_short_vector.h"
 #include "cl_string.h"
+#include "cl_refcount.h"
 
 int main()
 {

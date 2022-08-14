@@ -35,7 +35,9 @@ static inline cl_value short_vector_get(const cl_short_vector *vec, cl_value ind
     // TODO make these exceptions
     assert(value_is_smi(index) && index.v >= value_make_smi(0).v && index.v < vec->count.v);
 
-    return vec->array[value_get_smi(index)];
+    cl_value v = vec->array[value_get_smi(index)];
+    cl_decref(index);
+    return cl_incref(v);
 }
 
 static inline void short_vector_mutating_set(cl_short_vector *vec, cl_value index, cl_value elem)
@@ -44,6 +46,7 @@ static inline void short_vector_mutating_set(cl_short_vector *vec, cl_value inde
     assert(value_is_smi(index) && index.v >= 0 && index.v < vec->count.v);
 
     vec->array[value_get_smi(index)] = elem;
+    cl_decref(index);
 }
 
 

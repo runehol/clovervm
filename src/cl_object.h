@@ -2,6 +2,7 @@
 #define CL_OBJECT_H
 
 #include <stdint.h>
+#include <stdatomic.h>
 
 struct cl_class;
 /* 
@@ -10,10 +11,12 @@ struct cl_class;
 typedef struct cl_object
 {
     struct cl_class *klass;
-    int32_t refcount;
+    _Atomic int32_t refcount;
     uint16_t n_cells;
     uint16_t size_in_cells;
 } cl_object;
+
+
 
 static inline void object_init(cl_object *obj, struct cl_class *klass, uint32_t n_cells, uint32_t size_in_cells)
 {
