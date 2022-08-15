@@ -21,7 +21,7 @@ struct cl_object;
     Bit 0 (1): Falsy value
 
     The tags then are as follows:
-    00000: small integer, with the value is stored as signed two complements in the upper 59 bits.
+    00000: small integer, with the value is stored as signed two complement in the upper 59 bits.
     00010: special truthy value. Only one known: 0x22: true
     00011: special falsy value. Two known: 0x23: false, 0x43: nil
     00100: interned pointer
