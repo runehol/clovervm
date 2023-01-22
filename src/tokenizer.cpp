@@ -335,7 +335,7 @@ namespace cl
         }
 
 
-
+        tokens.append(Token::ENDMARKER, max);
 
     }
 
