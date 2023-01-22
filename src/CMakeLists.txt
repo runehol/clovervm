@@ -14,7 +14,10 @@ add_executable(clovervm
     cl_string.c
     cl_string.h
     cl_value.h
-    tokenizer.h
+    tokenizer.cpp
+	tokenizer.h
+	token.h
+	compilation_unit.h
 
     )
 
