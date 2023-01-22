@@ -1,6 +1,7 @@
 #ifndef CL_COMPILATION_UNIT_H
 #define CL_COMPILATION_UNIT_H
 
+#include <cwchar>
 #include <string>
 #include "token.h"
 
