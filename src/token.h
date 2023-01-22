@@ -10,13 +10,20 @@ namespace cl
 
     enum class Token : uint8_t
     {
+        //end of file
         ENDMARKER,
+
+        //metaclasses
         NAME,
         NUMBER,
         STRING,
+
+        //indentation handling
         NEWLINE,
         INDENT,
         DEDENT,
+
+        //operators
         LPAR,
         RPAR,
         LSQB,
@@ -64,12 +71,47 @@ namespace cl
         RARROW,
         ELLIPSIS,
         COLONEQUAL,
-        OP,
+
+        //keywords - https://docs.python.org/3/reference/lexical_analysis.html#keywords
+        FALSE,
+        NONE,
+        TRUE,
+        AND,
+        AS,
+        ASSERT,
         AWAIT,
         ASYNC,
+        BREAK,
+        CLASS,
+        CONTINUE,
+        DEF,
+        DEL,
+        ELIF,
+        ELSE,
+        EXCEPT,
+        FINALLY,
+        FOR,
+        FROM,
+        GLOBAL,
+        IF,
+        IMPORT,
+        IN,
+        IS,
+        LAMBDA,
+        NONLOCAL,
+        NOT,
+        OR,
+        PASS,
+        RAISE,
+        RETURN,
+        TRY,
+        WHILE,
+        WITH,
+        YIELD,
+
+        //OTHER
         TYPE_IGNORE,
         TYPE_COMMENT,
-        SOFT_KEYWORD,
         ERRORTOKEN,
     };
 
