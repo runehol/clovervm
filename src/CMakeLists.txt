@@ -28,6 +28,7 @@ target_include_directories(clovervm PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
 target_link_libraries(clovervm PRIVATE ${CMAKE_THREAD_LIBS_INIT})
 target_link_libraries(clovervm PRIVATE project_options project_warnings)
 target_link_libraries(clovervm PRIVATE absl::inlined_vector absl::flat_hash_map absl::flat_hash_set)
+target_link_libraries(clovervm PRIVATE ctre)
 
 
 

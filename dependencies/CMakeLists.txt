@@ -29,3 +29,11 @@ FetchContent_Declare(
   URL_MD5           955b6faedf32ec2ce1b7725561d15618
 )
 FetchContent_MakeAvailable(absl)
+
+
+FetchContent_Declare(
+  ctre
+  URL               https://github.com/hanickadot/compile-time-regular-expressions/archive/refs/tags/v3.7.1.tar.gz
+  URL_MD5           95a1297be479f287fd33b27da0d9218e
+)
+FetchContent_MakeAvailable(ctre)

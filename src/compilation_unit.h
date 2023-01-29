@@ -13,8 +13,6 @@ namespace cl
         std::wstring file_name;
         std::wstring source_code;
 
-        TokenVector tokens;
-
     };
 
 }

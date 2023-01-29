@@ -5,11 +5,16 @@
 #include <algorithm>
 #include <absl/container/flat_hash_map.h>
 #include <string_view>
+#include <ctre-unicode.hpp>
 
 
 namespace cl
 {
 
+    using namespace ctre::literals;
+
+
+    static constexpr auto name_re = "\\w+"_ctre;
 
     static absl::flat_hash_map<std::wstring_view, Token> make_keyword_token_map()
     {
@@ -59,10 +64,10 @@ namespace cl
 
 
 
-    void tokenise(CompilationUnit &cu)
+    TokenVector tokenise(CompilationUnit &cu)
     {
         const std::wstring &source_code = cu.source_code;
-        TokenVector &tokens = cu.tokens;
+        TokenVector tokens;
 
         absl::flat_hash_map<std::wstring_view, Token> keywords = make_keyword_token_map();
 
@@ -73,26 +78,26 @@ namespace cl
             throw std::runtime_error("Too large file");
         }
         uint32_t pos = 0;
-        uint32_t max = source_code.size();
+        uint32_t end = source_code.size();
         static constexpr uint32_t tabsize = 8;
 
         enum {
             START_LINE,
             NORMAL,
-            IN_PAREN,
-            CONTINUED,
-            CONTSTR
+            //IN_PAREN,
+            //CONTINUED,
+            //CONTSTR
         } state = START_LINE;
 
 
-        while(pos < max)
+        while(pos < end)
         {
             switch(state)
             {
             case START_LINE:
             {
                 uint32_t column = 0;
-                while(pos < max)
+                while(pos < end)
                 {
                     wchar_t c = source_code[pos];
                     if(c == ' ')
@@ -111,7 +116,7 @@ namespace cl
 
 
                 }
-                if(pos == max) break;
+                if(pos == end) break;
 
                 wchar_t c = source_code[pos];
                 if(c == '#' || c == '\r' || c == '\n')
@@ -150,8 +155,8 @@ namespace cl
             case NORMAL:
             {
                 wchar_t c = source_code[pos];
-                wchar_t c2 = pos+1 < max ? source_code[pos+1] : 0;
-                wchar_t c3 = pos+2 < max ? source_code[pos+2] : 0;
+                wchar_t c2 = pos+1 < end ? source_code[pos+1] : 0;
+                wchar_t c3 = pos+2 < end ? source_code[pos+2] : 0;
                 bool c2_equal = (c2 == '=');
                 switch(c)
                 {
@@ -375,6 +380,39 @@ namespace cl
                         tokens.emplace_back(Token::AT, pos++);
                     }
                     break;
+                case '\n':
+                case '\r':
+                    tokens.emplace_back(Token::NEWLINE, pos);
+                    while(source_code[pos] == '\n' || source_code[pos] == '\r')
+                    {
+                        ++pos;
+                    }
+                    break;
+
+                case ' ':
+                case '\f':
+                case '\t':
+                    //skip over whitespace
+                    ++pos;
+                    break;
+
+                default:
+                {
+                    auto m = name_re.match(std::wstring_view(source_code.data() + pos, end - pos));
+                    if(m)
+                    {
+                        std::wstring_view v = m;
+                        Token t = Token::NAME;
+                        auto it = keywords.find(v);
+                        if(it != keywords.end())
+                        {
+                            t = it->second;
+                        }
+                        tokens.emplace_back(t, pos);
+                        pos += v.size();
+                    }
+
+                }
 
 
                 }
@@ -387,9 +425,20 @@ namespace cl
 
         }
 
+        if(tokens.size() == 0 || tokens.tokens.back() != Token::NEWLINE)
+        {
+            // terminate with a newline if not there already
+            tokens.emplace_back(Token::NEWLINE, end);
+        }
+        while(indents.size() > 1)
+        {
+            indents.pop_back();
+            tokens.emplace_back(Token::DEDENT, end);
+        }
 
-        tokens.emplace_back(Token::ENDMARKER, max);
+        tokens.emplace_back(Token::ENDMARKER, end);
 
+        return tokens;
     }
 
 
