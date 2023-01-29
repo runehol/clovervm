@@ -3,15 +3,68 @@
 #include "token.h"
 #include <limits>
 #include <algorithm>
+#include <absl/container/flat_hash_map.h>
+#include <string_view>
 
 
 namespace cl
 {
 
+
+    static absl::flat_hash_map<std::wstring_view, Token> make_keyword_token_map()
+    {
+        using namespace std::literals;
+
+        absl::flat_hash_map<std::wstring_view, Token> keywords =
+        {
+            {L"False"sv, Token::FALSE},
+            {L"None"sv, Token::NONE},
+            {L"True"sv, Token::TRUE},
+
+            {L"and"sv, Token::AND},
+            {L"as"sv, Token::AS},
+            {L"assert"sv, Token::ASSERT},
+            {L"await"sv, Token::AWAIT},
+            {L"async"sv, Token::ASYNC},
+            {L"break"sv, Token::BREAK},
+            {L"class"sv, Token::CLASS},
+            {L"continue"sv, Token::CONTINUE},
+            {L"def"sv, Token::DEF},
+            {L"del"sv, Token::DEL},
+            {L"elif"sv, Token::ELIF},
+            {L"else"sv, Token::ELSE},
+            {L"except"sv, Token::EXCEPT},
+            {L"finally"sv, Token::FINALLY},
+            {L"for"sv, Token::FOR},
+            {L"from"sv, Token::FROM},
+            {L"global"sv, Token::GLOBAL},
+            {L"if"sv, Token::IF},
+            {L"import"sv, Token::IMPORT},
+            {L"in"sv, Token::IN},
+            {L"is"sv, Token::IS},
+            {L"lambda"sv, Token::LAMBDA},
+            {L"nonlocal"sv, Token::NONLOCAL},
+            {L"not"sv, Token::NOT},
+            {L"or"sv, Token::OR},
+            {L"pass"sv, Token::PASS},
+            {L"raise"sv, Token::RAISE},
+            {L"return"sv, Token::RETURN},
+            {L"try"sv, Token::TRY},
+            {L"while"sv, Token::WHILE},
+            {L"with"sv, Token::WITH},
+            {L"yield"sv, Token::YIELD},
+        };
+        return keywords;
+    }
+
+
+
     void tokenise(CompilationUnit &cu)
     {
         const std::wstring &source_code = cu.source_code;
         TokenVector &tokens = cu.tokens;
+
+        absl::flat_hash_map<std::wstring_view, Token> keywords = make_keyword_token_map();
 
         std::vector<uint32_t> indents;
         indents.push_back(0);
