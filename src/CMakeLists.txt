@@ -1,7 +1,7 @@
 find_package(Threads)
 
 
-add_executable(clovervm
+add_library(libclovervm STATIC
 	clovervm.c
     cl_klass.c
     cl_klass.h
@@ -16,22 +16,28 @@ add_executable(clovervm
     cl_value.h
     tokenizer.cpp
 	tokenizer.h
+	token.cpp
 	token.h
 	compilation_unit.h
 
     )
 
 # add project sources to include path
-target_include_directories(clovervm PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
+target_include_directories(libclovervm PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
 
+
+target_link_libraries(libclovervm PRIVATE project_options project_warnings)
+target_link_libraries(libclovervm PRIVATE absl::inlined_vector absl::flat_hash_map absl::flat_hash_set)
+target_link_libraries(libclovervm PRIVATE ctre)
+
+
+add_executable(clovervm
+	clovervm.c
+	)
 
 target_link_libraries(clovervm PRIVATE ${CMAKE_THREAD_LIBS_INIT})
 target_link_libraries(clovervm PRIVATE project_options project_warnings)
-target_link_libraries(clovervm PRIVATE absl::inlined_vector absl::flat_hash_map absl::flat_hash_set)
-target_link_libraries(clovervm PRIVATE ctre)
-
-
-
+target_link_libraries(clovervm PRIVATE libclovervm)
 
 
 install (TARGETS clovervm DESTINATION bin)

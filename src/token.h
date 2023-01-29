@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdint>
 #include <cassert>
+#include <iosfwd>
 
 namespace cl
 {
@@ -114,6 +115,9 @@ namespace cl
         TYPE_COMMENT,
         ERRORTOKEN,
     };
+
+    const char *to_string(Token t);
+    std::ostream &operator<<(std::ostream &o, Token t);
 
 
     struct TokenVector

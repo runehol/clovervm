@@ -75,7 +75,7 @@ namespace cl
 
 
 
-    TokenVector tokenise(CompilationUnit &cu)
+    TokenVector tokenize(CompilationUnit &cu)
     {
         const std::wstring &source_code = cu.source_code;
         TokenVector tokens;
@@ -436,6 +436,8 @@ namespace cl
                             pos += v.size();
                         }
                     }
+
+                    tokens.emplace_back(Token::ERRORTOKEN, pos++);
                 }
 
 

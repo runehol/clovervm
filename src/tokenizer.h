@@ -6,7 +6,7 @@
 namespace cl
 {
     struct CompilationUnit;
-    TokenVector tokenise(CompilationUnit &cu);
+    TokenVector tokenize(CompilationUnit &cu);
 }
 
 #endif //CL_TOKENIZER_H

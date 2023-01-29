@@ -44,7 +44,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     enable_testing()
 	# Externally provided content
 	add_subdirectory(dependencies)
-    #add_subdirectory(tests)
+    add_subdirectory(tests)
 
 
     #add_subdirectory(benchmark)
