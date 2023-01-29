@@ -7,24 +7,25 @@
 #include <string_view>
 #include <ctre-unicode.hpp>
 
-
 namespace cl
 {
 
     using namespace ctre::literals;
 
 
-    static constexpr auto name_re = "\\w+"_ctre;
+    static constexpr auto name_re = "^\\w+"_ctre;
 
 
     static constexpr auto int_number_re =
+        "^("
         "(0[xX](?:_?[0-9a-fA-F])+)" // hexadecimal
         "|"
         "(0[bB](?:_?[01])+)" //binary
         "|"
         "(0[oO](?:_?[0-7])+)" //octal
         "|"
-        "(?:0(?:_?0)*|[1-9](?:_?[0-9])*)"_ctre;
+        "(?:0(?:_?0)*|[1-9](?:_?[0-9])*)"
+        ")"_ctre;
 
 
     static absl::flat_hash_map<std::wstring_view, Token> make_keyword_token_map()
@@ -141,11 +142,12 @@ namespace cl
                     indents.push_back(column);
                     tokens.emplace_back(Token::INDENT, pos);
                 }
+
                 if(column < indents.back())
                 {
-                    if(std::find(indents.begin(), indents.end(), pos) == indents.end())
+                    if(std::find(indents.begin(), indents.end(), column) == indents.end())
                     {
-                        throw std::runtime_error("IndentationError: unindent does not match any outer indentation level " + std::to_string(pos));
+                        throw std::runtime_error("IndentationError: unindent does not match any outer indentation level " + std::to_string(column));
                     }
 
                     while(column < indents.back())
@@ -398,6 +400,7 @@ namespace cl
                     {
                         ++pos;
                     }
+                    state = START_LINE;
                     break;
 
                 case ' ':
@@ -411,7 +414,18 @@ namespace cl
                 {
                     std::wstring_view source_view(source_code.data() + pos, end - pos);
                     {
-                        auto m = name_re.match(source_view);
+                        auto m = int_number_re.search(source_view);
+                        if(m)
+                        {
+                            std::wstring_view v = m;
+                            tokens.emplace_back(Token::NUMBER, pos);
+                            pos += v.size();
+                            break;
+                        }
+                    }
+
+                    {
+                        auto m = name_re.search(source_view);
                         if(m)
                         {
                             std::wstring_view v = m;
@@ -423,18 +437,9 @@ namespace cl
                             }
                             tokens.emplace_back(t, pos);
                             pos += v.size();
+                            break;
                         }
 
-                    }
-
-                    {
-                        auto m = int_number_re.match(source_view);
-                        if(m)
-                        {
-                            std::wstring_view v = m;
-                            tokens.emplace_back(Token::NUMBER, pos);
-                            pos += v.size();
-                        }
                     }
 
                     tokens.emplace_back(Token::ERRORTOKEN, pos++);
