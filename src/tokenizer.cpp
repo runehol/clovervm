@@ -16,6 +16,17 @@ namespace cl
 
     static constexpr auto name_re = "\\w+"_ctre;
 
+
+    static constexpr auto int_number_re =
+        "(0[xX](?:_?[0-9a-fA-F])+)" // hexadecimal
+        "|"
+        "(0[bB](?:_?[01])+)" //binary
+        "|"
+        "(0[oO](?:_?[0-7])+)" //octal
+        "|"
+        "(?:0(?:_?0)*|[1-9](?:_?[0-9])*)"_ctre;
+
+
     static absl::flat_hash_map<std::wstring_view, Token> make_keyword_token_map()
     {
         using namespace std::literals;
@@ -398,20 +409,33 @@ namespace cl
 
                 default:
                 {
-                    auto m = name_re.match(std::wstring_view(source_code.data() + pos, end - pos));
-                    if(m)
+                    std::wstring_view source_view(source_code.data() + pos, end - pos);
                     {
-                        std::wstring_view v = m;
-                        Token t = Token::NAME;
-                        auto it = keywords.find(v);
-                        if(it != keywords.end())
+                        auto m = name_re.match(source_view);
+                        if(m)
                         {
-                            t = it->second;
+                            std::wstring_view v = m;
+                            Token t = Token::NAME;
+                            auto it = keywords.find(v);
+                            if(it != keywords.end())
+                            {
+                                t = it->second;
+                            }
+                            tokens.emplace_back(t, pos);
+                            pos += v.size();
                         }
-                        tokens.emplace_back(t, pos);
-                        pos += v.size();
+
                     }
 
+                    {
+                        auto m = int_number_re.match(source_view);
+                        if(m)
+                        {
+                            std::wstring_view v = m;
+                            tokens.emplace_back(Token::NUMBER, pos);
+                            pos += v.size();
+                        }
+                    }
                 }
 
 
