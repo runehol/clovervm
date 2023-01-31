@@ -27,6 +27,28 @@ namespace cl
         "(?:0(?:_?0)*|[1-9](?:_?[0-9])*)"
         ")"_ctre;
 
+    std::wstring_view string_for_name_token(std::wstring_view source, uint32_t offset)
+    {
+        std::wstring_view s = source.substr(offset);
+        auto m = name_re.search(s);
+        if(m)
+        {
+            return std::wstring_view(m);
+        }
+        return std::wstring_view();
+    }
+
+
+    std::wstring_view string_for_number_token(std::wstring_view source, uint32_t offset)
+    {
+        std::wstring_view s = source.substr(offset);
+        auto m = int_number_re.search(s);
+        if(m)
+        {
+            return std::wstring_view(m);
+        }
+        return std::wstring_view();
+    }
 
     static absl::flat_hash_map<std::wstring_view, Token> make_keyword_token_map()
     {
@@ -412,31 +434,28 @@ namespace cl
 
                 default:
                 {
-                    std::wstring_view source_view(source_code.data() + pos, end - pos);
                     {
-                        auto m = int_number_re.search(source_view);
-                        if(m)
+                        std::wstring_view m = string_for_number_token(source_code, pos);
+                        if(!m.empty())
                         {
-                            std::wstring_view v = m;
                             tokens.emplace_back(Token::NUMBER, pos);
-                            pos += v.size();
+                            pos += m.size();
                             break;
                         }
                     }
 
                     {
-                        auto m = name_re.search(source_view);
-                        if(m)
+                        std::wstring_view m = string_for_name_token(source_code, pos);
+                        if(!m.empty())
                         {
-                            std::wstring_view v = m;
                             Token t = Token::NAME;
-                            auto it = keywords.find(v);
+                            auto it = keywords.find(m);
                             if(it != keywords.end())
                             {
                                 t = it->second;
                             }
                             tokens.emplace_back(t, pos);
-                            pos += v.size();
+                            pos += m.size();
                             break;
                         }
 
