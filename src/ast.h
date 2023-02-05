@@ -101,11 +101,13 @@ namespace cl
             return kinds.size();
         }
 
-        void emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs=-1, int32_t rhs=-1)
+        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs=-1, int32_t rhs=-1)
         {
+            int32_t idx = size();
             kinds.push_back(kind);
             source_offsets.push_back(source_offset);
             children.emplace_back(lhs, rhs);
+            return idx;
         }
     };
 

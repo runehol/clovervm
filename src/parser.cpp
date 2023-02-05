@@ -47,11 +47,45 @@ namespace cl
 
     };
 
+    int32_t simple_statements(ParserState &state)
+    {
+        return -1;
+    }
+
+
+    int32_t compound_statement(ParserState &state)
+    {
+        return -1;
+    }
+
+
+
+    int32_t statement(ParserState &state)
+    {
+        switch(state.peek_token())
+        {
+        case Token::DEF:
+        case Token::AT:
+        case Token::ASYNC:
+        case Token::IF:
+        case Token::CLASS:
+        case Token::WITH:
+        case Token::FOR:
+        case Token::TRY:
+        case Token::WHILE:
+            return compound_statement(state);
+
+        default:
+            return simple_statements(state);
+
+        }
+
+    }
+
 
     int32_t statements(ParserState &state)
     {
         return -1;
-
     }
 
     int32_t file(ParserState &state)
