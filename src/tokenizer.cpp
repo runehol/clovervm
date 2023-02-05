@@ -156,6 +156,7 @@ namespace cl
                 if(c == '#' || c == '\r' || c == '\n')
                 {
                     // comments or blank lines don't count for the indentation algorithm
+                    state = NORMAL;
                     break;
                 }
 
@@ -431,6 +432,15 @@ namespace cl
                     //skip over whitespace
                     ++pos;
                     break;
+
+
+                case '#':
+                    // skip over comments until end of line
+                    do {
+                        ++pos;
+                    } while(source_code[pos] != '\n' && source_code[pos] != '\r');
+                    break;
+
 
                 default:
                 {
