@@ -96,6 +96,8 @@ namespace cl
         std::vector<AstChildren> children01;
         std::vector<int32_t> children2;
 
+        int32_t root_node = -1;
+
         size_t size() const {
             assert(kinds.size() == source_offsets.size());
             assert(kinds.size() == children01.size());

@@ -7,33 +7,73 @@
 namespace cl
 {
 
-    struct ParserState
+
+    class Parser
     {
-        ParserState(const TokenVector &_token_vec)
+    public:
+        Parser(const TokenVector &_token_vec)
             : token_vec(_token_vec)
         {}
 
+        AstVector parse(StartRule start_rule)
+        {
+            switch(start_rule)
+            {
+            case StartRule::File:
+                ast.root_node = file();
+                break;
+            case StartRule::Interactive:
+                break;
+            case StartRule::Eval:
+                break;
+            case StartRule::FuncType:
+                break;
+            case StartRule::FString:
+                break;
+            }
 
-        Token peek_token()
+
+            return std::move(ast);
+
+        }
+
+    private:
+
+        AstVector ast;
+        const TokenVector &token_vec;
+        size_t token_pos = 0;
+
+        Token peek()
         {
             assert(token_pos < token_vec.size());
             return token_vec.tokens[token_pos];
         };
 
-        Token get_token()
+        Token advance()
         {
             assert(token_pos < token_vec.size());
             return token_vec.tokens[token_pos++];
         };
 
 
-        void expect_token(Token expected)
+        void consume(Token expected)
         {
-            Token actual = get_token();
+            Token actual = advance();
             if(expected != actual)
             {
                 throw std::runtime_error(std::string("Expected token ") + to_string(expected) + ", got " + to_string(actual));
             }
+        }
+
+        bool match(Token expected)
+        {
+            Token actual = peek();
+            if(actual == expected)
+            {
+                ++token_pos;
+                return true;
+            }
+            return false;
         }
 
         uint32_t source_pos_for_last_token()
@@ -41,86 +81,73 @@ namespace cl
             return token_vec.source_offsets[token_pos-1];
         }
 
-        AstVector ast;
-        const TokenVector &token_vec;
-        size_t token_pos = 0;
+        bool is_at_end()
+        {
+            return peek() == Token::ENDMARKER;
+        }
+
+
+
+        int32_t simple_statements()
+        {
+            return -1;
+        }
+
+
+        int32_t compound_statement()
+        {
+            return -1;
+        }
+
+
+
+        int32_t statement()
+        {
+            switch(peek())
+            {
+            case Token::DEF:
+            case Token::AT:
+            case Token::ASYNC:
+            case Token::IF:
+            case Token::CLASS:
+            case Token::WITH:
+            case Token::FOR:
+            case Token::TRY:
+            case Token::WHILE:
+                return compound_statement();
+
+            default:
+                return simple_statements();
+
+            }
+
+        }
+
+
+        int32_t statements()
+        {
+            return -1;
+        }
+
+        int32_t file()
+        {
+            int32_t idx = -1;
+            if(!is_at_end())
+            {
+                idx = statements();
+            }
+            consume(Token::ENDMARKER);
+            return idx;
+        }
 
     };
-
-    int32_t simple_statements(ParserState &state)
-    {
-        return -1;
-    }
-
-
-    int32_t compound_statement(ParserState &state)
-    {
-        return -1;
-    }
-
-
-
-    int32_t statement(ParserState &state)
-    {
-        switch(state.peek_token())
-        {
-        case Token::DEF:
-        case Token::AT:
-        case Token::ASYNC:
-        case Token::IF:
-        case Token::CLASS:
-        case Token::WITH:
-        case Token::FOR:
-        case Token::TRY:
-        case Token::WHILE:
-            return compound_statement(state);
-
-        default:
-            return simple_statements(state);
-
-        }
-
-    }
-
-
-    int32_t statements(ParserState &state)
-    {
-        return -1;
-    }
-
-    int32_t file(ParserState &state)
-    {
-        int32_t idx = -1;
-        if(state.peek_token() != Token::ENDMARKER)
-        {
-            idx = statements(state);
-        }
-        state.expect_token(Token::ENDMARKER);
-        return idx;
-    }
-
 
 
     AstVector parse(const TokenVector &t, StartRule start_rule)
     {
-        ParserState state(t);
+        Parser parser(t);
 
-        switch(start_rule)
-        {
-        case StartRule::File:
-            break;
-        case StartRule::Interactive:
-            break;
-        case StartRule::Eval:
-            break;
-        case StartRule::FuncType:
-            break;
-        case StartRule::FString:
-            break;
-        }
-
-
-        return std::move(state.ast);
+        return parser.parse(start_rule);
     }
 
 }
