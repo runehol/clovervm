@@ -80,33 +80,36 @@ namespace cl
 
     struct AstChildren
     {
-        AstChildren(int32_t _lhs=-1, int32_t _rhs=-1):
-            lhs(_lhs),
-            rhs(_rhs)
+        AstChildren(int32_t _child0=-1, int32_t _child1=-1):
+            child0(_child0),
+            child1(_child1)
         {}
 
-        int32_t lhs;
-        int32_t rhs;
+        int32_t child0;
+        int32_t child1;
     };
 
     struct AstVector
     {
         std::vector<AstKind> kinds;
         std::vector<uint32_t> source_offsets;
-        std::vector<AstChildren> children;
+        std::vector<AstChildren> children01;
+        std::vector<int32_t> children2;
 
         size_t size() const {
             assert(kinds.size() == source_offsets.size());
-            assert(kinds.size() == children.size());
+            assert(kinds.size() == children01.size());
+            assert(kinds.size() == children2.size());
             return kinds.size();
         }
 
-        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs=-1, int32_t rhs=-1)
+        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t child0=-1, int32_t child1=-1, int32_t child2=-1)
         {
             int32_t idx = size();
             kinds.push_back(kind);
             source_offsets.push_back(source_offset);
-            children.emplace_back(lhs, rhs);
+            children01.emplace_back(child0, child1);
+            children2.emplace_back(child2);
             return idx;
         }
     };
