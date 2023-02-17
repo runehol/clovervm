@@ -33,7 +33,7 @@ namespace cl
         STATEMENT_SEQUENCE,
         EXPRESSION_ASSIGN,
         EXPRESSION_BINARY,
-        STATEMENT_UNARY,
+        EXPRESSION_UNARY,
         EXPRESSION_LITERAL,
 
     };
@@ -47,10 +47,11 @@ namespace cl
         SUBSCRIPT,
 
         ADD,
-        SUB,
+        SUBTRACT,
         MULTIPLY,
         DIVIDE,
         INT_DIVIDE,
+        MATMULT,
         POWER,
         LEFTSHIFT,
         RIGHTSHIFT,
@@ -61,6 +62,8 @@ namespace cl
 
         NOT,
         NEGATE,
+        PLUS,
+        INVERT,
 
 
         //literal expressions

@@ -13,7 +13,7 @@ namespace cl
     {
     public:
         Parser(CompilationUnit &_cu, const TokenVector &_token_vec)
-            : cu(_cu), token_vec(_token_vec)
+            : token_vec(_token_vec)
         {}
 
         AstVector parse(StartRule start_rule)
@@ -41,7 +41,6 @@ namespace cl
     private:
 
         AstVector ast;
-        CompilationUnit &cu;
         const TokenVector &token_vec;
         size_t token_pos = 0;
 
@@ -56,6 +55,13 @@ namespace cl
             assert(token_pos < token_vec.size());
             return token_vec.tokens[token_pos++];
         };
+
+        uint32_t source_pos_and_advance()
+        {
+            assert(token_pos < token_vec.size());
+            return token_vec.source_offsets[token_pos++];
+
+        }
 
 
         void consume(Token expected)
@@ -93,8 +99,128 @@ namespace cl
 
         // now the parser itself
 
+        // expressions
 
-        int32_t literal_expr()
+
+
+        int32_t sum()
+        {
+            int32_t result = term();
+            while(true)
+            {
+                AstOperatorKind op_kind = AstOperatorKind::UNUSED;
+                switch(peek())
+                {
+                case Token::PLUS:
+                    op_kind = AstOperatorKind::ADD;
+                    break;
+                case Token::MINUS:
+                    op_kind = AstOperatorKind::SUBTRACT;
+                    break;
+
+                default:
+                    return result;
+                }
+
+
+                uint32_t source_pos = source_pos_and_advance();
+                int32_t rhs = factor();
+                result = ast.emplace_back(
+                    AstKind(AstNodeKind::EXPRESSION_BINARY, op_kind),
+                    source_pos, result, rhs);
+
+            }
+        }
+
+        int32_t term()
+        {
+            int32_t result = factor();
+            while(true)
+            {
+                AstOperatorKind op_kind = AstOperatorKind::UNUSED;
+                switch(peek())
+                {
+                case Token::STAR:
+                    op_kind = AstOperatorKind::MULTIPLY;
+                    break;
+                case Token::SLASH:
+                    op_kind = AstOperatorKind::DIVIDE;
+                    break;
+                case Token::DOUBLESLASH:
+                    op_kind = AstOperatorKind::INT_DIVIDE;
+                    break;
+                case Token::PERCENT:
+                    op_kind = AstOperatorKind::MODULO;
+                    break;
+                case Token::AT:
+                    op_kind = AstOperatorKind::MATMULT;
+                    break;
+
+                default:
+                    return result;
+                }
+
+
+                uint32_t source_pos = source_pos_and_advance();
+                int32_t rhs = factor();
+                result = ast.emplace_back(
+                    AstKind(AstNodeKind::EXPRESSION_BINARY, op_kind),
+                    source_pos, result, rhs);
+
+            }
+            return result;
+        }
+
+        int32_t factor()
+        {
+            AstOperatorKind op_kind = AstOperatorKind::UNUSED;
+            switch(peek())
+            {
+            case Token::PLUS:
+                op_kind = AstOperatorKind::PLUS;
+                break;
+            case Token::MINUS:
+                op_kind = AstOperatorKind::NEGATE;
+                break;
+            case Token::TILDE:
+                op_kind = AstOperatorKind::INVERT;
+                break;
+
+            default:
+                return power();
+            }
+
+            uint32_t source_pos = source_pos_and_advance();
+            int32_t inner = factor();
+            return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_UNARY, op_kind), source_pos, inner);
+        }
+
+        int32_t power()
+        {
+            int32_t lhs = await_primary();
+            if(peek() == Token::DOUBLESTAR)
+            {
+                uint32_t source_pos = source_pos_and_advance();
+                int32_t rhs = factor();
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_BINARY, AstOperatorKind::POWER), source_pos, lhs, rhs);
+            } else {
+                return lhs;
+            }
+        }
+
+        int32_t await_primary()
+        {
+            return primary();
+        }
+
+        int32_t primary()
+        {
+            int32_t first = atom();
+            // todo parse atom.name, atom[slices], atom(arguments) here
+            return first;
+        }
+
+        int32_t atom()
         {
             switch(peek())
             {
@@ -116,10 +242,9 @@ namespace cl
             default:
                 throw std::runtime_error(std::string("Unexpected token") + to_string(peek()));
 
+                // TODO NAME, STRING, parenthesis, tuples, lists, dicts, ... (ELLIPSIS)
             }
         }
-
-
 
         int32_t simple_statements()
         {
