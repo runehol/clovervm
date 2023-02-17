@@ -1,3 +1,3 @@
 # clovervm
 Clover Virtual Machine
-Experiments with JIT compilation using Clojure as a source language. Very much work-in-progress.
+Experiments with JIT compilation using Python 3 as a source language. Very much work-in-progress.
