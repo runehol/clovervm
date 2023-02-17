@@ -34,19 +34,18 @@ namespace cl
         EXPRESSION_ASSIGN,
         EXPRESSION_BINARY,
         STATEMENT_UNARY,
-        EXPRESSION_NUMBER_LITERAL,
-        EXPRESSION_STRING_LITERAL,
+        EXPRESSION_LITERAL,
 
     };
 
 
     enum class AstOperatorKind : uint8_t
     {
+        UNUSED,
         COMMA,
         DOT,
         SUBSCRIPT,
 
-        NONE,
         ADD,
         SUB,
         MULTIPLY,
@@ -61,8 +60,15 @@ namespace cl
         XOR,
 
         NOT,
-        NEGATE
+        NEGATE,
 
+
+        //literal expressions
+        NUMBER,
+        STRING,
+        NONE,
+        TRUE,
+        FALSE,
 
     };
 
@@ -74,6 +80,10 @@ namespace cl
 
     struct AstKind
     {
+        AstKind(AstNodeKind _node_kind, AstOperatorKind _operator_kind=AstOperatorKind::UNUSED)
+            : node_kind(_node_kind), operator_kind(_operator_kind)
+        {}
+
         AstNodeKind node_kind;
         AstOperatorKind operator_kind;
     };
@@ -114,6 +124,7 @@ namespace cl
             children2.emplace_back(child2);
             return idx;
         }
+
     };
 
 }

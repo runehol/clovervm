@@ -3,6 +3,7 @@
 #include <string>
 #include "ast.h"
 #include "token.h"
+#include "compilation_unit.h"
 
 namespace cl
 {
@@ -11,8 +12,8 @@ namespace cl
     class Parser
     {
     public:
-        Parser(const TokenVector &_token_vec)
-            : token_vec(_token_vec)
+        Parser(CompilationUnit &_cu, const TokenVector &_token_vec)
+            : cu(_cu), token_vec(_token_vec)
         {}
 
         AstVector parse(StartRule start_rule)
@@ -40,6 +41,7 @@ namespace cl
     private:
 
         AstVector ast;
+        CompilationUnit &cu;
         const TokenVector &token_vec;
         size_t token_pos = 0;
 
@@ -84,6 +86,37 @@ namespace cl
         bool is_at_end()
         {
             return peek() == Token::ENDMARKER;
+        }
+
+
+
+
+        // now the parser itself
+
+
+        int32_t literal_expr()
+        {
+            switch(peek())
+            {
+            case Token::NUMBER:
+                consume(Token::NUMBER);
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER), source_pos_for_last_token());
+            case Token::STRING:
+                consume(Token::STRING);
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::STRING), source_pos_for_last_token());
+            case Token::NONE:
+                consume(Token::NONE);
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NONE), source_pos_for_last_token());
+            case Token::TRUE:
+                consume(Token::TRUE);
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::TRUE), source_pos_for_last_token());
+            case Token::FALSE:
+                consume(Token::FALSE);
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::FALSE), source_pos_for_last_token());
+            default:
+                throw std::runtime_error(std::string("Unexpected token") + to_string(peek()));
+
+            }
         }
 
 
@@ -143,9 +176,9 @@ namespace cl
     };
 
 
-    AstVector parse(const TokenVector &t, StartRule start_rule)
+    AstVector parse(CompilationUnit &cu, const TokenVector &t, StartRule start_rule)
     {
-        Parser parser(t);
+        Parser parser(cu, t);
 
         return parser.parse(start_rule);
     }
