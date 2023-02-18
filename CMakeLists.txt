@@ -6,6 +6,9 @@ project (clovervm LANGUAGES CXX C)
 
 # Project wide setup
 
+set (CMAKE_CXX_STANDARD 17)
+set (CMAKE_CXX_STANDARD_REQUIRED ON)
+set (CMAKE_CXX_EXTENSIONS OFF)
 
 include(cmake/StandardProjectSettings.cmake)
 
