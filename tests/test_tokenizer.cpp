@@ -40,7 +40,7 @@ TEST(CTensor, factorial)
 {
     std::wstring source =
        L"def recur_factorial(n):\n"
-        "    if n == 1:\n"
+        "    if n == 1: #zomg\n"
         "        return n\n"
         "    else:\n"
         "        return n*recur_factorial(n-1)\n";

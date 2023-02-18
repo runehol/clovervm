@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cassert>
 #include <iosfwd>
+#include <fmt/format.h>
 
 namespace cl
 {
@@ -119,7 +120,6 @@ namespace cl
     const char *to_string(Token t);
     std::ostream &operator<<(std::ostream &o, Token t);
 
-
     struct TokenVector
     {
         std::vector<Token> tokens;
@@ -138,5 +138,44 @@ namespace cl
     };
 
 }
+
+
+
+template<>
+struct fmt::formatter<cl::Token>
+{
+    constexpr auto parse(format_parse_context& ctx)
+    {
+        return ctx.end();
+    }
+
+    template <typename FormatContext>
+    auto format(const cl::Token &t, FormatContext& ctx) -> decltype(ctx.out())
+    {
+        auto&& out = ctx.out();
+        return format_to(out, "{}", cl::to_string(t));
+    }
+};
+
+template<>
+struct fmt::formatter<cl::TokenVector>
+{
+    constexpr auto parse(format_parse_context& ctx)
+    {
+        return ctx.end();
+    }
+
+    template <typename FormatContext>
+    auto format(const cl::TokenVector &tv, FormatContext& ctx) -> decltype(ctx.out())
+    {
+        auto&& out = ctx.out();
+        for(size_t i = 0; i < tv.size(); ++i)
+        {
+            format_to(out, "{:05d}\t{}\n", tv.source_offsets[i], tv.tokens[i]);
+        }
+        return out;
+    }
+};
+
 
 #endif //CL_TOKEN_H
