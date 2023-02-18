@@ -22,8 +22,8 @@ struct cl_object;
 
     The tags then are as follows:
     00000: small integer, with the value is stored as signed two complement in the upper 59 bits.
-    00010: special truthy value. Only one known: 0x22: true
-    00011: special falsy value. Two known: 0x23: false, 0x43: nil
+    00010: special truthy value. Only one known: 0x22: True
+    00011: special falsy value. Two known: 0x23: False, 0x43: None
     00100: interned pointer
     01000: permanent pointer
     10000: refcounted pointer
@@ -93,9 +93,9 @@ static inline bool value_is_falsy(cl_value val)
     return (val.v&cl_falsy_tag) != 0;
 }
 
-static const cl_value cl_nil = (cl_value){.v=0x43};
-static const cl_value cl_true = (cl_value){.v=0x22};
-static const cl_value cl_false = (cl_value){.v=0x23};
+static const cl_value cl_None = (cl_value){.v=0x43};
+static const cl_value cl_True = (cl_value){.v=0x22};
+static const cl_value cl_False = (cl_value){.v=0x23};
 static const cl_value cl_exception_marker = (cl_value){.v=0x82}; // special value to return if an exception has been thrown.
 
 

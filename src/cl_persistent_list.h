@@ -42,7 +42,7 @@ static inline cl_value persistent_list_first(const cl_persistent_list *lst)
 
 static inline cl_value persistent_list_next(const cl_persistent_list *lst)
 {
-    if(lst->count.v <= value_make_smi(1).v) return cl_nil;
+    if(lst->count.v <= value_make_smi(1).v) return cl_None;
     return cl_incref(lst->rest);
 }
 

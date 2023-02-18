@@ -1,4 +1,5 @@
-#include <stdio.h>
+#include <fmt/core.h>
+
 #include "cl_object.h"
 #include "cl_value.h"
 #include "cl_persistent_list.h"
@@ -9,6 +10,6 @@
 
 int main()
 {
-    printf("hello world\n");
+    fmt::print("hello world\n");
     return 0;
 }

@@ -2,16 +2,16 @@ find_package(Threads)
 
 
 add_library(libclovervm STATIC
-	clovervm.c
-    cl_klass.c
+	clovervm.cpp
+    cl_klass.cpp
     cl_klass.h
     cl_object.h
-    cl_persistent_list.c
+    cl_persistent_list.cpp
     cl_persistent_list.h
     cl_refcount.h
-    cl_short_vector.c
+    cl_short_vector.cpp
     cl_short_vector.h
-    cl_string.c
+    cl_string.cpp
     cl_string.h
     cl_value.h
 	parser.cpp
@@ -35,11 +35,12 @@ target_link_libraries(libclovervm PRIVATE ctre)
 
 
 add_executable(clovervm
-	clovervm.c
+	clovervm.cpp
 	)
 
 target_link_libraries(clovervm PRIVATE ${CMAKE_THREAD_LIBS_INIT})
 target_link_libraries(clovervm PRIVATE project_options project_warnings)
+target_link_libraries(clovervm PRIVATE fmt)
 target_link_libraries(clovervm PRIVATE libclovervm)
 
 
