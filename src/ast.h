@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cassert>
 #include <iosfwd>
+#include <absl/container/inlined_vector.h>
 
 namespace cl
 {
@@ -97,13 +98,13 @@ namespace cl
 
     struct AstChildren
     {
-        AstChildren(int32_t _child0=-1, int32_t _child1=-1):
-            child0(_child0),
-            child1(_child1)
+        AstChildren(int32_t _lhs=-1, int32_t _rhs=-1):
+            lhs(_lhs),
+            rhs(_rhs)
         {}
 
-        int32_t child0;
-        int32_t child1;
+        int32_t lhs;
+        int32_t rhs;
     };
 
     struct AstVector
@@ -115,29 +116,56 @@ namespace cl
         const CompilationUnit *compilation_unit;
         std::vector<AstKind> kinds;
         std::vector<uint32_t> source_offsets;
-        std::vector<AstChildren> children01;
-        std::vector<int32_t> children2;
+        std::vector<AstChildren> children;
 
         int32_t root_node = -1;
 
         size_t size() const {
             assert(kinds.size() == source_offsets.size());
-            assert(kinds.size() == children01.size());
-            assert(kinds.size() == children2.size());
+            assert(kinds.size() == children.size());
             return kinds.size();
         }
 
-        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t child0=-1, int32_t child1=-1, int32_t child2=-1)
+        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs=-1, int32_t rhs=-1)
         {
             int32_t idx = size();
             kinds.push_back(kind);
             source_offsets.push_back(source_offset);
-            children01.emplace_back(child0, child1);
-            children2.emplace_back(child2);
+            children.emplace_back(lhs, rhs);
             return idx;
         }
 
+        absl::InlinedVector<int32_t, 4> extract_child_sequence(int32_t parent_idx)
+        {
+            absl::InlinedVector<int32_t, 4> children;
+            while(true)
+            {
+                AstChildren ch = children[parent_idx];
+                if(ch.lhs != -1)
+                {
+                    assert(kinds[ch.lhs].node_kind != AstNodeKind::SEQUENCE);
+                    children.push_back(ch.lhs);
+                }
+
+                if(ch.rhs == -1)
+                {
+                    break;
+                } else if(kinds[ch.rhs].node_kind != AstNodeKind::SEQUENCE)
+                {
+                    children.push_back(ch.rhs);
+                    break;
+                } else {
+                    parent_idx = ch.rhs;
+                }
+            }
+
+            return children;
+        }
+
+
     };
+
+
 
 }
 
