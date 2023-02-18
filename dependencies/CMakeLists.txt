@@ -37,3 +37,11 @@ FetchContent_Declare(
   URL_MD5           95a1297be479f287fd33b27da0d9218e
 )
 FetchContent_MakeAvailable(ctre)
+
+
+FetchContent_Declare(
+  fmt
+  URL               https://github.com/fmtlib/fmt/archive/refs/tags/9.1.0.tar.gz
+  URL_MD5           21fac48cae8f3b4a5783ae06b443973a
+)
+FetchContent_MakeAvailable(fmt)
