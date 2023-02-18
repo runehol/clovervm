@@ -27,9 +27,11 @@ namespace cl
         "(?:0(?:_?0)*|[1-9](?:_?[0-9])*)"
         ")"_ctre;
 
-    std::wstring_view string_for_name_token(std::wstring_view source, uint32_t offset)
+    static constexpr auto string_re = "\"[^\"]*\""_ctre; // very noddy string regexp
+
+    std::wstring_view string_for_name_token(const CompilationUnit &cu, uint32_t offset)
     {
-        std::wstring_view s = source.substr(offset);
+        std::wstring_view s = cu.get_source_view().substr(offset);
         auto m = name_re.search(s);
         if(m)
         {
@@ -39,15 +41,27 @@ namespace cl
     }
 
 
-    std::wstring_view string_for_number_token(std::wstring_view source, uint32_t offset)
+    std::wstring_view string_for_number_token(const CompilationUnit &cu, uint32_t offset)
     {
-        std::wstring_view s = source.substr(offset);
+        std::wstring_view s = cu.get_source_view().substr(offset);
         auto m = int_number_re.search(s);
         if(m)
         {
             return std::wstring_view(m);
         }
         return std::wstring_view();
+    }
+
+    std::wstring_view string_for_string_token(const CompilationUnit &cu, uint32_t offset)
+    {
+        std::wstring_view s = cu.get_source_view().substr(offset);
+        auto m = string_re.search(s);
+        if(m)
+        {
+            return std::wstring_view(m);
+        }
+        return std::wstring_view();
+
     }
 
     static absl::flat_hash_map<std::wstring_view, Token> make_keyword_token_map()
@@ -101,7 +115,7 @@ namespace cl
     TokenVector tokenize(CompilationUnit &cu)
     {
         const std::wstring &source_code = cu.source_code;
-        TokenVector tokens;
+        TokenVector tokens(&cu);
 
         absl::flat_hash_map<std::wstring_view, Token> keywords = make_keyword_token_map();
 
@@ -441,11 +455,22 @@ namespace cl
                     } while(source_code[pos] != '\n' && source_code[pos] != '\r');
                     break;
 
+                case '"':
+                {
+                    std::wstring_view m = string_for_string_token(cu, pos);
+                    if(!m.empty())
+                    {
+                        tokens.emplace_back(Token::STRING, pos);
+                        pos += m.size();
+                        break;
+                    }
+                }
+
 
                 default:
                 {
                     {
-                        std::wstring_view m = string_for_number_token(source_code, pos);
+                        std::wstring_view m = string_for_number_token(cu, pos);
                         if(!m.empty())
                         {
                             tokens.emplace_back(Token::NUMBER, pos);
@@ -455,7 +480,7 @@ namespace cl
                     }
 
                     {
-                        std::wstring_view m = string_for_name_token(source_code, pos);
+                        std::wstring_view m = string_for_name_token(cu, pos);
                         if(!m.empty())
                         {
                             Token t = Token::NAME;

@@ -5,10 +5,11 @@
 #include <cstdint>
 #include <cassert>
 #include <iosfwd>
-#include <fmt/format.h>
 
 namespace cl
 {
+
+    struct CompilationUnit;
 
     enum class Token : uint8_t
     {
@@ -122,6 +123,11 @@ namespace cl
 
     struct TokenVector
     {
+        TokenVector(const CompilationUnit *_compilation_unit)
+            : compilation_unit(_compilation_unit)
+        {}
+
+        const CompilationUnit *compilation_unit;
         std::vector<Token> tokens;
         std::vector<uint32_t> source_offsets;
 
@@ -138,44 +144,6 @@ namespace cl
     };
 
 }
-
-
-
-template<>
-struct fmt::formatter<cl::Token>
-{
-    constexpr auto parse(format_parse_context& ctx)
-    {
-        return ctx.end();
-    }
-
-    template <typename FormatContext>
-    auto format(const cl::Token &t, FormatContext& ctx) -> decltype(ctx.out())
-    {
-        auto&& out = ctx.out();
-        return format_to(out, "{}", cl::to_string(t));
-    }
-};
-
-template<>
-struct fmt::formatter<cl::TokenVector>
-{
-    constexpr auto parse(format_parse_context& ctx)
-    {
-        return ctx.end();
-    }
-
-    template <typename FormatContext>
-    auto format(const cl::TokenVector &tv, FormatContext& ctx) -> decltype(ctx.out())
-    {
-        auto&& out = ctx.out();
-        for(size_t i = 0; i < tv.size(); ++i)
-        {
-            format_to(out, "{:05d}\t{}\n", tv.source_offsets[i], tv.tokens[i]);
-        }
-        return out;
-    }
-};
 
 
 #endif //CL_TOKEN_H

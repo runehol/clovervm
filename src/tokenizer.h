@@ -9,8 +9,9 @@ namespace cl
     struct CompilationUnit;
     TokenVector tokenize(CompilationUnit &cu);
 
-    std::wstring_view string_for_name_token(std::wstring_view source, uint32_t offset);
-    std::wstring_view string_for_number_token(std::wstring_view source, uint32_t offset);
+    std::wstring_view string_for_name_token(const CompilationUnit &cu, uint32_t offset);
+    std::wstring_view string_for_number_token(const CompilationUnit &cu, uint32_t offset);
+    std::wstring_view string_for_string_token(const CompilationUnit &cu, uint32_t offset);
 
 }
 

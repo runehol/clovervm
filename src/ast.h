@@ -8,6 +8,7 @@
 
 namespace cl
 {
+    struct CompilationUnit;
 
     enum class AstNodeKind : uint8_t
     {
@@ -104,6 +105,11 @@ namespace cl
 
     struct AstVector
     {
+        AstVector(const CompilationUnit *_compilation_unit)
+            : compilation_unit(_compilation_unit)
+        {}
+
+        const CompilationUnit *compilation_unit;
         std::vector<AstKind> kinds;
         std::vector<uint32_t> source_offsets;
         std::vector<AstChildren> children01;

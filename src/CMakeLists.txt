@@ -20,6 +20,7 @@ add_library(libclovervm STATIC
 	tokenizer.h
 	token.cpp
 	token.h
+	token_print.h
 	compilation_unit.h
 
     )

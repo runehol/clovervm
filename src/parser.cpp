@@ -12,8 +12,8 @@ namespace cl
     class Parser
     {
     public:
-        Parser(CompilationUnit &_cu, const TokenVector &_token_vec)
-            : token_vec(_token_vec)
+        Parser(const TokenVector &_token_vec)
+            : token_vec(_token_vec), ast(token_vec.compilation_unit)
         {}
 
         AstVector parse(StartRule start_rule)
@@ -40,8 +40,8 @@ namespace cl
 
     private:
 
-        AstVector ast;
         const TokenVector &token_vec;
+        AstVector ast;
         size_t token_pos = 0;
 
         Token peek()
@@ -301,9 +301,9 @@ namespace cl
     };
 
 
-    AstVector parse(CompilationUnit &cu, const TokenVector &t, StartRule start_rule)
+    AstVector parse(const TokenVector &tv, StartRule start_rule)
     {
-        Parser parser(cu, t);
+        Parser parser(tv);
 
         return parser.parse(start_rule);
     }

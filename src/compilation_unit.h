@@ -23,6 +23,8 @@ namespace cl
         std::wstring file_name;
         std::wstring source_code;
 
+        std::wstring_view get_source_view() const { return source_code; }
+
     };
 
 }
