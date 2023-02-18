@@ -61,9 +61,9 @@ namespace cl
         LEFTSHIFT,
         RIGHTSHIFT,
         MODULO,
-        OR,
-        AND,
-        XOR,
+        BITWISE_OR,
+        BITWISE_AND,
+        BITWISE_XOR,
 
         NOT,
         NEGATE,

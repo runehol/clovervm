@@ -90,7 +90,7 @@ namespace cl
             return token_vec.source_offsets[token_pos];
         }
 
-        uint32_t source_pos_for_last_token()
+        uint32_t source_pos_for_previous_token()
         {
             return token_vec.source_offsets[token_pos-1];
         }
@@ -158,7 +158,107 @@ namespace cl
 
         int32_t expression()
         {
-            return sum();
+            return disjunction();
+        }
+
+        int32_t disjunction()
+        {
+            return conjunction();
+
+        }
+
+
+        int32_t conjunction()
+        {
+            return inversion();
+        }
+
+        int32_t inversion()
+        {
+            if(match(Token::NOT))
+            {
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_UNARY, AstOperatorKind::NOT), source_pos_for_previous_token(), inversion());
+            }
+            return comparison();
+        }
+
+
+        int32_t comparison()
+        {
+            return bitwise_or();
+        }
+
+
+        int32_t bitwise_or()
+        {
+            int32_t result = bitwise_xor();
+            while(match(Token::VBAR))
+            {
+                uint32_t source_pos = source_pos_for_previous_token();
+                int32_t rhs = bitwise_xor();
+                result = ast.emplace_back(
+                    AstKind(AstNodeKind::EXPRESSION_BINARY, AstOperatorKind::BITWISE_OR),
+                    source_pos, result, rhs);
+            }
+            return result;
+        }
+
+        int32_t bitwise_xor()
+        {
+            int32_t result = bitwise_and();
+            while(match(Token::CIRCUMFLEX))
+            {
+                uint32_t source_pos = source_pos_for_previous_token();
+                int32_t rhs = bitwise_and();
+                result = ast.emplace_back(
+                    AstKind(AstNodeKind::EXPRESSION_BINARY, AstOperatorKind::BITWISE_XOR),
+                    source_pos, result, rhs);
+            }
+            return result;
+        }
+
+        int32_t bitwise_and()
+        {
+            int32_t result = shift_expr();
+            while(match(Token::CIRCUMFLEX))
+            {
+                uint32_t source_pos = source_pos_for_previous_token();
+                int32_t rhs = shift_expr();
+                result = ast.emplace_back(
+                    AstKind(AstNodeKind::EXPRESSION_BINARY, AstOperatorKind::BITWISE_AND),
+                    source_pos, result, rhs);
+            }
+            return result;
+        }
+
+
+        int32_t shift_expr()
+        {
+            int32_t result = sum();
+            while(true)
+            {
+                AstOperatorKind op_kind = AstOperatorKind::NOP;
+                switch(peek())
+                {
+                case Token::LEFTSHIFT:
+                    op_kind = AstOperatorKind::LEFTSHIFT;
+                    break;
+                case Token::RIGHTSHIFT:
+                    op_kind = AstOperatorKind::RIGHTSHIFT;
+                    break;
+
+                default:
+                    return result;
+                }
+
+
+                uint32_t source_pos = source_pos_and_advance();
+                int32_t rhs = sum();
+                result = ast.emplace_back(
+                    AstKind(AstNodeKind::EXPRESSION_BINARY, op_kind),
+                    source_pos, result, rhs);
+
+            }
         }
 
 
