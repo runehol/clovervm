@@ -26,7 +26,7 @@ namespace cl
             case StartRule::Interactive:
                 break;
             case StartRule::Eval:
-                ast.root_node = expressions();
+                ast.root_node = eval();
                 break;
             case StartRule::FuncType:
                 break;
@@ -124,7 +124,10 @@ namespace cl
 
         // expressions
 
-
+        int32_t genexp()
+        {
+            return expression();
+        }
 
         int32_t star_expressions()
         {
@@ -283,7 +286,7 @@ namespace cl
 
 
                 uint32_t source_pos = source_pos_and_advance();
-                int32_t rhs = factor();
+                int32_t rhs = term();
                 result = ast.emplace_back(
                     AstKind(AstNodeKind::EXPRESSION_BINARY, op_kind),
                     source_pos, result, rhs);
@@ -393,6 +396,14 @@ namespace cl
                 return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::TRUE), source_pos_and_advance());
             case Token::FALSE:
                 return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::FALSE), source_pos_and_advance());
+            case Token::LPAR:
+            {
+                advance();
+                int32_t result = genexp();
+                consume(Token::RPAR);
+                return result;
+            }
+
             default:
                 throw std::runtime_error(std::string("Unexpected token") + to_string(peek()));
 
@@ -450,6 +461,17 @@ namespace cl
             }
             consume(Token::ENDMARKER);
             return idx;
+        }
+
+        int32_t eval()
+        {
+            int32_t result = expressions();
+            while(match(Token::NEWLINE))
+            {}
+
+            consume(Token::ENDMARKER);
+            return result;
+
         }
 
     };

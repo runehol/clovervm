@@ -8,6 +8,7 @@ enable_sanitizers(test_clovervm)
 
 target_sources(test_clovervm PRIVATE
 	test_tokenizer.cpp
+	test_parser.cpp
 	)
 
 target_link_libraries(test_clovervm PRIVATE gtest_main)
