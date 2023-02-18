@@ -26,6 +26,7 @@ namespace cl
             case StartRule::Interactive:
                 break;
             case StartRule::Eval:
+                ast.root_node = expressions();
                 break;
             case StartRule::FuncType:
                 break;
@@ -84,6 +85,11 @@ namespace cl
             return false;
         }
 
+        uint32_t source_pos_for_token()
+        {
+            return token_vec.source_offsets[token_pos];
+        }
+
         uint32_t source_pos_for_last_token()
         {
             return token_vec.source_offsets[token_pos-1];
@@ -99,26 +105,56 @@ namespace cl
 
         // now the parser itself
 
+        // helper to build sequences
+        int32_t sequence_until_stop_token(int32_t (Parser::*parse_member)(), Token separator, Token stop)
+        {
+            if(match(separator))
+            {
+                if(peek() != stop)
+                {
+                    uint32_t pos = source_pos_and_advance();
+                    int32_t member = (this->*parse_member)();
+                    return ast.emplace_back(AstNodeKind::SEQUENCE, pos, member, sequence_until_stop_token(parse_member, separator, stop));
+
+                }
+            }
+            return -1;
+
+        }
+
         // expressions
+
+
 
         int32_t star_expressions()
         {
+            uint32_t tuple_start_pos = source_pos_for_token();
             int32_t result = star_expression();
-            while(match(Token::COMMA))
+            if(peek() == Token::COMMA)
             {
-                uint32_t pos = source_pos_and_advance();
-                if(peek() == Token::NEWLINE) break;
-
-                int32_t rhs = star_expression();
-                result = ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_BINARY, AstOperatorKind::COMMA), pos, result, rhs);
+                return ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE, tuple_start_pos, result, sequence_until_stop_token(&Parser::star_expression, Token::COMMA, Token::NEWLINE));
+            } else {
+                return result;
             }
-            return result;
         }
 
         int32_t star_expression()
         {
             return expression();
         }
+
+        int32_t expressions()
+        {
+            uint32_t tuple_start_pos = source_pos_for_token();
+            int32_t result = expression();
+            if(peek() == Token::COMMA)
+            {
+                return ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE, tuple_start_pos, result, sequence_until_stop_token(&Parser::expression, Token::COMMA, Token::NEWLINE));
+            } else {
+                return result;
+            }
+        }
+
 
         int32_t expression()
         {
@@ -248,20 +284,15 @@ namespace cl
             switch(peek())
             {
             case Token::NUMBER:
-                consume(Token::NUMBER);
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER), source_pos_for_last_token());
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER), source_pos_and_advance());
             case Token::STRING:
-                consume(Token::STRING);
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::STRING), source_pos_for_last_token());
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::STRING), source_pos_and_advance());
             case Token::NONE:
-                consume(Token::NONE);
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NONE), source_pos_for_last_token());
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NONE), source_pos_and_advance());
             case Token::TRUE:
-                consume(Token::TRUE);
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::TRUE), source_pos_for_last_token());
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::TRUE), source_pos_and_advance());
             case Token::FALSE:
-                consume(Token::FALSE);
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::FALSE), source_pos_for_last_token());
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::FALSE), source_pos_and_advance());
             default:
                 throw std::runtime_error(std::string("Unexpected token") + to_string(peek()));
 
