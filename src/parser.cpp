@@ -101,6 +101,29 @@ namespace cl
 
         // expressions
 
+        int32_t star_expressions()
+        {
+            int32_t result = star_expression();
+            while(match(Token::COMMA))
+            {
+                uint32_t pos = source_pos_and_advance();
+                if(peek() == Token::NEWLINE) break;
+
+                int32_t rhs = star_expression();
+                result = ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_BINARY, AstOperatorKind::COMMA), pos, result, rhs);
+            }
+            return result;
+        }
+
+        int32_t star_expression()
+        {
+            return expression();
+        }
+
+        int32_t expression()
+        {
+            return sum();
+        }
 
 
         int32_t sum()
