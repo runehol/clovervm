@@ -42,7 +42,7 @@ namespace cl
 
     enum class AstOperatorKind : uint8_t
     {
-        UNUSED,
+        NOP,
         COMMA,
         DOT,
         SUBSCRIPT,
@@ -84,7 +84,7 @@ namespace cl
 
     struct AstKind
     {
-        AstKind(AstNodeKind _node_kind, AstOperatorKind _operator_kind=AstOperatorKind::UNUSED)
+        AstKind(AstNodeKind _node_kind, AstOperatorKind _operator_kind=AstOperatorKind::NOP)
             : node_kind(_node_kind), operator_kind(_operator_kind)
         {}
 

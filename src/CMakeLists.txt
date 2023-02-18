@@ -14,6 +14,8 @@ add_library(libclovervm STATIC
     cl_string.cpp
     cl_string.h
     cl_value.h
+	ast.h
+	ast_printer.h
 	parser.cpp
 	parser.h
     tokenizer.cpp

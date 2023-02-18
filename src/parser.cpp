@@ -108,7 +108,7 @@ namespace cl
             int32_t result = term();
             while(true)
             {
-                AstOperatorKind op_kind = AstOperatorKind::UNUSED;
+                AstOperatorKind op_kind = AstOperatorKind::NOP;
                 switch(peek())
                 {
                 case Token::PLUS:
@@ -137,7 +137,7 @@ namespace cl
             int32_t result = factor();
             while(true)
             {
-                AstOperatorKind op_kind = AstOperatorKind::UNUSED;
+                AstOperatorKind op_kind = AstOperatorKind::NOP;
                 switch(peek())
                 {
                 case Token::STAR:
@@ -173,7 +173,7 @@ namespace cl
 
         int32_t factor()
         {
-            AstOperatorKind op_kind = AstOperatorKind::UNUSED;
+            AstOperatorKind op_kind = AstOperatorKind::NOP;
             switch(peek())
             {
             case Token::PLUS:
