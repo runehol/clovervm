@@ -15,11 +15,11 @@ TEST(Codegen, simple)
     CompilationUnit input(L"1 + 2  *  (4 + 3)");
     std::string expected =
         "Code object:\n"
-		"00011 LdaSmi 4\n"
-		"00013 AddSmi 3\n"
-		"00007 MulSmi 2\n"
-		"00002 AddSmi 1\n"
-		"00000 Return\n";
+        "00011 LdaSmi 4\n"
+        "00013 AddSmi 3\n"
+        "00007 MulSmi 2\n"
+        "00002 AddSmi 1\n"
+        "00000 Return\n";
 
     TokenVector tv = tokenize(input);
     AstVector av = parse(tv, StartRule::Eval);
@@ -34,10 +34,10 @@ TEST(Codegen, simple2)
     CompilationUnit input(L"(1 << 4) + 3");
     std::string expected =
         "Code object:\n"
-		"00001 LdaSmi 1\n"
-		"00003 LeftShiftSmi 4\n"
-		"00009 AddSmi 3\n"
-		"00000 Return\n";
+        "00001 LdaSmi 1\n"
+        "00003 LeftShiftSmi 4\n"
+        "00009 AddSmi 3\n"
+        "00000 Return\n";
 
     TokenVector tv = tokenize(input);
     AstVector av = parse(tv, StartRule::Eval);
@@ -51,9 +51,9 @@ TEST(Codegen, simple3)
     CompilationUnit input(L"not True");
     std::string expected =
         "Code object:\n"
-		"00004 LdaTrue\n"
-		"00000 Not\n"
-		"00000 Return\n";
+        "00004 LdaTrue\n"
+        "00000 Not\n"
+        "00000 Return\n";
 
     TokenVector tv = tokenize(input);
     AstVector av = parse(tv, StartRule::Eval);
