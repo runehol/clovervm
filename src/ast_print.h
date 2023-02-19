@@ -60,7 +60,7 @@ struct fmt::formatter<cl::AstOperatorKind>
             return format_to(out, "-");
         case cl::AstOperatorKind::PLUS:
             return format_to(out, "+");
-        case cl::AstOperatorKind::INVERT:
+        case cl::AstOperatorKind::BITWISE_NOT:
             return format_to(out, "^");
 
         case cl::AstOperatorKind::NONE:

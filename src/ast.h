@@ -141,7 +141,7 @@ namespace cl
         NOT,
         NEGATE,
         PLUS,
-        INVERT,
+        BITWISE_NOT,
 
 
         //literal expressions
@@ -152,7 +152,7 @@ namespace cl
         FALSE,
 
     };
-
+    constexpr static size_t AstOperatorKindSize = size_t(AstOperatorKind::FALSE)+1;
 
 
     const char *to_string(AstNodeKind t);
@@ -228,7 +228,7 @@ namespace cl
 
 		case AstOperatorKind::NEGATE:
 		case AstOperatorKind::PLUS:
-		case AstOperatorKind::INVERT:
+		case AstOperatorKind::BITWISE_NOT:
             return ExpressionPrecedence::Factor;
 
 		case AstOperatorKind::POWER:

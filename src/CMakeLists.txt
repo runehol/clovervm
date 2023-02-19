@@ -2,7 +2,10 @@ find_package(Threads)
 
 
 add_library(libclovervm STATIC
-	clovervm.cpp
+	bytecode.h
+	code_object.h
+	codegen.cpp
+	codegen.h
     cl_klass.cpp
     cl_klass.h
     cl_object.h
@@ -15,7 +18,7 @@ add_library(libclovervm STATIC
     cl_string.h
     cl_value.h
 	ast.h
-	ast_printer.h
+	ast_print.h
 	parser.cpp
 	parser.h
     tokenizer.cpp

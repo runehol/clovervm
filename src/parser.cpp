@@ -345,7 +345,7 @@ namespace cl
                 op_kind = AstOperatorKind::NEGATE;
                 break;
             case Token::TILDE:
-                op_kind = AstOperatorKind::INVERT;
+                op_kind = AstOperatorKind::BITWISE_NOT;
                 break;
 
             default:
