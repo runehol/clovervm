@@ -109,6 +109,7 @@ namespace cl
 
         };
 
+        static constexpr AstKind NumericalConstant = AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER);
 
         void codegen_node(int32_t node_idx, Mode mode)
         {
@@ -121,12 +122,23 @@ namespace cl
             {
 
                 OpTableEntry entry = get_operator_entry(kind.operator_kind);
-                codegen_node(children.lhs, mode);
-                TemporaryReg temp_reg(this);
-                code_obj.emplace_back(source_offset, Bytecode::Star, temp_reg);
 
-                codegen_node(children.rhs, mode);
-                code_obj.emplace_back(source_offset, entry.standard, temp_reg);
+                if(entry.binary_acc_smi != Bytecode::Invalid && av.kinds[children.rhs] == NumericalConstant && value_is_smi8(av.constants[children.rhs]))
+                {
+                    codegen_node(children.lhs, mode);
+                    code_obj.emplace_back(source_offset, entry.binary_acc_smi, value_get_smi(av.constants[children.rhs]));
+                } else if(entry.binary_smi_acc != Bytecode::Invalid && av.kinds[children.lhs] == NumericalConstant && value_is_smi8(av.constants[children.lhs]))
+                {
+                    codegen_node(children.rhs, mode);
+                    code_obj.emplace_back(source_offset, entry.binary_smi_acc, value_get_smi(av.constants[children.lhs]));
+                } else {
+                    codegen_node(children.lhs, mode);
+                    TemporaryReg temp_reg(this);
+                    code_obj.emplace_back(source_offset, Bytecode::Star, temp_reg);
+
+                    codegen_node(children.rhs, mode);
+                    code_obj.emplace_back(source_offset, entry.standard, temp_reg);
+                }
                 break;
             }
             case cl::AstNodeKind::EXPRESSION_UNARY:
@@ -155,7 +167,7 @@ namespace cl
                 case AstOperatorKind::NUMBER:
                 {
                     CLValue val = av.constants[node_idx];
-                    if(value_is_smi(val) && value_get_smi(val) >= -128 && value_get_smi(val) <= 127)
+                    if(value_is_smi8(val))
                     {
                         code_obj.emplace_back(source_offset, Bytecode::LdaSmi, value_get_smi(val));
                     } else {

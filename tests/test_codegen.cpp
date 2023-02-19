@@ -15,16 +15,10 @@ TEST(Codegen, simple)
     CompilationUnit input(L"1 + 2  *  (4 + 3)");
     std::string expected =
         "Code object:\n"
-		"00000 LdaSmi 1\n"
-		"00002 Star r0\n"
-		"00004 LdaSmi 2\n"
-		"00007 Star r1\n"
 		"00011 LdaSmi 4\n"
-		"00013 Star r2\n"
-		"00015 LdaSmi 3\n"
-		"00013 Add r2\n"
-		"00007 Mul r1\n"
-		"00002 Add r0\n"
+		"00013 AddSmi 3\n"
+		"00007 MulSmi 2\n"
+		"00002 AddSmi 1\n"
 		"00000 Return\n";
 
     TokenVector tv = tokenize(input);
@@ -40,13 +34,9 @@ TEST(Codegen, simple2)
     CompilationUnit input(L"(1 << 4) + 3");
     std::string expected =
         "Code object:\n"
-        "00001 LdaSmi 1\n"
-		"00003 Star r0\n"
-		"00006 LdaSmi 4\n"
-		"00003 LeftShift r0\n"
-		"00009 Star r0\n"
-		"00011 LdaSmi 3\n"
-		"00009 Add r0\n"
+		"00001 LdaSmi 1\n"
+		"00003 LeftShiftSmi 4\n"
+		"00009 AddSmi 3\n"
 		"00000 Return\n";
 
     TokenVector tv = tokenize(input);

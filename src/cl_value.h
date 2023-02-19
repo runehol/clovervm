@@ -51,6 +51,9 @@ static inline bool value_is_smi(CLValue val)
 {
     return (val.v &cl_tag_mask) == 0;
 }
+
+
+
 static inline bool value_is_ptr(CLValue val)
 {
     return (val.v &cl_ptr_mask) != 0;
@@ -66,6 +69,15 @@ static inline int64_t value_get_smi(CLValue val)
     assert(value_is_smi(val));
     return val.v >> cl_tag_bits;
 }
+
+static inline bool value_is_smi8(CLValue val)
+{
+    if(!value_is_smi(val)) return false;
+
+    int64_t v = value_get_smi(val);
+    return v >= -128 && v <= 127;
+}
+
 
 static inline CLValue value_make_smi(int64_t v)
 {

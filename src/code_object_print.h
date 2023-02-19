@@ -143,9 +143,10 @@ struct fmt::formatter<cl::CodeObject>
     uint32_t disassemble_instruction(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
     {
 
-        cl::Bytecode bc = cl::Bytecode(code_obj.code[pc++]);
+        cl::Bytecode bc = cl::Bytecode(code_obj.code[pc]);
         format_to(out, "{:05d} {}", code_obj.source_offsets[pc], bc);
 
+        ++pc;
 
         switch(bc)
         {

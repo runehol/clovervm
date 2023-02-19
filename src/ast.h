@@ -168,6 +168,12 @@ namespace cl
             : node_kind(_node_kind), operator_kind(_operator_kind)
         {}
 
+
+        constexpr bool operator==(AstKind o) const
+        {
+            return node_kind == o.node_kind && operator_kind == o.operator_kind;
+        }
+
         AstNodeKind node_kind;
         AstOperatorKind operator_kind;
     };
