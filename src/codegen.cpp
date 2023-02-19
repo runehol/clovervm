@@ -154,12 +154,12 @@ namespace cl
 
                 case AstOperatorKind::NUMBER:
                 {
-                    int64_t v = std::stoll(std::wstring(string_for_number_token(*av.compilation_unit, source_offset)));
-                    if(v >= -128 && v <= 127)
+                    CLValue val = av.constants[node_idx];
+                    if(value_is_smi(val) && value_get_smi(val) >= -128 && value_get_smi(val) <= 127)
                     {
-                        code_obj.emplace_back(source_offset, Bytecode::LdaSmi, v);
+                        code_obj.emplace_back(source_offset, Bytecode::LdaSmi, value_get_smi(val));
                     } else {
-                        uint32_t constant_idx = code_obj.allocate_constant(value_make_smi(v));
+                        uint32_t constant_idx = code_obj.allocate_constant(val);
                         code_obj.emplace_back(source_offset, Bytecode::LdaConstant, constant_idx);
                         break;
                     }
@@ -169,7 +169,7 @@ namespace cl
                 case AstOperatorKind::STRING:
                 default:
                 {
-                    uint32_t constant_idx = code_obj.allocate_constant(value_make_smi(1337));
+                    uint32_t constant_idx = code_obj.allocate_constant(av.constants[node_idx]);
                     code_obj.emplace_back(source_offset, Bytecode::LdaConstant, constant_idx);
                     break;
                 }

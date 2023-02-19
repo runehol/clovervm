@@ -3,6 +3,7 @@
 #include <string>
 #include "ast.h"
 #include "token.h"
+#include "tokenizer.h"
 #include "compilation_unit.h"
 
 namespace cl
@@ -387,15 +388,19 @@ namespace cl
             switch(peek())
             {
             case Token::NUMBER:
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER), source_pos_and_advance());
+            {
+                int64_t iv = std::stoll(std::wstring(string_for_number_token(*ast.compilation_unit, source_pos_for_token())));
+                CLValue v = value_make_smi(iv);
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER), source_pos_and_advance(), -1, -1, v);
+            }
             case Token::STRING:
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::STRING), source_pos_and_advance());
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::STRING), source_pos_and_advance(), -1, -1, cl_None);
             case Token::NONE:
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NONE), source_pos_and_advance());
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NONE), source_pos_and_advance(), -1, -1, cl_None);
             case Token::TRUE:
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::TRUE), source_pos_and_advance());
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::TRUE), source_pos_and_advance(), -1, -1, cl_True);
             case Token::FALSE:
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::FALSE), source_pos_and_advance());
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::FALSE), source_pos_and_advance(), -1, -1, cl_False);
             case Token::LPAR:
             {
                 advance();

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cassert>
 #include <iosfwd>
+#include "cl_value.h"
 #include <absl/container/inlined_vector.h>
 
 namespace cl
@@ -271,21 +272,24 @@ namespace cl
         std::vector<AstKind> kinds;
         std::vector<uint32_t> source_offsets;
         std::vector<AstChildren> children;
+        std::vector<CLValue> constants;
 
         int32_t root_node = -1;
 
         size_t size() const {
             assert(kinds.size() == source_offsets.size());
             assert(kinds.size() == children.size());
+            assert(kinds.size() == constants.size());
             return kinds.size();
         }
 
-        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs=-1, int32_t rhs=-1)
+        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs=-1, int32_t rhs=-1, CLValue constant = cl_None)
         {
             int32_t idx = size();
             kinds.push_back(kind);
             source_offsets.push_back(source_offset);
             children.emplace_back(lhs, rhs);
+            constants.emplace_back(constant);
             return idx;
         }
 
