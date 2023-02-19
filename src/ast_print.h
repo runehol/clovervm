@@ -1,9 +1,10 @@
+#ifndef CL_AST_PRINT_H
+#define CL_AST_PRINT_H
+
 #include "ast.h"
 #include <fmt/format.h>
 #include <cassert>
 
-#ifndef CL_AST_PRINTER_H
-#define CL_AST_PRINTER_H
 
 template<>
 struct fmt::formatter<cl::AstOperatorKind>
@@ -157,4 +158,4 @@ struct fmt::formatter<cl::AstVector>
 };
 
 
-#endif //CL_AST_PRINTER_H
+#endif //CL_AST_PRINT_H
