@@ -15,12 +15,12 @@
     When we call a function, we transfer ownership of the argument to that function, 
     and the function is responsible for consuming the argument. Only exceptions are:
     - Function objects being called are borrowed.
-    - This arguments are borrowed. In C code, this is indicated by using the actual object type, not cl_value.
+    - This arguments are borrowed. In C code, this is indicated by using the actual object type, not CLValue.
     
 */
 
 
-static inline cl_value cl_incref(cl_value v)
+static inline CLValue cl_incref(CLValue v)
 {
     if(value_is_refcounted_ptr(v))
     {
@@ -35,7 +35,7 @@ static inline cl_value cl_incref(cl_value v)
     return v;
 }
 
-static inline void cl_decref(cl_value v)
+static inline void cl_decref(CLValue v)
 {
     if(value_is_refcounted_ptr(v))
     {

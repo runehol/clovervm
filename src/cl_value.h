@@ -5,7 +5,7 @@
 #include <assert.h>
 #include <stdbool.h>
 
-struct cl_object;
+struct CLObject;
 
 /*
     A cl_value is a 64-bit generic cell to hold any value. It holds some of them inline, and some of them indirect.
@@ -41,62 +41,62 @@ static const uint64_t cl_special_tag        = 0x02;
 static const uint64_t cl_falsy_tag          = 0x01;
 static const uint64_t cl_ptr_mask = cl_refcounted_ptr_tag|cl_permanent_ptr_tag|cl_interned_ptr_tag;
 
-typedef union cl_value
+typedef union CLValue
 {
     int64_t v;
-    struct cl_object *ptr;
-} cl_value;
+    struct CLObject *ptr;
+} CLValue;
 
-static inline bool value_is_smi(cl_value val)
+static inline bool value_is_smi(CLValue val)
 {
     return (val.v &cl_tag_mask) == 0;
 }
-static inline bool value_is_ptr(cl_value val)
+static inline bool value_is_ptr(CLValue val)
 {
     return (val.v &cl_ptr_mask) != 0;
 }
 
-static inline bool value_is_refcounted_ptr(cl_value val)
+static inline bool value_is_refcounted_ptr(CLValue val)
 {
     return (val.v &cl_ptr_mask) != 0;
 }
 
-static inline int64_t value_get_smi(cl_value val)
+static inline int64_t value_get_smi(CLValue val)
 {
     assert(value_is_smi(val));
     return val.v >> cl_tag_bits;
 }
 
-static inline cl_value value_make_smi(int64_t v)
+static inline CLValue value_make_smi(int64_t v)
 {
-    return (cl_value){.v = v<<cl_tag_bits};
+    return (CLValue){.v = v<<cl_tag_bits};
 
 }
 
-static inline cl_value value_make_oop(cl_object *obj)
+static inline CLValue value_make_oop(CLObject *obj)
 {
-    return (cl_value){.ptr = obj};
+    return (CLValue){.ptr = obj};
 }
 
-static inline struct cl_object *value_get_ptr(cl_value val)
+static inline struct CLObject *value_get_ptr(CLValue val)
 {
     assert(value_is_ptr(val));
     return val.ptr;
 }
 
-static inline bool value_is_truthy(cl_value val)
+static inline bool value_is_truthy(CLValue val)
 {
     return (val.v&cl_falsy_tag) == 0;
 }
-static inline bool value_is_falsy(cl_value val)
+static inline bool value_is_falsy(CLValue val)
 {
     return (val.v&cl_falsy_tag) != 0;
 }
 
-static const cl_value cl_None = (cl_value){.v=0x43};
-static const cl_value cl_True = (cl_value){.v=0x22};
-static const cl_value cl_False = (cl_value){.v=0x23};
-static const cl_value cl_exception_marker = (cl_value){.v=0x82}; // special value to return if an exception has been thrown.
+static const CLValue cl_None = (CLValue){.v=0x43};
+static const CLValue cl_True = (CLValue){.v=0x22};
+static const CLValue cl_False = (CLValue){.v=0x23};
+static const CLValue cl_exception_marker = (CLValue){.v=0x82}; // special value to return if an exception has been thrown.
 
 
 #endif //CL_VALUE_H

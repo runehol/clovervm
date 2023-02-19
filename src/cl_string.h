@@ -10,32 +10,32 @@
 
 typedef wchar_t cl_wchar;
 
-typedef struct cl_string
+typedef struct CLString
 {
-    cl_object obj;
-    cl_value count;
+    CLObject obj;
+    CLValue count;
     cl_wchar data[];
 
-} cl_string;
+} CLString;
 
-extern struct cl_klass cl_string_klass;
+extern struct CLKlass cl_string_klass;
 
 
-static inline void string_init(cl_string *vec, const cl_wchar *data, cl_value count)
+static inline void string_init(CLString *vec, const cl_wchar *data, CLValue count)
 {
     assert(value_is_smi(count));
     object_init(&vec->obj, &cl_string_klass, 1, 1 + value_get_smi(count)*sizeof(cl_wchar));
     vec->count = count;
 }
 
-static inline cl_value string_make(const cl_wchar *data, cl_value count)
+static inline CLValue string_make(const cl_wchar *data, CLValue count)
 {
-    cl_string *s = (cl_string *)cl_alloc(sizeof(cl_string)+value_get_smi(count) * sizeof(cl_wchar));
+    CLString *s = (CLString *)cl_alloc(sizeof(CLString)+value_get_smi(count) * sizeof(cl_wchar));
     string_init(s, data, count);
     return value_make_oop(&s->obj);
 }
 
-static inline cl_value string_make_z(const cl_wchar *data)
+static inline CLValue string_make_z(const cl_wchar *data)
 {
     return string_make(data, value_make_smi(wcslen(data)));
 }
