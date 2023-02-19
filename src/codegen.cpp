@@ -1,5 +1,6 @@
 #include "codegen.h"
 #include "ast.h"
+#include "tokenizer.h"
 
 namespace cl
 {
@@ -63,6 +64,7 @@ namespace cl
         CodeObject codegen()
         {
             codegen_node(av.root_node, Mode::RValue);
+            code_obj.emplace_back(0, Bytecode::Return);
             return code_obj;
         }
     private:
@@ -120,20 +122,18 @@ namespace cl
 
                 OpTableEntry entry = get_operator_entry(kind.operator_kind);
                 codegen_node(children.lhs, mode);
-                TemporaryReg temp(this);
-                code_obj.emplace_back(Bytecode::Star, source_offset);
-                code_obj.emplace_back(temp, source_offset);
+                TemporaryReg temp_reg(this);
+                code_obj.emplace_back(source_offset, Bytecode::Star, temp_reg);
 
                 codegen_node(children.rhs, mode);
-                code_obj.emplace_back(entry.standard, source_offset);
-                code_obj.emplace_back(temp, source_offset);
+                code_obj.emplace_back(source_offset, entry.standard, temp_reg);
                 break;
             }
             case cl::AstNodeKind::EXPRESSION_UNARY:
             {
                 OpTableEntry entry = get_operator_entry(kind.operator_kind);
                 codegen_node(children.lhs, mode);
-                code_obj.emplace_back(entry.standard, source_offset);
+                code_obj.emplace_back(source_offset, entry.standard);
                 break;
             }
             case cl::AstNodeKind::EXPRESSION_LITERAL:
@@ -142,16 +142,35 @@ namespace cl
                 switch(kind.operator_kind)
                 {
                 case AstOperatorKind::NONE:
+                    code_obj.emplace_back(source_offset, Bytecode::LdaNone);
+                    break;
+                case AstOperatorKind::TRUE:
+                    code_obj.emplace_back(source_offset, Bytecode::LdaTrue);
+                    break;
+                case AstOperatorKind::FALSE:
+                    code_obj.emplace_back(source_offset, Bytecode::LdaFalse);
+                    break;
 
 
                 case AstOperatorKind::NUMBER:
+                {
+                    int64_t v = std::stoll(std::wstring(string_for_number_token(*av.compilation_unit, source_offset)));
+                    if(v >= -128 && v <= 127)
+                    {
+                        code_obj.emplace_back(source_offset, Bytecode::LdaSmi, v);
+                    } else {
+                        uint32_t constant_idx = code_obj.allocate_constant(value_make_smi(v));
+                        code_obj.emplace_back(source_offset, Bytecode::LdaConstant, constant_idx);
+                        break;
+                    }
+                }
                     break;
 
                 case AstOperatorKind::STRING:
                 default:
                 {
                     uint32_t constant_idx = code_obj.allocate_constant(value_make_smi(1337));
-                    code_obj.emplace_back(Bytecode::LdaConstant, constant_idx);
+                    code_obj.emplace_back(source_offset, Bytecode::LdaConstant, constant_idx);
                     break;
                 }
                 }

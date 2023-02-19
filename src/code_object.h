@@ -34,7 +34,7 @@ namespace cl
             return code.size();
         }
 
-        uint32_t emplace_back(uint8_t c, uint32_t source_offset)
+        uint32_t emplace_back(uint32_t source_offset, uint8_t c)
         {
             uint32_t offset = code.size();
             code.push_back(c);
@@ -42,10 +42,18 @@ namespace cl
             return offset;
         }
 
-        uint32_t emplace_back(Bytecode c, uint32_t source_offset)
+        uint32_t emplace_back(uint32_t source_offset, Bytecode c)
         {
             assert(c != Bytecode::Invalid);
-            return emplace_back(uint8_t(c), source_offset);
+            return emplace_back(source_offset, uint8_t(c));
+        }
+
+        uint32_t emplace_back(uint32_t source_offset, Bytecode c, uint8_t k)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            emplace_back(source_offset, k);
+            return result;
         }
 
         std::vector<CLValue> constant_table;

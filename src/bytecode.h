@@ -54,6 +54,7 @@ namespace cl
         Plus,
         BitwiseNot,
 
+        Nop,
 
         Return,
 
