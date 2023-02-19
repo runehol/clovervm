@@ -45,3 +45,19 @@ TEST(Codegen, simple2)
     std::string actual = fmt::to_string(code_obj);
     EXPECT_EQ(expected, actual);
 }
+
+TEST(Codegen, simple3)
+{
+    CompilationUnit input(L"not True");
+    std::string expected =
+        "Code object:\n"
+		"00004 LdaTrue\n"
+		"00000 Not\n"
+		"00000 Return\n";
+
+    TokenVector tv = tokenize(input);
+    AstVector av = parse(tv, StartRule::Eval);
+    CodeObject code_obj = generate_code(av);
+    std::string actual = fmt::to_string(code_obj);
+    EXPECT_EQ(expected, actual);
+}
