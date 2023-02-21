@@ -21,12 +21,13 @@ namespace cl
         uint32_t n_temporaries;
         uint32_t n_locals;
 
-        uint32_t get_n_registers() const { return n_arguments + n_temporaries + n_locals; }
 
         std::vector<uint8_t> code;
 
         std::vector<uint32_t> source_offsets;
+        std::vector<CLValue> constant_table;
 
+        uint32_t get_n_registers() const { return n_arguments + n_temporaries + n_locals; }
 
         size_t size() const
         {
@@ -56,7 +57,6 @@ namespace cl
             return result;
         }
 
-        std::vector<CLValue> constant_table;
 
         uint32_t allocate_constant(CLValue val)
         {
