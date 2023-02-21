@@ -73,7 +73,7 @@ TEST(Codegen, simple4)
         "00013 AddSmi 3\n"
         "00007 MulSmi 2\n"
         "00002 Sub r0\n"
-        "00000 Return\n"
+        "00000 Return\n";
 
     TokenVector tv = tokenize(input);
     AstVector av = parse(tv, StartRule::Eval);
