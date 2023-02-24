@@ -22,7 +22,7 @@ namespace cl
         GlobalHeap(size_t _offset, size_t _slab_size);
         ~GlobalHeap();
 
-        static GlobalHeap refcount_heap(size_t slab_size = DefaultSlabSize)
+        static GlobalHeap refcounted_heap(size_t slab_size = DefaultSlabSize)
         {
             return GlobalHeap(value_refcounted_ptr_tag, slab_size);
         }
@@ -61,28 +61,21 @@ namespace cl
         ThreadLocalHeap(GlobalHeap *_global_heap);
 
         // allocation fast path
-        template<typename T>
-        T *allocate(size_t n_bytes)
+        void *allocate(size_t n_bytes)
         {
             void *result = local_allocator->allocate(n_bytes);
             if(likely(result != nullptr))
             {
-                return reinterpret_cast<T*>(result);
+                return result;
             }
 
             if(n_bytes >= LargeAllocationSize)
             {
-                return reinterpret_cast<T*>(global_heap->allocate_large_object(n_bytes));
+                return (global_heap->allocate_large_object(n_bytes));
             } else {
                 local_allocator = global_heap->make_new_slab();
-                return reinterpret_cast<T*>(local_allocator->allocate(n_bytes));
+                return (local_allocator->allocate(n_bytes));
             }
-        }
-
-        template<typename T>
-        T *allocate()
-        {
-            return allocate<T>(sizeof(T));
         }
 
     private:

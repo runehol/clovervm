@@ -10,7 +10,7 @@ namespace cl
 
     ThreadState::ThreadState(VirtualMachine *_machine)
         : machine(_machine),
-          refcount_heap(&machine->get_refcount_global_heap()),
+          refcounted_heap(&machine->get_refcounted_global_heap()),
           stack(10000)
     {
 
@@ -38,6 +38,17 @@ namespace cl
     {
         ThreadState *ts = ThreadState::get_active();
         ts->zero_count_table.push_back(v);
+    }
+
+
+    void *ThreadState::allocate_immortal(size_t n_bytes)
+    {
+        return machine->allocate_immortal(n_bytes);
+    }
+
+    void *ThreadState::allocate_interned(size_t n_bytes)
+    {
+        return machine->allocate_interned(n_bytes);
     }
 
 
