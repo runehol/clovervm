@@ -43,7 +43,7 @@ static const uint64_t cl_ptr_mask = cl_refcounted_ptr_tag|cl_permanent_ptr_tag|c
 
 typedef union CLValue
 {
-    int64_t v;
+    long long v;
     struct CLObject *ptr;
 } CLValue;
 
