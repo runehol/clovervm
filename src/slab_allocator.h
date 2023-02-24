@@ -4,10 +4,10 @@
 #include <cstdlib>
 #include "value.h"
 
+
 namespace cl
 {
 
-    static constexpr size_t DefaultSlabSize = 65536;
 
     class SlabAllocator
     {
@@ -15,20 +15,6 @@ namespace cl
         SlabAllocator(size_t offset, size_t slab_size);
         ~SlabAllocator();
 
-        static SlabAllocator refcount_slab(size_t slab_size = DefaultSlabSize)
-        {
-            return SlabAllocator(value_refcounted_ptr_tag, slab_size);
-        }
-
-        static SlabAllocator immortal_slab(size_t slab_size = DefaultSlabSize)
-        {
-            return SlabAllocator(value_immportal_ptr_tag, slab_size);
-        }
-
-        static SlabAllocator interned_slab(size_t slab_size = DefaultSlabSize)
-        {
-            return SlabAllocator(value_immportal_ptr_tag|value_interned_ptr_tag, slab_size);
-        }
 
         char *allocate(size_t n_bytes)
         {

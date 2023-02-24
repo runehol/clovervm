@@ -9,8 +9,6 @@ namespace cl
 
 #define NOINLINE __attribute__((noinline))
 #define MUSTTAIL __attribute__((musttail))
-#define likely(x)       __builtin_expect((x),1)
-#define unlikely(x)     __builtin_expect((x),0)
 
 #define PARAMS StackFrame *frame, const uint8_t *pc, Value accumulator, void *dispatch, const CodeObject *code_object
 #define ARGS frame, pc, accumulator, dispatch, code_object

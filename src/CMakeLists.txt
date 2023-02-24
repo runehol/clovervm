@@ -9,6 +9,8 @@ add_library(libclovervm STATIC
 	codegen.cpp
 	codegen.h
 	compilation_unit.h
+	heap.cpp
+	heap.h
 	interpreter.cpp
 	parser.cpp
 	parser.h
@@ -18,20 +20,20 @@ add_library(libclovervm STATIC
 	tokenizer.h
 	virtual_machine.cpp
 	virtual_machine.h
-    klass.cpp
-    klass.h
-    object.h
-    refcount.h
-    short_vector.cpp
-    short_vector.h
-    slab_allocator.cpp
-    slab_allocator.h
-    str.cpp
-    str.h
-    tokenizer.cpp
-    value.h
+	klass.cpp
+	klass.h
+	object.h
+	refcount.h
+	short_vector.cpp
+	short_vector.h
+	slab_allocator.cpp
+	slab_allocator.h
+	str.cpp
+	str.h
+	tokenizer.cpp
+	value.h
 
-    )
+	)
 
 # add project sources to include path
 target_include_directories(libclovervm PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
