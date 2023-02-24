@@ -278,7 +278,7 @@ namespace cl
         std::vector<AstKind> kinds;
         std::vector<uint32_t> source_offsets;
         std::vector<AstChildren> children;
-        std::vector<CLValue> constants;
+        std::vector<Value> constants;
 
         int32_t root_node = -1;
 
@@ -289,7 +289,7 @@ namespace cl
             return kinds.size();
         }
 
-        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs=-1, int32_t rhs=-1, CLValue constant = cl_None)
+        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs=-1, int32_t rhs=-1, Value constant = cl_None)
         {
             int32_t idx = size();
             kinds.push_back(kind);

@@ -13,32 +13,32 @@ namespace cl
 {
     typedef wchar_t cl_wchar;
 
-    typedef struct CLString
+    typedef struct String
     {
-        CLObject obj;
-        CLValue count;
+        Object obj;
+        Value count;
         cl_wchar data[];
 
-    } CLString;
+    } String;
 
     extern struct CLKlass cl_string_klass;
 
 
-    static inline void string_init(CLString *vec, const cl_wchar *data, CLValue count)
+    static inline void string_init(String *vec, const cl_wchar *data, Value count)
     {
         assert(value_is_smi(count));
         object_init(&vec->obj, &cl_string_klass, 1, 1 + value_get_smi(count)*sizeof(cl_wchar));
         vec->count = count;
     }
 
-    static inline CLValue string_make(const cl_wchar *data, CLValue count)
+    static inline Value string_make(const cl_wchar *data, Value count)
     {
-        CLString *s = cl_alloc<CLString>(sizeof(CLString)+value_get_smi(count) * sizeof(cl_wchar));
+        String *s = cl_alloc<String>(sizeof(String)+value_get_smi(count) * sizeof(cl_wchar));
         string_init(s, data, count);
         return value_make_oop(&s->obj);
     }
 
-    static inline CLValue string_make_z(const cl_wchar *data)
+    static inline Value string_make_z(const cl_wchar *data)
     {
         return string_make(data, value_make_smi(wcslen(data)));
     }

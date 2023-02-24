@@ -7,7 +7,7 @@ namespace cl
 {
     struct StackFrame
     {
-        CLValue registers[100]; //great advantage to having registers being the first member of StackFrame, as we do frequent indexing arithmetic on these.
+        Value registers[100]; //great advantage to having registers being the first member of StackFrame, as we do frequent indexing arithmetic on these.
         // - otherwise we get extra arithmetic for every access
 
 

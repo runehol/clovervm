@@ -3,7 +3,7 @@
 
 namespace cl
 {
-    static CLValue string_str(CLValue s)
+    static Value string_str(Value s)
     {
         return s;
     }

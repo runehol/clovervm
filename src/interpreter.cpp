@@ -12,10 +12,10 @@ namespace cl
 #define likely(x)       __builtin_expect((x),1)
 #define unlikely(x)     __builtin_expect((x),0)
 
-#define PARAMS StackFrame *frame, const uint8_t *pc, CLValue accumulator, void *dispatch, const CodeObject *code_object
+#define PARAMS StackFrame *frame, const uint8_t *pc, Value accumulator, void *dispatch, const CodeObject *code_object
 #define ARGS frame, pc, accumulator, dispatch, code_object
 
-    using DispatchTableEntry = CLValue (*)(PARAMS);
+    using DispatchTableEntry = Value (*)(PARAMS);
 
     struct DispatchTable
     {
@@ -30,53 +30,53 @@ namespace cl
 #define START_BINARY_REG_ACC()               \
     START(2);                                \
     uint8_t reg = pc[1];                     \
-    CLValue a = frame->registers[reg];       \
-    CLValue b = accumulator
+    Value a = frame->registers[reg];       \
+    Value b = accumulator
 
 #define START_BINARY_ACC_SMI()               \
     START(2);                                \
-    CLValue a = accumulator;                 \
-    CLValue b = value_make_smi(int8_t(pc[1]))
+    Value a = accumulator;                 \
+    Value b = value_make_smi(int8_t(pc[1]))
 
 #define START_UNARY_ACC()                    \
     START(1);                                \
-    CLValue a = accumulator
+    Value a = accumulator
 
 
 
 
-#define A_NOT_SMI() ((a.v & cl_not_smi_mask) != 0)
-#define A_OR_B_NOT_SMI() (((a.v | b.v) & cl_not_smi_mask) != 0)
+#define A_NOT_SMI() ((a.v & value_not_smi_mask) != 0)
+#define A_OR_B_NOT_SMI() (((a.v | b.v) & value_not_smi_mask) != 0)
 
 
 
 
 
-    NOINLINE CLValue raise_generic_exception(PARAMS)
+    NOINLINE Value raise_generic_exception(PARAMS)
     {
         throw std::runtime_error("Clovervm exception");
     }
 
-    NOINLINE CLValue raise_unknown_opcode_exception(PARAMS)
+    NOINLINE Value raise_unknown_opcode_exception(PARAMS)
     {
         throw std::runtime_error("Unknown opcode");
     }
 
-    NOINLINE CLValue raise_value_error_negative_shift_count(PARAMS)
+    NOINLINE Value raise_value_error_negative_shift_count(PARAMS)
     {
         throw std::runtime_error("ValueError: negative shift count");
     }
 
-    NOINLINE static CLValue slow_path(PARAMS)
+    NOINLINE static Value slow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
     }
-    NOINLINE static CLValue overflow_path(PARAMS)
+    NOINLINE static Value overflow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
     }
 
-    static CLValue op_lda_constant(PARAMS)
+    static Value op_lda_constant(PARAMS)
     {
         START(2);
         uint8_t const_offset = pc[1];
@@ -84,7 +84,7 @@ namespace cl
         COMPLETE();
     }
 
-    static CLValue op_lda_smi(PARAMS)
+    static Value op_lda_smi(PARAMS)
     {
         START(2);
         int8_t smi = pc[1];
@@ -92,28 +92,28 @@ namespace cl
         COMPLETE();
     }
 
-    static CLValue op_lda_true(PARAMS)
+    static Value op_lda_true(PARAMS)
     {
         START(1);
         accumulator = cl_True;
         COMPLETE();
     }
 
-    static CLValue op_lda_false(PARAMS)
+    static Value op_lda_false(PARAMS)
     {
         START(1);
         accumulator = cl_False;
         COMPLETE();
     }
 
-    static CLValue op_lda_none(PARAMS)
+    static Value op_lda_none(PARAMS)
     {
         START(1);
         accumulator = cl_None;
         COMPLETE();
     }
 
-    static CLValue op_ldar(PARAMS)
+    static Value op_ldar(PARAMS)
     {
         START(2);
         uint8_t reg = pc[1];
@@ -121,7 +121,7 @@ namespace cl
         COMPLETE();
     }
 
-    static CLValue op_star(PARAMS)
+    static Value op_star(PARAMS)
     {
         START(2);
         uint8_t reg = pc[1];
@@ -132,7 +132,7 @@ namespace cl
 
 
 
-    static CLValue op_add_smi(PARAMS)
+    static Value op_add_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -149,7 +149,7 @@ namespace cl
     }
 
 
-    static CLValue op_add(PARAMS)
+    static Value op_add(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -165,7 +165,7 @@ namespace cl
         COMPLETE();
     }
 
-    static CLValue op_sub_smi(PARAMS)
+    static Value op_sub_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -186,7 +186,7 @@ namespace cl
 
 
 
-    static CLValue op_sub(PARAMS)
+    static Value op_sub(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -202,14 +202,14 @@ namespace cl
         COMPLETE();
     }
 
-    static CLValue op_mul(PARAMS)
+    static Value op_mul(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        CLValue dest;
+        Value dest;
         if(unlikely(__builtin_smulll_overflow(a.v, value_get_smi(b), &dest.v)))
         {
             MUSTTAIL return overflow_path(ARGS);
@@ -219,14 +219,14 @@ namespace cl
         COMPLETE();
     }
 
-    static CLValue op_mul_smi(PARAMS)
+    static Value op_mul_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        CLValue dest;
+        Value dest;
         if(unlikely(__builtin_smulll_overflow(a.v, value_get_smi(b), &dest.v)))
         {
             MUSTTAIL return overflow_path(ARGS);
@@ -236,7 +236,7 @@ namespace cl
         COMPLETE();
     }
 
-    static CLValue op_left_shift(PARAMS)
+    static Value op_left_shift(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -251,7 +251,7 @@ namespace cl
         COMPLETE();
     }
 
-    static CLValue op_left_shift_smi(PARAMS)
+    static Value op_left_shift_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -268,7 +268,7 @@ namespace cl
 
 
 
-    static CLValue op_right_shift(PARAMS)
+    static Value op_right_shift(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -279,13 +279,13 @@ namespace cl
         int64_t shift_count = value_get_smi(b);
         if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
         accumulator.v = a.v >> shift_count;
-        accumulator.v &= ~cl_not_smi_mask;
+        accumulator.v &= ~value_not_smi_mask;
 
 
         COMPLETE();
     }
 
-    static CLValue op_right_shift_smi(PARAMS)
+    static Value op_right_shift_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -295,7 +295,7 @@ namespace cl
         int64_t shift_count = value_get_smi(b);
         if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
         accumulator.v = a.v >> shift_count;
-        accumulator.v &= ~cl_not_smi_mask;
+        accumulator.v &= ~value_not_smi_mask;
 
         COMPLETE();
     }
@@ -304,7 +304,7 @@ namespace cl
 
 
 
-    static CLValue op_negate(PARAMS)
+    static Value op_negate(PARAMS)
     {
         START_UNARY_ACC();
         if(unlikely(A_NOT_SMI()))
@@ -321,17 +321,17 @@ namespace cl
         COMPLETE();
     }
 
-    static CLValue op_not(PARAMS)
+    static Value op_not(PARAMS)
     {
         START_UNARY_ACC();
-        if(unlikely((a.v & cl_ptr_mask) != 0))
+        if(unlikely((a.v & value_ptr_mask) != 0))
         {
             // this is not an inlined type, go to the slow path
             MUSTTAIL return slow_path(ARGS);
         }
         // however, if this is an inlined type, we can simply test for truthiness using a mask and negate
 
-        if((a.v & cl_truthy_mask) != 0)
+        if((a.v & value_truthy_mask) != 0)
         {
             accumulator = cl_False;
         } else {
@@ -342,7 +342,7 @@ namespace cl
 
     }
 
-    static CLValue op_return(PARAMS)
+    static Value op_return(PARAMS)
     {
         START(1);
 
@@ -391,11 +391,11 @@ namespace cl
     DispatchTable dispatch_table = make_dispatch_table();
 
 
-    CLValue run_interpreter(const CodeObject *code_object, uint32_t start_pc)
+    Value run_interpreter(const CodeObject *code_object, uint32_t start_pc)
     {
         const uint8_t *pc = &code_object->code[start_pc];
         void *dispatch = reinterpret_cast<void *>(&dispatch_table);
-        CLValue accumulator = value_make_smi(0); // init accumulator to 0
+        Value accumulator = value_make_smi(0); // init accumulator to 0
 
         StackFrame stack_frame; //temporarily make a stack frame here
 

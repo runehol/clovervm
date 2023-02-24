@@ -7,7 +7,7 @@
 
 namespace cl
 {
-    struct CLObject;
+    struct Object;
 
 /*
   A cl_value is a 64-bit generic cell to hold any value. It holds some of them inline, and some of them indirect.
@@ -34,52 +34,52 @@ namespace cl
 
 */
 
-    static constexpr uint64_t cl_tag_bits = 5;
-    static constexpr uint64_t cl_tag_mask = 0x1f;
-    static constexpr uint64_t cl_refcounted_ptr_tag = 0x10;
-    static constexpr uint64_t cl_permanent_ptr_tag  = 0x08;
-    static constexpr uint64_t cl_interned_ptr_tag   = 0x04;
-    static constexpr uint64_t cl_special_tag        = 0x02;
-    static constexpr uint64_t cl_truthy_mask          = 0xffffffffffffffe1ull;
-    static constexpr uint64_t cl_ptr_mask = cl_refcounted_ptr_tag|cl_permanent_ptr_tag|cl_interned_ptr_tag;
-    static constexpr uint64_t cl_not_smi_mask = cl_tag_mask;
+    static constexpr uint64_t value_tag_bits = 5;
+    static constexpr uint64_t value_tag_mask = 0x1f;
+    static constexpr uint64_t value_refcounted_ptr_tag = 0x10;
+    static constexpr uint64_t value_immportal_ptr_tag  = 0x08;
+    static constexpr uint64_t value_interned_ptr_tag   = 0x04;
+    static constexpr uint64_t value_special_tag        = 0x02;
+    static constexpr uint64_t value_truthy_mask          = 0xffffffffffffffe1ull;
+    static constexpr uint64_t value_ptr_mask = value_refcounted_ptr_tag|value_immportal_ptr_tag|value_interned_ptr_tag;
+    static constexpr uint64_t value_not_smi_mask = value_tag_mask;
 
 
-    union CLValue
+    union Value
     {
         long long v;
-        struct CLObject *ptr;
+        struct Object *ptr;
 
-        bool operator==(CLValue o) const
+        bool operator==(Value o) const
         {
             return v == o.v;
         }
     };
 
-    static inline bool value_is_smi(CLValue val)
+    static inline bool value_is_smi(Value val)
     {
-        return (val.v &cl_tag_mask) == 0;
+        return (val.v &value_tag_mask) == 0;
     }
 
 
 
-    static inline bool value_is_ptr(CLValue val)
+    static inline bool value_is_ptr(Value val)
     {
-        return (val.v &cl_ptr_mask) != 0;
+        return (val.v &value_ptr_mask) != 0;
     }
 
-    static inline bool value_is_refcounted_ptr(CLValue val)
+    static inline bool value_is_refcounted_ptr(Value val)
     {
-        return (val.v &cl_ptr_mask) != 0;
+        return (val.v &value_ptr_mask) != 0;
     }
 
-    static inline int64_t value_get_smi(CLValue val)
+    static inline int64_t value_get_smi(Value val)
     {
         assert(value_is_smi(val));
-        return val.v >> cl_tag_bits;
+        return val.v >> value_tag_bits;
     }
 
-    static inline bool value_is_smi8(CLValue val)
+    static inline bool value_is_smi8(Value val)
     {
         if(!value_is_smi(val)) return false;
 
@@ -88,37 +88,37 @@ namespace cl
     }
 
 
-    static inline CLValue value_make_smi(int64_t v)
+    static inline Value value_make_smi(int64_t v)
     {
-        return (CLValue){.v = v<<cl_tag_bits};
+        return (Value){.v = v<<value_tag_bits};
 
     }
 
-    static inline CLValue value_make_oop(CLObject *obj)
+    static inline Value value_make_oop(Object *obj)
     {
-        return (CLValue){.ptr = obj};
+        return (Value){.ptr = obj};
     }
 
-    static inline struct CLObject *value_get_ptr(CLValue val)
+    static inline struct Object *value_get_ptr(Value val)
     {
         assert(value_is_ptr(val));
         return val.ptr;
     }
 
-    static inline bool value_is_truthy(CLValue val)
+    static inline bool value_is_truthy(Value val)
     {
-        return (val.v&cl_truthy_mask) != 0;
+        return (val.v&value_truthy_mask) != 0;
     }
-    static inline bool value_is_falsy(CLValue val)
+    static inline bool value_is_falsy(Value val)
     {
-        return (val.v&cl_truthy_mask) == 0;
+        return (val.v&value_truthy_mask) == 0;
     }
 
-    static constexpr CLValue cl_None = (CLValue){.v=0x42};
-    static constexpr CLValue cl_False = (CLValue){.v=0x22};
-    static constexpr CLValue cl_True = (CLValue){.v=0x23};
-    static constexpr CLValue cl_exception_marker = (CLValue){.v=0x82}; // special value to return if an exception has been thrown.
-    static constexpr CLValue cl_not_present_marker = (CLValue){.v=0x102}; // special value to mark deleted/not present entries in scopes.
+    static constexpr Value cl_None = (Value){.v=0x42};
+    static constexpr Value cl_False = (Value){.v=0x22};
+    static constexpr Value cl_True = (Value){.v=0x23};
+    static constexpr Value cl_exception_marker = (Value){.v=0x82}; // special value to return if an exception has been thrown.
+    static constexpr Value cl_not_present_marker = (Value){.v=0x102}; // special value to mark deleted/not present entries in scopes.
 
 }
 

@@ -14,7 +14,7 @@ namespace cl
 
 
 
-    static inline CLValue cl_incref(CLValue v)
+    static inline Value cl_incref(Value v)
     {
         if(value_is_refcounted_ptr(v))
         {
@@ -23,7 +23,7 @@ namespace cl
         return v;
     }
 
-    static inline void cl_decref(CLValue v)
+    static inline void cl_decref(Value v)
     {
         if(value_is_refcounted_ptr(v))
         {

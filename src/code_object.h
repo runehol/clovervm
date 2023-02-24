@@ -25,7 +25,7 @@ namespace cl
         std::vector<uint8_t> code;
 
         std::vector<uint32_t> source_offsets;
-        std::vector<CLValue> constant_table;
+        std::vector<Value> constant_table;
 
         uint32_t get_n_registers() const { return n_arguments + n_temporaries + n_locals; }
 
@@ -58,7 +58,7 @@ namespace cl
         }
 
 
-        uint32_t allocate_constant(CLValue val)
+        uint32_t allocate_constant(Value val)
         {
             uint32_t idx = constant_table.size();
             constant_table.push_back(val);

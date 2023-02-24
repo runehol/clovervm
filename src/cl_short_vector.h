@@ -13,40 +13,40 @@ namespace cl
 
     struct CLShortVector
     {
-        CLObject obj;
-        CLValue count;
-        CLValue array[];
+        Object obj;
+        Value count;
+        Value array[];
 
     };
 
     extern struct CLKlass cl_short_vector_klass;
 
-    static inline void short_vector_init(CLShortVector *vec, CLValue count)
+    static inline void short_vector_init(CLShortVector *vec, Value count)
     {
         assert(value_is_smi(count));
         object_init_all_cells(&vec->obj, &cl_short_vector_klass, value_get_smi(count));
         vec->count = count;
     }
 
-    static inline CLValue short_vector_make(CLValue count)
+    static inline Value short_vector_make(Value count)
     {
-        CLShortVector *vec = cl_alloc<CLShortVector>(sizeof(CLShortVector)+value_get_smi(count)*sizeof(CLValue));
+        CLShortVector *vec = cl_alloc<CLShortVector>(sizeof(CLShortVector)+value_get_smi(count)*sizeof(Value));
         short_vector_init(vec, count);
         return value_make_oop(&vec->obj);
     }
 
 
-    static inline CLValue short_vector_get(const CLShortVector *vec, CLValue index)
+    static inline Value short_vector_get(const CLShortVector *vec, Value index)
     {
         // TODO make these exceptions
         assert(value_is_smi(index) && index.v >= value_make_smi(0).v && index.v < vec->count.v);
 
-        CLValue v = vec->array[value_get_smi(index)];
+        Value v = vec->array[value_get_smi(index)];
         cl_decref(index);
         return cl_incref(v);
     }
 
-    static inline void short_vector_mutating_set(CLShortVector *vec, CLValue index, CLValue elem)
+    static inline void short_vector_mutating_set(CLShortVector *vec, Value index, Value elem)
     {
         // TODO make these exceptions
         assert(value_is_smi(index) && index.v >= 0 && index.v < vec->count.v);

@@ -9,7 +9,7 @@ namespace cl
 /*
   Base class for all language objects, i.e. indirect values
 */
-    struct CLObject
+    struct Object
     {
         struct CLKlass *klass;
         int32_t refcount;
@@ -19,7 +19,7 @@ namespace cl
 
 
 
-    static inline void object_init(CLObject *obj, struct CLKlass *klass, uint32_t n_cells, uint32_t size_in_cells)
+    static inline void object_init(Object *obj, struct CLKlass *klass, uint32_t n_cells, uint32_t size_in_cells)
     {
         obj->klass = klass;
         obj->refcount = 0;
@@ -27,7 +27,7 @@ namespace cl
         obj->size_in_cells = size_in_cells;
     }
 
-    static inline void object_init_all_cells(CLObject *obj, struct CLKlass *klass, uint32_t n_cells)
+    static inline void object_init_all_cells(Object *obj, struct CLKlass *klass, uint32_t n_cells)
     {
         object_init(obj, klass, n_cells, n_cells);
     }

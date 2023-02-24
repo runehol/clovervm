@@ -3,7 +3,7 @@
 
 namespace cl
 {
-    static CLValue short_vector_str(CLValue s)
+    static Value short_vector_str(Value s)
     {
         return s;
     }

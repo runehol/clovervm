@@ -166,7 +166,7 @@ namespace cl
 
                 case AstOperatorKind::NUMBER:
                 {
-                    CLValue val = av.constants[node_idx];
+                    Value val = av.constants[node_idx];
                     if(value_is_smi8(val))
                     {
                         code_obj.emplace_back(source_offset, Bytecode::LdaSmi, value_get_smi(val));

@@ -10,7 +10,7 @@
 using namespace cl;
 
 
-static CLValue run_expression(const wchar_t *str)
+static Value run_expression(const wchar_t *str)
 {
     CompilationUnit input(str);
     TokenVector tv = tokenize(input);
@@ -21,29 +21,29 @@ static CLValue run_expression(const wchar_t *str)
 
 TEST(Interpreter, simple)
 {
-    CLValue expected = value_make_smi(15);
-    CLValue actual = run_expression(L"1 + 2  *  (4 + 3)");
+    Value expected = value_make_smi(15);
+    Value actual = run_expression(L"1 + 2  *  (4 + 3)");
     EXPECT_EQ(expected, actual);
 }
 
 
 TEST(Interpreter, simple2)
 {
-    CLValue expected = value_make_smi(19);
-    CLValue actual = run_expression(L"(1 << 4) + 3");
+    Value expected = value_make_smi(19);
+    Value actual = run_expression(L"(1 << 4) + 3");
     EXPECT_EQ(expected, actual);
 }
 
 TEST(Interpreter, simple3)
 {
-    CLValue expected = cl_False;
-    CLValue actual = run_expression(L"not True");
+    Value expected = cl_False;
+    Value actual = run_expression(L"not True");
     EXPECT_EQ(expected, actual);
 }
 
 TEST(Interpreter, simple4)
 {
-    CLValue expected = value_make_smi(-13);
-    CLValue actual = run_expression(L"1 - 2  *  (4 + 3)");
+    Value expected = value_make_smi(-13);
+    Value actual = run_expression(L"1 - 2  *  (4 + 3)");
     EXPECT_EQ(expected, actual);
 }
