@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <memory>
+#include <deque>
 
 #include "value.h"
 #include "heap.h"
@@ -41,7 +42,7 @@ namespace cl
         ThreadLocalHeap refcounted_heap;
 
         std::vector<Value> stack;
-        std::vector<Value> zero_count_table;
+        std::deque<Value> zero_count_table;
 
 
 
