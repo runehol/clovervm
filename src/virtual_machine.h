@@ -6,6 +6,7 @@
 
 #include "thread_state.h"
 #include "heap.h"
+#include "intern_store.h"
 
 namespace cl
 {
@@ -22,19 +23,15 @@ namespace cl
         ThreadState *make_new_thread();
 
         GlobalHeap &get_refcounted_global_heap() { return refcounted_global_heap; }
+        GlobalHeap &get_immortal_global_heap() { return immortal_global_heap; }
+        GlobalHeap &get_interned_global_heap() { return interned_global_heap; }
 
-        void *allocate_immortal(size_t n_bytes);
-        void *allocate_interned(size_t n_bytes);
 
     private:
         std::vector<std::unique_ptr<ThreadState>> threads;
         GlobalHeap refcounted_global_heap;
         GlobalHeap immortal_global_heap;
         GlobalHeap interned_global_heap;
-        std::mutex immortal_heap_mutex;
-        std::mutex interned_heap_mutex;
-        ThreadLocalHeap immortal_heap;
-        ThreadLocalHeap interned_heap;
     };
 
 

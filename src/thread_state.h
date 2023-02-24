@@ -33,8 +33,6 @@ namespace cl
 
 
         void *allocated_refcounted(size_t n_bytes) { return refcounted_heap.allocate(n_bytes); }
-        void *allocate_immortal(size_t n_bytes);
-        void *allocate_interned(size_t n_bytes);
 
 
     private:

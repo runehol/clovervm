@@ -31,6 +31,14 @@ namespace cl
         return single_allocator->allocate(n_bytes);
     }
 
+
+    void *GlobalHeap::allocate_global(size_t n_bytes)
+    {
+        const std::lock_guard<std::mutex> lock(global_allocator_mutex);
+        if(global_allocator == nullptr) global_allocator = std::make_unique<ThreadLocalHeap>(this);
+        return global_allocator->allocate(n_bytes);
+    }
+
     GlobalHeap::~GlobalHeap() = default;
 
     ThreadLocalHeap::ThreadLocalHeap(GlobalHeap *_global_heap)

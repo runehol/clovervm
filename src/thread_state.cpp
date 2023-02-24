@@ -41,15 +41,5 @@ namespace cl
     }
 
 
-    void *ThreadState::allocate_immortal(size_t n_bytes)
-    {
-        return machine->allocate_immortal(n_bytes);
-    }
-
-    void *ThreadState::allocate_interned(size_t n_bytes)
-    {
-        return machine->allocate_interned(n_bytes);
-    }
-
 
 }

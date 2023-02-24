@@ -14,6 +14,8 @@ namespace cl
     static constexpr size_t DefaultSlabSize = 65536;
     static constexpr size_t LargeAllocationSize = DefaultSlabSize/2;
 
+    class ThreadLocalHeap;
+
     /* global heap, shared between threads */
 
     class GlobalHeap
@@ -39,6 +41,7 @@ namespace cl
 
         void *allocate_large_object(size_t n_bytes); // slow path allocation for large objects
 
+        void *allocate_global(size_t n_bytes);
 
         SlabAllocator *make_new_slab();
 
@@ -52,6 +55,8 @@ namespace cl
         std::deque<std::unique_ptr<SlabAllocator>> slabs;
         size_t offset;
         size_t slab_size;
+        std::unique_ptr<ThreadLocalHeap> global_allocator;
+        std::mutex global_allocator_mutex;
     };
 
     /* thread local heap, for fast lockless allocation in the common case */
@@ -71,10 +76,10 @@ namespace cl
 
             if(n_bytes >= LargeAllocationSize)
             {
-                return (global_heap->allocate_large_object(n_bytes));
+                return global_heap->allocate_large_object(n_bytes);
             } else {
                 local_allocator = global_heap->make_new_slab();
-                return (local_allocator->allocate(n_bytes));
+                return local_allocator->allocate(n_bytes);
             }
         }
 
