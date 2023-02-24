@@ -23,7 +23,7 @@ namespace cl
         current_thread = this;
 
         try {
-            Value result = run_interpreter(obj, 0);
+            Value result = run_interpreter(stack.data(), obj, 0);
             current_thread = nullptr;
             return result;
 

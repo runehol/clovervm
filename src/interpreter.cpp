@@ -389,15 +389,14 @@ namespace cl
     DispatchTable dispatch_table = make_dispatch_table();
 
 
-    Value run_interpreter(const CodeObject *code_object, uint32_t start_pc)
+    Value run_interpreter(Value *stack_frame, const CodeObject *code_object, uint32_t start_pc)
     {
         const uint8_t *pc = &code_object->code[start_pc];
         void *dispatch = reinterpret_cast<void *>(&dispatch_table);
         Value accumulator = Value::from_smi(0); // init accumulator to 0
 
-        StackFrame stack_frame; //temporarily make a stack frame here
+        StackFrame *frame = reinterpret_cast<StackFrame*>(stack_frame);
 
-        StackFrame *frame = &stack_frame;
 
 
 

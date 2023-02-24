@@ -18,7 +18,7 @@ static Value run_expression(const wchar_t *str)
     TokenVector tv = tokenize(input);
     AstVector av = parse(vm, tv, StartRule::Eval);
     CodeObject code_obj = generate_code(av);
-    return run_interpreter(&code_obj, 0);
+    return vm.get_default_thread()->run(&code_obj);
 }
 
 TEST(Interpreter, simple)
