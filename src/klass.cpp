@@ -1,5 +1,5 @@
-#include "cl_klass.h"
-#include "cl_refcount.h"
+#include "klass.h"
+#include "refcount.h"
 
 namespace cl
 {

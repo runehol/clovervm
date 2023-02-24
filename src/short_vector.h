@@ -1,12 +1,12 @@
 #ifndef CL_SHORT_VECTOR_H
 #define CL_SHORT_VECTOR_H
 
-#include "cl_object.h"
-#include "cl_value.h"
-#include "cl_refcount.h"
+#include "object.h"
+#include "value.h"
+#include "refcount.h"
 #include <stdint.h>
 #include <assert.h>
-#include "cl_alloc.h"
+#include "alloc.h"
 
 namespace cl
 {
@@ -39,7 +39,7 @@ namespace cl
     static inline Value short_vector_get(const CLShortVector *vec, Value index)
     {
         // TODO make these exceptions
-        assert(value_is_smi(index) && index.v >= value_make_smi(0).v && index.v < vec->count.v);
+        assert(value_is_smi(index) && index.as.integer >= value_make_smi(0).as.integer && index.as.integer < vec->count.as.integer);
 
         Value v = vec->array[value_get_smi(index)];
         cl_decref(index);
@@ -49,7 +49,7 @@ namespace cl
     static inline void short_vector_mutating_set(CLShortVector *vec, Value index, Value elem)
     {
         // TODO make these exceptions
-        assert(value_is_smi(index) && index.v >= 0 && index.v < vec->count.v);
+        assert(value_is_smi(index) && index.as.integer >= 0 && index.as.integer < vec->count.as.integer);
 
         vec->array[value_get_smi(index)] = elem;
         cl_decref(index);

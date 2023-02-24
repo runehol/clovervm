@@ -1,5 +1,5 @@
-#include "cl_string.h"
-#include "cl_klass.h"
+#include "str.h"
+#include "klass.h"
 
 namespace cl
 {

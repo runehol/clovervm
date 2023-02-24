@@ -3,7 +3,7 @@
 
 #include "bytecode.h"
 #include <vector>
-#include "cl_value.h"
+#include "value.h"
 
 namespace cl
 {

@@ -2,7 +2,7 @@
 #define CL_INTERPRETER_H
 
 #include <cstdint>
-#include "cl_value.h"
+#include "value.h"
 
 namespace cl
 {

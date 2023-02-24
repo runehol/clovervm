@@ -3,9 +3,9 @@
 
 #include <stdatomic.h>
 
-#include "cl_value.h"
-#include "cl_object.h"
-#include "cl_alloc.h"
+#include "value.h"
+#include "object.h"
+#include "alloc.h"
 
 
 namespace cl
@@ -18,7 +18,7 @@ namespace cl
     {
         if(value_is_refcounted_ptr(v))
         {
-            ++v.ptr->refcount;
+            ++v.as.ptr->refcount;
         }
         return v;
     }
@@ -27,10 +27,10 @@ namespace cl
     {
         if(value_is_refcounted_ptr(v))
         {
-            if(--v.ptr->refcount == 0)
+            if(--v.as.ptr->refcount == 0)
             {
                 // todo add to zero count table instead
-                cl_free(v.ptr);
+                cl_free(v.as.ptr);
             }
         }
     }

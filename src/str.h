@@ -1,9 +1,9 @@
 #ifndef CL_STRING_H
 #define CL_STRING_H
 
-#include "cl_object.h"
-#include "cl_alloc.h"
-#include "cl_value.h"
+#include "object.h"
+#include "alloc.h"
+#include "value.h"
 #include <stdint.h>
 #include <assert.h>
 #include <wchar.h>

@@ -1,7 +1,7 @@
 #ifndef CL_KLASS_H
 #define CL_KLASS_H
 
-#include "cl_string.h"
+#include "str.h"
 
 namespace cl
 {

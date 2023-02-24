@@ -1,6 +1,6 @@
 #include "interpreter.h"
 
-#include "cl_value.h"
+#include "value.h"
 #include "code_object.h"
 #include "stack_frame.h"
 
@@ -45,8 +45,8 @@ namespace cl
 
 
 
-#define A_NOT_SMI() ((a.v & value_not_smi_mask) != 0)
-#define A_OR_B_NOT_SMI() (((a.v | b.v) & value_not_smi_mask) != 0)
+#define A_NOT_SMI() ((a.as.integer & value_not_smi_mask) != 0)
+#define A_OR_B_NOT_SMI() (((a.as.integer | b.as.integer) & value_not_smi_mask) != 0)
 
 
 
@@ -139,9 +139,9 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        if(unlikely(__builtin_saddll_overflow(a.v, b.v, &accumulator.v)))
+        if(unlikely(__builtin_saddll_overflow(a.as.integer, b.as.integer, &accumulator.as.integer)))
         {
-            accumulator.v -= b.v;
+            accumulator.as.integer -= b.as.integer;
             MUSTTAIL return overflow_path(ARGS);
         }
 
@@ -156,9 +156,9 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        if(unlikely(__builtin_saddll_overflow(a.v, b.v, &accumulator.v)))
+        if(unlikely(__builtin_saddll_overflow(a.as.integer, b.as.integer, &accumulator.as.integer)))
         {
-            accumulator.v -= a.v;
+            accumulator.as.integer -= a.as.integer;
             MUSTTAIL return overflow_path(ARGS);
         }
 
@@ -172,9 +172,9 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        if(unlikely(__builtin_ssubll_overflow(a.v, b.v, &accumulator.v)))
+        if(unlikely(__builtin_ssubll_overflow(a.as.integer, b.as.integer, &accumulator.as.integer)))
         {
-            accumulator.v += b.v;
+            accumulator.as.integer += b.as.integer;
             MUSTTAIL return overflow_path(ARGS);
         }
 
@@ -193,9 +193,9 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        if(unlikely(__builtin_ssubll_overflow(a.v, b.v, &accumulator.v)))
+        if(unlikely(__builtin_ssubll_overflow(a.as.integer, b.as.integer, &accumulator.as.integer)))
         {
-            accumulator.v += a.v;
+            accumulator.as.integer += a.as.integer;
             MUSTTAIL return overflow_path(ARGS);
         }
 
@@ -210,7 +210,7 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
         Value dest;
-        if(unlikely(__builtin_smulll_overflow(a.v, value_get_smi(b), &dest.v)))
+        if(unlikely(__builtin_smulll_overflow(a.as.integer, value_get_smi(b), &dest.as.integer)))
         {
             MUSTTAIL return overflow_path(ARGS);
         }
@@ -227,7 +227,7 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
         Value dest;
-        if(unlikely(__builtin_smulll_overflow(a.v, value_get_smi(b), &dest.v)))
+        if(unlikely(__builtin_smulll_overflow(a.as.integer, value_get_smi(b), &dest.as.integer)))
         {
             MUSTTAIL return overflow_path(ARGS);
         }
@@ -245,7 +245,7 @@ namespace cl
         }
         int64_t shift_count = value_get_smi(b);
         if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
-        accumulator.v = a.v << shift_count;
+        accumulator.as.integer = a.as.integer << shift_count;
         /* TODO need to test overflow here */
 
         COMPLETE();
@@ -260,7 +260,7 @@ namespace cl
         }
         int64_t shift_count = value_get_smi(b);
         if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
-        accumulator.v = a.v << shift_count;
+        accumulator.as.integer = a.as.integer << shift_count;
         /* TODO need to test overflow here */
 
         COMPLETE();
@@ -278,8 +278,8 @@ namespace cl
 
         int64_t shift_count = value_get_smi(b);
         if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
-        accumulator.v = a.v >> shift_count;
-        accumulator.v &= ~value_not_smi_mask;
+        accumulator.as.integer = a.as.integer >> shift_count;
+        accumulator.as.integer &= ~value_not_smi_mask;
 
 
         COMPLETE();
@@ -294,8 +294,8 @@ namespace cl
         }
         int64_t shift_count = value_get_smi(b);
         if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
-        accumulator.v = a.v >> shift_count;
-        accumulator.v &= ~value_not_smi_mask;
+        accumulator.as.integer = a.as.integer >> shift_count;
+        accumulator.as.integer &= ~value_not_smi_mask;
 
         COMPLETE();
     }
@@ -312,9 +312,9 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
 
-        if(unlikely(__builtin_ssubll_overflow(0, a.v, &accumulator.v)))
+        if(unlikely(__builtin_ssubll_overflow(0, a.as.integer, &accumulator.as.integer)))
         {
-            accumulator.v = -accumulator.v;
+            accumulator.as.integer = -accumulator.as.integer;
             MUSTTAIL return overflow_path(ARGS);
         }
 
@@ -324,14 +324,14 @@ namespace cl
     static Value op_not(PARAMS)
     {
         START_UNARY_ACC();
-        if(unlikely((a.v & value_ptr_mask) != 0))
+        if(unlikely((a.as.integer & value_ptr_mask) != 0))
         {
             // this is not an inlined type, go to the slow path
             MUSTTAIL return slow_path(ARGS);
         }
         // however, if this is an inlined type, we can simply test for truthiness using a mask and negate
 
-        if((a.v & value_truthy_mask) != 0)
+        if((a.as.integer & value_truthy_mask) != 0)
         {
             accumulator = cl_False;
         } else {

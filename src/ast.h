@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <cassert>
 #include <iosfwd>
-#include "cl_value.h"
+#include "value.h"
 #include <absl/container/inlined_vector.h>
 
 namespace cl

@@ -6,15 +6,15 @@ add_library(libclovervm STATIC
 	code_object.h
 	codegen.cpp
 	codegen.h
-    cl_klass.cpp
-    cl_klass.h
-    cl_object.h
-    cl_refcount.h
-    cl_short_vector.cpp
-    cl_short_vector.h
-    cl_string.cpp
-    cl_string.h
-    cl_value.h
+    klass.cpp
+    klass.h
+    object.h
+    refcount.h
+    short_vector.cpp
+    short_vector.h
+    str.cpp
+    str.h
+    value.h
 	ast.h
 	ast_print.h
 	parser.cpp

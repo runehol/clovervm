@@ -45,38 +45,40 @@ namespace cl
     static constexpr uint64_t value_not_smi_mask = value_tag_mask;
 
 
-    union Value
+    struct Value
     {
-        long long v;
-        struct Object *ptr;
+        union {
+            long long integer;
+            struct Object *ptr;
+        } as;
 
         bool operator==(Value o) const
         {
-            return v == o.v;
+            return as.integer == o.as.integer;
         }
     };
 
     static inline bool value_is_smi(Value val)
     {
-        return (val.v &value_tag_mask) == 0;
+        return (val.as.integer &value_tag_mask) == 0;
     }
 
 
 
     static inline bool value_is_ptr(Value val)
     {
-        return (val.v &value_ptr_mask) != 0;
+        return (val.as.integer &value_ptr_mask) != 0;
     }
 
     static inline bool value_is_refcounted_ptr(Value val)
     {
-        return (val.v &value_ptr_mask) != 0;
+        return (val.as.integer &value_ptr_mask) != 0;
     }
 
     static inline int64_t value_get_smi(Value val)
     {
         assert(value_is_smi(val));
-        return val.v >> value_tag_bits;
+        return val.as.integer >> value_tag_bits;
     }
 
     static inline bool value_is_smi8(Value val)
@@ -90,35 +92,35 @@ namespace cl
 
     static inline Value value_make_smi(int64_t v)
     {
-        return (Value){.v = v<<value_tag_bits};
+        return (Value){.as.integer = v<<value_tag_bits};
 
     }
 
     static inline Value value_make_oop(Object *obj)
     {
-        return (Value){.ptr = obj};
+        return (Value){.as.ptr = obj};
     }
 
     static inline struct Object *value_get_ptr(Value val)
     {
         assert(value_is_ptr(val));
-        return val.ptr;
+        return val.as.ptr;
     }
 
     static inline bool value_is_truthy(Value val)
     {
-        return (val.v&value_truthy_mask) != 0;
+        return (val.as.integer&value_truthy_mask) != 0;
     }
     static inline bool value_is_falsy(Value val)
     {
-        return (val.v&value_truthy_mask) == 0;
+        return (val.as.integer&value_truthy_mask) == 0;
     }
 
-    static constexpr Value cl_None = (Value){.v=0x42};
-    static constexpr Value cl_False = (Value){.v=0x22};
-    static constexpr Value cl_True = (Value){.v=0x23};
-    static constexpr Value cl_exception_marker = (Value){.v=0x82}; // special value to return if an exception has been thrown.
-    static constexpr Value cl_not_present_marker = (Value){.v=0x102}; // special value to mark deleted/not present entries in scopes.
+    static constexpr Value cl_None = (Value){.as.integer=0x42};
+    static constexpr Value cl_False = (Value){.as.integer=0x22};
+    static constexpr Value cl_True = (Value){.as.integer=0x23};
+    static constexpr Value cl_exception_marker = (Value){.as.integer=0x82}; // special value to return if an exception has been thrown.
+    static constexpr Value cl_not_present_marker = (Value){.as.integer=0x102}; // special value to mark deleted/not present entries in scopes.
 
 }
 
