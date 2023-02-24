@@ -116,7 +116,7 @@ static constexpr CLValue cl_None = (CLValue){.v=0x42};
 static constexpr CLValue cl_False = (CLValue){.v=0x22};
 static constexpr CLValue cl_True = (CLValue){.v=0x23};
 static constexpr CLValue cl_exception_marker = (CLValue){.v=0x82}; // special value to return if an exception has been thrown.
-static constexpr CLValue cl_not_found_marker = (CLValue){.v=0x102}; // special value to mark deleted/not present entries in scopes.
+static constexpr CLValue cl_not_present_marker = (CLValue){.v=0x102}; // special value to mark deleted/not present entries in scopes.
 
 
 #endif //CL_VALUE_H
