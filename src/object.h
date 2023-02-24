@@ -2,35 +2,40 @@
 #define CL_OBJECT_H
 
 #include <cstdint>
+#include <type_traits>
 
 namespace cl
 {
-    struct CLKlass;
+    struct Klass;
 /*
   Base class for all language objects, i.e. indirect values
 */
     struct Object
     {
-        struct CLKlass *klass;
+        Object(Klass *_klass, uint32_t _n_cells, uint32_t _size_in_cells)
+            : klass(_klass),
+              refcount(0),
+              n_cells(_n_cells),
+              size_in_cells(_size_in_cells)
+        {}
+
+        Object(Klass *_klass, uint32_t _n_cells)
+            : klass(_klass),
+              refcount(0),
+              n_cells(_n_cells),
+              size_in_cells(_n_cells)
+        {}
+
+        struct Klass *klass;
         int32_t refcount;
         uint16_t n_cells;
         uint16_t size_in_cells;
     };
 
+    static_assert(std::is_destructible_v<Object>);
 
 
-    static inline void object_init(Object *obj, struct CLKlass *klass, uint32_t n_cells, uint32_t size_in_cells)
-    {
-        obj->klass = klass;
-        obj->refcount = 0;
-        obj->n_cells = n_cells;
-        obj->size_in_cells = size_in_cells;
-    }
 
-    static inline void object_init_all_cells(Object *obj, struct CLKlass *klass, uint32_t n_cells)
-    {
-        object_init(obj, klass, n_cells, n_cells);
-    }
 }
 
 #endif //CL_OBJECT_H

@@ -7,42 +7,44 @@
 #include <stdint.h>
 #include <assert.h>
 #include <wchar.h>
+#include <cstring>
 
 
 namespace cl
 {
     typedef wchar_t cl_wchar;
 
-    typedef struct String
+    extern struct Klass cl_string_klass;
+
+
+    struct String : public Object
     {
-        Object obj;
+
+        String(const cl_wchar *_data, Value _count)
+        : Object(&cl_string_klass, 1, sizeof(Value) + (_count.get_smi() + 1) * sizeof(cl_wchar))
+        {
+            size_t n_chars = _count.get_smi();
+            memcpy(&this->data[0], _data, n_chars*sizeof(cl_wchar));
+            this->data[n_chars] = 0; // zero terminate for good measure
+            count = _count;
+        }
+
+        String(const cl_wchar *_data)
+        : Object(&cl_string_klass, 1, sizeof(Value) + (wcslen(_data) + 1) * sizeof(cl_wchar))
+        {
+            size_t n_chars = wcslen(_data);
+            memcpy(&this->data[0], _data, n_chars*sizeof(cl_wchar));
+            this->data[n_chars] = 0; // zero terminate for good measure
+            count = Value::from_smi(n_chars);
+        }
+
+
         Value count;
-        cl_wchar data[];
-
-    } String;
-
-    extern struct CLKlass cl_string_klass;
+        cl_wchar data[1];
+    };
 
 
-    static inline void string_init(String *vec, const cl_wchar *data, Value count)
-    {
-        assert(count.is_smi());
-        object_init(&vec->obj, &cl_string_klass, 1, 1 + count.get_smi()*sizeof(cl_wchar));
-        vec->count = count;
-    }
-
-    static inline Value string_make(const cl_wchar *data, Value count)
-    {
-        assert(count.is_smi());
-        String *s = cl_alloc<String>(sizeof(String)+count.get_smi() * sizeof(cl_wchar));
-        string_init(s, data, count);
-        return Value::from_oop(&s->obj);
-    }
-
-    static inline Value string_make_z(const cl_wchar *data)
-    {
-        return string_make(data, Value::from_smi(wcslen(data)));
-    }
+    Value make_interned_string(const cl_wchar *data);
 }
 
 

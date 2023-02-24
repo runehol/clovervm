@@ -8,5 +8,5 @@ namespace cl
         return s;
     }
 
-    CLKlass cl_short_vector_klass = MAKE_KLASS(L"persistent_vector", short_vector_str);
+    Klass cl_short_vector_klass(L"persistent_vector", short_vector_str);
 }

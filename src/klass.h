@@ -5,23 +5,26 @@
 
 namespace cl
 {
-    typedef Value (*cl_arity_one_function)(Value);
+    typedef Value (*arity_one_function)(Value);
 
-    typedef struct CLKlass
+    extern Klass cl_klass_klass; // the klass object of all klasses.
+
+    struct Klass : public Object
     {
-        struct Object obj;
+        Klass(const cl_wchar *_klass_name, arity_one_function str_fun)
+            : Object(&cl_klass_klass, 0, 2),
+              klass_name(_klass_name),
+              str(str_fun)
+        {}
+
         const cl_wchar *klass_name;
-        cl_arity_one_function str;
+        arity_one_function str;
 
-    } CLKlass;
+    };
 
-#define MAKE_KLASS(name, str_fun)                                       \
-    (CLKlass){.obj=(Object){.klass=&cl_klass_klass, .refcount=9999, .n_cells=0, .size_in_cells=2}, \
-            .klass_name=(name),                                         \
-            .str=(str_fun),                                             \
-            }                                                           \
 
-    extern CLKlass cl_klass_klass; // the klass object of all klasses.
+
+
 
 }
 

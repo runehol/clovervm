@@ -11,29 +11,19 @@
 namespace cl
 {
 
-    struct CLShortVector
+    extern struct Klass cl_short_vector_klass;
+
+    struct CLShortVector : public Object
     {
-        Object obj;
+        CLShortVector(Value count)
+            : Object(&cl_short_vector_klass, count.get_smi()+1)
+        {}
         Value count;
         Value array[];
 
     };
 
-    extern struct CLKlass cl_short_vector_klass;
 
-    static inline void short_vector_init(CLShortVector *vec, Value count)
-    {
-        assert(count.is_smi());
-        object_init_all_cells(&vec->obj, &cl_short_vector_klass, count.get_smi());
-        vec->count = count;
-    }
-
-    static inline Value short_vector_make(Value count)
-    {
-        CLShortVector *vec = cl_alloc<CLShortVector>(sizeof(CLShortVector)+count.get_smi()*sizeof(Value));
-        short_vector_init(vec, count);
-        return Value::from_oop(&vec->obj);
-    }
 
 
     static inline Value short_vector_get(const CLShortVector *vec, Value index)

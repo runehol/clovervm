@@ -8,6 +8,6 @@ namespace cl
         return s;
     }
 
-    CLKlass cl_string_klass = MAKE_KLASS(L"string", string_str);
+    Klass cl_string_klass(L"string", string_str);
 
 }
