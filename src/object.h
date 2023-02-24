@@ -32,7 +32,7 @@ namespace cl
         uint16_t size_in_cells;
     };
 
-    static_assert(std::is_destructible_v<Object>);
+    static_assert(std::is_trivially_destructible_v<Object>);
 
 
 

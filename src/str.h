@@ -70,6 +70,7 @@ namespace cl
     }
 
 
+    static_assert(std::is_trivially_destructible_v<String>);
 
     Value make_interned_string(const cl_wchar *data);
 }

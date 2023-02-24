@@ -7,7 +7,8 @@ namespace cl
     VirtualMachine::VirtualMachine()
         : refcounted_global_heap(GlobalHeap::refcounted_heap()),
           immortal_global_heap(GlobalHeap::immortal_heap()),
-          interned_global_heap(GlobalHeap::interned_heap())
+          interned_global_heap(GlobalHeap::interned_heap()),
+          interned_strings(&interned_global_heap)
     {
         // make the main thread
         make_new_thread();
