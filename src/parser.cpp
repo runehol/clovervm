@@ -390,7 +390,7 @@ namespace cl
             case Token::NUMBER:
             {
                 int64_t iv = std::stoll(std::wstring(string_for_number_token(*ast.compilation_unit, source_pos_for_token())));
-                Value v = value_make_smi(iv);
+                Value v = Value::from_smi(iv);
                 return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER), source_pos_and_advance(), -1, -1, v);
             }
             case Token::STRING:

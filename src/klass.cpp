@@ -5,9 +5,8 @@ namespace cl
 {
     static Value klass_str(Value v)
     {
-        const CLKlass *k = (const CLKlass*)value_get_ptr(v);
+        const CLKlass *k = (const CLKlass*)v.get_ptr();
         Value res = string_make_z(k->klass_name);
-        cl_decref(v);
         return res;
     }
 

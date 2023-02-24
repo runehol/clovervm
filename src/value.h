@@ -47,6 +47,21 @@ namespace cl
 
     struct Value
     {
+        static inline Value from_smi(int64_t v)
+        {
+            Value val;
+            val.as.integer = v<<value_tag_bits;
+            return val;
+
+        }
+
+        static inline Value from_oop(Object *obj)
+        {
+            Value val;
+            val.as.ptr = obj;
+            return val;
+        }
+
         union {
             long long integer;
             struct Object *ptr;
@@ -56,65 +71,58 @@ namespace cl
         {
             return as.integer == o.as.integer;
         }
+
+        bool is_smi() const
+        {
+            return (as.integer & value_tag_mask) == 0;
+        }
+
+
+
+        bool is_ptr() const
+        {
+            return (as.integer &value_ptr_mask) != 0;
+        }
+
+        bool is_refcounted_ptr() const
+        {
+            return (as.integer &value_ptr_mask) != 0;
+        }
+
+        int64_t get_smi() const
+        {
+            assert(is_smi());
+            return as.integer >> value_tag_bits;
+        }
+
+        bool is_smi8() const
+        {
+            if(!is_smi()) return false;
+
+            int64_t v = get_smi();
+            return v >= -128 && v <= 127;
+        }
+
+
+
+        Object *get_ptr() const
+        {
+            assert(is_ptr());
+            return as.ptr;
+        }
+
+        bool value_is_truthy() const
+        {
+            return (as.integer&value_truthy_mask) != 0;
+        }
+        bool is_falsy() const
+        {
+            return (as.integer&value_truthy_mask) == 0;
+        }
+
     };
 
-    static inline bool value_is_smi(Value val)
-    {
-        return (val.as.integer &value_tag_mask) == 0;
-    }
-
-
-
-    static inline bool value_is_ptr(Value val)
-    {
-        return (val.as.integer &value_ptr_mask) != 0;
-    }
-
-    static inline bool value_is_refcounted_ptr(Value val)
-    {
-        return (val.as.integer &value_ptr_mask) != 0;
-    }
-
-    static inline int64_t value_get_smi(Value val)
-    {
-        assert(value_is_smi(val));
-        return val.as.integer >> value_tag_bits;
-    }
-
-    static inline bool value_is_smi8(Value val)
-    {
-        if(!value_is_smi(val)) return false;
-
-        int64_t v = value_get_smi(val);
-        return v >= -128 && v <= 127;
-    }
-
-
-    static inline Value value_make_smi(int64_t v)
-    {
-        return (Value){.as.integer = v<<value_tag_bits};
-
-    }
-
-    static inline Value value_make_oop(Object *obj)
-    {
-        return (Value){.as.ptr = obj};
-    }
-
-    static inline struct Object *value_get_ptr(Value val)
-    {
-        assert(value_is_ptr(val));
-        return val.as.ptr;
-    }
-
-    static inline bool value_is_truthy(Value val)
-    {
-        return (val.as.integer&value_truthy_mask) != 0;
-    }
-    static inline bool value_is_falsy(Value val)
-    {
-        return (val.as.integer&value_truthy_mask) == 0;
-    }
+  
 
     static constexpr Value cl_None = (Value){.as.integer=0x42};
     static constexpr Value cl_False = (Value){.as.integer=0x22};

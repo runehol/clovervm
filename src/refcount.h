@@ -14,18 +14,18 @@ namespace cl
 
 
 
-    static inline Value cl_incref(Value v)
+    static inline Value incref(Value v)
     {
-        if(value_is_refcounted_ptr(v))
+        if(v.is_refcounted_ptr())
         {
             ++v.as.ptr->refcount;
         }
         return v;
     }
 
-    static inline void cl_decref(Value v)
+    static inline void decref(Value v)
     {
-        if(value_is_refcounted_ptr(v))
+        if(v.is_refcounted_ptr())
         {
             if(--v.as.ptr->refcount == 0)
             {

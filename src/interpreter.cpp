@@ -36,7 +36,7 @@ namespace cl
 #define START_BINARY_ACC_SMI()               \
     START(2);                                \
     Value a = accumulator;                 \
-    Value b = value_make_smi(int8_t(pc[1]))
+    Value b = Value::from_smi(int8_t(pc[1]))
 
 #define START_UNARY_ACC()                    \
     START(1);                                \
@@ -88,7 +88,7 @@ namespace cl
     {
         START(2);
         int8_t smi = pc[1];
-        accumulator = value_make_smi(smi);
+        accumulator = Value::from_smi(smi);
         COMPLETE();
     }
 
@@ -210,7 +210,7 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
         Value dest;
-        if(unlikely(__builtin_smulll_overflow(a.as.integer, value_get_smi(b), &dest.as.integer)))
+        if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(), &dest.as.integer)))
         {
             MUSTTAIL return overflow_path(ARGS);
         }
@@ -227,7 +227,7 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
         Value dest;
-        if(unlikely(__builtin_smulll_overflow(a.as.integer, value_get_smi(b), &dest.as.integer)))
+        if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(), &dest.as.integer)))
         {
             MUSTTAIL return overflow_path(ARGS);
         }
@@ -243,7 +243,7 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        int64_t shift_count = value_get_smi(b);
+        int64_t shift_count = b.get_smi();
         if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
         accumulator.as.integer = a.as.integer << shift_count;
         /* TODO need to test overflow here */
@@ -258,7 +258,7 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        int64_t shift_count = value_get_smi(b);
+        int64_t shift_count = b.get_smi();
         if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
         accumulator.as.integer = a.as.integer << shift_count;
         /* TODO need to test overflow here */
@@ -276,7 +276,7 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
 
-        int64_t shift_count = value_get_smi(b);
+        int64_t shift_count = b.get_smi();
         if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
         accumulator.as.integer = a.as.integer >> shift_count;
         accumulator.as.integer &= ~value_not_smi_mask;
@@ -292,7 +292,7 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        int64_t shift_count = value_get_smi(b);
+        int64_t shift_count = b.get_smi();
         if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
         accumulator.as.integer = a.as.integer >> shift_count;
         accumulator.as.integer &= ~value_not_smi_mask;
@@ -395,7 +395,7 @@ namespace cl
     {
         const uint8_t *pc = &code_object->code[start_pc];
         void *dispatch = reinterpret_cast<void *>(&dispatch_table);
-        Value accumulator = value_make_smi(0); // init accumulator to 0
+        Value accumulator = Value::from_smi(0); // init accumulator to 0
 
         StackFrame stack_frame; //temporarily make a stack frame here
 

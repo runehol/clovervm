@@ -21,7 +21,7 @@ static Value run_expression(const wchar_t *str)
 
 TEST(Interpreter, simple)
 {
-    Value expected = value_make_smi(15);
+    Value expected = Value::from_smi(15);
     Value actual = run_expression(L"1 + 2  *  (4 + 3)");
     EXPECT_EQ(expected, actual);
 }
@@ -29,7 +29,7 @@ TEST(Interpreter, simple)
 
 TEST(Interpreter, simple2)
 {
-    Value expected = value_make_smi(19);
+    Value expected = Value::from_smi(19);
     Value actual = run_expression(L"(1 << 4) + 3");
     EXPECT_EQ(expected, actual);
 }
@@ -43,7 +43,7 @@ TEST(Interpreter, simple3)
 
 TEST(Interpreter, simple4)
 {
-    Value expected = value_make_smi(-13);
+    Value expected = Value::from_smi(-13);
     Value actual = run_expression(L"1 - 2  *  (4 + 3)");
     EXPECT_EQ(expected, actual);
 }

@@ -23,36 +23,39 @@ namespace cl
 
     static inline void short_vector_init(CLShortVector *vec, Value count)
     {
-        assert(value_is_smi(count));
-        object_init_all_cells(&vec->obj, &cl_short_vector_klass, value_get_smi(count));
+        assert(count.is_smi());
+        object_init_all_cells(&vec->obj, &cl_short_vector_klass, count.get_smi());
         vec->count = count;
     }
 
     static inline Value short_vector_make(Value count)
     {
-        CLShortVector *vec = cl_alloc<CLShortVector>(sizeof(CLShortVector)+value_get_smi(count)*sizeof(Value));
+        CLShortVector *vec = cl_alloc<CLShortVector>(sizeof(CLShortVector)+count.get_smi()*sizeof(Value));
         short_vector_init(vec, count);
-        return value_make_oop(&vec->obj);
+        return Value::from_oop(&vec->obj);
     }
 
 
     static inline Value short_vector_get(const CLShortVector *vec, Value index)
     {
         // TODO make these exceptions
-        assert(value_is_smi(index) && index.as.integer >= value_make_smi(0).as.integer && index.as.integer < vec->count.as.integer);
+        assert(index.is_smi() && index.as.integer >= Value::from_smi(0).as.integer && index.as.integer < vec->count.as.integer);
 
-        Value v = vec->array[value_get_smi(index)];
-        cl_decref(index);
-        return cl_incref(v);
+        Value v = vec->array[index.get_smi()];
+        return v;
     }
 
     static inline void short_vector_mutating_set(CLShortVector *vec, Value index, Value elem)
     {
         // TODO make these exceptions
-        assert(value_is_smi(index) && index.as.integer >= 0 && index.as.integer < vec->count.as.integer);
+        assert(index.is_smi() && index.as.integer >= 0 && index.as.integer < vec->count.as.integer);
 
-        vec->array[value_get_smi(index)] = elem;
-        cl_decref(index);
+        int64_t idx = index.get_smi();
+
+        // make sure we incref the new value before decrefing the old value, in case we're assigning the same value
+        Value old_val = vec->array[idx];
+        vec->array[idx] = incref(elem);
+        decref(old_val);
     }
 
 }

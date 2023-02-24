@@ -123,14 +123,14 @@ namespace cl
 
                 OpTableEntry entry = get_operator_entry(kind.operator_kind);
 
-                if(entry.binary_acc_smi != Bytecode::Invalid && av.kinds[children.rhs] == NumericalConstant && value_is_smi8(av.constants[children.rhs]))
+                if(entry.binary_acc_smi != Bytecode::Invalid && av.kinds[children.rhs] == NumericalConstant && av.constants[children.rhs].is_smi8())
                 {
                     codegen_node(children.lhs, mode);
-                    code_obj.emplace_back(source_offset, entry.binary_acc_smi, value_get_smi(av.constants[children.rhs]));
-                } else if(entry.binary_smi_acc != Bytecode::Invalid && av.kinds[children.lhs] == NumericalConstant && value_is_smi8(av.constants[children.lhs]))
+                    code_obj.emplace_back(source_offset, entry.binary_acc_smi, av.constants[children.rhs].get_smi());
+                } else if(entry.binary_smi_acc != Bytecode::Invalid && av.kinds[children.lhs] == NumericalConstant && av.constants[children.lhs].is_smi8())
                 {
                     codegen_node(children.rhs, mode);
-                    code_obj.emplace_back(source_offset, entry.binary_smi_acc, value_get_smi(av.constants[children.lhs]));
+                    code_obj.emplace_back(source_offset, entry.binary_smi_acc, av.constants[children.lhs].get_smi());
                 } else {
                     codegen_node(children.lhs, mode);
                     TemporaryReg temp_reg(this);
@@ -167,9 +167,9 @@ namespace cl
                 case AstOperatorKind::NUMBER:
                 {
                     Value val = av.constants[node_idx];
-                    if(value_is_smi8(val))
+                    if(val.is_smi8())
                     {
-                        code_obj.emplace_back(source_offset, Bytecode::LdaSmi, value_get_smi(val));
+                        code_obj.emplace_back(source_offset, Bytecode::LdaSmi, val.get_smi());
                     } else {
                         uint32_t constant_idx = code_obj.allocate_constant(val);
                         code_obj.emplace_back(source_offset, Bytecode::LdaConstant, constant_idx);
