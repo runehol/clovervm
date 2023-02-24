@@ -1,11 +1,10 @@
 #ifndef CL_REFCOUNT_H
 #define CL_REFCOUNT_H
 
-#include <stdatomic.h>
-
 #include "value.h"
 #include "object.h"
 #include "alloc.h"
+#include "thread_state.h"
 
 
 namespace cl
@@ -29,8 +28,7 @@ namespace cl
         {
             if(--v.as.ptr->refcount == 0)
             {
-                // todo add to zero count table instead
-                cl_free(v.as.ptr);
+                ThreadState::add_to_active_zero_count_table(v);
             }
         }
     }
