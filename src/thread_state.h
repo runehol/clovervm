@@ -5,13 +5,14 @@
 #include <memory>
 
 #include "value.h"
+#include "heap.h"
 
 namespace cl
 {
 
 
     class VirtualMachine;
-    class CodeObject;
+    struct CodeObject;
 
     class ThreadState
     {
@@ -30,12 +31,19 @@ namespace cl
             return current_thread;
         }
 
+        ThreadLocalHeap &get_refcount_heap() { return refcount_heap; }
+
+
     private:
         VirtualMachine *machine;
 
-        std::vector<Value> stack;
+        ThreadLocalHeap refcount_heap;
 
+        std::vector<Value> stack;
         std::vector<Value> zero_count_table;
+
+
+
 
         static thread_local ThreadState *current_thread;
 

@@ -1,4 +1,6 @@
 #include "thread_state.h"
+#include "virtual_machine.h"
+#include "interpreter.h"
 
 namespace cl
 {
@@ -8,6 +10,7 @@ namespace cl
 
     ThreadState::ThreadState(VirtualMachine *_machine)
         : machine(_machine),
+          refcount_heap(&machine->get_refcount_global_heap()),
           stack(10000)
     {
 
@@ -21,21 +24,20 @@ namespace cl
 
         try {
             Value result = run_interpreter(obj, 0);
+            current_thread = nullptr;
+            return result;
 
-        } catch()
+        } catch(...)
         {
             current_thread = nullptr;
             throw;
         }
-
-        current_thread = nullptr;
-        return result;
     }
 
     void ThreadState::add_to_active_zero_count_table(Value v)
     {
         ThreadState *ts = ThreadState::get_active();
-        zero_count_table.push_back(v);
+        ts->zero_count_table.push_back(v);
     }
 
 

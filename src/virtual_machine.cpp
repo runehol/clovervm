@@ -5,6 +5,11 @@ namespace cl
 {
 
     VirtualMachine::VirtualMachine()
+        : refcount_global_heap(GlobalHeap::refcount_heap()),
+          immortal_global_heap(GlobalHeap::immortal_heap()),
+          interned_global_heap(GlobalHeap::interned_heap()),
+          immortal_heap(&immortal_global_heap),
+          interned_heap(&interned_global_heap)
     {
         // make the main thread
         make_new_thread();

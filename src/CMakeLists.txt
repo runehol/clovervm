@@ -30,6 +30,8 @@ add_library(libclovervm STATIC
 	slab_allocator.h
 	str.cpp
 	str.h
+	thread_state.cpp
+	thread_state.h
 	tokenizer.cpp
 	value.h
 
