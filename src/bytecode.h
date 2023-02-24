@@ -29,7 +29,7 @@ namespace cl
         IntDiv,
         Pow,
         LeftShift,
-        RightShift,
+        RightShift, //arithmetic shift
         Mod,
         BitwiseOr,
         BitwiseAnd,
@@ -43,7 +43,7 @@ namespace cl
         IntDivSmi,
         PowSmi,
         LeftShiftSmi,
-        RightShiftSmi,
+        RightShiftSmi, //arithmetic shift
         ModSmi,
         BitwiseOrSmi,
         BitwiseAndSmi,

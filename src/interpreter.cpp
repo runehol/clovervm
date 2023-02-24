@@ -62,6 +62,11 @@ namespace cl
         throw std::runtime_error("Unknown opcode");
     }
 
+    NOINLINE CLValue raise_value_error_negative_shift_count(PARAMS)
+    {
+        throw std::runtime_error("ValueError: negative shift count");
+    }
+
     NOINLINE static CLValue slow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
@@ -205,7 +210,7 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
         CLValue dest;
-        if(unlikely(__builtin_smulll_overflow(a.v, b.v>>5, &dest.v)))
+        if(unlikely(__builtin_smulll_overflow(a.v, value_get_smi(b), &dest.v)))
         {
             MUSTTAIL return overflow_path(ARGS);
         }
@@ -222,7 +227,7 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
         CLValue dest;
-        if(unlikely(__builtin_smulll_overflow(a.v, b.v>>5, &dest.v)))
+        if(unlikely(__builtin_smulll_overflow(a.v, value_get_smi(b), &dest.v)))
         {
             MUSTTAIL return overflow_path(ARGS);
         }
@@ -230,6 +235,74 @@ namespace cl
 
         COMPLETE();
     }
+
+    static CLValue op_left_shift(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+        if(unlikely(A_OR_B_NOT_SMI()))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+        int64_t shift_count = value_get_smi(b);
+        if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
+        accumulator.v = a.v << shift_count;
+        /* TODO need to test overflow here */
+
+        COMPLETE();
+    }
+
+    static CLValue op_left_shift_smi(PARAMS)
+    {
+        START_BINARY_ACC_SMI();
+        if(unlikely(A_NOT_SMI()))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+        int64_t shift_count = value_get_smi(b);
+        if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
+        accumulator.v = a.v << shift_count;
+        /* TODO need to test overflow here */
+
+        COMPLETE();
+    }
+
+
+
+    static CLValue op_right_shift(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+        if(unlikely(A_OR_B_NOT_SMI()))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        int64_t shift_count = value_get_smi(b);
+        if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
+        accumulator.v = a.v >> shift_count;
+        accumulator.v &= ~cl_not_smi_mask;
+
+
+        COMPLETE();
+    }
+
+    static CLValue op_right_shift_smi(PARAMS)
+    {
+        START_BINARY_ACC_SMI();
+        if(unlikely(A_NOT_SMI()))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+        int64_t shift_count = value_get_smi(b);
+        if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
+        accumulator.v = a.v >> shift_count;
+        accumulator.v &= ~cl_not_smi_mask;
+
+        COMPLETE();
+    }
+
+
+
+
 
     static CLValue op_negate(PARAMS)
     {
@@ -300,6 +373,12 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::SubSmi, op_sub_smi);
         SET_TABLE_ENTRY(Bytecode::Mul, op_mul);
         SET_TABLE_ENTRY(Bytecode::MulSmi, op_mul_smi);
+
+        SET_TABLE_ENTRY(Bytecode::LeftShift, op_left_shift);
+        SET_TABLE_ENTRY(Bytecode::LeftShiftSmi, op_left_shift_smi);
+        SET_TABLE_ENTRY(Bytecode::RightShift, op_right_shift);
+        SET_TABLE_ENTRY(Bytecode::RightShiftSmi, op_right_shift_smi);
+
 
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
