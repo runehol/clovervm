@@ -45,8 +45,8 @@ namespace cl
 
 
 
-#define A_NOT_SMI() ((a.v & cl_tag_mask) != 0)
-#define A_OR_B_NOT_SMI() (((a.v | b.v) & cl_tag_mask) != 0)
+#define A_NOT_SMI() ((a.v & cl_not_smi_mask) != 0)
+#define A_OR_B_NOT_SMI() (((a.v | b.v) & cl_not_smi_mask) != 0)
 
 
 
@@ -248,6 +248,27 @@ namespace cl
         COMPLETE();
     }
 
+    static CLValue op_not(PARAMS)
+    {
+        START_UNARY_ACC();
+        if(unlikely((a.v & cl_ptr_mask) != 0))
+        {
+            // this is not an inlined type, go to the slow path
+            MUSTTAIL return slow_path(ARGS);
+        }
+        // however, if this is an inlined type, we can simply test for truthiness using a mask and negate
+
+        if((a.v & cl_truthy_mask) != 0)
+        {
+            accumulator = cl_False;
+        } else {
+            accumulator = cl_True;
+        }
+        COMPLETE();
+
+
+    }
+
     static CLValue op_return(PARAMS)
     {
         START(1);
@@ -279,7 +300,10 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::SubSmi, op_sub_smi);
         SET_TABLE_ENTRY(Bytecode::Mul, op_mul);
         SET_TABLE_ENTRY(Bytecode::MulSmi, op_mul_smi);
+
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
+        SET_TABLE_ENTRY(Bytecode::Not, op_not);
+
         SET_TABLE_ENTRY(Bytecode::Return, op_return);
         return tbl;
     }

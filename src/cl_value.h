@@ -32,19 +32,26 @@ struct CLObject;
 
 */
 
-static const uint64_t cl_tag_bits = 5;
-static const uint64_t cl_tag_mask = 0x1f;
-static const uint64_t cl_refcounted_ptr_tag = 0x10;
-static const uint64_t cl_permanent_ptr_tag  = 0x08;
-static const uint64_t cl_interned_ptr_tag   = 0x04;
-static const uint64_t cl_special_tag        = 0x02;
-static const uint64_t cl_truthy_tag          = 0xffffffffffffffe1ull;
-static const uint64_t cl_ptr_mask = cl_refcounted_ptr_tag|cl_permanent_ptr_tag|cl_interned_ptr_tag;
+static constexpr uint64_t cl_tag_bits = 5;
+static constexpr uint64_t cl_tag_mask = 0x1f;
+static constexpr uint64_t cl_refcounted_ptr_tag = 0x10;
+static constexpr uint64_t cl_permanent_ptr_tag  = 0x08;
+static constexpr uint64_t cl_interned_ptr_tag   = 0x04;
+static constexpr uint64_t cl_special_tag        = 0x02;
+static constexpr uint64_t cl_truthy_mask          = 0xffffffffffffffe1ull;
+static constexpr uint64_t cl_ptr_mask = cl_refcounted_ptr_tag|cl_permanent_ptr_tag|cl_interned_ptr_tag;
+static constexpr uint64_t cl_not_smi_mask = cl_tag_mask;
+
 
 typedef union CLValue
 {
     long long v;
     struct CLObject *ptr;
+
+    bool operator==(CLValue o) const
+    {
+        return v == o.v;
+    }
 } CLValue;
 
 static inline bool value_is_smi(CLValue val)
@@ -98,11 +105,11 @@ static inline struct CLObject *value_get_ptr(CLValue val)
 
 static inline bool value_is_truthy(CLValue val)
 {
-    return (val.v&cl_truthy_tag) != 0;
+    return (val.v&cl_truthy_mask) != 0;
 }
 static inline bool value_is_falsy(CLValue val)
 {
-    return (val.v&cl_truthy_tag) == 0;
+    return (val.v&cl_truthy_mask) == 0;
 }
 
 static constexpr CLValue cl_None = (CLValue){.v=0x42};

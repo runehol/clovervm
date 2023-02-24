@@ -10,6 +10,7 @@ target_sources(test_clovervm PRIVATE
 	test_codegen.cpp
 	test_parser.cpp
 	test_tokenizer.cpp
+	test_interpreter.cpp
 	)
 
 target_link_libraries(test_clovervm PRIVATE gtest_main)
