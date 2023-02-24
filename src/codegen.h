@@ -1,7 +1,6 @@
 #ifndef CL_CODEGEN_H
 #define CL_CODEGEN_H
 
-#include <cassert>
 #include "code_object.h"
 #include "ast.h"
 namespace cl

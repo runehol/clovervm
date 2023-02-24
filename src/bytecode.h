@@ -61,6 +61,8 @@ namespace cl
         Invalid
     };
 
+    static constexpr size_t BytecodeTableSize = size_t(Bytecode::Invalid)+1;
+
 
 }
 
