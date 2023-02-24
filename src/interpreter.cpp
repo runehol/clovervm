@@ -62,16 +62,53 @@ namespace cl
         throw std::runtime_error("Unknown opcode");
     }
 
-    NOINLINE CLValue slow_path(PARAMS)
+    NOINLINE static CLValue slow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
     }
-    NOINLINE CLValue overflow_path(PARAMS)
+    NOINLINE static CLValue overflow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
     }
 
-    CLValue op_ldar(PARAMS)
+    static CLValue op_lda_constant(PARAMS)
+    {
+        START(2);
+        uint8_t const_offset = pc[1];
+        accumulator = code_object->constant_table[const_offset];
+        COMPLETE();
+    }
+
+    static CLValue op_lda_smi(PARAMS)
+    {
+        START(2);
+        int8_t smi = pc[1];
+        accumulator = value_make_smi(smi);
+        COMPLETE();
+    }
+
+    static CLValue op_lda_true(PARAMS)
+    {
+        START(1);
+        accumulator = cl_True;
+        COMPLETE();
+    }
+
+    static CLValue op_lda_false(PARAMS)
+    {
+        START(1);
+        accumulator = cl_False;
+        COMPLETE();
+    }
+
+    static CLValue op_lda_none(PARAMS)
+    {
+        START(1);
+        accumulator = cl_None;
+        COMPLETE();
+    }
+
+    static CLValue op_ldar(PARAMS)
     {
         START(2);
         uint8_t reg = pc[1];
@@ -79,7 +116,7 @@ namespace cl
         COMPLETE();
     }
 
-    CLValue op_star(PARAMS)
+    static CLValue op_star(PARAMS)
     {
         START(2);
         uint8_t reg = pc[1];
@@ -90,7 +127,7 @@ namespace cl
 
 
 
-    CLValue op_add_smi(PARAMS)
+    static CLValue op_add_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -107,7 +144,7 @@ namespace cl
     }
 
 
-    CLValue op_add(PARAMS)
+    static CLValue op_add(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -123,7 +160,7 @@ namespace cl
         COMPLETE();
     }
 
-    CLValue op_sub_smi(PARAMS)
+    static CLValue op_sub_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -144,7 +181,7 @@ namespace cl
 
 
 
-    CLValue op_sub(PARAMS)
+    static CLValue op_sub(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -160,7 +197,7 @@ namespace cl
         COMPLETE();
     }
 
-    CLValue op_mul(PARAMS)
+    static CLValue op_mul(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -177,7 +214,7 @@ namespace cl
         COMPLETE();
     }
 
-    CLValue op_mul_smi(PARAMS)
+    static CLValue op_mul_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -194,7 +231,7 @@ namespace cl
         COMPLETE();
     }
 
-    CLValue op_negate(PARAMS)
+    static CLValue op_negate(PARAMS)
     {
         START_UNARY_ACC();
         if(unlikely(A_NOT_SMI()))
@@ -211,7 +248,7 @@ namespace cl
         COMPLETE();
     }
 
-    CLValue op_return(PARAMS)
+    static CLValue op_return(PARAMS)
     {
         START(1);
 
@@ -231,6 +268,11 @@ namespace cl
 #define SET_TABLE_ENTRY(bytecode, fun) tbl.table[size_t(bytecode)] = fun
         SET_TABLE_ENTRY(Bytecode::Ldar, op_ldar);
         SET_TABLE_ENTRY(Bytecode::Star, op_star);
+        SET_TABLE_ENTRY(Bytecode::LdaConstant, op_lda_constant);
+        SET_TABLE_ENTRY(Bytecode::LdaSmi, op_lda_smi);
+        SET_TABLE_ENTRY(Bytecode::LdaTrue, op_lda_true);
+        SET_TABLE_ENTRY(Bytecode::LdaFalse, op_lda_false);
+        SET_TABLE_ENTRY(Bytecode::LdaNone, op_lda_none);
         SET_TABLE_ENTRY(Bytecode::Add, op_add);
         SET_TABLE_ENTRY(Bytecode::AddSmi, op_add_smi);
         SET_TABLE_ENTRY(Bytecode::Sub, op_sub);
