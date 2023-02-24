@@ -9,8 +9,6 @@ add_library(libclovervm STATIC
     cl_klass.cpp
     cl_klass.h
     cl_object.h
-    cl_persistent_list.cpp
-    cl_persistent_list.h
     cl_refcount.h
     cl_short_vector.cpp
     cl_short_vector.h
