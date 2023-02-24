@@ -289,7 +289,7 @@ namespace cl
             return kinds.size();
         }
 
-        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs=-1, int32_t rhs=-1, Value constant = cl_None)
+        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs=-1, int32_t rhs=-1, Value constant = Value::None())
         {
             int32_t idx = size();
             kinds.push_back(kind);

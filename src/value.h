@@ -62,6 +62,41 @@ namespace cl
             return val;
         }
 
+        static inline Value None()
+        {
+            Value val;
+            val.as.integer = 0x42;
+            return val;
+        }
+
+        static inline Value False()
+        {
+            Value val;
+            val.as.integer = 0x22;
+            return val;
+        }
+
+        static inline Value True()
+        {
+            Value val;
+            val.as.integer = 0x23;
+            return val;
+        }
+
+        static inline Value exception_marker()
+        {
+            Value val;
+            val.as.integer = 0x82; // special value to return if an exception has been thrown.
+            return val;
+        }
+
+        static inline Value not_present_marker(int32_t next_idx=-1)
+        {
+            Value val;
+            val.as.integer = (int64_t(next_idx) << 32) | 0x102; // special value to mark deleted/not present entries in scopes.
+            return val;
+        }
+
         union {
             long long integer;
             struct Object *ptr;
@@ -122,13 +157,8 @@ namespace cl
 
     };
 
-  
 
-    static constexpr Value cl_None = (Value){.as.integer=0x42};
-    static constexpr Value cl_False = (Value){.as.integer=0x22};
-    static constexpr Value cl_True = (Value){.as.integer=0x23};
-    static constexpr Value cl_exception_marker = (Value){.as.integer=0x82}; // special value to return if an exception has been thrown.
-    static constexpr Value cl_not_present_marker = (Value){.as.integer=0x102}; // special value to mark deleted/not present entries in scopes.
+
 
 }
 

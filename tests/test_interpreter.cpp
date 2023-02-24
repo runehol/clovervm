@@ -36,7 +36,7 @@ TEST(Interpreter, simple2)
 
 TEST(Interpreter, simple3)
 {
-    Value expected = cl_False;
+    Value expected = Value::False();
     Value actual = run_expression(L"not True");
     EXPECT_EQ(expected, actual);
 }

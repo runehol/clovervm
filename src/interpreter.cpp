@@ -95,21 +95,21 @@ namespace cl
     static Value op_lda_true(PARAMS)
     {
         START(1);
-        accumulator = cl_True;
+        accumulator = Value::True();
         COMPLETE();
     }
 
     static Value op_lda_false(PARAMS)
     {
         START(1);
-        accumulator = cl_False;
+        accumulator = Value::False();
         COMPLETE();
     }
 
     static Value op_lda_none(PARAMS)
     {
         START(1);
-        accumulator = cl_None;
+        accumulator = Value::None();
         COMPLETE();
     }
 
@@ -333,9 +333,9 @@ namespace cl
 
         if((a.as.integer & value_truthy_mask) != 0)
         {
-            accumulator = cl_False;
+            accumulator = Value::False();
         } else {
-            accumulator = cl_True;
+            accumulator = Value::True();
         }
         COMPLETE();
 
