@@ -5,6 +5,7 @@
 #include "token.h"
 #include "tokenizer.h"
 #include "compilation_unit.h"
+#include "virtual_machine.h"
 
 namespace cl
 {
@@ -388,6 +389,13 @@ namespace cl
         {
             switch(peek())
             {
+            case Token::NAME:
+            {
+                std::wstring name = std::wstring(string_for_name_token(*ast.compilation_unit, source_pos_for_token()));
+                Value v = vm.get_or_create_interned_string(name);
+                return ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE, source_pos_and_advance(), -1, -1, v);
+            }
+
             case Token::NUMBER:
             {
                 int64_t iv = std::stoll(std::wstring(string_for_number_token(*ast.compilation_unit, source_pos_for_token())));

@@ -40,6 +40,7 @@ namespace cl
         EXPRESSION_BINARY,
         EXPRESSION_UNARY,
         EXPRESSION_LITERAL,
+        EXPRESSION_VARIABLE_REFERENCE,
         SEQUENCE,
 
     };
@@ -75,6 +76,7 @@ namespace cl
 		case AstNodeKind::EXPRESSION_BINARY:
 		case AstNodeKind::EXPRESSION_UNARY:
 		case AstNodeKind::EXPRESSION_LITERAL:
+		case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
             return false;
 		case AstNodeKind::SEQUENCE:
             return false;
@@ -112,6 +114,7 @@ namespace cl
 		case AstNodeKind::EXPRESSION_BINARY:
 		case AstNodeKind::EXPRESSION_UNARY:
 		case AstNodeKind::EXPRESSION_LITERAL:
+		case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
             return true;
 		case AstNodeKind::SEQUENCE:
             return false;

@@ -32,7 +32,7 @@ namespace cl
         }
 
 
-        void *allocated_refcounted(size_t n_bytes) { return refcounted_heap.allocate(n_bytes); }
+        void *allocate_refcounted(size_t n_bytes) { return refcounted_heap.allocate(n_bytes); }
 
 
     private:

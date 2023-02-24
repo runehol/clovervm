@@ -57,6 +57,10 @@ namespace cl
         {
             return sizeof(String) + str.size()*sizeof(cl_wchar);
         }
+        static size_t size_for(const cl_wchar *str)
+        {
+            return sizeof(String) + wcslen(str)*sizeof(cl_wchar);
+        }
     };
 
     static inline bool operator==(const String &a, const std::wstring &b)
@@ -72,7 +76,6 @@ namespace cl
 
     static_assert(std::is_trivially_destructible_v<String>);
 
-    Value make_interned_string(const cl_wchar *data);
 }
 
 
