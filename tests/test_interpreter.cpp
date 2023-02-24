@@ -5,6 +5,7 @@
 #include "parser.h"
 #include "codegen.h"
 #include "interpreter.h"
+#include "virtual_machine.h"
 #include <fmt/xchar.h>
 
 using namespace cl;
@@ -12,9 +13,10 @@ using namespace cl;
 
 static Value run_expression(const wchar_t *str)
 {
+    VirtualMachine vm;
     CompilationUnit input(str);
     TokenVector tv = tokenize(input);
-    AstVector av = parse(tv, StartRule::Eval);
+    AstVector av = parse(vm, tv, StartRule::Eval);
     CodeObject code_obj = generate_code(av);
     return run_interpreter(&code_obj, 0);
 }

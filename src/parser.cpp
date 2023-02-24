@@ -13,8 +13,8 @@ namespace cl
     class Parser
     {
     public:
-        Parser(const TokenVector &_token_vec)
-            : token_vec(_token_vec), ast(token_vec.compilation_unit)
+        Parser(VirtualMachine &_vm, const TokenVector &_token_vec)
+            : vm(_vm), token_vec(_token_vec), ast(token_vec.compilation_unit)
         {}
 
         AstVector parse(StartRule start_rule)
@@ -42,6 +42,7 @@ namespace cl
 
     private:
 
+        VirtualMachine &vm;
         const TokenVector &token_vec;
         AstVector ast;
         size_t token_pos = 0;
@@ -482,9 +483,9 @@ namespace cl
     };
 
 
-    AstVector parse(const TokenVector &tv, StartRule start_rule)
+    AstVector parse(VirtualMachine &vm, const TokenVector &tv, StartRule start_rule)
     {
-        Parser parser(tv);
+        Parser parser(vm, tv);
 
         return parser.parse(start_rule);
     }

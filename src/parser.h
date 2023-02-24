@@ -6,6 +6,8 @@
 namespace cl
 {
 
+    class VirtualMachine;
+
     struct TokenVector;
 
     enum class StartRule
@@ -18,7 +20,7 @@ namespace cl
     };
 
 
-    AstVector parse(const TokenVector &tv, StartRule start_rule);
+    AstVector parse(VirtualMachine &vm, const TokenVector &tv, StartRule start_rule);
 
 
 }
