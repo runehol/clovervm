@@ -3,7 +3,6 @@
 
 #include "value.h"
 #include "object.h"
-#include "alloc.h"
 #include "thread_state.h"
 
 

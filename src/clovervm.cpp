@@ -2,7 +2,6 @@
 
 #include "object.h"
 #include "value.h"
-#include "alloc.h"
 #include "short_vector.h"
 #include "string.h"
 #include "refcount.h"

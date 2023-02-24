@@ -2,7 +2,6 @@
 #define CL_STRING_H
 
 #include "object.h"
-#include "alloc.h"
 #include "value.h"
 #include <stdint.h>
 #include <assert.h>

@@ -6,7 +6,6 @@
 #include "refcount.h"
 #include <stdint.h>
 #include <assert.h>
-#include "alloc.h"
 
 namespace cl
 {
