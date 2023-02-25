@@ -394,23 +394,23 @@ namespace cl
             {
                 std::wstring name = std::wstring(string_for_name_token(*ast.compilation_unit, source_pos_for_token()));
                 Value v = vm.get_or_create_interned_string(name);
-                return ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE, source_pos_and_advance(), -1, -1, v);
+                return ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE, source_pos_and_advance(), v);
             }
 
             case Token::NUMBER:
             {
                 int64_t iv = std::stoll(std::wstring(string_for_number_token(*ast.compilation_unit, source_pos_for_token())));
                 Value v = Value::from_smi(iv);
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER), source_pos_and_advance(), -1, -1, v);
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER), source_pos_and_advance(), v);
             }
             case Token::STRING:
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::STRING), source_pos_and_advance(), -1, -1, Value::None());
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::STRING), source_pos_and_advance(), Value::None());
             case Token::NONE:
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NONE), source_pos_and_advance(), -1, -1, Value::None());
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NONE), source_pos_and_advance(), Value::None());
             case Token::TRUE:
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::TRUE), source_pos_and_advance(), -1, -1, Value::True());
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::TRUE), source_pos_and_advance(), Value::True());
             case Token::FALSE:
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::FALSE), source_pos_and_advance(), -1, -1, Value::False());
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::FALSE), source_pos_and_advance(), Value::False());
             case Token::LPAR:
             {
                 advance();
@@ -464,7 +464,12 @@ namespace cl
 
         int32_t statements()
         {
-            return -1;
+            int32_t source_pos = source_pos_for_token();
+            AstChildren children;
+            do {
+                children.push_back(statement());
+            } while(peek() != Token::DEDENT && peek() != Token::ENDMARKER);
+            return ast.emplace_back(AstNodeKind::STATEMENT_SEQUENCE, source_pos, children);
         }
 
         int32_t file()

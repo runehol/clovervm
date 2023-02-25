@@ -277,32 +277,52 @@ namespace cl
             return kinds.size();
         }
 
-        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs=-1, int32_t rhs=-1, Value constant = Value::None())
+        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs, int32_t rhs)
         {
             int32_t idx = size();
+            AstChildren ch;
+            ch.push_back(lhs);
+            ch.push_back(rhs);
+
             kinds.push_back(kind);
             source_offsets.push_back(source_offset);
+            children.emplace_back(ch);
+            constants.emplace_back(Value::None());
+            return idx;
+        }
 
+        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs)
+        {
+            int32_t idx = size();
+            AstChildren ch;
+            ch.push_back(lhs);
+
+            kinds.push_back(kind);
+            source_offsets.push_back(source_offset);
+            children.emplace_back(ch);
+            constants.emplace_back(Value::None());
+            return idx;
+        }
+
+        int32_t emplace_back(AstKind kind, uint32_t source_offset, Value constant)
+        {
+            int32_t idx = size();
+
+            kinds.push_back(kind);
+            source_offsets.push_back(source_offset);
             children.emplace_back();
-            if(lhs != -1)
-            {
-                children.back().push_back(lhs);
-                if(rhs != -1)
-                {
-                    children.back().push_back(rhs);
-                }
-            }
             constants.emplace_back(constant);
             return idx;
         }
 
-        int32_t emplace_back(AstKind kind, uint32_t source_offset, AstChildren child_vec, Value constant = Value::None())
+
+        int32_t emplace_back(AstKind kind, uint32_t source_offset, AstChildren child_vec)
         {
             int32_t idx = size();
             kinds.push_back(kind);
             source_offsets.push_back(source_offset);
             children.emplace_back(child_vec);
-            constants.emplace_back(constant);
+            constants.emplace_back(Value::None());
             return idx;
         }
 
