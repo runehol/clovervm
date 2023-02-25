@@ -109,19 +109,18 @@ namespace cl
         // now the parser itself
 
         // helper to build sequences
-        int32_t sequence_until_stop_token(int32_t (Parser::*parse_member)(), Token separator, Token stop)
+        AstChildren sequence_until_stop_token(int32_t initial, int32_t (Parser::*parse_member)(), Token separator, Token stop)
         {
-            if(match(separator))
+            AstChildren children;
+            children.push_back(initial);
+            while(match(separator))
             {
-                if(peek() != stop)
-                {
-                    uint32_t pos = source_pos_and_advance();
-                    int32_t member = (this->*parse_member)();
-                    return ast.emplace_back(AstNodeKind::SEQUENCE, pos, member, sequence_until_stop_token(parse_member, separator, stop));
+                if(peek() == stop) break;
 
-                }
+                int32_t member = (this->*parse_member)();
+                children.push_back(member);
             }
-            return -1;
+            return children;
 
         }
 
@@ -138,7 +137,8 @@ namespace cl
             int32_t result = star_expression();
             if(peek() == Token::COMMA)
             {
-                return ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE, tuple_start_pos, result, sequence_until_stop_token(&Parser::star_expression, Token::COMMA, Token::NEWLINE));
+                AstChildren children = sequence_until_stop_token(result, &Parser::star_expression, Token::COMMA, Token::NEWLINE);
+                return ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE, tuple_start_pos, children);
             } else {
                 return result;
             }
@@ -155,7 +155,8 @@ namespace cl
             int32_t result = expression();
             if(peek() == Token::COMMA)
             {
-                return ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE, tuple_start_pos, result, sequence_until_stop_token(&Parser::expression, Token::COMMA, Token::NEWLINE));
+                 AstChildren children = sequence_until_stop_token(result, &Parser::expression, Token::COMMA, Token::NEWLINE);
+                return ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE, tuple_start_pos, children);
             } else {
                 return result;
             }

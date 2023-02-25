@@ -109,18 +109,18 @@ struct fmt::formatter<cl::AstVector>
         switch(kind.node_kind)
         {
         case cl::AstNodeKind::EXPRESSION_ASSIGN:
-            render_node(av, out, children.lhs, indent, self_precedence);
+            render_node(av, out, children[0], indent, self_precedence);
             format_to(out, " {}= ", kind.operator_kind);
-            render_node(av, out, children.rhs, indent, self_precedence);
+            render_node(av, out, children[1], indent, self_precedence);
             break;
         case cl::AstNodeKind::EXPRESSION_BINARY:
-            render_node(av, out, children.lhs, indent, self_precedence);
+            render_node(av, out, children[0], indent, self_precedence);
             format_to(out, " {} ", kind.operator_kind);
-            render_node(av, out, children.rhs, indent, self_precedence);
+            render_node(av, out, children[1], indent, self_precedence);
             break;
         case cl::AstNodeKind::EXPRESSION_UNARY:
             format_to(out, "{} ", kind.operator_kind);
-            render_node(av, out, children.lhs, indent, self_precedence);
+            render_node(av, out, children[0], indent, self_precedence);
             break;
         case cl::AstNodeKind::EXPRESSION_LITERAL:
             format_to(out, "{}", kind.operator_kind);

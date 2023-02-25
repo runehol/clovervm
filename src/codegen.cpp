@@ -123,20 +123,20 @@ namespace cl
 
                 OpTableEntry entry = get_operator_entry(kind.operator_kind);
 
-                if(entry.binary_acc_smi != Bytecode::Invalid && av.kinds[children.rhs] == NumericalConstant && av.constants[children.rhs].is_smi8())
+                if(entry.binary_acc_smi != Bytecode::Invalid && av.kinds[children[1]] == NumericalConstant && av.constants[children[1]].is_smi8())
                 {
-                    codegen_node(children.lhs, mode);
-                    code_obj.emplace_back(source_offset, entry.binary_acc_smi, av.constants[children.rhs].get_smi());
-                } else if(entry.binary_smi_acc != Bytecode::Invalid && av.kinds[children.lhs] == NumericalConstant && av.constants[children.lhs].is_smi8())
+                    codegen_node(children[0], mode);
+                    code_obj.emplace_back(source_offset, entry.binary_acc_smi, av.constants[children[1]].get_smi());
+                } else if(entry.binary_smi_acc != Bytecode::Invalid && av.kinds[children[0]] == NumericalConstant && av.constants[children[0]].is_smi8())
                 {
-                    codegen_node(children.rhs, mode);
-                    code_obj.emplace_back(source_offset, entry.binary_smi_acc, av.constants[children.lhs].get_smi());
+                    codegen_node(children[1], mode);
+                    code_obj.emplace_back(source_offset, entry.binary_smi_acc, av.constants[children[0]].get_smi());
                 } else {
-                    codegen_node(children.lhs, mode);
+                    codegen_node(children[0], mode);
                     TemporaryReg temp_reg(this);
                     code_obj.emplace_back(source_offset, Bytecode::Star, temp_reg);
 
-                    codegen_node(children.rhs, mode);
+                    codegen_node(children[1], mode);
                     code_obj.emplace_back(source_offset, entry.standard, temp_reg);
                 }
                 break;
@@ -144,7 +144,7 @@ namespace cl
             case cl::AstNodeKind::EXPRESSION_UNARY:
             {
                 OpTableEntry entry = get_operator_entry(kind.operator_kind);
-                codegen_node(children.lhs, mode);
+                codegen_node(children[0], mode);
                 code_obj.emplace_back(source_offset, entry.standard);
                 break;
             }

@@ -41,7 +41,6 @@ namespace cl
         EXPRESSION_UNARY,
         EXPRESSION_LITERAL,
         EXPRESSION_VARIABLE_REFERENCE,
-        SEQUENCE,
 
     };
 
@@ -77,8 +76,6 @@ namespace cl
 		case AstNodeKind::EXPRESSION_UNARY:
 		case AstNodeKind::EXPRESSION_LITERAL:
 		case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
-            return false;
-		case AstNodeKind::SEQUENCE:
             return false;
         }
     }
@@ -116,8 +113,6 @@ namespace cl
 		case AstNodeKind::EXPRESSION_LITERAL:
 		case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
             return true;
-		case AstNodeKind::SEQUENCE:
-            return false;
         }
     }
 
@@ -259,17 +254,7 @@ namespace cl
 
     }
 
-
-    struct AstChildren
-    {
-        constexpr AstChildren(int32_t _lhs=-1, int32_t _rhs=-1):
-            lhs(_lhs),
-            rhs(_rhs)
-        {}
-
-        int32_t lhs;
-        int32_t rhs;
-    };
+    using AstChildren = absl::InlinedVector<int32_t, 4>;
 
     struct AstVector
     {
@@ -297,37 +282,30 @@ namespace cl
             int32_t idx = size();
             kinds.push_back(kind);
             source_offsets.push_back(source_offset);
-            children.emplace_back(lhs, rhs);
+
+            children.emplace_back();
+            if(lhs != -1)
+            {
+                children.back().push_back(lhs);
+                if(rhs != -1)
+                {
+                    children.back().push_back(rhs);
+                }
+            }
             constants.emplace_back(constant);
             return idx;
         }
 
-        absl::InlinedVector<int32_t, 4> extract_child_sequence(int32_t parent_idx)
+        int32_t emplace_back(AstKind kind, uint32_t source_offset, AstChildren child_vec, Value constant = Value::None())
         {
-            absl::InlinedVector<int32_t, 4> children;
-            while(true)
-            {
-                AstChildren ch = children[parent_idx];
-                if(ch.lhs != -1)
-                {
-                    assert(kinds[ch.lhs].node_kind != AstNodeKind::SEQUENCE);
-                    children.push_back(ch.lhs);
-                }
-
-                if(ch.rhs == -1)
-                {
-                    break;
-                } else if(kinds[ch.rhs].node_kind != AstNodeKind::SEQUENCE)
-                {
-                    children.push_back(ch.rhs);
-                    break;
-                } else {
-                    parent_idx = ch.rhs;
-                }
-            }
-
-            return children;
+            int32_t idx = size();
+            kinds.push_back(kind);
+            source_offsets.push_back(source_offset);
+            children.emplace_back(child_vec);
+            constants.emplace_back(constant);
+            return idx;
         }
+
 
 
     };
