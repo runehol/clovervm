@@ -426,9 +426,89 @@ namespace cl
             }
         }
 
-        int32_t simple_stmt()
+        int32_t assignment()
         {
             return -1;
+        }
+
+        int32_t return_stmt()
+        {
+            return -1;
+        }
+
+        int32_t import_stmt()
+        {
+            return -1;
+        }
+
+        int32_t del_stmt()
+        {
+            return -1;
+        }
+
+        int32_t yield_stmt()
+        {
+            return -1;
+        }
+
+        int32_t assert_stmt()
+        {
+            return -1;
+        }
+
+        int32_t break_stmt()
+        {
+            return -1;
+        }
+
+        int32_t continue_stmt()
+        {
+            return -1;
+        }
+
+        int32_t global_stmt()
+        {
+            return -1;
+        }
+
+        int32_t nonlocal_stmt()
+        {
+            return -1;
+        }
+
+
+        int32_t simple_stmt()
+        {
+            switch(peek())
+            {
+            case Token::NAME:
+            case Token::LPAR:
+                return assignment();
+
+            case Token::RETURN:
+                return return_stmt();
+            case Token::IMPORT:
+            case Token::FROM:
+                return import_stmt();
+
+            case Token::DEL:
+                return del_stmt();
+            case Token::YIELD:
+                return yield_stmt();
+            case Token::ASSERT:
+                return assert_stmt();
+            case Token::BREAK:
+                return break_stmt();
+            case Token::CONTINUE:
+                return continue_stmt();
+            case Token::GLOBAL:
+                return global_stmt();
+            case Token::NONLOCAL:
+                return nonlocal_stmt();
+
+            default:
+                return star_expressions();
+            }
         }
 
         int32_t simple_stmts()
