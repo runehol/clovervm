@@ -426,9 +426,29 @@ namespace cl
             }
         }
 
-        int32_t simple_statements()
+        int32_t simple_stmt()
         {
             return -1;
+        }
+
+        int32_t simple_stmts()
+        {
+            AstChildren children;
+            int32_t source_pos = source_pos_for_token();
+            do {
+
+                children.emplace_back(simple_stmt());
+
+            } while(match(Token::SEMI));
+
+            consume(Token::NEWLINE);
+
+            if(children.size() == 1)
+            {
+                return children[0];
+            } else {
+                return ast.emplace_back(AstNodeKind::STATEMENT_SEQUENCE, source_pos, children);
+            }
         }
 
 
@@ -455,7 +475,7 @@ namespace cl
                 return compound_statement();
 
             default:
-                return simple_statements();
+                return simple_stmts();
 
             }
 
