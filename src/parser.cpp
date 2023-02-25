@@ -54,6 +54,13 @@ namespace cl
             return token_vec.tokens[token_pos];
         };
 
+        Token peek2()
+        {
+            size_t pos2 = token_pos+1;
+            if(pos2 < token_vec.size()) return token_vec.tokens[pos2];
+            return Token::ENDMARKER;
+        };
+
         Token advance()
         {
             assert(token_pos < token_vec.size());
@@ -124,6 +131,22 @@ namespace cl
 
         }
 
+
+        int32_t block()
+        {
+            int32_t stmts = -1;
+            if(match(Token::NEWLINE))
+            {
+                consume(Token::INDENT);
+                stmts = statements();
+                consume(Token::DEDENT);
+            } else {
+                stmts = simple_stmts();
+            }
+            return stmts;
+
+
+        }
         // expressions
 
         int32_t genexp()
@@ -166,6 +189,30 @@ namespace cl
         int32_t expression()
         {
             return disjunction();
+        }
+
+        int32_t assignment_expression()
+        {
+            if(peek() != Token::NAME)
+            {
+                throw std::runtime_error(std::string("Expected token ") + to_string(Token::NAME) + ", got " + to_string(peek()));
+            }
+            int32_t lhs = atom(); // smallest rule that just consumes a name and makes a nice node for us
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::COLONEQUAL);
+            int32_t rhs = expression();
+            return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_ASSIGN, AstOperatorKind::NOP), source_pos, lhs, rhs);
+        }
+
+
+        int32_t named_expression()
+        {
+            if(peek() == Token::NAME && peek2() == Token::COLONEQUAL)
+            {
+                return assignment_expression();
+            } else {
+                return expression();
+            }
         }
 
         int32_t disjunction()
@@ -598,10 +645,104 @@ namespace cl
             }
         }
 
+        int32_t function_def()
+        {
+            return -1;
+        }
+
+        int32_t if_stmt()
+        {
+            AstChildren children;
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::IF);
+            children.push_back(named_expression());
+            consume(Token::COLON);
+            children.push_back(block());
+            while(peek() == Token::ELIF)
+            {
+                consume(Token::ELIF);
+                children.push_back(named_expression());
+                consume(Token::COLON);
+                children.push_back(block());
+            }
+            if(peek() == Token::ELSE)
+            {
+                consume(Token::ELSE);
+                consume(Token::COLON);
+                children.push_back(block());
+            }
+            return ast.emplace_back(AstNodeKind::STATEMENT_IF, source_pos, children);
+        }
+
+        int32_t class_def()
+        {
+            return -1;
+        }
+
+        int32_t with_stmt()
+        {
+            return -1;
+        }
+
+        int32_t for_stmt()
+        {
+            return -1;
+        }
+
+        int32_t try_stmt()
+        {
+            return -1;
+        }
+
+        int32_t while_stmt()
+        {
+            AstChildren children;
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::WHILE);
+            children.push_back(named_expression());
+            consume(Token::COLON);
+            children.push_back(block());
+
+            if(peek() == Token::ELSE)
+            {
+                consume(Token::ELSE);
+                consume(Token::COLON);
+                children.push_back(block());
+            }
+            return ast.emplace_back(AstNodeKind::STATEMENT_WHILE, source_pos, children);
+        }
+
+        int32_t match_stmt()
+        {
+            return -1;
+        }
 
         int32_t compound_statement()
         {
-            return -1;
+            switch(peek())
+            {
+            case Token::DEF:
+            case Token::AT:
+            case Token::ASYNC:
+                return function_def();
+            case Token::IF:
+                return if_stmt();
+            case Token::CLASS:
+                return class_def();
+            case Token::WITH:
+                return with_stmt();
+            case Token::FOR:
+                return for_stmt();
+            case Token::TRY:
+                return try_stmt();
+            case Token::WHILE:
+                return while_stmt();
+
+            default:
+                return match_stmt();
+
+
+            }
         }
 
 
