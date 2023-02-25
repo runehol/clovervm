@@ -428,8 +428,79 @@ namespace cl
 
         int32_t assignment()
         {
+            int32_t lhs = star_expressions();
+            /* TODO check if single target */
+            AstOperatorKind op_kind = AstOperatorKind::FALSE;
+            switch(peek())
+            {
+            case Token::EQUAL:
+                op_kind = AstOperatorKind::NOP;
+                break;
+            case Token::PLUSEQUAL:
+                op_kind = AstOperatorKind::ADD;
+                break;
+            case Token::MINEQUAL:
+                op_kind = AstOperatorKind::SUBTRACT;
+                break;
+            case Token::STAREQUAL:
+                op_kind = AstOperatorKind::MULTIPLY;
+                break;
+            case Token::ATEQUAL:
+                op_kind = AstOperatorKind::MATMULT;
+                break;
+            case Token::SLASHEQUAL:
+                op_kind = AstOperatorKind::DIVIDE;
+                break;
+            case Token::PERCENTEQUAL:
+                op_kind = AstOperatorKind::MODULO;
+                break;
+            case Token::AMPEREQUAL:
+                op_kind = AstOperatorKind::BITWISE_AND;
+                break;
+            case Token::VBAREQUAL:
+                op_kind = AstOperatorKind::BITWISE_OR;
+                break;
+            case Token::CIRCUMFLEXEQUAL:
+                op_kind = AstOperatorKind::BITWISE_XOR;
+                break;
+            case Token::LEFTSHIFTEQUAL:
+                op_kind = AstOperatorKind::LEFTSHIFT;
+                break;
+            case Token::RIGHTSHIFTEQUAL:
+                op_kind = AstOperatorKind::RIGHTSHIFT;
+                break;
+            case Token::DOUBLESTAREQUAL:
+                op_kind = AstOperatorKind::POWER;
+                break;
+            case Token::DOUBLESLASHEQUAL:
+                op_kind = AstOperatorKind::INT_DIVIDE;
+                break;
+            default:
+                return lhs;
+            }
+
+            int32_t source_pos = source_pos_and_advance();
+            int32_t rhs = annotated_rhs();
+            return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_ASSIGN, op_kind), source_pos, lhs, rhs);
+
+        }
+
+        int32_t yield_expr()
+        {
             return -1;
         }
+
+        int32_t annotated_rhs()
+        {
+            switch(peek())
+            {
+            case Token::YIELD:
+                return yield_expr();
+            default:
+                return star_expressions();
+            }
+        }
+
 
         int32_t return_stmt()
         {
@@ -481,10 +552,6 @@ namespace cl
         {
             switch(peek())
             {
-            case Token::NAME:
-            case Token::LPAR:
-                return assignment();
-
             case Token::RETURN:
                 return return_stmt();
             case Token::IMPORT:
@@ -507,7 +574,7 @@ namespace cl
                 return nonlocal_stmt();
 
             default:
-                return star_expressions();
+                return assignment();
             }
         }
 
