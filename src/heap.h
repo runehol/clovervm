@@ -31,12 +31,12 @@ namespace cl
 
         static GlobalHeap immortal_heap(size_t slab_size = DefaultSlabSize)
         {
-            return GlobalHeap(value_immportal_ptr_tag, slab_size);
+            return GlobalHeap(value_immortal_ptr_tag, slab_size);
         }
 
         static GlobalHeap interned_heap(size_t slab_size = DefaultSlabSize)
         {
-            return GlobalHeap(value_immportal_ptr_tag|value_interned_ptr_tag, slab_size);
+            return GlobalHeap(value_immortal_ptr_tag|value_interned_ptr_tag, slab_size);
         }
 
         void *allocate_large_object(size_t n_bytes); // slow path allocation for large objects

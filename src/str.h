@@ -73,6 +73,10 @@ namespace cl
     }
 
 
+    uint64_t string_hash(Value s);
+    bool string_eq(Value a, Value b);
+
+
     static_assert(std::is_trivially_destructible_v<String>);
 
 }

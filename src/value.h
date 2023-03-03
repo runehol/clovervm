@@ -41,11 +41,11 @@ namespace cl
     static constexpr uint64_t value_tag_mask = 0x1f;
     static constexpr uint64_t value_ptr_granularity = value_tag_mask+1;
     static constexpr uint64_t value_refcounted_ptr_tag = 0x10;
-    static constexpr uint64_t value_immportal_ptr_tag  = 0x08;
+    static constexpr uint64_t value_immortal_ptr_tag  = 0x08;
     static constexpr uint64_t value_interned_ptr_tag   = 0x04;
     static constexpr uint64_t value_special_tag        = 0x02;
     static constexpr uint64_t value_truthy_mask          = 0xffffffffffffffe1ull;
-    static constexpr uint64_t value_ptr_mask = value_refcounted_ptr_tag|value_immportal_ptr_tag|value_interned_ptr_tag;
+    static constexpr uint64_t value_ptr_mask = value_refcounted_ptr_tag|value_immortal_ptr_tag|value_interned_ptr_tag;
     static constexpr uint64_t value_not_smi_mask = value_tag_mask;
 
 
