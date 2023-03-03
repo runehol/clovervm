@@ -11,6 +11,8 @@ add_library(libclovervm STATIC
 	compilation_unit.h
 	heap.cpp
 	heap.h
+	indirect_dict.cpp
+	indirect_dict.h
 	interpreter.cpp
 	parser.cpp
 	parser.h

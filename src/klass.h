@@ -11,7 +11,7 @@ namespace cl
 
     struct Klass : public Object
     {
-        Klass(const cl_wchar *_klass_name, arity_one_function str_fun)
+        constexpr Klass(const cl_wchar *_klass_name, arity_one_function str_fun)
             : Object(&cl_klass_klass, 0, 2),
               klass_name(_klass_name),
               str(str_fun)
