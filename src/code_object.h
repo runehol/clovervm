@@ -10,6 +10,36 @@
 namespace cl
 {
     struct CompilationUnit;
+    struct CodeObject;
+
+    class JumpTarget
+    {
+    public:
+        JumpTarget(CodeObject *_code_obj)
+            : code_obj(_code_obj), target(-1)
+        {}
+
+
+        void resolve();
+
+        void add_relocation(uint32_t pos)
+        {
+            if(target == -1)
+            {
+                unresolved_relocations.push_back(pos);
+            } else {
+                resolve_relocation(pos);
+            }
+        }
+
+    private:
+        void resolve_relocation(uint32_t pos);
+
+        CodeObject *code_obj;
+        int32_t target;
+        std::vector<uint32_t> unresolved_relocations;
+
+    };
 
     struct CodeObject
     {
@@ -71,6 +101,19 @@ namespace cl
             return result;
         }
 
+        uint32_t emit_jump(uint32_t source_offset, Bytecode c, JumpTarget &target)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            uint32_t pos = code.size();
+            emplace_back(source_offset, 0);
+            emplace_back(source_offset, 0);
+            target.add_relocation(pos);
+
+            return result;
+        }
+
+
 
         uint32_t allocate_constant(Value val)
         {
@@ -80,7 +123,35 @@ namespace cl
             return idx;
         }
 
+
+        void set_int16(uint32_t pos, int16_t v)
+        {
+            code[pos+0] = (v>>0)&0xff;
+            code[pos+1] = (v>>8)&0xff;
+
+        }
+
     };
+
+    inline void JumpTarget::resolve_relocation(uint32_t pos)
+    {
+        int32_t rel_dest = target - (pos + 2);
+        if(rel_dest != int16_t(rel_dest))
+        {
+            throw std::runtime_error("Relocation out of range");
+        }
+        code_obj->set_int16(pos, rel_dest);
+    }
+
+    inline void JumpTarget::resolve()
+    {
+        target = code_obj->size();
+        for(uint32_t pos: unresolved_relocations)
+        {
+            resolve_relocation(pos);
+        }
+        unresolved_relocations.clear();
+    }
 
 
 }

@@ -81,6 +81,17 @@ namespace cl
             Function
         };
 
+        struct LoopTargetSet
+        {
+            LoopTargetSet(JumpTarget *_break_target, JumpTarget *_continue_target)
+                : break_target(_break_target), continue_target(_continue_target)
+            {}
+
+            JumpTarget *break_target;
+            JumpTarget *continue_target;
+        };
+        std::vector<LoopTargetSet> loop_targets;
+
         constexpr static OpTable operator_table = make_table();
 
         constexpr static OpTableEntry get_operator_entry(AstOperatorKind ok)
@@ -245,6 +256,55 @@ namespace cl
                     codegen_node(ch_idx, mode);
                 }
                 break;
+
+
+            case AstNodeKind::STATEMENT_WHILE:
+            {
+                JumpTarget loop_start_target(&code_obj);
+                JumpTarget else_target(&code_obj);
+                JumpTarget break_target(&code_obj);
+                JumpTarget continue_target(&code_obj);
+                codegen_node(children[0], mode); // condition, initial check
+                code_obj.emit_jump(source_offset, Bytecode::JumpIfFalse, else_target);
+
+                loop_start_target.resolve();
+
+                loop_targets.emplace_back(&break_target, &continue_target);
+                codegen_node(children[1], mode); // body
+                loop_targets.pop_back();
+
+                continue_target.resolve();
+                codegen_node(children[0], mode); // condition, non-initial check
+                code_obj.emit_jump(source_offset, Bytecode::JumpIfTrue, loop_start_target);
+                else_target.resolve();
+                if(children.size() == 3)
+                {
+                    codegen_node(children[2], mode); // else clause of a loop
+                }
+                break_target.resolve();
+                break;
+            }
+
+            case AstNodeKind::STATEMENT_BREAK:
+                if(loop_targets.empty())
+                {
+                    throw std::runtime_error("SyntaxError: 'break' outside loop");
+                } else {
+                    code_obj.emit_jump(source_offset, Bytecode::Jump, *loop_targets.back().break_target);
+                }
+                break;
+
+            case AstNodeKind::STATEMENT_CONTINUE:
+                if(loop_targets.empty())
+                {
+                    throw std::runtime_error("SyntaxError: 'continue' not properly in loop");
+                } else {
+                    code_obj.emit_jump(source_offset, Bytecode::Jump, *loop_targets.back().continue_target);
+                }
+                break;
+
+
+
 
             default:
                 throw std::runtime_error(std::string("Don't know how to codegen for kind ") + std::to_string(int(kind.node_kind)));

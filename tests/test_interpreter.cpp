@@ -69,3 +69,19 @@ TEST(Interpreter, assignment2)
 
     EXPECT_EQ(expected, actual);
 }
+
+
+TEST(Interpreter, while1)
+{
+    Value expected = Value::from_smi(4950);
+    Value actual = run_file(L"b = 0\n"
+                            "a = 100\n"
+                            "while a:\n"
+                            "    a -= 1\n"
+                            "    b += a\n"
+                            "b\n"
+        );
+
+    std::cout << "expected " << expected.get_smi() << " actual " << actual.get_smi() << "\n";
+    EXPECT_EQ(expected, actual);
+}

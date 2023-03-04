@@ -107,3 +107,60 @@ TEST(Codegen, assignment2)
 
     EXPECT_EQ(expected, actual);
 }
+
+
+TEST(Codegen, while1)
+{
+    std::string expected =
+        "Code object:\n"
+        "    0 LdaSmi 4\n"
+        "    2 StaGlobal [0]\n"
+        "    7 LdaGlobal [0]\n"
+        "   12 JumpIfFalse 35\n"
+        "   15 LdaGlobal [0]\n"
+        "   20 SubSmi 1\n"
+        "   22 StaGlobal [0]\n"
+        "   27 LdaGlobal [0]\n"
+        "   32 JumpIfTrue 15\n"
+        "   35 Return\n";
+    std::string actual = bytecode_str_from_file(L"a = 4\n"
+                                                "while a: a -= 1\n"
+        );
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, while2)
+{
+    const wchar_t *test_case =
+        L"b = 0\n"
+        "a = 100\n"
+        "while a:\n"
+        "    a -= 1\n"
+        "    b += a\n"
+        "b\n";
+
+    std::string expected =
+        "Code object:\n"
+        "    0 LdaSmi 0\n"
+        "    2 StaGlobal [0]\n"
+        "    7 LdaSmi 100\n"
+        "    9 StaGlobal [1]\n"
+        "   14 LdaGlobal [1]\n"
+        "   19 JumpIfFalse 61\n"
+        "   22 LdaGlobal [1]\n"
+        "   27 SubSmi 1\n"
+        "   29 StaGlobal [1]\n"
+        "   34 LdaGlobal [0]\n"
+        "   39 Star r0\n"
+        "   41 LdaGlobal [1]\n"
+        "   46 Add r0\n"
+        "   48 StaGlobal [0]\n"
+        "   53 LdaGlobal [1]\n"
+        "   58 JumpIfTrue 22\n"
+        "   61 LdaGlobal [0]\n"
+        "   66 Return\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}

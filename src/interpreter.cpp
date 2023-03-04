@@ -402,7 +402,7 @@ namespace cl
         }
 
         pc += 3;
-        if(accumulator.is_falsy())
+        if(accumulator.is_truthy())
         {
             pc += rel_target;
         }

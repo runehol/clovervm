@@ -467,7 +467,7 @@ namespace cl
             }
 
             default:
-                throw std::runtime_error(std::string("Unexpected token") + to_string(peek()));
+                throw std::runtime_error(std::string("Unexpected token ") + to_string(peek()));
 
                 // TODO NAME, STRING, parenthesis, tuples, lists, dicts, ... (ELLIPSIS)
             }
@@ -576,12 +576,16 @@ namespace cl
 
         int32_t break_stmt()
         {
-            return -1;
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::BREAK);
+            return ast.emplace_back(AstNodeKind::STATEMENT_BREAK, source_pos, {});
         }
 
         int32_t continue_stmt()
         {
-            return -1;
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::CONTINUE);
+            return ast.emplace_back(AstNodeKind::STATEMENT_CONTINUE, source_pos, {});
         }
 
         int32_t global_stmt()
