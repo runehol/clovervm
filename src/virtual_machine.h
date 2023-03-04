@@ -4,7 +4,6 @@
 #include <vector>
 #include <memory>
 
-#include "thread_state.h"
 #include "heap.h"
 #include "intern_store.h"
 #include "str.h"
@@ -28,6 +27,7 @@ namespace cl
         GlobalHeap &get_interned_global_heap() { return interned_global_heap; }
 
         Value get_or_create_interned_string(const std::wstring &str) { return interned_strings.get_or_create(str); }
+
 
     private:
         std::vector<std::unique_ptr<ThreadState>> threads;

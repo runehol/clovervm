@@ -1,9 +1,7 @@
 #include <gtest/gtest.h>
-#include "tokenizer.h"
-#include "compilation_unit.h"
-#include "token_print.h"
+#include "code_object.h"
+#include "thread_state.h"
 #include "parser.h"
-#include "codegen.h"
 #include "virtual_machine.h"
 #include "code_object_print.h"
 #include <fmt/xchar.h>
@@ -13,20 +11,7 @@ using namespace cl;
 std::string bytecode_str_from_expression(const wchar_t *expr)
 {
     VirtualMachine vm;
-    CompilationUnit input(expr);
-    std::string expected =
-        "Code object:\n"
-        "00000 LdaSmi 1\n"
-        "00002 Star r0\n"
-        "00011 LdaSmi 4\n"
-        "00013 AddSmi 3\n"
-        "00007 MulSmi 2\n"
-        "00002 Sub r0\n"
-        "00000 Return\n";
-
-    TokenVector tv = tokenize(input);
-    AstVector av = parse(vm, tv, StartRule::Eval);
-    CodeObject code_obj = generate_code(av);
+    CodeObject code_obj = vm.get_default_thread()->compile(expr, StartRule::Eval);
     std::string actual = fmt::to_string(code_obj);
     return actual;
 }

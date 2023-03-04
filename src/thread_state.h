@@ -7,10 +7,11 @@
 
 #include "value.h"
 #include "heap.h"
+#include "code_object.h"
 
 namespace cl
 {
-
+    enum class StartRule;
 
     class VirtualMachine;
     struct CodeObject;
@@ -35,6 +36,7 @@ namespace cl
 
         void *allocate_refcounted(size_t n_bytes) { return refcounted_heap.allocate(n_bytes); }
 
+        CodeObject compile(const wchar_t *str, StartRule start_rule);
 
     private:
         VirtualMachine *machine;
@@ -48,6 +50,19 @@ namespace cl
 
 
         static thread_local ThreadState *current_thread;
+
+        class CurrThreadStateHolder
+        {
+        public:
+            CurrThreadStateHolder(ThreadState *ts)
+            {
+                ThreadState::current_thread = ts;
+            }
+            ~CurrThreadStateHolder()
+            {
+                ThreadState::current_thread = nullptr;
+            }
+        };
 
     };
 

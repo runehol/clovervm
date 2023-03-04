@@ -1,6 +1,10 @@
 #include "thread_state.h"
 #include "virtual_machine.h"
 #include "interpreter.h"
+#include "tokenizer.h"
+#include "compilation_unit.h"
+#include "parser.h"
+#include "codegen.h"
 
 namespace cl
 {
@@ -18,21 +22,23 @@ namespace cl
 
     ThreadState::~ThreadState() = default;
 
+
     Value ThreadState::run(const CodeObject *obj)
     {
-        current_thread = this;
-
-        try {
-            Value result = run_interpreter(stack.data(), obj, 0);
-            current_thread = nullptr;
-            return result;
-
-        } catch(...)
-        {
-            current_thread = nullptr;
-            throw;
-        }
+        CurrThreadStateHolder curr_thread_holder(this);
+        return run_interpreter(stack.data(), obj, 0);
     }
+
+    CodeObject ThreadState::compile(const wchar_t *str, StartRule start_rule)
+    {
+        CurrThreadStateHolder curr_thread_holder(this);
+
+        CompilationUnit input(str);
+        TokenVector tv = tokenize(input);
+        AstVector av = parse(*machine, tv, start_rule);
+        return generate_code(av);
+     }
+
 
     void ThreadState::add_to_active_zero_count_table(Value v)
     {
