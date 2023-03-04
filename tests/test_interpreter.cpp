@@ -12,7 +12,7 @@
 using namespace cl;
 
 
-static Value run_expression(const wchar_t *str)
+static Value run_file(const wchar_t *str)
 {
     VirtualMachine vm;
     CodeObject code_obj = vm.get_default_thread()->compile(str, StartRule::File);
@@ -22,7 +22,7 @@ static Value run_expression(const wchar_t *str)
 TEST(Interpreter, simple)
 {
     Value expected = Value::from_smi(15);
-    Value actual = run_expression(L"1 + 2  *  (4 + 3)");
+    Value actual = run_file(L"1 + 2  *  (4 + 3)");
     EXPECT_EQ(expected, actual);
 }
 
@@ -30,20 +30,42 @@ TEST(Interpreter, simple)
 TEST(Interpreter, simple2)
 {
     Value expected = Value::from_smi(19);
-    Value actual = run_expression(L"(1 << 4) + 3");
+    Value actual = run_file(L"(1 << 4) + 3");
     EXPECT_EQ(expected, actual);
 }
 
 TEST(Interpreter, simple3)
 {
     Value expected = Value::False();
-    Value actual = run_expression(L"not True");
+    Value actual = run_file(L"not True");
     EXPECT_EQ(expected, actual);
 }
 
 TEST(Interpreter, simple4)
 {
     Value expected = Value::from_smi(-13);
-    Value actual = run_expression(L"1 - 2  *  (4 + 3)");
+    Value actual = run_file(L"1 - 2  *  (4 + 3)");
+    EXPECT_EQ(expected, actual);
+}
+
+
+TEST(Interpreter, assignment1)
+{
+    Value expected = Value::from_smi(7);
+    Value actual = run_file(L"a = 4\n"
+                            "a + 3"
+        );
+
+    EXPECT_EQ(expected, actual);
+}
+
+
+TEST(Interpreter, assignment2)
+{
+    Value expected = Value::from_smi(11);
+    Value actual = run_file(L"a = 4\n"
+                            "a += 7\n"
+        );
+
     EXPECT_EQ(expected, actual);
 }

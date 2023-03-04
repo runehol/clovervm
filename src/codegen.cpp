@@ -157,6 +157,7 @@ namespace cl
             {
                 uint32_t slot_idx = code_obj.module_scope->register_slot_index_for_read(av.constants[node_idx]);
                 code_obj.emit_opcode_uint32(source_offset, Bytecode::LdaGlobal, slot_idx);
+                break;
             }
 
             case AstNodeKind::EXPRESSION_ASSIGN:
@@ -179,7 +180,7 @@ namespace cl
                     codegen_node(children[1], mode);
                 }
                 code_obj.emit_opcode_uint32(source_offset, Bytecode::StaGlobal, slot_idx);
-
+                break;
 
             }
 

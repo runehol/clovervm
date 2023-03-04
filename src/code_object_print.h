@@ -155,10 +155,10 @@ struct fmt::formatter<cl::CodeObject>
 
 
     template <typename Out>
-    void disassemble_uint32_t(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
+    void disassemble_global_ref(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
     {
         uint32_t v = read_uint32_le(&code_obj.code[pc]);
-        format_to(out, "{}", v);
+        format_to(out, "[{}]", v);
 
     }
 
@@ -200,7 +200,7 @@ struct fmt::formatter<cl::CodeObject>
         case cl::Bytecode::LdaGlobal:
         case cl::Bytecode::StaGlobal:
             format_to(out, " ");
-            disassemble_reg(code_obj, out, pc);
+            disassemble_global_ref(code_obj, out, pc);
             pc += 4;
             break;
 
