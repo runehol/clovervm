@@ -168,7 +168,7 @@ struct fmt::formatter<cl::CodeObject>
     {
 
         cl::Bytecode bc = cl::Bytecode(code_obj.code[pc]);
-        format_to(out, "{:05d} {}", code_obj.source_offsets[pc], bc);
+        format_to(out, "{:5d} {}", pc, bc);
 
         ++pc;
 
