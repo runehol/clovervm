@@ -65,7 +65,7 @@ namespace cl
 
         CodeObject codegen()
         {
-            active_scope = code_obj.scope;
+            active_scope = code_obj.module_scope;
             codegen_node(av.root_node, Mode::Module);
             code_obj.emplace_back(0, Bytecode::Return);
             return code_obj;

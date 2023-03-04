@@ -13,11 +13,11 @@ namespace cl
 
     struct CodeObject
     {
-        CodeObject(const CompilationUnit *_compilation_unit, Scope *_scope)
-            : scope(incref(_scope)), compilation_unit(_compilation_unit)
+        CodeObject(const CompilationUnit *_compilation_unit, Scope *_module_scope)
+            : module_scope(incref(_module_scope)), compilation_unit(_compilation_unit)
         {}
 
-        Scope *scope;
+        Scope *module_scope;
         const CompilationUnit *compilation_unit;
 
         uint32_t n_arguments;

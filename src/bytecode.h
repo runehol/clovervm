@@ -21,6 +21,10 @@ namespace cl
         Star,
 
 
+        //load and store globals by slot index
+        LdaGlobal,
+        StaGlobal,
+
         // binary on accumulator. reg op acc
         Add,
         Sub,

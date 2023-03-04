@@ -36,6 +36,11 @@ struct fmt::formatter<cl::Bytecode>
         case cl::Bytecode::Star:
             return format_to(out, "Star");
 
+        case cl::Bytecode::LdaGlobal:
+            return format_to(out, "LdaGlobal");
+        case cl::Bytecode::StaGlobal:
+            return format_to(out, "StaGlobal");
+
 
         case cl::Bytecode::Add:
             return format_to(out, "Add");
@@ -139,6 +144,25 @@ struct fmt::formatter<cl::CodeObject>
 
     }
 
+    static uint32_t read_uint32_le(const uint8_t *p)
+    {
+        return
+            (p[0] <<  0) |
+            (p[1] <<  8) |
+            (p[1] << 16) |
+            (p[1] << 24);
+    }
+
+
+    template <typename Out>
+    void disassemble_uint32_t(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
+    {
+        uint32_t v = read_uint32_le(&code_obj.code[pc]);
+        format_to(out, "{}", v);
+
+    }
+
+
     template <typename Out>
     uint32_t disassemble_instruction(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
     {
@@ -171,6 +195,13 @@ struct fmt::formatter<cl::CodeObject>
         case cl::Bytecode::Star:
             format_to(out, " ");
             disassemble_reg(code_obj, out, pc++);
+            break;
+
+        case cl::Bytecode::LdaGlobal:
+        case cl::Bytecode::StaGlobal:
+            format_to(out, " ");
+            disassemble_reg(code_obj, out, pc);
+            pc += 4;
             break;
 
 

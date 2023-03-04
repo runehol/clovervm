@@ -47,6 +47,15 @@ namespace cl
 #define A_OR_B_NOT_SMI() (((a.as.integer | b.as.integer) & value_not_smi_mask) != 0)
 
 
+    static uint32_t read_uint32_le(const uint8_t *p)
+    {
+        return
+            (p[0] <<  0) |
+            (p[1] <<  8) |
+            (p[1] << 16) |
+            (p[1] << 24);
+    }
+
 
 
 
@@ -63,6 +72,11 @@ namespace cl
     NOINLINE Value raise_value_error_negative_shift_count(PARAMS)
     {
         throw std::runtime_error("ValueError: negative shift count");
+    }
+
+    NOINLINE Value name_error(PARAMS)
+    {
+        throw std::runtime_error("NameError");
     }
 
     NOINLINE static Value slow_path(PARAMS)
@@ -128,6 +142,28 @@ namespace cl
         COMPLETE();
     }
 
+
+
+    static Value op_lda_global(PARAMS)
+    {
+        START(5);
+        int32_t slot_idx = read_uint32_le(&pc[1]);
+        Value v = code_object->module_scope->get_by_slot_index(slot_idx);
+        if(unlikely(v.is_not_present()))
+        {
+            MUSTTAIL return name_error(ARGS);
+        }
+        accumulator = v;
+        COMPLETE();
+    }
+
+    static Value op_sta_global(PARAMS)
+    {
+        START(5);
+        int32_t slot_idx = read_uint32_le(&pc[1]);
+        code_object->module_scope->set_by_slot_index(slot_idx, accumulator);
+        COMPLETE();
+    }
 
 
     static Value op_add_smi(PARAMS)
@@ -377,6 +413,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::RightShift, op_right_shift);
         SET_TABLE_ENTRY(Bytecode::RightShiftSmi, op_right_shift_smi);
 
+        SET_TABLE_ENTRY(Bytecode::LdaGlobal, op_lda_global);
+        SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);
 
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
