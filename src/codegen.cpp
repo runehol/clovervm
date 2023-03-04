@@ -67,7 +67,7 @@ namespace cl
         {
             active_scope = code_obj.module_scope;
             codegen_node(av.root_node, Mode::Module);
-            code_obj.emplace_back(0, Bytecode::Return);
+            code_obj.emit_opcode(0, Bytecode::Return);
             return code_obj;
         }
     private:
@@ -134,18 +134,18 @@ namespace cl
                 if(entry.binary_acc_smi != Bytecode::Invalid && av.kinds[children[1]] == NumericalConstant && av.constants[children[1]].is_smi8())
                 {
                     codegen_node(children[0], mode);
-                    code_obj.emplace_back(source_offset, entry.binary_acc_smi, av.constants[children[1]].get_smi());
+                    code_obj.emit_opcode_uint8(source_offset, entry.binary_acc_smi, av.constants[children[1]].get_smi());
                 } else if(entry.binary_smi_acc != Bytecode::Invalid && av.kinds[children[0]] == NumericalConstant && av.constants[children[0]].is_smi8())
                 {
                     codegen_node(children[1], mode);
-                    code_obj.emplace_back(source_offset, entry.binary_smi_acc, av.constants[children[0]].get_smi());
+                    code_obj.emit_opcode_uint8(source_offset, entry.binary_smi_acc, av.constants[children[0]].get_smi());
                 } else {
                     codegen_node(children[0], mode);
                     TemporaryReg temp_reg(this);
-                    code_obj.emplace_back(source_offset, Bytecode::Star, temp_reg);
+                    code_obj.emit_opcode_uint8(source_offset, Bytecode::Star, temp_reg);
 
                     codegen_node(children[1], mode);
-                    code_obj.emplace_back(source_offset, entry.standard, temp_reg);
+                    code_obj.emit_opcode_uint8(source_offset, entry.standard, temp_reg);
                 }
                 break;
             }
@@ -153,7 +153,7 @@ namespace cl
             {
                 OpTableEntry entry = get_operator_entry(kind.operator_kind);
                 codegen_node(children[0], mode);
-                code_obj.emplace_back(source_offset, entry.standard);
+                code_obj.emit_opcode(source_offset, entry.standard);
                 break;
             }
             case cl::AstNodeKind::EXPRESSION_LITERAL:
@@ -162,13 +162,13 @@ namespace cl
                 switch(kind.operator_kind)
                 {
                 case AstOperatorKind::NONE:
-                    code_obj.emplace_back(source_offset, Bytecode::LdaNone);
+                    code_obj.emit_opcode(source_offset, Bytecode::LdaNone);
                     break;
                 case AstOperatorKind::TRUE:
-                    code_obj.emplace_back(source_offset, Bytecode::LdaTrue);
+                    code_obj.emit_opcode(source_offset, Bytecode::LdaTrue);
                     break;
                 case AstOperatorKind::FALSE:
-                    code_obj.emplace_back(source_offset, Bytecode::LdaFalse);
+                    code_obj.emit_opcode(source_offset, Bytecode::LdaFalse);
                     break;
 
 
@@ -177,10 +177,10 @@ namespace cl
                     Value val = av.constants[node_idx];
                     if(val.is_smi8())
                     {
-                        code_obj.emplace_back(source_offset, Bytecode::LdaSmi, val.get_smi());
+                        code_obj.emit_opcode_uint8(source_offset, Bytecode::LdaSmi, val.get_smi());
                     } else {
                         uint32_t constant_idx = code_obj.allocate_constant(val);
-                        code_obj.emplace_back(source_offset, Bytecode::LdaConstant, constant_idx);
+                        code_obj.emit_opcode_uint8(source_offset, Bytecode::LdaConstant, constant_idx);
                         break;
                     }
                     break;
@@ -190,7 +190,7 @@ namespace cl
                 default:
                 {
                     uint32_t constant_idx = code_obj.allocate_constant(av.constants[node_idx]);
-                    code_obj.emplace_back(source_offset, Bytecode::LdaConstant, constant_idx);
+                    code_obj.emit_opcode_uint8(source_offset, Bytecode::LdaConstant, constant_idx);
                     break;
                 }
                 }

@@ -46,17 +46,28 @@ namespace cl
             return offset;
         }
 
-        uint32_t emplace_back(uint32_t source_offset, Bytecode c)
+        uint32_t emit_opcode(uint32_t source_offset, Bytecode c)
         {
             assert(c != Bytecode::Invalid);
             return emplace_back(source_offset, uint8_t(c));
         }
 
-        uint32_t emplace_back(uint32_t source_offset, Bytecode c, uint8_t k)
+        uint32_t emit_opcode_uint8(uint32_t source_offset, Bytecode c, uint8_t k)
         {
             assert(c != Bytecode::Invalid);
             uint32_t result = emplace_back(source_offset, uint8_t(c));
             emplace_back(source_offset, k);
+            return result;
+        }
+        uint32_t emit_opcode_uint32(uint32_t source_offset, Bytecode c, uint32_t k)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            emplace_back(source_offset, (k >>  0)&0xff);
+            emplace_back(source_offset, (k >>  8)&0xff);
+            emplace_back(source_offset, (k >> 16)&0xff);
+            emplace_back(source_offset, (k >> 24)&0xff);
+
             return result;
         }
 
