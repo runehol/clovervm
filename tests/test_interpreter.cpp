@@ -15,7 +15,7 @@ using namespace cl;
 static Value run_expression(const wchar_t *str)
 {
     VirtualMachine vm;
-    CodeObject code_obj = vm.get_default_thread()->compile(str, StartRule::Eval);
+    CodeObject code_obj = vm.get_default_thread()->compile(str, StartRule::File);
     return vm.get_default_thread()->run(&code_obj);
 }
 

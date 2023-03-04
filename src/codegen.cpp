@@ -3,6 +3,7 @@
 #include "tokenizer.h"
 #include "scope.h"
 #include "thread_state.h"
+#include <fmt/core.h>
 
 namespace cl
 {
@@ -226,18 +227,26 @@ namespace cl
                 }
 
                 case AstOperatorKind::STRING:
-                default:
                 {
                     uint32_t constant_idx = code_obj.allocate_constant(av.constants[node_idx]);
                     code_obj.emit_opcode_uint8(source_offset, Bytecode::LdaConstant, constant_idx);
                     break;
                 }
+                default:
+                    break;
                 }
                 break;
             }
 
+            case AstNodeKind::STATEMENT_SEQUENCE:
+                for(int32_t ch_idx: children)
+                {
+                    codegen_node(ch_idx, mode);
+                }
+                break;
+
             default:
-                assert(0);
+                throw std::runtime_error(std::string("Don't know how to codegen for kind ") + std::to_string(int(kind.node_kind)));
                 break;
             }
 
