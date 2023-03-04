@@ -105,6 +105,12 @@ struct fmt::formatter<cl::Bytecode>
         case cl::Bytecode::BitwiseNot:
             return format_to(out, "BitwiseNot");
 
+        case cl::Bytecode::Jump:
+            return format_to(out, "Jump");
+        case cl::Bytecode::JumpIfTrue:
+            return format_to(out, "JumpIfTrue");
+        case cl::Bytecode::JumpIfFalse:
+            return format_to(out, "JumpIfFalse");
         case cl::Bytecode::Return:
             return format_to(out, "Return");
 
@@ -141,6 +147,23 @@ struct fmt::formatter<cl::CodeObject>
     {
         int32_t smi = int8_t(code_obj.code[pc]);
         format_to(out, "{}", smi);
+
+    }
+
+    static int16_t read_int16_le(const uint8_t *p)
+    {
+        return
+            (p[0] <<  0) |
+            (p[1] <<  8);
+    }
+
+
+    template <typename Out>
+    void disassemble_jump_target(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
+    {
+        int16_t rel_target = read_int16_le(&code_obj.code[pc]);
+        uint32_t actual_target = pc + 2 + rel_target;
+        format_to(out, "{}", actual_target);
 
     }
 
@@ -244,6 +267,15 @@ struct fmt::formatter<cl::CodeObject>
         case cl::Bytecode::Plus:
         case cl::Bytecode::BitwiseNot:
             break;
+
+        case cl::Bytecode::Jump:
+        case cl::Bytecode::JumpIfTrue:
+        case cl::Bytecode::JumpIfFalse:
+            format_to(out, " ");
+            disassemble_jump_target(code_obj, out, pc);
+            pc += 2;
+            break;
+
 
         case cl::Bytecode::Return:
             break;

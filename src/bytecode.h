@@ -60,7 +60,13 @@ namespace cl
 
         Nop,
 
+
+        // control flow
         Return,
+        Jump,
+        JumpIfTrue,
+        JumpIfFalse,
+
 
         Invalid
     };

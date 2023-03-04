@@ -168,12 +168,14 @@ namespace cl
             return as.ptr;
         }
 
-        bool value_is_truthy() const
+        bool is_truthy() const
         {
+            assert(!is_ptr());
             return (as.integer&value_truthy_mask) != 0;
         }
         bool is_falsy() const
         {
+            assert(!is_ptr());
             return (as.integer&value_truthy_mask) == 0;
         }
 

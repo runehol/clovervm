@@ -56,6 +56,12 @@ namespace cl
             (p[1] << 24);
     }
 
+    static int16_t read_int16_le(const uint8_t *p)
+    {
+        return
+            (p[0] <<  0) |
+            (p[1] <<  8);
+    }
 
 
 
@@ -376,6 +382,55 @@ namespace cl
 
     }
 
+    static Value op_jump(PARAMS)
+    {
+        int16_t rel_target = read_int16_le(&pc[1]);
+        pc += 3;
+        pc += rel_target;
+
+        START(0);
+        COMPLETE();
+    }
+
+    static Value op_jump_if_true(PARAMS)
+    {
+        int16_t rel_target = read_int16_le(&pc[1]);
+        if(unlikely((accumulator.as.integer & value_ptr_mask) != 0))
+        {
+            // this is not an inlined type, go to the slow path
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        pc += 3;
+        if(accumulator.is_falsy())
+        {
+            pc += rel_target;
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
+    static Value op_jump_if_false(PARAMS)
+    {
+        int16_t rel_target = read_int16_le(&pc[1]);
+        if(unlikely((accumulator.as.integer & value_ptr_mask) != 0))
+        {
+            // this is not an inlined type, go to the slow path
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        pc += 3;
+        if(accumulator.is_falsy())
+        {
+            pc += rel_target;
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
+
     static Value op_return(PARAMS)
     {
         START(1);
@@ -419,6 +474,9 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
 
+        SET_TABLE_ENTRY(Bytecode::Jump, op_jump);
+        SET_TABLE_ENTRY(Bytecode::JumpIfTrue, op_jump_if_true);
+        SET_TABLE_ENTRY(Bytecode::JumpIfFalse, op_jump_if_false);
         SET_TABLE_ENTRY(Bytecode::Return, op_return);
         return tbl;
     }
