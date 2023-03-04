@@ -10,7 +10,7 @@ namespace cl
 #define NOINLINE __attribute__((noinline))
 #define MUSTTAIL __attribute__((musttail))
 
-#define PARAMS StackFrame *frame, const uint8_t *pc, Value accumulator, void *dispatch, const CodeObject *code_object
+#define PARAMS StackFrame *frame, const uint8_t *pc, Value accumulator, void *dispatch, CodeObject *code_object
 #define ARGS frame, pc, accumulator, dispatch, code_object
 
     using DispatchTableEntry = Value (*)(PARAMS);
@@ -389,7 +389,7 @@ namespace cl
     DispatchTable dispatch_table = make_dispatch_table();
 
 
-    Value run_interpreter(Value *stack_frame, const CodeObject *code_object, uint32_t start_pc)
+    Value run_interpreter(Value *stack_frame, CodeObject *code_object, uint32_t start_pc)
     {
         const uint8_t *pc = &code_object->code[start_pc];
         void *dispatch = reinterpret_cast<void *>(&dispatch_table);

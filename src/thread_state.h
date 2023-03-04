@@ -25,7 +25,7 @@ namespace cl
         static void add_to_active_zero_count_table(Value v);
 
 
-        Value run(const CodeObject *obj);
+        Value run(CodeObject *obj);
 
         static ThreadState *get_active()
         {

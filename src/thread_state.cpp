@@ -23,7 +23,7 @@ namespace cl
     ThreadState::~ThreadState() = default;
 
 
-    Value ThreadState::run(const CodeObject *obj)
+    Value ThreadState::run(CodeObject *obj)
     {
         CurrThreadStateHolder curr_thread_holder(this);
         return run_interpreter(stack.data(), obj, 0);

@@ -65,15 +65,19 @@ namespace cl
 
         CodeObject codegen()
         {
-            codegen_node(av.root_node, Mode::RValue);
+            active_scope = code_obj.scope;
+            codegen_node(av.root_node, Mode::Module);
             code_obj.emplace_back(0, Bytecode::Return);
             return code_obj;
         }
     private:
+        Scope *active_scope = nullptr;
+
         enum class Mode
         {
-            LValue,
-            RValue
+            Module,
+            Class,
+            Function
         };
 
         constexpr static OpTable operator_table = make_table();
@@ -120,6 +124,8 @@ namespace cl
             uint32_t source_offset = av.source_offsets[node_idx];
             switch(kind.node_kind)
             {
+
+
             case cl::AstNodeKind::EXPRESSION_BINARY:
             {
 
@@ -177,8 +183,8 @@ namespace cl
                         code_obj.emplace_back(source_offset, Bytecode::LdaConstant, constant_idx);
                         break;
                     }
-                }
                     break;
+                }
 
                 case AstOperatorKind::STRING:
                 default:

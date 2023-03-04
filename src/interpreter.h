@@ -8,7 +8,7 @@ namespace cl
 {
     struct CodeObject;
 
-    Value run_interpreter(Value *stack_frame, const CodeObject *code_object, uint32_t start_pc);
+    Value run_interpreter(Value *stack_frame, CodeObject *code_object, uint32_t start_pc);
 }
 
 #endif //CL_INTERPRETER_H
