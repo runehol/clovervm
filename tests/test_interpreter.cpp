@@ -82,6 +82,23 @@ TEST(Interpreter, while1)
                             "b\n"
         );
 
-    std::cout << "expected " << expected.get_smi() << " actual " << actual.get_smi() << "\n";
     EXPECT_EQ(expected, actual);
 }
+
+/*
+TEST(Interpreter, small_bench)
+{
+    const wchar_t *test_case =
+        L"counter = 100000001\n"
+        "acc = 1245\n"
+        "while counter:\n"
+        "    acc = (-acc*64 + 64)>>6\n"
+        "    counter -= 1\n"
+        "acc\n";
+
+    Value expected = Value::from_smi(-1244);
+    Value actual = run_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+*/
