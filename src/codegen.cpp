@@ -117,46 +117,85 @@ namespace cl
 
         static constexpr AstKind NumericalConstant = AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER);
 
+        // used for both regular binary expressions and augmented assignment, so pull out
+        void codegen_binary_expression(int32_t node_idx, Mode mode)
+        {
+            AstKind kind = av.kinds[node_idx];
+            AstChildren children = av.children[node_idx];
+            uint32_t source_offset = av.source_offsets[node_idx];
+            OpTableEntry entry = get_operator_entry(kind.operator_kind);
+
+            if(entry.binary_acc_smi != Bytecode::Invalid && av.kinds[children[1]] == NumericalConstant && av.constants[children[1]].is_smi8())
+            {
+                codegen_node(children[0], mode);
+                code_obj.emit_opcode_uint8(source_offset, entry.binary_acc_smi, av.constants[children[1]].get_smi());
+            } else if(entry.binary_smi_acc != Bytecode::Invalid && av.kinds[children[0]] == NumericalConstant && av.constants[children[0]].is_smi8())
+            {
+                codegen_node(children[1], mode);
+                code_obj.emit_opcode_uint8(source_offset, entry.binary_smi_acc, av.constants[children[0]].get_smi());
+            } else {
+                codegen_node(children[0], mode);
+                TemporaryReg temp_reg(this);
+                code_obj.emit_opcode_uint8(source_offset, Bytecode::Star, temp_reg);
+
+                codegen_node(children[1], mode);
+                code_obj.emit_opcode_uint8(source_offset, entry.standard, temp_reg);
+            }
+
+        }
+
         void codegen_node(int32_t node_idx, Mode mode)
         {
-            cl::AstKind kind = av.kinds[node_idx];
-            cl::AstChildren children = av.children[node_idx];
+            AstKind kind = av.kinds[node_idx];
+            AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             switch(kind.node_kind)
             {
 
+            case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
+            {
+                uint32_t slot_idx = code_obj.module_scope->register_slot_index_for_read(av.constants[node_idx]);
+                code_obj.emit_opcode_uint32(source_offset, Bytecode::LdaGlobal, slot_idx);
+            }
 
-            case cl::AstNodeKind::EXPRESSION_BINARY:
+            case AstNodeKind::EXPRESSION_ASSIGN:
             {
 
-                OpTableEntry entry = get_operator_entry(kind.operator_kind);
-
-                if(entry.binary_acc_smi != Bytecode::Invalid && av.kinds[children[1]] == NumericalConstant && av.constants[children[1]].is_smi8())
+                int32_t lhs_idx = children[0];
+                if(av.kinds[lhs_idx].node_kind != AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                 {
-                    codegen_node(children[0], mode);
-                    code_obj.emit_opcode_uint8(source_offset, entry.binary_acc_smi, av.constants[children[1]].get_smi());
-                } else if(entry.binary_smi_acc != Bytecode::Invalid && av.kinds[children[0]] == NumericalConstant && av.constants[children[0]].is_smi8())
-                {
-                    codegen_node(children[1], mode);
-                    code_obj.emit_opcode_uint8(source_offset, entry.binary_smi_acc, av.constants[children[0]].get_smi());
-                } else {
-                    codegen_node(children[0], mode);
-                    TemporaryReg temp_reg(this);
-                    code_obj.emit_opcode_uint8(source_offset, Bytecode::Star, temp_reg);
-
-                    codegen_node(children[1], mode);
-                    code_obj.emit_opcode_uint8(source_offset, entry.standard, temp_reg);
+                    throw std::runtime_error("We don't support assignment to anything but simple variables yet");
                 }
-                break;
+                uint32_t slot_idx = code_obj.module_scope->register_slot_index_for_write(av.constants[lhs_idx]);
+
+
+                // augmented assignment
+                if(kind.operator_kind != AstOperatorKind::NOP)
+                {
+                    codegen_binary_expression(node_idx, mode);
+                } else {
+                    // just compute the RHS
+                    codegen_node(children[1], mode);
+                }
+                code_obj.emit_opcode_uint32(source_offset, Bytecode::StaGlobal, slot_idx);
+
+
             }
-            case cl::AstNodeKind::EXPRESSION_UNARY:
+
+
+            case AstNodeKind::EXPRESSION_BINARY:
+                codegen_binary_expression(node_idx, mode);
+                break;
+
+
+            case AstNodeKind::EXPRESSION_UNARY:
             {
                 OpTableEntry entry = get_operator_entry(kind.operator_kind);
                 codegen_node(children[0], mode);
                 code_obj.emit_opcode(source_offset, entry.standard);
                 break;
             }
-            case cl::AstNodeKind::EXPRESSION_LITERAL:
+            case AstNodeKind::EXPRESSION_LITERAL:
             {
 
                 switch(kind.operator_kind)
@@ -196,6 +235,7 @@ namespace cl
                 }
                 break;
             }
+
             default:
                 assert(0);
                 break;
