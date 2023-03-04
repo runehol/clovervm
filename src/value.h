@@ -124,6 +124,10 @@ namespace cl
         {
             return as.integer == o.as.integer;
         }
+        bool operator!=( Value o) const
+        {
+            return as.integer != o.as.integer;
+        }
 
         bool is_smi() const
         {

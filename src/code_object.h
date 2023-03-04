@@ -4,6 +4,8 @@
 #include "bytecode.h"
 #include <vector>
 #include "value.h"
+#include "refcount.h"
+#include "scope.h"
 
 namespace cl
 {
@@ -11,11 +13,12 @@ namespace cl
 
     struct CodeObject
     {
-        CodeObject(const CompilationUnit *_compilation_unit)
-            : compilation_unit(_compilation_unit)
+        CodeObject(const CompilationUnit *_compilation_unit, const Scope *_scope)
+            : scope(incref(_scope)), compilation_unit(_compilation_unit)
         {}
 
-         const CompilationUnit *compilation_unit;
+        const Scope *scope;
+        const CompilationUnit *compilation_unit;
 
         uint32_t n_arguments;
         uint32_t n_temporaries;

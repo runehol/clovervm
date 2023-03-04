@@ -25,6 +25,7 @@ add_library(libclovervm STATIC
 	klass.cpp
 	klass.h
 	object.h
+	refcount.cpp
 	refcount.h
 	scope.cpp
 	scope.h

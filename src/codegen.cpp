@@ -1,6 +1,8 @@
 #include "codegen.h"
 #include "ast.h"
 #include "tokenizer.h"
+#include "scope.h"
+#include "thread_state.h"
 
 namespace cl
 {
@@ -58,7 +60,7 @@ namespace cl
     {
     public:
         Codegen(const AstVector &_av)
-            : av(_av), code_obj(av.compilation_unit)
+            : av(_av), code_obj(av.compilation_unit, new(ThreadState::get_active()->allocate_refcounted(sizeof(Scope)))Scope(Value::None()))
         {}
 
         CodeObject codegen()

@@ -3,7 +3,6 @@
 
 #include "value.h"
 #include "object.h"
-#include "thread_state.h"
 
 
 namespace cl
@@ -21,13 +20,22 @@ namespace cl
         return v;
     }
 
+    template<typename T>
+    T *incref(T *t)
+    {
+        incref(Value::from_oop(const_cast<typename std::remove_const<T>::type *>(t)));
+        return t;
+    }
+
+    void add_to_active_zero_count_table(Value v);
+
     static inline void decref(Value v)
     {
         if(v.is_refcounted_ptr())
         {
             if(--v.as.ptr->refcount == 0)
             {
-                ThreadState::add_to_active_zero_count_table(v);
+                add_to_active_zero_count_table(v);
             }
         }
     }
