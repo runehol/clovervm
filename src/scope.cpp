@@ -17,7 +17,7 @@ namespace cl
         int32_t slot_idx = indirect_dict.insert(key);
         if(slot_idx >= int32_t(slots.size()))
         {
-            assert(slot_idx == slots.size());
+            assert(slot_idx == int32_t(slots.size()));
             slots.push_back(Value::not_present(-1));
         }
         return slot_idx;
@@ -33,7 +33,7 @@ namespace cl
         int32_t slot_idx = indirect_dict.insert(key);
         if(slot_idx >= int32_t(slots.size()))
         {
-            assert(slot_idx == slots.size());
+            assert(slot_idx == int32_t(slots.size()));
             int32_t parent_idx = -1;
             if(parent_scope != Value::None())
             {
@@ -65,7 +65,7 @@ namespace cl
         int32_t slot_idx = indirect_dict.insert(name);
         if(slot_idx >= int32_t(slots.size()))
         {
-            assert(slot_idx == slots.size());
+            assert(slot_idx == int32_t(slots.size()));
             slots.push_back(Value::not_present());
         }
         set_by_slot_index(slot_idx, val);

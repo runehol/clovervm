@@ -111,7 +111,7 @@ namespace cl
 
         int32_t get_not_present_index() const
         {
-            assert(is_not_present);
+            assert(is_not_present());
             return as.integer >> 32;
         }
 
