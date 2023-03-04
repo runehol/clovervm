@@ -1,5 +1,6 @@
 #include "indirect_dict.h"
 #include "str.h"
+#include "refcount.h"
 
 namespace cl
 {
@@ -60,7 +61,7 @@ namespace cl
         {
             idx = keys.size();
             *entry = idx;
-            keys.push_back(key);
+            keys.push_back(incref(key));
         }
         return idx;
     }

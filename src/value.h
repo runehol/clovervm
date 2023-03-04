@@ -47,6 +47,7 @@ namespace cl
     static constexpr uint64_t value_truthy_mask          = 0xffffffffffffffe1ull;
     static constexpr uint64_t value_ptr_mask = value_refcounted_ptr_tag|value_immortal_ptr_tag|value_interned_ptr_tag;
     static constexpr uint64_t value_not_smi_mask = value_tag_mask;
+    static constexpr uint32_t value_not_present = 0x102;
 
 
 
@@ -95,11 +96,23 @@ namespace cl
             return val;
         }
 
-        static inline Value not_present_marker(int32_t next_idx=-1)
+        static inline Value not_present(int32_t next_idx=-1)
         {
             Value val;
-            val.as.integer = (int64_t(next_idx) << 32) | 0x102; // special value to mark deleted/not present entries in scopes.
+            val.as.integer = (int64_t(next_idx) << 32) | value_not_present; // special value to mark deleted/not present entries in scopes.
             return val;
+        }
+
+        bool is_not_present() const
+        {
+            uint32_t v = as.integer;
+            return v == value_not_present;
+        }
+
+        int32_t get_not_present_index() const
+        {
+            assert(is_not_present);
+            return as.integer >> 32;
         }
 
         union {

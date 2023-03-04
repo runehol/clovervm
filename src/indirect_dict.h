@@ -22,6 +22,11 @@ namespace cl
         uint32_t size() const { return keys.size(); }
         bool empty() const { return keys.empty(); }
 
+        Value get_key_by_slot_index(int32_t slot_idx) const
+        {
+            return keys[slot_idx];
+        }
+
     private:
         constexpr static uint32_t max_load_nom = 3;
         constexpr static uint32_t max_load_denom = 4;

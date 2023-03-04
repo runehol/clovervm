@@ -26,6 +26,8 @@ add_library(libclovervm STATIC
 	klass.h
 	object.h
 	refcount.h
+	scope.cpp
+	scope.h
 	short_vector.cpp
 	short_vector.h
 	slab_allocator.cpp
