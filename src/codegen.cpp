@@ -257,6 +257,25 @@ namespace cl
                 }
                 break;
 
+            case AstNodeKind::STATEMENT_IF:
+            {
+                JumpTarget else_target(&code_obj);
+                JumpTarget done_target(&code_obj);
+                codegen_node(children[0], mode); // condition, initial check
+                code_obj.emit_jump(source_offset, Bytecode::JumpIfFalse, else_target);
+                codegen_node(children[1], mode); //then
+                if(children.size() == 3)
+                {
+                    code_obj.emit_jump(source_offset, Bytecode::Jump, done_target);
+                    else_target.resolve();
+                    codegen_node(children[2], mode); //else
+                } else {
+                    else_target.resolve();
+                }
+                done_target.resolve();
+
+                break;
+            }
 
             case AstNodeKind::STATEMENT_WHILE:
             {
