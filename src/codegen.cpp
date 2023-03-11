@@ -262,12 +262,35 @@ namespace cl
                 break;
             }
 
+            case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
+            {
+                JumpTarget skip_target(&code_obj);
+                codegen_node(children[0], mode);
+                switch(kind.operator_kind)
+                {
+                case AstOperatorKind::SHORTCUTTING_AND:
+                    code_obj.emit_jump(source_offset, Bytecode::JumpIfFalse, skip_target);
+                    break;
+                case AstOperatorKind::SHORTCUTTING_OR:
+                    code_obj.emit_jump(source_offset, Bytecode::JumpIfTrue, skip_target);
+                    break;
+                default:
+                    assert(0);
+                    break;
+                }
+                codegen_node(children[1], mode);
+                skip_target.resolve();
+                break;
+
+            }
+
             case AstNodeKind::STATEMENT_SEQUENCE:
                 for(int32_t ch_idx: children)
                 {
                     codegen_node(ch_idx, mode);
                 }
                 break;
+
 
             case AstNodeKind::STATEMENT_IF:
             {

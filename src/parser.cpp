@@ -217,15 +217,30 @@ namespace cl
 
         int32_t disjunction()
         {
-            return conjunction();
-
+            int32_t lhs = conjunction();
+            if(peek() == Token::OR)
+            {
+                uint32_t source_pos = source_pos_and_advance();
+                int32_t rhs = disjunction();
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY, AstOperatorKind::SHORTCUTTING_OR), source_pos, lhs, rhs);
+            } else {
+                return lhs;
+            }
         }
-
 
         int32_t conjunction()
         {
-            return inversion();
+            int32_t lhs = inversion();
+            if(peek() == Token::AND)
+            {
+                uint32_t source_pos = source_pos_and_advance();
+                int32_t rhs = conjunction();
+                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY, AstOperatorKind::SHORTCUTTING_AND), source_pos, lhs, rhs);
+            } else {
+                return lhs;
+            }
         }
+
 
         int32_t inversion()
         {
@@ -414,7 +429,7 @@ namespace cl
             if(peek() == Token::DOUBLESTAR)
             {
                 uint32_t source_pos = source_pos_and_advance();
-                int32_t rhs = factor();
+                int32_t rhs = power();
                 return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_BINARY, AstOperatorKind::POWER), source_pos, lhs, rhs);
             } else {
                 return lhs;
