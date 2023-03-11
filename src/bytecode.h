@@ -75,6 +75,7 @@ namespace cl
 
         // control flow
         Return,
+        Halt,
         Jump,
         JumpIfTrue,
         JumpIfFalse,

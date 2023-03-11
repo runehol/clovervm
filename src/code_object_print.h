@@ -135,6 +135,8 @@ struct fmt::formatter<cl::Bytecode>
             return format_to(out, "JumpIfFalse");
         case cl::Bytecode::Return:
             return format_to(out, "Return");
+        case cl::Bytecode::Halt:
+            return format_to(out, "Halt");
 
         case cl::Bytecode::Invalid:
             return format_to(out, "Invalid");
@@ -310,6 +312,9 @@ struct fmt::formatter<cl::CodeObject>
 
 
         case cl::Bytecode::Return:
+            break;
+
+        case cl::Bytecode::Halt:
             break;
 
         case cl::Bytecode::Invalid:

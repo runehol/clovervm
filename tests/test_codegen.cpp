@@ -25,7 +25,7 @@ TEST(Codegen, simple)
         "    2 AddSmi 3\n"
         "    4 MulSmi 2\n"
         "    6 AddSmi 1\n"
-        "    8 Return\n";
+        "    8 Halt\n";
     std::string actual = bytecode_str_from_file(L"1 + 2  *  (4 + 3)");
 
     EXPECT_EQ(expected, actual);
@@ -39,7 +39,7 @@ TEST(Codegen, simple2)
         "    0 LdaSmi 1\n"
         "    2 LeftShiftSmi 4\n"
         "    4 AddSmi 3\n"
-        "    6 Return\n";
+        "    6 Halt\n";
     std::string actual = bytecode_str_from_file(L"(1 << 4) + 3");
 
     EXPECT_EQ(expected, actual);
@@ -51,7 +51,7 @@ TEST(Codegen, simple3)
         "Code object:\n"
         "    0 LdaTrue\n"
         "    1 Not\n"
-        "    2 Return\n";
+        "    2 Halt\n";
     std::string actual = bytecode_str_from_file(L"not True");
 
     EXPECT_EQ(expected, actual);
@@ -67,7 +67,7 @@ TEST(Codegen, simple4)
         "    6 AddSmi 3\n"
         "    8 MulSmi 2\n"
         "   10 Sub r0\n"
-        "   12 Return\n";
+        "   12 Halt\n";
     std::string actual = bytecode_str_from_file(L"1 - 2  *  (4 + 3)");
 
     EXPECT_EQ(expected, actual);
@@ -82,7 +82,7 @@ TEST(Codegen, assignment1)
         "    2 StaGlobal [0]\n"
         "    7 LdaGlobal [0]\n"
         "   12 AddSmi 3\n"
-        "   14 Return\n";
+        "   14 Halt\n";
     std::string actual = bytecode_str_from_file(L"a = 4\n"
                                                 "a + 3"
         );
@@ -100,7 +100,7 @@ TEST(Codegen, assignment2)
         "    7 LdaGlobal [0]\n"
         "   12 AddSmi 7\n"
         "   14 StaGlobal [0]\n"
-        "   19 Return\n";
+        "   19 Halt\n";
     std::string actual = bytecode_str_from_file(L"a = 4\n"
                                                 "a += 7\n"
         );
@@ -122,7 +122,7 @@ TEST(Codegen, while1)
         "   22 StaGlobal [0]\n"
         "   27 LdaGlobal [0]\n"
         "   32 JumpIfTrue 15\n"
-        "   35 Return\n";
+        "   35 Halt\n";
     std::string actual = bytecode_str_from_file(L"a = 4\n"
                                                 "while a: a -= 1\n"
         );
@@ -159,7 +159,7 @@ TEST(Codegen, while2)
         "   53 LdaGlobal [1]\n"
         "   58 JumpIfTrue 22\n"
         "   61 LdaGlobal [0]\n"
-        "   66 Return\n";
+        "   66 Halt\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);

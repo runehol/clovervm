@@ -530,6 +530,13 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_halt(PARAMS)
+    {
+        START(1);
+        return accumulator;
+        COMPLETE();
+    }
+
     constexpr DispatchTable make_dispatch_table()
     {
         DispatchTable tbl;
@@ -577,6 +584,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::JumpIfTrue, op_jump_if_true);
         SET_TABLE_ENTRY(Bytecode::JumpIfFalse, op_jump_if_false);
         SET_TABLE_ENTRY(Bytecode::Return, op_return);
+        SET_TABLE_ENTRY(Bytecode::Halt, op_halt);
         return tbl;
     }
 

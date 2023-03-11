@@ -81,7 +81,7 @@ namespace cl
         {
             active_scope = code_obj.module_scope;
             codegen_node(av.root_node, Mode::Module);
-            code_obj.emit_opcode(0, Bytecode::Return);
+            code_obj.emit_opcode(0, Bytecode::Halt);
             return code_obj;
         }
     private:
