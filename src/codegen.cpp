@@ -45,6 +45,18 @@ namespace cl
         t.table[size_t(AstOperatorKind::BITWISE_XOR)] = OpTableEntry(Bytecode::BitwiseXor, Bytecode::BitwiseXorSmi, Bytecode::BitwiseXorSmi);
 
 
+        t.table[size_t(AstOperatorKind::EQUAL)] = OpTableEntry(Bytecode::TestEqual);
+        t.table[size_t(AstOperatorKind::NOT_EQUAL)] = OpTableEntry(Bytecode::TestNotEqual);
+        t.table[size_t(AstOperatorKind::LESS)] = OpTableEntry(Bytecode::TestLess);
+        t.table[size_t(AstOperatorKind::LESS_EQUAL)] = OpTableEntry(Bytecode::TestLessEqual);
+        t.table[size_t(AstOperatorKind::GREATER)] = OpTableEntry(Bytecode::TestGreater);
+        t.table[size_t(AstOperatorKind::GREATER_EQUAL)] = OpTableEntry(Bytecode::TestGreaterEqual);
+        t.table[size_t(AstOperatorKind::IS)] = OpTableEntry(Bytecode::TestIs);
+        t.table[size_t(AstOperatorKind::IS_NOT)] = OpTableEntry(Bytecode::TestIsNot);
+        t.table[size_t(AstOperatorKind::IN)] = OpTableEntry(Bytecode::TestIn);
+        t.table[size_t(AstOperatorKind::NOT_IN)] = OpTableEntry(Bytecode::TestNotIn);
+
+
         t.table[size_t(AstOperatorKind::NOT)] = OpTableEntry(Bytecode::Not);
         t.table[size_t(AstOperatorKind::NEGATE)] = OpTableEntry(Bytecode::Negate);
         t.table[size_t(AstOperatorKind::PLUS)] = OpTableEntry(Bytecode::Plus);

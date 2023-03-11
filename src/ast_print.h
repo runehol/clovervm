@@ -52,7 +52,29 @@ struct fmt::formatter<cl::AstOperatorKind>
         case cl::AstOperatorKind::BITWISE_AND:
             return format_to(out, "&");
         case cl::AstOperatorKind::BITWISE_XOR:
-            return format_to(out, " ^ ");
+            return format_to(out, "^");
+
+
+        case cl::AstOperatorKind::EQUAL:
+            return format_to(out, "==");
+        case cl::AstOperatorKind::NOT_EQUAL:
+            return format_to(out, "!=");
+        case cl::AstOperatorKind::LESS:
+            return format_to(out, "<");
+        case cl::AstOperatorKind::LESS_EQUAL:
+            return format_to(out, "<=");
+        case cl::AstOperatorKind::GREATER:
+            return format_to(out, ">");
+        case cl::AstOperatorKind::GREATER_EQUAL:
+            return format_to(out, ">=");
+        case cl::AstOperatorKind::IS:
+            return format_to(out, "is");
+        case cl::AstOperatorKind::IS_NOT:
+            return format_to(out, "is not");
+        case cl::AstOperatorKind::IN:
+            return format_to(out, "in");
+        case cl::AstOperatorKind::NOT_IN:
+            return format_to(out, "not in");
 
         case cl::AstOperatorKind::NOT:
             return format_to(out, "not");

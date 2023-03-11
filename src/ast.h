@@ -41,6 +41,8 @@ namespace cl
         EXPRESSION_UNARY,
         EXPRESSION_LITERAL,
         EXPRESSION_VARIABLE_REFERENCE,
+        EXPRESSION_COMPARISON, //n-children comparison sequence with a 1 LHS and 1..n-1 comparison fragments
+        EXPRESSION_COMPARISON_FRAGMENT
 
     };
 
@@ -76,6 +78,8 @@ namespace cl
 		case AstNodeKind::EXPRESSION_UNARY:
 		case AstNodeKind::EXPRESSION_LITERAL:
 		case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
+        case AstNodeKind::EXPRESSION_COMPARISON:
+        case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
             return false;
         }
     }
@@ -112,6 +116,8 @@ namespace cl
 		case AstNodeKind::EXPRESSION_UNARY:
 		case AstNodeKind::EXPRESSION_LITERAL:
 		case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
+        case AstNodeKind::EXPRESSION_COMPARISON:
+        case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
             return true;
         }
     }
@@ -137,10 +143,22 @@ namespace cl
         BITWISE_AND,
         BITWISE_XOR,
 
+        EQUAL,
+        NOT_EQUAL,
+        LESS,
+        LESS_EQUAL,
+        GREATER,
+        GREATER_EQUAL,
+        IS,
+        IS_NOT,
+        IN,
+        NOT_IN,
+
         NOT,
         NEGATE,
         PLUS,
         BITWISE_NOT,
+
 
 
         //literal expressions
@@ -208,6 +226,18 @@ namespace cl
 
 		case AstOperatorKind::NOT:
             return ExpressionPrecedence::Inversion;
+
+        case AstOperatorKind::EQUAL:
+        case AstOperatorKind::NOT_EQUAL:
+        case AstOperatorKind::LESS:
+        case AstOperatorKind::LESS_EQUAL:
+        case AstOperatorKind::GREATER:
+        case AstOperatorKind::GREATER_EQUAL:
+        case AstOperatorKind::IS:
+        case AstOperatorKind::IS_NOT:
+        case AstOperatorKind::IN:
+        case AstOperatorKind::NOT_IN:
+            return ExpressionPrecedence::Comparison;
 
 		case AstOperatorKind::BITWISE_OR:
             return ExpressionPrecedence::BitwiseOr;
