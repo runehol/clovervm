@@ -379,6 +379,24 @@ struct fmt::formatter<cl::CodeObject>
         {
             pc = disassemble_instruction(code_obj, out, pc);
         }
+
+        for(uint32_t cidx = 0; cidx < code_obj.constant_table.size(); ++cidx)
+        {
+            format_to(out, "Constant {}: ", cidx);
+            cl::Value c = code_obj.constant_table[cidx];
+            if(c.is_smi())
+            {
+                format_to(out, "{}", c.get_smi());
+            } else if(c.is_ptr())
+            {
+                if(c.get_ptr()->klass == &cl::CodeObject::klass)
+                {
+                    format_to(out, "{}", *c.get_ptr<cl::CodeObject>());
+                }
+            }
+            format_to(out, "\n");
+        }
+
         return out;
     }
 };
