@@ -49,35 +49,6 @@ namespace cl
 
     };
 
-    constexpr bool is_statement(AstNodeKind k)
-    {
-        switch(k)
-        {
-        case AstNodeKind::STATEMENT_IF:
-        case AstNodeKind::STATEMENT_WHILE:
-        case AstNodeKind::STATEMENT_RETURN:
-        case AstNodeKind::STATEMENT_PASS:
-        case AstNodeKind::STATEMENT_BREAK:
-        case AstNodeKind::STATEMENT_CONTINUE:
-        case AstNodeKind::STATEMENT_GLOBAL:
-        case AstNodeKind::STATEMENT_NONLOCAL:
-        case AstNodeKind::STATEMENT_SEQUENCE:
-        case AstNodeKind::STATEMENT_ASSIGN:
-        case AstNodeKind::STATEMENT_EXPRESSION:
-            return true;
-        case AstNodeKind::EXPRESSION_TUPLE:
-        case AstNodeKind::EXPRESSION_LIST:
-        case AstNodeKind::EXPRESSION_ASSIGN:
-        case AstNodeKind::EXPRESSION_BINARY:
-        case AstNodeKind::EXPRESSION_UNARY:
-        case AstNodeKind::EXPRESSION_LITERAL:
-        case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
-        case AstNodeKind::EXPRESSION_COMPARISON:
-        case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
-        case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
-            return false;
-        }
-    }
 
     constexpr bool is_expression(AstNodeKind k)
     {

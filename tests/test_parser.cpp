@@ -40,9 +40,9 @@ TEST(Parser, simple2)
 TEST(Parser, if_stmt)
 {
     std::string expected = ("if a < b:\n"
-                               "        return b\n"
+                               "    return b\n"
                                "else:\n"
-                               "        return a\n");
+                               "    return a\n");
     std::string actual = parse(L""
                                "if a < b:\n"
                                "    return b\n"

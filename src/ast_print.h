@@ -132,10 +132,7 @@ struct fmt::formatter<cl::AstVector>
         assert(node_idx >= 0);
         cl::AstKind kind = av.kinds[node_idx];
         cl::ExpressionPrecedence self_precedence = precedence_for_kind(kind);
-        if(is_statement(kind.node_kind))
-        {
-            emit_indent(out, indent);
-        } else if(is_expression(kind.node_kind) && self_precedence <= outer_precedence)
+        if(is_expression(kind.node_kind) && self_precedence <= outer_precedence)
         {
             format_to(out, "(");
         }
@@ -144,11 +141,19 @@ struct fmt::formatter<cl::AstVector>
         switch(kind.node_kind)
         {
         case cl::AstNodeKind::STATEMENT_ASSIGN:
-        case cl::AstNodeKind::EXPRESSION_ASSIGN:
+            emit_indent(out, indent);
             render_node(av, out, children[0], indent, self_precedence);
             format_to(out, " {}= ", kind.operator_kind);
             render_node(av, out, children[1], indent, self_precedence);
+            format_to(out, "\n");
             break;
+        case cl::AstNodeKind::EXPRESSION_ASSIGN:
+            render_node(av, out, children[0], indent, self_precedence);
+            assert(kind.operator_kind == cl::AstOperatorKind::NOP);
+            format_to(out, " := ", kind.operator_kind);
+            render_node(av, out, children[1], indent, self_precedence);
+            break;
+
         case cl::AstNodeKind::EXPRESSION_BINARY:
         case cl::AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
             render_node(av, out, children[0], indent, self_precedence);
@@ -219,9 +224,12 @@ struct fmt::formatter<cl::AstVector>
             break;
 
         case cl::AstNodeKind::STATEMENT_EXPRESSION:
+            emit_indent(out, indent);
             render_node(av, out, children[0], indent, cl::ExpressionPrecedence::Lowest);
+            format_to(out, "\n");
             break;
         case cl::AstNodeKind::STATEMENT_IF:
+            emit_indent(out, indent);
             format_to(out, "if ");
             render_node(av, out, children[0], indent, cl::ExpressionPrecedence::Lowest);
             format_to(out, ":\n");
@@ -235,6 +243,7 @@ struct fmt::formatter<cl::AstVector>
             break;
 
         case cl::AstNodeKind::STATEMENT_WHILE:
+            emit_indent(out, indent);
             format_to(out, "while ");
             render_node(av, out, children[0], indent, cl::ExpressionPrecedence::Lowest);
             format_to(out, ":\n");
@@ -248,26 +257,32 @@ struct fmt::formatter<cl::AstVector>
             break;
 
         case cl::AstNodeKind::STATEMENT_RETURN:
+            emit_indent(out, indent);
             format_to(out, "return");
             if(children.size() > 0)
             {
                 format_to(out, " ");
                 render_node(av, out, children[0], indent, cl::ExpressionPrecedence::Lowest);
             }
+            format_to(out, "\n");
             break;
 
         case cl::AstNodeKind::STATEMENT_PASS:
-            format_to(out, "pass");
+            emit_indent(out, indent);
+            format_to(out, "pass\n");
             break;
         case cl::AstNodeKind::STATEMENT_BREAK:
-            format_to(out, "break");
+            emit_indent(out, indent);
+            format_to(out, "break\n");
             break;
         case cl::AstNodeKind::STATEMENT_CONTINUE:
-            format_to(out, "continue");
+            emit_indent(out, indent);
+            format_to(out, "continue\n");
             break;
 
         case cl::AstNodeKind::STATEMENT_NONLOCAL:
         case cl::AstNodeKind::STATEMENT_GLOBAL:
+            emit_indent(out, indent);
             if(kind.node_kind == cl::AstNodeKind::STATEMENT_NONLOCAL)
             {
                 format_to(out, "nonlocal ");
@@ -282,6 +297,7 @@ struct fmt::formatter<cl::AstVector>
                 }
                 render_node(av, out, children[i], indent, cl::ExpressionPrecedence::Lowest);
             }
+            format_to(out, "nonlocal\n");
             break;
 
         case cl::AstNodeKind::STATEMENT_SEQUENCE:
@@ -294,10 +310,7 @@ struct fmt::formatter<cl::AstVector>
 
         }
 
-        if(is_statement(kind.node_kind) && kind.node_kind != cl::AstNodeKind::STATEMENT_SEQUENCE && kind.node_kind != cl::AstNodeKind::STATEMENT_IF && kind.node_kind != cl::AstNodeKind::STATEMENT_WHILE)
-        {
-            format_to(out, "\n");
-        } else if(is_expression(kind.node_kind) && self_precedence <= outer_precedence)
+        if(is_expression(kind.node_kind) && self_precedence <= outer_precedence)
         {
             format_to(out, ")");
         }
