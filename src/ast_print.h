@@ -222,6 +222,12 @@ struct fmt::formatter<cl::AstVector>
             format_to(out, ")");
             break;
 
+        case cl::AstNodeKind::EXPRESSION_CALL:
+            render_node(av, out, children[0], indent, self_precedence);
+            render_node(av, out, children[1], indent, self_precedence);
+            break;
+
+
         case cl::AstNodeKind::PARAMETER_SEQUENCE:
             format_to(out, "(");
             for(size_t i = 0; i < children.size(); ++i)
@@ -234,6 +240,7 @@ struct fmt::formatter<cl::AstVector>
             }
             format_to(out, ")");
             break;
+
 
         case cl::AstNodeKind::STATEMENT_FUNCTION_DEF:
             emit_indent(out, indent);

@@ -517,7 +517,44 @@ namespace cl
 
         int32_t await_primary()
         {
-            return primary();
+            int32_t result = primary();
+            while(true)
+            {
+                switch(peek())
+                {
+                case Token::LPAR: // function call
+                {
+                    uint32_t source_pos = source_pos_and_advance(); // skip over the LPAR
+                    int32_t args = arguments();
+                    consume(Token::RPAR);
+                    result = ast.emplace_back(AstNodeKind::EXPRESSION_CALL, source_pos, result, args);
+                    break;
+                }
+
+                default:
+                    return result;
+                }
+
+            }
+        }
+
+        int32_t arguments()
+        {
+            int32_t result = args();
+            return result;
+        }
+
+        int32_t args()
+        {
+           int32_t source_pos = source_pos_for_token();
+            /* TODO this is very incomplete. but just enough to get unnamed arguments going */
+            AstChildren ch;
+            while(peek() != Token::RPAR)
+            {
+                ch.push_back(expression());
+                if(!match(Token::COMMA)) break;
+            }
+            return ast.emplace_back(AstNodeKind::PARAMETER_SEQUENCE, source_pos, ch);
         }
 
         int32_t primary()

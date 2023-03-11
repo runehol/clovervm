@@ -68,3 +68,20 @@ TEST(Parser, def_stmt)
 
     EXPECT_EQ(expected, actual);
 }
+
+
+TEST(Parser, rec_call)
+{
+    std::string expected = (""
+                            "def fib(n):\n"
+                            "    if n <= 1:\n"
+                            "        return n\n"
+                            "    return fib(n - 2) + fib(n - 1)\n");
+    std::string actual = parse(L""
+                               "def fib(n):\n"
+                               "    if n <= 1:\n"
+                               "        return n\n"
+                               "    return fib(n-2) + fib(n-1)\n");
+
+    EXPECT_EQ(expected, actual);
+}

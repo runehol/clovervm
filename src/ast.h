@@ -48,6 +48,7 @@ namespace cl
         EXPRESSION_COMPARISON, //n-children comparison sequence with a 1 LHS and 1..n-1 comparison fragments
         EXPRESSION_COMPARISON_FRAGMENT,
         EXPRESSION_SHORTCUTTING_BINARY,
+        EXPRESSION_CALL,
 
     };
 
@@ -80,6 +81,7 @@ namespace cl
         case AstNodeKind::EXPRESSION_COMPARISON:
         case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
         case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
+        case AstNodeKind::EXPRESSION_CALL:
             return true;
         }
     }
@@ -190,6 +192,9 @@ namespace cl
         } else if(k.node_kind == AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
         {
             return ExpressionPrecedence::Atom;
+        } else if(k.node_kind == AstNodeKind::EXPRESSION_CALL)
+        {
+            return ExpressionPrecedence::Primary;
         }
         switch(k.operator_kind)
         {
