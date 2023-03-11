@@ -2,6 +2,10 @@
 
 #include "value.h"
 #include "code_object.h"
+#include "function.h"
+#include "thread_state.h"
+#include <fmt/core.h>
+#include "code_object_print.h"
 
 namespace cl
 {
@@ -83,6 +87,11 @@ namespace cl
     NOINLINE Value name_error(PARAMS)
     {
         throw std::runtime_error("NameError");
+    }
+
+    NOINLINE Value not_callable_error(PARAMS)
+    {
+        throw std::runtime_error("TypeError: object is not callable");
     }
 
     NOINLINE static Value slow_path(PARAMS)
@@ -471,6 +480,20 @@ namespace cl
 
     }
 
+    static Value op_create_function(PARAMS)
+    {
+        START(2);
+        uint8_t const_offset = pc[1];
+        Value code_obj = code_object->constant_table[const_offset];
+
+        accumulator = Value::from_oop(new(ThreadState::get_active()->allocate_refcounted(sizeof(Function)))Function(code_obj));
+
+        COMPLETE();
+
+
+    }
+
+
     static Value op_jump(PARAMS)
     {
         int16_t rel_target = read_int16_le(&pc[1]);
@@ -519,14 +542,43 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_call_simple(PARAMS)
+    {
+        int8_t reg = pc[1];
+        uint8_t n_args = pc[2];
+        Value fun = fp[reg];
+
+        if(unlikely(!fun.is_ptr() || fun.get_ptr()->klass != &Function::klass))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        pc += 3;
+
+        // must save off pc, old code object and fp
+        Value *new_fp = fp + reg - n_args - 1 - FrameHeaderSizeAboveFp;
+
+        // these aren't really values. we're just going to whack them in and ask the refcounter to ignore them.
+        new_fp[0].as.ptr = (Object *)fp;
+        new_fp[1].as.ptr = (Object *)pc;
+        new_fp[-1] = Value::from_oop(code_object);
+
+        fp = new_fp;
+        code_object = fun.get_ptr<Function>()->code_object.get_ptr<CodeObject>();
+        pc = code_object->code.data();
+
+        START(0);
+        COMPLETE();
+    }
+
 
     static Value op_return(PARAMS)
     {
-        START(1);
+        code_object = fp[-1].get_ptr<CodeObject>();
+        pc = (const uint8_t *)fp[1].as.ptr;
+        fp = (Value *)fp[0].as.ptr;
 
-        /* temporary implementation: return the accumulator value out of the interpreter */
-        return accumulator;
-
+        START(0);
         COMPLETE();
     }
 
@@ -579,6 +631,11 @@ namespace cl
 
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
+
+
+        SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);
+
+        SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
 
         SET_TABLE_ENTRY(Bytecode::Jump, op_jump);
         SET_TABLE_ENTRY(Bytecode::JumpIfTrue, op_jump_if_true);
