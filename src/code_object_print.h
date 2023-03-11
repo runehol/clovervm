@@ -139,7 +139,7 @@ struct fmt::formatter<cl::CodeObject>
     template <typename Out>
     void disassemble_constant(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
     {
-        format_to(out, "c[{}}", code_obj.code[pc]);
+        format_to(out, "c[{}]", code_obj.code[pc]);
     }
 
     template <typename Out>
