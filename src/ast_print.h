@@ -76,6 +76,13 @@ struct fmt::formatter<cl::AstOperatorKind>
         case cl::AstOperatorKind::NOT_IN:
             return format_to(out, "not in");
 
+        case cl::AstOperatorKind::SHORTCUTTING_AND:
+            return format_to(out, "and");
+
+        case cl::AstOperatorKind::SHORTCUTTING_OR:
+            return format_to(out, "or");
+
+
         case cl::AstOperatorKind::NOT:
             return format_to(out, "not");
         case cl::AstOperatorKind::NEGATE:
@@ -136,6 +143,7 @@ struct fmt::formatter<cl::AstVector>
             render_node(av, out, children[1], indent, self_precedence);
             break;
         case cl::AstNodeKind::EXPRESSION_BINARY:
+        case cl::AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
             render_node(av, out, children[0], indent, self_precedence);
             format_to(out, " {} ", kind.operator_kind);
             render_node(av, out, children[1], indent, self_precedence);

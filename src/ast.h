@@ -41,8 +41,9 @@ namespace cl
         EXPRESSION_UNARY,
         EXPRESSION_LITERAL,
         EXPRESSION_VARIABLE_REFERENCE,
-        EXPRESSION_COMPARISON, //n-children comparison sequence with a 1 LHS and 1..n-1 comparison fragments
-        EXPRESSION_COMPARISON_FRAGMENT
+        EXPRESSION_COMPARISON_COMPLEX, //n-children comparison sequence with a 1 LHS and 1..n-1 comparison fragments
+        EXPRESSION_COMPARISON_FRAGMENT,
+        EXPRESSION_SHORTCUTTING_BINARY,
 
     };
 
@@ -78,8 +79,9 @@ namespace cl
 		case AstNodeKind::EXPRESSION_UNARY:
 		case AstNodeKind::EXPRESSION_LITERAL:
 		case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
-        case AstNodeKind::EXPRESSION_COMPARISON:
+        case AstNodeKind::EXPRESSION_COMPARISON_COMPLEX:
         case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
+        case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
             return false;
         }
     }
@@ -116,8 +118,9 @@ namespace cl
 		case AstNodeKind::EXPRESSION_UNARY:
 		case AstNodeKind::EXPRESSION_LITERAL:
 		case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
-        case AstNodeKind::EXPRESSION_COMPARISON:
+        case AstNodeKind::EXPRESSION_COMPARISON_COMPLEX:
         case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
+        case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
             return true;
         }
     }
@@ -153,6 +156,9 @@ namespace cl
         IS_NOT,
         IN,
         NOT_IN,
+
+        SHORTCUTTING_AND,
+        SHORTCUTTING_OR,
 
         NOT,
         NEGATE,
@@ -223,6 +229,12 @@ namespace cl
         {
 		case AstOperatorKind::NOP:
             return ExpressionPrecedence::Lowest;
+
+        case AstOperatorKind::SHORTCUTTING_OR:
+            return ExpressionPrecedence::Disjunction;
+
+        case AstOperatorKind::SHORTCUTTING_AND:
+            return ExpressionPrecedence::Conjunction;
 
 		case AstOperatorKind::NOT:
             return ExpressionPrecedence::Inversion;
