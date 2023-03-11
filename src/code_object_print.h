@@ -67,6 +67,24 @@ struct fmt::formatter<cl::Bytecode>
         case cl::Bytecode::BitwiseXor:
             return format_to(out, "BitwiseXor");
 
+        case cl::Bytecode::TestEqual:
+            return format_to(out, "TestEqual");
+        case cl::Bytecode::TestNotEqual:
+            return format_to(out, "TestNotEqual");
+        case cl::Bytecode::TestLess:
+            return format_to(out, "TestLess");
+        case cl::Bytecode::TestLessEqual:
+            return format_to(out, "TestLessEqual");
+        case cl::Bytecode::TestGreater:
+            return format_to(out, "TestGreater");
+        case cl::Bytecode::TestGreaterEqual:
+            return format_to(out, "TestGreaterEqual");
+        case cl::Bytecode::TestIn:
+            return format_to(out, "TestIn");
+        case cl::Bytecode::TestNotIn:
+            return format_to(out, "TestNotIn");
+
+
         case cl::Bytecode::AddSmi:
             return format_to(out, "AddSmi");
         case cl::Bytecode::SubSmi:
@@ -240,6 +258,14 @@ struct fmt::formatter<cl::CodeObject>
         case cl::Bytecode::BitwiseOr:
         case cl::Bytecode::BitwiseAnd:
         case cl::Bytecode::BitwiseXor:
+        case cl::Bytecode::TestEqual:
+        case cl::Bytecode::TestNotEqual:
+        case cl::Bytecode::TestLess:
+        case cl::Bytecode::TestLessEqual:
+        case cl::Bytecode::TestGreater:
+        case cl::Bytecode::TestGreaterEqual:
+        case cl::Bytecode::TestIn:
+        case cl::Bytecode::TestNotIn:
             format_to(out, " ");
             disassemble_reg(code_obj, out, pc++);
             break;

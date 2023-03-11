@@ -38,6 +38,15 @@ namespace cl
         BitwiseOr,
         BitwiseAnd,
         BitwiseXor,
+        TestEqual,
+        TestNotEqual,
+        TestLess,
+        TestLessEqual,
+        TestGreater,
+        TestGreaterEqual,
+        TestIn,
+        TestNotIn,
+
 
         //binary on smi. acc op smi
         AddSmi,
