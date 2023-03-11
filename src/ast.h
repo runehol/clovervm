@@ -53,36 +53,36 @@ namespace cl
     {
         switch(k)
         {
-		case AstNodeKind::STATEMENT_FUNCTION_DEF:
-		case AstNodeKind::STATEMENT_IF:
-		case AstNodeKind::STATEMENT_CLASS_DEF:
-		case AstNodeKind::STATEMENT_WITH:
-		case AstNodeKind::STATEMENT_FOR:
-		case AstNodeKind::STATEMENT_TRY:
-		case AstNodeKind::STATEMENT_WHILE:
-		case AstNodeKind::STATEMENT_MATCH:
-		case AstNodeKind::STATEMENT_RETURN:
-		case AstNodeKind::STATEMENT_IMPORT:
-		case AstNodeKind::STATEMENT_RAISE:
-		case AstNodeKind::STATEMENT_PASS:
-		case AstNodeKind::STATEMENT_DEL:
-		case AstNodeKind::STATEMENT_YIELD:
-		case AstNodeKind::STATEMENT_ASSERT:
-		case AstNodeKind::STATEMENT_BREAK:
-		case AstNodeKind::STATEMENT_CONTINUE:
-		case AstNodeKind::STATEMENT_GLOBAL:
-		case AstNodeKind::STATEMENT_NON_LOCAL:
-		case AstNodeKind::STATEMENT_SEQUENCE:
+        case AstNodeKind::STATEMENT_FUNCTION_DEF:
+        case AstNodeKind::STATEMENT_IF:
+        case AstNodeKind::STATEMENT_CLASS_DEF:
+        case AstNodeKind::STATEMENT_WITH:
+        case AstNodeKind::STATEMENT_FOR:
+        case AstNodeKind::STATEMENT_TRY:
+        case AstNodeKind::STATEMENT_WHILE:
+        case AstNodeKind::STATEMENT_MATCH:
+        case AstNodeKind::STATEMENT_RETURN:
+        case AstNodeKind::STATEMENT_IMPORT:
+        case AstNodeKind::STATEMENT_RAISE:
+        case AstNodeKind::STATEMENT_PASS:
+        case AstNodeKind::STATEMENT_DEL:
+        case AstNodeKind::STATEMENT_YIELD:
+        case AstNodeKind::STATEMENT_ASSERT:
+        case AstNodeKind::STATEMENT_BREAK:
+        case AstNodeKind::STATEMENT_CONTINUE:
+        case AstNodeKind::STATEMENT_GLOBAL:
+        case AstNodeKind::STATEMENT_NON_LOCAL:
+        case AstNodeKind::STATEMENT_SEQUENCE:
         case AstNodeKind::STATEMENT_ASSIGN:
         case AstNodeKind::STATEMENT_EXPRESSION:
             return true;
-		case AstNodeKind::EXPRESSION_TUPLE:
-		case AstNodeKind::EXPRESSION_LIST:
-		case AstNodeKind::EXPRESSION_ASSIGN:
-		case AstNodeKind::EXPRESSION_BINARY:
-		case AstNodeKind::EXPRESSION_UNARY:
-		case AstNodeKind::EXPRESSION_LITERAL:
-		case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
+        case AstNodeKind::EXPRESSION_TUPLE:
+        case AstNodeKind::EXPRESSION_LIST:
+        case AstNodeKind::EXPRESSION_ASSIGN:
+        case AstNodeKind::EXPRESSION_BINARY:
+        case AstNodeKind::EXPRESSION_UNARY:
+        case AstNodeKind::EXPRESSION_LITERAL:
+        case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
         case AstNodeKind::EXPRESSION_COMPARISON:
         case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
         case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
@@ -94,36 +94,36 @@ namespace cl
     {
         switch(k)
         {
-		case AstNodeKind::STATEMENT_FUNCTION_DEF:
-		case AstNodeKind::STATEMENT_IF:
-		case AstNodeKind::STATEMENT_CLASS_DEF:
-		case AstNodeKind::STATEMENT_WITH:
-		case AstNodeKind::STATEMENT_FOR:
-		case AstNodeKind::STATEMENT_TRY:
-		case AstNodeKind::STATEMENT_WHILE:
-		case AstNodeKind::STATEMENT_MATCH:
-		case AstNodeKind::STATEMENT_RETURN:
-		case AstNodeKind::STATEMENT_IMPORT:
-		case AstNodeKind::STATEMENT_RAISE:
-		case AstNodeKind::STATEMENT_PASS:
-		case AstNodeKind::STATEMENT_DEL:
-		case AstNodeKind::STATEMENT_YIELD:
-		case AstNodeKind::STATEMENT_ASSERT:
-		case AstNodeKind::STATEMENT_BREAK:
-		case AstNodeKind::STATEMENT_CONTINUE:
-		case AstNodeKind::STATEMENT_GLOBAL:
-		case AstNodeKind::STATEMENT_NON_LOCAL:
-		case AstNodeKind::STATEMENT_SEQUENCE:
+        case AstNodeKind::STATEMENT_FUNCTION_DEF:
+        case AstNodeKind::STATEMENT_IF:
+        case AstNodeKind::STATEMENT_CLASS_DEF:
+        case AstNodeKind::STATEMENT_WITH:
+        case AstNodeKind::STATEMENT_FOR:
+        case AstNodeKind::STATEMENT_TRY:
+        case AstNodeKind::STATEMENT_WHILE:
+        case AstNodeKind::STATEMENT_MATCH:
+        case AstNodeKind::STATEMENT_RETURN:
+        case AstNodeKind::STATEMENT_IMPORT:
+        case AstNodeKind::STATEMENT_RAISE:
+        case AstNodeKind::STATEMENT_PASS:
+        case AstNodeKind::STATEMENT_DEL:
+        case AstNodeKind::STATEMENT_YIELD:
+        case AstNodeKind::STATEMENT_ASSERT:
+        case AstNodeKind::STATEMENT_BREAK:
+        case AstNodeKind::STATEMENT_CONTINUE:
+        case AstNodeKind::STATEMENT_GLOBAL:
+        case AstNodeKind::STATEMENT_NON_LOCAL:
+        case AstNodeKind::STATEMENT_SEQUENCE:
         case AstNodeKind::STATEMENT_ASSIGN:
         case AstNodeKind::STATEMENT_EXPRESSION:
             return false;
-		case AstNodeKind::EXPRESSION_TUPLE:
-		case AstNodeKind::EXPRESSION_LIST:
-		case AstNodeKind::EXPRESSION_ASSIGN:
-		case AstNodeKind::EXPRESSION_BINARY:
-		case AstNodeKind::EXPRESSION_UNARY:
-		case AstNodeKind::EXPRESSION_LITERAL:
-		case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
+        case AstNodeKind::EXPRESSION_TUPLE:
+        case AstNodeKind::EXPRESSION_LIST:
+        case AstNodeKind::EXPRESSION_ASSIGN:
+        case AstNodeKind::EXPRESSION_BINARY:
+        case AstNodeKind::EXPRESSION_UNARY:
+        case AstNodeKind::EXPRESSION_LITERAL:
+        case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
         case AstNodeKind::EXPRESSION_COMPARISON:
         case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
         case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
@@ -233,7 +233,7 @@ namespace cl
     {
         switch(k.operator_kind)
         {
-		case AstOperatorKind::NOP:
+        case AstOperatorKind::NOP:
             return ExpressionPrecedence::Lowest;
 
         case AstOperatorKind::SHORTCUTTING_OR:
@@ -242,7 +242,7 @@ namespace cl
         case AstOperatorKind::SHORTCUTTING_AND:
             return ExpressionPrecedence::Conjunction;
 
-		case AstOperatorKind::NOT:
+        case AstOperatorKind::NOT:
             return ExpressionPrecedence::Inversion;
 
         case AstOperatorKind::EQUAL:
@@ -257,46 +257,46 @@ namespace cl
         case AstOperatorKind::NOT_IN:
             return ExpressionPrecedence::Comparison;
 
-		case AstOperatorKind::BITWISE_OR:
+        case AstOperatorKind::BITWISE_OR:
             return ExpressionPrecedence::BitwiseOr;
-		case AstOperatorKind::BITWISE_AND:
+        case AstOperatorKind::BITWISE_AND:
             return ExpressionPrecedence::BitwiseAnd;
-		case AstOperatorKind::BITWISE_XOR:
+        case AstOperatorKind::BITWISE_XOR:
             return ExpressionPrecedence::BitwiseXor;
 
-		case AstOperatorKind::LEFTSHIFT:
-		case AstOperatorKind::RIGHTSHIFT:
+        case AstOperatorKind::LEFTSHIFT:
+        case AstOperatorKind::RIGHTSHIFT:
             return ExpressionPrecedence::Shift;
 
-		case AstOperatorKind::ADD:
-		case AstOperatorKind::SUBTRACT:
+        case AstOperatorKind::ADD:
+        case AstOperatorKind::SUBTRACT:
             return ExpressionPrecedence::Sum;
 
-		case AstOperatorKind::MULTIPLY:
-		case AstOperatorKind::DIVIDE:
-		case AstOperatorKind::INT_DIVIDE:
-		case AstOperatorKind::MATMULT:
-		case AstOperatorKind::MODULO:
+        case AstOperatorKind::MULTIPLY:
+        case AstOperatorKind::DIVIDE:
+        case AstOperatorKind::INT_DIVIDE:
+        case AstOperatorKind::MATMULT:
+        case AstOperatorKind::MODULO:
             return ExpressionPrecedence::Term;
 
-		case AstOperatorKind::NEGATE:
-		case AstOperatorKind::PLUS:
-		case AstOperatorKind::BITWISE_NOT:
+        case AstOperatorKind::NEGATE:
+        case AstOperatorKind::PLUS:
+        case AstOperatorKind::BITWISE_NOT:
             return ExpressionPrecedence::Factor;
 
-		case AstOperatorKind::POWER:
+        case AstOperatorKind::POWER:
             return ExpressionPrecedence::Power;
 
 
-		case AstOperatorKind::DOT:
-		case AstOperatorKind::SUBSCRIPT:
+        case AstOperatorKind::DOT:
+        case AstOperatorKind::SUBSCRIPT:
             return ExpressionPrecedence::Primary;
 
-		case AstOperatorKind::NUMBER:
-		case AstOperatorKind::STRING:
-		case AstOperatorKind::NONE:
-		case AstOperatorKind::TRUE:
-		case AstOperatorKind::FALSE:
+        case AstOperatorKind::NUMBER:
+        case AstOperatorKind::STRING:
+        case AstOperatorKind::NONE:
+        case AstOperatorKind::TRUE:
+        case AstOperatorKind::FALSE:
             return ExpressionPrecedence::Atom;
             }
 
