@@ -41,7 +41,7 @@ namespace cl
         EXPRESSION_UNARY,
         EXPRESSION_LITERAL,
         EXPRESSION_VARIABLE_REFERENCE,
-        EXPRESSION_COMPARISON_COMPLEX, //n-children comparison sequence with a 1 LHS and 1..n-1 comparison fragments
+        EXPRESSION_COMPARISON, //n-children comparison sequence with a 1 LHS and 1..n-1 comparison fragments
         EXPRESSION_COMPARISON_FRAGMENT,
         EXPRESSION_SHORTCUTTING_BINARY,
 
@@ -79,7 +79,7 @@ namespace cl
 		case AstNodeKind::EXPRESSION_UNARY:
 		case AstNodeKind::EXPRESSION_LITERAL:
 		case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
-        case AstNodeKind::EXPRESSION_COMPARISON_COMPLEX:
+        case AstNodeKind::EXPRESSION_COMPARISON:
         case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
         case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
             return false;
@@ -118,7 +118,7 @@ namespace cl
 		case AstNodeKind::EXPRESSION_UNARY:
 		case AstNodeKind::EXPRESSION_LITERAL:
 		case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
-        case AstNodeKind::EXPRESSION_COMPARISON_COMPLEX:
+        case AstNodeKind::EXPRESSION_COMPARISON:
         case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
         case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
             return true;

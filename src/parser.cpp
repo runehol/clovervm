@@ -254,7 +254,86 @@ namespace cl
 
         int32_t comparison()
         {
-            return bitwise_or();
+            AstChildren ch;
+            ch.push_back(bitwise_or());
+            uint32_t source_pos = source_pos_for_token();
+            while(1)
+            {
+                bool valid_lookahead = false;
+                switch(peek())
+                {
+                case Token::EQEQUAL:
+                case Token::NOTEQUAL:
+                case Token::LESS:
+                case Token::LESSEQUAL:
+                case Token::GREATEREQUAL:
+                case Token::GREATER:
+                case Token::IN:
+                case Token::IS:
+                    valid_lookahead = true;
+                    break;
+                case Token::NOT:
+                    if(peek2() == Token::IN)
+                    {
+                        valid_lookahead = true;
+                    }
+                    break;
+                default:
+                    break;
+
+                }
+                if(!valid_lookahead) break;
+                ch.push_back(comparison_fragment());
+            }
+
+            if(ch.size() == 1)
+            {
+                return ch[0];
+            } else {
+                return ast.emplace_back(AstNodeKind::EXPRESSION_COMPARISON, source_pos, ch);
+            }
+        }
+
+        int32_t comparison_fragment()
+        {
+            AstOperatorKind ok = AstOperatorKind::NOP;
+            uint32_t source_pos = source_pos_for_token();
+            if(match(Token::EQEQUAL))
+            {
+                ok = AstOperatorKind::EQUAL;
+            } else if(match(Token::NOTEQUAL))
+            {
+                ok = AstOperatorKind::NOT_EQUAL;
+            } else if(match(Token::LESS))
+            {
+                ok = AstOperatorKind::LESS;
+            } else if(match(Token::LESSEQUAL))
+            {
+                ok = AstOperatorKind::LESS_EQUAL;
+            } else if(match(Token::GREATEREQUAL))
+            {
+                ok = AstOperatorKind::GREATER_EQUAL;
+            } else if(match(Token::GREATER))
+            {
+                ok = AstOperatorKind::GREATER;
+            } else if(match(Token::IS))
+            {
+                ok = AstOperatorKind::IS;
+                if(match(Token::NOT))
+                {
+                    ok = AstOperatorKind::IS_NOT;
+                }
+            } else if(match(Token::IN))
+            {
+                ok = AstOperatorKind::IN;
+            } else if(peek() == Token::NOT && peek2() == Token::IN)
+            {
+                consume(Token::NOT); consume(Token::IN);
+                ok = AstOperatorKind::NOT_IN;
+            }
+            assert(ok != AstOperatorKind::NOP);
+            int32_t ch = bitwise_or();
+            return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT, ok), source_pos, ch);
         }
 
 
