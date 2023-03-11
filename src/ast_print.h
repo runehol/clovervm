@@ -263,7 +263,7 @@ struct fmt::formatter<cl::AstVector>
             format_to(out, ":\n");
             render_node(av, out, children[1], indent+1, cl::ExpressionPrecedence::Lowest);
 
-            for(size_t child_offset = 2; child_offset < children.size(); child_offset += 2)
+            for(size_t child_offset = 2; child_offset < children.size()-1; child_offset += 2)
             {
                 format_to(out, "elif ");
                 render_node(av, out, children[child_offset+0], indent, cl::ExpressionPrecedence::Lowest);

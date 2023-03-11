@@ -489,7 +489,7 @@ namespace cl
                 JumpTarget done_target(code_obj);
 
 
-                for(size_t i = 0; i < children.size(); i += 2)
+                for(size_t i = 0; i < children.size()-1; i += 2)
                 {
                     JumpTarget next_target(code_obj);
                     codegen_node(children[i+0], mode); // condition, initial check
