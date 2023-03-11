@@ -445,6 +445,8 @@ namespace cl
             case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
                 throw std::runtime_error("should not end here - this is handled by EXPRESSION_COMPARISON");
 
+            case AstNodeKind::PARAMETER_SEQUENCE:
+                throw std::runtime_error("should not end here - this is handled by function definitions");
 
             }
 

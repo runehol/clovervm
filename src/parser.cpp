@@ -753,7 +753,55 @@ namespace cl
 
         int32_t function_def()
         {
-            return -1;
+            if(peek() == Token::AT)
+            {
+                // todo worry about decorators later
+            }
+            return function_def_raw();
+        }
+
+        int32_t function_def_raw()
+        {
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::DEF); // todo worry about async later
+            consume(Token::NAME);
+            std::wstring name = std::wstring(string_for_name_token(*ast.compilation_unit, source_pos_for_previous_token()));
+            Value name_str = vm.get_or_create_interned_string(name);
+            consume(Token::LPAR);
+            int32_t param_seq = params();
+            consume(Token::RPAR);
+            if(peek() == Token::RARROW)
+            {
+                consume(Token::RARROW);
+                expression(); // just swallow that return type definition, we ignore it
+            }
+
+            consume(Token::COLON);
+            // todo worry about func_type_comment later
+            int32_t body = block();
+            return ast.emplace_back(AstNodeKind::STATEMENT_FUNCTION_DEF, source_pos, {param_seq, body}, name_str);
+        }
+
+        int32_t params()
+        {
+            return parameters();
+        }
+
+        int32_t parameters()
+        {
+            int32_t source_pos = source_pos_for_token();
+            /* TODO this is very incomplete. but just enough to get default-less parameters going */
+            AstChildren ch;
+            while(peek() != Token::RPAR)
+            {
+                consume(Token::NAME);
+                std::wstring name = std::wstring(string_for_name_token(*ast.compilation_unit, source_pos_for_previous_token()));
+                Value v = vm.get_or_create_interned_string(name);
+                ch.push_back(ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE, source_pos_for_previous_token(), v));
+                if(!match(Token::COMMA)) break;
+
+            }
+            return ast.emplace_back(AstNodeKind::PARAMETER_SEQUENCE, source_pos, ch);
         }
 
         int32_t if_stmt()

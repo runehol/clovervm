@@ -217,10 +217,31 @@ struct fmt::formatter<cl::AstVector>
             }
             if(children.size() == 1)
             {
-            format_to(out, ",");
-
+                format_to(out, ",");
             }
             format_to(out, ")");
+            break;
+
+        case cl::AstNodeKind::PARAMETER_SEQUENCE:
+            format_to(out, "(");
+            for(size_t i = 0; i < children.size(); ++i)
+            {
+                if(i != 0)
+                {
+                    format_to(out, ", ");
+                }
+                render_node(av, out, children[i], indent, cl::ExpressionPrecedence::Lowest);
+            }
+            format_to(out, ")");
+            break;
+
+        case cl::AstNodeKind::STATEMENT_FUNCTION_DEF:
+            emit_indent(out, indent);
+            format_to(out, L"def {}", string_as_wchar_t(av.constants[node_idx]));
+
+            render_node(av, out, children[0], indent, cl::ExpressionPrecedence::Lowest);
+            format_to(out, ":\n");
+            render_node(av, out, children[1], indent+1, cl::ExpressionPrecedence::Lowest);
             break;
 
         case cl::AstNodeKind::STATEMENT_EXPRESSION:

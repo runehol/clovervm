@@ -51,3 +51,20 @@ TEST(Parser, if_stmt)
 
     EXPECT_EQ(expected, actual);
 }
+
+
+TEST(Parser, def_stmt)
+{
+    std::string expected = (""
+                            "def maybe_sub(n):\n"
+                            "    if n <= 1:\n"
+                            "        return n\n"
+                            "    return n - 1\n");
+    std::string actual = parse(L""
+                               "def maybe_sub(n):\n"
+                               "    if n <= 1:\n"
+                               "        return n\n"
+                               "    return n-1\n");
+
+    EXPECT_EQ(expected, actual);
+}

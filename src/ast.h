@@ -6,6 +6,7 @@
 #include <cassert>
 #include <iosfwd>
 #include "value.h"
+#include "refcount.h"
 #include <absl/container/inlined_vector.h>
 
 namespace cl
@@ -14,7 +15,7 @@ namespace cl
 
     enum class AstNodeKind : uint8_t
     {
-        //STATEMENT_FUNCTION_DEF,
+        STATEMENT_FUNCTION_DEF,
         STATEMENT_IF,
         //STATEMENT_CLASS_DEF,
         //STATEMENT_WITH,
@@ -36,6 +37,7 @@ namespace cl
         STATEMENT_SEQUENCE,
         STATEMENT_ASSIGN,
         STATEMENT_EXPRESSION,
+        PARAMETER_SEQUENCE,
         EXPRESSION_TUPLE,
         EXPRESSION_LIST,
         EXPRESSION_ASSIGN,
@@ -54,6 +56,7 @@ namespace cl
     {
         switch(k)
         {
+        case AstNodeKind::STATEMENT_FUNCTION_DEF:
         case AstNodeKind::STATEMENT_IF:
         case AstNodeKind::STATEMENT_WHILE:
         case AstNodeKind::STATEMENT_RETURN:
@@ -65,6 +68,7 @@ namespace cl
         case AstNodeKind::STATEMENT_SEQUENCE:
         case AstNodeKind::STATEMENT_ASSIGN:
         case AstNodeKind::STATEMENT_EXPRESSION:
+        case AstNodeKind::PARAMETER_SEQUENCE:
             return false;
         case AstNodeKind::EXPRESSION_TUPLE:
         case AstNodeKind::EXPRESSION_LIST:
@@ -304,7 +308,7 @@ namespace cl
             kinds.push_back(kind);
             source_offsets.push_back(source_offset);
             children.emplace_back(ch);
-            constants.emplace_back(Value::None());
+            constants.emplace_back(incref(Value::None()));
             return idx;
         }
 
@@ -315,18 +319,18 @@ namespace cl
             kinds.push_back(kind);
             source_offsets.push_back(source_offset);
             children.emplace_back();
-            constants.emplace_back(constant);
+            constants.emplace_back(incref(constant));
             return idx;
         }
 
 
-        int32_t emplace_back(AstKind kind, uint32_t source_offset, AstChildren child_vec)
+        int32_t emplace_back(AstKind kind, uint32_t source_offset, AstChildren child_vec, Value constant = Value::None())
         {
             int32_t idx = size();
             kinds.push_back(kind);
             source_offsets.push_back(source_offset);
             children.emplace_back(child_vec);
-            constants.emplace_back(Value::None());
+            constants.emplace_back(incref(constant));
             return idx;
         }
 
