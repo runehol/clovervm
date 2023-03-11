@@ -75,6 +75,8 @@ namespace cl
 
         }
 
+        void reserve_empty_slots(size_t n_slots) { indirect_dict.reserve_empty_slots(n_slots); }
+
 
 
         uint32_t size() const { return slots.size(); }

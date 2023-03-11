@@ -162,9 +162,15 @@ struct fmt::formatter<cl::CodeObject>
     }
 
     template <typename Out>
+    void print_reg(Out &out, int8_t reg)
+    {
+        format_to(out, "r{}", reg);
+    }
+
+    template <typename Out>
     void disassemble_reg(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
     {
-        format_to(out, "r{}", code_obj.code[pc]);
+        print_reg(out, code_obj.code[pc]);
     }
 
     template <typename Out>
@@ -310,9 +316,22 @@ struct fmt::formatter<cl::CodeObject>
             break;
 
         case cl::Bytecode::CallSimple:
+        {
             format_to(out, " ");
-            disassemble_reg(code_obj, out, pc++);
-            disassemble_smi8(code_obj, out, pc++);
+            int8_t reg = code_obj.code[pc++];
+            uint8_t n_args = code_obj.code[pc++];
+            print_reg(out, reg);
+            if(n_args > 0)
+            {
+                format_to(out, ", ");
+                print_reg(out, reg-1);
+                if(n_args > 1)
+                {
+                    print_reg(out, reg-n_args);
+                }
+            }
+
+        }
             break;
 
         case cl::Bytecode::CreateFunction:

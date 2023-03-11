@@ -12,6 +12,10 @@ namespace cl
     struct CompilationUnit;
     struct CodeObject;
 
+    static constexpr uint32_t FrameHeaderSizeAboveFp = 2;
+    static constexpr uint32_t FrameHeaderSizeBelowFp = 3;
+    static constexpr uint32_t FrameHeaderSize = FrameHeaderSizeAboveFp + FrameHeaderSizeBelowFp;
+
     class JumpTarget
     {
     public:
@@ -89,13 +93,39 @@ namespace cl
             return emplace_back(source_offset, uint8_t(c));
         }
 
-        uint32_t emit_opcode_uint8(uint32_t source_offset, Bytecode c, uint8_t k)
+        uint32_t emit_opcode_smi(uint32_t source_offset, Bytecode c, int8_t smi)
         {
             assert(c != Bytecode::Invalid);
             uint32_t result = emplace_back(source_offset, uint8_t(c));
-            emplace_back(source_offset, k);
+            emplace_back(source_offset, smi);
             return result;
         }
+
+        uint32_t emit_opcode_constant_idx(uint32_t source_offset, Bytecode c, uint8_t constant_idx)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            emplace_back(source_offset, constant_idx);
+            return result;
+        }
+
+        uint32_t emit_opcode_reg(uint32_t source_offset, Bytecode c, uint8_t reg)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            emplace_back(source_offset, reg);
+            return result;
+        }
+
+        uint32_t emit_opcode_reg_range(uint32_t source_offset, Bytecode c, uint8_t reg, uint8_t n_regs)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            emplace_back(source_offset, reg);
+            emplace_back(source_offset, n_regs);
+            return result;
+        }
+
         uint32_t emit_opcode_uint32(uint32_t source_offset, Bytecode c, uint32_t k)
         {
             assert(c != Bytecode::Invalid);

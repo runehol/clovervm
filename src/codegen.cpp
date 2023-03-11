@@ -173,18 +173,18 @@ namespace cl
             if(entry.binary_acc_smi != Bytecode::Invalid && av.kinds[children[1]] == NumericalConstant && av.constants[children[1]].is_smi8())
             {
                 codegen_node(children[0], mode);
-                code_obj->emit_opcode_uint8(source_offset, entry.binary_acc_smi, av.constants[children[1]].get_smi());
+                code_obj->emit_opcode_smi(source_offset, entry.binary_acc_smi, av.constants[children[1]].get_smi());
             } else if(entry.binary_smi_acc != Bytecode::Invalid && av.kinds[children[0]] == NumericalConstant && av.constants[children[0]].is_smi8())
             {
                 codegen_node(children[1], mode);
-                code_obj->emit_opcode_uint8(source_offset, entry.binary_smi_acc, av.constants[children[0]].get_smi());
+                code_obj->emit_opcode_smi(source_offset, entry.binary_smi_acc, av.constants[children[0]].get_smi());
             } else {
                 codegen_node(children[0], mode);
                 TemporaryReg temp_reg(this);
-                code_obj->emit_opcode_uint8(source_offset, Bytecode::Star, temp_reg);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star, temp_reg);
 
                 codegen_node(children[1], mode);
-                code_obj->emit_opcode_uint8(source_offset, entry.standard, temp_reg);
+                code_obj->emit_opcode_reg(source_offset, entry.standard, temp_reg);
             }
 
         }
@@ -201,9 +201,9 @@ namespace cl
             codegen_node(children[0], mode);
             if(prod != nullptr)
             {
-                code_obj->emit_opcode_uint8(source_offset, Bytecode::Star, *prod);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star, *prod);
             }
-            code_obj->emit_opcode_uint8(source_offset, entry.standard, *recv);
+            code_obj->emit_opcode_reg(source_offset, entry.standard, *recv);
 
         }
 
@@ -229,6 +229,8 @@ namespace cl
                 {
                     code_obj->local_scope->register_slot_index_for_write(av.constants[ch]);
                 }
+                // reserve space for the frame header
+                code_obj->local_scope->reserve_empty_slots(FrameHeaderSize);
 
                 //now generate code for the body
                 codegen_node(children[1], Mode::Function);
@@ -241,7 +243,7 @@ namespace cl
 
             // stick this code object into the constant table, load it, and call the
             uint32_t constant_idx = code_obj->allocate_constant(Value::from_oop(fun_obj));
-            code_obj->emit_opcode_uint8(source_offset, Bytecode::CreateFunction, constant_idx);
+            code_obj->emit_opcode_constant_idx(source_offset, Bytecode::CreateFunction, constant_idx);
 
 
             perform_variable_assignment(source_offset, slot_idx, mode);
@@ -331,10 +333,10 @@ namespace cl
                     Value val = av.constants[node_idx];
                     if(val.is_smi8())
                     {
-                        code_obj->emit_opcode_uint8(source_offset, Bytecode::LdaSmi, val.get_smi());
+                        code_obj->emit_opcode_smi(source_offset, Bytecode::LdaSmi, val.get_smi());
                     } else {
                         uint32_t constant_idx = code_obj->allocate_constant(val);
-                        code_obj->emit_opcode_uint8(source_offset, Bytecode::LdaConstant, constant_idx);
+                        code_obj->emit_opcode_constant_idx(source_offset, Bytecode::LdaConstant, constant_idx);
                         break;
                     }
                     break;
@@ -343,7 +345,7 @@ namespace cl
                 case AstOperatorKind::STRING:
                 {
                     uint32_t constant_idx = code_obj->allocate_constant(av.constants[node_idx]);
-                    code_obj->emit_opcode_uint8(source_offset, Bytecode::LdaConstant, constant_idx);
+                    code_obj->emit_opcode_constant_idx(source_offset, Bytecode::LdaConstant, constant_idx);
                     break;
                 }
                 default:
@@ -366,7 +368,7 @@ namespace cl
                 }
 
                 codegen_node(children[0], mode);
-                code_obj->emit_opcode_uint8(source_offset, Bytecode::Star, *recv);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star, *recv);
                 for(size_t i = 1; i < children.size(); ++i)
                 {
                     bool last = i == children.size() - 1;
