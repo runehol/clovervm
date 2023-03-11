@@ -12,9 +12,9 @@ namespace cl
     struct CompilationUnit;
     struct CodeObject;
 
-    static constexpr uint32_t FrameHeaderSizeAboveFp = 2;
-    static constexpr uint32_t FrameHeaderSizeBelowFp = 2;
-    static constexpr uint32_t FrameHeaderSize = FrameHeaderSizeAboveFp + FrameHeaderSizeBelowFp;
+    static constexpr int32_t FrameHeaderSizeAboveFp = 2;
+    static constexpr int32_t FrameHeaderSizeBelowFp = 2;
+    static constexpr int32_t FrameHeaderSize = FrameHeaderSizeAboveFp + FrameHeaderSizeBelowFp;
 
     class JumpTarget
     {
@@ -117,8 +117,20 @@ namespace cl
         uint32_t emit_opcode_reg(uint32_t source_offset, Bytecode c, uint32_t reg)
         {
             assert(c != Bytecode::Invalid);
+            int8_t encoded_reg = encode_reg(reg);
+            int8_t r_offset = -encoded_reg - FrameHeaderSizeBelowFp - 1;
+            if(r_offset >= 0 && r_offset < n_fastpath_ldar_star)
+            {
+                if(c == Bytecode::Ldar)
+                {
+                    return emplace_back(source_offset, uint8_t(Bytecode::Ldar0)+r_offset);
+                } else if(c == Bytecode::Star)
+                {
+                    return emplace_back(source_offset, uint8_t(Bytecode::Star0)+r_offset);
+                }
+            }
             uint32_t result = emplace_back(source_offset, uint8_t(c));
-            emplace_back(source_offset, encode_reg(reg));
+            emplace_back(source_offset, encoded_reg);
             return result;
         }
 

@@ -160,6 +160,40 @@ namespace cl
         COMPLETE();
     }
 
+#define LDAR_STAR_FASTPATH(idx) \
+    static Value op_ldar##idx(PARAMS)                      \
+    {                                                      \
+        START(1);                                          \
+        int8_t reg = -idx - cl::FrameHeaderSizeBelowFp -1; \
+        accumulator = fp[reg];                             \
+        COMPLETE();                                        \
+    }                                                      \
+    static Value op_star##idx(PARAMS)                      \
+    {                                                      \
+        START(1);                                          \
+        int8_t reg = -idx - cl::FrameHeaderSizeBelowFp -1; \
+        fp[reg] = accumulator;                             \
+        COMPLETE();                                        \
+    }                                                      \
+
+    LDAR_STAR_FASTPATH(0);
+    LDAR_STAR_FASTPATH(1);
+    LDAR_STAR_FASTPATH(2);
+    LDAR_STAR_FASTPATH(3);
+    LDAR_STAR_FASTPATH(4);
+    LDAR_STAR_FASTPATH(5);
+    LDAR_STAR_FASTPATH(6);
+    LDAR_STAR_FASTPATH(7);
+    LDAR_STAR_FASTPATH(8);
+    LDAR_STAR_FASTPATH(9);
+    LDAR_STAR_FASTPATH(10);
+    LDAR_STAR_FASTPATH(11);
+    LDAR_STAR_FASTPATH(12);
+    LDAR_STAR_FASTPATH(13);
+    LDAR_STAR_FASTPATH(14);
+    LDAR_STAR_FASTPATH(15);
+#undef LDAR_STAR_FASTPATH
+
     NOINLINE static Value op_lda_global_slow_path(PARAMS)
     {
         START(5);
@@ -244,7 +278,6 @@ namespace cl
 
         COMPLETE();
     }
-
 
 
 
@@ -657,6 +690,31 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::JumpIfFalse, op_jump_if_false);
         SET_TABLE_ENTRY(Bytecode::Return, op_return);
         SET_TABLE_ENTRY(Bytecode::Halt, op_halt);
+
+
+
+#define REGISTER_LDAR_STAR_FASTPATH(idx) \
+        SET_TABLE_ENTRY(Bytecode::Ldar##idx, op_ldar##idx); \
+        SET_TABLE_ENTRY(Bytecode::Star##idx, op_star##idx);
+
+    REGISTER_LDAR_STAR_FASTPATH(0);
+    REGISTER_LDAR_STAR_FASTPATH(1);
+    REGISTER_LDAR_STAR_FASTPATH(2);
+    REGISTER_LDAR_STAR_FASTPATH(3);
+    REGISTER_LDAR_STAR_FASTPATH(4);
+    REGISTER_LDAR_STAR_FASTPATH(5);
+    REGISTER_LDAR_STAR_FASTPATH(6);
+    REGISTER_LDAR_STAR_FASTPATH(7);
+    REGISTER_LDAR_STAR_FASTPATH(8);
+    REGISTER_LDAR_STAR_FASTPATH(9);
+    REGISTER_LDAR_STAR_FASTPATH(10);
+    REGISTER_LDAR_STAR_FASTPATH(11);
+    REGISTER_LDAR_STAR_FASTPATH(12);
+    REGISTER_LDAR_STAR_FASTPATH(13);
+    REGISTER_LDAR_STAR_FASTPATH(14);
+    REGISTER_LDAR_STAR_FASTPATH(15);
+#undef REGISTER_LDAR_STAR_FASTPATH
+
         return tbl;
     }
 

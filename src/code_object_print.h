@@ -36,6 +36,73 @@ struct fmt::formatter<cl::Bytecode>
         case cl::Bytecode::Star:
             return format_to(out, "Star");
 
+        case cl::Bytecode::Ldar0:
+            return format_to(out, "Ldar0");
+        case cl::Bytecode::Ldar1:
+            return format_to(out, "Ldar1");
+        case cl::Bytecode::Ldar2:
+            return format_to(out, "Ldar2");
+        case cl::Bytecode::Ldar3:
+            return format_to(out, "Ldar3");
+        case cl::Bytecode::Ldar4:
+            return format_to(out, "Ldar4");
+        case cl::Bytecode::Ldar5:
+            return format_to(out, "Ldar5");
+        case cl::Bytecode::Ldar6:
+            return format_to(out, "Ldar6");
+        case cl::Bytecode::Ldar7:
+            return format_to(out, "Ldar7");
+        case cl::Bytecode::Ldar8:
+            return format_to(out, "Ldar8");
+        case cl::Bytecode::Ldar9:
+            return format_to(out, "Ldar9");
+        case cl::Bytecode::Ldar10:
+            return format_to(out, "Ldar10");
+        case cl::Bytecode::Ldar11:
+            return format_to(out, "Ldar11");
+        case cl::Bytecode::Ldar12:
+            return format_to(out, "Ldar12");
+        case cl::Bytecode::Ldar13:
+            return format_to(out, "Ldar13");
+        case cl::Bytecode::Ldar14:
+            return format_to(out, "Ldar14");
+        case cl::Bytecode::Ldar15:
+            return format_to(out, "Ldar15");
+
+        case cl::Bytecode::Star0:
+            return format_to(out, "Star0");
+        case cl::Bytecode::Star1:
+            return format_to(out, "Star1");
+        case cl::Bytecode::Star2:
+            return format_to(out, "Star2");
+        case cl::Bytecode::Star3:
+            return format_to(out, "Star3");
+        case cl::Bytecode::Star4:
+            return format_to(out, "Star4");
+        case cl::Bytecode::Star5:
+            return format_to(out, "Star5");
+        case cl::Bytecode::Star6:
+            return format_to(out, "Star6");
+        case cl::Bytecode::Star7:
+            return format_to(out, "Star7");
+        case cl::Bytecode::Star8:
+            return format_to(out, "Star8");
+        case cl::Bytecode::Star9:
+            return format_to(out, "Star9");
+        case cl::Bytecode::Star10:
+            return format_to(out, "Star10");
+        case cl::Bytecode::Star11:
+            return format_to(out, "Star11");
+        case cl::Bytecode::Star12:
+            return format_to(out, "Star12");
+        case cl::Bytecode::Star13:
+            return format_to(out, "Star13");
+        case cl::Bytecode::Star14:
+            return format_to(out, "Star14");
+        case cl::Bytecode::Star15:
+            return format_to(out, "Star15");
+
+
         case cl::Bytecode::LdaGlobal:
             return format_to(out, "LdaGlobal");
         case cl::Bytecode::StaGlobal:
@@ -264,6 +331,41 @@ struct fmt::formatter<cl::CodeObject>
             format_to(out, " ");
             disassemble_reg(code_obj, out, pc++);
             break;
+
+        case cl::Bytecode::Ldar0:
+        case cl::Bytecode::Ldar1:
+        case cl::Bytecode::Ldar2:
+        case cl::Bytecode::Ldar3:
+        case cl::Bytecode::Ldar4:
+        case cl::Bytecode::Ldar5:
+        case cl::Bytecode::Ldar6:
+        case cl::Bytecode::Ldar7:
+        case cl::Bytecode::Ldar8:
+        case cl::Bytecode::Ldar9:
+        case cl::Bytecode::Ldar10:
+        case cl::Bytecode::Ldar11:
+        case cl::Bytecode::Ldar12:
+        case cl::Bytecode::Ldar13:
+        case cl::Bytecode::Ldar14:
+        case cl::Bytecode::Ldar15:
+        case cl::Bytecode::Star0:
+        case cl::Bytecode::Star1:
+        case cl::Bytecode::Star2:
+        case cl::Bytecode::Star3:
+        case cl::Bytecode::Star4:
+        case cl::Bytecode::Star5:
+        case cl::Bytecode::Star6:
+        case cl::Bytecode::Star7:
+        case cl::Bytecode::Star8:
+        case cl::Bytecode::Star9:
+        case cl::Bytecode::Star10:
+        case cl::Bytecode::Star11:
+        case cl::Bytecode::Star12:
+        case cl::Bytecode::Star13:
+        case cl::Bytecode::Star14:
+        case cl::Bytecode::Star15:
+            break;
+
 
         case cl::Bytecode::LdaGlobal:
         case cl::Bytecode::StaGlobal:
