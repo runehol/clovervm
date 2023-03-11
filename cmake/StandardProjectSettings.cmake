@@ -22,8 +22,10 @@ endif()
 # tools
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# argolib exports a bunch of symbols, but we don't have export declarations for it. for now, just export them all
-set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
+
+# on x86-64, we get stack frames in our interpreter if we don't use these flags
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -momit-leaf-frame-pointer -fomit-frame-pointer")
 
 
 option(ENABLE_IPO
@@ -54,6 +56,7 @@ if(ENABLE_ASSERTS)
 		endif()
 	endforeach()
 endif()
+
 
 
 function(target_link_libraries_system target)
