@@ -141,22 +141,24 @@ namespace cl
         {
         public:
             friend class Codegen;
-            TemporaryReg(Codegen *_cg)
-                : cg(_cg)
+            TemporaryReg(Codegen *_cg, uint32_t _n_regs=1)
+                : cg(_cg), n_regs(_n_regs)
             {
-                reg = cg->_temporary_reg++;
+                reg = cg->_temporary_reg;
+                cg->_temporary_reg += n_regs;
             }
 
             ~TemporaryReg()
             {
-                --cg->_temporary_reg;
+                cg->_temporary_reg -= n_regs;
                 assert(reg == cg->_temporary_reg);
             }
 
             operator uint32_t() const { return reg; }
         private:
-            uint32_t reg;
             Codegen *cg;
+            uint32_t n_regs;
+            uint32_t reg;
 
         };
 
@@ -190,7 +192,7 @@ namespace cl
         }
 
 
-        void codegen_comparison_fragment(int32_t node_idx, Mode mode, const TemporaryReg *recv, const TemporaryReg *prod)
+        void codegen_comparison_fragment(int32_t node_idx, Mode mode, int32_t recv, int32_t prod)
         {
             AstKind kind = av.kinds[node_idx];
             assert(kind.node_kind == AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT);
@@ -199,11 +201,11 @@ namespace cl
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
 
             codegen_node(children[0], mode);
-            if(prod != nullptr)
+            if(prod >= 0)
             {
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star, *prod);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star, prod);
             }
-            code_obj->emit_opcode_reg(source_offset, entry.standard, *recv);
+            code_obj->emit_opcode_reg(source_offset, entry.standard, recv);
 
         }
 
@@ -357,22 +359,18 @@ namespace cl
             case AstNodeKind::EXPRESSION_COMPARISON:
             {
                 JumpTarget skip_target(code_obj);
-                TemporaryReg first_reg(this);
-                std::optional<TemporaryReg> second_reg;
-                const TemporaryReg *recv = &first_reg;
-                const TemporaryReg *prod = nullptr;
-                if(children.size() > 2)
-                {
-                    second_reg = TemporaryReg(this);
-                    prod = &*second_reg;
-                }
+
+                uint32_t n_temporaries = children.size() > 2 ? 2 : 1;
+                TemporaryReg regs(this, n_temporaries);
+                int32_t recv = regs;
+                int32_t prod = regs + 1;
 
                 codegen_node(children[0], mode);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star, *recv);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star, recv);
                 for(size_t i = 1; i < children.size(); ++i)
                 {
                     bool last = i == children.size() - 1;
-                    if(last) prod = nullptr;
+                    if(last) prod = -1;
 
                     codegen_comparison_fragment(children[i], mode, recv, prod);
 
