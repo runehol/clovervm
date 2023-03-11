@@ -14,25 +14,25 @@ namespace cl
 
     enum class AstNodeKind : uint8_t
     {
-        STATEMENT_FUNCTION_DEF,
+        //STATEMENT_FUNCTION_DEF,
         STATEMENT_IF,
-        STATEMENT_CLASS_DEF,
-        STATEMENT_WITH,
-        STATEMENT_FOR,
-        STATEMENT_TRY,
+        //STATEMENT_CLASS_DEF,
+        //STATEMENT_WITH,
+        //STATEMENT_FOR,
+        //STATEMENT_TRY,
         STATEMENT_WHILE,
-        STATEMENT_MATCH,
+        //STATEMENT_MATCH,
         STATEMENT_RETURN,
-        STATEMENT_IMPORT,
-        STATEMENT_RAISE,
+        //STATEMENT_IMPORT,
+        //STATEMENT_RAISE,
         STATEMENT_PASS,
-        STATEMENT_DEL,
-        STATEMENT_YIELD,
-        STATEMENT_ASSERT,
+        //STATEMENT_DEL,
+        //STATEMENT_YIELD,
+        //STATEMENT_ASSERT,
         STATEMENT_BREAK,
         STATEMENT_CONTINUE,
         STATEMENT_GLOBAL,
-        STATEMENT_NON_LOCAL,
+        STATEMENT_NONLOCAL,
         STATEMENT_SEQUENCE,
         STATEMENT_ASSIGN,
         STATEMENT_EXPRESSION,
@@ -53,25 +53,14 @@ namespace cl
     {
         switch(k)
         {
-        case AstNodeKind::STATEMENT_FUNCTION_DEF:
         case AstNodeKind::STATEMENT_IF:
-        case AstNodeKind::STATEMENT_CLASS_DEF:
-        case AstNodeKind::STATEMENT_WITH:
-        case AstNodeKind::STATEMENT_FOR:
-        case AstNodeKind::STATEMENT_TRY:
         case AstNodeKind::STATEMENT_WHILE:
-        case AstNodeKind::STATEMENT_MATCH:
         case AstNodeKind::STATEMENT_RETURN:
-        case AstNodeKind::STATEMENT_IMPORT:
-        case AstNodeKind::STATEMENT_RAISE:
         case AstNodeKind::STATEMENT_PASS:
-        case AstNodeKind::STATEMENT_DEL:
-        case AstNodeKind::STATEMENT_YIELD:
-        case AstNodeKind::STATEMENT_ASSERT:
         case AstNodeKind::STATEMENT_BREAK:
         case AstNodeKind::STATEMENT_CONTINUE:
         case AstNodeKind::STATEMENT_GLOBAL:
-        case AstNodeKind::STATEMENT_NON_LOCAL:
+        case AstNodeKind::STATEMENT_NONLOCAL:
         case AstNodeKind::STATEMENT_SEQUENCE:
         case AstNodeKind::STATEMENT_ASSIGN:
         case AstNodeKind::STATEMENT_EXPRESSION:
@@ -94,25 +83,14 @@ namespace cl
     {
         switch(k)
         {
-        case AstNodeKind::STATEMENT_FUNCTION_DEF:
         case AstNodeKind::STATEMENT_IF:
-        case AstNodeKind::STATEMENT_CLASS_DEF:
-        case AstNodeKind::STATEMENT_WITH:
-        case AstNodeKind::STATEMENT_FOR:
-        case AstNodeKind::STATEMENT_TRY:
         case AstNodeKind::STATEMENT_WHILE:
-        case AstNodeKind::STATEMENT_MATCH:
         case AstNodeKind::STATEMENT_RETURN:
-        case AstNodeKind::STATEMENT_IMPORT:
-        case AstNodeKind::STATEMENT_RAISE:
         case AstNodeKind::STATEMENT_PASS:
-        case AstNodeKind::STATEMENT_DEL:
-        case AstNodeKind::STATEMENT_YIELD:
-        case AstNodeKind::STATEMENT_ASSERT:
         case AstNodeKind::STATEMENT_BREAK:
         case AstNodeKind::STATEMENT_CONTINUE:
         case AstNodeKind::STATEMENT_GLOBAL:
-        case AstNodeKind::STATEMENT_NON_LOCAL:
+        case AstNodeKind::STATEMENT_NONLOCAL:
         case AstNodeKind::STATEMENT_SEQUENCE:
         case AstNodeKind::STATEMENT_ASSIGN:
         case AstNodeKind::STATEMENT_EXPRESSION:
@@ -231,6 +209,13 @@ namespace cl
 
     constexpr ExpressionPrecedence precedence_for_kind(AstKind k)
     {
+        if(k.node_kind == AstNodeKind::EXPRESSION_COMPARISON)
+        {
+            return ExpressionPrecedence::Comparison;
+        } else if(k.node_kind == AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+        {
+            return ExpressionPrecedence::Atom;
+        }
         switch(k.operator_kind)
         {
         case AstOperatorKind::NOP:

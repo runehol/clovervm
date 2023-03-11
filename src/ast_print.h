@@ -118,6 +118,15 @@ struct fmt::formatter<cl::AstVector>
     }
 
     template <typename Out>
+    void emit_indent(Out &out, uint32_t indent)
+    {
+        for(uint32_t i = 0; i < indent; ++i)
+        {
+            format_to(out, "    ");
+        }
+    }
+
+    template <typename Out>
     void render_node(const cl::AstVector &av, Out &out, int32_t node_idx, uint32_t indent, cl::ExpressionPrecedence outer_precedence)
     {
         assert(node_idx >= 0);
@@ -125,10 +134,7 @@ struct fmt::formatter<cl::AstVector>
         cl::ExpressionPrecedence self_precedence = precedence_for_kind(kind);
         if(is_statement(kind.node_kind))
         {
-            for(uint32_t i = 0; i < indent; ++i)
-            {
-                format_to(out, "    ");
-            }
+            emit_indent(out, indent);
         } else if(is_expression(kind.node_kind) && self_precedence <= outer_precedence)
         {
             format_to(out, "(");
@@ -137,6 +143,7 @@ struct fmt::formatter<cl::AstVector>
         cl::AstChildren children = av.children[node_idx];
         switch(kind.node_kind)
         {
+        case cl::AstNodeKind::STATEMENT_ASSIGN:
         case cl::AstNodeKind::EXPRESSION_ASSIGN:
             render_node(av, out, children[0], indent, self_precedence);
             format_to(out, " {}= ", kind.operator_kind);
@@ -153,7 +160,6 @@ struct fmt::formatter<cl::AstVector>
             render_node(av, out, children[0], indent, self_precedence);
             break;
         case cl::AstNodeKind::EXPRESSION_LITERAL:
-            format_to(out, "{}", kind.operator_kind);
             if(kind.operator_kind == cl::AstOperatorKind::NUMBER)
             {
                 format_to(out, L"{}", string_for_number_token(*av.compilation_unit, av.source_offsets[node_idx]));
@@ -162,11 +168,133 @@ struct fmt::formatter<cl::AstVector>
                 format_to(out, L" {}", string_for_string_token(*av.compilation_unit, av.source_offsets[node_idx]));
             }
             break;
-        default:
-            format_to(out, "Unknown node kind!");
+        case cl::AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
+            format_to(out, L"{}", string_as_wchar_t(av.constants[node_idx]));
+            break;
+
+        case cl::AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
+            throw std::runtime_error("should be handled elsewhere");
+
+        case cl::AstNodeKind::EXPRESSION_COMPARISON:
+            render_node(av, out, children[0], indent, self_precedence);
+            for(size_t i = 1; i < children.size(); ++i)
+            {
+                uint32_t ch = children[i];
+                cl::AstKind ch_kind = av.kinds[ch];
+                uint32_t ch_child = av.children[ch][0];
+                format_to(out, " {} ", ch_kind.operator_kind);
+                render_node(av, out, ch_child, indent, self_precedence);
+            }
+            break;
+
+        case cl::AstNodeKind::EXPRESSION_LIST:
+            format_to(out, "[");
+            for(size_t i = 0; i < children.size(); ++i)
+            {
+                if(i != 0)
+                {
+                    format_to(out, ", ");
+                }
+                render_node(av, out, children[i], indent, cl::ExpressionPrecedence::Lowest);
+            }
+            format_to(out, "]");
+            break;
+
+        case cl::AstNodeKind::EXPRESSION_TUPLE:
+            format_to(out, "(");
+            for(size_t i = 0; i < children.size(); ++i)
+            {
+                if(i != 0)
+                {
+                    format_to(out, ", ");
+                }
+                render_node(av, out, children[i], indent, cl::ExpressionPrecedence::Lowest);
+            }
+            if(children.size() == 1)
+            {
+            format_to(out, ",");
+
+            }
+            format_to(out, ")");
+            break;
+
+        case cl::AstNodeKind::STATEMENT_EXPRESSION:
+            render_node(av, out, children[0], indent, cl::ExpressionPrecedence::Lowest);
+            break;
+        case cl::AstNodeKind::STATEMENT_IF:
+            format_to(out, "if ");
+            render_node(av, out, children[0], indent, cl::ExpressionPrecedence::Lowest);
+            format_to(out, ":\n");
+            render_node(av, out, children[1], indent+1, cl::ExpressionPrecedence::Lowest);
+            if(children.size() == 3)
+            {
+                emit_indent(out, indent);
+                format_to(out, "else:\n");
+                render_node(av, out, children[2], indent+1, cl::ExpressionPrecedence::Lowest);
+            }
+            break;
+
+        case cl::AstNodeKind::STATEMENT_WHILE:
+            format_to(out, "while ");
+            render_node(av, out, children[0], indent, cl::ExpressionPrecedence::Lowest);
+            format_to(out, ":\n");
+            render_node(av, out, children[1], indent+1, cl::ExpressionPrecedence::Lowest);
+            if(children.size() == 3)
+            {
+                emit_indent(out, indent);
+                format_to(out, "else:\n");
+                render_node(av, out, children[2], indent+1, cl::ExpressionPrecedence::Lowest);
+            }
+            break;
+
+        case cl::AstNodeKind::STATEMENT_RETURN:
+            format_to(out, "return");
+            if(children.size() > 0)
+            {
+                format_to(out, " ");
+                render_node(av, out, children[0], indent, cl::ExpressionPrecedence::Lowest);
+            }
+            break;
+
+        case cl::AstNodeKind::STATEMENT_PASS:
+            format_to(out, "pass");
+            break;
+        case cl::AstNodeKind::STATEMENT_BREAK:
+            format_to(out, "break");
+            break;
+        case cl::AstNodeKind::STATEMENT_CONTINUE:
+            format_to(out, "continue");
+            break;
+
+        case cl::AstNodeKind::STATEMENT_NONLOCAL:
+        case cl::AstNodeKind::STATEMENT_GLOBAL:
+            if(kind.node_kind == cl::AstNodeKind::STATEMENT_NONLOCAL)
+            {
+                format_to(out, "nonlocal ");
+            } else {
+                format_to(out, "global ");
+            }
+            for(size_t i = 0; i < children.size(); ++i)
+            {
+                if(i != 0)
+                {
+                    format_to(out, ", ");
+                }
+                render_node(av, out, children[i], indent, cl::ExpressionPrecedence::Lowest);
+            }
+            break;
+
+        case cl::AstNodeKind::STATEMENT_SEQUENCE:
+            for(size_t i = 0; i < children.size(); ++i)
+            {
+                render_node(av, out, children[i], indent, cl::ExpressionPrecedence::Lowest);
+            }
+            break;
+
+
         }
 
-        if(is_statement(kind.node_kind) && kind.node_kind != cl::AstNodeKind::STATEMENT_SEQUENCE)
+        if(is_statement(kind.node_kind) && kind.node_kind != cl::AstNodeKind::STATEMENT_SEQUENCE && kind.node_kind != cl::AstNodeKind::STATEMENT_IF && kind.node_kind != cl::AstNodeKind::STATEMENT_WHILE)
         {
             format_to(out, "\n");
         } else if(is_expression(kind.node_kind) && self_precedence <= outer_precedence)

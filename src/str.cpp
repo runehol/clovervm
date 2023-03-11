@@ -26,6 +26,15 @@ namespace cl
 
     }
 
+    const cl_wchar *string_as_wchar_t(Value s)
+    {
+        assert(s.is_ptr() && s.get_ptr()->klass == &cl_string_klass);
+        String *str = reinterpret_cast<String *>(s.get_ptr());
+        cl_wchar *c = &str->data[0];
+        return c;
+    }
+
+
     bool string_eq(Value a, Value b)
     {
         // value equality -> true

@@ -421,12 +421,31 @@ namespace cl
                 }
                 break;
 
-
-
-
-            default:
-                throw std::runtime_error(std::string("Don't know how to codegen for kind ") + std::to_string(int(kind.node_kind)));
+            case AstNodeKind::STATEMENT_RETURN:
+                if(!children.empty())
+                {
+                    codegen_node(children[0], mode);
+                } else {
+                    code_obj->emit_opcode(source_offset, Bytecode::LdaNone);
+                }
+                code_obj->emit_opcode(source_offset, Bytecode::Return);
                 break;
+
+            case AstNodeKind::STATEMENT_PASS:
+            case AstNodeKind::STATEMENT_GLOBAL:
+            case AstNodeKind::STATEMENT_NONLOCAL:
+                break;
+
+            case AstNodeKind::EXPRESSION_TUPLE:
+                throw std::runtime_error("tuple literals not implemented");
+
+            case AstNodeKind::EXPRESSION_LIST:
+                throw std::runtime_error("list literals not implemented");
+
+            case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
+                throw std::runtime_error("should not end here - this is handled by EXPRESSION_COMPARISON");
+
+
             }
 
 

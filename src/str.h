@@ -75,6 +75,7 @@ namespace cl
 
     uint64_t string_hash(Value s);
     bool string_eq(Value a, Value b);
+    const cl_wchar *string_as_wchar_t(Value s);
 
 
     static_assert(std::is_trivially_destructible_v<String>);

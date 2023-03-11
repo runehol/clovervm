@@ -646,7 +646,14 @@ namespace cl
 
         int32_t return_stmt()
         {
-            return -1;
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::RETURN);
+            AstChildren ch;
+            if(peek() != Token::NEWLINE && peek() != Token::SEMI)
+            {
+                ch.push_back(star_expressions());
+            }
+            return ast.emplace_back(AstNodeKind::STATEMENT_RETURN, source_pos, ch);
         }
 
         int32_t import_stmt()
