@@ -29,7 +29,7 @@ namespace cl
         return run_interpreter(&stack[stack.size()-1024], obj, 0);
     }
 
-    CodeObject ThreadState::compile(const wchar_t *str, StartRule start_rule)
+    CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule)
     {
         CurrThreadStateHolder curr_thread_holder(this);
 

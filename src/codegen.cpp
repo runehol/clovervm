@@ -74,18 +74,28 @@ namespace cl
     {
     public:
         Codegen(const AstVector &_av)
-            : av(_av), code_obj(av.compilation_unit, new(ThreadState::get_active()->allocate_refcounted(sizeof(Scope)))Scope(Value::None()))
+            : av(_av)
         {}
 
-        CodeObject codegen()
+        CodeObject *make_code_obj()
         {
-            active_scope = code_obj.module_scope;
-            codegen_node(av.root_node, Mode::Module);
-            code_obj.emit_opcode(0, Bytecode::Halt);
+            ThreadState *ts = ThreadState::get_active();
+            Scope *scope = new(ts->allocate_refcounted(sizeof(Scope)))Scope(Value::None());
+            CodeObject *code_obj = new(ts->allocate_refcounted(sizeof(CodeObject)))CodeObject(av.compilation_unit, scope);
             return code_obj;
+        }
+
+        CodeObject *codegen()
+        {
+            code_obj = make_code_obj();
+            active_scope = code_obj->module_scope;
+            codegen_node(av.root_node, Mode::Module);
+            code_obj->emit_opcode(0, Bytecode::Halt);
+            return incref(code_obj);
         }
     private:
         Scope *active_scope = nullptr;
+        CodeObject *code_obj = nullptr;
 
         enum class Mode
         {
@@ -113,7 +123,6 @@ namespace cl
         }
 
         const AstVector &av;
-        CodeObject code_obj;
 
         uint32_t _temporary_reg = 0;
 
@@ -153,18 +162,18 @@ namespace cl
             if(entry.binary_acc_smi != Bytecode::Invalid && av.kinds[children[1]] == NumericalConstant && av.constants[children[1]].is_smi8())
             {
                 codegen_node(children[0], mode);
-                code_obj.emit_opcode_uint8(source_offset, entry.binary_acc_smi, av.constants[children[1]].get_smi());
+                code_obj->emit_opcode_uint8(source_offset, entry.binary_acc_smi, av.constants[children[1]].get_smi());
             } else if(entry.binary_smi_acc != Bytecode::Invalid && av.kinds[children[0]] == NumericalConstant && av.constants[children[0]].is_smi8())
             {
                 codegen_node(children[1], mode);
-                code_obj.emit_opcode_uint8(source_offset, entry.binary_smi_acc, av.constants[children[0]].get_smi());
+                code_obj->emit_opcode_uint8(source_offset, entry.binary_smi_acc, av.constants[children[0]].get_smi());
             } else {
                 codegen_node(children[0], mode);
                 TemporaryReg temp_reg(this);
-                code_obj.emit_opcode_uint8(source_offset, Bytecode::Star, temp_reg);
+                code_obj->emit_opcode_uint8(source_offset, Bytecode::Star, temp_reg);
 
                 codegen_node(children[1], mode);
-                code_obj.emit_opcode_uint8(source_offset, entry.standard, temp_reg);
+                code_obj->emit_opcode_uint8(source_offset, entry.standard, temp_reg);
             }
 
         }
@@ -173,7 +182,7 @@ namespace cl
         void codegen_comparison_fragment(int32_t node_idx, Mode mode, const TemporaryReg *recv, const TemporaryReg *prod)
         {
             AstKind kind = av.kinds[node_idx];
-            assert(kind.node_kind == AstKind::EXPRESSION_COMPARISON_FRAGMENT);
+            assert(kind.node_kind == AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT);
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
@@ -181,9 +190,9 @@ namespace cl
             codegen_node(children[0], mode);
             if(prod != nullptr)
             {
-                code_obj.emit_opcode_uint8(source_offset, Bytecode::Star, *prod);
+                code_obj->emit_opcode_uint8(source_offset, Bytecode::Star, *prod);
             }
-            code_obj.emit_opcode_uint8(source_offset, entry.standard, *recv);
+            code_obj->emit_opcode_uint8(source_offset, entry.standard, *recv);
 
         }
 
@@ -197,8 +206,8 @@ namespace cl
 
             case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
             {
-                uint32_t slot_idx = code_obj.module_scope->register_slot_index_for_read(av.constants[node_idx]);
-                code_obj.emit_opcode_uint32(source_offset, Bytecode::LdaGlobal, slot_idx);
+                uint32_t slot_idx = code_obj->module_scope->register_slot_index_for_read(av.constants[node_idx]);
+                code_obj->emit_opcode_uint32(source_offset, Bytecode::LdaGlobal, slot_idx);
                 break;
             }
 
@@ -210,7 +219,7 @@ namespace cl
                 {
                     throw std::runtime_error("We don't support assignment to anything but simple variables yet");
                 }
-                uint32_t slot_idx = code_obj.module_scope->register_slot_index_for_write(av.constants[lhs_idx]);
+                uint32_t slot_idx = code_obj->module_scope->register_slot_index_for_write(av.constants[lhs_idx]);
 
 
                 // augmented assignment
@@ -221,7 +230,7 @@ namespace cl
                     // just compute the RHS
                     codegen_node(children[1], mode);
                 }
-                code_obj.emit_opcode_uint32(source_offset, Bytecode::StaGlobal, slot_idx);
+                code_obj->emit_opcode_uint32(source_offset, Bytecode::StaGlobal, slot_idx);
                 break;
 
             }
@@ -236,7 +245,7 @@ namespace cl
             {
                 OpTableEntry entry = get_operator_entry(kind.operator_kind);
                 codegen_node(children[0], mode);
-                code_obj.emit_opcode(source_offset, entry.standard);
+                code_obj->emit_opcode(source_offset, entry.standard);
                 break;
             }
             case AstNodeKind::EXPRESSION_LITERAL:
@@ -245,13 +254,13 @@ namespace cl
                 switch(kind.operator_kind)
                 {
                 case AstOperatorKind::NONE:
-                    code_obj.emit_opcode(source_offset, Bytecode::LdaNone);
+                    code_obj->emit_opcode(source_offset, Bytecode::LdaNone);
                     break;
                 case AstOperatorKind::TRUE:
-                    code_obj.emit_opcode(source_offset, Bytecode::LdaTrue);
+                    code_obj->emit_opcode(source_offset, Bytecode::LdaTrue);
                     break;
                 case AstOperatorKind::FALSE:
-                    code_obj.emit_opcode(source_offset, Bytecode::LdaFalse);
+                    code_obj->emit_opcode(source_offset, Bytecode::LdaFalse);
                     break;
 
 
@@ -260,10 +269,10 @@ namespace cl
                     Value val = av.constants[node_idx];
                     if(val.is_smi8())
                     {
-                        code_obj.emit_opcode_uint8(source_offset, Bytecode::LdaSmi, val.get_smi());
+                        code_obj->emit_opcode_uint8(source_offset, Bytecode::LdaSmi, val.get_smi());
                     } else {
-                        uint32_t constant_idx = code_obj.allocate_constant(val);
-                        code_obj.emit_opcode_uint8(source_offset, Bytecode::LdaConstant, constant_idx);
+                        uint32_t constant_idx = code_obj->allocate_constant(val);
+                        code_obj->emit_opcode_uint8(source_offset, Bytecode::LdaConstant, constant_idx);
                         break;
                     }
                     break;
@@ -271,8 +280,8 @@ namespace cl
 
                 case AstOperatorKind::STRING:
                 {
-                    uint32_t constant_idx = code_obj.allocate_constant(av.constants[node_idx]);
-                    code_obj.emit_opcode_uint8(source_offset, Bytecode::LdaConstant, constant_idx);
+                    uint32_t constant_idx = code_obj->allocate_constant(av.constants[node_idx]);
+                    code_obj->emit_opcode_uint8(source_offset, Bytecode::LdaConstant, constant_idx);
                     break;
                 }
                 default:
@@ -283,7 +292,7 @@ namespace cl
 
             case AstNodeKind::EXPRESSION_COMPARISON:
             {
-                JumpTarget skip_target(&code_obj);
+                JumpTarget skip_target(code_obj);
                 TemporaryReg first_reg(this);
                 std::optional<TemporaryReg> second_reg;
                 const TemporaryReg *recv = &first_reg;
@@ -295,7 +304,7 @@ namespace cl
                 }
 
                 codegen_node(children[0], mode);
-                code_obj.emit_opcode_uint8(source_offset, Bytecode::Star, *recv);
+                code_obj->emit_opcode_uint8(source_offset, Bytecode::Star, *recv);
                 for(size_t i = 1; i < children.size(); ++i)
                 {
                     bool last = i == children.size() - 1;
@@ -305,7 +314,7 @@ namespace cl
 
                     if(!last)
                     {
-                        code_obj.emit_jump(source_offset, Bytecode::JumpIfFalse, skip_target);
+                        code_obj->emit_jump(source_offset, Bytecode::JumpIfFalse, skip_target);
                     }
                     std::swap(recv, prod);
                 }
@@ -317,15 +326,15 @@ namespace cl
 
             case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
             {
-                JumpTarget skip_target(&code_obj);
+                JumpTarget skip_target(code_obj);
                 codegen_node(children[0], mode);
                 switch(kind.operator_kind)
                 {
                 case AstOperatorKind::SHORTCUTTING_AND:
-                    code_obj.emit_jump(source_offset, Bytecode::JumpIfFalse, skip_target);
+                    code_obj->emit_jump(source_offset, Bytecode::JumpIfFalse, skip_target);
                     break;
                 case AstOperatorKind::SHORTCUTTING_OR:
-                    code_obj.emit_jump(source_offset, Bytecode::JumpIfTrue, skip_target);
+                    code_obj->emit_jump(source_offset, Bytecode::JumpIfTrue, skip_target);
                     break;
                 default:
                     assert(0);
@@ -347,14 +356,14 @@ namespace cl
 
             case AstNodeKind::STATEMENT_IF:
             {
-                JumpTarget else_target(&code_obj);
-                JumpTarget done_target(&code_obj);
+                JumpTarget else_target(code_obj);
+                JumpTarget done_target(code_obj);
                 codegen_node(children[0], mode); // condition, initial check
-                code_obj.emit_jump(source_offset, Bytecode::JumpIfFalse, else_target);
+                code_obj->emit_jump(source_offset, Bytecode::JumpIfFalse, else_target);
                 codegen_node(children[1], mode); //then
                 if(children.size() == 3)
                 {
-                    code_obj.emit_jump(source_offset, Bytecode::Jump, done_target);
+                    code_obj->emit_jump(source_offset, Bytecode::Jump, done_target);
                     else_target.resolve();
                     codegen_node(children[2], mode); //else
                 } else {
@@ -367,12 +376,12 @@ namespace cl
 
             case AstNodeKind::STATEMENT_WHILE:
             {
-                JumpTarget loop_start_target(&code_obj);
-                JumpTarget else_target(&code_obj);
-                JumpTarget break_target(&code_obj);
-                JumpTarget continue_target(&code_obj);
+                JumpTarget loop_start_target(code_obj);
+                JumpTarget else_target(code_obj);
+                JumpTarget break_target(code_obj);
+                JumpTarget continue_target(code_obj);
                 codegen_node(children[0], mode); // condition, initial check
-                code_obj.emit_jump(source_offset, Bytecode::JumpIfFalse, else_target);
+                code_obj->emit_jump(source_offset, Bytecode::JumpIfFalse, else_target);
 
                 loop_start_target.resolve();
 
@@ -382,7 +391,7 @@ namespace cl
 
                 continue_target.resolve();
                 codegen_node(children[0], mode); // condition, non-initial check
-                code_obj.emit_jump(source_offset, Bytecode::JumpIfTrue, loop_start_target);
+                code_obj->emit_jump(source_offset, Bytecode::JumpIfTrue, loop_start_target);
                 else_target.resolve();
                 if(children.size() == 3)
                 {
@@ -397,7 +406,7 @@ namespace cl
                 {
                     throw std::runtime_error("SyntaxError: 'break' outside loop");
                 } else {
-                    code_obj.emit_jump(source_offset, Bytecode::Jump, *loop_targets.back().break_target);
+                    code_obj->emit_jump(source_offset, Bytecode::Jump, *loop_targets.back().break_target);
                 }
                 break;
 
@@ -406,7 +415,7 @@ namespace cl
                 {
                     throw std::runtime_error("SyntaxError: 'continue' not properly in loop");
                 } else {
-                    code_obj.emit_jump(source_offset, Bytecode::Jump, *loop_targets.back().continue_target);
+                    code_obj->emit_jump(source_offset, Bytecode::Jump, *loop_targets.back().continue_target);
                 }
                 break;
 
@@ -425,7 +434,7 @@ namespace cl
     };
 
 
-    CodeObject generate_code(const AstVector &av)
+    CodeObject *generate_code(const AstVector &av)
     {
 
         return Codegen(av).codegen();

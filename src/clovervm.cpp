@@ -55,12 +55,12 @@ int main(int argc, const char *argv[])
         VirtualMachine vm;
         std::wstring file_contents = read_file(source_file);
         ThreadState *thr = vm.get_default_thread();
-        CodeObject code_obj = thr->compile(file_contents.c_str(), StartRule::File);
+        CodeObject *code_obj = thr->compile(file_contents.c_str(), StartRule::File);
         if(print_bytecode)
         {
-            fmt::print("{}\n", code_obj);
+            fmt::print("{}\n", *code_obj);
         }
-        Value v = thr->run(&code_obj);
+        Value v = thr->run(code_obj);
         if(v.is_smi())
         {
             std::cout << v.get_smi() << "\n";

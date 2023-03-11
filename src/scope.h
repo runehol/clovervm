@@ -26,7 +26,7 @@ namespace cl
     class Scope : public Object
     {
     public:
-        static constexpr Klass klass = Klass(L"scope", nullptr);
+        static constexpr Klass klass = Klass(L"Scope", nullptr);
 
         Scope(Value _parent_scope);
 

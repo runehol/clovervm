@@ -41,10 +41,15 @@ namespace cl
 
     };
 
-    struct CodeObject
+    struct CodeObject : public Object
     {
+        static constexpr Klass klass = Klass(L"CodeObject", nullptr);
+
+
         CodeObject(const CompilationUnit *_compilation_unit, Scope *_module_scope)
-            : module_scope(incref(_module_scope)), compilation_unit(_compilation_unit)
+            : Object(&klass, 1, sizeof(CodeObject)/8),
+              module_scope(incref(_module_scope)),
+              compilation_unit(_compilation_unit)
         {}
 
         Scope *module_scope;

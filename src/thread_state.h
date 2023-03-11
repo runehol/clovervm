@@ -7,7 +7,6 @@
 
 #include "value.h"
 #include "heap.h"
-#include "code_object.h"
 
 namespace cl
 {
@@ -36,7 +35,7 @@ namespace cl
 
         void *allocate_refcounted(size_t n_bytes) { return refcounted_heap.allocate(n_bytes); }
 
-        CodeObject compile(const wchar_t *str, StartRule start_rule);
+        CodeObject *compile(const wchar_t *str, StartRule start_rule);
 
     private:
         VirtualMachine *machine;

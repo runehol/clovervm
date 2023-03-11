@@ -39,6 +39,14 @@ namespace cl
             }
         }
     }
+
+    template<typename T>
+    T *decref(T *t)
+    {
+        decref(Value::from_oop(const_cast<typename std::remove_const<T>::type *>(t)));
+        return t;
+    }
+
 }
 
 #endif //CL_REFCOUNT_H

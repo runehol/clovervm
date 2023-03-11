@@ -11,8 +11,8 @@ using namespace cl;
 std::string bytecode_str_from_file(const wchar_t *expr)
 {
     VirtualMachine vm;
-    CodeObject code_obj = vm.get_default_thread()->compile(expr, StartRule::File);
-    std::string actual = fmt::to_string(code_obj);
+    CodeObject *code_obj = vm.get_default_thread()->compile(expr, StartRule::File);
+    std::string actual = fmt::to_string(*code_obj);
     return actual;
 }
 

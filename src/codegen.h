@@ -7,7 +7,7 @@ namespace cl
 {
     struct AstVector;
 
-    CodeObject generate_code(const AstVector &av);
+    CodeObject *generate_code(const AstVector &av);
 
 
 }
