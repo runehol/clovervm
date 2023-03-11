@@ -2,7 +2,6 @@
 
 #include "value.h"
 #include "code_object.h"
-#include "stack_frame.h"
 
 namespace cl
 {
@@ -10,8 +9,8 @@ namespace cl
 #define NOINLINE __attribute__((noinline))
 #define MUSTTAIL __attribute__((musttail))
 
-#define PARAMS StackFrame *frame, const uint8_t *pc, Value accumulator, void *dispatch, CodeObject *code_object
-#define ARGS frame, pc, accumulator, dispatch, code_object
+#define PARAMS Value *fp, const uint8_t *pc, Value accumulator, void *dispatch, CodeObject *code_object
+#define ARGS fp, pc, accumulator, dispatch, code_object
 
     using DispatchTableEntry = Value (*)(PARAMS);
 
@@ -28,7 +27,7 @@ namespace cl
 #define START_BINARY_REG_ACC()               \
     START(2);                                \
     uint8_t reg = pc[1];                     \
-    Value a = frame->registers[reg];       \
+    Value a = fp[reg];       \
     Value b = accumulator
 
 #define START_BINARY_ACC_SMI()               \
@@ -136,7 +135,7 @@ namespace cl
     {
         START(2);
         uint8_t reg = pc[1];
-        accumulator = frame->registers[reg];
+        accumulator = fp[reg];
         COMPLETE();
     }
 
@@ -144,7 +143,7 @@ namespace cl
     {
         START(2);
         uint8_t reg = pc[1];
-        frame->registers[reg] = accumulator;
+        fp[reg] = accumulator;
 
         COMPLETE();
     }
@@ -585,13 +584,12 @@ namespace cl
     DispatchTable dispatch_table = make_dispatch_table();
 
 
-    Value run_interpreter(Value *stack_frame, CodeObject *code_object, uint32_t start_pc)
+    Value run_interpreter(Value *fp, CodeObject *code_object, uint32_t start_pc)
     {
         const uint8_t *pc = &code_object->code[start_pc];
         void *dispatch = reinterpret_cast<void *>(&dispatch_table);
         Value accumulator = Value::from_smi(0); // init accumulator to 0
 
-        StackFrame *frame = reinterpret_cast<StackFrame*>(stack_frame);
 
 
 

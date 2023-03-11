@@ -15,7 +15,7 @@ namespace cl
     ThreadState::ThreadState(VirtualMachine *_machine)
         : machine(_machine),
           refcounted_heap(&machine->get_refcounted_global_heap()),
-          stack(10000)
+          stack(1024*1024)
     {
 
     }
@@ -26,7 +26,7 @@ namespace cl
     Value ThreadState::run(CodeObject *obj)
     {
         CurrThreadStateHolder curr_thread_holder(this);
-        return run_interpreter(stack.data(), obj, 0);
+        return run_interpreter(&stack[stack.size()-1024], obj, 0);
     }
 
     CodeObject ThreadState::compile(const wchar_t *str, StartRule start_rule)
