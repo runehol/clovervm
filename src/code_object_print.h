@@ -127,6 +127,13 @@ struct fmt::formatter<cl::Bytecode>
         case cl::Bytecode::BitwiseNot:
             return format_to(out, "BitwiseNot");
 
+        case cl::Bytecode::CallSimple:
+            return format_to(out, "CallSimple");
+
+
+        case cl::Bytecode::CreateFunction:
+            return format_to(out, "CreateFunction");
+
         case cl::Bytecode::Jump:
             return format_to(out, "Jump");
         case cl::Bytecode::JumpIfTrue:
@@ -302,6 +309,17 @@ struct fmt::formatter<cl::CodeObject>
         case cl::Bytecode::BitwiseNot:
             break;
 
+        case cl::Bytecode::CallSimple:
+            format_to(out, " ");
+            disassemble_reg(code_obj, out, pc++);
+            disassemble_smi8(code_obj, out, pc++);
+            break;
+
+        case cl::Bytecode::CreateFunction:
+            format_to(out, " ");
+            disassemble_constant(code_obj, out, pc++);
+            break;
+
         case cl::Bytecode::Jump:
         case cl::Bytecode::JumpIfTrue:
         case cl::Bytecode::JumpIfFalse:
@@ -309,7 +327,6 @@ struct fmt::formatter<cl::CodeObject>
             disassemble_jump_target(code_obj, out, pc);
             pc += 2;
             break;
-
 
         case cl::Bytecode::Return:
             break;

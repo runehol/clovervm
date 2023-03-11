@@ -46,18 +46,20 @@ namespace cl
         static constexpr Klass klass = Klass(L"CodeObject", nullptr);
 
 
-        CodeObject(const CompilationUnit *_compilation_unit, Scope *_module_scope)
+        CodeObject(const CompilationUnit *_compilation_unit, Scope *_module_scope, Scope *_local_scope)
             : Object(&klass, 1, sizeof(CodeObject)/8),
               module_scope(incref(_module_scope)),
+              local_scope(incref(_local_scope)),
               compilation_unit(_compilation_unit)
         {}
 
         Scope *module_scope;
+        Scope *local_scope;
         const CompilationUnit *compilation_unit;
 
-        uint32_t n_arguments;
-        uint32_t n_temporaries;
-        uint32_t n_locals;
+        uint32_t n_arguments = 0;
+        uint32_t n_locals = 0;
+        uint32_t n_temporaries = 0;
 
 
         std::vector<uint8_t> code;

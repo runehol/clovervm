@@ -74,28 +74,18 @@ namespace cl
     {
     public:
         Codegen(const AstVector &_av)
-            : av(_av)
-        {}
+            : av(_av), module_scope(new(ThreadState::get_active()->allocate_refcounted(sizeof(Scope)))Scope(Value::None()))
 
-        CodeObject *make_code_obj()
-        {
-            ThreadState *ts = ThreadState::get_active();
-            Scope *scope = new(ts->allocate_refcounted(sizeof(Scope)))Scope(Value::None());
-            CodeObject *code_obj = new(ts->allocate_refcounted(sizeof(CodeObject)))CodeObject(av.compilation_unit, scope);
-            return code_obj;
-        }
+        {}
 
         CodeObject *codegen()
         {
-            code_obj = make_code_obj();
-            active_scope = code_obj->module_scope;
+            code_obj = make_code_obj(Mode::Module);
             codegen_node(av.root_node, Mode::Module);
             code_obj->emit_opcode(0, Bytecode::Halt);
             return incref(code_obj);
         }
     private:
-        Scope *active_scope = nullptr;
-        CodeObject *code_obj = nullptr;
 
         enum class Mode
         {
@@ -103,6 +93,25 @@ namespace cl
             Class,
             Function
         };
+
+        CodeObject *make_code_obj(Mode mode)
+        {
+            ThreadState *ts = ThreadState::get_active();
+            Scope *local_scope = nullptr;
+            switch(mode)
+            {
+            case Mode::Module:
+                break;
+
+            case Mode::Class:
+            case Mode::Function:
+                local_scope = new(ts->allocate_refcounted(sizeof(Scope)))Scope(code_obj->local_scope ? Value::from_oop(code_obj->local_scope) : Value::None());
+                break;
+            }
+
+            CodeObject *code_obj = new(ts->allocate_refcounted(sizeof(CodeObject)))CodeObject(av.compilation_unit, module_scope, local_scope);
+            return code_obj;
+        }
 
         struct LoopTargetSet
         {
@@ -123,6 +132,8 @@ namespace cl
         }
 
         const AstVector &av;
+        Scope *module_scope = nullptr;
+        CodeObject *code_obj = nullptr;
 
         uint32_t _temporary_reg = 0;
 
@@ -196,6 +207,56 @@ namespace cl
 
         }
 
+        void codegen_function_definition(int32_t node_idx, Mode mode)
+        {
+            // function definitions are involved enough that we prefer a separate function for it
+            AstChildren children = av.children[node_idx];
+            uint32_t source_offset = av.source_offsets[node_idx];
+
+            uint32_t slot_idx = prepare_variable_assignment(av.constants[node_idx], mode);
+
+            CodeObject *outer_obj = code_obj;
+            CodeObject *fun_obj = make_code_obj(Mode::Function);
+
+            {
+                code_obj = fun_obj;
+                /*
+                  Now we're generating code for the function
+                */
+                AstChildren param_children = av.children[children[0]];
+                code_obj->n_arguments = param_children.size();
+                for(int32_t ch: param_children)
+                {
+                    code_obj->local_scope->register_slot_index_for_write(av.constants[ch]);
+                }
+
+                //now generate code for the body
+                codegen_node(children[1], Mode::Function);
+                // finally, emit return None just in case. as a future optimisation, we could check that all return paths already have a return statement
+                code_obj->emit_opcode(source_offset, Bytecode::LdaNone);
+                code_obj->emit_opcode(source_offset, Bytecode::Return);
+
+            }
+            code_obj = outer_obj;
+
+            // stick this code object into the constant table, load it, and call the
+            uint32_t constant_idx = code_obj->allocate_constant(Value::from_oop(fun_obj));
+            code_obj->emit_opcode_uint8(source_offset, Bytecode::CreateFunction, constant_idx);
+
+
+            perform_variable_assignment(source_offset, slot_idx, mode);
+        }
+
+        uint32_t prepare_variable_assignment(Value var_name, Mode mode)
+        {
+            return code_obj->module_scope->register_slot_index_for_write(var_name);
+        }
+
+        void perform_variable_assignment(uint32_t source_offset, uint32_t slot_idx, Mode mode)
+        {
+            code_obj->emit_opcode_uint32(source_offset, Bytecode::StaGlobal, slot_idx);
+        }
+
         void codegen_node(int32_t node_idx, Mode mode)
         {
             AstKind kind = av.kinds[node_idx];
@@ -220,7 +281,7 @@ namespace cl
                 {
                     throw std::runtime_error("We don't support assignment to anything but simple variables yet");
                 }
-                uint32_t slot_idx = code_obj->module_scope->register_slot_index_for_write(av.constants[lhs_idx]);
+                uint32_t slot_idx = prepare_variable_assignment(av.constants[lhs_idx], mode);
 
 
                 // augmented assignment
@@ -231,7 +292,7 @@ namespace cl
                     // just compute the RHS
                     codegen_node(children[1], mode);
                 }
-                code_obj->emit_opcode_uint32(source_offset, Bytecode::StaGlobal, slot_idx);
+                perform_variable_assignment(source_offset, slot_idx, mode);
                 break;
 
             }
@@ -434,6 +495,11 @@ namespace cl
             case AstNodeKind::STATEMENT_PASS:
             case AstNodeKind::STATEMENT_GLOBAL:
             case AstNodeKind::STATEMENT_NONLOCAL:
+                break;
+
+
+            case AstNodeKind::STATEMENT_FUNCTION_DEF:
+                codegen_function_definition(node_idx, mode);
                 break;
 
             case AstNodeKind::EXPRESSION_TUPLE:

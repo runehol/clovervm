@@ -72,6 +72,12 @@ namespace cl
 
         Nop,
 
+        //function calls
+        CallSimple,
+
+
+        // allocations
+        CreateFunction,
 
         // control flow
         Return,
