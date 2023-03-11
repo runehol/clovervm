@@ -26,7 +26,7 @@ namespace cl
 
 #define START_BINARY_REG_ACC()               \
     START(2);                                \
-    uint8_t reg = pc[1];                     \
+    int8_t reg = pc[1];                     \
     Value a = fp[reg];       \
     Value b = accumulator
 
@@ -134,7 +134,7 @@ namespace cl
     static Value op_ldar(PARAMS)
     {
         START(2);
-        uint8_t reg = pc[1];
+        int8_t reg = pc[1];
         accumulator = fp[reg];
         COMPLETE();
     }
@@ -142,7 +142,7 @@ namespace cl
     static Value op_star(PARAMS)
     {
         START(2);
-        uint8_t reg = pc[1];
+        int8_t reg = pc[1];
         fp[reg] = accumulator;
 
         COMPLETE();
