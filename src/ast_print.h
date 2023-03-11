@@ -262,11 +262,20 @@ struct fmt::formatter<cl::AstVector>
             render_node(av, out, children[0], indent, cl::ExpressionPrecedence::Lowest);
             format_to(out, ":\n");
             render_node(av, out, children[1], indent+1, cl::ExpressionPrecedence::Lowest);
-            if(children.size() == 3)
+
+            for(size_t child_offset = 2; child_offset < children.size(); child_offset += 2)
+            {
+                format_to(out, "elif ");
+                render_node(av, out, children[child_offset+0], indent, cl::ExpressionPrecedence::Lowest);
+                format_to(out, ":\n");
+                render_node(av, out, children[child_offset+1], indent+1, cl::ExpressionPrecedence::Lowest);
+
+            }
+            if(children.size() & 1) // if odd, we have an else block
             {
                 emit_indent(out, indent);
                 format_to(out, "else:\n");
-                render_node(av, out, children[2], indent+1, cl::ExpressionPrecedence::Lowest);
+                render_node(av, out, children.back(), indent+1, cl::ExpressionPrecedence::Lowest);
             }
             break;
 

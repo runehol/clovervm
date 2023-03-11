@@ -486,18 +486,26 @@ namespace cl
 
             case AstNodeKind::STATEMENT_IF:
             {
-                JumpTarget else_target(code_obj);
                 JumpTarget done_target(code_obj);
-                codegen_node(children[0], mode); // condition, initial check
-                code_obj->emit_jump(source_offset, Bytecode::JumpIfFalse, else_target);
-                codegen_node(children[1], mode); //then
-                if(children.size() == 3)
+
+
+                for(size_t i = 0; i < children.size(); i += 2)
                 {
-                    code_obj->emit_jump(source_offset, Bytecode::Jump, done_target);
-                    else_target.resolve();
-                    codegen_node(children[2], mode); //else
-                } else {
-                    else_target.resolve();
+                    JumpTarget next_target(code_obj);
+                    codegen_node(children[i+0], mode); // condition, initial check
+                    code_obj->emit_jump(source_offset, Bytecode::JumpIfFalse, next_target);
+                    codegen_node(children[i+1], mode); //then
+
+                    if(i + 2 != children.size())
+                    {
+                        // if we have more to emit, we have to generate a jump to the done target. otherwise, we'll just fall through
+                        code_obj->emit_jump(source_offset, Bytecode::Jump, done_target);
+                    }
+                    next_target.resolve();
+                }
+                if(children.size() & 1) // odd -> else
+                {
+                    codegen_node(children.back(), mode); //else
                 }
                 done_target.resolve();
 
