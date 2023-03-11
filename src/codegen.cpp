@@ -135,7 +135,7 @@ namespace cl
         Value module_scope = Value::None();
         CodeObject *code_obj = nullptr;
 
-        uint32_t _temporary_reg = 0;
+        uint32_t _temporary_reg = FrameHeaderSize;
 
         class TemporaryReg
         {
@@ -219,20 +219,25 @@ namespace cl
 
             CodeObject *outer_obj = code_obj;
             CodeObject *fun_obj = make_code_obj(Mode::Function);
-
+            uint32_t outer_temporary_reg = _temporary_reg;
             {
                 code_obj = fun_obj;
                 /*
                   Now we're generating code for the function
                 */
                 AstChildren param_children = av.children[children[0]];
-                code_obj->n_arguments = param_children.size();
+                code_obj->n_parameters = param_children.size();
                 for(int32_t ch: param_children)
                 {
                     code_obj->local_scope.get_ptr<Scope>()->register_slot_index_for_write(av.constants[ch]);
                 }
                 // reserve space for the frame header
                 code_obj->local_scope.get_ptr<Scope>()->reserve_empty_slots(FrameHeaderSize);
+
+
+                // todo scan for local variables
+
+                _temporary_reg = code_obj->local_scope.get_ptr<Scope>()->size();
 
                 //now generate code for the body
                 codegen_node(children[1], Mode::Function);
@@ -242,6 +247,7 @@ namespace cl
 
             }
             code_obj = outer_obj;
+            _temporary_reg = outer_temporary_reg;
 
             // stick this code object into the constant table, load it, and call the
             uint32_t constant_idx = code_obj->allocate_constant(Value::from_oop(fun_obj));
@@ -250,6 +256,29 @@ namespace cl
 
             perform_variable_assignment(source_offset, slot_idx, mode);
         }
+
+        void codegen_function_call(int32_t node_idx, Mode mode)
+        {
+            AstChildren children = av.children[node_idx];
+            uint32_t source_offset = av.source_offsets[node_idx];
+            AstChildren args = av.children[children[1]];
+
+            TemporaryReg regs(this, 1+args.size()); // a register for the function itself and all arguments
+
+            // function itself
+            codegen_node(children[0], mode);
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Star, regs+0);
+
+            for(size_t i = 0; i < args.size(); ++i)
+            {
+                codegen_node(args[i], mode);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star, regs+1+i);
+            }
+            code_obj->emit_opcode_reg_range(source_offset, Bytecode::CallSimple, regs, args.size());
+
+        }
+
+
 
         uint32_t prepare_variable_assignment(Value var_name, Mode mode)
         {
@@ -407,6 +436,11 @@ namespace cl
                 break;
 
             }
+
+            case AstNodeKind::EXPRESSION_CALL:
+                codegen_function_call(node_idx, mode);
+                break;
+
 
             case AstNodeKind::STATEMENT_SEQUENCE:
             case AstNodeKind::STATEMENT_EXPRESSION:

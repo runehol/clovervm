@@ -61,7 +61,7 @@ namespace cl
         Value local_scope;
         const CompilationUnit *compilation_unit;
 
-        uint32_t n_arguments = 0;
+        uint32_t n_parameters = 0;
         uint32_t n_locals = 0;
         uint32_t n_temporaries = 0;
 
@@ -71,7 +71,7 @@ namespace cl
         std::vector<uint32_t> source_offsets;
         std::vector<Value> constant_table;
 
-        uint32_t get_n_registers() const { return n_arguments + n_temporaries + n_locals; }
+        uint32_t get_n_registers() const { return n_parameters + n_temporaries + n_locals; }
 
         size_t size() const
         {
@@ -109,19 +109,24 @@ namespace cl
             return result;
         }
 
-        uint32_t emit_opcode_reg(uint32_t source_offset, Bytecode c, uint8_t reg)
+        int8_t encode_reg(uint32_t reg)
+        {
+            return n_parameters - 1 + FrameHeaderSizeAboveFp - reg;
+        }
+
+        uint32_t emit_opcode_reg(uint32_t source_offset, Bytecode c, uint32_t reg)
         {
             assert(c != Bytecode::Invalid);
             uint32_t result = emplace_back(source_offset, uint8_t(c));
-            emplace_back(source_offset, reg);
+            emplace_back(source_offset, encode_reg(reg));
             return result;
         }
 
-        uint32_t emit_opcode_reg_range(uint32_t source_offset, Bytecode c, uint8_t reg, uint8_t n_regs)
+        uint32_t emit_opcode_reg_range(uint32_t source_offset, Bytecode c, uint32_t reg, uint8_t n_regs)
         {
             assert(c != Bytecode::Invalid);
             uint32_t result = emplace_back(source_offset, uint8_t(c));
-            emplace_back(source_offset, reg);
+            emplace_back(source_offset, encode_reg(reg));
             emplace_back(source_offset, n_regs);
             return result;
         }

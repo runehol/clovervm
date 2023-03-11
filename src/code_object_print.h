@@ -162,15 +162,23 @@ struct fmt::formatter<cl::CodeObject>
     }
 
     template <typename Out>
-    void print_reg(Out &out, int8_t reg)
+    void print_reg(Out &out, const cl::CodeObject &code_obj, int8_t encoded_reg)
     {
-        format_to(out, "r{}", reg);
+        if(encoded_reg >= 0)
+        {
+            uint32_t reg = code_obj.n_parameters - 1 + cl::FrameHeaderSizeAboveFp - encoded_reg;
+            format_to(out, "a{}", reg);
+        } else if(encoded_reg < 0)
+        {
+            uint32_t reg = -encoded_reg - cl::FrameHeaderSizeBelowFp - 1;
+            format_to(out, "r{}", reg);
+        }
     }
 
     template <typename Out>
     void disassemble_reg(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
     {
-        print_reg(out, code_obj.code[pc]);
+        print_reg(out, code_obj, code_obj.code[pc]);
     }
 
     template <typename Out>
@@ -320,14 +328,14 @@ struct fmt::formatter<cl::CodeObject>
             format_to(out, " ");
             int8_t reg = code_obj.code[pc++];
             uint8_t n_args = code_obj.code[pc++];
-            print_reg(out, reg);
+            print_reg(out, code_obj, reg);
             if(n_args > 0)
             {
                 format_to(out, ", ");
-                print_reg(out, reg-1);
+                print_reg(out, code_obj, reg-1);
                 if(n_args > 1)
                 {
-                    print_reg(out, reg-n_args);
+                    print_reg(out, code_obj, reg-n_args);
                 }
             }
 
