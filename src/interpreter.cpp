@@ -154,7 +154,7 @@ namespace cl
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
-        Value v = code_object->module_scope->get_by_slot_index(slot_idx);
+        Value v = code_object->module_scope.get_ptr<Scope>()->get_by_slot_index(slot_idx);
         if(unlikely(v.is_not_present()))
         {
             MUSTTAIL return name_error(ARGS);
@@ -167,7 +167,7 @@ namespace cl
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
-        code_object->module_scope->set_by_slot_index(slot_idx, accumulator);
+        code_object->module_scope.get_ptr<Scope>()->set_by_slot_index(slot_idx, accumulator);
         COMPLETE();
     }
 

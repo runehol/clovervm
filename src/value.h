@@ -164,10 +164,11 @@ namespace cl
 
 
 
-        Object *get_ptr() const
+        template<typename T=Object>
+        T *get_ptr() const
         {
             assert(is_ptr());
-            return as.ptr;
+            return reinterpret_cast<T *>(as.ptr);
         }
 
         bool is_truthy() const

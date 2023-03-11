@@ -50,15 +50,15 @@ namespace cl
         static constexpr Klass klass = Klass(L"CodeObject", nullptr);
 
 
-        CodeObject(const CompilationUnit *_compilation_unit, Scope *_module_scope, Scope *_local_scope)
+        CodeObject(const CompilationUnit *_compilation_unit, Value _module_scope, Value _local_scope)
             : Object(&klass, 1, sizeof(CodeObject)/8),
               module_scope(incref(_module_scope)),
               local_scope(incref(_local_scope)),
               compilation_unit(_compilation_unit)
         {}
 
-        Scope *module_scope;
-        Scope *local_scope;
+        Value module_scope;
+        Value local_scope;
         const CompilationUnit *compilation_unit;
 
         uint32_t n_arguments = 0;

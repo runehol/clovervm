@@ -74,7 +74,7 @@ namespace cl
     {
     public:
         Codegen(const AstVector &_av)
-            : av(_av), module_scope(new(ThreadState::get_active()->allocate_refcounted(sizeof(Scope)))Scope(Value::None()))
+            : av(_av), module_scope(Value::from_oop(new(ThreadState::get_active()->allocate_refcounted(sizeof(Scope)))Scope(Value::None())))
 
         {}
 
@@ -97,7 +97,7 @@ namespace cl
         CodeObject *make_code_obj(Mode mode)
         {
             ThreadState *ts = ThreadState::get_active();
-            Scope *local_scope = nullptr;
+            Value local_scope = Value::None();
             switch(mode)
             {
             case Mode::Module:
@@ -105,7 +105,7 @@ namespace cl
 
             case Mode::Class:
             case Mode::Function:
-                local_scope = new(ts->allocate_refcounted(sizeof(Scope)))Scope(code_obj->local_scope ? Value::from_oop(code_obj->local_scope) : Value::None());
+                local_scope = Value::from_oop(new(ts->allocate_refcounted(sizeof(Scope)))Scope(code_obj->local_scope));
                 break;
             }
 
@@ -132,7 +132,7 @@ namespace cl
         }
 
         const AstVector &av;
-        Scope *module_scope = nullptr;
+        Value module_scope = Value::None();
         CodeObject *code_obj = nullptr;
 
         uint32_t _temporary_reg = 0;
@@ -227,10 +227,10 @@ namespace cl
                 code_obj->n_arguments = param_children.size();
                 for(int32_t ch: param_children)
                 {
-                    code_obj->local_scope->register_slot_index_for_write(av.constants[ch]);
+                    code_obj->local_scope.get_ptr<Scope>()->register_slot_index_for_write(av.constants[ch]);
                 }
                 // reserve space for the frame header
-                code_obj->local_scope->reserve_empty_slots(FrameHeaderSize);
+                code_obj->local_scope.get_ptr<Scope>()->reserve_empty_slots(FrameHeaderSize);
 
                 //now generate code for the body
                 codegen_node(children[1], Mode::Function);
@@ -251,7 +251,7 @@ namespace cl
 
         uint32_t prepare_variable_assignment(Value var_name, Mode mode)
         {
-            return code_obj->module_scope->register_slot_index_for_write(var_name);
+            return code_obj->module_scope.get_ptr<Scope>()->register_slot_index_for_write(var_name);
         }
 
         void perform_variable_assignment(uint32_t source_offset, uint32_t slot_idx, Mode mode)
@@ -269,7 +269,7 @@ namespace cl
 
             case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
             {
-                uint32_t slot_idx = code_obj->module_scope->register_slot_index_for_read(av.constants[node_idx]);
+                uint32_t slot_idx = code_obj->module_scope.get_ptr<Scope>()->register_slot_index_for_read(av.constants[node_idx]);
                 code_obj->emit_opcode_uint32(source_offset, Bytecode::LdaGlobal, slot_idx);
                 break;
             }
