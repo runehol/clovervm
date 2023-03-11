@@ -79,6 +79,10 @@ struct fmt::formatter<cl::Bytecode>
             return format_to(out, "TestGreater");
         case cl::Bytecode::TestGreaterEqual:
             return format_to(out, "TestGreaterEqual");
+        case cl::Bytecode::TestIs:
+            return format_to(out, "TestIs");
+        case cl::Bytecode::TestIsNot:
+            return format_to(out, "TestIsNot");
         case cl::Bytecode::TestIn:
             return format_to(out, "TestIn");
         case cl::Bytecode::TestNotIn:
@@ -264,6 +268,8 @@ struct fmt::formatter<cl::CodeObject>
         case cl::Bytecode::TestLessEqual:
         case cl::Bytecode::TestGreater:
         case cl::Bytecode::TestGreaterEqual:
+        case cl::Bytecode::TestIs:
+        case cl::Bytecode::TestIsNot:
         case cl::Bytecode::TestIn:
         case cl::Bytecode::TestNotIn:
             format_to(out, " ");

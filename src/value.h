@@ -18,8 +18,8 @@ namespace cl
   The tag is divided as follows:
   Bit 4 (16): Refcounted pointer
   Bit 3 (8): Interned pointer
-  Bit 1 (2): Special value
-  Bit 0 (1): Special truthy value
+  Bit 2 (4): Boolean. Also sets bit 5 for truthiness, for easy conversion and comparison to int
+  Bit 1-0: Other special values
 
   The tags then are as follows:
   00000: small integer, with the value is stored as signed two complement in the upper 59 bits.
@@ -40,11 +40,16 @@ namespace cl
     static constexpr uint64_t value_ptr_granularity = value_tag_mask+1;
     static constexpr uint64_t value_refcounted_ptr_tag = 0x10;
     static constexpr uint64_t value_interned_ptr_tag   = 0x08;
-    static constexpr uint64_t value_special_tag        = 0x02;
-    static constexpr uint64_t value_truthy_mask          = 0xffffffffffffffe1ull;
+    static constexpr uint64_t value_special_mask       = 0x07;
+    static constexpr uint64_t value_boolean_tag        = 0x04;
+    static constexpr uint64_t value_none               = 0x01;
+    static constexpr uint64_t value_not_present        = 0x02;
+    static constexpr uint64_t value_exception          = 0x03;
+    static constexpr uint64_t value_truthy_mask        = 0xffffffffffffffe0ull;
     static constexpr uint64_t value_ptr_mask = value_refcounted_ptr_tag|value_interned_ptr_tag;
     static constexpr uint64_t value_not_smi_mask = value_tag_mask;
-    static constexpr uint32_t value_not_present = 0x102;
+    static constexpr uint64_t value_not_smi_or_boolean_mask = value_tag_mask & ~value_boolean_tag;
+    static constexpr uint64_t value_boolean_to_integer_mask = ~value_boolean_tag;
 
 
 
@@ -68,28 +73,28 @@ namespace cl
         static inline Value None()
         {
             Value val;
-            val.as.integer = 0x42;
+            val.as.integer = value_none;
             return val;
         }
 
         static inline Value False()
         {
             Value val;
-            val.as.integer = 0x22;
+            val.as.integer = value_boolean_tag;
             return val;
         }
 
         static inline Value True()
         {
             Value val;
-            val.as.integer = 0x23;
+            val.as.integer = value_boolean_tag | (1<<value_tag_bits);
             return val;
         }
 
         static inline Value exception_marker()
         {
             Value val;
-            val.as.integer = 0x82; // special value to return if an exception has been thrown.
+            val.as.integer = value_exception; // special value to return if an exception has been thrown.
             return val;
         }
 

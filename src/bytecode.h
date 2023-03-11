@@ -38,12 +38,15 @@ namespace cl
         BitwiseOr,
         BitwiseAnd,
         BitwiseXor,
+
         TestEqual,
         TestNotEqual,
         TestLess,
         TestLessEqual,
         TestGreater,
         TestGreaterEqual,
+        TestIs,
+        TestIsNot,
         TestIn,
         TestNotIn,
 
