@@ -17,8 +17,7 @@ namespace cl
 
   The tag is divided as follows:
   Bit 4 (16): Refcounted pointer
-  Bit 3 (8): Permanent (non-refcounted) pointer
-  Bit 2 (4): Interned pointer
+  Bit 3 (8): Interned pointer
   Bit 1 (2): Special value
   Bit 0 (1): Special truthy value
 
@@ -26,8 +25,7 @@ namespace cl
   00000: small integer, with the value is stored as signed two complement in the upper 59 bits.
   00011: special truthy value. Only one known: 0x23: True
   00010: special falsy value. Two known: 0x22: False, 0x42: None
-  00100: interned pointer.
-  01000: permanent pointer
+  01000: interned pointer
   10000: refcounted pointer
 
 
@@ -41,11 +39,10 @@ namespace cl
     static constexpr uint64_t value_tag_mask = 0x1f;
     static constexpr uint64_t value_ptr_granularity = value_tag_mask+1;
     static constexpr uint64_t value_refcounted_ptr_tag = 0x10;
-    static constexpr uint64_t value_immortal_ptr_tag  = 0x08;
-    static constexpr uint64_t value_interned_ptr_tag   = 0x04;
+    static constexpr uint64_t value_interned_ptr_tag   = 0x08;
     static constexpr uint64_t value_special_tag        = 0x02;
     static constexpr uint64_t value_truthy_mask          = 0xffffffffffffffe1ull;
-    static constexpr uint64_t value_ptr_mask = value_refcounted_ptr_tag|value_immortal_ptr_tag|value_interned_ptr_tag;
+    static constexpr uint64_t value_ptr_mask = value_refcounted_ptr_tag|value_interned_ptr_tag;
     static constexpr uint64_t value_not_smi_mask = value_tag_mask;
     static constexpr uint32_t value_not_present = 0x102;
 

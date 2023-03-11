@@ -23,7 +23,6 @@ namespace cl
         ThreadState *make_new_thread();
 
         GlobalHeap &get_refcounted_global_heap() { return refcounted_global_heap; }
-        GlobalHeap &get_immortal_global_heap() { return immortal_global_heap; }
         GlobalHeap &get_interned_global_heap() { return interned_global_heap; }
 
         Value get_or_create_interned_string(const std::wstring &str) { return interned_strings.get_or_create(str); }
@@ -32,7 +31,6 @@ namespace cl
     private:
         std::vector<std::unique_ptr<ThreadState>> threads;
         GlobalHeap refcounted_global_heap;
-        GlobalHeap immortal_global_heap;
         GlobalHeap interned_global_heap;
         InternStore<std::wstring, String> interned_strings;
     };

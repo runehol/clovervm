@@ -31,12 +31,9 @@ namespace cl
         // value equality -> true
         if(a.as.integer == b.as.integer) return true;
 
-        // one or both are inline values -> false
-        if(((a.as.integer | b.as.integer) & value_ptr_mask) == 0) return false;
+        // one or both are inline or interned pointers values -> false
+        if(((a.as.integer | b.as.integer) & value_refcounted_ptr_tag) == 0) return false;
 
-
-        // both interned pointers and value equality -> false
-        if((a.as.integer | b.as.integer) & value_interned_ptr_tag) return false;
 
         const Object *oa = a.get_ptr();
         const Object *ob = b.get_ptr();
