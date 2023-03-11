@@ -54,12 +54,13 @@ int main(int argc, const char *argv[])
     {
         VirtualMachine vm;
         std::wstring file_contents = read_file(source_file);
-        CodeObject code_obj = vm.get_default_thread()->compile(file_contents.c_str(), StartRule::File);
+        ThreadState *thr = vm.get_default_thread();
+        CodeObject code_obj = thr->compile(file_contents.c_str(), StartRule::File);
         if(print_bytecode)
         {
-            std::cout << fmt::to_string(code_obj) << "\n";
+            fmt::print("{}\n", code_obj);
         }
-        Value v = vm.get_default_thread()->run(&code_obj);
+        Value v = thr->run(&code_obj);
         std::cout << v.get_smi() << "\n";
     }
 
