@@ -61,7 +61,21 @@ int main(int argc, const char *argv[])
             fmt::print("{}\n", code_obj);
         }
         Value v = thr->run(&code_obj);
-        std::cout << v.get_smi() << "\n";
+        if(v.is_smi())
+        {
+            std::cout << v.get_smi() << "\n";
+        } else if(v == Value::None())
+        {
+            std::cout << "None" << "\n";
+        } else if(v == Value::False())
+        {
+            std::cout << "False" << "\n";
+        } else if(v == Value::True())
+        {
+            std::cout << "True" << "\n";
+        } else {
+            std::cout << "unknown object\n";
+        }
     }
 
     return 0;

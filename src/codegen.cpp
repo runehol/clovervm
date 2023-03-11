@@ -4,6 +4,7 @@
 #include "scope.h"
 #include "thread_state.h"
 #include <fmt/core.h>
+#include <optional>
 
 namespace cl
 {
@@ -168,6 +169,24 @@ namespace cl
 
         }
 
+
+        void codegen_comparison_fragment(int32_t node_idx, Mode mode, const TemporaryReg *recv, const TemporaryReg *prod)
+        {
+            AstKind kind = av.kinds[node_idx];
+            assert(kind.node_kind == AstKind::EXPRESSION_COMPARISON_FRAGMENT);
+            AstChildren children = av.children[node_idx];
+            uint32_t source_offset = av.source_offsets[node_idx];
+            OpTableEntry entry = get_operator_entry(kind.operator_kind);
+
+            codegen_node(children[0], mode);
+            if(prod != nullptr)
+            {
+                code_obj.emit_opcode_uint8(source_offset, Bytecode::Star, *prod);
+            }
+            code_obj.emit_opcode_uint8(source_offset, entry.standard, *recv);
+
+        }
+
         void codegen_node(int32_t node_idx, Mode mode)
         {
             AstKind kind = av.kinds[node_idx];
@@ -261,6 +280,40 @@ namespace cl
                 }
                 break;
             }
+
+            case AstNodeKind::EXPRESSION_COMPARISON:
+            {
+                JumpTarget skip_target(&code_obj);
+                TemporaryReg first_reg(this);
+                std::optional<TemporaryReg> second_reg;
+                const TemporaryReg *recv = &first_reg;
+                const TemporaryReg *prod = nullptr;
+                if(children.size() > 2)
+                {
+                    second_reg = TemporaryReg(this);
+                    prod = &*second_reg;
+                }
+
+                codegen_node(children[0], mode);
+                code_obj.emit_opcode_uint8(source_offset, Bytecode::Star, *recv);
+                for(size_t i = 1; i < children.size(); ++i)
+                {
+                    bool last = i == children.size() - 1;
+                    if(last) prod = nullptr;
+
+                    codegen_comparison_fragment(children[i], mode, recv, prod);
+
+                    if(!last)
+                    {
+                        code_obj.emit_jump(source_offset, Bytecode::JumpIfFalse, skip_target);
+                    }
+                    std::swap(recv, prod);
+                }
+                skip_target.resolve();
+
+                break;
+            }
+
 
             case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
             {
