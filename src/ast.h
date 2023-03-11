@@ -34,6 +34,8 @@ namespace cl
         STATEMENT_GLOBAL,
         STATEMENT_NON_LOCAL,
         STATEMENT_SEQUENCE,
+        STATEMENT_ASSIGN,
+        STATEMENT_EXPRESSION,
         EXPRESSION_TUPLE,
         EXPRESSION_LIST,
         EXPRESSION_ASSIGN,
@@ -71,6 +73,8 @@ namespace cl
 		case AstNodeKind::STATEMENT_GLOBAL:
 		case AstNodeKind::STATEMENT_NON_LOCAL:
 		case AstNodeKind::STATEMENT_SEQUENCE:
+        case AstNodeKind::STATEMENT_ASSIGN:
+        case AstNodeKind::STATEMENT_EXPRESSION:
             return true;
 		case AstNodeKind::EXPRESSION_TUPLE:
 		case AstNodeKind::EXPRESSION_LIST:
@@ -110,6 +114,8 @@ namespace cl
 		case AstNodeKind::STATEMENT_GLOBAL:
 		case AstNodeKind::STATEMENT_NON_LOCAL:
 		case AstNodeKind::STATEMENT_SEQUENCE:
+        case AstNodeKind::STATEMENT_ASSIGN:
+        case AstNodeKind::STATEMENT_EXPRESSION:
             return false;
 		case AstNodeKind::EXPRESSION_TUPLE:
 		case AstNodeKind::EXPRESSION_LIST:

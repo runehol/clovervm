@@ -211,6 +211,7 @@ namespace cl
                 break;
             }
 
+            case AstNodeKind::STATEMENT_ASSIGN:
             case AstNodeKind::EXPRESSION_ASSIGN:
             {
 
@@ -347,6 +348,7 @@ namespace cl
             }
 
             case AstNodeKind::STATEMENT_SEQUENCE:
+            case AstNodeKind::STATEMENT_EXPRESSION:
                 for(int32_t ch_idx: children)
                 {
                     codegen_node(ch_idx, mode);

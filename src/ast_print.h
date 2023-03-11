@@ -166,7 +166,7 @@ struct fmt::formatter<cl::AstVector>
             format_to(out, "Unknown node kind!");
         }
 
-        if(is_statement(kind.node_kind))
+        if(is_statement(kind.node_kind) && kind.node_kind != cl::AstNodeKind::STATEMENT_SEQUENCE)
         {
             format_to(out, "\n");
         } else if(is_expression(kind.node_kind) && self_precedence <= outer_precedence)

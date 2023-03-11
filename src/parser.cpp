@@ -569,6 +569,7 @@ namespace cl
 
         int32_t assignment()
         {
+            int32_t source_pos = source_pos_for_token();
             int32_t lhs = star_expressions();
             /* TODO check if single target */
             AstOperatorKind op_kind = AstOperatorKind::FALSE;
@@ -617,12 +618,12 @@ namespace cl
                 op_kind = AstOperatorKind::INT_DIVIDE;
                 break;
             default:
-                return lhs;
+                return ast.emplace_back(AstNodeKind::STATEMENT_EXPRESSION, source_pos, lhs);
             }
 
-            int32_t source_pos = source_pos_and_advance();
+            source_pos = source_pos_and_advance();
             int32_t rhs = annotated_rhs();
-            return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_ASSIGN, op_kind), source_pos, lhs, rhs);
+            return ast.emplace_back(AstKind(AstNodeKind::STATEMENT_ASSIGN, op_kind), source_pos, lhs, rhs);
 
         }
 
