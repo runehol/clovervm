@@ -786,6 +786,8 @@ namespace cl
 
         int32_t file()
         {
+            while(match(Token::NEWLINE))
+            {}
             int32_t idx = -1;
             if(!is_at_end())
             {
