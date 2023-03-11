@@ -556,7 +556,7 @@ namespace cl
         pc += 3;
 
         // must save off pc, old code object and fp
-        Value *new_fp = fp + reg - n_args - 1 - FrameHeaderSizeAboveFp;
+        Value *new_fp = fp + reg - n_args - FrameHeaderSizeAboveFp;
 
         // these aren't really values. we're just going to whack them in and ask the refcounter to ignore them.
         new_fp[0].as.ptr = (Object *)fp;

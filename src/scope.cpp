@@ -44,6 +44,11 @@ namespace cl
         return slot_idx;
     }
 
+    int32_t Scope::lookup_slot_index_local(Value name) const
+    {
+        return indirect_dict.lookup(name);
+    }
+
 
     Value Scope::get_by_name(Value name) const
     {
@@ -69,6 +74,17 @@ namespace cl
             slots.push_back(Value::not_present());
         }
         set_by_slot_index(slot_idx, val);
+    }
+
+
+    void Scope::reserve_empty_slots(size_t n_slots)
+    {
+
+        indirect_dict.reserve_empty_slots(n_slots);
+        for(size_t i = 0; i < n_slots; ++i)
+        {
+            slots.push_back(Value::not_present());
+        }
     }
 
 

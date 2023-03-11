@@ -282,12 +282,29 @@ namespace cl
 
         uint32_t prepare_variable_assignment(Value var_name, Mode mode)
         {
-            return code_obj->module_scope.get_ptr<Scope>()->register_slot_index_for_write(var_name);
+            switch(mode)
+            {
+            case Mode::Module:
+                return code_obj->module_scope.get_ptr<Scope>()->register_slot_index_for_write(var_name);
+
+            case Mode::Class:
+            case Mode::Function:
+                return code_obj->local_scope.get_ptr<Scope>()->register_slot_index_for_write(var_name);
+            }
         }
 
         void perform_variable_assignment(uint32_t source_offset, uint32_t slot_idx, Mode mode)
         {
-            code_obj->emit_opcode_uint32(source_offset, Bytecode::StaGlobal, slot_idx);
+            switch(mode)
+            {
+            case Mode::Module:
+                code_obj->emit_opcode_uint32(source_offset, Bytecode::StaGlobal, slot_idx);
+                break;
+            case Mode::Class:
+            case Mode::Function:
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star, slot_idx);
+                break;
+            }
         }
 
         void codegen_node(int32_t node_idx, Mode mode)
@@ -299,11 +316,27 @@ namespace cl
             {
 
             case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
-            {
-                uint32_t slot_idx = code_obj->module_scope.get_ptr<Scope>()->register_slot_index_for_read(av.constants[node_idx]);
-                code_obj->emit_opcode_uint32(source_offset, Bytecode::LdaGlobal, slot_idx);
+                switch(mode)
+                {
+                case Mode::Class:
+                case Mode::Function:
+                {
+                    int32_t slot_idx = code_obj->local_scope.get_ptr<Scope>()->lookup_slot_index_local(av.constants[node_idx]);
+                    if(slot_idx >= 0)
+                    {
+                        code_obj->emit_opcode_reg(source_offset, Bytecode::Ldar, slot_idx);
+                        break;
+                    }
+                    /* otherwise, fallthrough */
+                }
+                case Mode::Module:
+                {
+                    uint32_t slot_idx = code_obj->module_scope.get_ptr<Scope>()->register_slot_index_for_read(av.constants[node_idx]);
+                    code_obj->emit_opcode_uint32(source_offset, Bytecode::LdaGlobal, slot_idx);
+                    break;
+                }
+                }
                 break;
-            }
 
             case AstNodeKind::STATEMENT_ASSIGN:
             case AstNodeKind::EXPRESSION_ASSIGN:
