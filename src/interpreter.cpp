@@ -560,8 +560,8 @@ namespace cl
 
         // these aren't really values. we're just going to whack them in and ask the refcounter to ignore them.
         new_fp[0].as.ptr = (Object *)fp;
-        new_fp[1].as.ptr = (Object *)pc;
         new_fp[-1] = Value::from_oop(code_object);
+        new_fp[-2].as.ptr = (Object *)pc;
 
         fp = new_fp;
         code_object = fun.get_ptr<Function>()->code_object.get_ptr<CodeObject>();
@@ -574,8 +574,8 @@ namespace cl
 
     static Value op_return(PARAMS)
     {
+        pc = (const uint8_t *)fp[-2].as.ptr;
         code_object = fp[-1].get_ptr<CodeObject>();
-        pc = (const uint8_t *)fp[1].as.ptr;
         fp = (Value *)fp[0].as.ptr;
 
         START(0);

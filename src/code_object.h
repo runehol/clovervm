@@ -13,7 +13,7 @@ namespace cl
     struct CodeObject;
 
     static constexpr uint32_t FrameHeaderSizeAboveFp = 2;
-    static constexpr uint32_t FrameHeaderSizeBelowFp = 3;
+    static constexpr uint32_t FrameHeaderSizeBelowFp = 2;
     static constexpr uint32_t FrameHeaderSize = FrameHeaderSizeAboveFp + FrameHeaderSizeBelowFp;
 
     class JumpTarget
