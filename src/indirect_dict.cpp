@@ -66,6 +66,18 @@ namespace cl
         return idx;
     }
 
+    void IndirectDict::reserve_empty_slots(size_t n_slots)
+    {
+        for(size_t i = 0; i < n_slots; ++i)
+        {
+            if(keys.size() > hash_table.size() * max_load_nom / max_load_denom)
+            {
+                grow();
+            }
+            keys.push_back(Value::not_present());
+        }
+    }
+
     int32_t IndirectDict::lookup(Value key) const
     {
         const int32_t *entry = find_entry(key);
@@ -82,8 +94,11 @@ namespace cl
         //and then just insert all the keys again
         for(int32_t idx = 0; idx < int32_t(keys.size()); ++idx)
         {
-            int32_t *entry = find_entry(keys[idx]);
-            *entry = idx;
+            if(!keys[idx].is_not_present())
+            {
+                int32_t *entry = find_entry(keys[idx]);
+                *entry = idx;
+            }
         }
     }
 

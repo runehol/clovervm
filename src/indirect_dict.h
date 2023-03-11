@@ -22,6 +22,9 @@ namespace cl
         uint32_t size() const { return keys.size(); }
         bool empty() const { return keys.empty(); }
 
+        void reserve_empty_slots(size_t n_slots);
+
+
         Value get_key_by_slot_index(int32_t slot_idx) const
         {
             return keys[slot_idx];
