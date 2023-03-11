@@ -45,6 +45,7 @@ namespace cl
 
 #define A_NOT_SMI() ((a.as.integer & value_not_smi_mask) != 0)
 #define A_OR_B_NOT_SMI() (((a.as.integer | b.as.integer) & value_not_smi_mask) != 0)
+#define A_OR_B_REFCOUNTED_PTR() (((a.as.integer | b.as.integer) & value_refcounted_ptr_tag) != 0)
 
 
     static uint32_t read_uint32_le(const uint8_t *p)
@@ -342,6 +343,95 @@ namespace cl
 
 
 
+    static Value op_test_is(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+
+        accumulator = (a.as.integer == b.as.integer) ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
+
+    static Value op_test_is_not(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+        accumulator = (a.as.integer != b.as.integer) ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
+    static Value op_test_less(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+        if(unlikely(A_OR_B_NOT_SMI()))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+        accumulator = (a.as.integer < b.as.integer) ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
+    static Value op_test_less_equal(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+        if(unlikely(A_OR_B_NOT_SMI()))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+        accumulator = (a.as.integer <= b.as.integer) ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
+    static Value op_test_greater_equal(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+        if(unlikely(A_OR_B_NOT_SMI()))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+        accumulator = (a.as.integer >= b.as.integer) ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
+    static Value op_test_greater(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+        if(unlikely(A_OR_B_NOT_SMI()))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+        accumulator = (a.as.integer > b.as.integer) ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
+    static Value op_test_equal(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+        if(unlikely(A_OR_B_REFCOUNTED_PTR()))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+        // see if we have a bit difference after we clear the bit that promotes booleans to 0/1 integers
+        uint64_t difference = (a.as.integer ^ b.as.integer) & value_boolean_to_integer_mask;
+        accumulator = (difference == 0) ? Value::True() : Value::False();
+
+
+        COMPLETE();
+    }
+
+    static Value op_test_not_equal(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+        if(unlikely(A_OR_B_REFCOUNTED_PTR()))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+        // see if we have a bit difference after we clear the bit that promotes booleans to 0/1 integers
+        uint64_t difference = (a.as.integer ^ b.as.integer) & value_boolean_to_integer_mask;
+        accumulator = (difference != 0) ? Value::True() : Value::False();
+
+        COMPLETE();
+    }
+
 
 
     static Value op_negate(PARAMS)
@@ -467,6 +557,16 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::LeftShiftSmi, op_left_shift_smi);
         SET_TABLE_ENTRY(Bytecode::RightShift, op_right_shift);
         SET_TABLE_ENTRY(Bytecode::RightShiftSmi, op_right_shift_smi);
+
+        SET_TABLE_ENTRY(Bytecode::TestIs, op_test_is);
+        SET_TABLE_ENTRY(Bytecode::TestIsNot, op_test_is_not);
+        SET_TABLE_ENTRY(Bytecode::TestEqual, op_test_equal);
+        SET_TABLE_ENTRY(Bytecode::TestNotEqual, op_test_not_equal);
+        SET_TABLE_ENTRY(Bytecode::TestLess, op_test_less);
+        SET_TABLE_ENTRY(Bytecode::TestLessEqual, op_test_less_equal);
+        SET_TABLE_ENTRY(Bytecode::TestGreaterEqual, op_test_greater_equal);
+        SET_TABLE_ENTRY(Bytecode::TestGreater, op_test_greater);
+
 
         SET_TABLE_ENTRY(Bytecode::LdaGlobal, op_lda_global);
         SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);
