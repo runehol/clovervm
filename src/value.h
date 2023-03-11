@@ -33,6 +33,9 @@ namespace cl
 */
 #define likely(x)       __builtin_expect((x),1)
 #define unlikely(x)     __builtin_expect((x),0)
+#define ALWAYSINLINE __attribute__((always_inline))
+#define NOINLINE __attribute__((noinline))
+#define MUSTTAIL __attribute__((musttail))
 
 
     static constexpr uint64_t value_tag_bits = 5;

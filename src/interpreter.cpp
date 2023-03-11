@@ -10,8 +10,6 @@
 namespace cl
 {
 
-#define NOINLINE __attribute__((noinline))
-#define MUSTTAIL __attribute__((musttail))
 
 #define PARAMS Value *fp, const uint8_t *pc, Value accumulator, void *dispatch, CodeObject *code_object
 #define ARGS fp, pc, accumulator, dispatch, code_object
@@ -62,9 +60,14 @@ namespace cl
 
     static int16_t read_int16_le(const uint8_t *p)
     {
+#if 1
+        const int16_t *ptr = reinterpret_cast<const int16_t *>(p);
+        return *ptr;
+#else
         return
             (p[0] <<  0) |
             (p[1] <<  8);
+#endif
     }
 
 

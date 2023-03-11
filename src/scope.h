@@ -47,7 +47,7 @@ namespace cl
 
         Value get_by_name(Value name) const;
 
-        Value get_by_slot_index(int32_t slot_idx) const
+        ALWAYSINLINE Value get_by_slot_index(int32_t slot_idx) const
         {
             assert(slot_idx >= 0);
             Value v = slots[slot_idx].value;
@@ -55,9 +55,9 @@ namespace cl
             int32_t parent_slot_idx = v.get_not_present_index();
             if(likely(parent_slot_idx >= 0))
             {
-                return get_parent_scope_ptr()->get_by_slot_index(parent_slot_idx);
+                MUSTTAIL return get_parent_scope_ptr()->get_by_slot_index(parent_slot_idx);
             } else {
-                if(parent_scope != Value::None())
+                if(unlikely(parent_scope != Value::None()))
                 {
                     return get_parent_scope_ptr()->get_by_name(indirect_dict.get_key_by_slot_index(slot_idx));
                 }
@@ -69,7 +69,7 @@ namespace cl
 
         void set_by_name(Value name, Value val);
 
-        void set_by_slot_index(int32_t slot_idx, Value val)
+        ALWAYSINLINE void set_by_slot_index(int32_t slot_idx, Value val)
         {
             // note the order, in case val == slots[slot_idx]
             incref(val);
