@@ -160,9 +160,7 @@ namespace cl
         COMPLETE();
     }
 
-
-
-    static Value op_lda_global(PARAMS)
+    NOINLINE static Value op_lda_global_slow_path(PARAMS)
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
@@ -170,6 +168,20 @@ namespace cl
         if(unlikely(v.is_not_present()))
         {
             MUSTTAIL return name_error(ARGS);
+        }
+        accumulator = v;
+        COMPLETE();
+    }
+
+
+    static Value op_lda_global(PARAMS)
+    {
+        START(5);
+        int32_t slot_idx = read_uint32_le(&pc[1]);
+        Value v = code_object->module_scope.get_ptr<Scope>()->get_by_slot_index_fastpath_only(slot_idx);
+        if(unlikely(v.is_not_present()))
+        {
+            MUSTTAIL return op_lda_global_slow_path(ARGS);
         }
         accumulator = v;
         COMPLETE();

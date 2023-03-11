@@ -47,7 +47,7 @@ namespace cl
 
         Value get_by_name(Value name) const;
 
-        ALWAYSINLINE Value get_by_slot_index(int32_t slot_idx) const
+        ALWAYSINLINE Value get_by_slot_index_fastpath_only(int32_t slot_idx) const
         {
             assert(slot_idx >= 0);
             Value v = slots[slot_idx].value;
@@ -55,7 +55,21 @@ namespace cl
             int32_t parent_slot_idx = v.get_not_present_index();
             if(likely(parent_slot_idx >= 0))
             {
-                MUSTTAIL return get_parent_scope_ptr()->get_by_slot_index(parent_slot_idx);
+                MUSTTAIL return get_parent_scope_ptr()->get_by_slot_index_fastpath_only(parent_slot_idx);
+            } else {
+                return Value::not_present();
+            }
+        }
+
+        NOINLINE Value get_by_slot_index(int32_t slot_idx) const
+        {
+            assert(slot_idx >= 0);
+            Value v = slots[slot_idx].value;
+            if(!v.is_not_present()) return v;
+            int32_t parent_slot_idx = v.get_not_present_index();
+            if(likely(parent_slot_idx >= 0))
+            {
+                return get_parent_scope_ptr()->get_by_slot_index(parent_slot_idx);
             } else {
                 if(unlikely(parent_scope != Value::None()))
                 {
@@ -63,7 +77,6 @@ namespace cl
                 }
                 return Value::not_present();
             }
-
         }
 
 
