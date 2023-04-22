@@ -21,11 +21,15 @@ TEST(Codegen, simple)
 {
     std::string expected =
         "Code object:\n"
-        "    0 LdaSmi 4\n"
-        "    2 AddSmi 3\n"
-        "    4 MulSmi 2\n"
-        "    6 AddSmi 1\n"
-        "    8 Halt\n";
+        "    0 LdaSmi 1\n"
+        "    2 Star0\n"
+        "    3 LdaSmi 2\n"
+        "    5 Star1\n"
+        "    6 LdaSmi 4\n"
+        "    8 AddSmi 3\n"
+        "   10 Mul r1\n"
+        "   12 Add r0\n"
+        "   14 Halt\n";
     std::string actual = bytecode_str_from_file(L"1 + 2  *  (4 + 3)");
 
     EXPECT_EQ(expected, actual);
@@ -63,11 +67,13 @@ TEST(Codegen, simple4)
         "Code object:\n"
         "    0 LdaSmi 1\n"
         "    2 Star0\n"
-        "    3 LdaSmi 4\n"
-        "    5 AddSmi 3\n"
-        "    7 MulSmi 2\n"
-        "    9 Sub r0\n"
-        "   11 Halt\n";
+        "    3 LdaSmi 2\n"
+        "    5 Star1\n"
+        "    6 LdaSmi 4\n"
+        "    8 AddSmi 3\n"
+        "   10 Mul r1\n"
+        "   12 Sub r0\n"
+        "   14 Halt\n";
     std::string actual = bytecode_str_from_file(L"1 - 2  *  (4 + 3)");
 
     EXPECT_EQ(expected, actual);

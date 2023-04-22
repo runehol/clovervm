@@ -11,15 +11,13 @@ namespace cl
 
     struct OpTableEntry
     {
-        constexpr OpTableEntry(Bytecode _standard = Bytecode::Invalid, Bytecode _binary_acc_smi = Bytecode::Invalid, Bytecode _binary_smi_acc = Bytecode::Invalid)
+        constexpr OpTableEntry(Bytecode _standard = Bytecode::Invalid, Bytecode _binary_acc_smi = Bytecode::Invalid)
             : standard(_standard),
-              binary_acc_smi(_binary_acc_smi),
-              binary_smi_acc(_binary_smi_acc)
+              binary_acc_smi(_binary_acc_smi)
         {}
 
         Bytecode standard;
         Bytecode binary_acc_smi;
-        Bytecode binary_smi_acc;
     };
 
     struct OpTable
@@ -32,18 +30,18 @@ namespace cl
     {
         OpTable t;
 
-        t.table[size_t(AstOperatorKind::ADD)] = OpTableEntry(Bytecode::Add, Bytecode::AddSmi, Bytecode::AddSmi);
-        t.table[size_t(AstOperatorKind::SUBTRACT)] = OpTableEntry(Bytecode::Sub, Bytecode::SubSmi, Bytecode::Invalid);
-        t.table[size_t(AstOperatorKind::MULTIPLY)] = OpTableEntry(Bytecode::Mul, Bytecode::MulSmi, Bytecode::MulSmi);
+        t.table[size_t(AstOperatorKind::ADD)] = OpTableEntry(Bytecode::Add, Bytecode::AddSmi);
+        t.table[size_t(AstOperatorKind::SUBTRACT)] = OpTableEntry(Bytecode::Sub, Bytecode::SubSmi);
+        t.table[size_t(AstOperatorKind::MULTIPLY)] = OpTableEntry(Bytecode::Mul, Bytecode::MulSmi);
         t.table[size_t(AstOperatorKind::DIVIDE)] = OpTableEntry(Bytecode::Div, Bytecode::DivSmi);
         t.table[size_t(AstOperatorKind::INT_DIVIDE)] = OpTableEntry(Bytecode::IntDiv, Bytecode::IntDivSmi);
         t.table[size_t(AstOperatorKind::POWER)] = OpTableEntry(Bytecode::Pow, Bytecode::PowSmi);
         t.table[size_t(AstOperatorKind::LEFTSHIFT)] = OpTableEntry(Bytecode::LeftShift, Bytecode::LeftShiftSmi);
         t.table[size_t(AstOperatorKind::RIGHTSHIFT)] = OpTableEntry(Bytecode::RightShift, Bytecode::RightShiftSmi);
         t.table[size_t(AstOperatorKind::MODULO)] = OpTableEntry(Bytecode::Mod, Bytecode::ModSmi);
-        t.table[size_t(AstOperatorKind::BITWISE_OR)] = OpTableEntry(Bytecode::BitwiseOr, Bytecode::BitwiseOrSmi, Bytecode::BitwiseOrSmi);
-        t.table[size_t(AstOperatorKind::BITWISE_AND)] = OpTableEntry(Bytecode::BitwiseAnd, Bytecode::BitwiseAndSmi, Bytecode::BitwiseAndSmi);
-        t.table[size_t(AstOperatorKind::BITWISE_XOR)] = OpTableEntry(Bytecode::BitwiseXor, Bytecode::BitwiseXorSmi, Bytecode::BitwiseXorSmi);
+        t.table[size_t(AstOperatorKind::BITWISE_OR)] = OpTableEntry(Bytecode::BitwiseOr, Bytecode::BitwiseOrSmi);
+        t.table[size_t(AstOperatorKind::BITWISE_AND)] = OpTableEntry(Bytecode::BitwiseAnd, Bytecode::BitwiseAndSmi);
+        t.table[size_t(AstOperatorKind::BITWISE_XOR)] = OpTableEntry(Bytecode::BitwiseXor, Bytecode::BitwiseXorSmi);
 
 
         t.table[size_t(AstOperatorKind::EQUAL)] = OpTableEntry(Bytecode::TestEqual);
@@ -176,10 +174,6 @@ namespace cl
             {
                 codegen_node(children[0], mode);
                 code_obj->emit_opcode_smi(source_offset, entry.binary_acc_smi, av.constants[children[1]].get_smi());
-            } else if(entry.binary_smi_acc != Bytecode::Invalid && av.kinds[children[0]] == NumericalConstant && av.constants[children[0]].is_smi8())
-            {
-                codegen_node(children[1], mode);
-                code_obj->emit_opcode_smi(source_offset, entry.binary_smi_acc, av.constants[children[0]].get_smi());
             } else {
                 codegen_node(children[0], mode);
                 TemporaryReg temp_reg(this);
