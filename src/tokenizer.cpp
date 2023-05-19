@@ -432,7 +432,10 @@ namespace cl
                     break;
                 case '\n':
                 case '\r':
-                    tokens.emplace_back(Token::NEWLINE, pos);
+                    if(tokens.size() == 0 || tokens.tokens.back() != Token::NEWLINE)
+                    {
+                        tokens.emplace_back(Token::NEWLINE, pos);
+                    }
                     while(source_code[pos] == '\n' || source_code[pos] == '\r')
                     {
                         ++pos;

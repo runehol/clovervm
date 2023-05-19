@@ -103,3 +103,51 @@ TEST(Tokenizer, simple_strings)
     TokenVector tv = tokenize(input);
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
+
+
+
+TEST(Tokenizer, comment_issue)
+{
+    std::wstring source =
+        L""
+"# Program to display the Fibonacci sequence up to n-th term\n"
+"\n"
+"nterms = int(input(\"How many terms? \"))\n"
+"\n"
+"# first two terms\n"
+"n1, n2 = 0, 1\n"
+"count = 0\n"
+"\n"
+        ;
+        ;
+    CompilationUnit input(source);
+    std::vector<Token> expected_tokens = {
+        Token::NEWLINE,
+        Token::NAME,
+        Token::EQUAL,
+        Token::NAME,
+        Token::LPAR,
+        Token::NAME,
+        Token::LPAR,
+        Token::STRING,
+        Token::RPAR,
+        Token::RPAR,
+        Token::NEWLINE,
+        Token::NAME,
+        Token::COMMA,
+        Token::NAME,
+        Token::EQUAL,
+        Token::NUMBER,
+        Token::COMMA,
+        Token::NUMBER,
+        Token::NEWLINE,
+        Token::NAME,
+        Token::EQUAL,
+        Token::NUMBER,
+        Token::NEWLINE,
+        Token::ENDMARKER
+    };
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+}
