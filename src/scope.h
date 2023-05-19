@@ -11,13 +11,47 @@
 namespace cl
 {
 
-    struct SlotEntry
+    class SlotEntry
     {
+    public:
         SlotEntry(Value _value, Value _extra = Value::None())
-            : value(_value),
-              extra(_extra)
         {
+            set_value(_value);
+            set_extra(_extra);
         }
+
+        ~SlotEntry()
+        {
+            decref(value);
+            decref(extra);
+        }
+
+        void set_value(Value _value)
+        {
+            // note the order, in case val == slots[slot_idx]
+            incref(_value);
+            decref(value);
+            value = _value;
+        }
+
+        void set_extra(Value _extra)
+        {
+            // note the order, in case val == slots[slot_idx]
+            incref(_extra);
+            decref(extra);
+            extra = _extra;
+        }
+
+        Value get_value() const
+        {
+            return value;
+        }
+
+        Value get_extra() const
+        {
+            return extra;
+        }
+    private:
 
         Value value;
         Value extra; // extra is used for registering invalidation arrays for global scopes, and closure usage for local scopes
@@ -50,7 +84,7 @@ namespace cl
         ALWAYSINLINE Value get_by_slot_index_fastpath_only(int32_t slot_idx) const
         {
             assert(slot_idx >= 0);
-            Value v = slots[slot_idx].value;
+            Value v = slots[slot_idx].get_value();
             if(!v.is_not_present()) return v;
             int32_t parent_slot_idx = v.get_not_present_index();
             if(likely(parent_slot_idx >= 0))
@@ -64,7 +98,7 @@ namespace cl
         NOINLINE Value get_by_slot_index(int32_t slot_idx) const
         {
             assert(slot_idx >= 0);
-            Value v = slots[slot_idx].value;
+            Value v = slots[slot_idx].get_value();
             if(!v.is_not_present()) return v;
             int32_t parent_slot_idx = v.get_not_present_index();
             if(likely(parent_slot_idx >= 0))
@@ -84,11 +118,7 @@ namespace cl
 
         ALWAYSINLINE void set_by_slot_index(int32_t slot_idx, Value val)
         {
-            // note the order, in case val == slots[slot_idx]
-            incref(val);
-            decref(slots[slot_idx].value);
-            slots[slot_idx] = val;
-
+            slots[slot_idx].set_value(val);
         }
 
         void reserve_empty_slots(size_t n_slots);
