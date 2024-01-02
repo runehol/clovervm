@@ -74,6 +74,7 @@ namespace cl
         RARROW,
         ELLIPSIS,
         COLONEQUAL,
+        EXCLAMATION,
 
         //keywords - https://docs.python.org/3/reference/lexical_analysis.html#keywords
         FALSE,

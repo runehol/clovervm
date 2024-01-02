@@ -403,7 +403,7 @@ namespace cl
                         pos += 2;
                     } else {
 
-                        tokens.emplace_back(Token::ERRORTOKEN, pos++);
+                        tokens.emplace_back(Token::EXCLAMATION, pos++);
                     }
                     break;
 

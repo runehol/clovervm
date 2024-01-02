@@ -106,6 +106,8 @@ namespace cl
             return "DOUBLESLASH";
         case Token::DOUBLESLASHEQUAL:
             return "DOUBLESLASHEQUAL";
+        case Token::EXCLAMATION:
+            return "EXCLAMATION";
         case Token::AT:
             return "AT";
         case Token::ATEQUAL:
