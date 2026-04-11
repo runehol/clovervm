@@ -3,6 +3,7 @@
 #include "interpreter.h"
 #include "parser.h"
 #include "str.h"
+#include "test_helpers.h"
 #include "thread_state.h"
 #include "token_print.h"
 #include "tokenizer.h"
@@ -17,10 +18,8 @@ static constexpr int64_t kMinSmi = -288230376151711744LL;
 
 static Value run_file(const wchar_t *str)
 {
-    VirtualMachine vm;
-    CodeObject *code_obj =
-        vm.get_default_thread()->compile(str, StartRule::File);
-    return vm.get_default_thread()->run(code_obj);
+    test::VmTestContext test_context;
+    return test_context.run_file(str);
 }
 
 static void expect_runtime_error(const wchar_t *source,
@@ -177,10 +176,8 @@ TEST(Interpreter, function_implicit_return_none)
 
 TEST(Interpreter, string_literal_value)
 {
-    VirtualMachine vm;
-    CodeObject *code_obj =
-        vm.get_default_thread()->compile(L"\"abc\"\n", StartRule::File);
-    Value actual = vm.get_default_thread()->run(code_obj);
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"\"abc\"\n");
 
     EXPECT_STREQ(L"abc", string_as_wchar_t(actual));
 }

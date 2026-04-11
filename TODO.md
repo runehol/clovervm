@@ -61,7 +61,7 @@ These are the lowest-hanging improvements I found after reading the current toke
   Why: the file already has `TODO` comments for this. Converting assertion-only failures into runtime errors would make behavior safer outside debug-only scenarios.
   Where: `src/short_vector.h`.
 
-- [ ] Add a small test helper layer to reduce repeated `VirtualMachine` setup in tests.
+- [x] Add a small test helper layer to reduce repeated `VirtualMachine` setup in tests.
   Why: several tests manually compile/parse/run strings in nearly identical ways. A tiny shared helper would make adding new coverage much easier.
   Where: `tests/`.
 

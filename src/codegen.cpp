@@ -633,6 +633,9 @@ namespace cl
                         break;
                     }
 
+                case AstNodeKind::STATEMENT_FOR:
+                    throw std::runtime_error("for loops not implemented");
+
                 case AstNodeKind::STATEMENT_BREAK:
                     if(loop_targets.empty())
                     {

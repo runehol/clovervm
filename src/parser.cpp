@@ -995,7 +995,51 @@ namespace cl
 
         int32_t with_stmt() { return not_implemented("with statement"); }
 
-        int32_t for_stmt() { return not_implemented("for statement"); }
+        int32_t for_stmt()
+        {
+            AstChildren children;
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::FOR);
+            uint32_t target_start_pos = source_pos_for_token();
+            int32_t target = -1;
+            if(peek() == Token::NAME)
+            {
+                std::wstring name = std::wstring(string_for_name_token(
+                    *ast.compilation_unit, source_pos_for_token()));
+                Value v = vm.get_or_create_interned_string(name);
+                target =
+                    ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
+                                     source_pos_and_advance(), v);
+                if(peek() == Token::COMMA)
+                {
+                    AstChildren target_children = sequence_until_stop_token(
+                        target, &Parser::star_expression, Token::COMMA,
+                        Token::IN);
+                    target =
+                        ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE,
+                                         target_start_pos, target_children);
+                }
+            }
+            else
+            {
+                target = star_expressions();
+            }
+            validate_assignment_target(target);
+            children.push_back(target);
+            consume(Token::IN);
+            children.push_back(named_expression());
+            consume(Token::COLON);
+            children.push_back(block());
+
+            if(peek() == Token::ELSE)
+            {
+                consume(Token::ELSE);
+                consume(Token::COLON);
+                children.push_back(block());
+            }
+            return ast.emplace_back(AstNodeKind::STATEMENT_FOR, source_pos,
+                                    children);
+        }
 
         int32_t try_stmt() { return not_implemented("try statement"); }
 

@@ -312,6 +312,26 @@ template <> struct fmt::formatter<cl::AstVector>
                 }
                 break;
 
+            case cl::AstNodeKind::STATEMENT_FOR:
+                emit_indent(out, indent);
+                format_to(out, "for ");
+                render_node(av, out, children[0], indent,
+                            cl::ExpressionPrecedence::Lowest);
+                format_to(out, " in ");
+                render_node(av, out, children[1], indent,
+                            cl::ExpressionPrecedence::Lowest);
+                format_to(out, ":\n");
+                render_node(av, out, children[2], indent + 1,
+                            cl::ExpressionPrecedence::Lowest);
+                if(children.size() == 4)
+                {
+                    emit_indent(out, indent);
+                    format_to(out, "else:\n");
+                    render_node(av, out, children[3], indent + 1,
+                                cl::ExpressionPrecedence::Lowest);
+                }
+                break;
+
             case cl::AstNodeKind::STATEMENT_RETURN:
                 emit_indent(out, indent);
                 format_to(out, "return");

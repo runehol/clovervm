@@ -54,7 +54,7 @@ This gives end-to-end `for` loop semantics with minimal surface area.
 
 ## Implementation Plan
 
-### 1. Add AST and parser support for `for`
+### 1. Add AST and parser support for `for` [done]
 
 Files:
 
@@ -86,6 +86,15 @@ Suggested child layout:
 - child 1: iterable expression
 - child 2: body
 - child 3: optional else block
+
+Status:
+
+- Implemented in [src/ast.h](/Users/runehol/projects/clovervm/src/ast.h),
+  [src/parser.cpp](/Users/runehol/projects/clovervm/src/parser.cpp), and
+  [src/ast_print.h](/Users/runehol/projects/clovervm/src/ast_print.h)
+- Parser tests added in
+  [tests/test_parser.cpp](/Users/runehol/projects/clovervm/tests/test_parser.cpp)
+- Current behavior intentionally remains limited to simple variable targets
 
 ### 2. Introduce builtin-function runtime support
 
@@ -298,7 +307,7 @@ Add semantic coverage for:
 
 ## Milestones
 
-### Milestone 1
+### Milestone 1 [done]
 
 - AST support for `STATEMENT_FOR`
 - parser implementation for `for`

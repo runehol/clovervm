@@ -2,6 +2,7 @@
 #include "compilation_unit.h"
 #include "parser.h"
 #include "str.h"
+#include "test_helpers.h"
 #include "token_print.h"
 #include "tokenizer.h"
 #include "virtual_machine.h"
@@ -13,11 +14,8 @@ using namespace cl;
 
 static std::string parse(const wchar_t *in_str)
 {
-    VirtualMachine vm;
-    CompilationUnit input(in_str);
-    TokenVector tv = tokenize(input);
-    AstVector av = parse(vm, tv, StartRule::File);
-    std::string actual = fmt::to_string(av);
+    test::ParsedFile parsed(in_str);
+    std::string actual = fmt::to_string(parsed.ast);
     return actual;
 }
 
@@ -100,25 +98,49 @@ TEST(Parser, while_else_stmt)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, for_stmt)
+{
+    std::string expected = ("for x in y:\n"
+                            "    x\n");
+    std::string actual = parse(L""
+                               "for x in y:\n"
+                               "    x\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, for_else_stmt)
+{
+    std::string expected = ("for x in range(3):\n"
+                            "    x\n"
+                            "else:\n"
+                            "    return 1\n");
+    std::string actual = parse(L""
+                               "for x in range(3):\n"
+                               "    x\n"
+                               "else:\n"
+                               "    return 1\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, string_literal_stores_constant_value)
 {
-    VirtualMachine vm;
-    CompilationUnit input(L"\"abc\"\n");
-    TokenVector tv = tokenize(input);
-    AstVector av = parse(vm, tv, StartRule::File);
+    test::ParsedFile parsed(L"\"abc\"\n");
 
-    EXPECT_TRUE(av.kinds[av.root_node].node_kind ==
+    EXPECT_TRUE(parsed.ast.kinds[parsed.ast.root_node].node_kind ==
                 AstNodeKind::STATEMENT_SEQUENCE);
 
-    int32_t stmt_idx = av.children[av.root_node][0];
-    EXPECT_TRUE(av.kinds[stmt_idx].node_kind ==
+    int32_t stmt_idx = parsed.ast.children[parsed.ast.root_node][0];
+    EXPECT_TRUE(parsed.ast.kinds[stmt_idx].node_kind ==
                 AstNodeKind::STATEMENT_EXPRESSION);
 
-    int32_t literal_idx = av.children[stmt_idx][0];
-    EXPECT_TRUE(av.kinds[literal_idx].node_kind ==
+    int32_t literal_idx = parsed.ast.children[stmt_idx][0];
+    EXPECT_TRUE(parsed.ast.kinds[literal_idx].node_kind ==
                 AstNodeKind::EXPRESSION_LITERAL);
-    EXPECT_TRUE(av.kinds[literal_idx].operator_kind == AstOperatorKind::STRING);
-    EXPECT_STREQ(L"abc", string_as_wchar_t(av.constants[literal_idx]));
+    EXPECT_TRUE(parsed.ast.kinds[literal_idx].operator_kind ==
+                AstOperatorKind::STRING);
+    EXPECT_STREQ(L"abc", string_as_wchar_t(parsed.ast.constants[literal_idx]));
 }
 
 TEST(Parser, def_stmt)
@@ -176,12 +198,13 @@ TEST(Parser, class_def_not_implemented)
                        "offset 0 (line 1, column 1), near \"class C:\"");
 }
 
-TEST(Parser, for_stmt_not_implemented)
+TEST(Parser, for_stmt_target_not_supported)
 {
-    expect_parse_error(L"for x in y:\n"
-                       L"    break\n",
-                       "Not implemented: for statement (token FOR) at offset 0 "
-                       "(line 1, column 1), near \"for x in y:\"");
+    expect_parse_error(L"for a, b in pairs:\n"
+                       L"    a\n",
+                       "SyntaxError: assignment target must be a simple "
+                       "variable at offset 4 (line 1, column 5), near "
+                       "\"for a, b in pairs:\"");
 }
 
 TEST(Parser, yield_stmt_not_implemented)

@@ -2,6 +2,7 @@
 #include "code_object_print.h"
 #include "parser.h"
 #include "str.h"
+#include "test_helpers.h"
 #include "thread_state.h"
 #include "virtual_machine.h"
 #include <fmt/xchar.h>
@@ -11,9 +12,8 @@ using namespace cl;
 
 std::string bytecode_str_from_file(const wchar_t *expr)
 {
-    VirtualMachine vm;
-    CodeObject *code_obj =
-        vm.get_default_thread()->compile(expr, StartRule::File);
+    test::VmTestContext test_context;
+    CodeObject *code_obj = test_context.compile_file(expr);
     std::string actual = fmt::to_string(*code_obj);
     return actual;
 }
@@ -172,9 +172,8 @@ TEST(Codegen, function_implicit_return_none)
 
 TEST(Codegen, string_literal_constant_value)
 {
-    VirtualMachine vm;
-    CodeObject *code_obj =
-        vm.get_default_thread()->compile(L"\"abc\"\n", StartRule::File);
+    test::VmTestContext test_context;
+    CodeObject *code_obj = test_context.compile_file(L"\"abc\"\n");
 
     ASSERT_EQ(size_t(1), code_obj->constant_table.size());
     EXPECT_STREQ(L"abc", string_as_wchar_t(code_obj->constant_table[0]));
