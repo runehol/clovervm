@@ -54,8 +54,8 @@ namespace cl
         return
             (p[0] <<  0) |
             (p[1] <<  8) |
-            (p[1] << 16) |
-            (p[1] << 24);
+            (p[2] << 16) |
+            (p[3] << 24);
     }
 
     static int16_t read_int16_le(const uint8_t *p)
