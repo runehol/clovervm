@@ -3,6 +3,7 @@
 #include "scope.h"
 #include "thread_state.h"
 #include "tokenizer.h"
+#include "virtual_machine.h"
 #include <fmt/core.h>
 #include <optional>
 
@@ -89,9 +90,11 @@ namespace cl
     public:
         Codegen(const AstVector &_av)
             : av(_av),
-              module_scope(Value::from_oop(new(
-                  ThreadState::get_active()->allocate_refcounted(sizeof(Scope)))
-                                               Scope(Value::None())))
+              module_scope(Value::from_oop(
+                  new(ThreadState::get_active()->allocate_refcounted(
+                      sizeof(Scope))) Scope(ThreadState::get_active()
+                                                ->get_machine()
+                                                ->get_builtin_scope())))
 
         {
         }

@@ -38,6 +38,8 @@ namespace cl
 
         CodeObject *compile(const wchar_t *str, StartRule start_rule);
 
+        VirtualMachine *get_machine() const { return machine; }
+
     private:
         VirtualMachine *machine;
 

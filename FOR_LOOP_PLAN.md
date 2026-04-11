@@ -135,7 +135,7 @@ Status:
 - Interpreter tests added in
   [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp)
 
-### 3. Add a builtin scope
+### 3. Add a builtin scope [done]
 
 Files:
 
@@ -155,6 +155,11 @@ Why this fits well:
 - `Scope::register_slot_index_for_read()` already anticipates parent scopes and
   builtin-style fallback.
 - This avoids hard-coding `range` as a special global name.
+
+Status:
+
+- Implemented.
+
 
 ### 4. Implement `range` as a builtin returning an iterator object
 

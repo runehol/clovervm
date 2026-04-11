@@ -284,6 +284,29 @@ TEST(Interpreter, call_builtin_function)
     EXPECT_EQ(Value::from_smi(11), actual);
 }
 
+TEST(Interpreter, builtin_scope_lookup)
+{
+    test::VmTestContext test_context;
+    CodeObject *code_obj = test_context.compile_file(L"range\n");
+
+    Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
+    Value name = test_context.vm().get_or_create_interned_string(L"range");
+    int32_t slot_idx = module_scope->lookup_slot_index_local(name);
+    ASSERT_GE(slot_idx, 0);
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(&BuiltinFunction::klass, actual.get_ptr<Object>()->klass);
+    EXPECT_EQ(actual, module_scope->get_by_slot_index_fastpath_only(slot_idx));
+}
+
+TEST(Interpreter, module_scope_can_shadow_builtin_scope)
+{
+    Value actual = run_file(L"range = 42\n"
+                            "range\n");
+
+    EXPECT_EQ(Value::from_smi(42), actual);
+}
+
 TEST(Interpreter, builtin_wrong_arity)
 {
     test::VmTestContext test_context;
