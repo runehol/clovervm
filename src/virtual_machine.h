@@ -1,8 +1,8 @@
 #ifndef CL_VIRTUAL_MACHINE_H
 #define CL_VIRTUAL_MACHINE_H
 
-#include <vector>
 #include <memory>
+#include <vector>
 
 #include "heap.h"
 #include "intern_store.h"
@@ -22,11 +22,16 @@ namespace cl
 
         ThreadState *make_new_thread();
 
-        GlobalHeap &get_refcounted_global_heap() { return refcounted_global_heap; }
+        GlobalHeap &get_refcounted_global_heap()
+        {
+            return refcounted_global_heap;
+        }
         GlobalHeap &get_interned_global_heap() { return interned_global_heap; }
 
-        Value get_or_create_interned_string(const std::wstring &str) { return interned_strings.get_or_create(str); }
-
+        Value get_or_create_interned_string(const std::wstring &str)
+        {
+            return interned_strings.get_or_create(str);
+        }
 
     private:
         std::vector<std::unique_ptr<ThreadState>> threads;
@@ -35,8 +40,6 @@ namespace cl
         InternStore<std::wstring, String> interned_strings;
     };
 
+}  // namespace cl
 
-
-}
-
-#endif //CL_VIRTUAL_MACHINE_H
+#endif  // CL_VIRTUAL_MACHINE_H

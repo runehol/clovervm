@@ -19,9 +19,9 @@ namespace cl
         LdaFalse,
         LdaNone,
 
-        //load accumulator from register
+        // load accumulator from register
         Ldar,
-        //store accumulator to register
+        // store accumulator to register
         Star,
 
         // fast single-byte optimisation opcodes for the first 16 registers
@@ -59,7 +59,7 @@ namespace cl
         Star14,
         Star15,
 
-        //load and store globals by slot index
+        // load and store globals by slot index
         LdaGlobal,
         StaGlobal,
 
@@ -71,7 +71,7 @@ namespace cl
         IntDiv,
         Pow,
         LeftShift,
-        RightShift, //arithmetic shift
+        RightShift,  // arithmetic shift
         Mod,
         BitwiseOr,
         BitwiseAnd,
@@ -88,8 +88,7 @@ namespace cl
         TestIn,
         TestNotIn,
 
-
-        //binary on smi. acc op smi
+        // binary on smi. acc op smi
         AddSmi,
         SubSmi,
         MulSmi,
@@ -97,7 +96,7 @@ namespace cl
         IntDivSmi,
         PowSmi,
         LeftShiftSmi,
-        RightShiftSmi, //arithmetic shift
+        RightShiftSmi,  // arithmetic shift
         ModSmi,
         BitwiseOrSmi,
         BitwiseAndSmi,
@@ -110,9 +109,8 @@ namespace cl
 
         Nop,
 
-        //function calls
+        // function calls
         CallSimple,
-
 
         // allocations
         CreateFunction,
@@ -124,14 +122,11 @@ namespace cl
         JumpIfTrue,
         JumpIfFalse,
 
-
         Invalid
     };
 
-    static constexpr size_t BytecodeTableSize = size_t(Bytecode::Invalid)+1;
+    static constexpr size_t BytecodeTableSize = size_t(Bytecode::Invalid) + 1;
 
+}  // namespace cl
 
-}
-
-
-#endif //CL_BYTECODE_H
+#endif  // CL_BYTECODE_H

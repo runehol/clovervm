@@ -2,10 +2,10 @@
 #define CL_CODE_OBJECT_H
 
 #include "bytecode.h"
-#include <vector>
-#include "value.h"
 #include "refcount.h"
 #include "scope.h"
+#include "value.h"
+#include <vector>
 
 namespace cl
 {
@@ -14,15 +14,13 @@ namespace cl
 
     static constexpr int32_t FrameHeaderSizeAboveFp = 2;
     static constexpr int32_t FrameHeaderSizeBelowFp = 2;
-    static constexpr int32_t FrameHeaderSize = FrameHeaderSizeAboveFp + FrameHeaderSizeBelowFp;
+    static constexpr int32_t FrameHeaderSize =
+        FrameHeaderSizeAboveFp + FrameHeaderSizeBelowFp;
 
     class JumpTarget
     {
     public:
-        JumpTarget(CodeObject *_code_obj)
-            : code_obj(_code_obj), target(-1)
-        {}
-
+        JumpTarget(CodeObject *_code_obj) : code_obj(_code_obj), target(-1) {}
 
         void resolve();
 
@@ -31,7 +29,9 @@ namespace cl
             if(target == -1)
             {
                 unresolved_relocations.push_back(pos);
-            } else {
+            }
+            else
+            {
                 resolve_relocation(pos);
             }
         }
@@ -42,20 +42,20 @@ namespace cl
         CodeObject *code_obj;
         int32_t target;
         std::vector<uint32_t> unresolved_relocations;
-
     };
 
     struct CodeObject : public Object
     {
         static constexpr Klass klass = Klass(L"CodeObject", nullptr);
 
-
-        CodeObject(const CompilationUnit *_compilation_unit, Value _module_scope, Value _local_scope)
-            : Object(&klass, 1, sizeof(CodeObject)/8),
+        CodeObject(const CompilationUnit *_compilation_unit,
+                   Value _module_scope, Value _local_scope)
+            : Object(&klass, 1, sizeof(CodeObject) / 8),
               module_scope(incref(_module_scope)),
               local_scope(incref(_local_scope)),
               compilation_unit(_compilation_unit)
-        {}
+        {
+        }
 
         Value module_scope;
         Value local_scope;
@@ -65,13 +65,15 @@ namespace cl
         uint32_t n_locals = 0;
         uint32_t n_temporaries = 0;
 
-
         std::vector<uint8_t> code;
 
         std::vector<uint32_t> source_offsets;
         std::vector<Value> constant_table;
 
-        uint32_t get_n_registers() const { return n_parameters + n_temporaries + n_locals; }
+        uint32_t get_n_registers() const
+        {
+            return n_parameters + n_temporaries + n_locals;
+        }
 
         size_t size() const
         {
@@ -101,7 +103,8 @@ namespace cl
             return result;
         }
 
-        uint32_t emit_opcode_constant_idx(uint32_t source_offset, Bytecode c, uint8_t constant_idx)
+        uint32_t emit_opcode_constant_idx(uint32_t source_offset, Bytecode c,
+                                          uint8_t constant_idx)
         {
             assert(c != Bytecode::Invalid);
             uint32_t result = emplace_back(source_offset, uint8_t(c));
@@ -114,7 +117,8 @@ namespace cl
             return n_parameters - 1 + FrameHeaderSizeAboveFp - reg;
         }
 
-        uint32_t emit_opcode_reg(uint32_t source_offset, Bytecode c, uint32_t reg)
+        uint32_t emit_opcode_reg(uint32_t source_offset, Bytecode c,
+                                 uint32_t reg)
         {
             assert(c != Bytecode::Invalid);
             int8_t encoded_reg = encode_reg(reg);
@@ -123,10 +127,13 @@ namespace cl
             {
                 if(c == Bytecode::Ldar)
                 {
-                    return emplace_back(source_offset, uint8_t(Bytecode::Ldar0)+r_offset);
-                } else if(c == Bytecode::Star)
+                    return emplace_back(source_offset,
+                                        uint8_t(Bytecode::Ldar0) + r_offset);
+                }
+                else if(c == Bytecode::Star)
                 {
-                    return emplace_back(source_offset, uint8_t(Bytecode::Star0)+r_offset);
+                    return emplace_back(source_offset,
+                                        uint8_t(Bytecode::Star0) + r_offset);
                 }
             }
             uint32_t result = emplace_back(source_offset, uint8_t(c));
@@ -134,7 +141,8 @@ namespace cl
             return result;
         }
 
-        uint32_t emit_opcode_reg_range(uint32_t source_offset, Bytecode c, uint32_t reg, uint8_t n_regs)
+        uint32_t emit_opcode_reg_range(uint32_t source_offset, Bytecode c,
+                                       uint32_t reg, uint8_t n_regs)
         {
             assert(c != Bytecode::Invalid);
             uint32_t result = emplace_back(source_offset, uint8_t(c));
@@ -143,19 +151,21 @@ namespace cl
             return result;
         }
 
-        uint32_t emit_opcode_uint32(uint32_t source_offset, Bytecode c, uint32_t k)
+        uint32_t emit_opcode_uint32(uint32_t source_offset, Bytecode c,
+                                    uint32_t k)
         {
             assert(c != Bytecode::Invalid);
             uint32_t result = emplace_back(source_offset, uint8_t(c));
-            emplace_back(source_offset, (k >>  0)&0xff);
-            emplace_back(source_offset, (k >>  8)&0xff);
-            emplace_back(source_offset, (k >> 16)&0xff);
-            emplace_back(source_offset, (k >> 24)&0xff);
+            emplace_back(source_offset, (k >> 0) & 0xff);
+            emplace_back(source_offset, (k >> 8) & 0xff);
+            emplace_back(source_offset, (k >> 16) & 0xff);
+            emplace_back(source_offset, (k >> 24) & 0xff);
 
             return result;
         }
 
-        uint32_t emit_jump(uint32_t source_offset, Bytecode c, JumpTarget &target)
+        uint32_t emit_jump(uint32_t source_offset, Bytecode c,
+                           JumpTarget &target)
         {
             assert(c != Bytecode::Invalid);
             uint32_t result = emplace_back(source_offset, uint8_t(c));
@@ -167,8 +177,6 @@ namespace cl
             return result;
         }
 
-
-
         uint32_t allocate_constant(Value val)
         {
             uint32_t idx = constant_table.size();
@@ -177,14 +185,11 @@ namespace cl
             return idx;
         }
 
-
         void set_int16(uint32_t pos, int16_t v)
         {
-            code[pos+0] = (v>>0)&0xff;
-            code[pos+1] = (v>>8)&0xff;
-
+            code[pos + 0] = (v >> 0) & 0xff;
+            code[pos + 1] = (v >> 8) & 0xff;
         }
-
     };
 
     inline void JumpTarget::resolve_relocation(uint32_t pos)
@@ -207,7 +212,6 @@ namespace cl
         unresolved_relocations.clear();
     }
 
+}  // namespace cl
 
-}
-
-#endif //CL_CODE_OBJECT_H
+#endif  // CL_CODE_OBJECT_H

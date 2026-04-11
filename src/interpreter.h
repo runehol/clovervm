@@ -1,14 +1,15 @@
 #ifndef CL_INTERPRETER_H
 #define CL_INTERPRETER_H
 
-#include <cstdint>
 #include "value.h"
+#include <cstdint>
 
 namespace cl
 {
     struct CodeObject;
 
-    Value run_interpreter(Value *stack_frame, CodeObject *code_object, uint32_t start_pc);
-}
+    Value run_interpreter(Value *stack_frame, CodeObject *code_object,
+                          uint32_t start_pc);
+}  // namespace cl
 
-#endif //CL_INTERPRETER_H
+#endif  // CL_INTERPRETER_H

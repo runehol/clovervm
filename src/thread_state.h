@@ -1,12 +1,12 @@
 #ifndef CL_THREAD_STATE_H
 #define CL_THREAD_STATE_H
 
-#include <vector>
-#include <memory>
 #include <deque>
+#include <memory>
+#include <vector>
 
-#include "value.h"
 #include "heap.h"
+#include "value.h"
 
 namespace cl
 {
@@ -23,7 +23,6 @@ namespace cl
 
         static void add_to_active_zero_count_table(Value v);
 
-
         Value run(CodeObject *obj);
 
         static ThreadState *get_active()
@@ -32,8 +31,10 @@ namespace cl
             return current_thread;
         }
 
-
-        void *allocate_refcounted(size_t n_bytes) { return refcounted_heap.allocate(n_bytes); }
+        void *allocate_refcounted(size_t n_bytes)
+        {
+            return refcounted_heap.allocate(n_bytes);
+        }
 
         CodeObject *compile(const wchar_t *str, StartRule start_rule);
 
@@ -45,9 +46,6 @@ namespace cl
         std::vector<Value> stack;
         std::deque<Value> zero_count_table;
 
-
-
-
         static thread_local ThreadState *current_thread;
 
         class CurrThreadStateHolder
@@ -57,16 +55,10 @@ namespace cl
             {
                 ThreadState::current_thread = ts;
             }
-            ~CurrThreadStateHolder()
-            {
-                ThreadState::current_thread = nullptr;
-            }
+            ~CurrThreadStateHolder() { ThreadState::current_thread = nullptr; }
         };
-
     };
 
+}  // namespace cl
 
-
-}
-
-#endif //CL_THREAD_STATE_H
+#endif  // CL_THREAD_STATE_H

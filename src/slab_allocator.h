@@ -1,20 +1,17 @@
 #ifndef CL_SLAB_ALLOCATOR_H
 #define CL_SLAB_ALLOCATOR_H
 
-#include <cstdlib>
 #include "value.h"
-
+#include <cstdlib>
 
 namespace cl
 {
-
 
     class SlabAllocator
     {
     public:
         SlabAllocator(size_t offset, size_t slab_size);
         ~SlabAllocator();
-
 
         char *allocate(size_t n_bytes)
         {
@@ -23,7 +20,8 @@ namespace cl
                 return nullptr;
             }
             char *result = curr_ptr;
-            n_bytes = (n_bytes + value_ptr_granularity-1)&~(value_ptr_granularity-1);
+            n_bytes = (n_bytes + value_ptr_granularity - 1) &
+                      ~(value_ptr_granularity - 1);
             curr_ptr += n_bytes;
             return result;
         }
@@ -32,9 +30,8 @@ namespace cl
         char *start_ptr;
         char *curr_ptr;
         char *end_ptr;
-
     };
 
-}
+}  // namespace cl
 
-#endif //CL_SLAB_ALLOCATOR_H
+#endif  // CL_SLAB_ALLOCATOR_H

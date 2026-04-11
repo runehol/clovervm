@@ -1,21 +1,21 @@
-#include <gtest/gtest.h>
-#include "tokenizer.h"
-#include "compilation_unit.h"
-#include "token_print.h"
-#include "parser.h"
 #include "codegen.h"
+#include "compilation_unit.h"
 #include "interpreter.h"
+#include "parser.h"
 #include "thread_state.h"
+#include "token_print.h"
+#include "tokenizer.h"
 #include "virtual_machine.h"
 #include <fmt/xchar.h>
+#include <gtest/gtest.h>
 
 using namespace cl;
-
 
 static Value run_file(const wchar_t *str)
 {
     VirtualMachine vm;
-    CodeObject *code_obj = vm.get_default_thread()->compile(str, StartRule::File);
+    CodeObject *code_obj =
+        vm.get_default_thread()->compile(str, StartRule::File);
     return vm.get_default_thread()->run(code_obj);
 }
 
@@ -25,7 +25,6 @@ TEST(Interpreter, simple)
     Value actual = run_file(L"1 + 2  *  (4 + 3)");
     EXPECT_EQ(expected, actual);
 }
-
 
 TEST(Interpreter, simple2)
 {
@@ -48,28 +47,23 @@ TEST(Interpreter, simple4)
     EXPECT_EQ(expected, actual);
 }
 
-
 TEST(Interpreter, assignment1)
 {
     Value expected = Value::from_smi(7);
     Value actual = run_file(L"a = 4\n"
-                            "a + 3"
-        );
+                            "a + 3");
 
     EXPECT_EQ(expected, actual);
 }
-
 
 TEST(Interpreter, assignment2)
 {
     Value expected = Value::from_smi(11);
     Value actual = run_file(L"a = 4\n"
-                            "a += 7\n"
-        );
+                            "a += 7\n");
 
     EXPECT_EQ(expected, actual);
 }
-
 
 TEST(Interpreter, while1)
 {
@@ -79,8 +73,7 @@ TEST(Interpreter, while1)
                             "while a:\n"
                             "    a -= 1\n"
                             "    b += a\n"
-                            "b\n"
-        );
+                            "b\n");
 
     EXPECT_EQ(expected, actual);
 }

@@ -8,4 +8,4 @@ namespace cl
     {
         ThreadState::add_to_active_zero_count_table(v);
     }
-}
+}  // namespace cl

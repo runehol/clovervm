@@ -1,13 +1,12 @@
 #ifndef CL_INDIRECT_DICT_H
 #define CL_INDIRECT_DICT_H
 
-#include <vector>
-#include "object.h"
 #include "klass.h"
+#include "object.h"
+#include <vector>
 
 namespace cl
 {
-
 
     class IndirectDict : public Object
     {
@@ -23,7 +22,6 @@ namespace cl
         bool empty() const { return keys.empty(); }
 
         void reserve_empty_slots(size_t n_slots);
-
 
         Value get_key_by_slot_index(int32_t slot_idx) const
         {
@@ -41,15 +39,12 @@ namespace cl
 
         void grow();
 
-        // TODO these need to be CL arrays at some point, but we're not ready for that yet
+        // TODO these need to be CL arrays at some point, but we're not ready
+        // for that yet
         std::vector<int32_t> hash_table;
         std::vector<Value> keys;
-
-
     };
 
-};
+};  // namespace cl
 
-
-
-#endif //CL_INDIRECT_DICT_H
+#endif  // CL_INDIRECT_DICT_H

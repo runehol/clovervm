@@ -1,17 +1,18 @@
 #include "interpreter.h"
 
-#include "value.h"
 #include "code_object.h"
+#include "code_object_print.h"
 #include "function.h"
 #include "thread_state.h"
+#include "value.h"
 #include <fmt/core.h>
-#include "code_object_print.h"
 
 namespace cl
 {
 
-
-#define PARAMS Value *fp, const uint8_t *pc, Value accumulator, void *dispatch, CodeObject *code_object
+#define PARAMS                                                                 \
+    Value *fp, const uint8_t *pc, Value accumulator, void *dispatch,           \
+        CodeObject *code_object
 #define ARGS fp, pc, accumulator, dispatch, code_object
 
     using DispatchTableEntry = Value (*)(PARAMS);
@@ -21,41 +22,38 @@ namespace cl
         DispatchTableEntry table[BytecodeTableSize];
     };
 
+#define START(len)                                                             \
+    static constexpr uint32_t instr_len = len;                                 \
+    auto *dispatch_fun =                                                       \
+        reinterpret_cast<DispatchTable *>(dispatch)->table[pc[instr_len]]
+#define COMPLETE()                                                             \
+    pc += instr_len;                                                           \
+    MUSTTAIL return dispatch_fun(ARGS)
 
-
-#define START(len) static constexpr uint32_t instr_len = len; auto *dispatch_fun = reinterpret_cast<DispatchTable *>(dispatch)->table[pc[instr_len]]
-#define COMPLETE() pc += instr_len; MUSTTAIL return dispatch_fun(ARGS)
-
-#define START_BINARY_REG_ACC()               \
-    START(2);                                \
-    int8_t reg = pc[1];                     \
-    Value a = fp[reg];       \
+#define START_BINARY_REG_ACC()                                                 \
+    START(2);                                                                  \
+    int8_t reg = pc[1];                                                        \
+    Value a = fp[reg];                                                         \
     Value b = accumulator
 
-#define START_BINARY_ACC_SMI()               \
-    START(2);                                \
-    Value a = accumulator;                 \
+#define START_BINARY_ACC_SMI()                                                 \
+    START(2);                                                                  \
+    Value a = accumulator;                                                     \
     Value b = Value::from_smi(int8_t(pc[1]))
 
-#define START_UNARY_ACC()                    \
-    START(1);                                \
+#define START_UNARY_ACC()                                                      \
+    START(1);                                                                  \
     Value a = accumulator
 
-
-
-
 #define A_NOT_SMI() ((a.as.integer & value_not_smi_mask) != 0)
-#define A_OR_B_NOT_SMI() (((a.as.integer | b.as.integer) & value_not_smi_mask) != 0)
-#define A_OR_B_REFCOUNTED_PTR() (((a.as.integer | b.as.integer) & value_refcounted_ptr_tag) != 0)
-
+#define A_OR_B_NOT_SMI()                                                       \
+    (((a.as.integer | b.as.integer) & value_not_smi_mask) != 0)
+#define A_OR_B_REFCOUNTED_PTR()                                                \
+    (((a.as.integer | b.as.integer) & value_refcounted_ptr_tag) != 0)
 
     static uint32_t read_uint32_le(const uint8_t *p)
     {
-        return
-            (p[0] <<  0) |
-            (p[1] <<  8) |
-            (p[2] << 16) |
-            (p[3] << 24);
+        return (p[0] << 0) | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
     }
 
     static int16_t read_int16_le(const uint8_t *p)
@@ -64,13 +62,9 @@ namespace cl
         const int16_t *ptr = reinterpret_cast<const int16_t *>(p);
         return *ptr;
 #else
-        return
-            (p[0] <<  0) |
-            (p[1] <<  8);
+        return (p[0] << 0) | (p[1] << 8);
 #endif
     }
-
-
 
     NOINLINE Value raise_generic_exception(PARAMS)
     {
@@ -87,10 +81,7 @@ namespace cl
         throw std::runtime_error("ValueError: negative shift count");
     }
 
-    NOINLINE Value name_error(PARAMS)
-    {
-        throw std::runtime_error("NameError");
-    }
+    NOINLINE Value name_error(PARAMS) { throw std::runtime_error("NameError"); }
 
     NOINLINE Value not_callable_error(PARAMS)
     {
@@ -160,21 +151,21 @@ namespace cl
         COMPLETE();
     }
 
-#define LDAR_STAR_FASTPATH(idx) \
-    static Value op_ldar##idx(PARAMS)                      \
-    {                                                      \
-        START(1);                                          \
-        int8_t reg = -idx - cl::FrameHeaderSizeBelowFp -1; \
-        accumulator = fp[reg];                             \
-        COMPLETE();                                        \
-    }                                                      \
-    static Value op_star##idx(PARAMS)                      \
-    {                                                      \
-        START(1);                                          \
-        int8_t reg = -idx - cl::FrameHeaderSizeBelowFp -1; \
-        fp[reg] = accumulator;                             \
-        COMPLETE();                                        \
-    }                                                      \
+#define LDAR_STAR_FASTPATH(idx)                                                \
+    static Value op_ldar##idx(PARAMS)                                          \
+    {                                                                          \
+        START(1);                                                              \
+        int8_t reg = -idx - cl::FrameHeaderSizeBelowFp - 1;                    \
+        accumulator = fp[reg];                                                 \
+        COMPLETE();                                                            \
+    }                                                                          \
+    static Value op_star##idx(PARAMS)                                          \
+    {                                                                          \
+        START(1);                                                              \
+        int8_t reg = -idx - cl::FrameHeaderSizeBelowFp - 1;                    \
+        fp[reg] = accumulator;                                                 \
+        COMPLETE();                                                            \
+    }
 
     LDAR_STAR_FASTPATH(0);
     LDAR_STAR_FASTPATH(1);
@@ -198,7 +189,8 @@ namespace cl
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
-        Value v = code_object->module_scope.get_ptr<Scope>()->get_by_slot_index(slot_idx);
+        Value v = code_object->module_scope.get_ptr<Scope>()->get_by_slot_index(
+            slot_idx);
         if(unlikely(v.is_not_present()))
         {
             MUSTTAIL return name_error(ARGS);
@@ -207,12 +199,12 @@ namespace cl
         COMPLETE();
     }
 
-
     static Value op_lda_global(PARAMS)
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
-        Value v = code_object->module_scope.get_ptr<Scope>()->get_by_slot_index_fastpath_only(slot_idx);
+        Value v = code_object->module_scope.get_ptr<Scope>()
+                      ->get_by_slot_index_fastpath_only(slot_idx);
         if(unlikely(v.is_not_present()))
         {
             MUSTTAIL return op_lda_global_slow_path(ARGS);
@@ -225,10 +217,10 @@ namespace cl
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
-        code_object->module_scope.get_ptr<Scope>()->set_by_slot_index(slot_idx, accumulator);
+        code_object->module_scope.get_ptr<Scope>()->set_by_slot_index(
+            slot_idx, accumulator);
         COMPLETE();
     }
-
 
     static Value op_add_smi(PARAMS)
     {
@@ -237,7 +229,8 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        if(unlikely(__builtin_saddll_overflow(a.as.integer, b.as.integer, &accumulator.as.integer)))
+        if(unlikely(__builtin_saddll_overflow(a.as.integer, b.as.integer,
+                                              &accumulator.as.integer)))
         {
             accumulator.as.integer -= b.as.integer;
             MUSTTAIL return overflow_path(ARGS);
@@ -246,7 +239,6 @@ namespace cl
         COMPLETE();
     }
 
-
     static Value op_add(PARAMS)
     {
         START_BINARY_REG_ACC();
@@ -254,7 +246,8 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        if(unlikely(__builtin_saddll_overflow(a.as.integer, b.as.integer, &accumulator.as.integer)))
+        if(unlikely(__builtin_saddll_overflow(a.as.integer, b.as.integer,
+                                              &accumulator.as.integer)))
         {
             accumulator.as.integer -= a.as.integer;
             MUSTTAIL return overflow_path(ARGS);
@@ -270,7 +263,8 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        if(unlikely(__builtin_ssubll_overflow(a.as.integer, b.as.integer, &accumulator.as.integer)))
+        if(unlikely(__builtin_ssubll_overflow(a.as.integer, b.as.integer,
+                                              &accumulator.as.integer)))
         {
             accumulator.as.integer += b.as.integer;
             MUSTTAIL return overflow_path(ARGS);
@@ -279,10 +273,6 @@ namespace cl
         COMPLETE();
     }
 
-
-
-
-
     static Value op_sub(PARAMS)
     {
         START_BINARY_REG_ACC();
@@ -290,7 +280,8 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        if(unlikely(__builtin_ssubll_overflow(a.as.integer, b.as.integer, &accumulator.as.integer)))
+        if(unlikely(__builtin_ssubll_overflow(a.as.integer, b.as.integer,
+                                              &accumulator.as.integer)))
         {
             accumulator.as.integer += a.as.integer;
             MUSTTAIL return overflow_path(ARGS);
@@ -307,7 +298,8 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
         Value dest;
-        if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(), &dest.as.integer)))
+        if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(),
+                                              &dest.as.integer)))
         {
             MUSTTAIL return overflow_path(ARGS);
         }
@@ -324,7 +316,8 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
         Value dest;
-        if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(), &dest.as.integer)))
+        if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(),
+                                              &dest.as.integer)))
         {
             MUSTTAIL return overflow_path(ARGS);
         }
@@ -341,7 +334,8 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
         int64_t shift_count = b.get_smi();
-        if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
+        if(unlikely(shift_count < 0))
+            MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
         accumulator.as.integer = a.as.integer << shift_count;
         /* TODO need to test overflow here */
 
@@ -356,14 +350,13 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
         int64_t shift_count = b.get_smi();
-        if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
+        if(unlikely(shift_count < 0))
+            MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
         accumulator.as.integer = a.as.integer << shift_count;
         /* TODO need to test overflow here */
 
         COMPLETE();
     }
-
-
 
     static Value op_right_shift(PARAMS)
     {
@@ -374,10 +367,10 @@ namespace cl
         }
 
         int64_t shift_count = b.get_smi();
-        if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
+        if(unlikely(shift_count < 0))
+            MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
         accumulator.as.integer = a.as.integer >> shift_count;
         accumulator.as.integer &= ~value_not_smi_mask;
-
 
         COMPLETE();
     }
@@ -390,28 +383,28 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
         int64_t shift_count = b.get_smi();
-        if(unlikely(shift_count < 0)) MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
+        if(unlikely(shift_count < 0))
+            MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
         accumulator.as.integer = a.as.integer >> shift_count;
         accumulator.as.integer &= ~value_not_smi_mask;
 
         COMPLETE();
     }
 
-
-
     static Value op_test_is(PARAMS)
     {
         START_BINARY_REG_ACC();
 
-        accumulator = (a.as.integer == b.as.integer) ? Value::True() : Value::False();
+        accumulator =
+            (a.as.integer == b.as.integer) ? Value::True() : Value::False();
         COMPLETE();
     }
-
 
     static Value op_test_is_not(PARAMS)
     {
         START_BINARY_REG_ACC();
-        accumulator = (a.as.integer != b.as.integer) ? Value::True() : Value::False();
+        accumulator =
+            (a.as.integer != b.as.integer) ? Value::True() : Value::False();
         COMPLETE();
     }
 
@@ -422,7 +415,8 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        accumulator = (a.as.integer < b.as.integer) ? Value::True() : Value::False();
+        accumulator =
+            (a.as.integer < b.as.integer) ? Value::True() : Value::False();
         COMPLETE();
     }
 
@@ -433,7 +427,8 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        accumulator = (a.as.integer <= b.as.integer) ? Value::True() : Value::False();
+        accumulator =
+            (a.as.integer <= b.as.integer) ? Value::True() : Value::False();
         COMPLETE();
     }
 
@@ -444,7 +439,8 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        accumulator = (a.as.integer >= b.as.integer) ? Value::True() : Value::False();
+        accumulator =
+            (a.as.integer >= b.as.integer) ? Value::True() : Value::False();
         COMPLETE();
     }
 
@@ -455,7 +451,8 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        accumulator = (a.as.integer > b.as.integer) ? Value::True() : Value::False();
+        accumulator =
+            (a.as.integer > b.as.integer) ? Value::True() : Value::False();
         COMPLETE();
     }
 
@@ -466,10 +463,11 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        // see if we have a bit difference after we clear the bit that promotes booleans to 0/1 integers
-        uint64_t difference = (a.as.integer ^ b.as.integer) & value_boolean_to_integer_mask;
+        // see if we have a bit difference after we clear the bit that promotes
+        // booleans to 0/1 integers
+        uint64_t difference =
+            (a.as.integer ^ b.as.integer) & value_boolean_to_integer_mask;
         accumulator = (difference == 0) ? Value::True() : Value::False();
-
 
         COMPLETE();
     }
@@ -481,14 +479,14 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        // see if we have a bit difference after we clear the bit that promotes booleans to 0/1 integers
-        uint64_t difference = (a.as.integer ^ b.as.integer) & value_boolean_to_integer_mask;
+        // see if we have a bit difference after we clear the bit that promotes
+        // booleans to 0/1 integers
+        uint64_t difference =
+            (a.as.integer ^ b.as.integer) & value_boolean_to_integer_mask;
         accumulator = (difference != 0) ? Value::True() : Value::False();
 
         COMPLETE();
     }
-
-
 
     static Value op_negate(PARAMS)
     {
@@ -498,7 +496,8 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
 
-        if(unlikely(__builtin_ssubll_overflow(0, a.as.integer, &accumulator.as.integer)))
+        if(unlikely(__builtin_ssubll_overflow(0, a.as.integer,
+                                              &accumulator.as.integer)))
         {
             accumulator.as.integer = -accumulator.as.integer;
             MUSTTAIL return overflow_path(ARGS);
@@ -515,17 +514,18 @@ namespace cl
             // this is not an inlined type, go to the slow path
             MUSTTAIL return slow_path(ARGS);
         }
-        // however, if this is an inlined type, we can simply test for truthiness using a mask and negate
+        // however, if this is an inlined type, we can simply test for
+        // truthiness using a mask and negate
 
         if((a.as.integer & value_truthy_mask) != 0)
         {
             accumulator = Value::False();
-        } else {
+        }
+        else
+        {
             accumulator = Value::True();
         }
         COMPLETE();
-
-
     }
 
     static Value op_create_function(PARAMS)
@@ -534,13 +534,12 @@ namespace cl
         uint8_t const_offset = pc[1];
         Value code_obj = code_object->constant_table[const_offset];
 
-        accumulator = Value::from_oop(new(ThreadState::get_active()->allocate_refcounted(sizeof(Function)))Function(code_obj));
+        accumulator =
+            Value::from_oop(new(ThreadState::get_active()->allocate_refcounted(
+                sizeof(Function))) Function(code_obj));
 
         COMPLETE();
-
-
     }
-
 
     static Value op_jump(PARAMS)
     {
@@ -606,19 +605,20 @@ namespace cl
         // must save off pc, old code object and fp
         Value *new_fp = fp + reg - n_args - FrameHeaderSizeAboveFp;
 
-        // these aren't really values. we're just going to whack them in and ask the refcounter to ignore them.
+        // these aren't really values. we're just going to whack them in and ask
+        // the refcounter to ignore them.
         new_fp[0].as.ptr = (Object *)fp;
         new_fp[-1] = Value::from_oop(code_object);
         new_fp[-2].as.ptr = (Object *)pc;
 
         fp = new_fp;
-        code_object = fun.get_ptr<Function>()->code_object.get_ptr<CodeObject>();
+        code_object =
+            fun.get_ptr<Function>()->code_object.get_ptr<CodeObject>();
         pc = code_object->code.data();
 
         START(0);
         COMPLETE();
     }
-
 
     static Value op_return(PARAMS)
     {
@@ -673,13 +673,11 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::TestGreaterEqual, op_test_greater_equal);
         SET_TABLE_ENTRY(Bytecode::TestGreater, op_test_greater);
 
-
         SET_TABLE_ENTRY(Bytecode::LdaGlobal, op_lda_global);
         SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);
 
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
-
 
         SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);
 
@@ -691,53 +689,42 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::Return, op_return);
         SET_TABLE_ENTRY(Bytecode::Halt, op_halt);
 
+#define REGISTER_LDAR_STAR_FASTPATH(idx)                                       \
+    SET_TABLE_ENTRY(Bytecode::Ldar##idx, op_ldar##idx);                        \
+    SET_TABLE_ENTRY(Bytecode::Star##idx, op_star##idx);
 
-
-#define REGISTER_LDAR_STAR_FASTPATH(idx) \
-        SET_TABLE_ENTRY(Bytecode::Ldar##idx, op_ldar##idx); \
-        SET_TABLE_ENTRY(Bytecode::Star##idx, op_star##idx);
-
-    REGISTER_LDAR_STAR_FASTPATH(0);
-    REGISTER_LDAR_STAR_FASTPATH(1);
-    REGISTER_LDAR_STAR_FASTPATH(2);
-    REGISTER_LDAR_STAR_FASTPATH(3);
-    REGISTER_LDAR_STAR_FASTPATH(4);
-    REGISTER_LDAR_STAR_FASTPATH(5);
-    REGISTER_LDAR_STAR_FASTPATH(6);
-    REGISTER_LDAR_STAR_FASTPATH(7);
-    REGISTER_LDAR_STAR_FASTPATH(8);
-    REGISTER_LDAR_STAR_FASTPATH(9);
-    REGISTER_LDAR_STAR_FASTPATH(10);
-    REGISTER_LDAR_STAR_FASTPATH(11);
-    REGISTER_LDAR_STAR_FASTPATH(12);
-    REGISTER_LDAR_STAR_FASTPATH(13);
-    REGISTER_LDAR_STAR_FASTPATH(14);
-    REGISTER_LDAR_STAR_FASTPATH(15);
+        REGISTER_LDAR_STAR_FASTPATH(0);
+        REGISTER_LDAR_STAR_FASTPATH(1);
+        REGISTER_LDAR_STAR_FASTPATH(2);
+        REGISTER_LDAR_STAR_FASTPATH(3);
+        REGISTER_LDAR_STAR_FASTPATH(4);
+        REGISTER_LDAR_STAR_FASTPATH(5);
+        REGISTER_LDAR_STAR_FASTPATH(6);
+        REGISTER_LDAR_STAR_FASTPATH(7);
+        REGISTER_LDAR_STAR_FASTPATH(8);
+        REGISTER_LDAR_STAR_FASTPATH(9);
+        REGISTER_LDAR_STAR_FASTPATH(10);
+        REGISTER_LDAR_STAR_FASTPATH(11);
+        REGISTER_LDAR_STAR_FASTPATH(12);
+        REGISTER_LDAR_STAR_FASTPATH(13);
+        REGISTER_LDAR_STAR_FASTPATH(14);
+        REGISTER_LDAR_STAR_FASTPATH(15);
 #undef REGISTER_LDAR_STAR_FASTPATH
 
         return tbl;
     }
 
-
     DispatchTable dispatch_table = make_dispatch_table();
-
 
     Value run_interpreter(Value *fp, CodeObject *code_object, uint32_t start_pc)
     {
         const uint8_t *pc = &code_object->code[start_pc];
         void *dispatch = reinterpret_cast<void *>(&dispatch_table);
-        Value accumulator = Value::from_smi(0); // init accumulator to 0
-
-
-
-
+        Value accumulator = Value::from_smi(0);  // init accumulator to 0
 
         // do the initial dispatch
         auto *dispatch_fun = dispatch_table.table[*pc];
         return dispatch_fun(ARGS);
-
-
     }
 
-
-}
+}  // namespace cl

@@ -3,15 +3,15 @@
 namespace cl
 {
 
-
     Scope::Scope(Value _parent_scope)
-        : Object(&klass, 1, sizeof(Scope)/8),
+        : Object(&klass, 1, sizeof(Scope) / 8),
           parent_scope(incref(_parent_scope))
 
     {
     }
 
-        /* For a write, we just insert a regular not-present value with no parent scope slot indication (-1) */
+    /* For a write, we just insert a regular not-present value with no parent
+     * scope slot indication (-1) */
     int32_t Scope::register_slot_index_for_write(Value key)
     {
         int32_t slot_idx = indirect_dict.insert(key);
@@ -37,7 +37,8 @@ namespace cl
             int32_t parent_idx = -1;
             if(parent_scope != Value::None())
             {
-                parent_idx = get_parent_scope_ptr()->register_slot_index_for_read(key);
+                parent_idx =
+                    get_parent_scope_ptr()->register_slot_index_for_read(key);
             }
             slots.push_back(Value::not_present(parent_idx));
         }
@@ -48,7 +49,6 @@ namespace cl
     {
         return indirect_dict.lookup(name);
     }
-
 
     Value Scope::get_by_name(Value name) const
     {
@@ -64,7 +64,6 @@ namespace cl
         return Value::not_present();
     }
 
-
     void Scope::set_by_name(Value name, Value val)
     {
         int32_t slot_idx = indirect_dict.insert(name);
@@ -76,7 +75,6 @@ namespace cl
         set_by_slot_index(slot_idx, val);
     }
 
-
     void Scope::reserve_empty_slots(size_t n_slots)
     {
 
@@ -87,5 +85,4 @@ namespace cl
         }
     }
 
-
-};
+};  // namespace cl

@@ -19,10 +19,9 @@ namespace cl
         FString
     };
 
+    AstVector parse(VirtualMachine &vm, const TokenVector &tv,
+                    StartRule start_rule);
 
-    AstVector parse(VirtualMachine &vm, const TokenVector &tv, StartRule start_rule);
+}  // namespace cl
 
-
-}
-
-#endif //CL_PARSER_H
+#endif  // CL_PARSER_H

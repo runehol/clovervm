@@ -1,18 +1,18 @@
 #ifndef CL_HEAP_H
 #define CL_HEAP_H
 
+#include "slab_allocator.h"
+#include "value.h"
 #include <cstdlib>
 #include <deque>
-#include "value.h"
 #include <mutex>
 #include <tuple>
-#include "slab_allocator.h"
 
 namespace cl
 {
 
     static constexpr size_t DefaultSlabSize = 65536;
-    static constexpr size_t LargeAllocationSize = DefaultSlabSize/2;
+    static constexpr size_t LargeAllocationSize = DefaultSlabSize / 2;
 
     class ThreadLocalHeap;
 
@@ -34,12 +34,12 @@ namespace cl
             return GlobalHeap(value_interned_ptr_tag, slab_size);
         }
 
-        void *allocate_large_object(size_t n_bytes); // slow path allocation for large objects
+        void *allocate_large_object(
+            size_t n_bytes);  // slow path allocation for large objects
 
         void *allocate_global(size_t n_bytes);
 
         SlabAllocator *make_new_slab();
-
 
         SlabAllocator *get_active_slab();
 
@@ -72,7 +72,9 @@ namespace cl
             if(n_bytes >= LargeAllocationSize)
             {
                 return global_heap->allocate_large_object(n_bytes);
-            } else {
+            }
+            else
+            {
                 local_allocator = global_heap->make_new_slab();
                 return local_allocator->allocate(n_bytes);
             }
@@ -83,6 +85,6 @@ namespace cl
         SlabAllocator *local_allocator;
     };
 
-}
+}  // namespace cl
 
-#endif //CL_HEAP_H
+#endif  // CL_HEAP_H

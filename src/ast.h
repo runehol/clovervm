@@ -1,13 +1,13 @@
 #ifndef CL_AST_H
 #define CL_AST_H
 
-#include <vector>
-#include <cstdint>
-#include <cassert>
-#include <iosfwd>
-#include "value.h"
 #include "refcount.h"
+#include "value.h"
 #include <absl/container/inlined_vector.h>
+#include <cassert>
+#include <cstdint>
+#include <iosfwd>
+#include <vector>
 
 namespace cl
 {
@@ -17,19 +17,19 @@ namespace cl
     {
         STATEMENT_FUNCTION_DEF,
         STATEMENT_IF,
-        //STATEMENT_CLASS_DEF,
-        //STATEMENT_WITH,
-        //STATEMENT_FOR,
-        //STATEMENT_TRY,
+        // STATEMENT_CLASS_DEF,
+        // STATEMENT_WITH,
+        // STATEMENT_FOR,
+        // STATEMENT_TRY,
         STATEMENT_WHILE,
-        //STATEMENT_MATCH,
+        // STATEMENT_MATCH,
         STATEMENT_RETURN,
-        //STATEMENT_IMPORT,
-        //STATEMENT_RAISE,
+        // STATEMENT_IMPORT,
+        // STATEMENT_RAISE,
         STATEMENT_PASS,
-        //STATEMENT_DEL,
-        //STATEMENT_YIELD,
-        //STATEMENT_ASSERT,
+        // STATEMENT_DEL,
+        // STATEMENT_YIELD,
+        // STATEMENT_ASSERT,
         STATEMENT_BREAK,
         STATEMENT_CONTINUE,
         STATEMENT_GLOBAL,
@@ -45,47 +45,46 @@ namespace cl
         EXPRESSION_UNARY,
         EXPRESSION_LITERAL,
         EXPRESSION_VARIABLE_REFERENCE,
-        EXPRESSION_COMPARISON, //n-children comparison sequence with a 1 LHS and 1..n-1 comparison fragments
+        EXPRESSION_COMPARISON,  // n-children comparison sequence with a 1 LHS
+                                // and 1..n-1 comparison fragments
         EXPRESSION_COMPARISON_FRAGMENT,
         EXPRESSION_SHORTCUTTING_BINARY,
         EXPRESSION_CALL,
 
     };
 
-
     constexpr bool is_expression(AstNodeKind k)
     {
         switch(k)
         {
-        case AstNodeKind::STATEMENT_FUNCTION_DEF:
-        case AstNodeKind::STATEMENT_IF:
-        case AstNodeKind::STATEMENT_WHILE:
-        case AstNodeKind::STATEMENT_RETURN:
-        case AstNodeKind::STATEMENT_PASS:
-        case AstNodeKind::STATEMENT_BREAK:
-        case AstNodeKind::STATEMENT_CONTINUE:
-        case AstNodeKind::STATEMENT_GLOBAL:
-        case AstNodeKind::STATEMENT_NONLOCAL:
-        case AstNodeKind::STATEMENT_SEQUENCE:
-        case AstNodeKind::STATEMENT_ASSIGN:
-        case AstNodeKind::STATEMENT_EXPRESSION:
-        case AstNodeKind::PARAMETER_SEQUENCE:
-            return false;
-        case AstNodeKind::EXPRESSION_TUPLE:
-        case AstNodeKind::EXPRESSION_LIST:
-        case AstNodeKind::EXPRESSION_ASSIGN:
-        case AstNodeKind::EXPRESSION_BINARY:
-        case AstNodeKind::EXPRESSION_UNARY:
-        case AstNodeKind::EXPRESSION_LITERAL:
-        case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
-        case AstNodeKind::EXPRESSION_COMPARISON:
-        case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
-        case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
-        case AstNodeKind::EXPRESSION_CALL:
-            return true;
+            case AstNodeKind::STATEMENT_FUNCTION_DEF:
+            case AstNodeKind::STATEMENT_IF:
+            case AstNodeKind::STATEMENT_WHILE:
+            case AstNodeKind::STATEMENT_RETURN:
+            case AstNodeKind::STATEMENT_PASS:
+            case AstNodeKind::STATEMENT_BREAK:
+            case AstNodeKind::STATEMENT_CONTINUE:
+            case AstNodeKind::STATEMENT_GLOBAL:
+            case AstNodeKind::STATEMENT_NONLOCAL:
+            case AstNodeKind::STATEMENT_SEQUENCE:
+            case AstNodeKind::STATEMENT_ASSIGN:
+            case AstNodeKind::STATEMENT_EXPRESSION:
+            case AstNodeKind::PARAMETER_SEQUENCE:
+                return false;
+            case AstNodeKind::EXPRESSION_TUPLE:
+            case AstNodeKind::EXPRESSION_LIST:
+            case AstNodeKind::EXPRESSION_ASSIGN:
+            case AstNodeKind::EXPRESSION_BINARY:
+            case AstNodeKind::EXPRESSION_UNARY:
+            case AstNodeKind::EXPRESSION_LITERAL:
+            case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
+            case AstNodeKind::EXPRESSION_COMPARISON:
+            case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
+            case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
+            case AstNodeKind::EXPRESSION_CALL:
+                return true;
         }
     }
-
 
     enum class AstOperatorKind : uint8_t
     {
@@ -126,9 +125,7 @@ namespace cl
         PLUS,
         BITWISE_NOT,
 
-
-
-        //literal expressions
+        // literal expressions
         NUMBER,
         STRING,
         NONE,
@@ -136,21 +133,21 @@ namespace cl
         FALSE,
 
     };
-    constexpr static size_t AstOperatorKindSize = size_t(AstOperatorKind::FALSE)+1;
-
+    constexpr static size_t AstOperatorKindSize =
+        size_t(AstOperatorKind::FALSE) + 1;
 
     const char *to_string(AstNodeKind t);
     std::ostream &operator<<(std::ostream &o, AstNodeKind t);
     const char *to_string(AstOperatorKind t);
     std::ostream &operator<<(std::ostream &o, AstOperatorKind t);
 
-
     struct AstKind
     {
-        constexpr AstKind(AstNodeKind _node_kind, AstOperatorKind _operator_kind=AstOperatorKind::NOP)
+        constexpr AstKind(AstNodeKind _node_kind,
+                          AstOperatorKind _operator_kind = AstOperatorKind::NOP)
             : node_kind(_node_kind), operator_kind(_operator_kind)
-        {}
-
+        {
+        }
 
         constexpr bool operator==(AstKind o) const
         {
@@ -160,7 +157,6 @@ namespace cl
         AstNodeKind node_kind;
         AstOperatorKind operator_kind;
     };
-
 
     enum class ExpressionPrecedence : uint32_t
     {
@@ -182,89 +178,92 @@ namespace cl
         Atom
     };
 
-    constexpr ExpressionPrecedence next(ExpressionPrecedence p) { return ExpressionPrecedence(uint32_t(p) + 1); }
+    constexpr ExpressionPrecedence next(ExpressionPrecedence p)
+    {
+        return ExpressionPrecedence(uint32_t(p) + 1);
+    }
 
     constexpr ExpressionPrecedence precedence_for_kind(AstKind k)
     {
         if(k.node_kind == AstNodeKind::EXPRESSION_COMPARISON)
         {
             return ExpressionPrecedence::Comparison;
-        } else if(k.node_kind == AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+        }
+        else if(k.node_kind == AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
         {
             return ExpressionPrecedence::Atom;
-        } else if(k.node_kind == AstNodeKind::EXPRESSION_CALL)
+        }
+        else if(k.node_kind == AstNodeKind::EXPRESSION_CALL)
         {
             return ExpressionPrecedence::Primary;
         }
         switch(k.operator_kind)
         {
-        case AstOperatorKind::NOP:
-            return ExpressionPrecedence::Lowest;
+            case AstOperatorKind::NOP:
+                return ExpressionPrecedence::Lowest;
 
-        case AstOperatorKind::SHORTCUTTING_OR:
-            return ExpressionPrecedence::Disjunction;
+            case AstOperatorKind::SHORTCUTTING_OR:
+                return ExpressionPrecedence::Disjunction;
 
-        case AstOperatorKind::SHORTCUTTING_AND:
-            return ExpressionPrecedence::Conjunction;
+            case AstOperatorKind::SHORTCUTTING_AND:
+                return ExpressionPrecedence::Conjunction;
 
-        case AstOperatorKind::NOT:
-            return ExpressionPrecedence::Inversion;
+            case AstOperatorKind::NOT:
+                return ExpressionPrecedence::Inversion;
 
-        case AstOperatorKind::EQUAL:
-        case AstOperatorKind::NOT_EQUAL:
-        case AstOperatorKind::LESS:
-        case AstOperatorKind::LESS_EQUAL:
-        case AstOperatorKind::GREATER:
-        case AstOperatorKind::GREATER_EQUAL:
-        case AstOperatorKind::IS:
-        case AstOperatorKind::IS_NOT:
-        case AstOperatorKind::IN:
-        case AstOperatorKind::NOT_IN:
-            return ExpressionPrecedence::Comparison;
+            case AstOperatorKind::EQUAL:
+            case AstOperatorKind::NOT_EQUAL:
+            case AstOperatorKind::LESS:
+            case AstOperatorKind::LESS_EQUAL:
+            case AstOperatorKind::GREATER:
+            case AstOperatorKind::GREATER_EQUAL:
+            case AstOperatorKind::IS:
+            case AstOperatorKind::IS_NOT:
+            case AstOperatorKind::IN:
+            case AstOperatorKind::NOT_IN:
+                return ExpressionPrecedence::Comparison;
 
-        case AstOperatorKind::BITWISE_OR:
-            return ExpressionPrecedence::BitwiseOr;
-        case AstOperatorKind::BITWISE_AND:
-            return ExpressionPrecedence::BitwiseAnd;
-        case AstOperatorKind::BITWISE_XOR:
-            return ExpressionPrecedence::BitwiseXor;
+            case AstOperatorKind::BITWISE_OR:
+                return ExpressionPrecedence::BitwiseOr;
+            case AstOperatorKind::BITWISE_AND:
+                return ExpressionPrecedence::BitwiseAnd;
+            case AstOperatorKind::BITWISE_XOR:
+                return ExpressionPrecedence::BitwiseXor;
 
-        case AstOperatorKind::LEFTSHIFT:
-        case AstOperatorKind::RIGHTSHIFT:
-            return ExpressionPrecedence::Shift;
+            case AstOperatorKind::LEFTSHIFT:
+            case AstOperatorKind::RIGHTSHIFT:
+                return ExpressionPrecedence::Shift;
 
-        case AstOperatorKind::ADD:
-        case AstOperatorKind::SUBTRACT:
-            return ExpressionPrecedence::Sum;
+            case AstOperatorKind::ADD:
+            case AstOperatorKind::SUBTRACT:
+                return ExpressionPrecedence::Sum;
 
-        case AstOperatorKind::MULTIPLY:
-        case AstOperatorKind::DIVIDE:
-        case AstOperatorKind::INT_DIVIDE:
-        case AstOperatorKind::MATMULT:
-        case AstOperatorKind::MODULO:
-            return ExpressionPrecedence::Term;
+            case AstOperatorKind::MULTIPLY:
+            case AstOperatorKind::DIVIDE:
+            case AstOperatorKind::INT_DIVIDE:
+            case AstOperatorKind::MATMULT:
+            case AstOperatorKind::MODULO:
+                return ExpressionPrecedence::Term;
 
-        case AstOperatorKind::NEGATE:
-        case AstOperatorKind::PLUS:
-        case AstOperatorKind::BITWISE_NOT:
-            return ExpressionPrecedence::Factor;
+            case AstOperatorKind::NEGATE:
+            case AstOperatorKind::PLUS:
+            case AstOperatorKind::BITWISE_NOT:
+                return ExpressionPrecedence::Factor;
 
-        case AstOperatorKind::POWER:
-            return ExpressionPrecedence::Power;
+            case AstOperatorKind::POWER:
+                return ExpressionPrecedence::Power;
 
+            case AstOperatorKind::DOT:
+            case AstOperatorKind::SUBSCRIPT:
+                return ExpressionPrecedence::Primary;
 
-        case AstOperatorKind::DOT:
-        case AstOperatorKind::SUBSCRIPT:
-            return ExpressionPrecedence::Primary;
-
-        case AstOperatorKind::NUMBER:
-        case AstOperatorKind::STRING:
-        case AstOperatorKind::NONE:
-        case AstOperatorKind::TRUE:
-        case AstOperatorKind::FALSE:
-            return ExpressionPrecedence::Atom;
-            }
-
+            case AstOperatorKind::NUMBER:
+            case AstOperatorKind::STRING:
+            case AstOperatorKind::NONE:
+            case AstOperatorKind::TRUE:
+            case AstOperatorKind::FALSE:
+                return ExpressionPrecedence::Atom;
+        }
     }
 
     using AstChildren = absl::InlinedVector<int32_t, 4>;
@@ -273,7 +272,8 @@ namespace cl
     {
         AstVector(const CompilationUnit *_compilation_unit)
             : compilation_unit(_compilation_unit)
-        {}
+        {
+        }
 
         const CompilationUnit *compilation_unit;
         std::vector<AstKind> kinds;
@@ -283,14 +283,16 @@ namespace cl
 
         int32_t root_node = -1;
 
-        size_t size() const {
+        size_t size() const
+        {
             assert(kinds.size() == source_offsets.size());
             assert(kinds.size() == children.size());
             assert(kinds.size() == constants.size());
             return kinds.size();
         }
 
-        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs, int32_t rhs)
+        int32_t emplace_back(AstKind kind, uint32_t source_offset, int32_t lhs,
+                             int32_t rhs)
         {
             int32_t idx = size();
             AstChildren ch;
@@ -317,7 +319,8 @@ namespace cl
             return idx;
         }
 
-        int32_t emplace_back(AstKind kind, uint32_t source_offset, Value constant)
+        int32_t emplace_back(AstKind kind, uint32_t source_offset,
+                             Value constant)
         {
             int32_t idx = size();
 
@@ -328,8 +331,9 @@ namespace cl
             return idx;
         }
 
-
-        int32_t emplace_back(AstKind kind, uint32_t source_offset, AstChildren child_vec, Value constant = Value::None())
+        int32_t emplace_back(AstKind kind, uint32_t source_offset,
+                             AstChildren child_vec,
+                             Value constant = Value::None())
         {
             int32_t idx = size();
             kinds.push_back(kind);
@@ -338,13 +342,8 @@ namespace cl
             constants.emplace_back(incref(constant));
             return idx;
         }
-
-
-
     };
 
+}  // namespace cl
 
-
-}
-
-#endif //CL_AST_H
+#endif  // CL_AST_H

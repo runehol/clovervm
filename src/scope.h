@@ -1,12 +1,12 @@
 #ifndef CL_SCOPE_H
 #define CL_SCOPE_H
 
-#include <vector>
-#include "object.h"
-#include "klass.h"
-#include "refcount.h"
 #include "indirect_dict.h"
+#include "klass.h"
+#include "object.h"
+#include "refcount.h"
 #include "value.h"
+#include <vector>
 
 namespace cl
 {
@@ -42,19 +42,14 @@ namespace cl
             extra = _extra;
         }
 
-        Value get_value() const
-        {
-            return value;
-        }
+        Value get_value() const { return value; }
 
-        Value get_extra() const
-        {
-            return extra;
-        }
+        Value get_extra() const { return extra; }
+
     private:
-
         Value value;
-        Value extra; // extra is used for registering invalidation arrays for global scopes, and closure usage for local scopes
+        Value extra;  // extra is used for registering invalidation arrays for
+                      // global scopes, and closure usage for local scopes
     };
 
     class Scope : public Object
@@ -64,9 +59,8 @@ namespace cl
 
         Scope(Value _parent_scope);
 
-
-
-        /* For a write, we just insert a regular not-present value with no parent scope slot indication (-1) */
+        /* For a write, we just insert a regular not-present value with no
+         * parent scope slot indication (-1) */
         int32_t register_slot_index_for_write(Value key);
 
         /* whereas for a read, if the value isn't present, we also
@@ -78,19 +72,23 @@ namespace cl
 
         int32_t lookup_slot_index_local(Value name) const;
 
-
         Value get_by_name(Value name) const;
 
-        ALWAYSINLINE Value get_by_slot_index_fastpath_only(int32_t slot_idx) const
+        ALWAYSINLINE Value
+        get_by_slot_index_fastpath_only(int32_t slot_idx) const
         {
             assert(slot_idx >= 0);
             Value v = slots[slot_idx].get_value();
-            if(!v.is_not_present()) return v;
+            if(!v.is_not_present())
+                return v;
             int32_t parent_slot_idx = v.get_not_present_index();
             if(likely(parent_slot_idx >= 0))
             {
-                MUSTTAIL return get_parent_scope_ptr()->get_by_slot_index_fastpath_only(parent_slot_idx);
-            } else {
+                MUSTTAIL return get_parent_scope_ptr()
+                    ->get_by_slot_index_fastpath_only(parent_slot_idx);
+            }
+            else
+            {
                 return Value::not_present();
             }
         }
@@ -99,20 +97,24 @@ namespace cl
         {
             assert(slot_idx >= 0);
             Value v = slots[slot_idx].get_value();
-            if(!v.is_not_present()) return v;
+            if(!v.is_not_present())
+                return v;
             int32_t parent_slot_idx = v.get_not_present_index();
             if(likely(parent_slot_idx >= 0))
             {
-                return get_parent_scope_ptr()->get_by_slot_index(parent_slot_idx);
-            } else {
+                return get_parent_scope_ptr()->get_by_slot_index(
+                    parent_slot_idx);
+            }
+            else
+            {
                 if(unlikely(parent_scope != Value::None()))
                 {
-                    return get_parent_scope_ptr()->get_by_name(indirect_dict.get_key_by_slot_index(slot_idx));
+                    return get_parent_scope_ptr()->get_by_name(
+                        indirect_dict.get_key_by_slot_index(slot_idx));
                 }
                 return Value::not_present();
             }
         }
-
 
         void set_by_name(Value name, Value val);
 
@@ -123,8 +125,6 @@ namespace cl
 
         void reserve_empty_slots(size_t n_slots);
 
-
-
         uint32_t size() const { return slots.size(); }
         bool empty() const { return slots.empty(); }
 
@@ -134,20 +134,13 @@ namespace cl
             return reinterpret_cast<Scope *>(parent_scope.get_ptr());
         }
 
-
         Value parent_scope;
         IndirectDict indirect_dict;
-        // TODO these need to be CL arrays at some point, but we're not ready for that yet
+        // TODO these need to be CL arrays at some point, but we're not ready
+        // for that yet
         std::vector<SlotEntry> slots;
-
-
     };
 
+};  // namespace cl
 
-
-
-};
-
-
-
-#endif //CL_SCOPE_H
+#endif  // CL_SCOPE_H

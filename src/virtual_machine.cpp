@@ -15,11 +15,9 @@ namespace cl
 
     VirtualMachine::~VirtualMachine() = default;
 
-
     ThreadState *VirtualMachine::make_new_thread()
     {
         return threads.emplace_back(std::make_unique<ThreadState>(this)).get();
     }
 
-
-}
+}  // namespace cl

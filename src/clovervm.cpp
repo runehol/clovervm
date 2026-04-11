@@ -1,23 +1,22 @@
 #include <fmt/core.h>
 
+#include "code_object_print.h"
 #include "object.h"
-#include "value.h"
+#include "parser.h"
+#include "refcount.h"
 #include "short_vector.h"
 #include "string.h"
-#include "refcount.h"
-#include <sstream>
-#include <fstream>
-#include <codecvt>
-#include "virtual_machine.h"
 #include "thread_state.h"
-#include "parser.h"
-#include "code_object_print.h"
+#include "value.h"
+#include "virtual_machine.h"
+#include <codecvt>
 #include <fmt/xchar.h>
+#include <fstream>
+#include <sstream>
 
 using namespace cl;
 
-
-std::wstring read_file(const char* filename)
+std::wstring read_file(const char *filename)
 {
     std::wifstream wif(filename);
     wif.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
@@ -25,7 +24,6 @@ std::wstring read_file(const char* filename)
     wss << wif.rdbuf();
     return wss.str();
 }
-
 
 int main(int argc, const char *argv[])
 {
@@ -38,7 +36,9 @@ int main(int argc, const char *argv[])
         if(argv[i] == "--print-bytecode"sv)
         {
             print_bytecode = true;
-        } else {
+        }
+        else
+        {
             break;
         }
     }
@@ -55,7 +55,8 @@ int main(int argc, const char *argv[])
         VirtualMachine vm;
         std::wstring file_contents = read_file(source_file);
         ThreadState *thr = vm.get_default_thread();
-        CodeObject *code_obj = thr->compile(file_contents.c_str(), StartRule::File);
+        CodeObject *code_obj =
+            thr->compile(file_contents.c_str(), StartRule::File);
         if(print_bytecode)
         {
             fmt::print("{}\n", *code_obj);
@@ -64,16 +65,21 @@ int main(int argc, const char *argv[])
         if(v.is_smi())
         {
             std::cout << v.get_smi() << "\n";
-        } else if(v == Value::None())
+        }
+        else if(v == Value::None())
         {
             std::cout << "None" << "\n";
-        } else if(v == Value::False())
+        }
+        else if(v == Value::False())
         {
             std::cout << "False" << "\n";
-        } else if(v == Value::True())
+        }
+        else if(v == Value::True())
         {
             std::cout << "True" << "\n";
-        } else {
+        }
+        else
+        {
             std::cout << "unknown object\n";
         }
     }

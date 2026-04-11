@@ -7,24 +7,23 @@
 namespace cl
 {
     struct Klass;
-/*
-  Base class for all language objects, i.e. indirect values
-*/
+    /*
+      Base class for all language objects, i.e. indirect values
+    */
     struct Object
     {
-        constexpr Object(const Klass *_klass, uint32_t _n_cells, uint32_t _size_in_cells)
-            : klass(_klass),
-              refcount(0),
-              n_cells(_n_cells),
+        constexpr Object(const Klass *_klass, uint32_t _n_cells,
+                         uint32_t _size_in_cells)
+            : klass(_klass), refcount(0), n_cells(_n_cells),
               size_in_cells(_size_in_cells)
-        {}
+        {
+        }
 
         constexpr Object(const Klass *_klass, uint32_t _n_cells)
-            : klass(_klass),
-              refcount(0),
-              n_cells(_n_cells),
+            : klass(_klass), refcount(0), n_cells(_n_cells),
               size_in_cells(_n_cells)
-        {}
+        {
+        }
 
         const struct Klass *klass;
         int32_t refcount;
@@ -34,8 +33,6 @@ namespace cl
 
     static_assert(std::is_trivially_destructible_v<Object>);
 
+}  // namespace cl
 
-
-}
-
-#endif //CL_OBJECT_H
+#endif  // CL_OBJECT_H

@@ -1,15 +1,11 @@
 #ifndef CL_REFCOUNT_H
 #define CL_REFCOUNT_H
 
-#include "value.h"
 #include "object.h"
-
+#include "value.h"
 
 namespace cl
 {
-
-
-
 
     static inline Value incref(Value v)
     {
@@ -20,10 +16,10 @@ namespace cl
         return v;
     }
 
-    template<typename T>
-    T *incref(T *t)
+    template <typename T> T *incref(T *t)
     {
-        incref(Value::from_oop(const_cast<typename std::remove_const<T>::type *>(t)));
+        incref(Value::from_oop(
+            const_cast<typename std::remove_const<T>::type *>(t)));
         return t;
     }
 
@@ -40,13 +36,13 @@ namespace cl
         }
     }
 
-    template<typename T>
-    T *decref(T *t)
+    template <typename T> T *decref(T *t)
     {
-        decref(Value::from_oop(const_cast<typename std::remove_const<T>::type *>(t)));
+        decref(Value::from_oop(
+            const_cast<typename std::remove_const<T>::type *>(t)));
         return t;
     }
 
-}
+}  // namespace cl
 
-#endif //CL_REFCOUNT_H
+#endif  // CL_REFCOUNT_H

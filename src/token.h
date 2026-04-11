@@ -1,10 +1,10 @@
 #ifndef CL_TOKEN_H
 #define CL_TOKEN_H
 
-#include <vector>
-#include <cstdint>
 #include <cassert>
+#include <cstdint>
 #include <iosfwd>
+#include <vector>
 
 namespace cl
 {
@@ -13,20 +13,20 @@ namespace cl
 
     enum class Token : uint8_t
     {
-        //end of file
+        // end of file
         ENDMARKER,
 
-        //metaclasses
+        // metaclasses
         NAME,
         NUMBER,
         STRING,
 
-        //indentation handling
+        // indentation handling
         NEWLINE,
         INDENT,
         DEDENT,
 
-        //operators
+        // operators
         LPAR,
         RPAR,
         LSQB,
@@ -76,7 +76,8 @@ namespace cl
         COLONEQUAL,
         EXCLAMATION,
 
-        //keywords - https://docs.python.org/3/reference/lexical_analysis.html#keywords
+        // keywords -
+        // https://docs.python.org/3/reference/lexical_analysis.html#keywords
         FALSE,
         NONE,
         TRUE,
@@ -113,7 +114,7 @@ namespace cl
         WITH,
         YIELD,
 
-        //OTHER
+        // OTHER
         TYPE_IGNORE,
         TYPE_COMMENT,
         ERRORTOKEN,
@@ -126,13 +127,15 @@ namespace cl
     {
         TokenVector(const CompilationUnit *_compilation_unit)
             : compilation_unit(_compilation_unit)
-        {}
+        {
+        }
 
         const CompilationUnit *compilation_unit;
         std::vector<Token> tokens;
         std::vector<uint32_t> source_offsets;
 
-        size_t size() const {
+        size_t size() const
+        {
             assert(tokens.size() == source_offsets.size());
             return tokens.size();
         }
@@ -144,7 +147,6 @@ namespace cl
         }
     };
 
-}
+}  // namespace cl
 
-
-#endif //CL_TOKEN_H
+#endif  // CL_TOKEN_H

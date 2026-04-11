@@ -1,14 +1,10 @@
 #include "indirect_dict.h"
-#include "str.h"
 #include "refcount.h"
+#include "str.h"
 
 namespace cl
 {
-    IndirectDict::IndirectDict()
-        : Object(&klass, 0, 8),
-          hash_table(16, -1)
-
-    {}
+    IndirectDict::IndirectDict() : Object(&klass, 0, 8), hash_table(16, -1) {}
 
     const int32_t *IndirectDict::find_entry(Value key) const
     {
@@ -22,7 +18,8 @@ namespace cl
             int32_t entry_idx = hash_table[hash_idx];
             if(entry_idx == not_present)
             {
-                if(tombstone_hash_idx == -1) tombstone_hash_idx = hash_idx;
+                if(tombstone_hash_idx == -1)
+                    tombstone_hash_idx = hash_idx;
                 return &hash_table[tombstone_hash_idx];
             }
             if(entry_idx == tombstone)
@@ -37,8 +34,7 @@ namespace cl
                 return &hash_table[hash_idx];
             }
 
-            hash_idx = (hash_idx+1) & hash_table_size_m1;
-
+            hash_idx = (hash_idx + 1) & hash_table_size_m1;
         }
     }
 
@@ -82,16 +78,16 @@ namespace cl
     {
         const int32_t *entry = find_entry(key);
         int32_t idx = *entry;
-        return std::max(idx, -1); // normalise tombstone to not-found
+        return std::max(idx, -1);  // normalise tombstone to not-found
     }
 
     void IndirectDict::grow()
     {
         // make one that's twice the size
-        std::vector<int32_t> new_hash_table(hash_table.size()*2, -1);
+        std::vector<int32_t> new_hash_table(hash_table.size() * 2, -1);
         std::swap(hash_table, new_hash_table);
 
-        //and then just insert all the keys again
+        // and then just insert all the keys again
         for(int32_t idx = 0; idx < int32_t(keys.size()); ++idx)
         {
             if(!keys[idx].is_not_present())
@@ -102,5 +98,4 @@ namespace cl
         }
     }
 
-
-}
+}  // namespace cl
