@@ -2,6 +2,7 @@
 #include "compilation_unit.h"
 #include "interpreter.h"
 #include "parser.h"
+#include "str.h"
 #include "thread_state.h"
 #include "token_print.h"
 #include "tokenizer.h"
@@ -172,6 +173,16 @@ TEST(Interpreter, function_implicit_return_none)
                             "f()\n");
 
     EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, string_literal_value)
+{
+    VirtualMachine vm;
+    CodeObject *code_obj =
+        vm.get_default_thread()->compile(L"\"abc\"\n", StartRule::File);
+    Value actual = vm.get_default_thread()->run(code_obj);
+
+    EXPECT_STREQ(L"abc", string_as_wchar_t(actual));
 }
 
 TEST(Interpreter, function_local_shadows_global)

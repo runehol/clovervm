@@ -1,6 +1,7 @@
 #include "ast_print.h"
 #include "compilation_unit.h"
 #include "parser.h"
+#include "str.h"
 #include "token_print.h"
 #include "tokenizer.h"
 #include "virtual_machine.h"
@@ -97,6 +98,27 @@ TEST(Parser, while_else_stmt)
                                "    return a\n");
 
     EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, string_literal_stores_constant_value)
+{
+    VirtualMachine vm;
+    CompilationUnit input(L"\"abc\"\n");
+    TokenVector tv = tokenize(input);
+    AstVector av = parse(vm, tv, StartRule::File);
+
+    EXPECT_TRUE(av.kinds[av.root_node].node_kind ==
+                AstNodeKind::STATEMENT_SEQUENCE);
+
+    int32_t stmt_idx = av.children[av.root_node][0];
+    EXPECT_TRUE(av.kinds[stmt_idx].node_kind ==
+                AstNodeKind::STATEMENT_EXPRESSION);
+
+    int32_t literal_idx = av.children[stmt_idx][0];
+    EXPECT_TRUE(av.kinds[literal_idx].node_kind ==
+                AstNodeKind::EXPRESSION_LITERAL);
+    EXPECT_TRUE(av.kinds[literal_idx].operator_kind == AstOperatorKind::STRING);
+    EXPECT_STREQ(L"abc", string_as_wchar_t(av.constants[literal_idx]));
 }
 
 TEST(Parser, def_stmt)

@@ -655,10 +655,19 @@ namespace cl
                             source_pos_and_advance(), v);
                     }
                 case Token::STRING:
-                    return ast.emplace_back(
-                        AstKind(AstNodeKind::EXPRESSION_LITERAL,
-                                AstOperatorKind::STRING),
-                        source_pos_and_advance(), Value::None());
+                    {
+                        std::wstring token =
+                            std::wstring(string_for_string_token(
+                                *ast.compilation_unit, source_pos_for_token()));
+                        assert(token.size() >= 2);
+                        std::wstring value =
+                            token.substr(1, token.size() - 2);  // strip quotes
+                        Value v = vm.get_or_create_interned_string(value);
+                        return ast.emplace_back(
+                            AstKind(AstNodeKind::EXPRESSION_LITERAL,
+                                    AstOperatorKind::STRING),
+                            source_pos_and_advance(), v);
+                    }
                 case Token::NONE:
                     return ast.emplace_back(
                         AstKind(AstNodeKind::EXPRESSION_LITERAL,

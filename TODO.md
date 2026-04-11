@@ -37,7 +37,7 @@ These are the lowest-hanging improvements I found after reading the current toke
   Why: functions exist, but there is very little coverage for multiple parameters, implicit `return None`, local-vs-global lookup, and nested control flow inside functions.
   Where: `tests/test_interpreter.cpp`, `tests/test_codegen.cpp`.
 
-- [ ] Store actual string literal values in the AST instead of `Value::None()`.
+- [x] Store actual string literal values in the AST instead of `Value::None()`.
   Why: `atom()` creates string literal AST nodes but currently records `Value::None()` instead of the parsed string. That makes string support look further along than it really is.
   Where: `src/parser.cpp`.
 

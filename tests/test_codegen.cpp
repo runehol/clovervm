@@ -1,6 +1,7 @@
 #include "code_object.h"
 #include "code_object_print.h"
 #include "parser.h"
+#include "str.h"
 #include "thread_state.h"
 #include "virtual_machine.h"
 #include <fmt/xchar.h>
@@ -167,4 +168,14 @@ TEST(Codegen, function_implicit_return_none)
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, string_literal_constant_value)
+{
+    VirtualMachine vm;
+    CodeObject *code_obj =
+        vm.get_default_thread()->compile(L"\"abc\"\n", StartRule::File);
+
+    ASSERT_EQ(size_t(1), code_obj->constant_table.size());
+    EXPECT_STREQ(L"abc", string_as_wchar_t(code_obj->constant_table[0]));
 }
