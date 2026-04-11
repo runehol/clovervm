@@ -15,6 +15,7 @@ namespace cl
     {
     public:
         SlotEntry(Value _value, Value _extra = Value::None())
+            : value(Value::None()), extra(Value::None())
         {
             set_value(_value);
             set_extra(_extra);

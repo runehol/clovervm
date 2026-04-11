@@ -78,6 +78,19 @@ TEST(Interpreter, while1)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Interpreter, recursive_fibonacci)
+{
+    Value expected = Value::from_smi(10946);
+    Value actual = run_file(L"def fib(n):\n"
+                            "    if n <= 2:\n"
+                            "        return n\n"
+                            "    return fib(n-2) + fib(n-1)\n"
+                            "\n"
+                            "fib(20)\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 /*
 TEST(Interpreter, small_bench)
 {

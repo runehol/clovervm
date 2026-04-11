@@ -18,7 +18,7 @@ namespace cl
         static constexpr Klass klass = Klass(L"Function", nullptr);
 
         Function(Value _code_object)
-            : Object(&klass, 1, sizeof(Scope) / 8),
+            : Object(&klass, 1, sizeof(Function) / 8),
               code_object(incref(_code_object))
         {
         }
