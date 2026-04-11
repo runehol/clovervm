@@ -12,7 +12,7 @@ These are the lowest-hanging improvements I found after reading the current toke
   Why: `src/interpreter.cpp` already has `TODO` notes for left-shift overflow, and arithmetic ops depend on overflow intrinsics that are not being stress-tested.
   Good cases: negative shift counts, large left shifts, `-x`, add/sub/mul overflow edges, right shift of negative values.
 
-- [ ] Replace silent `-1` parser stubs with explicit "not implemented" errors.
+- [x] Replace silent `-1` parser stubs with explicit "not implemented" errors.
   Why: several parser entry points currently return `-1` for constructs like `import`, `del`, `yield`, `class`, `for`, `try`, `with`, `global`, and `nonlocal`. That is brittle and makes failures harder to diagnose.
   Where: `src/parser.cpp`.
 

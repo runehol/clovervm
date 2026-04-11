@@ -103,3 +103,29 @@ TEST(Parser, missing_colon_in_if_stmt)
                        L"    return 1\n",
                        "Expected token COLON, got NEWLINE");
 }
+
+TEST(Parser, import_stmt_not_implemented)
+{
+    expect_parse_error(L"import math\n",
+                       "Not implemented: import statement (token IMPORT)");
+}
+
+TEST(Parser, class_def_not_implemented)
+{
+    expect_parse_error(L"class C:\n"
+                       L"    pass\n",
+                       "Not implemented: class definition (token CLASS)");
+}
+
+TEST(Parser, for_stmt_not_implemented)
+{
+    expect_parse_error(L"for x in y:\n"
+                       L"    break\n",
+                       "Not implemented: for statement (token FOR)");
+}
+
+TEST(Parser, yield_stmt_not_implemented)
+{
+    expect_parse_error(L"yield 1\n",
+                       "Not implemented: yield statement (token YIELD)");
+}

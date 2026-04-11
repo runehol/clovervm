@@ -105,6 +105,13 @@ namespace cl
 
         bool is_at_end() { return peek() == Token::ENDMARKER; }
 
+        int32_t not_implemented(const char *construct_name)
+        {
+            throw std::runtime_error(std::string("Not implemented: ") +
+                                     construct_name + " (token " +
+                                     to_string(peek()) + ")");
+        }
+
         // now the parser itself
 
         // helper to build sequences
@@ -716,7 +723,7 @@ namespace cl
                 lhs, rhs);
         }
 
-        int32_t yield_expr() { return -1; }
+        int32_t yield_expr() { return not_implemented("yield expression"); }
 
         int32_t annotated_rhs()
         {
@@ -742,13 +749,13 @@ namespace cl
                                     ch);
         }
 
-        int32_t import_stmt() { return -1; }
+        int32_t import_stmt() { return not_implemented("import statement"); }
 
-        int32_t del_stmt() { return -1; }
+        int32_t del_stmt() { return not_implemented("del statement"); }
 
-        int32_t yield_stmt() { return -1; }
+        int32_t yield_stmt() { return not_implemented("yield statement"); }
 
-        int32_t assert_stmt() { return -1; }
+        int32_t assert_stmt() { return not_implemented("assert statement"); }
 
         int32_t break_stmt()
         {
@@ -766,9 +773,12 @@ namespace cl
                                     {});
         }
 
-        int32_t global_stmt() { return -1; }
+        int32_t global_stmt() { return not_implemented("global statement"); }
 
-        int32_t nonlocal_stmt() { return -1; }
+        int32_t nonlocal_stmt()
+        {
+            return not_implemented("nonlocal statement");
+        }
 
         int32_t simple_stmt()
         {
@@ -907,13 +917,13 @@ namespace cl
                                     children);
         }
 
-        int32_t class_def() { return -1; }
+        int32_t class_def() { return not_implemented("class definition"); }
 
-        int32_t with_stmt() { return -1; }
+        int32_t with_stmt() { return not_implemented("with statement"); }
 
-        int32_t for_stmt() { return -1; }
+        int32_t for_stmt() { return not_implemented("for statement"); }
 
-        int32_t try_stmt() { return -1; }
+        int32_t try_stmt() { return not_implemented("try statement"); }
 
         int32_t while_stmt()
         {
@@ -934,7 +944,7 @@ namespace cl
                                     children);
         }
 
-        int32_t match_stmt() { return -1; }
+        int32_t match_stmt() { return not_implemented("match statement"); }
 
         int32_t compound_statement()
         {
