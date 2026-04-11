@@ -164,6 +164,53 @@ TEST(Tokenizer, comment_issue)
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
+TEST(Tokenizer, leading_comment_and_blank_lines_collapse_to_one_newline)
+{
+    CompilationUnit input(L"# first comment\n"
+                          L"\n"
+                          L"   # second comment\n"
+                          L"value = 1\n");
+    std::vector<Token> expected_tokens = {Token::NEWLINE, Token::NAME,
+                                          Token::EQUAL,   Token::NUMBER,
+                                          Token::NEWLINE, Token::ENDMARKER};
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+}
+
+TEST(Tokenizer, interior_comment_and_blank_lines_collapse_to_one_newline)
+{
+    CompilationUnit input(L"a = 1\n"
+                          L"# comment between statements\n"
+                          L"\n"
+                          L"  # indented comment between statements\n"
+                          L"b = 2\n");
+    std::vector<Token> expected_tokens = {
+        Token::NAME,    Token::EQUAL,   Token::NUMBER,
+        Token::NEWLINE, Token::NAME,    Token::EQUAL,
+        Token::NUMBER,  Token::NEWLINE, Token::ENDMARKER};
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+}
+
+TEST(Tokenizer, blank_line_inside_block_emits_newline_without_indent_changes)
+{
+    CompilationUnit input(L"if True:\n"
+                          L"    a = 1\n"
+                          L"\n"
+                          L"    # comment-only line in block\n"
+                          L"    b = 2\n");
+    std::vector<Token> expected_tokens = {
+        Token::IF,      Token::TRUE,   Token::COLON,    Token::NEWLINE,
+        Token::INDENT,  Token::NAME,   Token::EQUAL,    Token::NUMBER,
+        Token::NEWLINE, Token::NAME,   Token::EQUAL,    Token::NUMBER,
+        Token::NEWLINE, Token::DEDENT, Token::ENDMARKER};
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+}
+
 TEST(Tokenizer, bad_indentation)
 {
     expect_tokenize_error(L"if True:\n"

@@ -47,7 +47,7 @@ These are the lowest-hanging improvements I found after reading the current toke
   Why: the tokenizer accepts decimal, hex, octal, binary, and underscores, but tests only cover simple decimal literals.
   Good cases: `0xff`, `0b1010`, `0o77`, `1_000_000`.
 
-- [ ] Decide whether comments/blank lines should emit leading `NEWLINE` tokens and lock it down with tests.
+- [x] Decide whether comments/blank lines should emit leading `NEWLINE` tokens and lock it down with tests.
   Why: there is already a regression-style tokenizer test around comments, which suggests this area is subtle and worth specifying clearly.
   Where: `src/tokenizer.cpp`, `tests/test_tokenizer.cpp`.
 
