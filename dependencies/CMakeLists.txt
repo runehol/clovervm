@@ -28,7 +28,7 @@ endif()
 
 FetchContent_Declare(
   absl
-  URL               https://github.com/abseil/abseil-cpp/archive/refs/tags/20240722.2.tar.gz
+  URL               https://github.com/abseil/abseil-cpp/archive/refs/tags/20260107.1.tar.gz
 )
 FetchContent_MakeAvailable(absl)
 
