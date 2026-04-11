@@ -3,7 +3,7 @@ include(FetchContent)
 
 set(CMAKE_CXX_CLANG_TIDY "") # turn off clang-tidy for third-party code
 
-option(CLOVERVM_BUILD_BENCHMARK_DEPS "Fetch and build googlebenchmark dependencies" OFF)
+option(CLOVERVM_BUILD_BENCHMARK_DEPS "Fetch and build googlebenchmark dependencies" ON)
 
 
 FetchContent_Declare(
@@ -17,9 +17,10 @@ FetchContent_MakeAvailable(googletest)
 if(CLOVERVM_BUILD_BENCHMARK_DEPS)
   set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE INTERNAL "")
   set(BENCHMARK_ENABLE_TESTING OFF CACHE INTERNAL "")
+  set(BENCHMARK_ENABLE_WERROR OFF CACHE INTERNAL "")
   FetchContent_Declare(
     googlebenchmark
-    URL               https://github.com/google/benchmark/archive/refs/tags/v1.8.3.tar.gz
+    URL               https://github.com/google/benchmark/archive/refs/tags/v1.8.5.tar.gz
 
   )
   FetchContent_MakeAvailable(googlebenchmark)
