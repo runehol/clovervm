@@ -8,7 +8,7 @@ These are the lowest-hanging improvements I found after reading the current toke
   Why: the current test suite is almost entirely happy-path. A few small tests for `NameError`, non-callable calls, bad indentation, and parse failures would harden behavior quickly and make refactors safer.
   Where: `tests/test_interpreter.cpp`, `tests/test_parser.cpp`, `tests/test_tokenizer.cpp`.
 
-- [ ] Add interpreter tests for arithmetic edge cases, especially shifts and overflow boundaries.
+- [x] Add interpreter tests for arithmetic edge cases, especially shifts and overflow boundaries.
   Why: `src/interpreter.cpp` already has `TODO` notes for left-shift overflow, and arithmetic ops depend on overflow intrinsics that are not being stress-tested.
   Good cases: negative shift counts, large left shifts, `-x`, add/sub/mul overflow edges, right shift of negative values.
 

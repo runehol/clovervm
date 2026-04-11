@@ -336,8 +336,16 @@ namespace cl
         int64_t shift_count = b.get_smi();
         if(unlikely(shift_count < 0))
             MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
-        accumulator.as.integer = a.as.integer << shift_count;
-        /* TODO need to test overflow here */
+        int64_t value = a.get_smi();
+        int64_t sign_bits = __builtin_clrsbll(value);
+        if(unlikely(uint64_t(shift_count) >= 64 ||
+                    (value != 0 &&
+                     shift_count + int64_t(value_tag_bits) > sign_bits)))
+        {
+            MUSTTAIL return overflow_path(ARGS);
+        }
+        accumulator.as.integer =
+            static_cast<int64_t>(uint64_t(a.as.integer) << shift_count);
 
         COMPLETE();
     }
@@ -350,10 +358,17 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
         int64_t shift_count = b.get_smi();
-        if(unlikely(shift_count < 0))
-            MUSTTAIL return raise_value_error_negative_shift_count(ARGS);
-        accumulator.as.integer = a.as.integer << shift_count;
-        /* TODO need to test overflow here */
+        // Bytecode invariant: codegen only emits LeftShiftSmi for shifts 0..63.
+        assert(shift_count >= 0 && shift_count < 64);
+        int64_t value = a.get_smi();
+        int64_t sign_bits = __builtin_clrsbll(value);
+        if(unlikely(value != 0 &&
+                    shift_count + int64_t(value_tag_bits) > sign_bits))
+        {
+            MUSTTAIL return overflow_path(ARGS);
+        }
+        accumulator.as.integer =
+            static_cast<int64_t>(uint64_t(a.as.integer) << shift_count);
 
         COMPLETE();
     }

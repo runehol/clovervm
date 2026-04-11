@@ -196,10 +196,21 @@ namespace cl
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
+            bool rhs_is_small_number =
+                av.kinds[children[1]] == NumericalConstant &&
+                av.constants[children[1]].is_smi8();
+            bool use_binary_acc_smi =
+                entry.binary_acc_smi != Bytecode::Invalid &&
+                rhs_is_small_number;
 
-            if(entry.binary_acc_smi != Bytecode::Invalid &&
-               av.kinds[children[1]] == NumericalConstant &&
-               av.constants[children[1]].is_smi8())
+            if(kind.operator_kind == AstOperatorKind::LEFTSHIFT &&
+               use_binary_acc_smi)
+            {
+                int64_t shift_count = av.constants[children[1]].get_smi();
+                use_binary_acc_smi = shift_count >= 0 && shift_count < 64;
+            }
+
+            if(use_binary_acc_smi)
             {
                 codegen_node(children[0], mode);
                 code_obj->emit_opcode_smi(source_offset, entry.binary_acc_smi,

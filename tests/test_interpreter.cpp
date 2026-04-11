@@ -12,6 +12,8 @@
 
 using namespace cl;
 
+static constexpr int64_t kMinSmi = -288230376151711744LL;
+
 static Value run_file(const wchar_t *str)
 {
     VirtualMachine vm;
@@ -115,6 +117,85 @@ TEST(Interpreter, name_error)
 TEST(Interpreter, call_non_callable)
 {
     expect_runtime_error(L"1()\n", "TypeError: object is not callable");
+}
+
+TEST(Interpreter, negate_expression)
+{
+    Value expected = Value::from_smi(-7);
+    Value actual = run_file(L"-(3 + 4)\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, left_shift_negative_count)
+{
+    expect_runtime_error(L"a = 1\n"
+                         L"b = -1\n"
+                         L"a << b\n",
+                         "ValueError: negative shift count");
+}
+
+TEST(Interpreter, right_shift_negative_count)
+{
+    expect_runtime_error(L"a = 8\n"
+                         L"b = -1\n"
+                         L"a >> b\n",
+                         "ValueError: negative shift count");
+}
+
+TEST(Interpreter, left_shift_boundary)
+{
+    Value expected = Value::from_smi(kMinSmi);
+    Value actual = run_file(L"(-1) << 58\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, left_shift_overflow_smi)
+{
+    expect_runtime_error(L"1 << 58\n", "Clovervm exception");
+}
+
+TEST(Interpreter, left_shift_overflow_register)
+{
+    expect_runtime_error(L"a = 1\n"
+                         L"b = 58\n"
+                         L"a << b\n",
+                         "Clovervm exception");
+}
+
+TEST(Interpreter, right_shift_negative_value)
+{
+    Value expected = Value::from_smi(-5);
+    Value actual = run_file(L"(-9) >> 1\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, add_overflow)
+{
+    expect_runtime_error(L"288230376151711743 + 1\n", "Clovervm exception");
+}
+
+TEST(Interpreter, subtract_overflow)
+{
+    expect_runtime_error(L"-288230376151711743 - 2\n", "Clovervm exception");
+}
+
+TEST(Interpreter, multiply_overflow)
+{
+    expect_runtime_error(L"288230376151711743 * 2\n", "Clovervm exception");
+}
+
+TEST(Interpreter, negate_overflow)
+{
+    Value expected = Value::from_smi(kMinSmi);
+    Value actual = run_file(L"-288230376151711743 - 1\n");
+    EXPECT_EQ(expected, actual);
+
+    expect_runtime_error(L"x = -288230376151711743 - 1\n"
+                         L"-x\n",
+                         "Clovervm exception");
 }
 
 /*
