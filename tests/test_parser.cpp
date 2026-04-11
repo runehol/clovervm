@@ -101,31 +101,59 @@ TEST(Parser, missing_colon_in_if_stmt)
 {
     expect_parse_error(L"if True\n"
                        L"    return 1\n",
-                       "Expected token COLON, got NEWLINE");
+                       "Expected token COLON, got NEWLINE at offset 7 (line 1, "
+                       "column 8), near \"if True\"");
 }
 
 TEST(Parser, import_stmt_not_implemented)
 {
     expect_parse_error(L"import math\n",
-                       "Not implemented: import statement (token IMPORT)");
+                       "Not implemented: import statement (token IMPORT) at "
+                       "offset 0 (line 1, column 1), near \"import math\"");
 }
 
 TEST(Parser, class_def_not_implemented)
 {
     expect_parse_error(L"class C:\n"
                        L"    pass\n",
-                       "Not implemented: class definition (token CLASS)");
+                       "Not implemented: class definition (token CLASS) at "
+                       "offset 0 (line 1, column 1), near \"class C:\"");
 }
 
 TEST(Parser, for_stmt_not_implemented)
 {
     expect_parse_error(L"for x in y:\n"
                        L"    break\n",
-                       "Not implemented: for statement (token FOR)");
+                       "Not implemented: for statement (token FOR) at offset 0 "
+                       "(line 1, column 1), near \"for x in y:\"");
 }
 
 TEST(Parser, yield_stmt_not_implemented)
 {
     expect_parse_error(L"yield 1\n",
-                       "Not implemented: yield statement (token YIELD)");
+                       "Not implemented: yield statement (token YIELD) at "
+                       "offset 0 (line 1, column 1), near \"yield 1\"");
+}
+
+TEST(Parser, unexpected_token_reports_location)
+{
+    expect_parse_error(L")\n",
+                       "Unexpected token RPAR at offset 0 (line 1, column 1), "
+                       "near \")\"");
+}
+
+TEST(Parser, parse_error_reports_tab_expanded_column)
+{
+    expect_parse_error(L"if\tTrue\n"
+                       L"    return 1\n",
+                       "Expected token COLON, got NEWLINE at offset 7 (line 1, "
+                       "column 13), near \"if\tTrue\"");
+}
+
+TEST(Parser, parse_error_reports_crlf_line_numbers)
+{
+    expect_parse_error(L"if True:\r\n"
+                       L"    return (\r\n",
+                       "Unexpected token NEWLINE at offset 22 (line 2, column "
+                       "13), near \"    return (\"");
 }

@@ -5,6 +5,7 @@
 #include "token.h"
 #include "tokenizer.h"
 #include "virtual_machine.h"
+#include <algorithm>
 #include <string>
 
 namespace cl
@@ -73,12 +74,14 @@ namespace cl
 
         void consume(Token expected)
         {
+            uint32_t source_pos = source_pos_for_token();
             Token actual = advance();
             if(expected != actual)
             {
                 throw std::runtime_error(std::string("Expected token ") +
                                          to_string(expected) + ", got " +
-                                         to_string(actual));
+                                         to_string(actual) +
+                                         format_error_context(source_pos));
             }
         }
 
@@ -105,11 +108,36 @@ namespace cl
 
         bool is_at_end() { return peek() == Token::ENDMARKER; }
 
+        static std::string narrow(std::wstring_view s)
+        {
+            return std::string(s.begin(), s.end());
+        }
+
+        std::string format_error_context(uint32_t source_pos)
+        {
+            auto [line, column] =
+                ast.compilation_unit->get_line_column(source_pos);
+            std::wstring_view line_view =
+                ast.compilation_unit->get_line_view(source_pos);
+            std::string snippet = narrow(line_view);
+            static constexpr size_t max_snippet_len = 40;
+            if(snippet.size() > max_snippet_len)
+            {
+                snippet.resize(max_snippet_len);
+                snippet += "...";
+            }
+
+            return std::string(" at offset ") + std::to_string(source_pos) +
+                   " (line " + std::to_string(line) + ", column " +
+                   std::to_string(column) + "), near \"" + snippet + "\"";
+        }
+
         int32_t not_implemented(const char *construct_name)
         {
-            throw std::runtime_error(std::string("Not implemented: ") +
-                                     construct_name + " (token " +
-                                     to_string(peek()) + ")");
+            throw std::runtime_error(
+                std::string("Not implemented: ") + construct_name + " (token " +
+                to_string(peek()) + ")" +
+                format_error_context(source_pos_for_token()));
         }
 
         // now the parser itself
@@ -194,9 +222,11 @@ namespace cl
         {
             if(peek() != Token::NAME)
             {
+                uint32_t source_pos = source_pos_for_token();
                 throw std::runtime_error(std::string("Expected token ") +
                                          to_string(Token::NAME) + ", got " +
-                                         to_string(peek()));
+                                         to_string(peek()) +
+                                         format_error_context(source_pos));
             }
             int32_t lhs = atom();  // smallest rule that just consumes a name
                                    // and makes a nice node for us
@@ -653,8 +683,10 @@ namespace cl
                     }
 
                 default:
+                    uint32_t source_pos = source_pos_for_token();
                     throw std::runtime_error(std::string("Unexpected token ") +
-                                             to_string(peek()));
+                                             to_string(peek()) +
+                                             format_error_context(source_pos));
 
                     // TODO NAME, STRING, parenthesis, tuples, lists, dicts, ...
                     // (ELLIPSIS)

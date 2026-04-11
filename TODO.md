@@ -16,7 +16,7 @@ These are the lowest-hanging improvements I found after reading the current toke
   Why: several parser entry points currently return `-1` for constructs like `import`, `del`, `yield`, `class`, `for`, `try`, `with`, `global`, and `nonlocal`. That is brittle and makes failures harder to diagnose.
   Where: `src/parser.cpp`.
 
-- [ ] Improve parse error messages with token position/source context.
+- [x] Improve parse error messages with token position/source context.
   Why: current parser errors usually say only "Expected token X, got Y" or "Unexpected token Y". Including the source offset or line/column would make debugging much faster.
   Where: `src/parser.cpp`, possibly `src/compilation_unit.h` if line/column helpers are needed.
 
