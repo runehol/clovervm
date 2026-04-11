@@ -8,7 +8,7 @@ option(CLOVERVM_BUILD_BENCHMARK_DEPS "Fetch and build googlebenchmark dependenci
 
 FetchContent_Declare(
   googletest
-  URL               https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz
+  URL               https://github.com/google/googletest/archive/refs/tags/v1.17.0.tar.gz
 
 )
 FetchContent_MakeAvailable(googletest)
