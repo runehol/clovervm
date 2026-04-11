@@ -2,6 +2,8 @@
 #define CL_BYTECODE_H
 
 #include <cassert>
+#include <cstdint>
+#include <cstdlib>
 
 namespace cl
 {

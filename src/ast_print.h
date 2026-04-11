@@ -4,6 +4,12 @@
 #include "ast.h"
 #include <fmt/format.h>
 #include <cassert>
+#include <string>
+
+static inline std::string narrow_wstring_view_ast(std::wstring_view s)
+{
+    return std::string(s.begin(), s.end());
+}
 
 
 template<>
@@ -15,7 +21,7 @@ struct fmt::formatter<cl::AstOperatorKind>
     }
 
     template <typename FormatContext>
-    auto format(const cl::AstOperatorKind ok, FormatContext& ctx) -> decltype(ctx.out())
+    auto format(const cl::AstOperatorKind ok, FormatContext& ctx) const -> decltype(ctx.out())
     {
         auto&& out = ctx.out();
         switch(ok)
@@ -118,7 +124,7 @@ struct fmt::formatter<cl::AstVector>
     }
 
     template <typename Out>
-    void emit_indent(Out &out, uint32_t indent)
+    void emit_indent(Out &out, uint32_t indent) const
     {
         for(uint32_t i = 0; i < indent; ++i)
         {
@@ -127,7 +133,7 @@ struct fmt::formatter<cl::AstVector>
     }
 
     template <typename Out>
-    void render_node(const cl::AstVector &av, Out &out, int32_t node_idx, uint32_t indent, cl::ExpressionPrecedence outer_precedence)
+    void render_node(const cl::AstVector &av, Out &out, int32_t node_idx, uint32_t indent, cl::ExpressionPrecedence outer_precedence) const
     {
         assert(node_idx >= 0);
         cl::AstKind kind = av.kinds[node_idx];
@@ -167,14 +173,14 @@ struct fmt::formatter<cl::AstVector>
         case cl::AstNodeKind::EXPRESSION_LITERAL:
             if(kind.operator_kind == cl::AstOperatorKind::NUMBER)
             {
-                format_to(out, L"{}", string_for_number_token(*av.compilation_unit, av.source_offsets[node_idx]));
+                format_to(out, "{}", narrow_wstring_view_ast(string_for_number_token(*av.compilation_unit, av.source_offsets[node_idx])));
             } else if(kind.operator_kind == cl::AstOperatorKind::STRING)
             {
-                format_to(out, L" {}", string_for_string_token(*av.compilation_unit, av.source_offsets[node_idx]));
+                format_to(out, " {}", narrow_wstring_view_ast(string_for_string_token(*av.compilation_unit, av.source_offsets[node_idx])));
             }
             break;
         case cl::AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
-            format_to(out, L"{}", string_as_wchar_t(av.constants[node_idx]));
+            format_to(out, "{}", narrow_wstring_view_ast(string_as_wchar_t(av.constants[node_idx])));
             break;
 
         case cl::AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
@@ -244,7 +250,7 @@ struct fmt::formatter<cl::AstVector>
 
         case cl::AstNodeKind::STATEMENT_FUNCTION_DEF:
             emit_indent(out, indent);
-            format_to(out, L"def {}", string_as_wchar_t(av.constants[node_idx]));
+            format_to(out, "def {}", narrow_wstring_view_ast(string_as_wchar_t(av.constants[node_idx])));
 
             render_node(av, out, children[0], indent, cl::ExpressionPrecedence::Lowest);
             format_to(out, ":\n");
@@ -357,7 +363,7 @@ struct fmt::formatter<cl::AstVector>
 
 
     template <typename FormatContext>
-    auto format(const cl::AstVector &tv, FormatContext& ctx) -> decltype(ctx.out())
+    auto format(const cl::AstVector &tv, FormatContext& ctx) const -> decltype(ctx.out())
     {
         auto&& out = ctx.out();
         render_node(tv, out, tv.root_node, 0, cl::ExpressionPrecedence::Lowest);

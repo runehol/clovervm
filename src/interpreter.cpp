@@ -637,7 +637,7 @@ namespace cl
         COMPLETE();
     }
 
-    constexpr DispatchTable make_dispatch_table()
+    DispatchTable make_dispatch_table()
     {
         DispatchTable tbl;
         for(size_t i = 0; i < BytecodeTableSize; ++i)

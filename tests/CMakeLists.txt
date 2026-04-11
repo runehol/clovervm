@@ -4,6 +4,12 @@ include(GoogleTest)
 
 add_executable(test_clovervm)
 
+set_target_properties(test_clovervm PROPERTIES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED YES
+  CXX_EXTENSIONS NO
+)
+
 enable_sanitizers(test_clovervm)
 
 target_sources(test_clovervm PRIVATE

@@ -42,19 +42,31 @@ add_library(libclovervm STATIC
 
 	)
 
+set_target_properties(libclovervm PROPERTIES
+	CXX_STANDARD 17
+	CXX_STANDARD_REQUIRED YES
+	CXX_EXTENSIONS NO
+)
+
 # add project sources to include path
 target_include_directories(libclovervm PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
+target_include_directories(libclovervm PRIVATE "${PROJECT_BINARY_DIR}/_deps/ctre-src/include")
 
 
 target_link_libraries(libclovervm PRIVATE project_options project_warnings)
 target_link_libraries(libclovervm PUBLIC absl::inlined_vector absl::flat_hash_map absl::flat_hash_set)
-target_link_libraries(libclovervm PUBLIC fmt)
-target_link_libraries(libclovervm PRIVATE ctre)
+target_link_libraries(libclovervm PUBLIC fmt::fmt)
 
 
 add_executable(clovervm
 	clovervm.cpp
 	)
+
+set_target_properties(clovervm PROPERTIES
+	CXX_STANDARD 17
+	CXX_STANDARD_REQUIRED YES
+	CXX_EXTENSIONS NO
+)
 
 target_link_libraries(clovervm PRIVATE ${CMAKE_THREAD_LIBS_INIT})
 target_link_libraries(clovervm PRIVATE project_options project_warnings)

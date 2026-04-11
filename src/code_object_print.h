@@ -15,7 +15,7 @@ struct fmt::formatter<cl::Bytecode>
     }
 
     template <typename FormatContext>
-    auto format(const cl::Bytecode b, FormatContext& ctx) -> decltype(ctx.out())
+    auto format(const cl::Bytecode b, FormatContext& ctx) const -> decltype(ctx.out())
     {
         auto&& out = ctx.out();
         switch(b)
@@ -229,7 +229,7 @@ struct fmt::formatter<cl::CodeObject>
     }
 
     template <typename Out>
-    void print_reg(Out &out, const cl::CodeObject &code_obj, int8_t encoded_reg)
+    void print_reg(Out &out, const cl::CodeObject &code_obj, int8_t encoded_reg) const
     {
         if(encoded_reg >= 0)
         {
@@ -243,19 +243,19 @@ struct fmt::formatter<cl::CodeObject>
     }
 
     template <typename Out>
-    void disassemble_reg(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
+    void disassemble_reg(const cl::CodeObject &code_obj, Out &out, uint32_t pc) const
     {
         print_reg(out, code_obj, code_obj.code[pc]);
     }
 
     template <typename Out>
-    void disassemble_constant(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
+    void disassemble_constant(const cl::CodeObject &code_obj, Out &out, uint32_t pc) const
     {
         format_to(out, "c[{}]", code_obj.code[pc]);
     }
 
     template <typename Out>
-    void disassemble_smi8(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
+    void disassemble_smi8(const cl::CodeObject &code_obj, Out &out, uint32_t pc) const
     {
         int32_t smi = int8_t(code_obj.code[pc]);
         format_to(out, "{}", smi);
@@ -271,7 +271,7 @@ struct fmt::formatter<cl::CodeObject>
 
 
     template <typename Out>
-    void disassemble_jump_target(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
+    void disassemble_jump_target(const cl::CodeObject &code_obj, Out &out, uint32_t pc) const
     {
         int16_t rel_target = read_int16_le(&code_obj.code[pc]);
         uint32_t actual_target = pc + 2 + rel_target;
@@ -284,13 +284,13 @@ struct fmt::formatter<cl::CodeObject>
         return
             (p[0] <<  0) |
             (p[1] <<  8) |
-            (p[1] << 16) |
-            (p[1] << 24);
+            (p[2] << 16) |
+            (p[3] << 24);
     }
 
 
     template <typename Out>
-    void disassemble_global_ref(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
+    void disassemble_global_ref(const cl::CodeObject &code_obj, Out &out, uint32_t pc) const
     {
         uint32_t v = read_uint32_le(&code_obj.code[pc]);
         format_to(out, "[{}]", v);
@@ -299,7 +299,7 @@ struct fmt::formatter<cl::CodeObject>
 
 
     template <typename Out>
-    uint32_t disassemble_instruction(const cl::CodeObject &code_obj, Out &out, uint32_t pc)
+    uint32_t disassemble_instruction(const cl::CodeObject &code_obj, Out &out, uint32_t pc) const
     {
 
         cl::Bytecode bc = cl::Bytecode(code_obj.code[pc]);
@@ -472,7 +472,7 @@ struct fmt::formatter<cl::CodeObject>
     }
 
     template <typename FormatContext>
-    auto format(const cl::CodeObject &code_obj, FormatContext& ctx) -> decltype(ctx.out())
+    auto format(const cl::CodeObject &code_obj, FormatContext& ctx) const -> decltype(ctx.out())
     {
         auto&& out = ctx.out();
         format_to(out, "Code object:\n");
