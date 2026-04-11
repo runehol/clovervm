@@ -4,7 +4,7 @@ These are the lowest-hanging improvements I found after reading the current toke
 
 ## High value, low effort
 
-- [ ] Add negative tests for unsupported syntax and runtime failures.
+- [x] Add negative tests for unsupported syntax and runtime failures.
   Why: the current test suite is almost entirely happy-path. A few small tests for `NameError`, non-callable calls, bad indentation, and parse failures would harden behavior quickly and make refactors safer.
   Where: `tests/test_interpreter.cpp`, `tests/test_parser.cpp`, `tests/test_tokenizer.cpp`.
 

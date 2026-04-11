@@ -2,9 +2,26 @@
 #include "token_print.h"
 #include "tokenizer.h"
 #include <gtest/gtest.h>
+#include <stdexcept>
 #include <vector>
 
 using namespace cl;
+
+static void expect_tokenize_error(const wchar_t *source,
+                                  const char *expected_message)
+{
+    try
+    {
+        CompilationUnit input(source);
+        (void)tokenize(input);
+        FAIL() << "Expected std::runtime_error with message: "
+               << expected_message;
+    }
+    catch(const std::runtime_error &err)
+    {
+        EXPECT_STREQ(expected_message, err.what());
+    }
+}
 
 TEST(Tokenizer, simple)
 {
@@ -112,4 +129,13 @@ TEST(Tokenizer, comment_issue)
 
     TokenVector tv = tokenize(input);
     EXPECT_EQ(tv.tokens, expected_tokens);
+}
+
+TEST(Tokenizer, bad_indentation)
+{
+    expect_tokenize_error(L"if True:\n"
+                          L"    a = 1\n"
+                          L"  b = 2\n",
+                          "IndentationError: unindent does not match any outer "
+                          "indentation level 2");
 }

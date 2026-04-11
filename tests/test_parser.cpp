@@ -6,6 +6,7 @@
 #include "virtual_machine.h"
 #include <fmt/xchar.h>
 #include <gtest/gtest.h>
+#include <stdexcept>
 
 using namespace cl;
 
@@ -17,6 +18,21 @@ static std::string parse(const wchar_t *in_str)
     AstVector av = parse(vm, tv, StartRule::File);
     std::string actual = fmt::to_string(av);
     return actual;
+}
+
+static void expect_parse_error(const wchar_t *source,
+                               const char *expected_message)
+{
+    try
+    {
+        (void)parse(source);
+        FAIL() << "Expected std::runtime_error with message: "
+               << expected_message;
+    }
+    catch(const std::runtime_error &err)
+    {
+        EXPECT_STREQ(expected_message, err.what());
+    }
 }
 
 TEST(Parser, simple)
@@ -79,4 +95,11 @@ TEST(Parser, rec_call)
                                "    return fib(n-2) + fib(n-1)\n");
 
     EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, missing_colon_in_if_stmt)
+{
+    expect_parse_error(L"if True\n"
+                       L"    return 1\n",
+                       "Expected token COLON, got NEWLINE");
 }

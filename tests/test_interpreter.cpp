@@ -8,6 +8,7 @@
 #include "virtual_machine.h"
 #include <fmt/xchar.h>
 #include <gtest/gtest.h>
+#include <stdexcept>
 
 using namespace cl;
 
@@ -17,6 +18,21 @@ static Value run_file(const wchar_t *str)
     CodeObject *code_obj =
         vm.get_default_thread()->compile(str, StartRule::File);
     return vm.get_default_thread()->run(code_obj);
+}
+
+static void expect_runtime_error(const wchar_t *source,
+                                 const char *expected_message)
+{
+    try
+    {
+        (void)run_file(source);
+        FAIL() << "Expected std::runtime_error with message: "
+               << expected_message;
+    }
+    catch(const std::runtime_error &err)
+    {
+        EXPECT_STREQ(expected_message, err.what());
+    }
 }
 
 TEST(Interpreter, simple)
@@ -89,6 +105,16 @@ TEST(Interpreter, recursive_fibonacci)
                             "fib(20)\n");
 
     EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, name_error)
+{
+    expect_runtime_error(L"missing_name\n", "NameError");
+}
+
+TEST(Interpreter, call_non_callable)
+{
+    expect_runtime_error(L"1()\n", "TypeError: object is not callable");
 }
 
 /*
