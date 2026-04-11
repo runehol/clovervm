@@ -693,11 +693,43 @@ namespace cl
             }
         }
 
+        uint32_t assignment_target_source_pos(int32_t node_idx)
+        {
+            AstKind kind = ast.kinds[node_idx];
+            switch(kind.node_kind)
+            {
+                case AstNodeKind::EXPRESSION_BINARY:
+                case AstNodeKind::EXPRESSION_UNARY:
+                case AstNodeKind::EXPRESSION_COMPARISON:
+                case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
+                case AstNodeKind::EXPRESSION_CALL:
+                case AstNodeKind::EXPRESSION_ASSIGN:
+                    return assignment_target_source_pos(
+                        ast.children[node_idx][0]);
+
+                default:
+                    return ast.source_offsets[node_idx];
+            }
+        }
+
+        void validate_assignment_target(int32_t lhs)
+        {
+            if(ast.kinds[lhs].node_kind ==
+               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+            {
+                return;
+            }
+
+            throw std::runtime_error(
+                std::string("SyntaxError: assignment target must be a simple "
+                            "variable") +
+                format_error_context(assignment_target_source_pos(lhs)));
+        }
+
         int32_t assignment()
         {
             int32_t source_pos = source_pos_for_token();
             int32_t lhs = star_expressions();
-            /* TODO check if single target */
             AstOperatorKind op_kind = AstOperatorKind::FALSE;
             switch(peek())
             {
@@ -748,6 +780,7 @@ namespace cl
                                             source_pos, lhs);
             }
 
+            validate_assignment_target(lhs);
             source_pos = source_pos_and_advance();
             int32_t rhs = annotated_rhs();
             return ast.emplace_back(

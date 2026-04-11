@@ -135,6 +135,22 @@ TEST(Parser, yield_stmt_not_implemented)
                        "offset 0 (line 1, column 1), near \"yield 1\"");
 }
 
+TEST(Parser, tuple_assignment_target_not_supported)
+{
+    expect_parse_error(L"a, b = 1, 2\n",
+                       "SyntaxError: assignment target must be a simple "
+                       "variable at offset 0 (line 1, column 1), near "
+                       "\"a, b = 1, 2\"");
+}
+
+TEST(Parser, expression_assignment_target_not_supported)
+{
+    expect_parse_error(L"a + b = 1\n",
+                       "SyntaxError: assignment target must be a simple "
+                       "variable at offset 0 (line 1, column 1), near "
+                       "\"a + b = 1\"");
+}
+
 TEST(Parser, unexpected_token_reports_location)
 {
     expect_parse_error(L")\n",

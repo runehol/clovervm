@@ -25,7 +25,7 @@ These are the lowest-hanging improvements I found after reading the current toke
 
 ## Nice wins in the parser/codegen path
 
-- [ ] Validate assignment targets before codegen.
+- [x] Validate assignment targets before codegen.
   Why: the parser leaves a `TODO` about checking for a single assignment target, while codegen later rejects anything except simple variable assignment. Catching this earlier would produce clearer errors.
   Where: `src/parser.cpp`, `src/codegen.cpp`.
 
