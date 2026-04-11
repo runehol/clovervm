@@ -1,0 +1,18 @@
+# Project Description
+
+This repository contains clovervm, a Python VM.
+
+# Changing code
+
+- Run `clang-format -i` on every touched C++ source or header file so it matches the repository's `.clang-format`.
+- Use `build-debug/` for local builds. If it is missing, configured with the wrong generator, or appears stale after dependency changes, reconfigure it with `cmake -S . -B build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug`. Use `cmake --fresh -G Ninja -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug` when a clean reconfigure is needed.
+- After making changes, run `ninja -C build-debug all check`.
+- `ccache` is picked up at CMake configure time. If a configure or build step hits sandbox restrictions because of `ccache`, ask for elevated permissions instead of disabling `ccache` or reconfiguring the build to avoid it.
+- Run git commands one at a time. Do not launch multiple git commands in parallel, because repository locking can make them fail.
+
+# Code style
+- This is a C++17 code base.
+- Prefer include guards over `#pragma once` in headers.
+- Name include guards consistently. Follow the existing repository convention, e.g. `CL_SLAB_ALLOCATOR_H`.
+- For fixed-width integer and size types, include `<cstdint>` or `<cstdlib>`/`<cstddef>` as needed and use unqualified names like `int64_t` and `size_t`.
+- Prefer small non-virtual accessor definitions in headers so they are easy to inline.
