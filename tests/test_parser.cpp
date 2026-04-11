@@ -65,6 +65,40 @@ TEST(Parser, if_stmt)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, if_elif_else_stmt)
+{
+    std::string expected = ("if a:\n"
+                            "    return 1\n"
+                            "elif b:\n"
+                            "    return 2\n"
+                            "else:\n"
+                            "    return 3\n");
+    std::string actual = parse(L""
+                               "if a:\n"
+                               "    return 1\n"
+                               "elif b:\n"
+                               "    return 2\n"
+                               "else:\n"
+                               "    return 3\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, while_else_stmt)
+{
+    std::string expected = ("while a:\n"
+                            "    a -= 1\n"
+                            "else:\n"
+                            "    return a\n");
+    std::string actual = parse(L""
+                               "while a:\n"
+                               "    a -= 1\n"
+                               "else:\n"
+                               "    return a\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, def_stmt)
 {
     std::string expected = (""

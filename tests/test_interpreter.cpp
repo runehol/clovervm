@@ -96,6 +96,64 @@ TEST(Interpreter, while1)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Interpreter, if_elif_branch)
+{
+    Value expected = Value::from_smi(2);
+    Value actual = run_file(L"a = False\n"
+                            "b = True\n"
+                            "if a:\n"
+                            "    1\n"
+                            "elif b:\n"
+                            "    2\n"
+                            "else:\n"
+                            "    3\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, if_else_branch)
+{
+    Value expected = Value::from_smi(3);
+    Value actual = run_file(L"a = False\n"
+                            "b = False\n"
+                            "if a:\n"
+                            "    1\n"
+                            "elif b:\n"
+                            "    2\n"
+                            "else:\n"
+                            "    3\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, while_else_runs_after_normal_exit)
+{
+    Value expected = Value::from_smi(7);
+    Value actual = run_file(L"a = 2\n"
+                            "b = 0\n"
+                            "while a:\n"
+                            "    a -= 1\n"
+                            "else:\n"
+                            "    b = 7\n"
+                            "b\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, while_else_skipped_after_break)
+{
+    Value expected = Value::from_smi(0);
+    Value actual = run_file(L"a = 2\n"
+                            "b = 0\n"
+                            "while a:\n"
+                            "    break\n"
+                            "else:\n"
+                            "    b = 7\n"
+                            "b\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Interpreter, recursive_fibonacci)
 {
     Value expected = Value::from_smi(10946);

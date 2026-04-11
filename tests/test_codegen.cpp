@@ -154,3 +154,64 @@ TEST(Codegen, while2)
 
     EXPECT_EQ(expected, actual);
 }
+
+TEST(Codegen, if_elif_else)
+{
+    const wchar_t *test_case = L"if a:\n"
+                               "    b = 1\n"
+                               "elif c:\n"
+                               "    b = 2\n"
+                               "else:\n"
+                               "    b = 3\n"
+                               "b\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 LdaGlobal [0]\n"
+                           "    5 JumpIfFalse 18\n"
+                           "    8 LdaSmi 1\n"
+                           "   10 StaGlobal [1]\n"
+                           "   15 Jump 43\n"
+                           "   18 LdaGlobal [2]\n"
+                           "   23 JumpIfFalse 36\n"
+                           "   26 LdaSmi 2\n"
+                           "   28 StaGlobal [1]\n"
+                           "   33 Jump 43\n"
+                           "   36 LdaSmi 3\n"
+                           "   38 StaGlobal [1]\n"
+                           "   43 LdaGlobal [1]\n"
+                           "   48 Halt\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, while_else)
+{
+    const wchar_t *test_case = L"a = 2\n"
+                               "b = 0\n"
+                               "while a:\n"
+                               "    a -= 1\n"
+                               "else:\n"
+                               "    b = 7\n"
+                               "b\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 LdaSmi 2\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 LdaSmi 0\n"
+                           "    9 StaGlobal [1]\n"
+                           "   14 LdaGlobal [0]\n"
+                           "   19 JumpIfFalse 42\n"
+                           "   22 LdaGlobal [0]\n"
+                           "   27 SubSmi 1\n"
+                           "   29 StaGlobal [0]\n"
+                           "   34 LdaGlobal [0]\n"
+                           "   39 JumpIfTrue 22\n"
+                           "   42 LdaSmi 7\n"
+                           "   44 StaGlobal [1]\n"
+                           "   49 LdaGlobal [1]\n"
+                           "   54 Halt\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}

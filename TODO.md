@@ -29,7 +29,7 @@ These are the lowest-hanging improvements I found after reading the current toke
   Why: the parser leaves a `TODO` about checking for a single assignment target, while codegen later rejects anything except simple variable assignment. Catching this earlier would produce clearer errors.
   Where: `src/parser.cpp`, `src/codegen.cpp`.
 
-- [ ] Add parser/codegen/interpreter coverage for `if/elif/else` and loop `else`.
+- [x] Add parser/codegen/interpreter coverage for `if/elif/else` and loop `else`.
   Why: the parser and codegen both support these forms, but the existing tests barely exercise them.
   Where: `tests/test_parser.cpp`, `tests/test_codegen.cpp`, `tests/test_interpreter.cpp`.
 
