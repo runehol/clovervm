@@ -154,6 +154,63 @@ TEST(Interpreter, while_else_skipped_after_break)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Interpreter, function_multiple_parameters)
+{
+    Value expected = Value::from_smi(6);
+    Value actual = run_file(L"def add3(a, b, c):\n"
+                            "    return a + b + c\n"
+                            "add3(1, 2, 3)\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, function_implicit_return_none)
+{
+    Value expected = Value::None();
+    Value actual = run_file(L"def f():\n"
+                            "    a = 1\n"
+                            "f()\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, function_local_shadows_global)
+{
+    Value expected = Value::from_smi(11);
+    Value actual = run_file(L"a = 10\n"
+                            "def f():\n"
+                            "    a = 1\n"
+                            "    return a\n"
+                            "f() + a\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, function_reads_global_when_not_shadowed)
+{
+    Value expected = Value::from_smi(10);
+    Value actual = run_file(L"a = 10\n"
+                            "def f():\n"
+                            "    return a\n"
+                            "f()\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, function_nested_control_flow)
+{
+    Value expected = Value::from_smi(2);
+    Value actual = run_file(L"def pick(n):\n"
+                            "    if n:\n"
+                            "        while n:\n"
+                            "            return 1\n"
+                            "    else:\n"
+                            "        return 2\n"
+                            "pick(0)\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Interpreter, recursive_fibonacci)
 {
     Value expected = Value::from_smi(10946);

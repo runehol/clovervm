@@ -33,7 +33,7 @@ These are the lowest-hanging improvements I found after reading the current toke
   Why: the parser and codegen both support these forms, but the existing tests barely exercise them.
   Where: `tests/test_parser.cpp`, `tests/test_codegen.cpp`, `tests/test_interpreter.cpp`.
 
-- [ ] Add tests for function behavior beyond the recursive Fibonacci smoke test.
+- [x] Add tests for function behavior beyond the recursive Fibonacci smoke test.
   Why: functions exist, but there is very little coverage for multiple parameters, implicit `return None`, local-vs-global lookup, and nested control flow inside functions.
   Where: `tests/test_interpreter.cpp`, `tests/test_codegen.cpp`.
 

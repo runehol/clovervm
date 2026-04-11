@@ -9,6 +9,7 @@ This repository contains clovervm, a Python VM.
 - After making changes, run `ninja -C build-debug all check`.
 - `ccache` is picked up at CMake configure time. If a configure or build step hits sandbox restrictions because of `ccache`, ask for elevated permissions instead of disabling `ccache` or reconfiguring the build to avoid it.
 - Run git commands one at a time. Do not launch multiple git commands in parallel, because repository locking can make them fail.
+- Prefer interpreter tests for semantics and end-to-end behavior. Keep codegen tests focused on high-value structural guarantees such as specific lowering patterns, call conventions, or optimizations that interpreter tests would not pin down well.
 
 # Code style
 - This is a C++17 code base.
