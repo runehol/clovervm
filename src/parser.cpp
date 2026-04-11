@@ -368,7 +368,7 @@ namespace cl
         int32_t bitwise_and()
         {
             int32_t result = shift_expr();
-            while(match(Token::CIRCUMFLEX))
+            while(match(Token::AMPER))
             {
                 uint32_t source_pos = source_pos_for_previous_token();
                 int32_t rhs = shift_expr();
