@@ -20,7 +20,7 @@ These are the lowest-hanging improvements I found after reading the current toke
   Why: current parser errors usually say only "Expected token X, got Y" or "Unexpected token Y". Including the source offset or line/column would make debugging much faster.
   Where: `src/parser.cpp`, possibly `src/compilation_unit.h` if line/column helpers are needed.
 
-- [ ] Document the currently supported Python subset in `README.md`.
+- [x] Document the currently supported Python subset in `README.md`.
   Why: the README describes long-term goals, but not the syntax and semantics that actually work today. A short "currently supported" list would reduce confusion immediately.
 
 ## Nice wins in the parser/codegen path
