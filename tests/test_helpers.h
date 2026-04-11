@@ -15,7 +15,8 @@ namespace cl::test
     class VmTestContext
     {
     public:
-        ThreadState *thread() { return vm.get_default_thread(); }
+        VirtualMachine &vm() { return vm_; }
+        ThreadState *thread() { return vm_.get_default_thread(); }
 
         CodeObject *compile_file(const wchar_t *source)
         {
@@ -28,7 +29,7 @@ namespace cl::test
         }
 
     private:
-        VirtualMachine vm;
+        VirtualMachine vm_;
     };
 
     struct ParsedFile

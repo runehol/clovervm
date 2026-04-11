@@ -1,5 +1,6 @@
 #include "interpreter.h"
 
+#include "builtin_function.h"
 #include "code_object.h"
 #include "code_object_print.h"
 #include "function.h"
@@ -86,6 +87,11 @@ namespace cl
     NOINLINE Value not_callable_error(PARAMS)
     {
         throw std::runtime_error("TypeError: object is not callable");
+    }
+
+    NOINLINE Value wrong_arity_error(PARAMS)
+    {
+        throw std::runtime_error("TypeError: wrong number of arguments");
     }
 
     NOINLINE static Value slow_path(PARAMS)
@@ -610,7 +616,32 @@ namespace cl
         uint8_t n_args = pc[2];
         Value fun = fp[reg];
 
-        if(unlikely(!fun.is_ptr() || fun.get_ptr()->klass != &Function::klass))
+        if(unlikely(!fun.is_ptr()))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        if(fun.get_ptr()->klass == &BuiltinFunction::klass)
+        {
+            BuiltinFunction *builtin = fun.get_ptr<BuiltinFunction>();
+            if(unlikely(!builtin->accepts_arity(n_args)))
+            {
+                MUSTTAIL return wrong_arity_error(ARGS);
+            }
+
+            {
+                CallArguments args(&fp[reg], n_args);
+                accumulator =
+                    builtin->callback(ThreadState::get_active(), args);
+            }
+
+            pc += 3;
+
+            START(0);
+            COMPLETE();
+        }
+
+        if(unlikely(fun.get_ptr()->klass != &Function::klass))
         {
             MUSTTAIL return not_callable_error(ARGS);
         }

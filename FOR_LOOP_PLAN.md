@@ -96,7 +96,7 @@ Status:
   [tests/test_parser.cpp](/Users/runehol/projects/clovervm/tests/test_parser.cpp)
 - Current behavior intentionally remains limited to simple variable targets
 
-### 2. Introduce builtin-function runtime support
+### 2. Introduce builtin-function runtime support [done]
 
 Files:
 
@@ -116,9 +116,24 @@ Changes:
 
 Suggested direction:
 
-- Native callback accepts a span or pointer/range of argument `Value`s.
+- Native callback accepts a lightweight `CallArguments` view over the current
+  interpreter call slots.
+- Builtins can advertise fixed arity, bounded multi-arity, or varargs.
 - Callback returns a `Value` directly.
 - Runtime errors can still use the current C++ exception strategy for now.
+
+Status:
+
+- Implemented in
+  [src/builtin_function.h](/Users/runehol/projects/clovervm/src/builtin_function.h)
+  and [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+- `CallSimple` now dispatches to either bytecode `Function` or native
+  `BuiltinFunction`
+- The builtin calling interface uses `CallArguments` instead of copying values
+  out of the interpreter stack
+- Arity handling now supports exact arity, bounded multi-arity, and varargs
+- Interpreter tests added in
+  [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp)
 
 ### 3. Add a builtin scope
 

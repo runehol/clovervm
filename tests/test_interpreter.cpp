@@ -1,7 +1,9 @@
+#include "builtin_function.h"
 #include "codegen.h"
 #include "compilation_unit.h"
 #include "interpreter.h"
 #include "parser.h"
+#include "scope.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -15,6 +17,30 @@
 using namespace cl;
 
 static constexpr int64_t kMinSmi = -288230376151711744LL;
+
+static Value builtin_add(ThreadState *, const CallArguments &args)
+{
+    if(args.n_args != 2 || !args[0].is_smi() || !args[1].is_smi())
+    {
+        throw std::runtime_error("builtin_add received unexpected arguments");
+    }
+    return Value::from_smi(args[0].get_smi() + args[1].get_smi());
+}
+
+static Value builtin_sum(ThreadState *, const CallArguments &args)
+{
+    int64_t total = 0;
+    for(uint32_t i = 0; i < args.n_args; ++i)
+    {
+        if(!args[i].is_smi())
+        {
+            throw std::runtime_error(
+                "builtin_sum received unexpected arguments");
+        }
+        total += args[i].get_smi();
+    }
+    return Value::from_smi(total);
+}
 
 static Value run_file(const wchar_t *str)
 {
@@ -240,6 +266,85 @@ TEST(Interpreter, name_error)
 TEST(Interpreter, call_non_callable)
 {
     expect_runtime_error(L"1()\n", "TypeError: object is not callable");
+}
+
+TEST(Interpreter, call_builtin_function)
+{
+    test::VmTestContext test_context;
+    CodeObject *code_obj = test_context.compile_file(L"native_add(4, 7)\n");
+
+    Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
+    Value name = test_context.vm().get_or_create_interned_string(L"native_add");
+    Value builtin = Value::from_oop(
+        new(test_context.thread()->allocate_refcounted(sizeof(BuiltinFunction)))
+            BuiltinFunction(builtin_add, 2, 2));
+    module_scope->set_by_name(name, builtin);
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(11), actual);
+}
+
+TEST(Interpreter, builtin_wrong_arity)
+{
+    test::VmTestContext test_context;
+    CodeObject *code_obj = test_context.compile_file(L"native_add(4)\n");
+
+    Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
+    Value name = test_context.vm().get_or_create_interned_string(L"native_add");
+    Value builtin = Value::from_oop(
+        new(test_context.thread()->allocate_refcounted(sizeof(BuiltinFunction)))
+            BuiltinFunction(builtin_add, 2, 2));
+    module_scope->set_by_name(name, builtin);
+
+    try
+    {
+        (void)test_context.thread()->run(code_obj);
+        FAIL() << "Expected std::runtime_error with message: "
+               << "TypeError: wrong number of arguments";
+    }
+    catch(const std::runtime_error &err)
+    {
+        EXPECT_STREQ("TypeError: wrong number of arguments", err.what());
+    }
+}
+
+TEST(Interpreter, builtin_multiple_arities)
+{
+    test::VmTestContext test_context;
+    Scope *module_scope = nullptr;
+    Value name = test_context.vm().get_or_create_interned_string(L"native_sum");
+    Value builtin = Value::from_oop(
+        new(test_context.thread()->allocate_refcounted(sizeof(BuiltinFunction)))
+            BuiltinFunction(builtin_sum, 1, 3));
+
+    CodeObject *one_arg = test_context.compile_file(L"native_sum(4)\n");
+    module_scope = one_arg->module_scope.get_ptr<Scope>();
+    module_scope->set_by_name(name, builtin);
+    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(one_arg));
+
+    CodeObject *three_args =
+        test_context.compile_file(L"native_sum(4, 5, 6)\n");
+    module_scope = three_args->module_scope.get_ptr<Scope>();
+    module_scope->set_by_name(name, builtin);
+    EXPECT_EQ(Value::from_smi(15), test_context.thread()->run(three_args));
+}
+
+TEST(Interpreter, builtin_varargs)
+{
+    test::VmTestContext test_context;
+    Value name = test_context.vm().get_or_create_interned_string(L"native_sum");
+    Value builtin = Value::from_oop(
+        new(test_context.thread()->allocate_refcounted(sizeof(BuiltinFunction)))
+            BuiltinFunction(builtin_sum, 0, BuiltinFunction::VarArgs));
+
+    CodeObject *zero_args = test_context.compile_file(L"native_sum()\n");
+    zero_args->module_scope.get_ptr<Scope>()->set_by_name(name, builtin);
+    EXPECT_EQ(Value::from_smi(0), test_context.thread()->run(zero_args));
+
+    CodeObject *four_args =
+        test_context.compile_file(L"native_sum(1, 2, 3, 4)\n");
+    four_args->module_scope.get_ptr<Scope>()->set_by_name(name, builtin);
+    EXPECT_EQ(Value::from_smi(10), test_context.thread()->run(four_args));
 }
 
 TEST(Interpreter, negate_expression)
