@@ -9,20 +9,39 @@
 #include "thread_state.h"
 #include "value.h"
 #include "virtual_machine.h"
-#include <codecvt>
+#include <cerrno>
+#include <cwchar>
 #include <fmt/xchar.h>
 #include <fstream>
-#include <sstream>
+#include <stdexcept>
+#include <string>
 
 using namespace cl;
 
 std::wstring read_file(const char *filename)
 {
-    std::wifstream wif(filename);
-    wif.imbue(std::locale(std::locale(), new std::codecvt_utf8<wchar_t>));
-    std::wstringstream wss;
-    wss << wif.rdbuf();
-    return wss.str();
+    std::ifstream ifs(filename, std::ios::binary);
+    std::string bytes((std::istreambuf_iterator<char>(ifs)),
+                      std::istreambuf_iterator<char>());
+    const char *src = bytes.c_str();
+    std::mbstate_t state = std::mbstate_t();
+    errno = 0;
+    size_t size = std::mbsrtowcs(nullptr, &src, 0, &state);
+    if(size == static_cast<size_t>(-1))
+    {
+        throw std::runtime_error("failed to decode source file");
+    }
+
+    std::wstring result(size, L'\0');
+    src = bytes.c_str();
+    state = std::mbstate_t();
+    errno = 0;
+    if(std::mbsrtowcs(result.data(), &src, result.size(), &state) ==
+       static_cast<size_t>(-1))
+    {
+        throw std::runtime_error("failed to decode source file");
+    }
+    return result;
 }
 
 int main(int argc, const char *argv[])
