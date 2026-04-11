@@ -7,6 +7,25 @@
 
 using namespace cl;
 
+static void expect_number_spellings(const wchar_t *source,
+                                    const std::vector<std::wstring> &expected)
+{
+    CompilationUnit input(source);
+    TokenVector tv = tokenize(input);
+
+    std::vector<std::wstring> actual;
+    for(size_t i = 0; i < tv.tokens.size(); ++i)
+    {
+        if(tv.tokens[i] == Token::NUMBER)
+        {
+            actual.emplace_back(
+                string_for_number_token(input, tv.source_offsets[i]));
+        }
+    }
+
+    EXPECT_EQ(expected, actual);
+}
+
 static void expect_tokenize_error(const wchar_t *source,
                                   const char *expected_message)
 {
@@ -42,6 +61,20 @@ TEST(Tokenizer, simple2)
 
     TokenVector tv = tokenize(input);
     EXPECT_EQ(tv.tokens, expected_tokens);
+}
+
+TEST(Tokenizer, number_formats)
+{
+    CompilationUnit input(L"0xff + 0b1010 + 0o77 + 1_000_000");
+    std::vector<Token> expected_tokens = {
+        Token::NUMBER, Token::PLUS,    Token::NUMBER,
+        Token::PLUS,   Token::NUMBER,  Token::PLUS,
+        Token::NUMBER, Token::NEWLINE, Token::ENDMARKER};
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+    expect_number_spellings(L"0xff + 0b1010 + 0o77 + 1_000_000",
+                            {L"0xff", L"0b1010", L"0o77", L"1_000_000"});
 }
 
 TEST(Tokenizer, factorial)

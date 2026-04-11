@@ -43,7 +43,7 @@ These are the lowest-hanging improvements I found after reading the current toke
 
 ## Tokenizer improvements that should be cheap
 
-- [ ] Add tokenizer tests for number formats that the regex claims to support.
+- [x] Add tokenizer tests for number formats that the regex claims to support.
   Why: the tokenizer accepts decimal, hex, octal, binary, and underscores, but tests only cover simple decimal literals.
   Good cases: `0xff`, `0b1010`, `0o77`, `1_000_000`.
 
