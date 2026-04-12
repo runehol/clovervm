@@ -1,7 +1,5 @@
-def run():
+def run(n):
     acc = 0
-    for x in range(__N__):
+    for x in range(n):
         acc += x
     return acc
-
-run()

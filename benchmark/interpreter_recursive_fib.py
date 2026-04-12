@@ -3,4 +3,5 @@ def fib(n):
         return n
     return fib(n - 1) + fib(n - 2)
 
-fib(__N__)
+def run(n):
+    return fib(n)

@@ -54,7 +54,8 @@ and some runtime behavior is intentionally narrow.
 
 ## Benchmarking
 
-The repository includes Google Benchmark-based interpreter microbenchmarks for:
+The repository includes Google Benchmark-based microbenchmarks that run both
+clovervm and CPython on the same workloads:
 
 - Recursive Fibonacci.
 - A `while` loop accumulator.
@@ -68,10 +69,13 @@ cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release --target run_benchmark
 ```
 
-These benchmarks compile the source once and then measure interpreter execution.
-For the loop benchmarks, the normalized throughput signal is loop iterations per
-second. For recursive Fibonacci, the benchmark normalizes by recursive function
-calls per second so regressions are easier to compare over time. The benchmark
-programs themselves live as external files under `benchmark/`, so adjusting or
-adding workloads does not require editing the harness logic. Benchmark numbers
-should be taken from a `Release` build rather than `Debug`.
+These benchmarks load the source once and then measure repeated execution.
+clovervm compiles once per benchmark case, and the CPython path keeps one
+persistent `python3` subprocess alive per case so process startup is not on the
+hot path. For the loop benchmarks, the normalized throughput signal is loop
+iterations per second. For recursive Fibonacci, the benchmark normalizes by
+recursive function calls per second so regressions are easier to compare over
+time. The benchmark programs themselves live as external files under
+`benchmark/`, so adjusting or adding workloads does not require editing the
+harness logic. Benchmark numbers should be taken from a `Release` build rather
+than `Debug`.
