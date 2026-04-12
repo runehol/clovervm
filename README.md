@@ -59,6 +59,7 @@ The repository includes Google Benchmark-based interpreter microbenchmarks for:
 - Recursive Fibonacci.
 - A `while` loop accumulator.
 - A `for x in range(...)` loop accumulator.
+- A nested `for` loop accumulator.
 
 Build and run them with:
 

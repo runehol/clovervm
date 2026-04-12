@@ -91,6 +91,19 @@ namespace
 
         return std::wstring(source.begin(), source.end());
     }
+
+    int64_t sum_of_products(int64_t n, int64_t inner_iterations)
+    {
+        int64_t total = 0;
+        for(int64_t x = 0; x < n; ++x)
+        {
+            for(int64_t y = 0; y < inner_iterations; ++y)
+            {
+                total += x * y;
+            }
+        }
+        return total;
+    }
 }  // namespace
 
 static void BM_RecursiveFibonacci(benchmark::State &state)
@@ -140,5 +153,22 @@ static void BM_ForLoop(benchmark::State &state)
     state.SetItemsProcessed(state.iterations() * iterations);
 }
 BENCHMARK(BM_ForLoop)->Arg(1000)->Arg(10000)->Arg(100000);
+
+static void BM_NestedForLoop(benchmark::State &state)
+{
+    const int64_t iterations = state.range(0);
+    static constexpr int64_t kInnerIterations = 10;
+    CompiledProgram program(load_program_source(
+        "benchmark/interpreter_nested_for_loop.py", iterations));
+    expect_smi(program.run(), sum_of_products(iterations, kInnerIterations));
+
+    for(auto _: state)
+    {
+        benchmark::DoNotOptimize(program.run());
+    }
+
+    state.SetItemsProcessed(state.iterations() * iterations * kInnerIterations);
+}
+BENCHMARK(BM_NestedForLoop)->Arg(1000)->Arg(10000)->Arg(100000);
 
 BENCHMARK_MAIN();
