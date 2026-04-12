@@ -179,32 +179,65 @@ TEST(Codegen, string_literal_constant_value)
     EXPECT_STREQ(L"abc", string_as_wchar_t(code_obj->constant_table[0]));
 }
 
-TEST(Codegen, for_loop_lowers_through_generic_iterator_bytecodes)
+TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
 {
     std::string expected = "Code object:\n"
                            "    0 LdaSmi 0\n"
                            "    2 StaGlobal [0]\n"
                            "    7 LdaGlobal [2]\n"
-                           "   12 Star1\n"
+                           "   12 Star0\n"
                            "   13 LdaSmi 3\n"
-                           "   15 Star2\n"
-                           "   16 CallSimple r1, r2\n"
-                           "   19 GetIter\n"
-                           "   20 Star0\n"
-                           "   21 ForIter r0, 51\n"
-                           "   25 StaGlobal [1]\n"
-                           "   30 LdaGlobal [0]\n"
-                           "   35 Star1\n"
-                           "   36 LdaGlobal [1]\n"
-                           "   41 Add r1\n"
-                           "   43 StaGlobal [0]\n"
-                           "   48 Jump 21\n"
-                           "   51 LdaGlobal [0]\n"
-                           "   56 Halt\n";
+                           "   15 Star1\n"
+                           "   16 ForPrepRange1 r0, 50\n"
+                           "   20 ForIterRange1 r0, 85\n"
+                           "   24 StaGlobal [1]\n"
+                           "   29 LdaGlobal [0]\n"
+                           "   34 Star3\n"
+                           "   35 LdaGlobal [1]\n"
+                           "   40 Add r3\n"
+                           "   42 StaGlobal [0]\n"
+                           "   47 Jump 20\n"
+                           "   50 CallSimple r0, r1\n"
+                           "   53 GetIter\n"
+                           "   54 Star2\n"
+                           "   55 ForIter r2, 85\n"
+                           "   59 StaGlobal [1]\n"
+                           "   64 LdaGlobal [0]\n"
+                           "   69 Star3\n"
+                           "   70 LdaGlobal [1]\n"
+                           "   75 Add r3\n"
+                           "   77 StaGlobal [0]\n"
+                           "   82 Jump 55\n"
+                           "   85 LdaGlobal [0]\n"
+                           "   90 Halt\n";
     std::string actual = bytecode_str_from_file(L"total = 0\n"
                                                 "for x in range(3):\n"
                                                 "    total += x\n"
                                                 "total\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, non_direct_for_loop_still_uses_generic_iterator_bytecodes)
+{
+    std::string expected = "Code object:\n"
+                           "    0 LdaGlobal [1]\n"
+                           "    5 Star0\n"
+                           "    6 LdaSmi 3\n"
+                           "    8 Star1\n"
+                           "    9 CallSimple r0, r1\n"
+                           "   12 StaGlobal [0]\n"
+                           "   17 LdaGlobal [0]\n"
+                           "   22 GetIter\n"
+                           "   23 Star0\n"
+                           "   24 ForIter r0, 41\n"
+                           "   28 StaGlobal [2]\n"
+                           "   33 LdaGlobal [2]\n"
+                           "   38 Jump 24\n"
+                           "   41 Halt\n";
+    std::string actual = bytecode_str_from_file(L"it = range(3)\n"
+                                                "for x in it:\n"
+                                                "    x\n");
 
     EXPECT_EQ(expected, actual);
 }

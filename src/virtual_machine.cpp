@@ -80,7 +80,7 @@ namespace cl
                 Scope(Value::None()));
 
         Value range_name = get_or_create_interned_string(L"range");
-        Value range_builtin = Value::from_oop(
+        range_builtin = Value::from_oop(
             new(refcounted_global_heap.allocate_global(sizeof(BuiltinFunction)))
                 BuiltinFunction(builtin_range, 1, 3));
         builtin_scope.get_ptr<Scope>()->set_by_name(range_name, range_builtin);

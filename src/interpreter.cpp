@@ -7,6 +7,7 @@
 #include "range_iterator.h"
 #include "thread_state.h"
 #include "value.h"
+#include "virtual_machine.h"
 #include <fmt/core.h>
 
 namespace cl
@@ -103,6 +104,17 @@ namespace cl
     NOINLINE Value not_iterator_error(PARAMS)
     {
         throw std::runtime_error("TypeError: object is not an iterator");
+    }
+
+    NOINLINE Value range_integer_argument_error(PARAMS)
+    {
+        throw std::runtime_error(
+            "TypeError: range() arguments must be integers");
+    }
+
+    NOINLINE Value range_zero_step_error(PARAMS)
+    {
+        throw std::runtime_error("ValueError: range() arg 3 must not be zero");
     }
 
     NOINLINE static Value slow_path(PARAMS)
@@ -747,6 +759,170 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_for_prep_range1(PARAMS)
+    {
+        int8_t reg = pc[1];
+        int16_t rel_target = read_int16_le(&pc[2]);
+        Value callable = fp[reg];
+        pc += 4;
+        if(callable !=
+           ThreadState::get_active()->get_machine()->get_range_builtin())
+        {
+            pc += rel_target;
+        }
+        else
+        {
+            Value stop = fp[reg - 1];
+            if(unlikely(!stop.is_integer()))
+            {
+                MUSTTAIL return range_integer_argument_error(ARGS);
+            }
+            fp[reg] = Value::from_smi(0);
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
+    static Value op_for_prep_range2(PARAMS)
+    {
+        int8_t reg = pc[1];
+        int16_t rel_target = read_int16_le(&pc[2]);
+        Value callable = fp[reg];
+        pc += 4;
+        if(callable !=
+           ThreadState::get_active()->get_machine()->get_range_builtin())
+        {
+            pc += rel_target;
+        }
+        else
+        {
+            Value start = fp[reg - 1];
+            Value stop = fp[reg - 2];
+            if(unlikely(!start.is_integer() || !stop.is_integer()))
+            {
+                MUSTTAIL return range_integer_argument_error(ARGS);
+            }
+            fp[reg] = start;
+            fp[reg - 1] = stop;
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
+    static Value op_for_prep_range3(PARAMS)
+    {
+        int8_t reg = pc[1];
+        int16_t rel_target = read_int16_le(&pc[2]);
+        Value callable = fp[reg];
+        pc += 4;
+        if(callable !=
+           ThreadState::get_active()->get_machine()->get_range_builtin())
+        {
+            pc += rel_target;
+        }
+        else
+        {
+            Value start = fp[reg - 1];
+            Value stop = fp[reg - 2];
+            Value step = fp[reg - 3];
+            if(unlikely(!start.is_integer() || !stop.is_integer() ||
+                        !step.is_integer()))
+            {
+                MUSTTAIL return range_integer_argument_error(ARGS);
+            }
+            if(unlikely(step.get_smi() == 0))
+            {
+                MUSTTAIL return range_zero_step_error(ARGS);
+            }
+            fp[reg] = start;
+            fp[reg - 1] = stop;
+            fp[reg - 2] = step;
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
+    static Value op_for_iter_range1(PARAMS)
+    {
+        int8_t reg = pc[1];
+        int16_t rel_target = read_int16_le(&pc[2]);
+        Value current = fp[reg];
+        Value stop = fp[reg - 1];
+
+        if(unlikely(!current.is_smi() || !stop.is_smi()))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        int64_t current_smi = current.get_smi();
+        int64_t stop_smi = stop.get_smi();
+        pc += 4;
+        if(current_smi >= stop_smi)
+        {
+            pc += rel_target;
+        }
+        else
+        {
+            int64_t next_smi = 0;
+            if(unlikely(__builtin_saddll_overflow(current_smi, 1, &next_smi)))
+            {
+                MUSTTAIL return overflow_path(ARGS);
+            }
+            accumulator = current;
+            fp[reg] = Value::from_smi(next_smi);
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
+    static Value op_for_iter_range_step(PARAMS)
+    {
+        int8_t reg = pc[1];
+        int16_t rel_target = read_int16_le(&pc[2]);
+        Value current = fp[reg];
+        Value stop = fp[reg - 1];
+        Value step = fp[reg - 2];
+
+        if(unlikely(!current.is_smi() || !stop.is_smi() || !step.is_smi()))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        int64_t current_smi = current.get_smi();
+        int64_t stop_smi = stop.get_smi();
+        int64_t step_smi = step.get_smi();
+        if(unlikely(step_smi == 0))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        bool exhausted =
+            step_smi > 0 ? current_smi >= stop_smi : current_smi <= stop_smi;
+        pc += 4;
+        if(exhausted)
+        {
+            pc += rel_target;
+        }
+        else
+        {
+            int64_t next_smi = 0;
+            if(unlikely(
+                   __builtin_saddll_overflow(current_smi, step_smi, &next_smi)))
+            {
+                MUSTTAIL return overflow_path(ARGS);
+            }
+            accumulator = current;
+            fp[reg] = Value::from_smi(next_smi);
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
     static Value op_return(PARAMS)
     {
         pc = (const uint8_t *)fp[-2].as.ptr;
@@ -811,6 +987,11 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
         SET_TABLE_ENTRY(Bytecode::GetIter, op_get_iter);
         SET_TABLE_ENTRY(Bytecode::ForIter, op_for_iter);
+        SET_TABLE_ENTRY(Bytecode::ForPrepRange1, op_for_prep_range1);
+        SET_TABLE_ENTRY(Bytecode::ForPrepRange2, op_for_prep_range2);
+        SET_TABLE_ENTRY(Bytecode::ForPrepRange3, op_for_prep_range3);
+        SET_TABLE_ENTRY(Bytecode::ForIterRange1, op_for_iter_range1);
+        SET_TABLE_ENTRY(Bytecode::ForIterRangeStep, op_for_iter_range_step);
 
         SET_TABLE_ENTRY(Bytecode::Jump, op_jump);
         SET_TABLE_ENTRY(Bytecode::JumpIfTrue, op_jump_if_true);

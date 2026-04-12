@@ -35,6 +35,7 @@ namespace cl
         }
 
         Value get_builtin_scope() const { return builtin_scope; }
+        Value get_range_builtin() const { return range_builtin; }
 
     private:
         void initialize_builtin_scope();
@@ -44,6 +45,7 @@ namespace cl
         GlobalHeap interned_global_heap;
         InternStore<std::wstring, String> interned_strings;
         Value builtin_scope = Value::None();
+        Value range_builtin = Value::None();
     };
 
 }  // namespace cl

@@ -328,6 +328,150 @@ namespace cl
                                             regs, args.size());
         }
 
+        std::optional<uint8_t> direct_range_call_arity(int32_t node_idx) const
+        {
+            if(av.kinds[node_idx].node_kind != AstNodeKind::EXPRESSION_CALL)
+            {
+                return std::nullopt;
+            }
+
+            AstChildren children = av.children[node_idx];
+            int32_t callable_idx = children[0];
+            if(av.kinds[callable_idx].node_kind !=
+               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+            {
+                return std::nullopt;
+            }
+
+            Value range_name = ThreadState::get_active()
+                                   ->get_machine()
+                                   ->get_or_create_interned_string(L"range");
+            if(av.constants[callable_idx] != range_name)
+            {
+                return std::nullopt;
+            }
+
+            size_t n_args = av.children[children[1]].size();
+            if(n_args < 1 || n_args > 3)
+            {
+                return std::nullopt;
+            }
+
+            return uint8_t(n_args);
+        }
+
+        void codegen_loop_body(int32_t body_idx, Mode mode,
+                               JumpTarget &break_target,
+                               JumpTarget &continue_target)
+        {
+            loop_targets.emplace_back(&break_target, &continue_target);
+            codegen_node(body_idx, mode);
+            loop_targets.pop_back();
+        }
+
+        void codegen_iterator_driven_for_loop(uint32_t source_offset,
+                                              uint32_t target_slot,
+                                              int32_t body_idx, Mode mode,
+                                              uint32_t iterator_reg,
+                                              JumpTarget &else_target,
+                                              JumpTarget &break_target)
+        {
+            JumpTarget loop_start_target(code_obj);
+            JumpTarget continue_target(code_obj);
+
+            loop_start_target.resolve();
+            code_obj->emit_opcode_reg_jump(source_offset, Bytecode::ForIter,
+                                           iterator_reg, else_target);
+            perform_variable_assignment(source_offset, target_slot, mode);
+
+            codegen_loop_body(body_idx, mode, break_target, continue_target);
+
+            continue_target.resolve();
+            code_obj->emit_jump(source_offset, Bytecode::Jump,
+                                loop_start_target);
+        }
+
+        void codegen_direct_range_for_loop(int32_t node_idx,
+                                           uint32_t target_slot, uint8_t n_args,
+                                           Mode mode)
+        {
+            AstChildren children = av.children[node_idx];
+            uint32_t source_offset = av.source_offsets[node_idx];
+            int32_t iterable_idx = children[1];
+            int32_t body_idx = children[2];
+            int32_t else_idx = children.size() == 4 ? children[3] : -1;
+            AstChildren call_children = av.children[iterable_idx];
+            AstChildren args = av.children[call_children[1]];
+
+            TemporaryReg range_regs(this, 1 + n_args);
+            TemporaryReg iterator_reg(this);
+            JumpTarget generic_fallback_target(code_obj);
+            JumpTarget fast_loop_start_target(code_obj);
+            JumpTarget fast_continue_target(code_obj);
+            JumpTarget else_target(code_obj);
+            JumpTarget break_target(code_obj);
+
+            codegen_node(call_children[0], mode);
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                      range_regs + 0);
+            for(size_t i = 0; i < args.size(); ++i)
+            {
+                codegen_node(args[i], mode);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          range_regs + 1 + i);
+            }
+
+            Bytecode prep_opcode = Bytecode::Invalid;
+            Bytecode iter_opcode = Bytecode::Invalid;
+            switch(n_args)
+            {
+                case 1:
+                    prep_opcode = Bytecode::ForPrepRange1;
+                    iter_opcode = Bytecode::ForIterRange1;
+                    break;
+                case 2:
+                    prep_opcode = Bytecode::ForPrepRange2;
+                    iter_opcode = Bytecode::ForIterRange1;
+                    break;
+                case 3:
+                    prep_opcode = Bytecode::ForPrepRange3;
+                    iter_opcode = Bytecode::ForIterRangeStep;
+                    break;
+                default:
+                    assert(false);
+            }
+
+            code_obj->emit_opcode_reg_jump(source_offset, prep_opcode,
+                                           range_regs, generic_fallback_target);
+
+            fast_loop_start_target.resolve();
+            code_obj->emit_opcode_reg_jump(source_offset, iter_opcode,
+                                           range_regs, else_target);
+            perform_variable_assignment(source_offset, target_slot, mode);
+            codegen_loop_body(body_idx, mode, break_target,
+                              fast_continue_target);
+            fast_continue_target.resolve();
+            code_obj->emit_jump(source_offset, Bytecode::Jump,
+                                fast_loop_start_target);
+
+            generic_fallback_target.resolve();
+            code_obj->emit_opcode_reg_range(source_offset, Bytecode::CallSimple,
+                                            range_regs, n_args);
+            code_obj->emit_opcode(source_offset, Bytecode::GetIter);
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                      iterator_reg);
+            codegen_iterator_driven_for_loop(source_offset, target_slot,
+                                             body_idx, mode, iterator_reg,
+                                             else_target, break_target);
+
+            else_target.resolve();
+            if(else_idx >= 0)
+            {
+                codegen_node(else_idx, mode);
+            }
+            break_target.resolve();
+        }
+
         uint32_t prepare_variable_assignment(Value var_name, Mode mode)
         {
             switch(mode)
@@ -681,38 +825,32 @@ namespace cl
                 case AstNodeKind::STATEMENT_FOR:
                     {
                         int32_t target_idx = children[0];
+                        uint32_t target_slot = prepare_variable_assignment(
+                            av.constants[target_idx], mode);
+                        std::optional<uint8_t> range_call_arity =
+                            direct_range_call_arity(children[1]);
+                        if(range_call_arity.has_value())
+                        {
+                            codegen_direct_range_for_loop(
+                                node_idx, target_slot, *range_call_arity, mode);
+                            break;
+                        }
+
                         int32_t iterable_idx = children[1];
                         int32_t body_idx = children[2];
                         int32_t else_idx =
                             children.size() == 4 ? children[3] : -1;
-                        uint32_t target_slot = prepare_variable_assignment(
-                            av.constants[target_idx], mode);
                         TemporaryReg iterator_reg(this);
-                        JumpTarget loop_start_target(code_obj);
                         JumpTarget else_target(code_obj);
                         JumpTarget break_target(code_obj);
-                        JumpTarget continue_target(code_obj);
 
                         codegen_node(iterable_idx, mode);
                         code_obj->emit_opcode(source_offset, Bytecode::GetIter);
                         code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
                                                   iterator_reg);
-
-                        loop_start_target.resolve();
-                        code_obj->emit_opcode_reg_jump(
-                            source_offset, Bytecode::ForIter, iterator_reg,
-                            else_target);
-                        perform_variable_assignment(source_offset, target_slot,
-                                                    mode);
-
-                        loop_targets.emplace_back(&break_target,
-                                                  &continue_target);
-                        codegen_node(body_idx, mode);
-                        loop_targets.pop_back();
-
-                        continue_target.resolve();
-                        code_obj->emit_jump(source_offset, Bytecode::Jump,
-                                            loop_start_target);
+                        codegen_iterator_driven_for_loop(
+                            source_offset, target_slot, body_idx, mode,
+                            iterator_reg, else_target, break_target);
                         else_target.resolve();
                         if(else_idx >= 0)
                         {

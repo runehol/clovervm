@@ -115,6 +115,11 @@ namespace cl
         // iteration
         GetIter,
         ForIter,
+        ForPrepRange1,
+        ForPrepRange2,
+        ForPrepRange3,
+        ForIterRange1,
+        ForIterRangeStep,
 
         // allocations
         CreateFunction,

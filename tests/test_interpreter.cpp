@@ -345,6 +345,24 @@ TEST(Interpreter, for_loop_iterates_range)
     EXPECT_EQ(Value::from_smi(10), actual);
 }
 
+TEST(Interpreter, for_loop_iterates_two_argument_range)
+{
+    Value actual = run_file(L"total = 0\n"
+                            "for x in range(1, 4):\n"
+                            "    total += x\n"
+                            "total\n");
+    EXPECT_EQ(Value::from_smi(6), actual);
+}
+
+TEST(Interpreter, for_loop_iterates_positive_step_range)
+{
+    Value actual = run_file(L"total = 0\n"
+                            "for x in range(1, 8, 3):\n"
+                            "    total += x\n"
+                            "total\n");
+    EXPECT_EQ(Value::from_smi(12), actual);
+}
+
 TEST(Interpreter, for_loop_iterates_negative_step_range)
 {
     Value actual = run_file(L"total = 0\n"
@@ -352,6 +370,20 @@ TEST(Interpreter, for_loop_iterates_negative_step_range)
                             "    total += x\n"
                             "total\n");
     EXPECT_EQ(Value::from_smi(9), actual);
+}
+
+TEST(Interpreter, direct_range_for_loop_reports_integer_argument_errors)
+{
+    expect_runtime_error(L"for x in range(False):\n"
+                         L"    0\n",
+                         "TypeError: range() arguments must be integers");
+}
+
+TEST(Interpreter, direct_range_for_loop_reports_zero_step_errors)
+{
+    expect_runtime_error(L"for x in range(1, 4, 0):\n"
+                         L"    0\n",
+                         "ValueError: range() arg 3 must not be zero");
 }
 
 TEST(Interpreter, for_else_runs_after_normal_exhaustion)
@@ -420,6 +452,18 @@ TEST(Interpreter, nested_for_loops_execute_inside_function)
                             "    return total\n"
                             "sum_pairs(3)\n");
     EXPECT_EQ(Value::from_smi(9), actual);
+}
+
+TEST(Interpreter, shadowed_range_for_loop_uses_generic_fallback)
+{
+    Value actual = run_file(L"real_range = range\n"
+                            "def range(n):\n"
+                            "    return real_range(1, n)\n"
+                            "total = 0\n"
+                            "for x in range(4):\n"
+                            "    total += x\n"
+                            "total\n");
+    EXPECT_EQ(Value::from_smi(6), actual);
 }
 
 TEST(Interpreter, module_scope_can_shadow_builtin_scope)

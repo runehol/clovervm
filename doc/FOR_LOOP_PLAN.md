@@ -322,7 +322,7 @@ Status:
   including exhaustion, `else`, `break`, `continue`, negative-step iteration,
   non-iterable rejection, and nested-loop sanity
 
-### 8. Add a specialized fast path for direct builtin `range(...)` loops
+### 8. Add a specialized fast path for direct builtin `range(...)` loops [done]
 
 Files:
 
@@ -374,6 +374,24 @@ Why stage this later:
   oracle.
 - The optimized path is then purely a performance/bytecode-shape improvement,
   not part of the semantic foundation.
+
+Status:
+
+- Implemented in [src/bytecode.h](/Users/runehol/projects/clovervm/src/bytecode.h),
+  [src/code_object_print.h](/Users/runehol/projects/clovervm/src/code_object_print.h),
+  [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp), and
+  [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+- Direct builtin `range(...)` `for` loops now lower through guarded
+  `ForPrepRange1` / `ForPrepRange2` / `ForPrepRange3` and
+  `ForIterRange1` / `ForIterRangeStep` bytecodes
+- The optimization checks for the exact builtin `range` object and falls back
+  to the shared generic iterator lowering when `range` is shadowed
+- Codegen coverage added in
+  [tests/test_codegen.cpp](/Users/runehol/projects/clovervm/tests/test_codegen.cpp)
+- Interpreter coverage added in
+  [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp),
+  including one-, two-, and three-argument direct `range(...)` loops plus the
+  generic fallback path
 
 ### 9. Defer full Python iterator protocol and exceptions
 

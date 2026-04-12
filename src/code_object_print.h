@@ -192,6 +192,16 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "GetIter");
             case cl::Bytecode::ForIter:
                 return format_to(out, "ForIter");
+            case cl::Bytecode::ForPrepRange1:
+                return format_to(out, "ForPrepRange1");
+            case cl::Bytecode::ForPrepRange2:
+                return format_to(out, "ForPrepRange2");
+            case cl::Bytecode::ForPrepRange3:
+                return format_to(out, "ForPrepRange3");
+            case cl::Bytecode::ForIterRange1:
+                return format_to(out, "ForIterRange1");
+            case cl::Bytecode::ForIterRangeStep:
+                return format_to(out, "ForIterRangeStep");
 
             case cl::Bytecode::CreateFunction:
                 return format_to(out, "CreateFunction");
@@ -428,6 +438,11 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::ForIter:
+            case cl::Bytecode::ForPrepRange1:
+            case cl::Bytecode::ForPrepRange2:
+            case cl::Bytecode::ForPrepRange3:
+            case cl::Bytecode::ForIterRange1:
+            case cl::Bytecode::ForIterRangeStep:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");
