@@ -161,7 +161,7 @@ Status:
 - Implemented.
 
 
-### 4. Implement `range` as a builtin returning a `RangeIterator`
+### 4. Implement `range` as a builtin returning a `RangeIterator` [done]
 
 Files:
 
@@ -182,6 +182,17 @@ Note:
 This stage intentionally establishes the generic loop semantics first. A later
 fast path for direct builtin `range(...)` loops can then be validated against
 the already-working `RangeIterator` behavior in `for` loops.
+
+Status:
+
+- Implemented in [src/range_iterator.h](/Users/runehol/projects/clovervm/src/range_iterator.h)
+  and [src/virtual_machine.cpp](/Users/runehol/projects/clovervm/src/virtual_machine.cpp)
+- `range` is registered in the builtin scope as a normal builtin callable
+- `RangeIterator` stores `current`, `stop`, and `step`
+- The builtin currently supports `range(stop)`, `range(start, stop)`, and
+  `range(start, stop, step)`
+- Interpreter tests added in
+  [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp)
 
 ### 5. Add generic iterator bytecodes
 
@@ -400,7 +411,7 @@ Later add:
 - AST printer support
 - parser tests
 
-### Milestone 2
+### Milestone 2 [done]
 
 - `BuiltinFunction` runtime object
 - builtin scope

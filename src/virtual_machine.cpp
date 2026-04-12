@@ -10,7 +10,7 @@ namespace cl
     static Value require_range_integer_arg(const CallArguments &args,
                                            uint32_t index)
     {
-        if(!args[index].is_smi())
+        if(!args[index].is_integer())
         {
             throw std::runtime_error(
                 "TypeError: range() arguments must be integers");

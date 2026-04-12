@@ -134,6 +134,8 @@ namespace cl
 
         bool is_smi() const { return (as.integer & value_tag_mask) == 0; }
 
+        bool is_integer() const { return is_smi(); }
+
         bool is_ptr() const { return (as.integer & value_ptr_mask) != 0; }
 
         bool is_refcounted_ptr() const
