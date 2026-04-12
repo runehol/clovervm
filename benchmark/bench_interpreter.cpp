@@ -5,6 +5,7 @@
 #include "thread_state.h"
 #include "value.h"
 #include "virtual_machine.h"
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -15,7 +16,9 @@
 #include <string>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <type_traits>
 #include <unistd.h>
+#include <unordered_map>
 
 namespace
 {
@@ -301,11 +304,19 @@ namespace
         state.SetItemsProcessed(state.iterations() * items_per_iteration);
     }
 
-    void run_python_benchmark_case(benchmark::State &state,
-                                   const char *relative_path, int64_t n,
-                                   int64_t expected,
-                                   int64_t items_per_iteration)
+    double measure_python_items_per_second(const char *relative_path, int64_t n,
+                                           int64_t expected,
+                                           int64_t items_per_iteration)
     {
+        static std::unordered_map<std::string, double> cache;
+
+        std::string key = std::string(relative_path) + "#" + std::to_string(n);
+        auto it = cache.find(key);
+        if(it != cache.end())
+        {
+            return it->second;
+        }
+
         PythonSubprocess program(relative_path, n);
         if(program.run() != expected)
         {
@@ -314,7 +325,9 @@ namespace
 
         const int64_t batch_size =
             std::max<int64_t>(1, 1000000 / items_per_iteration);
-        for(auto _: state)
+        int64_t total_items = 0;
+        double total_seconds = 0.0;
+        while(total_seconds < 0.1)
         {
             auto [result, elapsed_seconds] = program.run_batch(batch_size);
             if(result != expected)
@@ -322,11 +335,53 @@ namespace
                 throw std::runtime_error(
                     "benchmark produced unexpected result");
             }
-            state.SetIterationTime(elapsed_seconds);
+            total_items += batch_size * items_per_iteration;
+            total_seconds += elapsed_seconds;
         }
 
-        state.SetItemsProcessed(state.iterations() * items_per_iteration *
-                                batch_size);
+        double throughput = total_items / total_seconds;
+        cache.emplace(key, throughput);
+        return throughput;
+    }
+
+    double measure_clover_items_per_second(const char *relative_path, int64_t n,
+                                           int64_t expected,
+                                           int64_t items_per_iteration)
+    {
+        static std::unordered_map<std::string, double> cache;
+
+        std::string key = std::string(relative_path) + "#" + std::to_string(n);
+        auto it = cache.find(key);
+        if(it != cache.end())
+        {
+            return it->second;
+        }
+
+        CloverProgram program(relative_path, n);
+        if(program.run() != expected)
+        {
+            throw std::runtime_error("benchmark produced unexpected result");
+        }
+
+        int64_t total_items = 0;
+        auto start = std::chrono::steady_clock::now();
+        auto now = start;
+        while(std::chrono::duration<double>(now - start).count() < 0.1)
+        {
+            if(program.run() != expected)
+            {
+                throw std::runtime_error(
+                    "benchmark produced unexpected result");
+            }
+            total_items += items_per_iteration;
+            now = std::chrono::steady_clock::now();
+        }
+
+        double total_seconds =
+            std::chrono::duration<double>(now - start).count();
+        double throughput = total_items / total_seconds;
+        cache.emplace(key, throughput);
+        return throughput;
     }
 
     int64_t sum_of_products(int64_t n, int64_t inner_iterations)
@@ -349,19 +404,21 @@ static void BM_RecursiveFibonacci(benchmark::State &state)
     const int64_t n = state.range(0);
     run_benchmark_case<Program>(state, "benchmark/interpreter_recursive_fib.py",
                                 n, fibonacci_value(n), fibonacci_call_count(n));
+    if constexpr(std::is_same_v<Program, CloverProgram>)
+    {
+        state.counters["vs_cpython"] =
+            measure_clover_items_per_second(
+                "benchmark/interpreter_recursive_fib.py", n, fibonacci_value(n),
+                fibonacci_call_count(n)) /
+            measure_python_items_per_second(
+                "benchmark/interpreter_recursive_fib.py", n, fibonacci_value(n),
+                fibonacci_call_count(n));
+    }
 }
 BENCHMARK_TEMPLATE(BM_RecursiveFibonacci, CloverProgram)
     ->Name("BM_RecursiveFibonacci_CloverVM")
     ->Arg(20)
     ->Arg(25);
-
-static void BM_RecursiveFibonacci_CPython(benchmark::State &state)
-{
-    const int64_t n = state.range(0);
-    run_python_benchmark_case(state, "benchmark/interpreter_recursive_fib.py",
-                              n, fibonacci_value(n), fibonacci_call_count(n));
-}
-BENCHMARK(BM_RecursiveFibonacci_CPython)->UseManualTime()->Arg(20)->Arg(25);
 
 template <typename Program> static void BM_WhileLoop(benchmark::State &state)
 {
@@ -369,22 +426,19 @@ template <typename Program> static void BM_WhileLoop(benchmark::State &state)
     run_benchmark_case<Program>(state, "benchmark/interpreter_while_loop.py",
                                 iterations, triangular_number(iterations),
                                 iterations);
+    if constexpr(std::is_same_v<Program, CloverProgram>)
+    {
+        state.counters["vs_cpython"] =
+            measure_clover_items_per_second(
+                "benchmark/interpreter_while_loop.py", iterations,
+                triangular_number(iterations), iterations) /
+            measure_python_items_per_second(
+                "benchmark/interpreter_while_loop.py", iterations,
+                triangular_number(iterations), iterations);
+    }
 }
 BENCHMARK_TEMPLATE(BM_WhileLoop, CloverProgram)
     ->Name("BM_WhileLoop_CloverVM")
-    ->Arg(1000)
-    ->Arg(10000)
-    ->Arg(100000);
-
-static void BM_WhileLoop_CPython(benchmark::State &state)
-{
-    const int64_t iterations = state.range(0);
-    run_python_benchmark_case(state, "benchmark/interpreter_while_loop.py",
-                              iterations, triangular_number(iterations),
-                              iterations);
-}
-BENCHMARK(BM_WhileLoop_CPython)
-    ->UseManualTime()
     ->Arg(1000)
     ->Arg(10000)
     ->Arg(100000);
@@ -395,22 +449,19 @@ template <typename Program> static void BM_ForLoop(benchmark::State &state)
     run_benchmark_case<Program>(state, "benchmark/interpreter_for_loop.py",
                                 iterations, triangular_number(iterations),
                                 iterations);
+    if constexpr(std::is_same_v<Program, CloverProgram>)
+    {
+        state.counters["vs_cpython"] =
+            measure_clover_items_per_second(
+                "benchmark/interpreter_for_loop.py", iterations,
+                triangular_number(iterations), iterations) /
+            measure_python_items_per_second(
+                "benchmark/interpreter_for_loop.py", iterations,
+                triangular_number(iterations), iterations);
+    }
 }
 BENCHMARK_TEMPLATE(BM_ForLoop, CloverProgram)
     ->Name("BM_ForLoop_CloverVM")
-    ->Arg(1000)
-    ->Arg(10000)
-    ->Arg(100000);
-
-static void BM_ForLoop_CPython(benchmark::State &state)
-{
-    const int64_t iterations = state.range(0);
-    run_python_benchmark_case(state, "benchmark/interpreter_for_loop.py",
-                              iterations, triangular_number(iterations),
-                              iterations);
-}
-BENCHMARK(BM_ForLoop_CPython)
-    ->UseManualTime()
     ->Arg(1000)
     ->Arg(10000)
     ->Arg(100000);
@@ -424,24 +475,21 @@ static void BM_NestedForLoop(benchmark::State &state)
         state, "benchmark/interpreter_nested_for_loop.py", iterations,
         sum_of_products(iterations, kInnerIterations),
         iterations * kInnerIterations);
+    if constexpr(std::is_same_v<Program, CloverProgram>)
+    {
+        state.counters["vs_cpython"] =
+            measure_clover_items_per_second(
+                "benchmark/interpreter_nested_for_loop.py", iterations,
+                sum_of_products(iterations, kInnerIterations),
+                iterations * kInnerIterations) /
+            measure_python_items_per_second(
+                "benchmark/interpreter_nested_for_loop.py", iterations,
+                sum_of_products(iterations, kInnerIterations),
+                iterations * kInnerIterations);
+    }
 }
 BENCHMARK_TEMPLATE(BM_NestedForLoop, CloverProgram)
     ->Name("BM_NestedForLoop_CloverVM")
-    ->Arg(1000)
-    ->Arg(10000)
-    ->Arg(100000);
-
-static void BM_NestedForLoop_CPython(benchmark::State &state)
-{
-    const int64_t iterations = state.range(0);
-    static constexpr int64_t kInnerIterations = 10;
-    run_python_benchmark_case(state, "benchmark/interpreter_nested_for_loop.py",
-                              iterations,
-                              sum_of_products(iterations, kInnerIterations),
-                              iterations * kInnerIterations);
-}
-BENCHMARK(BM_NestedForLoop_CPython)
-    ->UseManualTime()
     ->Arg(1000)
     ->Arg(10000)
     ->Arg(100000);
