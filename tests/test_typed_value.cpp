@@ -44,7 +44,7 @@ TEST(TValue, UnsafeUncheckedRoundTripsRawValue)
 
     TValue<String> typed_string = TValue<String>::unsafe_unchecked(raw);
 
-    EXPECT_EQ(raw, typed_string.raw());
+    EXPECT_EQ(raw, typed_string.as_value());
     EXPECT_EQ(string, typed_string.get());
 }
 
@@ -64,7 +64,7 @@ TEST(TValue, ClIntAcceptsCurrentIntegerRepresentation)
 {
     TValue<CLInt> integer(Value::from_smi(42));
 
-    EXPECT_EQ(Value::from_smi(42), integer.raw());
+    EXPECT_EQ(Value::from_smi(42), integer.as_value());
 }
 
 TEST(OwnedTValue, RetainsAndExposesTypedPointers)
@@ -77,8 +77,8 @@ TEST(OwnedTValue, RetainsAndExposesTypedPointers)
 
     OwnedTValue<String> owned_string(Value::from_oop(string));
     EXPECT_EQ(1, string->refcount);
-    EXPECT_EQ(string, owned_string.get().get());
-    EXPECT_STREQ(L"owned", owned_string.get().get()->data);
+    EXPECT_EQ(string, owned_string.get());
+    EXPECT_STREQ(L"owned", owned_string.get()->data);
 
     Value released = owned_string.release();
     EXPECT_EQ(Value::from_oop(string), released);
@@ -94,7 +94,7 @@ TEST(OwnedTValue, SmiActsAsOwnedHandleWithoutRefcounting)
 {
     OwnedTValue<SMI> owned_smi(Value::from_smi(42));
 
-    EXPECT_EQ(42, owned_smi.get().get());
+    EXPECT_EQ(42, owned_smi.get());
 
     Value released = owned_smi.release();
     EXPECT_EQ(Value::from_smi(42), released);
@@ -105,7 +105,7 @@ TEST(OwnedTValue, ClIntActsAsOwnedIntegerHandle)
 {
     OwnedTValue<CLInt> owned_integer(Value::from_smi(42));
 
-    EXPECT_EQ(Value::from_smi(42), Value(owned_integer.get()));
+    EXPECT_EQ(Value::from_smi(42), owned_integer.as_value());
 
     Value released = owned_integer.release();
     EXPECT_EQ(Value::from_smi(42), released);

@@ -119,7 +119,7 @@ namespace cl
             return ValueTypeTraits<U>::get_unchecked(value_);
         }
 
-        Value raw() const { return value_; }
+        Value as_value() const { return value_; }
         operator Value() const { return value_; }
 
         bool operator==(TValue other) const { return value_ == other.value_; }
@@ -134,6 +134,10 @@ namespace cl
     template <typename T> struct OwnedHandleTraits<TValue<T>>
     {
         static TValue<T> from_raw(Value value) { return TValue<T>(value); }
+        static TValue<T> from_raw_unchecked(Value value)
+        {
+            return TValue<T>::unsafe_unchecked(value);
+        }
         static Value to_raw(TValue<T> value) { return Value(value); }
         static constexpr RefcountPolicy refcount_policy =
             ValueTypeTraits<T>::refcount_policy;

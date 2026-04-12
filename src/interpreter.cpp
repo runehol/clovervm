@@ -577,7 +577,7 @@ namespace cl
         START(2);
         uint8_t const_offset = pc[1];
         TValue<CodeObject> code_obj(
-            code_object->constant_table[const_offset].get());
+            code_object->constant_table[const_offset].as_value());
 
         accumulator =
             ThreadState::get_active()->make_refcounted_value<Function>(

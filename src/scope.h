@@ -24,9 +24,9 @@ namespace cl
 
         void set_extra(Value _extra) { extra = _extra; }
 
-        Value get_value() const { return value.get(); }
+        Value get_value() const { return value.as_value(); }
 
-        Value get_extra() const { return extra.get(); }
+        Value get_extra() const { return extra.as_value(); }
 
     private:
         OwnedValue value;
@@ -114,7 +114,7 @@ namespace cl
     private:
         Scope *get_parent_scope_ptr() const
         {
-            return parent_scope.get().get_ptr<Scope>();
+            return parent_scope.as_value().get_ptr<Scope>();
         }
 
         MemberValue parent_scope;

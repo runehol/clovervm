@@ -19,3 +19,8 @@ This repository contains clovervm, a Python VM.
 - Name include guards consistently. Follow the existing repository convention, e.g. `CL_SLAB_ALLOCATOR_H`.
 - For fixed-width integer and size types, include `<cstdint>` or `<cstdlib>`/`<cstddef>` as needed and use unqualified names like `int64_t` and `size_t`.
 - Prefer small non-virtual accessor definitions in headers so they are easy to inline.
+
+# Ownership semantics
+- Value and TValue<T> holds a borrowed untyped or typed value. It can be used for C++ parameters or for variables that are handled elsewhere by the garbage collector.
+- MemberValue and MemberTValue<T> holds a value which has struct member ownership - that is, we leave a refcount of 1 for the garbage collector. It should be used for all cl type members.
+- OwnedValue and OwnedTValue<T> holds a value with full refcounting. it should be used for local variables in C++ that need to retain ownership.

@@ -491,7 +491,7 @@ template <> struct fmt::formatter<cl::CodeObject>
         for(uint32_t cidx = 0; cidx < code_obj.constant_table.size(); ++cidx)
         {
             format_to(out, "Constant {}: ", cidx);
-            cl::Value c = code_obj.constant_table[cidx].get();
+            cl::Value c = code_obj.constant_table[cidx].as_value();
             if(c.is_smi())
             {
                 format_to(out, "{}", c.get_smi());

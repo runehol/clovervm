@@ -199,7 +199,7 @@ namespace cl
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
             bool rhs_is_small_number =
                 av.kinds[children[1]] == NumericalConstant &&
-                av.constants[children[1]].get().is_smi8();
+                av.constants[children[1]].as_value().is_smi8();
             bool use_binary_acc_smi =
                 entry.binary_acc_smi != Bytecode::Invalid &&
                 rhs_is_small_number;
@@ -207,7 +207,8 @@ namespace cl
             if(kind.operator_kind == AstOperatorKind::LEFTSHIFT &&
                use_binary_acc_smi)
             {
-                int64_t shift_count = av.constants[children[1]].get().get_smi();
+                int64_t shift_count =
+                    av.constants[children[1]].as_value().get_smi();
                 use_binary_acc_smi = shift_count >= 0 && shift_count < 64;
             }
 
@@ -216,7 +217,7 @@ namespace cl
                 codegen_node(children[0], mode);
                 code_obj->emit_opcode_smi(
                     source_offset, entry.binary_acc_smi,
-                    av.constants[children[1]].get().get_smi());
+                    av.constants[children[1]].as_value().get_smi());
             }
             else
             {
@@ -653,7 +654,8 @@ namespace cl
 
                             case AstOperatorKind::NUMBER:
                                 {
-                                    Value val = av.constants[node_idx].get();
+                                    Value val =
+                                        av.constants[node_idx].as_value();
                                     if(val.is_smi8())
                                     {
                                         code_obj->emit_opcode_smi(

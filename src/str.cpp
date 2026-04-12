@@ -10,7 +10,7 @@ namespace cl
     uint64_t string_hash(TValue<String> s)
     {
         String *str = s.get();
-        uint64_t len = str->count.get().get();
+        uint64_t len = str->count.get();
 
         cl_wchar *c = &str->data[0];
         uint64_t hash = 5381;
@@ -31,10 +31,11 @@ namespace cl
     bool string_eq(TValue<String> a, TValue<String> b)
     {
         // value equality -> true
-        if(a.raw().as.integer == b.raw().as.integer)
+        if(a.as_value().as.integer == b.as_value().as.integer)
             return true;
 
-        if(!a.raw().is_refcounted_ptr() || !b.raw().is_refcounted_ptr())
+        if(!a.as_value().is_refcounted_ptr() ||
+           !b.as_value().is_refcounted_ptr())
             return false;
 
         const String *sa = a.get();
@@ -43,7 +44,7 @@ namespace cl
         if(sa->count != sb->count)
             return false;
 
-        uint64_t len = sa->count.get().get();
+        uint64_t len = sa->count.get();
 
         for(uint64_t i = 0; i < len; ++i)
         {

@@ -20,6 +20,7 @@ namespace cl
     template <> struct OwnedHandleTraits<Value>
     {
         static Value from_raw(Value value) { return value; }
+        static Value from_raw_unchecked(Value value) { return value; }
         static Value to_raw(Value value) { return value; }
         static constexpr RefcountPolicy refcount_policy = RefcountPolicy::Maybe;
     };
@@ -146,17 +147,22 @@ namespace cl
             return *this;
         }
 
-        Handle get() const
+        template <typename H = Handle,
+                  typename Inner = decltype(std::declval<H>().get()),
+                  typename = std::enable_if_t<!std::is_same_v<H, Value>>>
+        Inner get() const
         {
-            return OwnedHandleTraits<Handle>::from_raw(value_);
+            return OwnedHandleTraits<Handle>::from_raw_unchecked(value_).get();
         }
+
+        Value as_value() const { return value_; }
         operator Value() const { return value_; }
 
         template <typename H = Handle,
                   typename = std::enable_if_t<!std::is_same_v<H, Value>>>
         operator Handle() const
         {
-            return get();
+            return OwnedHandleTraits<Handle>::from_raw_unchecked(value_);
         }
 
         template <typename T = Object> T *get_ptr() const
@@ -267,17 +273,22 @@ namespace cl
             return *this;
         }
 
-        Handle get() const
+        template <typename H = Handle,
+                  typename Inner = decltype(std::declval<H>().get()),
+                  typename = std::enable_if_t<!std::is_same_v<H, Value>>>
+        Inner get() const
         {
-            return OwnedHandleTraits<Handle>::from_raw(value_);
+            return OwnedHandleTraits<Handle>::from_raw_unchecked(value_).get();
         }
+
+        Value as_value() const { return value_; }
         operator Value() const { return value_; }
 
         template <typename H = Handle,
                   typename = std::enable_if_t<!std::is_same_v<H, Value>>>
         operator Handle() const
         {
-            return get();
+            return OwnedHandleTraits<Handle>::from_raw_unchecked(value_);
         }
 
         template <typename T = Object> T *get_ptr() const

@@ -91,7 +91,7 @@ namespace cl
         // and then just insert all the keys again
         for(int32_t idx = 0; idx < int32_t(keys.size()); ++idx)
         {
-            if(!keys[idx].get().is_not_present())
+            if(!keys[idx].as_value().is_not_present())
             {
                 int32_t *entry =
                     find_entry(TValue<String>::unsafe_unchecked(keys[idx]));
