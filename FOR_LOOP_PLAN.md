@@ -236,7 +236,7 @@ Status:
   and [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp);
   these should be removed once step 6 adds end-to-end `for`-loop lowering
 
-### 6. Lower `for` loops in codegen
+### 6. Lower `for` loops in codegen [done]
 
 Files:
 
@@ -253,6 +253,22 @@ Suggested lowering shape:
 
 1. Evaluate iterable expression.
 2. Emit `GetIter`.
+3. Store the iterator in a temporary register.
+4. Emit `ForIter <iter-reg>, <else-target>`.
+5. Assign the yielded value to the loop target and run the body.
+6. Jump back to the `ForIter` site on `continue`/fallthrough.
+7. Resolve `break` past the optional `else`.
+
+Status:
+
+- Implemented in [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp)
+- `STATEMENT_FOR` now lowers through the generic `GetIter`/`ForIter` path
+- `break`, `continue`, and loop `else` reuse the existing `loop_targets`
+  mechanism, matching `while` loop control-flow behavior
+- Temporary manual iterator-bytecode tests were removed and replaced with
+  end-to-end `for` loop coverage in
+  [tests/test_codegen.cpp](/Users/runehol/projects/clovervm/tests/test_codegen.cpp)
+  and [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp)
 3. Store iterator in a temporary register.
 4. Mark loop-head target.
 5. Emit `ForIter`, jumping to the loop-else or done target on exhaustion.

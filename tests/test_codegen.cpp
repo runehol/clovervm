@@ -179,30 +179,32 @@ TEST(Codegen, string_literal_constant_value)
     EXPECT_STREQ(L"abc", string_as_wchar_t(code_obj->constant_table[0]));
 }
 
-TEST(Codegen, iterator_bytecodes_print)
+TEST(Codegen, for_loop_lowers_through_generic_iterator_bytecodes)
 {
-    test::VmTestContext test_context;
-    ThreadState *thread = test_context.thread();
-    Value module_scope =
-        Value::from_oop(new(thread->allocate_refcounted(sizeof(Scope)))
-                            Scope(test_context.vm().get_builtin_scope()));
-    Value local_scope = Value::None();
-    CodeObject *code_obj = new(thread->allocate_refcounted(sizeof(CodeObject)))
-        CodeObject(nullptr, module_scope, local_scope);
-    code_obj->n_temporaries = 1;
-
-    JumpTarget done_target(code_obj);
-    code_obj->emit_opcode(0, Bytecode::GetIter);
-    code_obj->emit_opcode_reg_jump(0, Bytecode::ForIter, FrameHeaderSize,
-                                   done_target);
-    code_obj->emit_opcode(0, Bytecode::Halt);
-    done_target.resolve();
-
     std::string expected = "Code object:\n"
-                           "    0 GetIter\n"
-                           "    1 ForIter r0, 6\n"
-                           "    5 Halt\n";
-    std::string actual = fmt::to_string(*code_obj);
+                           "    0 LdaSmi 0\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 LdaGlobal [2]\n"
+                           "   12 Star1\n"
+                           "   13 LdaSmi 3\n"
+                           "   15 Star2\n"
+                           "   16 CallSimple r1, r2\n"
+                           "   19 GetIter\n"
+                           "   20 Star0\n"
+                           "   21 ForIter r0, 51\n"
+                           "   25 StaGlobal [1]\n"
+                           "   30 LdaGlobal [0]\n"
+                           "   35 Star1\n"
+                           "   36 LdaGlobal [1]\n"
+                           "   41 Add r1\n"
+                           "   43 StaGlobal [0]\n"
+                           "   48 Jump 21\n"
+                           "   51 LdaGlobal [0]\n"
+                           "   56 Halt\n";
+    std::string actual = bytecode_str_from_file(L"total = 0\n"
+                                                "for x in range(3):\n"
+                                                "    total += x\n"
+                                                "total\n");
 
     EXPECT_EQ(expected, actual);
 }

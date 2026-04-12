@@ -637,7 +637,48 @@ namespace cl
                     }
 
                 case AstNodeKind::STATEMENT_FOR:
-                    throw std::runtime_error("for loops not implemented");
+                    {
+                        int32_t target_idx = children[0];
+                        int32_t iterable_idx = children[1];
+                        int32_t body_idx = children[2];
+                        int32_t else_idx =
+                            children.size() == 4 ? children[3] : -1;
+                        uint32_t target_slot = prepare_variable_assignment(
+                            av.constants[target_idx], mode);
+                        TemporaryReg iterator_reg(this);
+                        JumpTarget loop_start_target(code_obj);
+                        JumpTarget else_target(code_obj);
+                        JumpTarget break_target(code_obj);
+                        JumpTarget continue_target(code_obj);
+
+                        codegen_node(iterable_idx, mode);
+                        code_obj->emit_opcode(source_offset, Bytecode::GetIter);
+                        code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                                  iterator_reg);
+
+                        loop_start_target.resolve();
+                        code_obj->emit_opcode_reg_jump(
+                            source_offset, Bytecode::ForIter, iterator_reg,
+                            else_target);
+                        perform_variable_assignment(source_offset, target_slot,
+                                                    mode);
+
+                        loop_targets.emplace_back(&break_target,
+                                                  &continue_target);
+                        codegen_node(body_idx, mode);
+                        loop_targets.pop_back();
+
+                        continue_target.resolve();
+                        code_obj->emit_jump(source_offset, Bytecode::Jump,
+                                            loop_start_target);
+                        else_target.resolve();
+                        if(else_idx >= 0)
+                        {
+                            codegen_node(else_idx, mode);
+                        }
+                        break_target.resolve();
+                        break;
+                    }
 
                 case AstNodeKind::STATEMENT_BREAK:
                     if(loop_targets.empty())
