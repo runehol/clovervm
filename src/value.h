@@ -1,14 +1,13 @@
 #ifndef CL_VALUE_H
 #define CL_VALUE_H
 
+#include "object.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 
 namespace cl
 {
-    struct Object;
-
 /*
   A cl_value is a 64-bit generic cell to hold any value. It holds some of them
   inline, and some of them indirect.

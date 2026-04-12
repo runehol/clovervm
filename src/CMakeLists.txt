@@ -38,6 +38,7 @@ add_library(libclovervm STATIC
     str.h
     thread_state.cpp
     thread_state.h
+    typed_value.h
     tokenizer.cpp
     value.h
 )

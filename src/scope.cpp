@@ -16,7 +16,7 @@ namespace cl
         if(slot_idx >= int32_t(slots.size()))
         {
             assert(slot_idx == int32_t(slots.size()));
-            slots.push_back(Value::not_present(-1));
+            slots.emplace_back(Value::not_present(-1));
         }
         return slot_idx;
     }
@@ -38,7 +38,7 @@ namespace cl
                 parent_idx =
                     get_parent_scope_ptr()->register_slot_index_for_read(key);
             }
-            slots.push_back(Value::not_present(parent_idx));
+            slots.emplace_back(Value::not_present(parent_idx));
         }
         return slot_idx;
     }
@@ -68,7 +68,7 @@ namespace cl
         if(slot_idx >= int32_t(slots.size()))
         {
             assert(slot_idx == int32_t(slots.size()));
-            slots.push_back(Value::not_present());
+            slots.emplace_back(Value::not_present());
         }
         set_by_slot_index(slot_idx, val);
     }
@@ -79,7 +79,7 @@ namespace cl
         indirect_dict.reserve_empty_slots(n_slots);
         for(size_t i = 0; i < n_slots; ++i)
         {
-            slots.push_back(Value::not_present());
+            slots.emplace_back(Value::not_present());
         }
     }
 
