@@ -52,6 +52,12 @@ tracks the most reasonable next steps after reviewing the current codebase,
   5. remaining statements such as `import`, `class`, and `with`
   Where: parser, codegen, interpreter, and focused interpreter-first tests.
 
+- [ ] For loops and iterator protocol. We need to implement the iterator
+  protocol properly once we've landed an object model and exceptions. Also note
+  that currently range() returns a RangeIterator. That's not actually right - it
+  should return a Range, and calling iter() on that should return a RangeIterator.
+
+
 ## Data structures and object model
 
 - [ ] Stage the hidden-class object model described in `doc/object-model-plan.md`.
