@@ -188,6 +188,10 @@ template <> struct fmt::formatter<cl::Bytecode>
 
             case cl::Bytecode::CallSimple:
                 return format_to(out, "CallSimple");
+            case cl::Bytecode::GetIter:
+                return format_to(out, "GetIter");
+            case cl::Bytecode::ForIter:
+                return format_to(out, "ForIter");
 
             case cl::Bytecode::CreateFunction:
                 return format_to(out, "CreateFunction");
@@ -418,6 +422,17 @@ template <> struct fmt::formatter<cl::CodeObject>
                         }
                     }
                 }
+                break;
+
+            case cl::Bytecode::GetIter:
+                break;
+
+            case cl::Bytecode::ForIter:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_jump_target(code_obj, out, pc);
+                pc += 2;
                 break;
 
             case cl::Bytecode::CreateFunction:

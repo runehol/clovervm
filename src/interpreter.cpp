@@ -4,6 +4,7 @@
 #include "code_object.h"
 #include "code_object_print.h"
 #include "function.h"
+#include "range_iterator.h"
 #include "thread_state.h"
 #include "value.h"
 #include <fmt/core.h>
@@ -92,6 +93,16 @@ namespace cl
     NOINLINE Value wrong_arity_error(PARAMS)
     {
         throw std::runtime_error("TypeError: wrong number of arguments");
+    }
+
+    NOINLINE Value not_iterable_error(PARAMS)
+    {
+        throw std::runtime_error("TypeError: object is not iterable");
+    }
+
+    NOINLINE Value not_iterator_error(PARAMS)
+    {
+        throw std::runtime_error("TypeError: object is not an iterator");
     }
 
     NOINLINE static Value slow_path(PARAMS)
@@ -666,6 +677,76 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_get_iter(PARAMS)
+    {
+        START(1);
+        if(unlikely(!accumulator.is_ptr()))
+        {
+            MUSTTAIL return not_iterable_error(ARGS);
+        }
+
+        if(unlikely(accumulator.get_ptr()->klass != &RangeIterator::klass))
+        {
+            MUSTTAIL return not_iterable_error(ARGS);
+        }
+
+        COMPLETE();
+    }
+
+    static Value op_for_iter(PARAMS)
+    {
+        int8_t reg = pc[1];
+        int16_t rel_target = read_int16_le(&pc[2]);
+        Value iterator_value = fp[reg];
+
+        if(unlikely(!iterator_value.is_ptr() ||
+                    iterator_value.get_ptr()->klass != &RangeIterator::klass))
+        {
+            MUSTTAIL return not_iterator_error(ARGS);
+        }
+
+        RangeIterator *iterator = iterator_value.get_ptr<RangeIterator>();
+        Value current = iterator->current;
+        Value stop = iterator->stop;
+        Value step = iterator->step;
+
+        if(unlikely(!current.is_smi() || !stop.is_smi() || !step.is_smi()))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        int64_t current_smi = current.get_smi();
+        int64_t stop_smi = stop.get_smi();
+        int64_t step_smi = step.get_smi();
+
+        if(unlikely(step_smi == 0))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        bool exhausted =
+            step_smi > 0 ? current_smi >= stop_smi : current_smi <= stop_smi;
+        pc += 4;
+        if(exhausted)
+        {
+            pc += rel_target;
+        }
+        else
+        {
+            int64_t next_smi = 0;
+            if(unlikely(
+                   __builtin_saddll_overflow(current_smi, step_smi, &next_smi)))
+            {
+                MUSTTAIL return overflow_path(ARGS);
+            }
+            accumulator = current;
+            iterator->current = Value::from_smi(next_smi);
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
     static Value op_return(PARAMS)
     {
         pc = (const uint8_t *)fp[-2].as.ptr;
@@ -728,6 +809,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);
 
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
+        SET_TABLE_ENTRY(Bytecode::GetIter, op_get_iter);
+        SET_TABLE_ENTRY(Bytecode::ForIter, op_for_iter);
 
         SET_TABLE_ENTRY(Bytecode::Jump, op_jump);
         SET_TABLE_ENTRY(Bytecode::JumpIfTrue, op_jump_if_true);

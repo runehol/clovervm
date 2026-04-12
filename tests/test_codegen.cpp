@@ -178,3 +178,31 @@ TEST(Codegen, string_literal_constant_value)
     ASSERT_EQ(size_t(1), code_obj->constant_table.size());
     EXPECT_STREQ(L"abc", string_as_wchar_t(code_obj->constant_table[0]));
 }
+
+TEST(Codegen, iterator_bytecodes_print)
+{
+    test::VmTestContext test_context;
+    ThreadState *thread = test_context.thread();
+    Value module_scope =
+        Value::from_oop(new(thread->allocate_refcounted(sizeof(Scope)))
+                            Scope(test_context.vm().get_builtin_scope()));
+    Value local_scope = Value::None();
+    CodeObject *code_obj = new(thread->allocate_refcounted(sizeof(CodeObject)))
+        CodeObject(nullptr, module_scope, local_scope);
+    code_obj->n_temporaries = 1;
+
+    JumpTarget done_target(code_obj);
+    code_obj->emit_opcode(0, Bytecode::GetIter);
+    code_obj->emit_opcode_reg_jump(0, Bytecode::ForIter, FrameHeaderSize,
+                                   done_target);
+    code_obj->emit_opcode(0, Bytecode::Halt);
+    done_target.resolve();
+
+    std::string expected = "Code object:\n"
+                           "    0 GetIter\n"
+                           "    1 ForIter r0, 6\n"
+                           "    5 Halt\n";
+    std::string actual = fmt::to_string(*code_obj);
+
+    EXPECT_EQ(expected, actual);
+}

@@ -151,6 +151,20 @@ namespace cl
             return result;
         }
 
+        uint32_t emit_opcode_reg_jump(uint32_t source_offset, Bytecode c,
+                                      uint32_t reg, JumpTarget &target)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            emplace_back(source_offset, encode_reg(reg));
+            uint32_t pos = code.size();
+            emplace_back(source_offset, 0);
+            emplace_back(source_offset, 0);
+            target.add_relocation(pos);
+
+            return result;
+        }
+
         uint32_t emit_opcode_uint32(uint32_t source_offset, Bytecode c,
                                     uint32_t k)
         {

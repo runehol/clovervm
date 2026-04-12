@@ -76,6 +76,60 @@ static void expect_range_iterator(Value actual, int64_t expected_current,
     EXPECT_EQ(Value::from_smi(expected_step), iterator->step);
 }
 
+static CodeObject *
+make_iterator_sum_code_object(test::VmTestContext &test_context,
+                              std::initializer_list<int8_t> range_args)
+{
+    ThreadState *thread = test_context.thread();
+    Value module_scope =
+        Value::from_oop(new(thread->allocate_refcounted(sizeof(Scope)))
+                            Scope(test_context.vm().get_builtin_scope()));
+    Value range_name =
+        test_context.vm().get_or_create_interned_string(L"range");
+    int32_t range_slot =
+        module_scope.get_ptr<Scope>()->register_slot_index_for_read(range_name);
+
+    CodeObject *code_obj = new(thread->allocate_refcounted(sizeof(CodeObject)))
+        CodeObject(nullptr, module_scope, Value::None());
+    code_obj->n_temporaries = 4;
+
+    code_obj->emit_opcode_uint32(0, Bytecode::LdaGlobal, range_slot);
+    code_obj->emit_opcode_reg(0, Bytecode::Star, FrameHeaderSize + 0);
+
+    uint32_t arg_reg = FrameHeaderSize + 1;
+    for(int8_t arg: range_args)
+    {
+        code_obj->emit_opcode_smi(0, Bytecode::LdaSmi, arg);
+        code_obj->emit_opcode_reg(0, Bytecode::Star, arg_reg++);
+    }
+
+    code_obj->emit_opcode_reg_range(0, Bytecode::CallSimple, FrameHeaderSize,
+                                    static_cast<uint8_t>(range_args.size()));
+    code_obj->emit_opcode(0, Bytecode::GetIter);
+    code_obj->emit_opcode_reg(0, Bytecode::Star, FrameHeaderSize + 0);
+
+    code_obj->emit_opcode_smi(0, Bytecode::LdaSmi, 0);
+    code_obj->emit_opcode_reg(0, Bytecode::Star, FrameHeaderSize + 1);
+
+    JumpTarget loop_target(code_obj);
+    JumpTarget done_target(code_obj);
+    loop_target.resolve();
+
+    code_obj->emit_opcode_reg_jump(0, Bytecode::ForIter, FrameHeaderSize + 0,
+                                   done_target);
+    code_obj->emit_opcode_reg(0, Bytecode::Star, FrameHeaderSize + 2);
+    code_obj->emit_opcode_reg(0, Bytecode::Ldar, FrameHeaderSize + 1);
+    code_obj->emit_opcode_reg(0, Bytecode::Add, FrameHeaderSize + 2);
+    code_obj->emit_opcode_reg(0, Bytecode::Star, FrameHeaderSize + 1);
+    code_obj->emit_jump(0, Bytecode::Jump, loop_target);
+
+    done_target.resolve();
+    code_obj->emit_opcode_reg(0, Bytecode::Ldar, FrameHeaderSize + 1);
+    code_obj->emit_opcode(0, Bytecode::Halt);
+
+    return code_obj;
+}
+
 TEST(Interpreter, simple)
 {
     Value expected = Value::from_smi(15);
@@ -336,6 +390,25 @@ TEST(Interpreter, range_builtin_three_arguments_returns_range_iterator)
     expect_range_iterator(actual, 2, 9, 3);
 }
 
+TEST(Interpreter, iterator_bytecodes_iterate_range)
+{
+    test::VmTestContext test_context;
+    CodeObject *code_obj = make_iterator_sum_code_object(test_context, {5});
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(10), actual);
+}
+
+TEST(Interpreter, iterator_bytecodes_iterate_negative_step_range)
+{
+    test::VmTestContext test_context;
+    CodeObject *code_obj =
+        make_iterator_sum_code_object(test_context, {5, -1, -2});
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(9), actual);
+}
+
 TEST(Interpreter, module_scope_can_shadow_builtin_scope)
 {
     Value actual = run_file(L"range = 42\n"
@@ -382,6 +455,32 @@ TEST(Interpreter, range_builtin_rejects_zero_step)
 {
     expect_runtime_error(L"range(1, 2, 0)\n",
                          "ValueError: range() arg 3 must not be zero");
+}
+
+TEST(Interpreter, get_iter_rejects_non_iterable)
+{
+    test::VmTestContext test_context;
+    ThreadState *thread = test_context.thread();
+    Value module_scope =
+        Value::from_oop(new(thread->allocate_refcounted(sizeof(Scope)))
+                            Scope(test_context.vm().get_builtin_scope()));
+    CodeObject *code_obj = new(thread->allocate_refcounted(sizeof(CodeObject)))
+        CodeObject(nullptr, module_scope, Value::None());
+
+    code_obj->emit_opcode_smi(0, Bytecode::LdaSmi, 1);
+    code_obj->emit_opcode(0, Bytecode::GetIter);
+    code_obj->emit_opcode(0, Bytecode::Halt);
+
+    try
+    {
+        (void)thread->run(code_obj);
+        FAIL() << "Expected std::runtime_error with message: "
+               << "TypeError: object is not iterable";
+    }
+    catch(const std::runtime_error &err)
+    {
+        EXPECT_STREQ("TypeError: object is not iterable", err.what());
+    }
 }
 
 TEST(Interpreter, builtin_multiple_arities)

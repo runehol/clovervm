@@ -112,6 +112,10 @@ namespace cl
         // function calls
         CallSimple,
 
+        // iteration
+        GetIter,
+        ForIter,
+
         // allocations
         CreateFunction,
 
