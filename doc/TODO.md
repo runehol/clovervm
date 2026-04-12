@@ -26,13 +26,6 @@ tracks the most reasonable next steps after reviewing the current codebase,
   much easier to debug and will keep future behavior changes testable.
   Where: `src/interpreter.cpp`, `tests/test_interpreter.cpp`.
 
-- [ ] Fix up comparisons between booleans and integers so they follow Python semantics.
-  In Python, booleans are not a separate, unrelated type—they are a subclass of integers. Concretely:
-     True behaves like the integer 1
-     False behaves like the integer 0
-  This design comes from Python’s object model: bool is a subclass of int.
-  I believe == and != are currently correct, whereas <, <=, >= and > are not.
-
 ## Next language and runtime slice
 
 - [ ] Make local-slot discovery less ad hoc before adding more statement forms.
