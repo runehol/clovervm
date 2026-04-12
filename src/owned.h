@@ -6,6 +6,12 @@
 
 namespace cl
 {
+    enum class RefcountPolicy
+    {
+        Never,
+        Maybe,
+        Always
+    };
 
     template <typename Handle> struct OwnedHandleTraits;
 
@@ -13,25 +19,26 @@ namespace cl
     {
         static Value from_raw(Value value) { return value; }
         static Value to_raw(Value value) { return value; }
+        static constexpr RefcountPolicy refcount_policy = RefcountPolicy::Maybe;
     };
 
     template <typename Handle> class Owned
     {
     public:
         Owned() : value_(Value::None()) {}
-        explicit Owned(Value value) : value_(incref(validate_raw(value))) {}
+        explicit Owned(Value value) : value_(retain(validate_raw(value))) {}
 
         template <typename H = Handle,
                   typename = std::enable_if_t<!std::is_same_v<H, Value>>>
         explicit Owned(H handle)
-            : value_(incref(OwnedHandleTraits<Handle>::to_raw(handle)))
+            : value_(retain(OwnedHandleTraits<Handle>::to_raw(handle)))
         {
         }
 
-        Owned(const Owned &other) : value_(incref(other.value_)) {}
+        Owned(const Owned &other) : value_(retain(other.value_)) {}
         Owned(Owned &&other) noexcept : value_(other.release()) {}
 
-        ~Owned() { decref(value_); }
+        ~Owned() { release_ref(value_); }
 
         Owned &operator=(Value value)
         {
@@ -60,7 +67,7 @@ namespace cl
         {
             if(this != &other)
             {
-                decref(value_);
+                release_ref(value_);
                 value_ = other.release();
             }
             return *this;
@@ -90,8 +97,8 @@ namespace cl
         void reset(Value value = Value::None())
         {
             value = validate_raw(value);
-            incref(value);
-            decref(value_);
+            retain(value);
+            release_ref(value_);
             value_ = value;
         }
 
@@ -110,6 +117,51 @@ namespace cl
         }
 
     private:
+        static constexpr RefcountPolicy refcount_policy =
+            OwnedHandleTraits<Handle>::refcount_policy;
+
+        static Value retain(Value value)
+        {
+            if(value == Value::None())
+            {
+                return value;
+            }
+
+            if constexpr(refcount_policy == RefcountPolicy::Never)
+            {
+                return value;
+            }
+            else if constexpr(refcount_policy == RefcountPolicy::Always)
+            {
+                return incref_refcounted_ptr(value);
+            }
+            else
+            {
+                return incref(value);
+            }
+        }
+
+        static void release_ref(Value value)
+        {
+            if(value == Value::None())
+            {
+                return;
+            }
+
+            if constexpr(refcount_policy == RefcountPolicy::Never)
+            {
+                return;
+            }
+            else if constexpr(refcount_policy == RefcountPolicy::Always)
+            {
+                decref_refcounted_ptr(value);
+            }
+            else
+            {
+                decref(value);
+            }
+        }
+
         static Value validate_raw(Value value)
         {
             (void)OwnedHandleTraits<Handle>::from_raw(value);

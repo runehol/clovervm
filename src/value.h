@@ -55,6 +55,13 @@ namespace cl
     static constexpr uint64_t value_boolean_to_integer_mask =
         ~value_boolean_tag;
 
+    enum class ValueStorageClass
+    {
+        Inline,
+        InternedPtr,
+        RefcountedPtr
+    };
+
     struct Value
     {
         static inline Value from_smi(int64_t v)
@@ -135,11 +142,36 @@ namespace cl
 
         bool is_integer() const { return is_smi(); }
 
+        ValueStorageClass storage_class() const
+        {
+            switch(as.integer & value_ptr_mask)
+            {
+                case 0:
+                    return ValueStorageClass::Inline;
+                case value_interned_ptr_tag:
+                    return ValueStorageClass::InternedPtr;
+                case value_refcounted_ptr_tag:
+                    return ValueStorageClass::RefcountedPtr;
+                default:
+                    __builtin_unreachable();
+            }
+        }
+
+        bool is_inline() const
+        {
+            return storage_class() == ValueStorageClass::Inline;
+        }
+
         bool is_ptr() const { return (as.integer & value_ptr_mask) != 0; }
+
+        bool is_interned_ptr() const
+        {
+            return storage_class() == ValueStorageClass::InternedPtr;
+        }
 
         bool is_refcounted_ptr() const
         {
-            return (as.integer & value_ptr_mask) != 0;
+            return storage_class() == ValueStorageClass::RefcountedPtr;
         }
 
         int64_t get_smi() const

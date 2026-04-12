@@ -82,3 +82,14 @@ TEST(OwnedTValue, CheckedConstructionThrowsOnWrongType)
 {
     EXPECT_THROW((void)OwnedTValue<Scope>(Value::None()), std::runtime_error);
 }
+
+TEST(OwnedTValue, SmiActsAsOwnedHandleWithoutRefcounting)
+{
+    OwnedTValue<SMI> owned_smi(Value::from_smi(42));
+
+    EXPECT_EQ(42, owned_smi.get().get());
+
+    Value released = owned_smi.release();
+    EXPECT_EQ(Value::from_smi(42), released);
+    EXPECT_EQ(Value::None(), Value(owned_smi));
+}

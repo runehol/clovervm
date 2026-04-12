@@ -7,6 +7,13 @@
 namespace cl
 {
 
+    static inline Value incref_refcounted_ptr(Value v)
+    {
+        assert(v.is_refcounted_ptr());
+        ++v.as.ptr->refcount;
+        return v;
+    }
+
     static inline Value incref(Value v)
     {
         if(v.is_refcounted_ptr())
@@ -24,6 +31,15 @@ namespace cl
     }
 
     void add_to_active_zero_count_table(Value v);
+
+    static inline void decref_refcounted_ptr(Value v)
+    {
+        assert(v.is_refcounted_ptr());
+        if(--v.as.ptr->refcount == 0)
+        {
+            add_to_active_zero_count_table(v);
+        }
+    }
 
     static inline void decref(Value v)
     {

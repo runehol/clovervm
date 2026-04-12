@@ -30,6 +30,8 @@ namespace cl
         }
 
         using get_type = T *;
+        static constexpr RefcountPolicy refcount_policy =
+            RefcountPolicy::Always;
 
         static get_type get_unchecked(Value value)
         {
@@ -48,6 +50,7 @@ namespace cl
         }
 
         using get_type = String *;
+        static constexpr RefcountPolicy refcount_policy = RefcountPolicy::Maybe;
 
         static get_type get_unchecked(Value value)
         {
@@ -60,6 +63,7 @@ namespace cl
         static bool is_instance(Value value) { return value.is_smi(); }
 
         using get_type = int64_t;
+        static constexpr RefcountPolicy refcount_policy = RefcountPolicy::Never;
 
         static get_type get_unchecked(Value value) { return value.get_smi(); }
     };
@@ -121,6 +125,8 @@ namespace cl
     {
         static TValue<T> from_raw(Value value) { return TValue<T>(value); }
         static Value to_raw(TValue<T> value) { return Value(value); }
+        static constexpr RefcountPolicy refcount_policy =
+            ValueTypeTraits<T>::refcount_policy;
     };
 
     template <typename T> using OwnedTValue = Owned<TValue<T>>;
