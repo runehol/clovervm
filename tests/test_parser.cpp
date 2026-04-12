@@ -140,7 +140,8 @@ TEST(Parser, string_literal_stores_constant_value)
                 AstNodeKind::EXPRESSION_LITERAL);
     EXPECT_TRUE(parsed.ast.kinds[literal_idx].operator_kind ==
                 AstOperatorKind::STRING);
-    EXPECT_STREQ(L"abc", string_as_wchar_t(parsed.ast.constants[literal_idx]));
+    EXPECT_STREQ(L"abc", string_as_wchar_t(TValue<String>(
+                             parsed.ast.constants[literal_idx])));
 }
 
 TEST(Parser, def_stmt)

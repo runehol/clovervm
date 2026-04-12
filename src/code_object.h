@@ -4,6 +4,7 @@
 #include "bytecode.h"
 #include "owned.h"
 #include "scope.h"
+#include "typed_value.h"
 #include "value.h"
 #include <vector>
 
@@ -49,15 +50,15 @@ namespace cl
         static constexpr Klass klass = Klass(L"CodeObject", nullptr);
 
         CodeObject(const CompilationUnit *_compilation_unit,
-                   Value _module_scope, Value _local_scope)
+                   TValue<Scope> _module_scope, Value _local_scope)
             : Object(&klass, 1, sizeof(CodeObject) / 8),
               module_scope(_module_scope), local_scope(_local_scope),
               compilation_unit(_compilation_unit)
         {
         }
 
-        OwnedValue module_scope;
-        OwnedValue local_scope;
+        MemberTValue<Scope> module_scope;
+        MemberValue local_scope;
         const CompilationUnit *compilation_unit;
 
         uint32_t n_parameters = 0;

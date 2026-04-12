@@ -4,6 +4,7 @@
 #include "klass.h"
 #include "object.h"
 #include "owned.h"
+#include "typed_value.h"
 #include <vector>
 
 namespace cl
@@ -16,17 +17,19 @@ namespace cl
 
         IndirectDict();
 
-        int32_t insert(Value key);
-        int32_t lookup(Value key) const;
+        int32_t insert(TValue<String> key);
+        int32_t lookup(TValue<String> key) const;
 
         uint32_t size() const { return keys.size(); }
         bool empty() const { return keys.empty(); }
 
         void reserve_empty_slots(size_t n_slots);
 
-        Value get_key_by_slot_index(int32_t slot_idx) const
+        TValue<String> get_key_by_slot_index(int32_t slot_idx) const
         {
-            return keys[slot_idx];
+            Value key = keys[slot_idx];
+            assert(!key.is_not_present());
+            return TValue<String>::unsafe_unchecked(key);
         }
 
     private:
@@ -35,8 +38,8 @@ namespace cl
         constexpr static int32_t tombstone = -2;
         constexpr static int32_t not_present = -1;
 
-        const int32_t *find_entry(Value key) const;
-        int32_t *find_entry(Value key);
+        const int32_t *find_entry(TValue<String> key) const;
+        int32_t *find_entry(TValue<String> key);
 
         void grow();
 

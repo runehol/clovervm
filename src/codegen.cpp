@@ -156,7 +156,7 @@ namespace cl
         }
 
         const AstVector &av;
-        Value module_scope = Value::None();
+        TValue<Scope> module_scope;
         CodeObject *code_obj = nullptr;
 
         uint32_t _temporary_reg = FrameHeaderSize;
@@ -256,8 +256,8 @@ namespace cl
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
 
-            uint32_t slot_idx =
-                prepare_variable_assignment(av.constants[node_idx], mode);
+            uint32_t slot_idx = prepare_variable_assignment(
+                TValue<String>(av.constants[node_idx]), mode);
 
             CodeObject *outer_obj = code_obj;
             CodeObject *fun_obj = make_code_obj(Mode::Function);
@@ -272,7 +272,8 @@ namespace cl
                 for(int32_t ch: param_children)
                 {
                     code_obj->local_scope.get_ptr<Scope>()
-                        ->register_slot_index_for_write(av.constants[ch]);
+                        ->register_slot_index_for_write(
+                            TValue<String>(av.constants[ch]));
                 }
                 // reserve space for the frame header
                 code_obj->local_scope.get_ptr<Scope>()->reserve_empty_slots(
@@ -342,11 +343,11 @@ namespace cl
                 return std::nullopt;
             }
 
-            Value range_name =
+            TValue<String> range_name =
                 ThreadState::get_active()
                     ->get_machine()
                     ->get_or_create_interned_string_value(L"range");
-            if(av.constants[callable_idx] != range_name)
+            if(av.constants[callable_idx] != Value(range_name))
             {
                 return std::nullopt;
             }
@@ -472,7 +473,7 @@ namespace cl
             break_target.resolve();
         }
 
-        uint32_t prepare_variable_assignment(Value var_name, Mode mode)
+        uint32_t prepare_variable_assignment(TValue<String> var_name, Mode mode)
         {
             switch(mode)
             {
@@ -513,7 +514,8 @@ namespace cl
             {
                 case AstNodeKind::STATEMENT_FUNCTION_DEF:
                     code_obj->local_scope.get_ptr<Scope>()
-                        ->register_slot_index_for_write(av.constants[node_idx]);
+                        ->register_slot_index_for_write(
+                            TValue<String>(av.constants[node_idx]));
                     return;
 
                 case AstNodeKind::STATEMENT_ASSIGN:
@@ -525,7 +527,7 @@ namespace cl
                         {
                             code_obj->local_scope.get_ptr<Scope>()
                                 ->register_slot_index_for_write(
-                                    av.constants[lhs_idx]);
+                                    TValue<String>(av.constants[lhs_idx]));
                         }
                         break;
                     }
@@ -533,7 +535,7 @@ namespace cl
                 case AstNodeKind::STATEMENT_FOR:
                     code_obj->local_scope.get_ptr<Scope>()
                         ->register_slot_index_for_write(
-                            av.constants[children[0]]);
+                            TValue<String>(av.constants[children[0]]));
                     break;
 
                 default:
@@ -563,7 +565,8 @@ namespace cl
                                 int32_t slot_idx =
                                     code_obj->local_scope.get_ptr<Scope>()
                                         ->lookup_slot_index_local(
-                                            av.constants[node_idx]);
+                                            TValue<String>(
+                                                av.constants[node_idx]));
                                 if(slot_idx >= 0)
                                 {
                                     code_obj->emit_opcode_reg(source_offset,
@@ -578,7 +581,8 @@ namespace cl
                                 uint32_t slot_idx =
                                     code_obj->module_scope.get_ptr<Scope>()
                                         ->register_slot_index_for_read(
-                                            av.constants[node_idx]);
+                                            TValue<String>(
+                                                av.constants[node_idx]));
                                 code_obj->emit_opcode_uint32(
                                     source_offset, Bytecode::LdaGlobal,
                                     slot_idx);
@@ -600,7 +604,7 @@ namespace cl
                                 "simple variables yet");
                         }
                         uint32_t slot_idx = prepare_variable_assignment(
-                            av.constants[lhs_idx], mode);
+                            TValue<String>(av.constants[lhs_idx]), mode);
 
                         // augmented assignment
                         if(kind.operator_kind != AstOperatorKind::NOP)
@@ -826,7 +830,7 @@ namespace cl
                     {
                         int32_t target_idx = children[0];
                         uint32_t target_slot = prepare_variable_assignment(
-                            av.constants[target_idx], mode);
+                            TValue<String>(av.constants[target_idx]), mode);
                         std::optional<uint8_t> range_call_arity =
                             direct_range_call_arity(children[1]);
                         if(range_call_arity.has_value())

@@ -7,15 +7,15 @@
 
 namespace cl
 {
-    static Value require_range_integer_arg(const CallArguments &args,
-                                           uint32_t index)
+    static TValue<CLInt> require_range_integer_arg(const CallArguments &args,
+                                                   uint32_t index)
     {
         if(!args[index].is_integer())
         {
             throw std::runtime_error(
                 "TypeError: range() arguments must be integers");
         }
-        return args[index];
+        return TValue<CLInt>(args[index]);
     }
 
     static Value builtin_range(ThreadState *thread, const CallArguments &args)
@@ -51,7 +51,8 @@ namespace cl
                     "TypeError: wrong number of arguments");
         }
 
-        return thread->make_refcounted_value<RangeIterator>(start, stop, step);
+        return thread->make_refcounted_value<RangeIterator>(
+            TValue<CLInt>(start), TValue<CLInt>(stop), TValue<CLInt>(step));
     }
 
     VirtualMachine::VirtualMachine()
@@ -69,8 +70,8 @@ namespace cl
         if(!threads.empty())
         {
             ThreadState::ActivationScope activation_scope(threads[0].get());
-            range_builtin.reset();
-            builtin_scope.reset();
+            range_builtin.clear();
+            builtin_scope.clear();
         }
     }
 
@@ -84,7 +85,8 @@ namespace cl
         builtin_scope =
             refcounted_global_heap.make_global_value<Scope>(Value::None());
 
-        Value range_name = get_or_create_interned_string_value(L"range");
+        TValue<String> range_name =
+            get_or_create_interned_string_value(L"range");
         range_builtin =
             refcounted_global_heap.make_global_value<BuiltinFunction>(
                 builtin_range, 1, 3);

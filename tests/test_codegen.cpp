@@ -176,7 +176,8 @@ TEST(Codegen, string_literal_constant_value)
     CodeObject *code_obj = test_context.compile_file(L"\"abc\"\n");
 
     ASSERT_EQ(size_t(1), code_obj->constant_table.size());
-    EXPECT_STREQ(L"abc", string_as_wchar_t(code_obj->constant_table[0]));
+    EXPECT_STREQ(L"abc", string_as_wchar_t(TValue<String>(
+                             code_obj->constant_table[0].get())));
 }
 
 TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)

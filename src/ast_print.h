@@ -178,8 +178,8 @@ template <> struct fmt::formatter<cl::AstVector>
                 break;
             case cl::AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
                 format_to(out, "{}",
-                          narrow_wstring_view_ast(
-                              string_as_wchar_t(av.constants[node_idx])));
+                          narrow_wstring_view_ast(string_as_wchar_t(
+                              cl::TValue<cl::String>(av.constants[node_idx]))));
                 break;
 
             case cl::AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
@@ -251,8 +251,8 @@ template <> struct fmt::formatter<cl::AstVector>
             case cl::AstNodeKind::STATEMENT_FUNCTION_DEF:
                 emit_indent(out, indent);
                 format_to(out, "def {}",
-                          narrow_wstring_view_ast(
-                              string_as_wchar_t(av.constants[node_idx])));
+                          narrow_wstring_view_ast(string_as_wchar_t(
+                              cl::TValue<cl::String>(av.constants[node_idx]))));
 
                 render_node(av, out, children[0], indent,
                             cl::ExpressionPrecedence::Lowest);

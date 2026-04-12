@@ -2,6 +2,7 @@
 #define CL_STRING_H
 
 #include "object.h"
+#include "typed_value.h"
 #include "value.h"
 #include <assert.h>
 #include <cstring>
@@ -18,11 +19,11 @@ namespace cl
     struct String : public Object
     {
 
-        String(const cl_wchar *_data, Value _count)
+        String(const cl_wchar *_data, TValue<SMI> _count)
             : Object(&cl_string_klass, 1,
-                     sizeof(Value) + (_count.get_smi() + 1) * sizeof(cl_wchar))
+                     sizeof(Value) + (_count.get() + 1) * sizeof(cl_wchar))
         {
-            size_t n_chars = _count.get_smi();
+            size_t n_chars = _count.get();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
             count = _count;
@@ -35,7 +36,7 @@ namespace cl
             size_t n_chars = wcslen(_data);
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
-            count = Value::from_smi(n_chars);
+            count = TValue<SMI>(Value::from_smi(n_chars));
         }
 
         String(const std::wstring &str)
@@ -45,10 +46,10 @@ namespace cl
             size_t n_chars = str.size();
             memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
-            count = Value::from_smi(n_chars);
+            count = TValue<SMI>(Value::from_smi(n_chars));
         }
 
-        Value count;
+        MemberTValue<SMI> count;
         cl_wchar data[1];
 
         static size_t size_for(const std::wstring &str)
@@ -71,12 +72,11 @@ namespace cl
         return a == b.data;
     }
 
-    uint64_t string_hash(Value s);
-    bool string_eq(Value a, Value b);
-    const cl_wchar *string_as_wchar_t(Value s);
+    uint64_t string_hash(TValue<String> s);
+    bool string_eq(TValue<String> a, TValue<String> b);
+    const cl_wchar *string_as_wchar_t(TValue<String> s);
 
     static_assert(std::is_trivially_destructible_v<String>);
-
 }  // namespace cl
 
 #endif  // CL_STRING_H

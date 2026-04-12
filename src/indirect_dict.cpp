@@ -6,7 +6,7 @@ namespace cl
 {
     IndirectDict::IndirectDict() : Object(&klass, 0, 8), hash_table(16, -1) {}
 
-    const int32_t *IndirectDict::find_entry(Value key) const
+    const int32_t *IndirectDict::find_entry(TValue<String> key) const
     {
         uint64_t hash = string_hash(key);
         uint32_t hash_table_size_m1 = hash_table.size() - 1;
@@ -29,7 +29,8 @@ namespace cl
                     tombstone_hash_idx = hash_idx;
                 }
             }
-            if(string_eq(key, keys[entry_idx]))
+            if(string_eq(key,
+                         TValue<String>::unsafe_unchecked(keys[entry_idx])))
             {
                 return &hash_table[hash_idx];
             }
@@ -38,13 +39,13 @@ namespace cl
         }
     }
 
-    int32_t *IndirectDict::find_entry(Value key)
+    int32_t *IndirectDict::find_entry(TValue<String> key)
     {
         const IndirectDict *self = this;
         return const_cast<int32_t *>(self->find_entry(key));
     }
 
-    int32_t IndirectDict::insert(Value key)
+    int32_t IndirectDict::insert(TValue<String> key)
     {
         if(keys.size() > hash_table.size() * max_load_nom / max_load_denom)
         {
@@ -74,7 +75,7 @@ namespace cl
         }
     }
 
-    int32_t IndirectDict::lookup(Value key) const
+    int32_t IndirectDict::lookup(TValue<String> key) const
     {
         const int32_t *entry = find_entry(key);
         int32_t idx = *entry;
@@ -92,7 +93,8 @@ namespace cl
         {
             if(!keys[idx].get().is_not_present())
             {
-                int32_t *entry = find_entry(keys[idx]);
+                int32_t *entry =
+                    find_entry(TValue<String>::unsafe_unchecked(keys[idx]));
                 *entry = idx;
             }
         }

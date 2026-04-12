@@ -5,6 +5,7 @@
 #include "klass.h"
 #include "object.h"
 #include "owned.h"
+#include "typed_value.h"
 #include "value.h"
 #include <vector>
 
@@ -43,18 +44,18 @@ namespace cl
 
         /* For a write, we just insert a regular not-present value with no
          * parent scope slot indication (-1) */
-        int32_t register_slot_index_for_write(Value key);
+        int32_t register_slot_index_for_write(TValue<String> key);
 
         /* whereas for a read, if the value isn't present, we also
          * register the slot in the parent scope and save that slot in
          * the not-present value. This is to accelerate access to
          * builtins, which live in the parent scope
          */
-        int32_t register_slot_index_for_read(Value key);
+        int32_t register_slot_index_for_read(TValue<String> key);
 
-        int32_t lookup_slot_index_local(Value name) const;
+        int32_t lookup_slot_index_local(TValue<String> name) const;
 
-        Value get_by_name(Value name) const;
+        Value get_by_name(TValue<String> name) const;
 
         ALWAYSINLINE Value
         get_by_slot_index_fastpath_only(int32_t slot_idx) const
@@ -98,7 +99,7 @@ namespace cl
             }
         }
 
-        void set_by_name(Value name, Value val);
+        void set_by_name(TValue<String> name, Value val);
 
         ALWAYSINLINE void set_by_slot_index(int32_t slot_idx, Value val)
         {
@@ -116,7 +117,7 @@ namespace cl
             return parent_scope.get().get_ptr<Scope>();
         }
 
-        OwnedValue parent_scope;
+        MemberValue parent_scope;
         IndirectDict indirect_dict;
         // TODO these need to be CL arrays at some point, but we're not ready
         // for that yet

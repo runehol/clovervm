@@ -218,7 +218,7 @@ TEST(Interpreter, string_literal_value)
     test::VmTestContext test_context;
     Value actual = test_context.run_file(L"\"abc\"\n");
 
-    EXPECT_STREQ(L"abc", string_as_wchar_t(actual));
+    EXPECT_STREQ(L"abc", string_as_wchar_t(TValue<String>(actual)));
 }
 
 TEST(Interpreter, function_local_shadows_global)
@@ -287,7 +287,7 @@ TEST(Interpreter, call_builtin_function)
     CodeObject *code_obj = test_context.compile_file(L"native_add(4, 7)\n");
 
     Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
-    Value name =
+    TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"native_add");
     Value builtin =
         test_context.thread()->make_refcounted_value<BuiltinFunction>(
@@ -304,7 +304,7 @@ TEST(Interpreter, builtin_scope_lookup)
     CodeObject *code_obj = test_context.compile_file(L"range\n");
 
     Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
-    Value name =
+    TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"range");
     int32_t slot_idx = module_scope->lookup_slot_index_local(name);
     ASSERT_GE(slot_idx, 0);
@@ -482,7 +482,7 @@ TEST(Interpreter, builtin_wrong_arity)
     CodeObject *code_obj = test_context.compile_file(L"native_add(4)\n");
 
     Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
-    Value name =
+    TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"native_add");
     Value builtin =
         test_context.thread()->make_refcounted_value<BuiltinFunction>(
@@ -528,7 +528,7 @@ TEST(Interpreter, builtin_multiple_arities)
 {
     test::VmTestContext test_context;
     Scope *module_scope = nullptr;
-    Value name =
+    TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"native_sum");
     Value builtin =
         test_context.thread()->make_refcounted_value<BuiltinFunction>(
@@ -549,7 +549,7 @@ TEST(Interpreter, builtin_multiple_arities)
 TEST(Interpreter, builtin_varargs)
 {
     test::VmTestContext test_context;
-    Value name =
+    TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"native_sum");
     Value builtin =
         test_context.thread()->make_refcounted_value<BuiltinFunction>(

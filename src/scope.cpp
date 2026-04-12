@@ -10,7 +10,7 @@ namespace cl
 
     /* For a write, we just insert a regular not-present value with no parent
      * scope slot indication (-1) */
-    int32_t Scope::register_slot_index_for_write(Value key)
+    int32_t Scope::register_slot_index_for_write(TValue<String> key)
     {
         int32_t slot_idx = indirect_dict.insert(key);
         if(slot_idx >= int32_t(slots.size()))
@@ -26,7 +26,7 @@ namespace cl
      * the not-present value. This is to accelerate access to
      * builtins, which live in the parent scope
      */
-    int32_t Scope::register_slot_index_for_read(Value key)
+    int32_t Scope::register_slot_index_for_read(TValue<String> key)
     {
         int32_t slot_idx = indirect_dict.insert(key);
         if(slot_idx >= int32_t(slots.size()))
@@ -43,12 +43,12 @@ namespace cl
         return slot_idx;
     }
 
-    int32_t Scope::lookup_slot_index_local(Value name) const
+    int32_t Scope::lookup_slot_index_local(TValue<String> name) const
     {
         return indirect_dict.lookup(name);
     }
 
-    Value Scope::get_by_name(Value name) const
+    Value Scope::get_by_name(TValue<String> name) const
     {
         int32_t slot_idx = indirect_dict.lookup(name);
         if(slot_idx >= 0)
@@ -62,7 +62,7 @@ namespace cl
         return Value::not_present();
     }
 
-    void Scope::set_by_name(Value name, Value val)
+    void Scope::set_by_name(TValue<String> name, Value val)
     {
         int32_t slot_idx = indirect_dict.insert(name);
         if(slot_idx >= int32_t(slots.size()))

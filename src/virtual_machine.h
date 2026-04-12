@@ -4,9 +4,11 @@
 #include <memory>
 #include <vector>
 
+#include "builtin_function.h"
 #include "heap.h"
 #include "intern_store.h"
 #include "owned.h"
+#include "scope.h"
 #include "str.h"
 #include "value.h"
 
@@ -41,8 +43,11 @@ namespace cl
             return interned_strings.get_or_create_raw(str);
         }
 
-        Value get_builtin_scope() const { return builtin_scope; }
-        Value get_range_builtin() const { return range_builtin; }
+        TValue<Scope> get_builtin_scope() const { return builtin_scope; }
+        TValue<BuiltinFunction> get_range_builtin() const
+        {
+            return range_builtin;
+        }
 
     private:
         void initialize_builtin_scope();
@@ -51,8 +56,8 @@ namespace cl
         GlobalHeap refcounted_global_heap;
         GlobalHeap interned_global_heap;
         InternStore<std::wstring, String> interned_strings;
-        OwnedValue builtin_scope;
-        OwnedValue range_builtin;
+        OwnedTValue<Scope> builtin_scope;
+        OwnedTValue<BuiltinFunction> range_builtin;
     };
 
 }  // namespace cl

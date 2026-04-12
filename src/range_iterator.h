@@ -4,6 +4,7 @@
 #include "klass.h"
 #include "object.h"
 #include "owned.h"
+#include "typed_value.h"
 #include "value.h"
 
 namespace cl
@@ -14,16 +15,19 @@ namespace cl
     public:
         static constexpr Klass klass = Klass(L"RangeIterator", nullptr);
 
-        RangeIterator(Value _current, Value _stop, Value _step)
+        RangeIterator(TValue<CLInt> _current, TValue<CLInt> _stop,
+                      TValue<CLInt> _step)
             : Object(&klass, 3, sizeof(RangeIterator) / 8), current(_current),
               stop(_stop), step(_step)
         {
         }
 
-        OwnedValue current;
-        OwnedValue stop;
-        OwnedValue step;
+        MemberTValue<CLInt> current;
+        MemberTValue<CLInt> stop;
+        MemberTValue<CLInt> step;
     };
+
+    static_assert(std::is_trivially_destructible_v<RangeIterator>);
 
 }  // namespace cl
 

@@ -1,7 +1,6 @@
 #ifndef CL_TYPED_VALUE_H
 #define CL_TYPED_VALUE_H
 
-#include "klass.h"
 #include "object.h"
 #include "owned.h"
 #include "value.h"
