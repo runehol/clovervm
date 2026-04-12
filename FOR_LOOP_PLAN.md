@@ -194,7 +194,7 @@ Status:
 - Interpreter tests added in
   [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp)
 
-### 5. Add generic iterator bytecodes
+### 5. Add generic iterator bytecodes [done]
 
 Files:
 
@@ -220,6 +220,21 @@ Suggested semantics:
 This establishes the canonical generic `for`-loop shape. Optimized bytecodes
 for direct builtin `range(...)` loops can be layered on later without changing
 the baseline semantics.
+
+Status:
+
+- Implemented in [src/bytecode.h](/Users/runehol/projects/clovervm/src/bytecode.h),
+  [src/code_object.h](/Users/runehol/projects/clovervm/src/code_object.h),
+  [src/code_object_print.h](/Users/runehol/projects/clovervm/src/code_object_print.h),
+  and [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+- Added `GetIter` and `ForIter` bytecodes plus code-object emission support for
+  iterator register + jump-target operands
+- The interpreter now advances `RangeIterator` instances directly and jumps on
+  exhaustion
+- Focused temporary tests were added in
+  [tests/test_codegen.cpp](/Users/runehol/projects/clovervm/tests/test_codegen.cpp)
+  and [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp);
+  these should be removed once step 6 adds end-to-end `for`-loop lowering
 
 ### 6. Lower `for` loops in codegen
 
