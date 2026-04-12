@@ -35,12 +35,14 @@ namespace cl::test
     struct ParsedFile
     {
         explicit ParsedFile(const wchar_t *source)
-            : compilation_unit(source), tokens(tokenize(compilation_unit)),
+            : active_thread(vm.get_default_thread()), compilation_unit(source),
+              tokens(tokenize(compilation_unit)),
               ast(cl::parse(vm, tokens, StartRule::File))
         {
         }
 
         VirtualMachine vm;
+        ThreadState::ActivationScope active_thread;
         CompilationUnit compilation_unit;
         TokenVector tokens;
         AstVector ast;

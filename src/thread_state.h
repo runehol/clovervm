@@ -20,6 +20,24 @@ namespace cl
     class ThreadState
     {
     public:
+        class ActivationScope
+        {
+        public:
+            explicit ActivationScope(ThreadState *ts)
+                : previous_thread(ThreadState::current_thread)
+            {
+                ThreadState::current_thread = ts;
+            }
+
+            ~ActivationScope()
+            {
+                ThreadState::current_thread = previous_thread;
+            }
+
+        private:
+            ThreadState *previous_thread;
+        };
+
         ThreadState(VirtualMachine *_machine);
         ~ThreadState();
 
@@ -32,8 +50,6 @@ namespace cl
             assert(current_thread != nullptr);
             return current_thread;
         }
-
-        static ThreadState *get_active_if_any() { return current_thread; }
 
         void *allocate_refcounted(size_t n_bytes)
         {
@@ -68,16 +84,6 @@ namespace cl
         std::deque<Value> zero_count_table;
 
         static thread_local ThreadState *current_thread;
-
-        class CurrThreadStateHolder
-        {
-        public:
-            CurrThreadStateHolder(ThreadState *ts)
-            {
-                ThreadState::current_thread = ts;
-            }
-            ~CurrThreadStateHolder() { ThreadState::current_thread = nullptr; }
-        };
     };
 
 }  // namespace cl

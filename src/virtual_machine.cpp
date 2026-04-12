@@ -66,7 +66,15 @@ namespace cl
         make_new_thread();
     }
 
-    VirtualMachine::~VirtualMachine() = default;
+    VirtualMachine::~VirtualMachine()
+    {
+        if(!threads.empty())
+        {
+            ThreadState::ActivationScope activation_scope(threads[0].get());
+            range_builtin.reset();
+            builtin_scope.reset();
+        }
+    }
 
     ThreadState *VirtualMachine::make_new_thread()
     {

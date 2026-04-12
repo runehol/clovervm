@@ -22,13 +22,13 @@ namespace cl
 
     Value ThreadState::run(CodeObject *obj)
     {
-        CurrThreadStateHolder curr_thread_holder(this);
+        ActivationScope activation_scope(this);
         return run_interpreter(&stack[stack.size() - 1024], obj, 0);
     }
 
     CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule)
     {
-        CurrThreadStateHolder curr_thread_holder(this);
+        ActivationScope activation_scope(this);
 
         CompilationUnit input(str);
         TokenVector tv = tokenize(input);
@@ -38,9 +38,7 @@ namespace cl
 
     void ThreadState::add_to_active_zero_count_table(Value v)
     {
-        ThreadState *ts = ThreadState::get_active_if_any();
-        if(ts == nullptr)
-            return;
+        ThreadState *ts = ThreadState::get_active();
         ts->zero_count_table.push_back(v);
     }
 
