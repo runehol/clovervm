@@ -279,7 +279,7 @@ namespace cl
                 code_obj->local_scope.get_ptr<Scope>()->reserve_empty_slots(
                     FrameHeaderSize);
 
-                // todo scan for local variables
+                collect_function_local_bindings(children[1]);
 
                 _temporary_reg = code_obj->local_scope.get_ptr<Scope>()->size();
 
@@ -357,6 +357,48 @@ namespace cl
                     code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
                                               slot_idx);
                     break;
+            }
+        }
+
+        void collect_function_local_bindings(int32_t node_idx)
+        {
+            AstKind kind = av.kinds[node_idx];
+            AstChildren children = av.children[node_idx];
+
+            switch(kind.node_kind)
+            {
+                case AstNodeKind::STATEMENT_FUNCTION_DEF:
+                    code_obj->local_scope.get_ptr<Scope>()
+                        ->register_slot_index_for_write(av.constants[node_idx]);
+                    return;
+
+                case AstNodeKind::STATEMENT_ASSIGN:
+                case AstNodeKind::EXPRESSION_ASSIGN:
+                    {
+                        int32_t lhs_idx = children[0];
+                        if(av.kinds[lhs_idx].node_kind ==
+                           AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                        {
+                            code_obj->local_scope.get_ptr<Scope>()
+                                ->register_slot_index_for_write(
+                                    av.constants[lhs_idx]);
+                        }
+                        break;
+                    }
+
+                case AstNodeKind::STATEMENT_FOR:
+                    code_obj->local_scope.get_ptr<Scope>()
+                        ->register_slot_index_for_write(
+                            av.constants[children[0]]);
+                    break;
+
+                default:
+                    break;
+            }
+
+            for(int32_t child_idx: children)
+            {
+                collect_function_local_bindings(child_idx);
             }
         }
 

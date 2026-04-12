@@ -389,6 +389,39 @@ TEST(Interpreter, for_continue_jumps_to_next_iteration)
     EXPECT_EQ(Value::from_smi(8), actual);
 }
 
+TEST(Interpreter, nested_for_loops_execute_correctly)
+{
+    Value actual = run_file(L"total = 0\n"
+                            "for x in range(3):\n"
+                            "    for y in range(2):\n"
+                            "        total += x + y\n"
+                            "total\n");
+    EXPECT_EQ(Value::from_smi(9), actual);
+}
+
+TEST(Interpreter, for_loop_executes_inside_function)
+{
+    Value actual = run_file(L"def sum_range(n):\n"
+                            "    total = 0\n"
+                            "    for x in range(n):\n"
+                            "        total += x\n"
+                            "    return total\n"
+                            "sum_range(5)\n");
+    EXPECT_EQ(Value::from_smi(10), actual);
+}
+
+TEST(Interpreter, nested_for_loops_execute_inside_function)
+{
+    Value actual = run_file(L"def sum_pairs(n):\n"
+                            "    total = 0\n"
+                            "    for x in range(n):\n"
+                            "        for y in range(2):\n"
+                            "            total += x + y\n"
+                            "    return total\n"
+                            "sum_pairs(3)\n");
+    EXPECT_EQ(Value::from_smi(9), actual);
+}
+
 TEST(Interpreter, module_scope_can_shadow_builtin_scope)
 {
     Value actual = run_file(L"range = 42\n"

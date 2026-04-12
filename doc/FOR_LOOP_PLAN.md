@@ -286,7 +286,7 @@ Desired behavior:
 - `break` skips loop `else`.
 - `continue` resumes through the same iterator-driven loop header.
 
-### 7. Implement loop execution in the interpreter
+### 7. Implement loop execution in the interpreter [done]
 
 Files:
 
@@ -308,6 +308,19 @@ Suggested behavior:
 
 This is the key place where we deliberately keep `StopIteration` internal and
 implicit for now.
+
+Status:
+
+- Implemented in [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+- The dispatch table now includes `GetIter` and `ForIter`
+- `GetIter` validates that the accumulator holds an iterable runtime value the
+  VM knows how to drive
+- `ForIter` advances `RangeIterator` state in place, leaves the next value in
+  the accumulator, and jumps on exhaustion without exposing `StopIteration`
+- Interpreter coverage lives in
+  [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp),
+  including exhaustion, `else`, `break`, `continue`, negative-step iteration,
+  non-iterable rejection, and nested-loop sanity
 
 ### 8. Add a specialized fast path for direct builtin `range(...)` loops
 
