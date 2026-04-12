@@ -3,6 +3,7 @@
 #include "compilation_unit.h"
 #include "interpreter.h"
 #include "parser.h"
+#include "range_iterator.h"
 #include "scope.h"
 #include "str.h"
 #include "test_helpers.h"
@@ -61,6 +62,18 @@ static void expect_runtime_error(const wchar_t *source,
     {
         EXPECT_STREQ(expected_message, err.what());
     }
+}
+
+static void expect_range_iterator(Value actual, int64_t expected_current,
+                                  int64_t expected_stop, int64_t expected_step)
+{
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(&RangeIterator::klass, actual.get_ptr<Object>()->klass);
+
+    RangeIterator *iterator = actual.get_ptr<RangeIterator>();
+    EXPECT_EQ(Value::from_smi(expected_current), iterator->current);
+    EXPECT_EQ(Value::from_smi(expected_stop), iterator->stop);
+    EXPECT_EQ(Value::from_smi(expected_step), iterator->step);
 }
 
 TEST(Interpreter, simple)
@@ -299,6 +312,30 @@ TEST(Interpreter, builtin_scope_lookup)
     EXPECT_EQ(actual, module_scope->get_by_slot_index_fastpath_only(slot_idx));
 }
 
+TEST(Interpreter, range_builtin_returns_range_iterator)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"range(5)\n");
+
+    expect_range_iterator(actual, 0, 5, 1);
+}
+
+TEST(Interpreter, range_builtin_two_arguments_returns_range_iterator)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"range(2, 5)\n");
+
+    expect_range_iterator(actual, 2, 5, 1);
+}
+
+TEST(Interpreter, range_builtin_three_arguments_returns_range_iterator)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"range(2, 9, 3)\n");
+
+    expect_range_iterator(actual, 2, 9, 3);
+}
+
 TEST(Interpreter, module_scope_can_shadow_builtin_scope)
 {
     Value actual = run_file(L"range = 42\n"
@@ -329,6 +366,22 @@ TEST(Interpreter, builtin_wrong_arity)
     {
         EXPECT_STREQ("TypeError: wrong number of arguments", err.what());
     }
+}
+
+TEST(Interpreter, range_builtin_requires_integer_argument)
+{
+    expect_runtime_error(L"range(False)\n",
+                         "TypeError: range() arguments must be integers");
+    expect_runtime_error(L"range(1, False)\n",
+                         "TypeError: range() arguments must be integers");
+    expect_runtime_error(L"range(1, 2, False)\n",
+                         "TypeError: range() arguments must be integers");
+}
+
+TEST(Interpreter, range_builtin_rejects_zero_step)
+{
+    expect_runtime_error(L"range(1, 2, 0)\n",
+                         "ValueError: range() arg 3 must not be zero");
 }
 
 TEST(Interpreter, builtin_multiple_arities)
