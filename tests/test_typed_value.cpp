@@ -60,6 +60,13 @@ TEST(TValue, SmiUsesTraitDefinedGetter)
     EXPECT_EQ(42, smi.get());
 }
 
+TEST(TValue, ClIntAcceptsCurrentIntegerRepresentation)
+{
+    TValue<CLInt> integer(Value::from_smi(42));
+
+    EXPECT_EQ(Value::from_smi(42), integer.raw());
+}
+
 TEST(OwnedTValue, RetainsAndExposesTypedPointers)
 {
     test::VmTestContext context;
@@ -92,4 +99,15 @@ TEST(OwnedTValue, SmiActsAsOwnedHandleWithoutRefcounting)
     Value released = owned_smi.release();
     EXPECT_EQ(Value::from_smi(42), released);
     EXPECT_EQ(Value::None(), Value(owned_smi));
+}
+
+TEST(OwnedTValue, ClIntActsAsOwnedIntegerHandle)
+{
+    OwnedTValue<CLInt> owned_integer(Value::from_smi(42));
+
+    EXPECT_EQ(Value::from_smi(42), Value(owned_integer.get()));
+
+    Value released = owned_integer.release();
+    EXPECT_EQ(Value::from_smi(42), released);
+    EXPECT_EQ(Value::None(), Value(owned_integer));
 }

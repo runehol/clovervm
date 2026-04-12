@@ -14,6 +14,9 @@ namespace cl
     struct SMI
     {
     };
+    struct CLInt
+    {
+    };
     extern Klass cl_string_klass;
 
     template <typename T, typename Enable = void> struct ValueTypeTraits;
@@ -66,6 +69,14 @@ namespace cl
         static constexpr RefcountPolicy refcount_policy = RefcountPolicy::Never;
 
         static get_type get_unchecked(Value value) { return value.get_smi(); }
+    };
+
+    template <> struct ValueTypeTraits<CLInt>
+    {
+        static bool is_instance(Value value) { return value.is_integer(); }
+
+        using get_type = void;
+        static constexpr RefcountPolicy refcount_policy = RefcountPolicy::Maybe;
     };
 
     template <typename T> inline void validate_typed_value(Value value)
