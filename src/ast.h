@@ -1,7 +1,7 @@
 #ifndef CL_AST_H
 #define CL_AST_H
 
-#include "refcount.h"
+#include "owned_value.h"
 #include "value.h"
 #include <absl/container/inlined_vector.h>
 #include <cassert>
@@ -280,7 +280,7 @@ namespace cl
         std::vector<AstKind> kinds;
         std::vector<uint32_t> source_offsets;
         std::vector<AstChildren> children;
-        std::vector<Value> constants;
+        std::vector<OwnedValue> constants;
 
         int32_t root_node = -1;
 
@@ -316,7 +316,7 @@ namespace cl
             kinds.push_back(kind);
             source_offsets.push_back(source_offset);
             children.emplace_back(ch);
-            constants.emplace_back(incref(Value::None()));
+            constants.emplace_back(Value::None());
             return idx;
         }
 
@@ -328,7 +328,7 @@ namespace cl
             kinds.push_back(kind);
             source_offsets.push_back(source_offset);
             children.emplace_back();
-            constants.emplace_back(incref(constant));
+            constants.emplace_back(constant);
             return idx;
         }
 
@@ -340,7 +340,7 @@ namespace cl
             kinds.push_back(kind);
             source_offsets.push_back(source_offset);
             children.emplace_back(child_vec);
-            constants.emplace_back(incref(constant));
+            constants.emplace_back(constant);
             return idx;
         }
     };

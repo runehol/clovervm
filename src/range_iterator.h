@@ -3,6 +3,7 @@
 
 #include "klass.h"
 #include "object.h"
+#include "owned_value.h"
 #include "value.h"
 
 namespace cl
@@ -19,9 +20,9 @@ namespace cl
         {
         }
 
-        Value current;
-        Value stop;
-        Value step;
+        OwnedValue current;
+        OwnedValue stop;
+        OwnedValue step;
     };
 
 }  // namespace cl

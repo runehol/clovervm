@@ -4,9 +4,7 @@ namespace cl
 {
 
     Scope::Scope(Value _parent_scope)
-        : Object(&klass, 1, sizeof(Scope) / 8),
-          parent_scope(incref(_parent_scope))
-
+        : Object(&klass, 1, sizeof(Scope) / 8), parent_scope(_parent_scope)
     {
     }
 

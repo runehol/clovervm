@@ -57,7 +57,7 @@ namespace cl
         {
             idx = keys.size();
             *entry = idx;
-            keys.push_back(incref(key));
+            keys.emplace_back(key);
         }
         return idx;
     }
@@ -70,7 +70,7 @@ namespace cl
             {
                 grow();
             }
-            keys.push_back(Value::not_present());
+            keys.emplace_back(Value::not_present());
         }
     }
 
@@ -90,7 +90,7 @@ namespace cl
         // and then just insert all the keys again
         for(int32_t idx = 0; idx < int32_t(keys.size()); ++idx)
         {
-            if(!keys[idx].is_not_present())
+            if(!keys[idx].get().is_not_present())
             {
                 int32_t *entry = find_entry(keys[idx]);
                 *entry = idx;

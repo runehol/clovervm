@@ -4,7 +4,7 @@
 #include "indirect_dict.h"
 #include "klass.h"
 #include "object.h"
-#include "refcount.h"
+#include "owned_value.h"
 #include "value.h"
 #include <vector>
 
@@ -15,40 +15,23 @@ namespace cl
     {
     public:
         SlotEntry(Value _value, Value _extra = Value::None())
-            : value(incref(_value)), extra(incref(_extra))
+            : value(_value), extra(_extra)
         {
         }
 
-        ~SlotEntry()
-        {
-            decref(value);
-            decref(extra);
-        }
+        void set_value(Value _value) { value = _value; }
 
-        void set_value(Value _value)
-        {
-            // note the order, in case val == slots[slot_idx]
-            incref(_value);
-            decref(value);
-            value = _value;
-        }
+        void set_extra(Value _extra) { extra = _extra; }
 
-        void set_extra(Value _extra)
-        {
-            // note the order, in case val == slots[slot_idx]
-            incref(_extra);
-            decref(extra);
-            extra = _extra;
-        }
+        Value get_value() const { return value.get(); }
 
-        Value get_value() const { return value; }
-
-        Value get_extra() const { return extra; }
+        Value get_extra() const { return extra.get(); }
 
     private:
-        Value value;
-        Value extra;  // extra is used for registering invalidation arrays for
-                      // global scopes, and closure usage for local scopes
+        OwnedValue value;
+        OwnedValue extra;  // extra is used for registering invalidation arrays
+                           // for global scopes, and closure usage for local
+                           // scopes
     };
 
     class Scope : public Object
@@ -130,10 +113,10 @@ namespace cl
     private:
         Scope *get_parent_scope_ptr() const
         {
-            return reinterpret_cast<Scope *>(parent_scope.get_ptr());
+            return parent_scope.get().get_ptr<Scope>();
         }
 
-        Value parent_scope;
+        OwnedValue parent_scope;
         IndirectDict indirect_dict;
         // TODO these need to be CL arrays at some point, but we're not ready
         // for that yet

@@ -2,7 +2,7 @@
 #define CL_CODE_OBJECT_H
 
 #include "bytecode.h"
-#include "refcount.h"
+#include "owned_value.h"
 #include "scope.h"
 #include "value.h"
 #include <vector>
@@ -51,14 +51,13 @@ namespace cl
         CodeObject(const CompilationUnit *_compilation_unit,
                    Value _module_scope, Value _local_scope)
             : Object(&klass, 1, sizeof(CodeObject) / 8),
-              module_scope(incref(_module_scope)),
-              local_scope(incref(_local_scope)),
+              module_scope(_module_scope), local_scope(_local_scope),
               compilation_unit(_compilation_unit)
         {
         }
 
-        Value module_scope;
-        Value local_scope;
+        OwnedValue module_scope;
+        OwnedValue local_scope;
         const CompilationUnit *compilation_unit;
 
         uint32_t n_parameters = 0;
@@ -68,7 +67,7 @@ namespace cl
         std::vector<uint8_t> code;
 
         std::vector<uint32_t> source_offsets;
-        std::vector<Value> constant_table;
+        std::vector<OwnedValue> constant_table;
 
         uint32_t get_n_registers() const
         {
@@ -194,7 +193,7 @@ namespace cl
         uint32_t allocate_constant(Value val)
         {
             uint32_t idx = constant_table.size();
-            constant_table.push_back(val);
+            constant_table.emplace_back(val);
             assert(idx < 256);
             return idx;
         }

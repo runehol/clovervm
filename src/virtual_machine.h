@@ -6,6 +6,7 @@
 
 #include "heap.h"
 #include "intern_store.h"
+#include "owned_value.h"
 #include "str.h"
 #include "value.h"
 
@@ -44,8 +45,8 @@ namespace cl
         GlobalHeap refcounted_global_heap;
         GlobalHeap interned_global_heap;
         InternStore<std::wstring, String> interned_strings;
-        Value builtin_scope = Value::None();
-        Value range_builtin = Value::None();
+        OwnedValue builtin_scope;
+        OwnedValue range_builtin;
     };
 
 }  // namespace cl

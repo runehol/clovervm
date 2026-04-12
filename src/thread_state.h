@@ -7,6 +7,8 @@
 
 #include "heap.h"
 #include "value.h"
+#include <type_traits>
+#include <utility>
 
 namespace cl
 {
@@ -31,9 +33,26 @@ namespace cl
             return current_thread;
         }
 
+        static ThreadState *get_active_if_any() { return current_thread; }
+
         void *allocate_refcounted(size_t n_bytes)
         {
             return refcounted_heap.allocate(n_bytes);
+        }
+
+        template <typename T, typename... Args>
+        T *make_refcounted(Args &&...args)
+        {
+            static_assert(std::is_base_of_v<Object, T>);
+            return refcounted_heap.make<T>(std::forward<Args>(args)...);
+        }
+
+        template <typename T, typename... Args>
+        T *make_refcounted_sized(size_t n_bytes, Args &&...args)
+        {
+            static_assert(std::is_base_of_v<Object, T>);
+            return refcounted_heap.make_sized<T>(n_bytes,
+                                                 std::forward<Args>(args)...);
         }
 
         CodeObject *compile(const wchar_t *str, StartRule start_rule);

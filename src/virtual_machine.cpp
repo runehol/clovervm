@@ -51,8 +51,8 @@ namespace cl
                     "TypeError: wrong number of arguments");
         }
 
-        void *mem = thread->allocate_refcounted(sizeof(RangeIterator));
-        RangeIterator *iterator = new(mem) RangeIterator(start, stop, step);
+        RangeIterator *iterator =
+            thread->make_refcounted<RangeIterator>(start, stop, step);
         return Value::from_oop(iterator);
     }
 
@@ -76,13 +76,12 @@ namespace cl
     void VirtualMachine::initialize_builtin_scope()
     {
         builtin_scope = Value::from_oop(
-            new(refcounted_global_heap.allocate_global(sizeof(Scope)))
-                Scope(Value::None()));
+            refcounted_global_heap.make_global<Scope>(Value::None()));
 
         Value range_name = get_or_create_interned_string(L"range");
-        range_builtin = Value::from_oop(
-            new(refcounted_global_heap.allocate_global(sizeof(BuiltinFunction)))
-                BuiltinFunction(builtin_range, 1, 3));
+        range_builtin =
+            Value::from_oop(refcounted_global_heap.make_global<BuiltinFunction>(
+                builtin_range, 1, 3));
         builtin_scope.get_ptr<Scope>()->set_by_name(range_name, range_builtin);
     }
 

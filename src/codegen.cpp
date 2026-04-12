@@ -89,12 +89,11 @@ namespace cl
     {
     public:
         Codegen(const AstVector &_av)
-            : av(_av),
-              module_scope(Value::from_oop(
-                  new(ThreadState::get_active()->allocate_refcounted(
-                      sizeof(Scope))) Scope(ThreadState::get_active()
-                                                ->get_machine()
-                                                ->get_builtin_scope())))
+            : av(_av), module_scope(Value::from_oop(
+                           ThreadState::get_active()->make_refcounted<Scope>(
+                               ThreadState::get_active()
+                                   ->get_machine()
+                                   ->get_builtin_scope())))
 
         {
         }
@@ -126,15 +125,13 @@ namespace cl
 
                 case Mode::Class:
                 case Mode::Function:
-                    local_scope = Value::from_oop(new(ts->allocate_refcounted(
-                        sizeof(Scope))) Scope(code_obj->local_scope));
+                    local_scope = Value::from_oop(
+                        ts->make_refcounted<Scope>(code_obj->local_scope));
                     break;
             }
 
-            CodeObject *code_obj =
-                new(ts->allocate_refcounted(sizeof(CodeObject)))
-                    CodeObject(av.compilation_unit, module_scope, local_scope);
-            return code_obj;
+            return ts->make_refcounted<CodeObject>(av.compilation_unit,
+                                                   module_scope, local_scope);
         }
 
         struct LoopTargetSet
@@ -201,7 +198,7 @@ namespace cl
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
             bool rhs_is_small_number =
                 av.kinds[children[1]] == NumericalConstant &&
-                av.constants[children[1]].is_smi8();
+                av.constants[children[1]].get().is_smi8();
             bool use_binary_acc_smi =
                 entry.binary_acc_smi != Bytecode::Invalid &&
                 rhs_is_small_number;
@@ -209,15 +206,16 @@ namespace cl
             if(kind.operator_kind == AstOperatorKind::LEFTSHIFT &&
                use_binary_acc_smi)
             {
-                int64_t shift_count = av.constants[children[1]].get_smi();
+                int64_t shift_count = av.constants[children[1]].get().get_smi();
                 use_binary_acc_smi = shift_count >= 0 && shift_count < 64;
             }
 
             if(use_binary_acc_smi)
             {
                 codegen_node(children[0], mode);
-                code_obj->emit_opcode_smi(source_offset, entry.binary_acc_smi,
-                                          av.constants[children[1]].get_smi());
+                code_obj->emit_opcode_smi(
+                    source_offset, entry.binary_acc_smi,
+                    av.constants[children[1]].get().get_smi());
             }
             else
             {
@@ -649,7 +647,7 @@ namespace cl
 
                             case AstOperatorKind::NUMBER:
                                 {
-                                    Value val = av.constants[node_idx];
+                                    Value val = av.constants[node_idx].get();
                                     if(val.is_smi8())
                                     {
                                         code_obj->emit_opcode_smi(

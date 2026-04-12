@@ -3,6 +3,7 @@
 
 #include "klass.h"
 #include "object.h"
+#include "owned_value.h"
 #include <vector>
 
 namespace cl
@@ -42,7 +43,7 @@ namespace cl
         // TODO these need to be CL arrays at some point, but we're not ready
         // for that yet
         std::vector<int32_t> hash_table;
-        std::vector<Value> keys;
+        std::vector<OwnedValue> keys;
     };
 
 };  // namespace cl

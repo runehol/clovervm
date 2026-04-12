@@ -4,6 +4,7 @@
 #include "heap.h"
 #include "value.h"
 #include <absl/container/flat_hash_map.h>
+
 namespace cl
 {
 
@@ -20,9 +21,8 @@ namespace cl
             if(it != map.end())
                 return Value::from_oop(it->second);
 
-            size_t sz = CLType::size_for(src);
-            void *mem = intern_heap->allocate_global(sz);
-            CLType *value = new(mem) CLType(src);
+            CLType *value = intern_heap->make_global_sized<CLType>(
+                CLType::size_for(src), src);
             value->refcount = -1;  // signifying immortality
             map[src] = value;
             return Value::from_oop(value);

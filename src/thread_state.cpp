@@ -38,7 +38,9 @@ namespace cl
 
     void ThreadState::add_to_active_zero_count_table(Value v)
     {
-        ThreadState *ts = ThreadState::get_active();
+        ThreadState *ts = ThreadState::get_active_if_any();
+        if(ts == nullptr)
+            return;
         ts->zero_count_table.push_back(v);
     }
 

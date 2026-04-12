@@ -288,9 +288,9 @@ TEST(Interpreter, call_builtin_function)
 
     Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
     Value name = test_context.vm().get_or_create_interned_string(L"native_add");
-    Value builtin = Value::from_oop(
-        new(test_context.thread()->allocate_refcounted(sizeof(BuiltinFunction)))
-            BuiltinFunction(builtin_add, 2, 2));
+    Value builtin =
+        Value::from_oop(test_context.thread()->make_refcounted<BuiltinFunction>(
+            builtin_add, 2, 2));
     module_scope->set_by_name(name, builtin);
 
     Value actual = test_context.thread()->run(code_obj);
@@ -481,9 +481,9 @@ TEST(Interpreter, builtin_wrong_arity)
 
     Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
     Value name = test_context.vm().get_or_create_interned_string(L"native_add");
-    Value builtin = Value::from_oop(
-        new(test_context.thread()->allocate_refcounted(sizeof(BuiltinFunction)))
-            BuiltinFunction(builtin_add, 2, 2));
+    Value builtin =
+        Value::from_oop(test_context.thread()->make_refcounted<BuiltinFunction>(
+            builtin_add, 2, 2));
     module_scope->set_by_name(name, builtin);
 
     try
@@ -526,9 +526,9 @@ TEST(Interpreter, builtin_multiple_arities)
     test::VmTestContext test_context;
     Scope *module_scope = nullptr;
     Value name = test_context.vm().get_or_create_interned_string(L"native_sum");
-    Value builtin = Value::from_oop(
-        new(test_context.thread()->allocate_refcounted(sizeof(BuiltinFunction)))
-            BuiltinFunction(builtin_sum, 1, 3));
+    Value builtin =
+        Value::from_oop(test_context.thread()->make_refcounted<BuiltinFunction>(
+            builtin_sum, 1, 3));
 
     CodeObject *one_arg = test_context.compile_file(L"native_sum(4)\n");
     module_scope = one_arg->module_scope.get_ptr<Scope>();
@@ -546,9 +546,9 @@ TEST(Interpreter, builtin_varargs)
 {
     test::VmTestContext test_context;
     Value name = test_context.vm().get_or_create_interned_string(L"native_sum");
-    Value builtin = Value::from_oop(
-        new(test_context.thread()->allocate_refcounted(sizeof(BuiltinFunction)))
-            BuiltinFunction(builtin_sum, 0, BuiltinFunction::VarArgs));
+    Value builtin =
+        Value::from_oop(test_context.thread()->make_refcounted<BuiltinFunction>(
+            builtin_sum, 0, BuiltinFunction::VarArgs));
 
     CodeObject *zero_args = test_context.compile_file(L"native_sum()\n");
     zero_args->module_scope.get_ptr<Scope>()->set_by_name(name, builtin);

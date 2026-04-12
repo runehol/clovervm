@@ -7,6 +7,8 @@
 #include <deque>
 #include <mutex>
 #include <tuple>
+#include <type_traits>
+#include <utility>
 
 namespace cl
 {
@@ -15,6 +17,7 @@ namespace cl
     static constexpr size_t LargeAllocationSize = DefaultSlabSize / 2;
 
     class ThreadLocalHeap;
+    struct Object;
 
     /* global heap, shared between threads */
 
@@ -38,6 +41,20 @@ namespace cl
             size_t n_bytes);  // slow path allocation for large objects
 
         void *allocate_global(size_t n_bytes);
+
+        template <typename T, typename... Args> T *make_global(Args &&...args)
+        {
+            static_assert(std::is_base_of_v<Object, T>);
+            return new(allocate_global(sizeof(T)))
+                T(std::forward<Args>(args)...);
+        }
+
+        template <typename T, typename... Args>
+        T *make_global_sized(size_t n_bytes, Args &&...args)
+        {
+            static_assert(std::is_base_of_v<Object, T>);
+            return new(allocate_global(n_bytes)) T(std::forward<Args>(args)...);
+        }
 
         SlabAllocator *make_new_slab();
 
@@ -78,6 +95,19 @@ namespace cl
                 local_allocator = global_heap->make_new_slab();
                 return local_allocator->allocate(n_bytes);
             }
+        }
+
+        template <typename T, typename... Args> T *make(Args &&...args)
+        {
+            static_assert(std::is_base_of_v<Object, T>);
+            return new(allocate(sizeof(T))) T(std::forward<Args>(args)...);
+        }
+
+        template <typename T, typename... Args>
+        T *make_sized(size_t n_bytes, Args &&...args)
+        {
+            static_assert(std::is_base_of_v<Object, T>);
+            return new(allocate(n_bytes)) T(std::forward<Args>(args)...);
         }
 
     private:
