@@ -161,29 +161,29 @@ Status:
 - Implemented.
 
 
-### 4. Implement `range` as a builtin returning an iterator object
+### 4. Implement `range` as a builtin returning a `RangeIterator`
 
 Files:
 
 - new runtime object file for range iterator
 - builtin registration site
+- [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
 
 Changes:
 
-- Add a lightweight `RangeIterator` object with state such as:
-  - current
-  - stop
-  - step
-- For the first cut, only support `range(stop)`.
-- The builtin `range` returns a `RangeIterator` directly.
+- Keep `range` as a normal builtin callable in the builtin scope.
+- Add a `RangeIterator` runtime object type.
+- For the first cut, support `range(stop)` with implicit `start=0`, `step=1`.
+- Have the builtin `range` return a `RangeIterator` as the runtime value
+  consumed by generic `for` iteration.
 
 Note:
 
-This is intentionally more like “an iterator object produced by a builtin” than
-“a full Python generator.” That is enough for `for` lowering and avoids the
-need for `yield`.
+This stage intentionally establishes the generic loop semantics first. A later
+fast path for direct builtin `range(...)` loops can then be validated against
+the already-working `RangeIterator` behavior in `for` loops.
 
-### 5. Add iterator bytecodes
+### 5. Add generic iterator bytecodes
 
 Files:
 
@@ -206,8 +206,9 @@ Suggested semantics:
   - on success, leaves the next value in the accumulator
   - on exhaustion, jumps to the target
 
-This makes iterator exhaustion a control-flow result instead of a general
-exception.
+This establishes the canonical generic `for`-loop shape. Optimized bytecodes
+for direct builtin `range(...)` loops can be layered on later without changing
+the baseline semantics.
 
 ### 6. Lower `for` loops in codegen
 
@@ -220,6 +221,7 @@ Changes:
 - Add a `STATEMENT_FOR` codegen path that mirrors the existing `while` lowering.
 - Reuse the existing `loop_targets` stack so `break` and `continue` keep working
   uniformly across loop kinds.
+- Lower all first-cut `for` loops through the generic iterable path.
 
 Suggested lowering shape:
 
@@ -227,8 +229,7 @@ Suggested lowering shape:
 2. Emit `GetIter`.
 3. Store iterator in a temporary register.
 4. Mark loop-head target.
-5. Emit `ForIter` on the iterator register, jumping to the loop-else or done
-   target on exhaustion.
+5. Emit `ForIter`, jumping to the loop-else or done target on exhaustion.
 6. Assign accumulator to the loop variable.
 7. Emit loop body.
 8. Resolve `continue` back to the loop head.
@@ -241,9 +242,9 @@ Desired behavior:
 
 - Normal exhaustion runs loop `else`.
 - `break` skips loop `else`.
-- `continue` advances the same iterator and resumes at the next iteration.
+- `continue` resumes through the same iterator-driven loop header.
 
-### 7. Implement iterator execution in the interpreter
+### 7. Implement loop execution in the interpreter
 
 Files:
 
@@ -253,19 +254,73 @@ Changes:
 
 - Add dispatch-table entries for `GetIter` and `ForIter`.
 - Add runtime logic for `RangeIterator`.
+- Add runtime logic for generic iterator execution.
 
 Suggested behavior:
 
-- `GetIter` verifies the accumulator is an iterable object that the runtime
-  knows how to iterate.
-- `ForIter` mutates iterator state in place.
+- `GetIter` verifies that the accumulator is an iterable value the runtime
+  knows how to iterate and produces its iterator state.
+- `ForIter` advances iterator state in place.
 - When a next value exists, place it in the accumulator and continue.
 - When exhausted, branch without throwing.
 
 This is the key place where we deliberately keep `StopIteration` internal and
 implicit for now.
 
-### 8. Defer full Python iterator protocol and exceptions
+### 8. Add a specialized fast path for direct builtin `range(...)` loops
+
+Files:
+
+- [src/bytecode.h](/Users/runehol/projects/clovervm/src/bytecode.h)
+- [src/code_object_print.h](/Users/runehol/projects/clovervm/src/code_object_print.h)
+- [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp)
+- [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+
+Changes:
+
+- Add specialized prep opcodes for direct `range(...)` loop shapes:
+  - `ForPrepRange1`
+  - `ForPrepRange2`
+  - `ForPrepRange3`
+- Add specialized macro-style iteration opcodes such as:
+  - `ForIterRange1`
+  - `ForIterRangeStep`
+- Guard the fast path on the resolved callable being the exact builtin `range`
+  object so shadowing remains correct.
+- Use duplicated control flow for the fast path and generic fallback path
+  rather than a shared oversized loop-state representation.
+
+Suggested semantics:
+
+- `ForPrepRange1`
+  - guards builtin identity
+  - on success, initializes `current = 0` and `stop = arg0`
+  - on failure, branches to the generic iterable fallback block
+- `ForPrepRange2`
+  - guards builtin identity
+  - on success, initializes `current = arg0`, `stop = arg1`
+  - on failure, branches to the generic iterable fallback block
+- `ForPrepRange3`
+  - guards builtin identity
+  - on success, initializes `current = arg0`, `stop = arg1`, `step = arg2`
+  - validates `step != 0`
+  - on failure, branches to the generic iterable fallback block
+- `ForIterRange1 <curr-reg>, <stop-reg>, <jump-target>`
+  - if `curr >= stop`, jump to target
+  - otherwise leave `curr` in the accumulator and increment it by `1`
+- `ForIterRangeStep <curr-reg>, <stop-reg>, <step-reg>, <jump-target>`
+  - if `step > 0` and `curr >= stop`, jump to target
+  - if `step < 0` and `curr <= stop`, jump to target
+  - otherwise leave `curr` in the accumulator and increment by `step`
+
+Why stage this later:
+
+- Generic `RangeIterator` semantics come first and act as the correctness
+  oracle.
+- The optimized path is then purely a performance/bytecode-shape improvement,
+  not part of the semantic foundation.
+
+### 9. Defer full Python iterator protocol and exceptions
 
 Not part of the first implementation:
 
@@ -279,7 +334,7 @@ Not part of the first implementation:
 
 These can be layered on later without invalidating the `for`-loop bytecode
 shape. If we eventually expose `next()`, the runtime can wrap the same internal
-iterator state machine in a Python-visible exception path.
+iteration state machine in a Python-visible exception path.
 
 ## Test Plan
 
@@ -304,9 +359,14 @@ File:
 
 Add structural coverage for:
 
-- simple `for` lowering over `range(...)`
+- simple generic `for` lowering using `GetIter` / `ForIter`
 - loop `else` layout
 - `break` path skipping `else`
+
+Later add structural coverage for:
+
+- direct `range(...)` lowering using specialized prep and range-iter opcodes
+- generic fallback CFG from specialized `range(...)` lowering
 
 Keep these tests structural and focused on lowering shape rather than full
 semantics.
@@ -324,6 +384,12 @@ Add semantic coverage for:
 - `break` suppresses loop `else`
 - `continue` skips to the next iteration correctly
 - nested loop sanity case
+- shadowing `range` falls back to the generic path correctly
+
+Later add:
+
+- `range(start, stop)` and `range(start, stop, step)` once enabled
+- fast-path `range(...)` loops match generic `RangeIterator` behavior
 
 ## Milestones
 
@@ -342,8 +408,9 @@ Add semantic coverage for:
 
 ### Milestone 3
 
+- `RangeIterator` runtime object
 - `GetIter` and `ForIter` bytecodes
-- interpreter support for iterators
+- interpreter support for generic iteration
 - code-object printer support
 
 ### Milestone 4
@@ -352,6 +419,12 @@ Add semantic coverage for:
 - `break`, `continue`, and `else` semantics validated for `for`
 
 ### Milestone 5
+
+- specialized `range(...)` fast-path bytecodes and lowering
+- guarded fallback to generic iteration
+- extend `range` to additional signatures if desired
+
+### Milestone 6
 
 - extend `range` to additional signatures if desired
 - add more builtins such as `print`
@@ -362,6 +435,13 @@ Add semantic coverage for:
   `Function` objects.
 - Builtin-scope creation needs to be done carefully so module/global lookup
   still behaves as expected.
+- Generic iterator support should be kept simple enough that later fast paths
+  still have a clear baseline to compare against.
+- The later `range` fast path must be guarded on resolved builtin identity at
+  runtime so shadowing remains correct.
+- Duplicated fast-path and fallback CFG needs to be kept readable when the
+  optimization layer is added, especially around `continue`, `break`, and loop
+  `else`.
 - If the implementation expands to include method calls or Python exceptions too
   early, the scope will grow quickly.
 
@@ -371,8 +451,10 @@ Start with the narrowest useful slice:
 
 - `for`
 - builtin `range(stop)`
-- iterator bytecodes
+- `RangeIterator`
+- generic iterator bytecodes
 - loop control-flow correctness
 
-Once that is in place, the same builtin-function mechanism can naturally grow to
+Once that is in place, a specialized `range(...)` fast path can be added as an
+optimization, and the same builtin-function mechanism can naturally grow to
 cover `print` and other small native helpers.
