@@ -54,6 +54,14 @@ tracks the most reasonable next steps after reviewing the current codebase,
 
 ## Data structures and object model
 
+- [ ] Stage the hidden-class object model described in `doc/object-model-plan.md`.
+  Why: the long-term direction is shape-based objects with slot layouts that
+  can be specialized by the JIT. The immediate next work is to turn that into
+  runtime milestones: shapes, instances, attribute access, and allocation-free
+  direct method calls.
+  Where: new runtime object types, attribute bytecodes, and interpreter/JIT
+  support.
+
 - [ ] Turn the placeholder scope/container storage into real VM-managed arrays.
   Why: both `src/indirect_dict.h` and `src/scope.h` still say some backing
   structures "need to be CL arrays at some point". This is an important step if
