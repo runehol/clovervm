@@ -56,9 +56,9 @@ tracks the most reasonable next steps after reviewing the current codebase,
 
 - [ ] Stage the hidden-class object model described in `doc/object-model-plan.md`.
   Why: the long-term direction is shape-based objects with slot layouts that
-  can be specialized by the JIT. The immediate next work is to turn that into
-  runtime milestones: shapes, instances, attribute access, and allocation-free
-  direct method calls.
+  can be specialized by the JIT. The immediate next work is the first
+  implementation slice in that doc: shapes, instances, generic attribute
+  bytecodes/helpers, and VM-native exception propagation.
   Where: new runtime object types, attribute bytecodes, and interpreter/JIT
   support.
 

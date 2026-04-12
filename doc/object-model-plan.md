@@ -408,6 +408,140 @@ Keep codegen/JIT tests structural and focused on:
 - method-call lowering
 - shape-guard specialization decisions
 
+## First Implementation Slice
+
+This is the recommended narrow slice to build next. It is intentionally smaller
+than "Python classes" and smaller than "full exceptions".
+
+### Slice goal
+
+Be able to create and manipulate shape-backed heap instances in the
+interpreter, with attribute loads/stores and VM-native exception propagation,
+without yet exposing full Python `class` syntax or `try` / `except`.
+
+### Milestone A: Runtime layout and allocation
+
+Deliverables:
+
+- add `Shape` runtime object
+- add `Instance` runtime object
+- choose trailing `Value` slot storage for instances
+- add one canonical empty shape per class-like owner
+- implement shape transition lookup for `store attr`
+
+Minimum invariants:
+
+- every instance points at exactly one shape
+- shape determines slot count and slot meaning
+- adding a new attribute either reuses an existing transition or creates one
+- shape identity is stable for the life of the shape
+
+Out of scope:
+
+- parser support for `class`
+- inheritance
+- descriptors
+
+### Milestone B: Generic attribute helpers
+
+Deliverables:
+
+- implement runtime helpers for:
+  - load instance attribute by name
+  - store instance attribute by name
+  - load class member by name
+- add a minimal "class-like owner" object or temporary test scaffolding so
+  instances have somewhere to resolve class members from
+
+Required behavior:
+
+- instance attribute hit reads the slot identified by the current shape
+- instance attribute miss checks the owner/class member table
+- missing attribute reports an internal attribute failure
+
+Out of scope:
+
+- inline caches
+- JIT specialization
+
+### Milestone C: Internal exception path
+
+Deliverables:
+
+- use `Value::exception_marker()` plus a pending-exception slot on thread state
+  or equivalent VM-owned state
+- add helpers to raise internal `TypeError`, `NameError`, `AttributeError`,
+  and `ValueError`
+- teach bytecode dispatch and function calls to propagate exception state
+  without relying on C++ exceptions as the VM semantic model
+
+Required behavior:
+
+- opcode helpers may fail without crashing or throwing through unrelated frames
+- nested function calls propagate exceptions back to the caller
+- existing runtime errors can begin moving onto the new mechanism incrementally
+
+Out of scope:
+
+- Python `raise`
+- Python `try` / `except`
+
+### Milestone D: Attribute bytecodes and syntax surface
+
+Deliverables:
+
+- parser support for attribute expressions `obj.name`
+- parser support for attribute assignment `obj.name = value`
+- codegen support for `LoadAttr` and `StoreAttr`
+- interpreter execution of those bytecodes via the generic helpers
+
+Required tests:
+
+1. store and reload one instance field
+2. two instances share shape transitions when fields are added in the same
+   order
+3. loading a missing attribute produces `AttributeError`
+4. exceptions raised during attribute access propagate through function calls
+
+Out of scope:
+
+- method calls
+- bound method values
+- class statements
+
+### Milestone E: Direct method-call fast path
+
+Deliverables:
+
+- parser support for `obj.method(args...)`
+- codegen lowering that preserves "receiver + callable" rather than forcing
+  bound-method allocation on the direct-call path
+- interpreter support to insert `self` for function-valued class members
+
+Required behavior:
+
+- direct method call syntax does not allocate a bound-method object
+- method escape cases such as `f = obj.method` may remain unsupported or use a
+  slower wrapper path initially
+
+Out of scope:
+
+- general descriptor protocol
+- optimization of escaping bound methods
+
+### Suggested stopping point for the slice
+
+Stop after Milestone D if we want the smallest coherent first delivery.
+
+That gives us:
+
+- shape-backed instances
+- attribute bytecodes
+- VM-native exception propagation
+- a clean substrate for later class syntax and method optimizations
+
+Add Milestone E immediately afterward if method syntax is the next priority.
+
 ## Recommendation
 
 Do not start with full Python `class` syntax.
