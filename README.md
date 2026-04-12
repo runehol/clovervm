@@ -51,3 +51,26 @@ and some runtime behavior is intentionally narrow.
 - Python C API compatibility for supporting the extension ecosystem.
 - Memory management using deferred refcounting - only references on the heap are refcounted, not references on the stack. This means only stores into objects trigger refcounting.
 - No GIL, fast multithreading.
+
+## Benchmarking
+
+The repository includes Google Benchmark-based interpreter microbenchmarks for:
+
+- Recursive Fibonacci.
+- A `while` loop accumulator.
+- A `for x in range(...)` loop accumulator.
+
+Build and run them with:
+
+```sh
+cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release --target run_benchmark
+```
+
+These benchmarks compile the source once and then measure interpreter execution.
+For the loop benchmarks, the normalized throughput signal is loop iterations per
+second. For recursive Fibonacci, the benchmark normalizes by recursive function
+calls per second so regressions are easier to compare over time. The benchmark
+programs themselves live as external files under `benchmark/`, so adjusting or
+adding workloads does not require editing the harness logic. Benchmark numbers
+should be taken from a `Release` build rather than `Debug`.

@@ -65,8 +65,8 @@ These are the lowest-hanging improvements I found after reading the current toke
   Why: several tests manually compile/parse/run strings in nearly identical ways. A tiny shared helper would make adding new coverage much easier.
   Where: `tests/`.
 
-- [ ] Add a simple benchmark or smoke target to track interpreter throughput over time.
-  Why: there are benchmark scripts in `benchmark/`, but they are not integrated into the workflow. Even one documented benchmark command would help catch obvious slowdowns.
+- [x] Add a simple benchmark target to track interpreter throughput over time.
+  Why: the repository now has a documented `run_benchmark` target backed by Google Benchmark, covering recursive Fibonacci plus `while` and `for` loop microbenchmarks.
 
 ## Probably not "lowest-hanging", but worth keeping in view
 

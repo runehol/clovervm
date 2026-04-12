@@ -48,8 +48,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 	# Externally provided content
 	add_subdirectory(dependencies)
     add_subdirectory(tests)
-
-
-    #add_subdirectory(benchmark)
+    if(CLOVERVM_BUILD_BENCHMARK_DEPS)
+        add_subdirectory(benchmark)
+    endif()
 
 endif()
