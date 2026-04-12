@@ -3,7 +3,7 @@
 
 #include "klass.h"
 #include "object.h"
-#include "owned_value.h"
+#include "owned.h"
 #include "value.h"
 
 namespace cl

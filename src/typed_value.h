@@ -3,7 +3,7 @@
 
 #include "klass.h"
 #include "object.h"
-#include "owned_value.h"
+#include "owned.h"
 #include "value.h"
 #include <stdexcept>
 #include <type_traits>
@@ -11,18 +11,29 @@
 namespace cl
 {
     struct String;
+    struct SMI
+    {
+    };
     extern Klass cl_string_klass;
 
-    template <typename T> struct ValueTypeTraits
-    {
-        static_assert(std::is_base_of_v<Object, T>);
+    template <typename T, typename Enable = void> struct ValueTypeTraits;
 
+    template <typename T>
+    struct ValueTypeTraits<T, std::enable_if_t<std::is_base_of_v<Object, T>>>
+    {
         static const Klass *expected_klass() { return &T::klass; }
 
         static bool is_instance(Value value)
         {
             return value.is_ptr() &&
                    value.get_ptr<Object>()->klass == expected_klass();
+        }
+
+        using get_type = T *;
+
+        static get_type get_unchecked(Value value)
+        {
+            return reinterpret_cast<T *>(value.as.ptr);
         }
     };
 
@@ -35,6 +46,22 @@ namespace cl
             return value.is_ptr() &&
                    value.get_ptr<Object>()->klass == expected_klass();
         }
+
+        using get_type = String *;
+
+        static get_type get_unchecked(Value value)
+        {
+            return reinterpret_cast<String *>(value.as.ptr);
+        }
+    };
+
+    template <> struct ValueTypeTraits<SMI>
+    {
+        static bool is_instance(Value value) { return value.is_smi(); }
+
+        using get_type = int64_t;
+
+        static get_type get_unchecked(Value value) { return value.get_smi(); }
     };
 
     template <typename T> inline void validate_typed_value(Value value)
@@ -50,8 +77,6 @@ namespace cl
     template <typename T> class TValue
     {
     public:
-        static_assert(std::is_base_of_v<Object, T>);
-
         explicit TValue(Value value) : value_(value)
         {
             validate_typed_value<T>(value_);
@@ -64,17 +89,24 @@ namespace cl
             return typed_value;
         }
 
-        static TValue from_ptr(T *ptr)
+        template <typename U = T,
+                  typename GetType = typename ValueTypeTraits<U>::get_type,
+                  typename = std::enable_if_t<std::is_pointer_v<GetType>>>
+        static TValue from_oop(std::remove_pointer_t<GetType> *ptr)
         {
             return unsafe_unchecked(Value::from_oop(ptr));
         }
 
+        template <typename U = T,
+                  typename GetType = typename ValueTypeTraits<U>::get_type,
+                  typename = std::enable_if_t<!std::is_void_v<GetType>>>
+        GetType get() const
+        {
+            return ValueTypeTraits<U>::get_unchecked(value_);
+        }
+
         Value raw() const { return value_; }
         operator Value() const { return value_; }
-
-        T *get() const { return reinterpret_cast<T *>(value_.as.ptr); }
-        T *operator->() const { return get(); }
-        T &operator*() const { return *get(); }
 
         bool operator==(TValue other) const { return value_ == other.value_; }
         bool operator!=(TValue other) const { return value_ != other.value_; }
@@ -85,61 +117,13 @@ namespace cl
         Value value_ = Value::None();
     };
 
-    template <typename T> class OwnedTValue
+    template <typename T> struct OwnedHandleTraits<TValue<T>>
     {
-    public:
-        static_assert(std::is_base_of_v<Object, T>);
-
-        explicit OwnedTValue(Value value) : value_(value)
-        {
-            validate_typed_value<T>(value);
-        }
-
-        explicit OwnedTValue(TValue<T> value) : value_(value.raw()) {}
-
-        OwnedTValue(const OwnedTValue &) = default;
-        OwnedTValue(OwnedTValue &&) noexcept = default;
-        OwnedTValue &operator=(const OwnedTValue &) = default;
-        OwnedTValue &operator=(OwnedTValue &&) noexcept = default;
-
-        OwnedTValue &operator=(Value value)
-        {
-            reset(value);
-            return *this;
-        }
-
-        OwnedTValue &operator=(TValue<T> value)
-        {
-            reset(value);
-            return *this;
-        }
-
-        TValue<T> get() const
-        {
-            return TValue<T>::unsafe_unchecked(value_.get());
-        }
-
-        Value raw() const { return value_.get(); }
-        operator Value() const { return raw(); }
-        operator TValue<T>() const { return get(); }
-
-        T *get_ptr() const { return get().get(); }
-        T *operator->() const { return get_ptr(); }
-        T &operator*() const { return *get_ptr(); }
-
-        void reset(Value value)
-        {
-            validate_typed_value<T>(value);
-            value_.reset(value);
-        }
-
-        void reset(TValue<T> value) { value_.reset(value.raw()); }
-
-        Value release() { return value_.release(); }
-
-    private:
-        OwnedValue value_;
+        static TValue<T> from_raw(Value value) { return TValue<T>(value); }
+        static Value to_raw(TValue<T> value) { return Value(value); }
     };
+
+    template <typename T> using OwnedTValue = Owned<TValue<T>>;
 
 }  // namespace cl
 

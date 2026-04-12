@@ -15,10 +15,10 @@ TEST(TValue, StringAllowsCheckedConstructionFromNonInternedString)
 
     String *string = context.thread()->make_refcounted<String>(L"hello");
 
-    TValue<String> typed_string(Value::from_oop(string));
+    TValue<String> typed_string = TValue<String>::from_oop(string);
 
     EXPECT_EQ(string, typed_string.get());
-    EXPECT_STREQ(L"hello", typed_string->data);
+    EXPECT_STREQ(L"hello", typed_string.get()->data);
 }
 
 TEST(TValue, ScopeUsesConcreteKlassTrait)
@@ -28,10 +28,10 @@ TEST(TValue, ScopeUsesConcreteKlassTrait)
 
     Scope *scope = context.thread()->make_refcounted<Scope>(Value::None());
 
-    TValue<Scope> typed_scope(Value::from_oop(scope));
+    TValue<Scope> typed_scope = TValue<Scope>::from_oop(scope);
 
     EXPECT_EQ(scope, typed_scope.get());
-    EXPECT_TRUE(typed_scope->empty());
+    EXPECT_TRUE(typed_scope.get()->empty());
 }
 
 TEST(TValue, UnsafeUncheckedRoundTripsRawValue)
@@ -53,6 +53,13 @@ TEST(TValue, CheckedConstructionThrowsOnWrongType)
     EXPECT_THROW((void)TValue<String>(Value::True()), std::runtime_error);
 }
 
+TEST(TValue, SmiUsesTraitDefinedGetter)
+{
+    TValue<SMI> smi(Value::from_smi(42));
+
+    EXPECT_EQ(42, smi.get());
+}
+
 TEST(OwnedTValue, RetainsAndExposesTypedPointers)
 {
     test::VmTestContext context;
@@ -63,8 +70,8 @@ TEST(OwnedTValue, RetainsAndExposesTypedPointers)
 
     OwnedTValue<String> owned_string(Value::from_oop(string));
     EXPECT_EQ(1, string->refcount);
-    EXPECT_EQ(string, owned_string.get_ptr());
-    EXPECT_STREQ(L"owned", owned_string->data);
+    EXPECT_EQ(string, owned_string.get().get());
+    EXPECT_STREQ(L"owned", owned_string.get().get()->data);
 
     Value released = owned_string.release();
     EXPECT_EQ(Value::from_oop(string), released);

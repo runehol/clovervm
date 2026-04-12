@@ -2,7 +2,7 @@
 #define CL_CODE_OBJECT_H
 
 #include "bytecode.h"
-#include "owned_value.h"
+#include "owned.h"
 #include "scope.h"
 #include "value.h"
 #include <vector>

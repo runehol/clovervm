@@ -6,7 +6,7 @@
 
 #include "heap.h"
 #include "intern_store.h"
-#include "owned_value.h"
+#include "owned.h"
 #include "str.h"
 #include "value.h"
 

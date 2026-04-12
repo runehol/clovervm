@@ -25,7 +25,7 @@ add_library(libclovervm STATIC
     klass.cpp
     klass.h
     object.h
-    owned_value.h
+    owned.h
     refcount.cpp
     refcount.h
     scope.cpp
