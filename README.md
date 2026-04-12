@@ -14,6 +14,8 @@ and some runtime behavior is intentionally narrow.
 - Names, assignment, and augmented assignment such as `+=`.
 - Function definitions, parameter passing, calls, recursion, and `return`.
 - `if` / `elif` / `else` statements.
+- `for` loops over `range(...)`, including `break`, `continue`, and loop
+  `else`.
 - `while` loops, including `break`, `continue`, and loop `else`.
 - Arithmetic and bitwise operators:
   `+`, `-`, `*`, `/`, `//`, `%`, `**`, `<<`, `>>`, `|`, `&`, `^`, unary `+`,
@@ -28,8 +30,8 @@ and some runtime behavior is intentionally narrow.
 
 ## Known limitations
 
-- Much of Python is not implemented yet, including `import`, `class`, `for`,
-  `try`, `with`, `global`, `nonlocal`, `del`, and `yield`.
+- Much of Python is not implemented yet, including `import`, `class`, `try`,
+  `with`, `global`, `nonlocal`, `del`, and `yield`.
 - Assignment is currently much narrower than Python. In practice, codegen only
   supports simple variable targets cleanly.
 - String support is minimal. The tokenizer recognizes basic double-quoted

@@ -1,76 +1,94 @@
 # clovervm TODO
 
-These are the lowest-hanging improvements I found after reading the current tokenizer, parser, code generator, interpreter, tests, and build setup. The items are ordered roughly by payoff versus implementation cost.
+The earlier "lowest-hanging fruit" checklist is mostly complete. This file now
+tracks the most reasonable next steps after reviewing the current codebase,
+[README.md](/Users/runehol/projects/clovervm/README.md), the completed
+`for`-loop plan, and the longer-term design notes.
 
-## High value, low effort
+## Immediate cleanup and correctness
 
-- [x] Add negative tests for unsupported syntax and runtime failures.
-  Why: the current test suite is almost entirely happy-path. A few small tests for `NameError`, non-callable calls, bad indentation, and parse failures would harden behavior quickly and make refactors safer.
-  Where: `tests/test_interpreter.cpp`, `tests/test_parser.cpp`, `tests/test_tokenizer.cpp`.
+- [ ] Tighten string literal handling, or explicitly document the narrow subset.
+  Why: `src/tokenizer.cpp` still only recognizes a very small double-quoted
+  string form with no escapes or single quotes. That limitation is easy to trip
+  over, and it is currently larger than the rest of the documented language
+  subset implies.
+  Where: `src/tokenizer.cpp`, `tests/test_tokenizer.cpp`, `README.md`.
 
-- [x] Add interpreter tests for arithmetic edge cases, especially shifts and overflow boundaries.
-  Why: `src/interpreter.cpp` already has `TODO` notes for left-shift overflow, and arithmetic ops depend on overflow intrinsics that are not being stress-tested.
-  Good cases: negative shift counts, large left shifts, `-x`, add/sub/mul overflow edges, right shift of negative values.
+- [ ] Turn `short_vector` assertion failures into runtime exceptions and add tests.
+  Why: `src/short_vector.h` still has explicit `TODO` comments for this. Bounds
+  and type failures should not rely on debug-only assertions once more runtime
+  features start using the container.
+  Where: `src/short_vector.h`, targeted tests.
 
-- [x] Replace silent `-1` parser stubs with explicit "not implemented" errors.
-  Why: several parser entry points currently return `-1` for constructs like `import`, `del`, `yield`, `class`, `for`, `try`, `with`, `global`, and `nonlocal`. That is brittle and makes failures harder to diagnose.
-  Where: `src/parser.cpp`.
+- [ ] Replace generic runtime errors on important slow paths with specific exceptions.
+  Why: arithmetic overflow and non-SMI fallbacks in `src/interpreter.cpp` still
+  collapse to `"Clovervm exception"`. Improving those failures will make the VM
+  much easier to debug and will keep future behavior changes testable.
+  Where: `src/interpreter.cpp`, `tests/test_interpreter.cpp`.
 
-- [x] Improve parse error messages with token position/source context.
-  Why: current parser errors usually say only "Expected token X, got Y" or "Unexpected token Y". Including the source offset or line/column would make debugging much faster.
-  Where: `src/parser.cpp`, possibly `src/compilation_unit.h` if line/column helpers are needed.
+## Next language and runtime slice
 
-- [x] Document the currently supported Python subset in `README.md`.
-  Why: the README describes long-term goals, but not the syntax and semantics that actually work today. A short "currently supported" list would reduce confusion immediately.
+- [ ] Make local-slot discovery less ad hoc before adding more statement forms.
+  Why: the current TODO list and the present codegen structure both point to
+  local analysis as a weak spot. Scanning function bodies for locals up front
+  will make control flow, nested blocks, and upcoming syntax work less brittle.
+  Where: `src/codegen.cpp`, `src/scope.cpp`, function-related tests.
 
-## Nice wins in the parser/codegen path
+- [ ] Add one more builtin on top of the new builtin-function path.
+  Why: `range` proved out the mechanism. Adding a small second builtin such as
+  `print` would validate that builtin lookup, arity checks, and call dispatch
+  are becoming a reusable runtime interface rather than a one-off for loops.
+  Where: `src/virtual_machine.cpp`, `src/interpreter.cpp`, interpreter tests.
 
-- [x] Validate assignment targets before codegen.
-  Why: the parser leaves a `TODO` about checking for a single assignment target, while codegen later rejects anything except simple variable assignment. Catching this earlier would produce clearer errors.
-  Where: `src/parser.cpp`, `src/codegen.cpp`.
+- [ ] Extend the supported Python subset in the order that unlocks real programs.
+  Why: the implementation is now strong enough on expressions, functions, and
+  loops that the next bottleneck is missing data access and containers, not loop
+  control itself.
+  Suggested order:
+  1. list and dict literals
+  2. subscripting
+  3. attribute access / method-call syntax
+  4. richer call syntax
+  5. remaining statements such as `import`, `class`, and `with`
+  Where: parser, codegen, interpreter, and focused interpreter-first tests.
 
-- [x] Add parser/codegen/interpreter coverage for `if/elif/else` and loop `else`.
-  Why: the parser and codegen both support these forms, but the existing tests barely exercise them.
-  Where: `tests/test_parser.cpp`, `tests/test_codegen.cpp`, `tests/test_interpreter.cpp`.
+## Data structures and object model
 
-- [x] Add tests for function behavior beyond the recursive Fibonacci smoke test.
-  Why: functions exist, but there is very little coverage for multiple parameters, implicit `return None`, local-vs-global lookup, and nested control flow inside functions.
-  Where: `tests/test_interpreter.cpp`, `tests/test_codegen.cpp`.
+- [ ] Turn the placeholder scope/container storage into real VM-managed arrays.
+  Why: both `src/indirect_dict.h` and `src/scope.h` still say some backing
+  structures "need to be CL arrays at some point". This is an important step if
+  the VM is going to grow beyond the current narrow subset without leaning on
+  host-side containers forever.
+  Where: `src/indirect_dict.h`, `src/scope.h`, related allocation/runtime code.
 
-- [x] Store actual string literal values in the AST instead of `Value::None()`.
-  Why: `atom()` creates string literal AST nodes but currently records `Value::None()` instead of the parsed string. That makes string support look further along than it really is.
-  Where: `src/parser.cpp`.
+- [ ] Start implementing the dictionary design described in `doc/dictionaries.md`.
+  Why: dictionaries unlock globals/scopes, object storage, and eventually Python
+  dict semantics. The design note is specific enough that this can become a real
+  implementation plan rather than staying aspirational.
+  Where: new dictionary runtime types plus scope integration.
 
-## Tokenizer improvements that should be cheap
+## Memory-management architecture
 
-- [x] Add tokenizer tests for number formats that the regex claims to support.
-  Why: the tokenizer accepts decimal, hex, octal, binary, and underscores, but tests only cover simple decimal literals.
-  Good cases: `0xff`, `0b1010`, `0o77`, `1_000_000`.
+- [ ] Write down a staged implementation plan for `doc/refcounting-and-safepoints.md`.
+  Why: the refcounting note has good long-term ideas, but it is still a sketch.
+  The project would benefit from a concrete sequence such as: deferred
+  refcounting invariants, zero-count tables, safepoint polling, then
+  multi-threaded coordination.
+  Where: new design doc or an expanded version of
+  `doc/refcounting-and-safepoints.md`.
 
-- [x] Decide whether comments/blank lines should emit leading `NEWLINE` tokens and lock it down with tests.
-  Why: there is already a regression-style tokenizer test around comments, which suggests this area is subtle and worth specifying clearly.
-  Where: `src/tokenizer.cpp`, `tests/test_tokenizer.cpp`.
+- [ ] Decide what near-term GC / lifetime invariants must hold before more heap objects land.
+  Why: upcoming work on dictionaries, collections, and richer objects will
+  multiply the number of refcounted heap paths. It is worth locking down the
+  invariants early instead of retrofitting them after object graphs get larger.
+  Where: memory-management docs, `src/refcount.h`, allocator and object tests.
 
-- [ ] Tighten string literal handling or explicitly mark it as intentionally minimal.
-  Why: the current tokenizer regex for strings is very limited and does not support escapes or single quotes. Either improving it a bit or documenting the limitation would avoid surprising behavior.
-  Where: `src/tokenizer.cpp`, `README.md`.
+## Performance and benchmarking
 
-## Small runtime / engineering cleanups
-
-- [ ] Turn `short_vector` bounds/type assertions into proper exceptions.
-  Why: the file already has `TODO` comments for this. Converting assertion-only failures into runtime errors would make behavior safer outside debug-only scenarios.
-  Where: `src/short_vector.h`.
-
-- [x] Add a small test helper layer to reduce repeated `VirtualMachine` setup in tests.
-  Why: several tests manually compile/parse/run strings in nearly identical ways. A tiny shared helper would make adding new coverage much easier.
-  Where: `tests/`.
-
-- [x] Add a simple benchmark target to track interpreter throughput over time.
-  Why: the repository now has a documented `run_benchmark` target backed by Google Benchmark, covering recursive Fibonacci plus `while` and `for` loop microbenchmarks.
-
-## Probably not "lowest-hanging", but worth keeping in view
-
-- [ ] Fill out the incomplete Python grammar incrementally: collections, attribute access, subscripting, richer call syntax, and more statements.
-- [ ] Implement real slow paths for non-SMI arithmetic/comparisons instead of generic exceptions.
-- [ ] Scan function bodies for locals before codegen so local slot allocation is more complete and less ad hoc.
-- [ ] Revisit memory/container placeholders like the comments saying some structures "need to be CL arrays at some point".
+- [ ] Use the new benchmark harness to establish a small tracked baseline before further feature work.
+  Why: the benchmark target now covers recursive calls plus `while` and `for`
+  loops. Capturing a baseline and adding one or two more workloads tied to the
+  next feature slice will make future regressions visible.
+  Good candidates: function-call-heavy code, builtin calls, and container-heavy
+  loops once lists/dicts exist.
+  Where: `benchmark/`, benchmark documentation, and release-build workflow.
