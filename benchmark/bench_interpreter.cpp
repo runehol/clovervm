@@ -269,6 +269,11 @@ namespace
 
     int64_t triangular_number(int64_t n) { return n * (n - 1) / 2; }
 
+    void set_cpython_comparison_counter(benchmark::State &state,
+                                        const char *relative_path, int64_t n,
+                                        int64_t expected,
+                                        int64_t items_per_iteration);
+
     template <typename Program>
     std::unique_ptr<Program> make_program(const char *relative_path, int64_t n)
     {
@@ -302,6 +307,12 @@ namespace
         }
 
         state.SetItemsProcessed(state.iterations() * items_per_iteration);
+
+        if constexpr(std::is_same_v<Program, CloverProgram>)
+        {
+            set_cpython_comparison_counter(state, relative_path, n, expected,
+                                           items_per_iteration);
+        }
     }
 
     double measure_python_items_per_second(const char *relative_path, int64_t n,
@@ -384,6 +395,18 @@ namespace
         return throughput;
     }
 
+    void set_cpython_comparison_counter(benchmark::State &state,
+                                        const char *relative_path, int64_t n,
+                                        int64_t expected,
+                                        int64_t items_per_iteration)
+    {
+        state.counters["vs_cpython"] =
+            measure_clover_items_per_second(relative_path, n, expected,
+                                            items_per_iteration) /
+            measure_python_items_per_second(relative_path, n, expected,
+                                            items_per_iteration);
+    }
+
     int64_t sum_of_products(int64_t n, int64_t inner_iterations)
     {
         int64_t total = 0;
@@ -404,16 +427,6 @@ static void BM_RecursiveFibonacci(benchmark::State &state)
     const int64_t n = state.range(0);
     run_benchmark_case<Program>(state, "benchmark/interpreter_recursive_fib.py",
                                 n, fibonacci_value(n), fibonacci_call_count(n));
-    if constexpr(std::is_same_v<Program, CloverProgram>)
-    {
-        state.counters["vs_cpython"] =
-            measure_clover_items_per_second(
-                "benchmark/interpreter_recursive_fib.py", n, fibonacci_value(n),
-                fibonacci_call_count(n)) /
-            measure_python_items_per_second(
-                "benchmark/interpreter_recursive_fib.py", n, fibonacci_value(n),
-                fibonacci_call_count(n));
-    }
 }
 BENCHMARK_TEMPLATE(BM_RecursiveFibonacci, CloverProgram)
     ->Name("BM_RecursiveFibonacci")
@@ -426,16 +439,6 @@ template <typename Program> static void BM_WhileLoop(benchmark::State &state)
     run_benchmark_case<Program>(state, "benchmark/interpreter_while_loop.py",
                                 iterations, triangular_number(iterations),
                                 iterations);
-    if constexpr(std::is_same_v<Program, CloverProgram>)
-    {
-        state.counters["vs_cpython"] =
-            measure_clover_items_per_second(
-                "benchmark/interpreter_while_loop.py", iterations,
-                triangular_number(iterations), iterations) /
-            measure_python_items_per_second(
-                "benchmark/interpreter_while_loop.py", iterations,
-                triangular_number(iterations), iterations);
-    }
 }
 BENCHMARK_TEMPLATE(BM_WhileLoop, CloverProgram)
     ->Name("BM_WhileLoop")
@@ -449,16 +452,6 @@ template <typename Program> static void BM_ForLoop(benchmark::State &state)
     run_benchmark_case<Program>(state, "benchmark/interpreter_for_loop.py",
                                 iterations, triangular_number(iterations),
                                 iterations);
-    if constexpr(std::is_same_v<Program, CloverProgram>)
-    {
-        state.counters["vs_cpython"] =
-            measure_clover_items_per_second(
-                "benchmark/interpreter_for_loop.py", iterations,
-                triangular_number(iterations), iterations) /
-            measure_python_items_per_second(
-                "benchmark/interpreter_for_loop.py", iterations,
-                triangular_number(iterations), iterations);
-    }
 }
 BENCHMARK_TEMPLATE(BM_ForLoop, CloverProgram)
     ->Name("BM_ForLoop")
@@ -473,16 +466,6 @@ static void BM_ForLoopSlowPath(benchmark::State &state)
     run_benchmark_case<Program>(
         state, "benchmark/interpreter_for_loop_slow_path.py", iterations,
         triangular_number(iterations), iterations);
-    if constexpr(std::is_same_v<Program, CloverProgram>)
-    {
-        state.counters["vs_cpython"] =
-            measure_clover_items_per_second(
-                "benchmark/interpreter_for_loop_slow_path.py", iterations,
-                triangular_number(iterations), iterations) /
-            measure_python_items_per_second(
-                "benchmark/interpreter_for_loop_slow_path.py", iterations,
-                triangular_number(iterations), iterations);
-    }
 }
 BENCHMARK_TEMPLATE(BM_ForLoopSlowPath, CloverProgram)
     ->Name("BM_ForLoopSlowPath")
@@ -499,18 +482,6 @@ static void BM_NestedForLoop(benchmark::State &state)
         state, "benchmark/interpreter_nested_for_loop.py", iterations,
         sum_of_products(iterations, kInnerIterations),
         iterations * kInnerIterations);
-    if constexpr(std::is_same_v<Program, CloverProgram>)
-    {
-        state.counters["vs_cpython"] =
-            measure_clover_items_per_second(
-                "benchmark/interpreter_nested_for_loop.py", iterations,
-                sum_of_products(iterations, kInnerIterations),
-                iterations * kInnerIterations) /
-            measure_python_items_per_second(
-                "benchmark/interpreter_nested_for_loop.py", iterations,
-                sum_of_products(iterations, kInnerIterations),
-                iterations * kInnerIterations);
-    }
 }
 BENCHMARK_TEMPLATE(BM_NestedForLoop, CloverProgram)
     ->Name("BM_NestedForLoop")
