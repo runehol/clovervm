@@ -203,6 +203,60 @@ Fast-path lookup can then be:
 while the generic lookup helper can switch to full MRO traversal for
 multiple-inheritance classes.
 
+### Shape-vs-class responsibility split
+
+Shapes should capture:
+
+- class identity
+- instance-owned field layout
+- whether an instance currently has an own property that shadows a class member
+
+Shapes should not capture:
+
+- the contents of the class member table
+- the contents of ancestor member tables
+- the effective result of method lookup through the MRO
+
+That means:
+
+- shape identity implies class identity for optimized instance operations
+- class mutation does not rewrite existing instance shapes
+- optimized lookup depends on both:
+  - instance shape, for own-field layout and shadowing
+  - class-side lookup validity, for MRO-resolved members
+
+This keeps per-instance layout and per-class method resolution cleanly
+separated.
+
+### Call-site guards and compression
+
+For an optimized method call like `c.f()`, the runtime wants to prove:
+
+- the receiver still has the expected shape
+- lookup of `f` starting from the receiver's class still resolves to the same
+  callable
+
+Because shapes are class-owned, the shape guard already implies class identity.
+So the hot-path guard set should not be:
+
+- shape check
+- separate class pointer check
+- separate shadowing check
+
+Instead, the intended compressed form is:
+
+- shape check
+- one class-side lookup-validity check, or eager invalidation instead of that
+  check
+
+In the long-term optimized path, method calls should ideally use:
+
+- shape guard
+- direct jump or inlined body
+
+with class-side changes handled by eager invalidation rather than by an always-on
+version load in the hot path.
+
 ### Stage 3: JIT specialization
 
 Lower cached attribute sites into:
@@ -268,6 +322,101 @@ semantics when the method value is observed.
 
 That mirrors what many VMs do: optimize the overwhelmingly common call pattern,
 and let the rarer "store the method object" path pay more.
+
+## Method Lookup Dependencies And Invalidation
+
+Optimized method calls depend on lookup facts, not merely on the class that
+currently owns the method.
+
+Example:
+
+```python
+class A:
+    def f(self):
+        ...
+
+class B(A):
+    pass
+
+b = B()
+```
+
+An optimized `b.f()` depends on the fact that:
+
+- lookup of `"f"` starting from `B`
+- currently resolves to `A.f`
+
+That optimization must be invalidated if:
+
+- `A.f` changes
+- `A.f` is deleted
+- `B.f` is assigned, causing a nearer shadowing hit
+- any earlier class in the relevant MRO begins defining `f`
+
+So the dependency is not just "the current defining class". It is the
+first-hit resolution of a name along the receiver class's MRO.
+
+### Required safety rule
+
+For an optimized lookup of `(start_class, name)`, any mutation to `name` on any
+class from `start_class` through the class that currently defines the name must
+invalidate the optimization.
+
+In single inheritance, if `B.f()` currently resolves to `A.f`, then the
+dependency set includes at least:
+
+- `B`
+- `A`
+
+because:
+
+- mutating `B.f` can introduce a closer hit
+- mutating `A.f` can change the current hit
+
+For deeper hierarchies, the same rule extends through the whole MRO prefix up
+to the defining class.
+
+### Practical invalidation strategy
+
+The likely staged design is:
+
+1. bootstrap correctness
+   - shape guard
+   - class-side version or lookup token check
+
+2. optimized steady state
+   - shape guard only on the hot path
+   - eager invalidation/deoptimization registry for class-side lookup facts
+
+This matches the expected workload well: classes and methods are usually stable,
+so it is better to pay invalidation cost on rare mutation than to pay a class
+version load on every hot method call.
+
+### Invalidation granularity
+
+Do not invalidate method-call optimizations for every class variable write.
+
+Instead, separate:
+
+- callable / lookup-relevant member mutations
+- ordinary class-data mutations
+
+The intended policy is:
+
+- method-like member writes participate in invalidation
+- plain class-variable writes do not invalidate method-call optimizations unless
+  optimized code explicitly depends on those variables
+
+This means:
+
+- `C.f = other_function` invalidates optimized `obj.f()`
+- `del C.f` invalidates optimized `obj.f()`
+- `Base.f = other_function` invalidates optimized inherited `obj.f()`
+- `C.x = 3` does not invalidate optimized `obj.f()` unless some optimization
+  explicitly depended on `x`
+
+That is a good first tradeoff: coarse enough to implement, but not so coarse
+that harmless class-data writes destroy unrelated call-site optimizations.
 
 ## Inheritance And MRO
 
@@ -375,130 +524,313 @@ Only after A and B:
 
 This keeps syntax work from outrunning runtime machinery.
 
-## Recommended Implementation Order
+## Implementation Roadmap
 
-### Milestone 1: Object-layout substrate
+The design should be implemented runtime-first. Each phase should leave the VM
+in a coherent, testable state.
 
-- define `Shape`, `Class`, and `Instance` runtime objects
-- use trailing inline cells plus optional overflow slot array storage
-- implement shape transitions for adding instance attributes
-- implement a minimal class member table with ancestor traversal
+### Phase 0: Lock down invariants
 
-This milestone does not need parser support for `class` yet if manual test
-construction is easier.
+These invariants should be treated as architecture decisions:
 
-### Milestone 2: Attribute bytecodes and interpreter semantics
+- instance pointers are stable for the object lifetime
+- shapes are immutable after publication
+- every shape belongs to exactly one class
+- shape identity comparison is by pointer or stable id
+- class member tables carry invalidation metadata for optimized lookups
+- instance member storage is split into inline slots and optional overflow
+  storage
+- generic lookup APIs are phrased in terms of MRO traversal even if the first
+  implementation only uses a single-base chain
 
-- add AST/codegen support for attribute access and assignment
-- add `LoadAttr` / `StoreAttr`
-- implement interpreter helpers using shape metadata
-- raise a real internal attribute failure instead of generic errors
+### Phase 1: Add runtime representations
 
-### Milestone 3: Internal exception machinery
+Add the core heap object types needed for classes and instances:
 
-- replace generic throw-based runtime control flow with pending-exception +
-  unwind support
+- `Shape`
+- `Class`
+- `Instance`
+- overflow slot array representation
+- minimal exception object representation
+
+Recommended choices:
+
+- keep `Klass` as the VM meta-type description and add a separate Python-level
+  `Class` runtime object
+- use a dictionary-like class member table with invalidation metadata
+- prefer a dedicated slot-array object over `CLShortVector` if resizing and
+  refcount behavior would otherwise become awkward
+
+Exit criteria:
+
+- tests can allocate classes and instances manually from C++ helpers
+- tests can inspect shapes, inline slots, and overflow slots directly
+
+### Phase 2: Implement shape growth and storage semantics
+
+Before any syntax work, make attribute storage real:
+
+- implement shape transition tables
+- implement slot assignment policy
+- implement overflow growth policy
+- add manual runtime helpers for reading and writing properties by name
+
+Recommended choices:
+
+- fixed inline capacity per class for the first cut
+- simple geometric growth for overflow arrays
+- assign inline slots first, then overflow slots, never re-pack existing shapes
+
+Exit criteria:
+
+- two instances with the same property-add order share shape transitions
+- instances continue to work after spilling into overflow storage
+
+### Phase 3: Implement generic lookup semantics
+
+Implement Python-like member resolution independently of parser/codegen work:
+
+- instance property lookup
+- class member lookup
+- ancestor walk
+- internal attribute-miss reporting
+
+Generic lookup should return a richer resolution record, not just a `Value`.
+That record should include:
+
+- resolved value
+- where it was found: instance slot, defining class, ancestor class
+- slot metadata when applicable
+- enough dependency information to invalidate optimized inherited lookups when a
+  nearer class begins shadowing a name
+
+Exit criteria:
+
+- generic lookup works correctly for instance hits, defining-class hits,
+  inherited hits, and misses
+
+### Phase 4: Add VM-native exception propagation
+
+Stop using C++ exceptions as the execution model:
+
+- add pending-exception state
+- add helper constructors for built-in exception classes
 - teach calls and returns to propagate exception state
-- switch existing name/type/value errors onto this path
+- move attribute failures onto the new path first
 
-This milestone is valuable even before Python `try` exists.
+Recommended choice:
 
-### Milestone 4: Method-call fast path
+- store a raw exception object `Value` first
+- add source-location attachment later
 
-- add method-call-aware lookup or bytecode
-- optimize `obj.method(args...)` without bound-method allocation
-- only allocate a bound-method wrapper when the method value escapes
+Exit criteria:
 
-### Milestone 5: Python class syntax
+- nested interpreter calls propagate exceptions without `throw`
+- attribute misses produce VM-managed exception objects
 
-- parse and compile `class`
-- create class objects
-- instantiate instances by calling class objects
-- support method definitions and `self`
+### Phase 5: Add attribute syntax and bytecode
 
-Start with:
+Connect the runtime machinery to the language pipeline:
 
-- no full multiple-inheritance semantics in the first cut, but class layout and
-  lookup must remain extensible to MRO-based resolution
-- no descriptors except plain function methods
-- no metaclass features
+- parser support for attribute expressions
+- parser support for attribute assignment
+- `LoadAttr` / `StoreAttr` bytecodes
+- codegen lowering
+- interpreter execution
 
-### Milestone 6: Exception syntax
+Recommended choice:
 
-- `raise`
-- `try` / `except`
-- exception matching by class
+- use constant-table interned strings for attribute names first
+- add cache metadata later rather than complicating the first opcode shape
 
-### Milestone 7: Caching and JIT hooks
+Exit criteria:
 
-- add monomorphic attribute inline caches in the interpreter
-- add class/member versioning needed for invalidation
-- expose the same cache/guard model to the JIT
+- attribute access works end to end from source text
 
-### Milestone 8: Richer Python semantics
+### Phase 6: Add method-call fast path
 
-- inheritance
-- descriptors
-- `super`
-- `__init__`
-- `__getattribute__` / `__getattr__`
-- `finally`
+Make direct method calls cheap before full class syntax arrives:
 
-## Open Design Questions
+- add method-aware lookup results
+- add `obj.method(args...)` lowering
+- insert `self` on direct class-function calls
+- allocate a wrapper only when method values escape
 
-### 1. Where should class members live?
+Recommended choice:
 
-Best initial answer:
+- prefer `LoadMethod` / `CallMethod` if that fits later inline caching better
+- allow escaping bound methods to stay slow or unsupported initially
 
-- in a dictionary-like class member table
-- with a version tag for cache invalidation
+Exit criteria:
 
-That is simple and works well with inline caches.
+- direct method calls work without bound-method allocation on the hot path
+- invalidation correctly handles inherited-method shadowing such as `B` gaining
+  `f` after optimized calls previously resolved to `A.f`
 
-### 1a. How should inheritance be represented?
+### Phase 7: Add Python class syntax
 
-Best initial answer:
+Expose the runtime model through Python `class` definitions:
 
-- keep an inline single-base pointer for the common case
-- add an optional bases array only for multiple inheritance
-- keep lookup helpers abstracted over class linearization rather than baking in
-  recursive single-base lookup
-- allow the first implementation to populate the effective linearization from
-  just:
-  - the class itself
-  - a single-base chain
-- add explicit MRO storage once multiple inheritance is enabled
+- `class` parser support
+- class body execution model
+- class object creation
+- method installation onto class member tables
 
-This keeps the common case fast without baking single inheritance into the
-generic lookup model or cache structure.
+Recommended choice:
 
-### 2. Should instances always support arbitrary new attributes?
+- execute class bodies in a temporary scope or dictionary-like environment
+- construct the class object from that environment afterward
+- start with no inheritance syntax or single-base syntax only, while keeping
+  the representation ready for multiple inheritance
 
-Probably yes for Python compatibility.
+Exit criteria:
 
-That means:
+- user code can define a basic class with methods and instantiate it
 
-- shapes must support transition-on-store
-- pathological objects can still fall back to a slower dictionary mode later if
-  needed
+### Phase 8: Add full inheritance and MRO
 
-### 3. How should slot storage be laid out?
+Enable Python’s class-linearization semantics beyond the single-base subset:
 
-Best initial answer:
+- multiple-base parsing
+- C3 linearization
+- explicit MRO storage
+- cache invalidation across the effective MRO
+- `super()` support later
 
-- use trailing inline `Value` cells after the object header
-- add an out-of-object overflow array once inline capacity is exhausted
+Exit criteria:
 
-This matches the existing cell-oriented allocator style and is JIT-friendly.
+- diamond inheritance resolves according to Python’s MRO rules
 
-### 4. How should bound-method escape values be represented?
+### Phase 9: Add inline caches and JIT hooks
 
-Best initial answer:
+Turn the correct object model into a fast one:
 
-- allocate a small wrapper object only when needed
-- do not allocate on direct method-call syntax
+- monomorphic attribute caches in the interpreter
+- eager invalidation or lookup-version dependencies for method resolution
+- method-call caches
+- JIT guard representation for shapes and class-member lookup assumptions
 
-That captures most of the win without distorting semantics.
+Exit criteria:
+
+- the interpreter and later JIT can specialize instance/member access without
+  dictionary lookup on the hot path
+
+## First Slice
+
+The recommended first implementation slice is intentionally smaller than full
+Python classes and smaller than full Python exception syntax.
+
+### Goal
+
+Be able to create and manipulate shape-backed heap instances in the
+interpreter, with attribute loads/stores and VM-native exception propagation,
+without yet exposing full Python `class` syntax or `try` / `except`.
+
+### Scope
+
+Build the system up through Phase 5:
+
+- runtime representations
+- shape growth and overflow storage
+- generic lookup
+- VM-native exception propagation
+- attribute syntax and bytecode
+
+Method-call optimization is the next step after that slice is stable.
+
+### Concrete checklist
+
+1. Runtime data structures
+   Add `src/shape.h` and `src/shape.cpp`.
+   Define `Shape` with stable identity, owning `Class *`, property count,
+   inline capacity, property-to-slot metadata, and a transition table.
+   Add slot metadata recording logical property slot, inline-vs-overflow
+   storage, and physical storage index.
+   Add or extend a `Class` runtime type with class name, member table, inline
+   single-base pointer, optional bases array, optional MRO placeholder,
+   initial instance shape, and invalidation metadata.
+   Add `Instance` with `Class *`, `Shape *`, inline slot capacity, and overflow
+   slot array pointer.
+
+2. Overflow storage
+   Choose the overflow representation.
+   Add helpers to allocate the first overflow array lazily, grow it without
+   moving the instance object, and read/write both inline and overflow slots.
+   Ensure refcounting is correct for overflow-stored values.
+
+3. Shape transitions
+   Implement "lookup existing transition by property name".
+   Implement "create new shape for added property".
+   Assign new properties to inline storage while capacity remains, and later
+   properties to overflow storage.
+   Preserve shape sharing across instances that add properties in the same
+   order.
+
+4. Class and ancestor lookup
+   Add helper to look up one member in a class member table.
+   Add helper to walk a class linearization until hit or miss.
+   Keep the API MRO-shaped even if the first implementation only fills it from
+   a single-base chain.
+   Optimize the implementation so the single-base case uses the inline base
+   pointer without an extra array or MRO indirection.
+
+5. VM exception substrate
+   Add pending-exception state to `ThreadState` or equivalent VM-owned state.
+   Add helper constructors for internal `TypeError`, `NameError`,
+   `AttributeError`, and `ValueError`.
+   Propagate `Value::exception_marker()` through call and return paths.
+   Convert attribute lookup/store failures onto this path first.
+
+6. Generic attribute helpers
+   Implement runtime `load_attr(obj, name)` and `store_attr(obj, name, value)`.
+   Use shape metadata for instance-slot hits.
+   Fall back to class and ancestor lookup on instance miss.
+   Create new shapes on new-property stores.
+   Spill into overflow storage when inline capacity is exhausted.
+   Raise `AttributeError` on full lookup miss.
+
+7. Syntax and bytecode
+   Extend the parser for attribute expressions `obj.name`.
+   Extend the parser for attribute assignment `obj.name = value`.
+   Add `LoadAttr` / `StoreAttr` bytecodes.
+   Add codegen lowering and interpreter support for the new bytecodes.
+
+8. Tests for the stopping point
+   Cover storing and loading one inline property.
+   Cover growing past inline capacity and using overflow storage.
+   Cover reusing the same shape chain across two instances with identical add
+   order.
+   Cover resolving a class member when the instance does not have the property.
+   Cover resolving an inherited member through the class chain.
+   Cover raising `AttributeError` on full miss.
+   Cover propagating an attribute exception through nested calls.
+
+### Expected stopping point
+
+After this slice, the VM should have:
+
+- shape-backed instances
+- class and ancestor lookup
+- attribute bytecodes
+- VM-native exception propagation
+- a clean substrate for later class syntax and method optimizations
+
+## What Still Needs To Be Pinned Down
+
+The plan now hangs together directionally, but a few details still need one
+more short appendix before coding starts in earnest:
+
+- the exact split between `Klass` and Python-level `Class`
+- the concrete representation of shape transition tables
+- the concrete representation of class member tables and invalidation metadata
+- the exact overflow slot array type
+- the exact API returned by generic member lookup
+- the exact dependency-registration data structure for invalidating optimized
+  inherited method lookups when nearer classes begin shadowing a name
+- the exact bytecode operand shape for `LoadAttr`, `StoreAttr`, and likely
+  `LoadMethod` / `CallMethod`
+
+Once those are pinned down, the first slice is detailed enough to implement.
 
 ## Testing Strategy
 
@@ -521,249 +853,48 @@ Keep codegen/JIT tests structural and focused on:
 - method-call lowering
 - shape-guard specialization decisions
 
-## First Implementation Slice
+## Open Questions
 
-This is the recommended narrow slice to build next. It is intentionally smaller
-than "Python classes" and smaller than "full exceptions".
+### Where should class members live?
 
-### Slice goal
+Best initial answer:
 
-Be able to create and manipulate shape-backed heap instances in the
-interpreter, with attribute loads/stores and VM-native exception propagation,
-without yet exposing full Python `class` syntax or `try` / `except`.
+- in a dictionary-like class member table
+- with invalidation metadata for optimized lookups
 
-### Milestone A: Runtime layout and allocation
+### How should inheritance be represented?
 
-Deliverables:
+Best initial answer:
 
-- add `Shape` runtime object
-- add `Instance` runtime object
-- choose trailing `Value` slot storage for instances
-- add one canonical empty shape per class-like owner
-- implement shape transition lookup for `store attr`
+- keep an inline single-base pointer for the common case
+- add an optional bases array only for multiple inheritance
+- keep lookup helpers abstracted over class linearization rather than baking in
+  recursive single-base lookup
+- add explicit MRO storage once multiple inheritance is enabled
 
-Minimum invariants:
+### Should instances always support arbitrary new attributes?
 
-- every instance points at exactly one shape
-- shape determines slot count and slot meaning
-- adding a new attribute either reuses an existing transition or creates one
-- shape identity is stable for the life of the shape
+Probably yes for Python compatibility.
 
-Out of scope:
+That means:
 
-- parser support for `class`
-- inheritance
-- descriptors
+- shapes must support transition-on-store
+- pathological objects can still fall back to a slower dictionary mode later if
+  needed
 
-### Milestone B: Generic attribute helpers
+### How should slot storage be laid out?
 
-Deliverables:
+Best initial answer:
 
-- implement runtime helpers for:
-  - load instance attribute by name
-  - store instance attribute by name
-  - load class member by name
-- add a minimal "class-like owner" object or temporary test scaffolding so
-  instances have somewhere to resolve class members from
+- use trailing inline `Value` cells after the object header
+- add an out-of-object overflow array once inline capacity is exhausted
 
-Required behavior:
+### How should bound-method escape values be represented?
 
-- instance attribute hit reads the slot identified by the current shape
-- instance attribute miss checks the owner/class member table
-- missing attribute reports an internal attribute failure
+Best initial answer:
 
-Out of scope:
-
-- inline caches
-- JIT specialization
-
-### Milestone C: Internal exception path
-
-Deliverables:
-
-- use `Value::exception_marker()` plus a pending-exception slot on thread state
-  or equivalent VM-owned state
-- add helpers to raise internal `TypeError`, `NameError`, `AttributeError`,
-  and `ValueError`
-- teach bytecode dispatch and function calls to propagate exception state
-  without relying on C++ exceptions as the VM semantic model
-
-Required behavior:
-
-- opcode helpers may fail without crashing or throwing through unrelated frames
-- nested function calls propagate exceptions back to the caller
-- existing runtime errors can begin moving onto the new mechanism incrementally
-
-Out of scope:
-
-- Python `raise`
-- Python `try` / `except`
-
-### Milestone D: Attribute bytecodes and syntax surface
-
-Deliverables:
-
-- parser support for attribute expressions `obj.name`
-- parser support for attribute assignment `obj.name = value`
-- codegen support for `LoadAttr` and `StoreAttr`
-- interpreter execution of those bytecodes via the generic helpers
-
-Required tests:
-
-1. store and reload one instance field
-2. two instances share shape transitions when fields are added in the same
-   order
-3. loading a missing attribute produces `AttributeError`
-4. exceptions raised during attribute access propagate through function calls
-
-Out of scope:
-
-- method calls
-- bound method values
-- class statements
-
-### Milestone E: Direct method-call fast path
-
-Deliverables:
-
-- parser support for `obj.method(args...)`
-- codegen lowering that preserves "receiver + callable" rather than forcing
-  bound-method allocation on the direct-call path
-- interpreter support to insert `self` for function-valued class members
-
-Required behavior:
-
-- direct method call syntax does not allocate a bound-method object
-- method escape cases such as `f = obj.method` may remain unsupported or use a
-  slower wrapper path initially
-
-Out of scope:
-
-- general descriptor protocol
-- optimization of escaping bound methods
-
-### Suggested stopping point for the slice
-
-Stop after Milestone D if we want the smallest coherent first delivery.
-
-That gives us:
-
-- shape-backed instances
-- attribute bytecodes
-- VM-native exception propagation
-- a clean substrate for later class syntax and method optimizations
-
-Add Milestone E immediately afterward if method syntax is the next priority.
-
-## Concrete Engineering Checklist
-
-This is the recommended implementation sequence for the first slice.
-
-### Checklist 1: Runtime data structures
-
-- add `src/shape.h` and `src/shape.cpp`
-- define `Shape` with:
-  - stable shape id
-  - owning `Class *`
-  - total property count
-  - inline capacity
-  - property-name to slot metadata mapping
-  - transition table for property-adds
-- define slot metadata that records:
-  - logical property slot
-  - inline vs overflow storage
-  - physical storage index
-- add or extend a `Class` runtime type with:
-  - class name
-  - member table
-  - inline single-base pointer
-  - optional bases array
-  - optional MRO / ancestor-walk placeholder representation
-  - initial instance shape
-  - version tag placeholder
-- add `Instance` with:
-  - `Class *`
-  - `Shape *`
-  - inline slot capacity
-  - overflow slot array pointer
-
-### Checklist 2: Overflow storage
-
-- choose the overflow representation:
-  - reuse `CLShortVector` after making it exception-safe, or
-  - add a dedicated slot-array runtime object
-- add helper to lazily allocate the first overflow array
-- add helper to grow the overflow array without moving the instance object
-- add helpers to read/write inline slots
-- add helpers to read/write overflow slots
-- ensure refcounting is correct for values stored in overflow slots
-
-### Checklist 3: Shape transitions
-
-- implement "lookup existing transition by property name"
-- implement "create new shape for added property"
-- assign new properties to inline storage while capacity remains
-- assign later properties to overflow storage
-- preserve shape sharing across instances that add properties in the same order
-- add focused tests for shared transition reuse
-
-### Checklist 4: Class-chain lookup
-
-- add helper to look up one member in a class member table
-- add helper to walk a class linearization until hit or miss
-- keep the API MRO-shaped even if the first implementation only fills it from a
-  single-base chain
-- optimize the implementation so the single-base case uses the inline base
-  pointer without an extra array/MRO indirection
-- define the invalidation/version fields needed for later caches
-- add tests for:
-  - hit on the defining class
-  - hit on a base class
-  - miss after full ancestor walk
-
-### Checklist 5: VM exception substrate
-
-- add pending-exception state to `ThreadState` or equivalent VM-owned state
-- add helper constructors for internal `TypeError`, `NameError`,
-  `AttributeError`, and `ValueError`
-- propagate `Value::exception_marker()` through call and return paths
-- convert attribute lookup/store failures onto this path first
-- add nested-call exception-propagation tests
-
-### Checklist 6: Generic attribute helpers
-
-- implement runtime `load_attr(obj, name)`
-- implement runtime `store_attr(obj, name, value)`
-- use shape metadata for instance-slot hits
-- fall back to class/base-class lookup on instance miss
-- create new shapes on new-property stores
-- spill into overflow storage when inline capacity is exhausted
-- raise `AttributeError` on full lookup miss
-
-### Checklist 7: Syntax and bytecode
-
-- extend the parser for attribute expressions `obj.name`
-- extend the parser for attribute assignment `obj.name = value`
-- add `LoadAttr` / `StoreAttr` bytecodes
-- add codegen lowering for attribute loads and stores
-- add interpreter support for the new bytecodes
-
-### Checklist 8: Tests for the first stopping point
-
-- storing and loading one inline property
-- growing past inline capacity and using overflow storage
-- reusing the same shape chain across two instances with identical add order
-- resolving a class member when the instance does not have the property
-- resolving a base-class member through the class chain
-- raising `AttributeError` on full miss
-- propagating an attribute exception through nested calls
-
-### Checklist 9: Optional immediate follow-up for method calls
-
-- classify plain function-valued class members as methods
-- add method-call-aware lookup result carrying callable plus receiver
-- add lowering for `obj.method(args...)` that avoids bound-method allocation
-- allow `f = obj.method` to use a slower wrapper path initially
+- allocate a small wrapper object only when needed
+- do not allocate on direct method-call syntax
 
 ## Recommendation
 
@@ -772,10 +903,10 @@ Do not start with full Python `class` syntax.
 Start with:
 
 - shape-backed instances
+- class and ancestor lookup
 - attribute load/store bytecodes
 - VM-level exception propagation
-- direct method-call optimization without bound-method allocation
 
 Once those pieces are stable, `class` syntax becomes a relatively thin layer on
-top of a runtime that already knows how to represent objects, call methods, and
-fail correctly.
+top of a runtime that already knows how to represent objects, look up members,
+and fail correctly.
