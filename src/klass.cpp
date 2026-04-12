@@ -9,9 +9,8 @@ namespace cl
         const Klass *k = (const Klass *)v.get_ptr();
         const cl_wchar *klass_name = k->klass_name;
 
-        String *str = ThreadState::get_active()->make_refcounted_sized<String>(
+        return ThreadState::get_active()->make_refcounted_sized_value<String>(
             String::size_for(klass_name), klass_name);
-        return Value::from_oop(str);
     }
 
     Klass cl_klass_klass(L"class", klass_str);

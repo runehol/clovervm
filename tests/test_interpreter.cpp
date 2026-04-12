@@ -287,10 +287,11 @@ TEST(Interpreter, call_builtin_function)
     CodeObject *code_obj = test_context.compile_file(L"native_add(4, 7)\n");
 
     Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
-    Value name = test_context.vm().get_or_create_interned_string(L"native_add");
+    Value name =
+        test_context.vm().get_or_create_interned_string_value(L"native_add");
     Value builtin =
-        Value::from_oop(test_context.thread()->make_refcounted<BuiltinFunction>(
-            builtin_add, 2, 2));
+        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+            builtin_add, 2, 2);
     module_scope->set_by_name(name, builtin);
 
     Value actual = test_context.thread()->run(code_obj);
@@ -303,7 +304,8 @@ TEST(Interpreter, builtin_scope_lookup)
     CodeObject *code_obj = test_context.compile_file(L"range\n");
 
     Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
-    Value name = test_context.vm().get_or_create_interned_string(L"range");
+    Value name =
+        test_context.vm().get_or_create_interned_string_value(L"range");
     int32_t slot_idx = module_scope->lookup_slot_index_local(name);
     ASSERT_GE(slot_idx, 0);
 
@@ -480,10 +482,11 @@ TEST(Interpreter, builtin_wrong_arity)
     CodeObject *code_obj = test_context.compile_file(L"native_add(4)\n");
 
     Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
-    Value name = test_context.vm().get_or_create_interned_string(L"native_add");
+    Value name =
+        test_context.vm().get_or_create_interned_string_value(L"native_add");
     Value builtin =
-        Value::from_oop(test_context.thread()->make_refcounted<BuiltinFunction>(
-            builtin_add, 2, 2));
+        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+            builtin_add, 2, 2);
     module_scope->set_by_name(name, builtin);
 
     try
@@ -525,10 +528,11 @@ TEST(Interpreter, builtin_multiple_arities)
 {
     test::VmTestContext test_context;
     Scope *module_scope = nullptr;
-    Value name = test_context.vm().get_or_create_interned_string(L"native_sum");
+    Value name =
+        test_context.vm().get_or_create_interned_string_value(L"native_sum");
     Value builtin =
-        Value::from_oop(test_context.thread()->make_refcounted<BuiltinFunction>(
-            builtin_sum, 1, 3));
+        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+            builtin_sum, 1, 3);
 
     CodeObject *one_arg = test_context.compile_file(L"native_sum(4)\n");
     module_scope = one_arg->module_scope.get_ptr<Scope>();
@@ -545,10 +549,11 @@ TEST(Interpreter, builtin_multiple_arities)
 TEST(Interpreter, builtin_varargs)
 {
     test::VmTestContext test_context;
-    Value name = test_context.vm().get_or_create_interned_string(L"native_sum");
+    Value name =
+        test_context.vm().get_or_create_interned_string_value(L"native_sum");
     Value builtin =
-        Value::from_oop(test_context.thread()->make_refcounted<BuiltinFunction>(
-            builtin_sum, 0, BuiltinFunction::VarArgs));
+        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+            builtin_sum, 0, BuiltinFunction::VarArgs);
 
     CodeObject *zero_args = test_context.compile_file(L"native_sum()\n");
     zero_args->module_scope.get_ptr<Scope>()->set_by_name(name, builtin);

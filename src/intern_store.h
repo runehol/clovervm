@@ -15,17 +15,22 @@ namespace cl
     public:
         InternStore(GlobalHeap *_intern_heap) : intern_heap(_intern_heap) {}
 
-        Value get_or_create(const BasicType &src)
+        CLType *get_or_create_raw(const BasicType &src)
         {
             auto it = map.find(src);
             if(it != map.end())
-                return Value::from_oop(it->second);
+                return it->second;
 
-            CLType *value = intern_heap->make_global_sized<CLType>(
+            CLType *value = intern_heap->make_global_sized_raw<CLType>(
                 CLType::size_for(src), src);
             value->refcount = -1;  // signifying immortality
             map[src] = value;
-            return Value::from_oop(value);
+            return value;
+        }
+
+        TValue<CLType> get_or_create_value(const BasicType &src)
+        {
+            return TValue<CLType>::from_oop(get_or_create_raw(src));
         }
 
     private:

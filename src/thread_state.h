@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "heap.h"
+#include "typed_value.h"
 #include "value.h"
 #include <type_traits>
 #include <utility>
@@ -57,18 +58,32 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        T *make_refcounted(Args &&...args)
+        T *make_refcounted_raw(Args &&...args)
         {
             static_assert(std::is_base_of_v<Object, T>);
             return refcounted_heap.make<T>(std::forward<Args>(args)...);
         }
 
         template <typename T, typename... Args>
-        T *make_refcounted_sized(size_t n_bytes, Args &&...args)
+        TValue<T> make_refcounted_value(Args &&...args)
+        {
+            return TValue<T>::from_oop(
+                make_refcounted_raw<T>(std::forward<Args>(args)...));
+        }
+
+        template <typename T, typename... Args>
+        T *make_refcounted_sized_raw(size_t n_bytes, Args &&...args)
         {
             static_assert(std::is_base_of_v<Object, T>);
             return refcounted_heap.make_sized<T>(n_bytes,
                                                  std::forward<Args>(args)...);
+        }
+
+        template <typename T, typename... Args>
+        TValue<T> make_refcounted_sized_value(size_t n_bytes, Args &&...args)
+        {
+            return TValue<T>::from_oop(make_refcounted_sized_raw<T>(
+                n_bytes, std::forward<Args>(args)...));
         }
 
         CodeObject *compile(const wchar_t *str, StartRule start_rule);

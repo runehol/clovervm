@@ -637,7 +637,7 @@ namespace cl
                     {
                         std::wstring name = std::wstring(string_for_name_token(
                             *ast.compilation_unit, source_pos_for_token()));
-                        Value v = vm.get_or_create_interned_string(name);
+                        Value v = vm.get_or_create_interned_string_value(name);
                         return ast.emplace_back(
                             AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
                             source_pos_and_advance(), v);
@@ -662,7 +662,7 @@ namespace cl
                         assert(token.size() >= 2);
                         std::wstring value =
                             token.substr(1, token.size() - 2);  // strip quotes
-                        Value v = vm.get_or_create_interned_string(value);
+                        Value v = vm.get_or_create_interned_string_value(value);
                         return ast.emplace_back(
                             AstKind(AstNodeKind::EXPRESSION_LITERAL,
                                     AstOperatorKind::STRING),
@@ -924,7 +924,7 @@ namespace cl
             consume(Token::NAME);
             std::wstring name = std::wstring(string_for_name_token(
                 *ast.compilation_unit, source_pos_for_previous_token()));
-            Value name_str = vm.get_or_create_interned_string(name);
+            Value name_str = vm.get_or_create_interned_string_value(name);
             consume(Token::LPAR);
             int32_t param_seq = params();
             consume(Token::RPAR);
@@ -955,7 +955,7 @@ namespace cl
                 consume(Token::NAME);
                 std::wstring name = std::wstring(string_for_name_token(
                     *ast.compilation_unit, source_pos_for_previous_token()));
-                Value v = vm.get_or_create_interned_string(name);
+                Value v = vm.get_or_create_interned_string_value(name);
                 ch.push_back(
                     ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
                                      source_pos_for_previous_token(), v));
@@ -1006,7 +1006,7 @@ namespace cl
             {
                 std::wstring name = std::wstring(string_for_name_token(
                     *ast.compilation_unit, source_pos_for_token()));
-                Value v = vm.get_or_create_interned_string(name);
+                Value v = vm.get_or_create_interned_string_value(name);
                 target =
                     ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
                                      source_pos_and_advance(), v);

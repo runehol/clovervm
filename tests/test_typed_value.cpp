@@ -13,7 +13,7 @@ TEST(TValue, StringAllowsCheckedConstructionFromNonInternedString)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    String *string = context.thread()->make_refcounted<String>(L"hello");
+    String *string = context.thread()->make_refcounted_raw<String>(L"hello");
 
     TValue<String> typed_string = TValue<String>::from_oop(string);
 
@@ -26,7 +26,7 @@ TEST(TValue, ScopeUsesConcreteKlassTrait)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    Scope *scope = context.thread()->make_refcounted<Scope>(Value::None());
+    Scope *scope = context.thread()->make_refcounted_raw<Scope>(Value::None());
 
     TValue<Scope> typed_scope = TValue<Scope>::from_oop(scope);
 
@@ -39,7 +39,7 @@ TEST(TValue, UnsafeUncheckedRoundTripsRawValue)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    String *string = context.thread()->make_refcounted<String>(L"unsafe");
+    String *string = context.thread()->make_refcounted_raw<String>(L"unsafe");
     Value raw = Value::from_oop(string);
 
     TValue<String> typed_string = TValue<String>::unsafe_unchecked(raw);
@@ -65,7 +65,7 @@ TEST(OwnedTValue, RetainsAndExposesTypedPointers)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    String *string = context.thread()->make_refcounted<String>(L"owned");
+    String *string = context.thread()->make_refcounted_raw<String>(L"owned");
     EXPECT_EQ(0, string->refcount);
 
     OwnedTValue<String> owned_string(Value::from_oop(string));

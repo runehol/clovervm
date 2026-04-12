@@ -89,11 +89,12 @@ namespace cl
     {
     public:
         Codegen(const AstVector &_av)
-            : av(_av), module_scope(Value::from_oop(
-                           ThreadState::get_active()->make_refcounted<Scope>(
-                               ThreadState::get_active()
-                                   ->get_machine()
-                                   ->get_builtin_scope())))
+            : av(_av),
+              module_scope(
+                  ThreadState::get_active()->make_refcounted_value<Scope>(
+                      ThreadState::get_active()
+                          ->get_machine()
+                          ->get_builtin_scope()))
 
         {
         }
@@ -125,13 +126,13 @@ namespace cl
 
                 case Mode::Class:
                 case Mode::Function:
-                    local_scope = Value::from_oop(
-                        ts->make_refcounted<Scope>(code_obj->local_scope));
+                    local_scope =
+                        ts->make_refcounted_value<Scope>(code_obj->local_scope);
                     break;
             }
 
-            return ts->make_refcounted<CodeObject>(av.compilation_unit,
-                                                   module_scope, local_scope);
+            return ts->make_refcounted_raw<CodeObject>(
+                av.compilation_unit, module_scope, local_scope);
         }
 
         struct LoopTargetSet
@@ -341,9 +342,10 @@ namespace cl
                 return std::nullopt;
             }
 
-            Value range_name = ThreadState::get_active()
-                                   ->get_machine()
-                                   ->get_or_create_interned_string(L"range");
+            Value range_name =
+                ThreadState::get_active()
+                    ->get_machine()
+                    ->get_or_create_interned_string_value(L"range");
             if(av.constants[callable_idx] != range_name)
             {
                 return std::nullopt;

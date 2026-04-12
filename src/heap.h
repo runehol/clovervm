@@ -2,6 +2,7 @@
 #define CL_HEAP_H
 
 #include "slab_allocator.h"
+#include "typed_value.h"
 #include "value.h"
 #include <cstdlib>
 #include <deque>
@@ -42,7 +43,8 @@ namespace cl
 
         void *allocate_global(size_t n_bytes);
 
-        template <typename T, typename... Args> T *make_global(Args &&...args)
+        template <typename T, typename... Args>
+        T *make_global_raw(Args &&...args)
         {
             static_assert(std::is_base_of_v<Object, T>);
             return new(allocate_global(sizeof(T)))
@@ -50,10 +52,24 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        T *make_global_sized(size_t n_bytes, Args &&...args)
+        TValue<T> make_global_value(Args &&...args)
+        {
+            return TValue<T>::from_oop(
+                make_global_raw<T>(std::forward<Args>(args)...));
+        }
+
+        template <typename T, typename... Args>
+        T *make_global_sized_raw(size_t n_bytes, Args &&...args)
         {
             static_assert(std::is_base_of_v<Object, T>);
             return new(allocate_global(n_bytes)) T(std::forward<Args>(args)...);
+        }
+
+        template <typename T, typename... Args>
+        TValue<T> make_global_sized_value(size_t n_bytes, Args &&...args)
+        {
+            return TValue<T>::from_oop(
+                make_global_sized_raw<T>(n_bytes, std::forward<Args>(args)...));
         }
 
         SlabAllocator *make_new_slab();
