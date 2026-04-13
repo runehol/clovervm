@@ -286,7 +286,7 @@ TEST(Interpreter, call_builtin_function)
     test::VmTestContext test_context;
     CodeObject *code_obj = test_context.compile_file(L"native_add(4, 7)\n");
 
-    Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
+    Scope *module_scope = code_obj->module_scope.extract();
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"native_add");
     Value builtin =
@@ -303,7 +303,7 @@ TEST(Interpreter, builtin_scope_lookup)
     test::VmTestContext test_context;
     CodeObject *code_obj = test_context.compile_file(L"range\n");
 
-    Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
+    Scope *module_scope = code_obj->module_scope.extract();
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"range");
     int32_t slot_idx = module_scope->lookup_slot_index_local(name);
@@ -481,7 +481,7 @@ TEST(Interpreter, builtin_wrong_arity)
     test::VmTestContext test_context;
     CodeObject *code_obj = test_context.compile_file(L"native_add(4)\n");
 
-    Scope *module_scope = code_obj->module_scope.get_ptr<Scope>();
+    Scope *module_scope = code_obj->module_scope.extract();
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"native_add");
     Value builtin =
@@ -535,13 +535,13 @@ TEST(Interpreter, builtin_multiple_arities)
             builtin_sum, 1, 3);
 
     CodeObject *one_arg = test_context.compile_file(L"native_sum(4)\n");
-    module_scope = one_arg->module_scope.get_ptr<Scope>();
+    module_scope = one_arg->module_scope.extract();
     module_scope->set_by_name(name, builtin);
     EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(one_arg));
 
     CodeObject *three_args =
         test_context.compile_file(L"native_sum(4, 5, 6)\n");
-    module_scope = three_args->module_scope.get_ptr<Scope>();
+    module_scope = three_args->module_scope.extract();
     module_scope->set_by_name(name, builtin);
     EXPECT_EQ(Value::from_smi(15), test_context.thread()->run(three_args));
 }
@@ -556,12 +556,12 @@ TEST(Interpreter, builtin_varargs)
             builtin_sum, 0, BuiltinFunction::VarArgs);
 
     CodeObject *zero_args = test_context.compile_file(L"native_sum()\n");
-    zero_args->module_scope.get_ptr<Scope>()->set_by_name(name, builtin);
+    zero_args->module_scope.extract()->set_by_name(name, builtin);
     EXPECT_EQ(Value::from_smi(0), test_context.thread()->run(zero_args));
 
     CodeObject *four_args =
         test_context.compile_file(L"native_sum(1, 2, 3, 4)\n");
-    four_args->module_scope.get_ptr<Scope>()->set_by_name(name, builtin);
+    four_args->module_scope.extract()->set_by_name(name, builtin);
     EXPECT_EQ(Value::from_smi(10), test_context.thread()->run(four_args));
 }
 

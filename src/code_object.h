@@ -2,9 +2,8 @@
 #define CL_CODE_OBJECT_H
 
 #include "bytecode.h"
-#include "owned.h"
+#include "owned_typed_value.h"
 #include "scope.h"
-#include "typed_value.h"
 #include "value.h"
 #include <vector>
 
@@ -64,6 +63,11 @@ namespace cl
         uint32_t n_parameters = 0;
         uint32_t n_locals = 0;
         uint32_t n_temporaries = 0;
+
+        Scope *get_local_scope_ptr() const
+        {
+            return local_scope.as_value().get_ptr<Scope>();
+        }
 
         std::vector<uint8_t> code;
 

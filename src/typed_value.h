@@ -2,7 +2,6 @@
 #define CL_TYPED_VALUE_H
 
 #include "object.h"
-#include "owned.h"
 #include "value.h"
 #include <stdexcept>
 #include <type_traits>
@@ -19,11 +18,23 @@ namespace cl
     extern Klass cl_string_klass;
 
     template <typename T, typename Enable = void> struct ValueTypeTraits;
-
-    template <typename T>
-    struct ValueTypeTraits<T, std::enable_if_t<std::is_base_of_v<Object, T>>>
+    template <typename T> struct ExactKlassProvider
     {
         static const Klass *expected_klass() { return &T::klass; }
+    };
+
+    struct StringKlassProvider
+    {
+        static const Klass *expected_klass() { return &cl_string_klass; }
+    };
+
+    template <typename T, typename KlassProvider, RefcountPolicy Policy>
+    struct PointerBackedValueTypeTraits
+    {
+        static const Klass *expected_klass()
+        {
+            return KlassProvider::expected_klass();
+        }
 
         static bool is_instance(Value value)
         {
@@ -32,8 +43,7 @@ namespace cl
         }
 
         using get_type = T *;
-        static constexpr RefcountPolicy refcount_policy =
-            RefcountPolicy::Always;
+        static constexpr RefcountPolicy refcount_policy = Policy;
 
         static get_type get_unchecked(Value value)
         {
@@ -41,23 +51,18 @@ namespace cl
         }
     };
 
-    template <> struct ValueTypeTraits<String>
+    template <typename T>
+    struct ValueTypeTraits<T, std::enable_if_t<std::is_base_of_v<Object, T>>>
+        : PointerBackedValueTypeTraits<T, ExactKlassProvider<T>,
+                                       RefcountPolicy::Always>
     {
-        static const Klass *expected_klass() { return &cl_string_klass; }
+    };
 
-        static bool is_instance(Value value)
-        {
-            return value.is_ptr() &&
-                   value.get_ptr<Object>()->klass == expected_klass();
-        }
-
-        using get_type = String *;
-        static constexpr RefcountPolicy refcount_policy = RefcountPolicy::Maybe;
-
-        static get_type get_unchecked(Value value)
-        {
-            return reinterpret_cast<String *>(value.as.ptr);
-        }
+    template <>
+    struct ValueTypeTraits<String>
+        : PointerBackedValueTypeTraits<String, StringKlassProvider,
+                                       RefcountPolicy::Maybe>
+    {
     };
 
     template <> struct ValueTypeTraits<SMI>
@@ -114,7 +119,7 @@ namespace cl
         template <typename U = T,
                   typename GetType = typename ValueTypeTraits<U>::get_type,
                   typename = std::enable_if_t<!std::is_void_v<GetType>>>
-        GetType get() const
+        GetType extract() const
         {
             return ValueTypeTraits<U>::get_unchecked(value_);
         }
@@ -130,60 +135,6 @@ namespace cl
 
         Value value_ = Value::None();
     };
-
-    template <typename T> struct HandleTraits<TValue<T>>
-    {
-        static TValue<T> from_value(Value value) { return TValue<T>(value); }
-        static TValue<T> from_value_unchecked(Value value)
-        {
-            return TValue<T>::unsafe_unchecked(value);
-        }
-        static Value to_value(TValue<T> value) { return Value(value); }
-        static TValue<T> none() { return from_value_unchecked(Value::None()); }
-        static constexpr RefcountPolicy refcount_policy =
-            ValueTypeTraits<T>::refcount_policy;
-
-        static TValue<T> retain_ref(TValue<T> value)
-        {
-            if constexpr(refcount_policy == RefcountPolicy::Never)
-            {
-                return value;
-            }
-            else if constexpr(refcount_policy == RefcountPolicy::Always)
-            {
-                if(value.as_value() != Value::None())
-                {
-                    incref_refcounted_ptr(value.as_value());
-                }
-            }
-            else
-            {
-                incref(value.as_value());
-            }
-            return value;
-        }
-
-        static void release_ref(TValue<T> value)
-        {
-            if constexpr(refcount_policy == RefcountPolicy::Never)
-            {
-                return;
-            }
-            else if constexpr(refcount_policy == RefcountPolicy::Always)
-            {
-                if(value.as_value() != Value::None())
-                {
-                    decref_refcounted_ptr(value.as_value());
-                }
-            }
-            else
-            {
-                decref(value.as_value());
-            }
-        }
-    };
-
-    template <typename T> using OwnedTValue = Owned<TValue<T>>;
 
 }  // namespace cl
 

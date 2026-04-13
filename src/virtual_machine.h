@@ -7,7 +7,7 @@
 #include "builtin_function.h"
 #include "heap.h"
 #include "intern_store.h"
-#include "owned.h"
+#include "owned_typed_value.h"
 #include "scope.h"
 #include "str.h"
 #include "value.h"

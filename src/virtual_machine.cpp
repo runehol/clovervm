@@ -90,7 +90,7 @@ namespace cl
         range_builtin =
             refcounted_global_heap.make_global_value<BuiltinFunction>(
                 builtin_range, 1, 3);
-        builtin_scope.get_ptr<Scope>()->set_by_name(range_name, range_builtin);
+        builtin_scope.extract()->set_by_name(range_name, range_builtin);
     }
 
 }  // namespace cl

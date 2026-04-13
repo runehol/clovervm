@@ -9,8 +9,8 @@ namespace cl
 
     uint64_t string_hash(TValue<String> s)
     {
-        String *str = s.get();
-        uint64_t len = str->count.get();
+        String *str = s.extract();
+        uint64_t len = str->count.extract();
 
         cl_wchar *c = &str->data[0];
         uint64_t hash = 5381;
@@ -23,7 +23,7 @@ namespace cl
 
     const cl_wchar *string_as_wchar_t(TValue<String> s)
     {
-        String *str = s.get();
+        String *str = s.extract();
         cl_wchar *c = &str->data[0];
         return c;
     }
@@ -38,13 +38,13 @@ namespace cl
            !b.as_value().is_refcounted_ptr())
             return false;
 
-        const String *sa = a.get();
-        const String *sb = b.get();
+        const String *sa = a.extract();
+        const String *sb = b.extract();
 
         if(sa->count != sb->count)
             return false;
 
-        uint64_t len = sa->count.get();
+        uint64_t len = sa->count.extract();
 
         for(uint64_t i = 0; i < len; ++i)
         {

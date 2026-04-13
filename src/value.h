@@ -62,6 +62,13 @@ namespace cl
         RefcountedPtr
     };
 
+    enum class RefcountPolicy
+    {
+        Never,
+        Maybe,
+        Always
+    };
+
     struct Value
     {
         static inline Value from_smi(int64_t v)

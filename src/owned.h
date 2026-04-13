@@ -6,14 +6,6 @@
 
 namespace cl
 {
-    template <typename T> class TValue;
-    enum class RefcountPolicy
-    {
-        Never,
-        Maybe,
-        Always
-    };
-
     template <typename Handle> struct HandleTraits;
     template <typename Handle> class Member;
 
@@ -23,6 +15,7 @@ namespace cl
         static Value from_value_unchecked(Value value) { return value; }
         static Value to_value(Value value) { return value; }
         static Value none() { return Value::None(); }
+        using extracted_type = void;
         static constexpr RefcountPolicy refcount_policy = RefcountPolicy::Maybe;
 
         static Value retain_ref(Value value) { return incref(value); }
@@ -48,12 +41,14 @@ namespace cl
         }
 
         explicit Owned(const Member<Handle> &other)
-            : handle_(HandleTraits<Handle>::retain_ref(other))
+            : handle_(
+                  HandleTraits<Handle>::retain_ref(static_cast<Handle>(other)))
         {
         }
 
         Owned(const Owned &other)
-            : handle_(HandleTraits<Handle>::retain_ref(other))
+            : handle_(
+                  HandleTraits<Handle>::retain_ref(static_cast<Handle>(other)))
         {
         }
         Owned(Owned &&other) noexcept : handle_(other.release()) {}
@@ -95,16 +90,16 @@ namespace cl
 
         Owned &operator=(const Member<Handle> &other)
         {
-            reset(other);
+            reset(static_cast<Handle>(other));
             return *this;
         }
 
         template <typename H = Handle,
-                  typename Inner = decltype(std::declval<H>().get()),
-                  typename = std::enable_if_t<!std::is_same_v<H, Value>>>
-        Inner get() const
+                  typename Extracted = typename HandleTraits<H>::extracted_type,
+                  typename = std::enable_if_t<!std::is_void_v<Extracted>>>
+        Extracted extract() const
         {
-            return handle_.get();
+            return HandleTraits<Handle>::extract(handle_);
         }
 
         Value as_value() const
@@ -121,12 +116,6 @@ namespace cl
         operator Handle() const
         {
             return handle_;
-        }
-
-        template <typename T = Object> T *get_ptr() const
-        {
-            return HandleTraits<Handle>::to_value(handle_)
-                .template get_ptr<T>();
         }
 
         bool operator==(Value value) const { return as_value() == value; }
@@ -174,12 +163,14 @@ namespace cl
         }
 
         explicit Member(const Owned<Handle> &other)
-            : handle_(HandleTraits<Handle>::retain_ref(other))
+            : handle_(
+                  HandleTraits<Handle>::retain_ref(static_cast<Handle>(other)))
         {
         }
 
         Member(const Member &other)
-            : handle_(HandleTraits<Handle>::retain_ref(other))
+            : handle_(
+                  HandleTraits<Handle>::retain_ref(static_cast<Handle>(other)))
         {
         }
         Member(Member &&other) noexcept : handle_(other.release()) {}
@@ -219,16 +210,16 @@ namespace cl
 
         Member &operator=(const Owned<Handle> &other)
         {
-            reset(other);
+            reset(static_cast<Handle>(other));
             return *this;
         }
 
         template <typename H = Handle,
-                  typename Inner = decltype(std::declval<H>().get()),
-                  typename = std::enable_if_t<!std::is_same_v<H, Value>>>
-        Inner get() const
+                  typename Extracted = typename HandleTraits<H>::extracted_type,
+                  typename = std::enable_if_t<!std::is_void_v<Extracted>>>
+        Extracted extract() const
         {
-            return handle_.get();
+            return HandleTraits<Handle>::extract(handle_);
         }
 
         Value as_value() const
@@ -245,12 +236,6 @@ namespace cl
         operator Handle() const
         {
             return handle_;
-        }
-
-        template <typename T = Object> T *get_ptr() const
-        {
-            return HandleTraits<Handle>::to_value(handle_)
-                .template get_ptr<T>();
         }
 
         bool operator==(Value value) const { return as_value() == value; }
@@ -282,7 +267,6 @@ namespace cl
 
     using OwnedValue = Owned<Value>;
     using MemberValue = Member<Value>;
-    template <typename T> using MemberTValue = Member<TValue<T>>;
 
     static_assert(sizeof(OwnedValue) == sizeof(Value));
     static_assert(sizeof(MemberValue) == sizeof(Value));

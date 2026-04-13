@@ -2,7 +2,7 @@
 #define CL_STRING_H
 
 #include "object.h"
-#include "typed_value.h"
+#include "owned_typed_value.h"
 #include "value.h"
 #include <assert.h>
 #include <cstring>
@@ -21,9 +21,9 @@ namespace cl
 
         String(const cl_wchar *_data, TValue<SMI> _count)
             : Object(&cl_string_klass, 1,
-                     sizeof(Value) + (_count.get() + 1) * sizeof(cl_wchar))
+                     sizeof(Value) + (_count.extract() + 1) * sizeof(cl_wchar))
         {
-            size_t n_chars = _count.get();
+            size_t n_chars = _count.extract();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
             count = _count;

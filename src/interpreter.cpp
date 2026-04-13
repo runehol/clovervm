@@ -218,8 +218,8 @@ namespace cl
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
-        Value v = code_object->module_scope.get_ptr<Scope>()->get_by_slot_index(
-            slot_idx);
+        Value v =
+            code_object->module_scope.extract()->get_by_slot_index(slot_idx);
         if(unlikely(v.is_not_present()))
         {
             MUSTTAIL return name_error(ARGS);
@@ -232,7 +232,7 @@ namespace cl
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
-        Value v = code_object->module_scope.get_ptr<Scope>()
+        Value v = code_object->module_scope.extract()
                       ->get_by_slot_index_fastpath_only(slot_idx);
         if(unlikely(v.is_not_present()))
         {
@@ -246,8 +246,8 @@ namespace cl
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
-        code_object->module_scope.get_ptr<Scope>()->set_by_slot_index(
-            slot_idx, accumulator);
+        code_object->module_scope.extract()->set_by_slot_index(slot_idx,
+                                                               accumulator);
         COMPLETE();
     }
 
@@ -682,8 +682,7 @@ namespace cl
         new_fp[-2].as.ptr = (Object *)pc;
 
         fp = new_fp;
-        code_object =
-            fun.get_ptr<Function>()->code_object.get_ptr<CodeObject>();
+        code_object = fun.get_ptr<Function>()->code_object.extract();
         pc = code_object->code.data();
 
         START(0);

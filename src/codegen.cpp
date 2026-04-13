@@ -272,17 +272,17 @@ namespace cl
                 code_obj->n_parameters = param_children.size();
                 for(int32_t ch: param_children)
                 {
-                    code_obj->local_scope.get_ptr<Scope>()
+                    code_obj->get_local_scope_ptr()
                         ->register_slot_index_for_write(
                             TValue<String>(av.constants[ch]));
                 }
                 // reserve space for the frame header
-                code_obj->local_scope.get_ptr<Scope>()->reserve_empty_slots(
+                code_obj->get_local_scope_ptr()->reserve_empty_slots(
                     FrameHeaderSize);
 
                 collect_function_local_bindings(children[1]);
 
-                _temporary_reg = code_obj->local_scope.get_ptr<Scope>()->size();
+                _temporary_reg = code_obj->get_local_scope_ptr()->size();
 
                 // now generate code for the body
                 codegen_node(children[1], Mode::Function);
@@ -479,12 +479,12 @@ namespace cl
             switch(mode)
             {
                 case Mode::Module:
-                    return code_obj->module_scope.get_ptr<Scope>()
+                    return code_obj->module_scope.extract()
                         ->register_slot_index_for_write(var_name);
 
                 case Mode::Class:
                 case Mode::Function:
-                    return code_obj->local_scope.get_ptr<Scope>()
+                    return code_obj->get_local_scope_ptr()
                         ->register_slot_index_for_write(var_name);
             }
         }
@@ -514,7 +514,7 @@ namespace cl
             switch(kind.node_kind)
             {
                 case AstNodeKind::STATEMENT_FUNCTION_DEF:
-                    code_obj->local_scope.get_ptr<Scope>()
+                    code_obj->get_local_scope_ptr()
                         ->register_slot_index_for_write(
                             TValue<String>(av.constants[node_idx]));
                     return;
@@ -526,7 +526,7 @@ namespace cl
                         if(av.kinds[lhs_idx].node_kind ==
                            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
-                            code_obj->local_scope.get_ptr<Scope>()
+                            code_obj->get_local_scope_ptr()
                                 ->register_slot_index_for_write(
                                     TValue<String>(av.constants[lhs_idx]));
                         }
@@ -534,7 +534,7 @@ namespace cl
                     }
 
                 case AstNodeKind::STATEMENT_FOR:
-                    code_obj->local_scope.get_ptr<Scope>()
+                    code_obj->get_local_scope_ptr()
                         ->register_slot_index_for_write(
                             TValue<String>(av.constants[children[0]]));
                     break;
@@ -564,7 +564,7 @@ namespace cl
                         case Mode::Function:
                             {
                                 int32_t slot_idx =
-                                    code_obj->local_scope.get_ptr<Scope>()
+                                    code_obj->get_local_scope_ptr()
                                         ->lookup_slot_index_local(
                                             TValue<String>(
                                                 av.constants[node_idx]));
@@ -580,7 +580,7 @@ namespace cl
                         case Mode::Module:
                             {
                                 uint32_t slot_idx =
-                                    code_obj->module_scope.get_ptr<Scope>()
+                                    code_obj->module_scope.extract()
                                         ->register_slot_index_for_read(
                                             TValue<String>(
                                                 av.constants[node_idx]));

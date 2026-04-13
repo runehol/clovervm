@@ -1,3 +1,4 @@
+#include "owned_typed_value.h"
 #include "scope.h"
 #include "str.h"
 #include "test_helpers.h"
@@ -17,8 +18,8 @@ TEST(TValue, StringAllowsCheckedConstructionFromNonInternedString)
 
     TValue<String> typed_string = TValue<String>::from_oop(string);
 
-    EXPECT_EQ(string, typed_string.get());
-    EXPECT_STREQ(L"hello", typed_string.get()->data);
+    EXPECT_EQ(string, typed_string.extract());
+    EXPECT_STREQ(L"hello", typed_string.extract()->data);
 }
 
 TEST(TValue, ScopeUsesConcreteKlassTrait)
@@ -30,8 +31,8 @@ TEST(TValue, ScopeUsesConcreteKlassTrait)
 
     TValue<Scope> typed_scope = TValue<Scope>::from_oop(scope);
 
-    EXPECT_EQ(scope, typed_scope.get());
-    EXPECT_TRUE(typed_scope.get()->empty());
+    EXPECT_EQ(scope, typed_scope.extract());
+    EXPECT_TRUE(typed_scope.extract()->empty());
 }
 
 TEST(TValue, UnsafeUncheckedRoundTripsRawValue)
@@ -45,7 +46,7 @@ TEST(TValue, UnsafeUncheckedRoundTripsRawValue)
     TValue<String> typed_string = TValue<String>::unsafe_unchecked(raw);
 
     EXPECT_EQ(raw, typed_string.as_value());
-    EXPECT_EQ(string, typed_string.get());
+    EXPECT_EQ(string, typed_string.extract());
 }
 
 TEST(TValue, CheckedConstructionThrowsOnWrongType)
@@ -57,7 +58,7 @@ TEST(TValue, SmiUsesTraitDefinedGetter)
 {
     TValue<SMI> smi(Value::from_smi(42));
 
-    EXPECT_EQ(42, smi.get());
+    EXPECT_EQ(42, smi.extract());
 }
 
 TEST(TValue, ClIntAcceptsCurrentIntegerRepresentation)
@@ -77,8 +78,8 @@ TEST(OwnedTValue, RetainsAndExposesTypedPointers)
 
     OwnedTValue<String> owned_string(Value::from_oop(string));
     EXPECT_EQ(1, string->refcount);
-    EXPECT_EQ(string, owned_string.get());
-    EXPECT_STREQ(L"owned", owned_string.get()->data);
+    EXPECT_EQ(string, owned_string.extract());
+    EXPECT_STREQ(L"owned", owned_string.extract()->data);
 
     Value released = owned_string.release();
     EXPECT_EQ(Value::from_oop(string), released);
@@ -94,7 +95,7 @@ TEST(OwnedTValue, SmiActsAsOwnedHandleWithoutRefcounting)
 {
     OwnedTValue<SMI> owned_smi(Value::from_smi(42));
 
-    EXPECT_EQ(42, owned_smi.get());
+    EXPECT_EQ(42, owned_smi.extract());
 
     Value released = owned_smi.release();
     EXPECT_EQ(Value::from_smi(42), released);
