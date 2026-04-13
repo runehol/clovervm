@@ -7,7 +7,7 @@ tracks the most reasonable next steps after reviewing the current codebase,
 
 ## Immediate cleanup and correctness
 
-- [ ] Tighten string literal handling, or explicitly document the narrow subset.
+- [x] Tighten string literal handling, or explicitly document the narrow subset.
   Why: `src/tokenizer.cpp` still only recognizes a very small double-quoted
   string form with no escapes or single quotes. That limitation is easy to trip
   over, and it is currently larger than the rest of the documented language

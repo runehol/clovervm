@@ -25,8 +25,105 @@ namespace cl
         "(?:0(?:_?0)*|[1-9](?:_?[0-9])*)"
         ")"_ctre;
 
-    static constexpr auto string_re =
-        "\"[^\"]*\""_ctre;  // very noddy string regexp
+    static constexpr auto string_prefix_re = "^[rRuU]{0,2}"_ctre;
+
+    static bool is_string_prefix(std::wstring_view prefix)
+    {
+        if(prefix.empty())
+        {
+            return true;
+        }
+        if(prefix.size() > 2)
+        {
+            return false;
+        }
+
+        bool seen_r = false;
+        bool seen_u = false;
+        for(wchar_t c: prefix)
+        {
+            if(c == L'r' || c == L'R')
+            {
+                if(seen_r)
+                {
+                    return false;
+                }
+                seen_r = true;
+            }
+            else if(c == L'u' || c == L'U')
+            {
+                if(seen_u)
+                {
+                    return false;
+                }
+                seen_u = true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static size_t find_string_literal_length(std::wstring_view s)
+    {
+        if(s.empty())
+        {
+            return 0;
+        }
+
+        auto prefix_match = string_prefix_re.search(s);
+        size_t prefix_len = 0;
+        if(prefix_match)
+        {
+            prefix_len = std::wstring_view(prefix_match).size();
+        }
+        if(!is_string_prefix(s.substr(0, prefix_len)))
+        {
+            return 0;
+        }
+
+        if(prefix_len >= s.size())
+        {
+            return 0;
+        }
+
+        wchar_t quote = s[prefix_len];
+        if(quote != L'\'' && quote != L'"')
+        {
+            return 0;
+        }
+
+        bool escaped = false;
+        for(size_t i = prefix_len + 1; i < s.size(); ++i)
+        {
+            wchar_t c = s[i];
+            if(c == L'\n' || c == L'\r')
+            {
+                return 0;
+            }
+
+            if(escaped)
+            {
+                escaped = false;
+                continue;
+            }
+
+            if(c == L'\\')
+            {
+                escaped = true;
+                continue;
+            }
+
+            if(c == quote)
+            {
+                return i + 1;
+            }
+        }
+
+        return 0;
+    }
 
     std::wstring_view string_for_name_token(const CompilationUnit &cu,
                                             uint32_t offset)
@@ -56,10 +153,10 @@ namespace cl
                                               uint32_t offset)
     {
         std::wstring_view s = cu.get_source_view().substr(offset);
-        auto m = string_re.search(s);
-        if(m)
+        size_t literal_len = find_string_literal_length(s);
+        if(literal_len > 0)
         {
-            return std::wstring_view(m);
+            return s.substr(0, literal_len);
         }
         return std::wstring_view();
     }
@@ -521,6 +618,7 @@ namespace cl
                                 break;
 
                             case '"':
+                            case '\'':
                                 {
                                     std::wstring_view m =
                                         string_for_string_token(cu, pos);
@@ -534,6 +632,18 @@ namespace cl
 
                             default:
                                 {
+                                    {
+                                        std::wstring_view m =
+                                            string_for_string_token(cu, pos);
+                                        if(!m.empty())
+                                        {
+                                            tokens.emplace_back(Token::STRING,
+                                                                pos);
+                                            pos += m.size();
+                                            break;
+                                        }
+                                    }
+
                                     {
                                         std::wstring_view m =
                                             string_for_number_token(cu, pos);

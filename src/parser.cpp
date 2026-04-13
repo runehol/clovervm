@@ -6,10 +6,187 @@
 #include "tokenizer.h"
 #include "virtual_machine.h"
 #include <algorithm>
+#include <cstdint>
 #include <string>
 
 namespace cl
 {
+    static bool is_hex_digit(wchar_t c)
+    {
+        return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f') ||
+               (c >= L'A' && c <= L'F');
+    }
+
+    static int hex_value(wchar_t c)
+    {
+        if(c >= L'0' && c <= L'9')
+        {
+            return c - L'0';
+        }
+        if(c >= L'a' && c <= L'f')
+        {
+            return 10 + (c - L'a');
+        }
+        return 10 + (c - L'A');
+    }
+
+    static std::wstring decode_python_string_literal(std::wstring_view token)
+    {
+        size_t prefix_len = 0;
+        bool is_raw = false;
+        while(prefix_len < token.size())
+        {
+            wchar_t c = token[prefix_len];
+            if(c == L'r' || c == L'R')
+            {
+                is_raw = true;
+                ++prefix_len;
+            }
+            else if(c == L'u' || c == L'U')
+            {
+                ++prefix_len;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        if(prefix_len >= token.size())
+        {
+            throw std::runtime_error("Invalid string literal");
+        }
+
+        wchar_t quote = token[prefix_len];
+        if(quote != L'\'' && quote != L'"')
+        {
+            throw std::runtime_error("Invalid string literal");
+        }
+        if(token.size() < prefix_len + 2 || token.back() != quote)
+        {
+            throw std::runtime_error("Invalid string literal");
+        }
+
+        std::wstring body = std::wstring(
+            token.substr(prefix_len + 1, token.size() - prefix_len - 2));
+        if(is_raw)
+        {
+            return body;
+        }
+
+        std::wstring out;
+        out.reserve(body.size());
+        for(size_t i = 0; i < body.size(); ++i)
+        {
+            wchar_t c = body[i];
+            if(c != L'\\')
+            {
+                out.push_back(c);
+                continue;
+            }
+
+            if(i + 1 >= body.size())
+            {
+                throw std::runtime_error("Invalid escape in string literal");
+            }
+
+            wchar_t esc = body[++i];
+            switch(esc)
+            {
+                case L'\n':
+                    break;
+                case L'\\':
+                    out.push_back(L'\\');
+                    break;
+                case L'\'':
+                    out.push_back(L'\'');
+                    break;
+                case L'"':
+                    out.push_back(L'"');
+                    break;
+                case L'a':
+                    out.push_back(L'\a');
+                    break;
+                case L'b':
+                    out.push_back(L'\b');
+                    break;
+                case L'f':
+                    out.push_back(L'\f');
+                    break;
+                case L'n':
+                    out.push_back(L'\n');
+                    break;
+                case L'r':
+                    out.push_back(L'\r');
+                    break;
+                case L't':
+                    out.push_back(L'\t');
+                    break;
+                case L'v':
+                    out.push_back(L'\v');
+                    break;
+                case L'x':
+                    {
+                        if(i + 2 >= body.size() || !is_hex_digit(body[i + 1]) ||
+                           !is_hex_digit(body[i + 2]))
+                        {
+                            throw std::runtime_error(
+                                "Invalid \\x escape in string literal");
+                        }
+                        int value = (hex_value(body[i + 1]) << 4) +
+                                    hex_value(body[i + 2]);
+                        out.push_back(static_cast<wchar_t>(value));
+                        i += 2;
+                        break;
+                    }
+                case L'u':
+                case L'U':
+                    {
+                        size_t digits = esc == L'u' ? 4 : 8;
+                        if(i + digits >= body.size())
+                        {
+                            throw std::runtime_error(
+                                "Invalid unicode escape in string literal");
+                        }
+                        uint32_t value = 0;
+                        for(size_t j = 1; j <= digits; ++j)
+                        {
+                            wchar_t h = body[i + j];
+                            if(!is_hex_digit(h))
+                            {
+                                throw std::runtime_error(
+                                    "Invalid unicode escape in string literal");
+                            }
+                            value = (value << 4) + hex_value(h);
+                        }
+                        out.push_back(static_cast<wchar_t>(value));
+                        i += digits;
+                        break;
+                    }
+                default:
+                    if(esc >= L'0' && esc <= L'7')
+                    {
+                        int value = esc - L'0';
+                        size_t consumed = 0;
+                        while(consumed < 2 && i + 1 < body.size() &&
+                              body[i + 1] >= L'0' && body[i + 1] <= L'7')
+                        {
+                            value = value * 8 + (body[i + 1] - L'0');
+                            ++i;
+                            ++consumed;
+                        }
+                        out.push_back(static_cast<wchar_t>(value & 0xFF));
+                    }
+                    else
+                    {
+                        out.push_back(L'\\');
+                        out.push_back(esc);
+                    }
+                    break;
+            }
+        }
+        return out;
+    }
 
     class Parser
     {
@@ -656,12 +833,10 @@ namespace cl
                     }
                 case Token::STRING:
                     {
-                        std::wstring token =
-                            std::wstring(string_for_string_token(
-                                *ast.compilation_unit, source_pos_for_token()));
-                        assert(token.size() >= 2);
+                        std::wstring_view token = string_for_string_token(
+                            *ast.compilation_unit, source_pos_for_token());
                         std::wstring value =
-                            token.substr(1, token.size() - 2);  // strip quotes
+                            decode_python_string_literal(token);
                         Value v = vm.get_or_create_interned_string_value(value);
                         return ast.emplace_back(
                             AstKind(AstNodeKind::EXPRESSION_LITERAL,
