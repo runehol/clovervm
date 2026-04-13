@@ -6,6 +6,7 @@
 #include "value.h"
 #include <cstdlib>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <tuple>
 #include <type_traits>
