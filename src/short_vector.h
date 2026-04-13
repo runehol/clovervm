@@ -10,6 +10,10 @@
 namespace cl
 {
 
+    // Historical leftover from an earlier Clojure-runtime direction where this
+    // was intended to model a persistent vector. It is currently orphaned and
+    // should not be treated as the preferred substrate for new VM container or
+    // slot-array work.
     extern struct Klass cl_short_vector_klass;
 
     struct CLShortVector : public Object
