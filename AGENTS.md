@@ -21,6 +21,9 @@ This repository contains clovervm, a Python VM.
 - Prefer small non-virtual accessor definitions in headers so they are easy to inline.
 
 # Ownership semantics
-- Value and TValue<T> holds a borrowed untyped or typed value. It can be used for C++ parameters or for variables that are handled elsewhere by the garbage collector.
-- MemberValue and MemberTValue<T> holds a value which has struct member ownership - that is, we leave a refcount of 1 for the garbage collector. It should be used for all cl type members.
-- OwnedValue and OwnedTValue<T> holds a value with full refcounting. it should be used for local variables in C++ that need to retain ownership.
+- `Value` and `TValue<T>` are borrowed handles. Use them for C++ parameters and for locals whose lifetime is managed elsewhere.
+- `TValue<T>` should be preferred over `Value` when the value is known to satisfy a specific semantic type, such as `String`, `SMI`, `CLInt`, or a concrete `Object` subclass.
+- `OwnedValue` and `OwnedTValue<T>` are RAII local owners. They retain on construction or assignment and release on destruction. Use them for local C++ variables that must keep a value alive.
+- `MemberValue` and `MemberTValue<T>` are for direct members of cl heap objects. They retain on construction or assignment and release the overwritten value on reassignment, but they do not release on destruction. This leaves the stored reference for the garbage collector to observe.
+- Direct members of cl heap objects should use `MemberValue` or `MemberTValue<T>`, not `OwnedValue` or `OwnedTValue<T>`.
+- Prefer `MemberTValue<T>` or `OwnedTValue<T>` over the untyped forms when the stored value has a known type. Use the untyped forms only when the value is genuinely heterogeneous or may hold sentinels such as `None` or `not_present`.
