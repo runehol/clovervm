@@ -14,102 +14,54 @@ namespace cl
         Always
     };
 
-    template <typename Handle> struct OwnedHandleTraits;
+    template <typename Handle> struct HandleTraits;
     template <typename Handle> class Member;
 
-    template <> struct OwnedHandleTraits<Value>
+    template <> struct HandleTraits<Value>
     {
-        static Value from_raw(Value value) { return value; }
-        static Value from_raw_unchecked(Value value) { return value; }
-        static Value to_raw(Value value) { return value; }
+        static Value from_value(Value value) { return value; }
+        static Value from_value_unchecked(Value value) { return value; }
+        static Value none() { return Value::None(); }
         static constexpr RefcountPolicy refcount_policy = RefcountPolicy::Maybe;
-    };
 
-    template <typename Handle> struct HandleRefOps
-    {
-        static constexpr RefcountPolicy refcount_policy =
-            OwnedHandleTraits<Handle>::refcount_policy;
+        static Value retain_ref(Value value) { return incref(value); }
 
-        static Handle validate_raw(Value value)
-        {
-            return OwnedHandleTraits<Handle>::from_raw(value);
-        }
-
-        static Handle retain_ref(Handle handle)
-        {
-            if constexpr(refcount_policy == RefcountPolicy::Never)
-            {
-            }
-            else if constexpr(refcount_policy == RefcountPolicy::Always)
-            {
-                if(Value(handle) != Value::None())
-                {
-                    incref_refcounted_ptr(handle);
-                }
-            }
-            else
-            {
-                incref(handle);
-            }
-            return handle;
-        }
-
-        static void release_ref(Handle handle)
-        {
-            if constexpr(refcount_policy == RefcountPolicy::Never)
-            {
-            }
-            else if constexpr(refcount_policy == RefcountPolicy::Always)
-            {
-                if(Value(handle) != Value::None())
-                {
-                    decref_refcounted_ptr(handle);
-                }
-            }
-            else
-            {
-                decref(handle);
-            }
-        }
+        static void release_ref(Value value) { decref(value); }
     };
 
     template <typename Handle> class Owned
     {
     public:
-        Owned()
-            : handle_(
-                  OwnedHandleTraits<Handle>::from_raw_unchecked(Value::None()))
-        {
-        }
+        Owned() : handle_(HandleTraits<Handle>::none()) {}
         explicit Owned(Value value)
-            : handle_(HandleRefOps<Handle>::retain_ref(
-                  HandleRefOps<Handle>::validate_raw(value)))
+            : handle_(HandleTraits<Handle>::retain_ref(
+                  HandleTraits<Handle>::from_value(value)))
         {
         }
 
         template <typename H = Handle,
                   typename = std::enable_if_t<!std::is_same_v<H, Value>>>
         explicit Owned(H handle)
-            : handle_(HandleRefOps<Handle>::retain_ref(handle))
+            : handle_(HandleTraits<Handle>::retain_ref(handle))
         {
         }
 
         explicit Owned(const Member<Handle> &other)
-            : handle_(HandleRefOps<Handle>::retain_ref(other))
+            : handle_(HandleTraits<Handle>::retain_ref(other))
         {
         }
 
         Owned(const Owned &other)
-            : handle_(HandleRefOps<Handle>::retain_ref(other))
+            : handle_(HandleTraits<Handle>::retain_ref(other))
         {
         }
         Owned(Owned &&other) noexcept : handle_(other.release()) {}
 
-        ~Owned() { HandleRefOps<Handle>::release_ref(handle_); }
+        ~Owned() { HandleTraits<Handle>::release_ref(handle_); }
 
         Owned &operator=(Value value)
         {
-            reset(HandleRefOps<Handle>::validate_raw(value));
+            reset(HandleTraits<Handle>::from_value(value));
             return *this;
         }
 
@@ -134,7 +86,7 @@ namespace cl
         {
             if(this != &other)
             {
-                HandleRefOps<Handle>::release_ref(handle_);
+                HandleTraits<Handle>::release_ref(handle_);
                 handle_ = other.release();
             }
             return *this;
@@ -154,14 +106,8 @@ namespace cl
             return handle_.get();
         }
 
-        Value as_value() const
-        {
-            return OwnedHandleTraits<Handle>::to_raw(handle_);
-        }
-        operator Value() const
-        {
-            return OwnedHandleTraits<Handle>::to_raw(handle_);
-        }
+        Value as_value() const { return handle_to_value(handle_); }
+        operator Value() const { return handle_to_value(handle_); }
 
         template <typename H = Handle,
                   typename = std::enable_if_t<!std::is_same_v<H, Value>>>
@@ -172,74 +118,79 @@ namespace cl
 
         template <typename T = Object> T *get_ptr() const
         {
-            return OwnedHandleTraits<Handle>::to_raw(handle_)
-                .template get_ptr<T>();
+            return handle_to_value(handle_).template get_ptr<T>();
         }
 
-        bool operator==(Value value) const { return handle_ == value; }
-        bool operator!=(Value value) const { return handle_ != value; }
+        bool operator==(Value value) const { return as_value() == value; }
+        bool operator!=(Value value) const { return as_value() != value; }
 
         void reset(Handle handle)
         {
-            HandleRefOps<Handle>::retain_ref(handle);
-            HandleRefOps<Handle>::release_ref(handle_);
+            HandleTraits<Handle>::retain_ref(handle);
+            HandleTraits<Handle>::release_ref(handle_);
             handle_ = handle;
         }
 
         void clear()
         {
-            HandleRefOps<Handle>::release_ref(handle_);
-            handle_ =
-                OwnedHandleTraits<Handle>::from_raw_unchecked(Value::None());
+            HandleTraits<Handle>::release_ref(handle_);
+            handle_ = HandleTraits<Handle>::none();
         }
 
         Handle release()
         {
             Handle released = handle_;
-            handle_ =
-                OwnedHandleTraits<Handle>::from_raw_unchecked(Value::None());
+            handle_ = HandleTraits<Handle>::none();
             return released;
         }
 
     private:
+        static Value handle_to_value(Handle handle)
+        {
+            if constexpr(std::is_same_v<Handle, Value>)
+            {
+                return handle;
+            }
+            else
+            {
+                return HandleTraits<Handle>::to_value(handle);
+            }
+        }
+
         Handle handle_;
     };
 
     template <typename Handle> class Member
     {
     public:
-        Member()
-            : handle_(
-                  OwnedHandleTraits<Handle>::from_raw_unchecked(Value::None()))
-        {
-        }
+        Member() : handle_(HandleTraits<Handle>::none()) {}
         explicit Member(Value value)
-            : handle_(HandleRefOps<Handle>::retain_ref(
-                  HandleRefOps<Handle>::validate_raw(value)))
+            : handle_(HandleTraits<Handle>::retain_ref(
+                  HandleTraits<Handle>::from_value(value)))
         {
         }
 
         template <typename H = Handle,
                   typename = std::enable_if_t<!std::is_same_v<H, Value>>>
         explicit Member(H handle)
-            : handle_(HandleRefOps<Handle>::retain_ref(handle))
+            : handle_(HandleTraits<Handle>::retain_ref(handle))
         {
         }
 
         explicit Member(const Owned<Handle> &other)
-            : handle_(HandleRefOps<Handle>::retain_ref(other))
+            : handle_(HandleTraits<Handle>::retain_ref(other))
         {
         }
 
         Member(const Member &other)
-            : handle_(HandleRefOps<Handle>::retain_ref(other))
+            : handle_(HandleTraits<Handle>::retain_ref(other))
         {
         }
         Member(Member &&other) noexcept : handle_(other.release()) {}
 
         Member &operator=(Value value)
         {
-            reset(HandleRefOps<Handle>::validate_raw(value));
+            reset(HandleTraits<Handle>::from_value(value));
             return *this;
         }
 
@@ -264,7 +215,7 @@ namespace cl
         {
             if(this != &other)
             {
-                HandleRefOps<Handle>::release_ref(handle_);
+                HandleTraits<Handle>::release_ref(handle_);
                 handle_ = other.release();
             }
             return *this;
@@ -284,14 +235,8 @@ namespace cl
             return handle_.get();
         }
 
-        Value as_value() const
-        {
-            return OwnedHandleTraits<Handle>::to_raw(handle_);
-        }
-        operator Value() const
-        {
-            return OwnedHandleTraits<Handle>::to_raw(handle_);
-        }
+        Value as_value() const { return handle_to_value(handle_); }
+        operator Value() const { return handle_to_value(handle_); }
 
         template <typename H = Handle,
                   typename = std::enable_if_t<!std::is_same_v<H, Value>>>
@@ -302,36 +247,45 @@ namespace cl
 
         template <typename T = Object> T *get_ptr() const
         {
-            return OwnedHandleTraits<Handle>::to_raw(handle_)
-                .template get_ptr<T>();
+            return handle_to_value(handle_).template get_ptr<T>();
         }
 
-        bool operator==(Value value) const { return Value(handle_) == value; }
-        bool operator!=(Value value) const { return Value(handle_) != value; }
+        bool operator==(Value value) const { return as_value() == value; }
+        bool operator!=(Value value) const { return as_value() != value; }
 
         void reset(Handle handle)
         {
-            HandleRefOps<Handle>::retain_ref(handle);
-            HandleRefOps<Handle>::release_ref(handle_);
+            HandleTraits<Handle>::retain_ref(handle);
+            HandleTraits<Handle>::release_ref(handle_);
             handle_ = handle;
         }
 
         void clear()
         {
-            HandleRefOps<Handle>::release_ref(handle_);
-            handle_ =
-                OwnedHandleTraits<Handle>::from_raw_unchecked(Value::None());
+            HandleTraits<Handle>::release_ref(handle_);
+            handle_ = HandleTraits<Handle>::none();
         }
 
         Handle release()
         {
             Handle released = handle_;
-            handle_ =
-                OwnedHandleTraits<Handle>::from_raw_unchecked(Value::None());
+            handle_ = HandleTraits<Handle>::none();
             return released;
         }
 
     private:
+        static Value handle_to_value(Handle handle)
+        {
+            if constexpr(std::is_same_v<Handle, Value>)
+            {
+                return handle;
+            }
+            else
+            {
+                return HandleTraits<Handle>::to_value(handle);
+            }
+        }
+
         Handle handle_;
     };
 
