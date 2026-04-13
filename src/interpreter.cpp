@@ -258,8 +258,8 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        if(unlikely(__builtin_saddll_overflow(a.as.integer, b.as.integer,
-                                              &accumulator.as.integer)))
+        if(unlikely(__builtin_add_overflow(a.as.integer, b.as.integer,
+                                           &accumulator.as.integer)))
         {
             accumulator.as.integer -= b.as.integer;
             MUSTTAIL return overflow_path(ARGS);
@@ -275,8 +275,8 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        if(unlikely(__builtin_saddll_overflow(a.as.integer, b.as.integer,
-                                              &accumulator.as.integer)))
+        if(unlikely(__builtin_add_overflow(a.as.integer, b.as.integer,
+                                           &accumulator.as.integer)))
         {
             accumulator.as.integer -= a.as.integer;
             MUSTTAIL return overflow_path(ARGS);
@@ -292,8 +292,8 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        if(unlikely(__builtin_ssubll_overflow(a.as.integer, b.as.integer,
-                                              &accumulator.as.integer)))
+        if(unlikely(__builtin_sub_overflow(a.as.integer, b.as.integer,
+                                           &accumulator.as.integer)))
         {
             accumulator.as.integer += b.as.integer;
             MUSTTAIL return overflow_path(ARGS);
@@ -309,8 +309,8 @@ namespace cl
         {
             MUSTTAIL return slow_path(ARGS);
         }
-        if(unlikely(__builtin_ssubll_overflow(a.as.integer, b.as.integer,
-                                              &accumulator.as.integer)))
+        if(unlikely(__builtin_sub_overflow(a.as.integer, b.as.integer,
+                                           &accumulator.as.integer)))
         {
             accumulator.as.integer += a.as.integer;
             MUSTTAIL return overflow_path(ARGS);
@@ -540,8 +540,8 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
 
-        if(unlikely(__builtin_ssubll_overflow(0, a.as.integer,
-                                              &accumulator.as.integer)))
+        if(unlikely(__builtin_sub_overflow(0, a.as.integer,
+                                           &accumulator.as.integer)))
         {
             accumulator.as.integer = -accumulator.as.integer;
             MUSTTAIL return overflow_path(ARGS);
@@ -747,7 +747,7 @@ namespace cl
         {
             int64_t next_smi = 0;
             if(unlikely(
-                   __builtin_saddll_overflow(current_smi, step_smi, &next_smi)))
+                   __builtin_add_overflow(current_smi, step_smi, &next_smi)))
             {
                 MUSTTAIL return overflow_path(ARGS);
             }
@@ -867,7 +867,7 @@ namespace cl
         else
         {
             int64_t next_smi = 0;
-            if(unlikely(__builtin_saddll_overflow(current_smi, 1, &next_smi)))
+            if(unlikely(__builtin_add_overflow(current_smi, 1, &next_smi)))
             {
                 MUSTTAIL return overflow_path(ARGS);
             }
@@ -911,7 +911,7 @@ namespace cl
         {
             int64_t next_smi = 0;
             if(unlikely(
-                   __builtin_saddll_overflow(current_smi, step_smi, &next_smi)))
+                   __builtin_add_overflow(current_smi, step_smi, &next_smi)))
             {
                 MUSTTAIL return overflow_path(ARGS);
             }
