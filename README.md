@@ -24,9 +24,11 @@ and some runtime behavior is intentionally narrow.
   `not`, `and`, `or`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `is`, `is not`, `in`,
   `not in`.
 - Tuple syntax in the parser for comma-separated expression lists.
-- Tokenization for names, indentation-sensitive blocks, double-quoted string
-  literals, and integer literal spellings including decimal, hexadecimal,
-  octal, binary, and underscores.
+- Tokenization for names, indentation-sensitive blocks, and Python-style short
+  string literals with single or double quotes, escape sequences, and `r` / `u`
+  prefixes (no triple-quoted strings yet).
+- Integer literal spellings including decimal, hexadecimal, octal, binary, and
+  underscores.
 
 ## Known limitations
 
@@ -34,8 +36,8 @@ and some runtime behavior is intentionally narrow.
   `with`, `global`, `nonlocal`, `del`, and `yield`.
 - Assignment is currently much narrower than Python. In practice, codegen only
   supports simple variable targets cleanly.
-- String support is minimal. The tokenizer recognizes basic double-quoted
-  literals, but string semantics are not close to full Python yet.
+- String support still does not include triple-quoted literals, bytes literals,
+  f-strings, or implicit literal concatenation.
 - Arithmetic currently focuses on tagged small integers. Overflow and several
   non-small-integer paths still raise generic VM exceptions instead of matching
   CPython behavior.

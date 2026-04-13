@@ -144,6 +144,26 @@ TEST(Parser, string_literal_stores_constant_value)
                              parsed.ast.constants[literal_idx])));
 }
 
+TEST(Parser, string_literal_decodes_escapes_and_prefixes)
+{
+    test::ParsedFile escaped(L"\"line\\n\\x41\\101\"\n");
+    int32_t escaped_stmt = escaped.ast.children[escaped.ast.root_node][0];
+    int32_t escaped_literal = escaped.ast.children[escaped_stmt][0];
+    EXPECT_STREQ(L"line\nAA", string_as_wchar_t(TValue<String>(
+                                  escaped.ast.constants[escaped_literal])));
+
+    test::ParsedFile raw(L"r\"line\\n\" u'\\u263A'\n");
+    int32_t raw_stmt = raw.ast.children[raw.ast.root_node][0];
+    int32_t raw_literal = raw.ast.children[raw_stmt][0];
+    EXPECT_STREQ(L"line\\n", string_as_wchar_t(TValue<String>(
+                                 raw.ast.constants[raw_literal])));
+
+    int32_t unicode_stmt = raw.ast.children[raw.ast.root_node][1];
+    int32_t unicode_literal = raw.ast.children[unicode_stmt][0];
+    EXPECT_STREQ(L"☺", string_as_wchar_t(
+                           TValue<String>(raw.ast.constants[unicode_literal])));
+}
+
 TEST(Parser, def_stmt)
 {
     std::string expected = (""
