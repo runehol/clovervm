@@ -152,7 +152,8 @@ TEST(Parser, string_literal_decodes_escapes_and_prefixes)
     EXPECT_STREQ(L"line\nAA", string_as_wchar_t(TValue<String>(
                                   escaped.ast.constants[escaped_literal])));
 
-    test::ParsedFile raw(L"r\"line\\n\" u'\\u263A'\n");
+    test::ParsedFile raw(L"r\"line\\n\"\n"
+                         L"u'\\u263A'\n");
     int32_t raw_stmt = raw.ast.children[raw.ast.root_node][0];
     int32_t raw_literal = raw.ast.children[raw_stmt][0];
     EXPECT_STREQ(L"line\\n", string_as_wchar_t(TValue<String>(
