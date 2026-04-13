@@ -21,6 +21,7 @@ namespace cl
     {
         static Value from_value(Value value) { return value; }
         static Value from_value_unchecked(Value value) { return value; }
+        static Value to_value(Value value) { return value; }
         static Value none() { return Value::None(); }
         static constexpr RefcountPolicy refcount_policy = RefcountPolicy::Maybe;
 
@@ -106,8 +107,14 @@ namespace cl
             return handle_.get();
         }
 
-        Value as_value() const { return handle_to_value(handle_); }
-        operator Value() const { return handle_to_value(handle_); }
+        Value as_value() const
+        {
+            return HandleTraits<Handle>::to_value(handle_);
+        }
+        operator Value() const
+        {
+            return HandleTraits<Handle>::to_value(handle_);
+        }
 
         template <typename H = Handle,
                   typename = std::enable_if_t<!std::is_same_v<H, Value>>>
@@ -118,7 +125,8 @@ namespace cl
 
         template <typename T = Object> T *get_ptr() const
         {
-            return handle_to_value(handle_).template get_ptr<T>();
+            return HandleTraits<Handle>::to_value(handle_)
+                .template get_ptr<T>();
         }
 
         bool operator==(Value value) const { return as_value() == value; }
@@ -145,18 +153,6 @@ namespace cl
         }
 
     private:
-        static Value handle_to_value(Handle handle)
-        {
-            if constexpr(std::is_same_v<Handle, Value>)
-            {
-                return handle;
-            }
-            else
-            {
-                return HandleTraits<Handle>::to_value(handle);
-            }
-        }
-
         Handle handle_;
     };
 
@@ -235,8 +231,14 @@ namespace cl
             return handle_.get();
         }
 
-        Value as_value() const { return handle_to_value(handle_); }
-        operator Value() const { return handle_to_value(handle_); }
+        Value as_value() const
+        {
+            return HandleTraits<Handle>::to_value(handle_);
+        }
+        operator Value() const
+        {
+            return HandleTraits<Handle>::to_value(handle_);
+        }
 
         template <typename H = Handle,
                   typename = std::enable_if_t<!std::is_same_v<H, Value>>>
@@ -247,7 +249,8 @@ namespace cl
 
         template <typename T = Object> T *get_ptr() const
         {
-            return handle_to_value(handle_).template get_ptr<T>();
+            return HandleTraits<Handle>::to_value(handle_)
+                .template get_ptr<T>();
         }
 
         bool operator==(Value value) const { return as_value() == value; }
@@ -274,18 +277,6 @@ namespace cl
         }
 
     private:
-        static Value handle_to_value(Handle handle)
-        {
-            if constexpr(std::is_same_v<Handle, Value>)
-            {
-                return handle;
-            }
-            else
-            {
-                return HandleTraits<Handle>::to_value(handle);
-            }
-        }
-
         Handle handle_;
     };
 
