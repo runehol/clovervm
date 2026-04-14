@@ -60,11 +60,23 @@ tracks the most reasonable next steps after reviewing the current codebase,
 
 ## Data structures and object model
 
+- [ ] Implement the namespace and mapping substrate described in `doc/namespaces-and-mappings.md`.
+  Why: the runtime now needs a clearer split between scope slot identity,
+  ordered mapping behavior, immutable shape metadata, and future Python-visible
+  mapping views. The near-term priority is the storage and layout work,
+  especially around shapes and ordered property metadata, rather than exposing
+  `globals()` or `obj.__dict__` immediately.
+  Where: `src/indirect_dict.h`, `src/scope.h`, new shape/object runtime types,
+  and later mapping-view objects.
+
 - [ ] Stage the hidden-class object model described in `doc/object-model-plan.md`.
   Why: the long-term direction is shape-based objects with slot layouts that
   can be specialized by the JIT. The immediate next work is the first
   implementation slice in that doc: shapes, instances, generic attribute
-  bytecodes/helpers, and VM-native exception propagation.
+  bytecodes/helpers, and VM-native exception propagation. This now partially
+  depends on the namespace and mapping invariants written down in
+  `doc/namespaces-and-mappings.md`, especially around shape layout, ordered
+  property metadata, and keeping room for future mapping views.
   Where: new runtime object types, attribute bytecodes, and interpreter/JIT
   support.
 
