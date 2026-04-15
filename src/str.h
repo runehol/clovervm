@@ -18,10 +18,8 @@ namespace cl
 
     struct String : public Object
     {
-
         String(const cl_wchar *_data, TValue<SMI> _count)
-            : Object(&cl_string_klass, 1,
-                     sizeof(Value) + (_count.extract() + 1) * sizeof(cl_wchar))
+            : Object(&cl_string_klass)
         {
             size_t n_chars = _count.extract();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -29,9 +27,7 @@ namespace cl
             count = _count;
         }
 
-        String(const cl_wchar *_data)
-            : Object(&cl_string_klass, 1,
-                     sizeof(Value) + (wcslen(_data) + 1) * sizeof(cl_wchar))
+        String(const cl_wchar *_data) : Object(&cl_string_klass)
         {
             size_t n_chars = wcslen(_data);
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -39,9 +35,7 @@ namespace cl
             count = TValue<SMI>(Value::from_smi(n_chars));
         }
 
-        String(const std::wstring &str)
-            : Object(&cl_string_klass, 1,
-                     sizeof(Value) + (str.size() + 1) * sizeof(cl_wchar))
+        String(const std::wstring &str) : Object(&cl_string_klass)
         {
             size_t n_chars = str.size();
             memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
@@ -60,6 +54,30 @@ namespace cl
         {
             return sizeof(String) + wcslen(str) * sizeof(cl_wchar);
         }
+        static size_t size_for(size_t n_chars)
+        {
+            return sizeof(String) + n_chars * sizeof(cl_wchar);
+        }
+
+        static DynamicLayoutSpec layout_spec_for(TValue<SMI> count)
+        {
+            return DynamicLayoutSpec{
+                round_up_to_16byte_units(size_for(size_t(count.extract()))), 1};
+        }
+
+        static DynamicLayoutSpec layout_spec_for(const cl_wchar *str)
+        {
+            return DynamicLayoutSpec{round_up_to_16byte_units(size_for(str)),
+                                     1};
+        }
+
+        static DynamicLayoutSpec layout_spec_for(const std::wstring &str)
+        {
+            return DynamicLayoutSpec{round_up_to_16byte_units(size_for(str)),
+                                     1};
+        }
+
+        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(String, count);
     };
 
     static inline bool operator==(const String &a, const std::wstring &b)

@@ -47,6 +47,9 @@ namespace cl
         // for that yet
         std::vector<int32_t> hash_table;
         std::vector<OwnedValue> keys;
+
+    public:
+        CL_DECLARE_STATIC_LAYOUT_NO_VALUES(IndirectDict);
     };
 
 };  // namespace cl

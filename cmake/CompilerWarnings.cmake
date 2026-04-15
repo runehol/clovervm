@@ -60,6 +60,7 @@ function(set_project_warnings project_name)
       -Wformat=2 # warn on security issues around functions that format output
                  # (ie printf)
 	  -Wno-unused-parameter
+	  -Wno-invalid-offsetof
 	  # -Wno-unused-local-typedef
 	  # -Wno-float-conversion
       # -Wno-sign-conversion

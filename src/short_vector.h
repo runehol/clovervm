@@ -19,11 +19,24 @@ namespace cl
     struct CLShortVector : public Object
     {
         CLShortVector(Value count)
-            : Object(&cl_short_vector_klass, count.get_smi() + 1)
+            : Object(&cl_short_vector_klass), count(count)
         {
         }
         Value count;
         Value array[];
+
+        static size_t size_for(Value count)
+        {
+            return sizeof(CLShortVector) + count.get_smi() * sizeof(Value);
+        }
+
+        static DynamicLayoutSpec layout_spec_for(Value count)
+        {
+            return DynamicLayoutSpec{round_up_to_16byte_units(size_for(count)),
+                                     uint64_t(count.get_smi() + 1)};
+        }
+
+        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(CLShortVector, count);
     };
 
     static inline Value short_vector_get(const CLShortVector *vec, Value index)

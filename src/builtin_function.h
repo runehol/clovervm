@@ -37,8 +37,8 @@ namespace cl
 
         BuiltinFunction(BuiltinCallback _callback, uint32_t _min_arity,
                         uint32_t _max_arity)
-            : Object(&klass, 0, sizeof(BuiltinFunction) / 8),
-              callback(_callback), min_arity(_min_arity), max_arity(_max_arity)
+            : Object(&klass, compact_layout()), callback(_callback),
+              min_arity(_min_arity), max_arity(_max_arity)
         {
         }
 
@@ -51,6 +51,8 @@ namespace cl
         BuiltinCallback callback;
         uint32_t min_arity;
         uint32_t max_arity;
+
+        CL_DECLARE_STATIC_LAYOUT_NO_VALUES(BuiltinFunction);
     };
 
 }  // namespace cl

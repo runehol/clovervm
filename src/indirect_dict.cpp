@@ -4,7 +4,10 @@
 
 namespace cl
 {
-    IndirectDict::IndirectDict() : Object(&klass, 0, 8), hash_table(16, -1) {}
+    IndirectDict::IndirectDict()
+        : Object(&klass, compact_layout()), hash_table(16, -1)
+    {
+    }
 
     const int32_t *IndirectDict::find_entry(TValue<String> key) const
     {

@@ -122,6 +122,9 @@ namespace cl
         // TODO these need to be CL arrays at some point, but we're not ready
         // for that yet
         std::vector<SlotEntry> slots;
+
+    public:
+        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Scope, parent_scope, 1);
     };
 
 };  // namespace cl

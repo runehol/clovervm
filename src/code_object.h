@@ -50,9 +50,8 @@ namespace cl
 
         CodeObject(const CompilationUnit *_compilation_unit,
                    TValue<Scope> _module_scope, Value _local_scope)
-            : Object(&klass, 1, sizeof(CodeObject) / 8),
-              module_scope(_module_scope), local_scope(_local_scope),
-              compilation_unit(_compilation_unit)
+            : Object(&klass, compact_layout()), module_scope(_module_scope),
+              local_scope(_local_scope), compilation_unit(_compilation_unit)
         {
         }
 
@@ -208,6 +207,8 @@ namespace cl
             code[pos + 0] = (v >> 0) & 0xff;
             code[pos + 1] = (v >> 8) & 0xff;
         }
+
+        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(CodeObject, module_scope, 2);
     };
 
     inline void JumpTarget::resolve_relocation(uint32_t pos)

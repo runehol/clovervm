@@ -21,8 +21,7 @@ namespace cl
             if(it != map.end())
                 return it->second;
 
-            CLType *value = intern_heap->make_global_sized_raw<CLType>(
-                CLType::size_for(src), src);
+            CLType *value = intern_heap->make_global_raw<CLType>(src);
             value->refcount = -1;  // signifying immortality
             map[src] = value;
             return value;

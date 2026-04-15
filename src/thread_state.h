@@ -52,15 +52,11 @@ namespace cl
             return current_thread;
         }
 
-        void *allocate_refcounted(size_t n_bytes)
-        {
-            return refcounted_heap.allocate(n_bytes);
-        }
-
         template <typename T, typename... Args>
         T *make_refcounted_raw(Args &&...args)
         {
             static_assert(std::is_base_of_v<Object, T>);
+            static_assert(HasObjectLayout<T>::value);
             return refcounted_heap.make<T>(std::forward<Args>(args)...);
         }
 
@@ -69,21 +65,6 @@ namespace cl
         {
             return TValue<T>::from_oop(
                 make_refcounted_raw<T>(std::forward<Args>(args)...));
-        }
-
-        template <typename T, typename... Args>
-        T *make_refcounted_sized_raw(size_t n_bytes, Args &&...args)
-        {
-            static_assert(std::is_base_of_v<Object, T>);
-            return refcounted_heap.make_sized<T>(n_bytes,
-                                                 std::forward<Args>(args)...);
-        }
-
-        template <typename T, typename... Args>
-        TValue<T> make_refcounted_sized_value(size_t n_bytes, Args &&...args)
-        {
-            return TValue<T>::from_oop(make_refcounted_sized_raw<T>(
-                n_bytes, std::forward<Args>(args)...));
         }
 
         CodeObject *compile(const wchar_t *str, StartRule start_rule);

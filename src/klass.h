@@ -12,13 +12,15 @@ namespace cl
     struct Klass : public Object
     {
         constexpr Klass(const cl_wchar *_klass_name, arity_one_function str_fun)
-            : Object(&cl_klass_klass, 0, 2), klass_name(_klass_name),
-              str(str_fun)
+            : Object(&cl_klass_klass, compact_layout()),
+              klass_name(_klass_name), str(str_fun)
         {
         }
 
         const cl_wchar *klass_name;
         arity_one_function str;
+
+        CL_DECLARE_STATIC_LAYOUT_NO_VALUES(Klass);
     };
 
 }  // namespace cl

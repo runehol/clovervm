@@ -16,14 +16,16 @@ namespace cl
 
         RangeIterator(TValue<CLInt> _current, TValue<CLInt> _stop,
                       TValue<CLInt> _step)
-            : Object(&klass, 3, sizeof(RangeIterator) / 8), current(_current),
-              stop(_stop), step(_step)
+            : Object(&klass, compact_layout()), current(_current), stop(_stop),
+              step(_step)
         {
         }
 
         MemberTValue<CLInt> current;
         MemberTValue<CLInt> stop;
         MemberTValue<CLInt> step;
+
+        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(RangeIterator, current, 3);
     };
 
     static_assert(std::is_trivially_destructible_v<RangeIterator>);
