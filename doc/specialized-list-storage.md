@@ -91,28 +91,20 @@ However, this depends on boxing allocation not failing while the storage is bein
 
 ## Transition diagram
 ```
-                    +------------------+
-                    |   Empty / Any    |
-                    | kind = ANY       |
-                    | len = 0          |
-                    +------------------+
-                      | append(float)
-                      v
-                    +------------------+
-                    |  Float-special   |
-      append(float) | kind = FLOAT     | append(float)
-     / set float    | all elems float  | / set float
-    +-------------->| backing=double[] |--------------+
-    |               +------------------+              |
-    |                    | append/set non-float       |
-    |                    | extend mixed iterable      |
-    |                    | any op requiring generic   |
-    |                    v                            |
-    |               +------------------+              |
-    +---------------|   Generic / Any  |<-------------+
-     append(any)    | kind = ANY       |  append(any)
-     set any        | backing=Value[]  |  set any
-                    +------------------+
+        +--------------+
+        |  ANY_EMPTY   |
+        +--------------+
+           |        |
+           |        |
+           |        +------------------------> +-----------+
+           |           append/set float        |   FLOAT   |
+           |                                   +-----------+
+           |                                         |
+           |                                         | append/set any
+           |                                         v
+           +---------------------------------> +-----------+
+                append/set any                 |    ANY    |
+                                               +-----------+
 ```
 
 
