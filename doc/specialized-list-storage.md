@@ -89,6 +89,32 @@ The backing storage is replaceable.
 Value and double take the same amount of storage, so it might be possible to mutate the existing backing storage. 
 However, this depends on boxing allocation not failing while the storage is being mutated, so we never leave the list in a half-valid state.
 
+## Transition diagram
+```
+                    +------------------+
+                    |   Empty / Any    |
+                    | kind = ANY       |
+                    | len = 0          |
+                    +------------------+
+                      | append(float)
+                      v
+                    +------------------+
+                    |  Float-special   |
+      append(float) | kind = FLOAT     | append(float)
+     / set float    | all elems float  | / set float
+    +-------------->| backing=double[] |--------------+
+    |               +------------------+              |
+    |                    | append/set non-float       |
+    |                    | extend mixed iterable      |
+    |                    | any op requiring generic   |
+    |                    v                            |
+    |               +------------------+              |
+    +---------------|   Generic / Any  |<-------------+
+     append(any)    | kind = ANY       |  append(any)
+     set any        | backing=Value[]  |  set any
+                    +------------------+
+```
+
 
 ## Concurrency
 
