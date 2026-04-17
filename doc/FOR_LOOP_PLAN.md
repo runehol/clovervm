@@ -464,43 +464,6 @@ Later add:
 - `range(start, stop)` and `range(start, stop, step)` once enabled
 - fast-path `range(...)` loops match generic `RangeIterator` behavior
 
-## Milestones
-
-### Milestone 1 [done]
-
-- AST support for `STATEMENT_FOR`
-- parser implementation for `for`
-- AST printer support
-- parser tests
-
-### Milestone 2 [done]
-
-- `BuiltinFunction` runtime object
-- builtin scope
-- `range(stop)` builtin
-
-### Milestone 3
-
-- `RangeIterator` runtime object
-- `GetIter` and `ForIter` bytecodes
-- interpreter support for generic iteration
-- code-object printer support
-
-### Milestone 4
-
-- codegen lowering for `for`
-- `break`, `continue`, and `else` semantics validated for `for`
-
-### Milestone 5
-
-- specialized `range(...)` fast-path bytecodes and lowering
-- guarded fallback to generic iteration
-- extend `range` to additional signatures if desired
-
-### Milestone 6
-
-- extend `range` to additional signatures if desired
-- add more builtins such as `print`
 
 ## Main Risks
 
