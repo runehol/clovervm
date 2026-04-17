@@ -22,7 +22,7 @@ Py_BEGIN_ALLOW_THREADS
 Py_END_ALLOW_THREADS
 ```
 
-The original purpose is to release the GIL so that other Python threads can do their thing, but we could repurpose it to declare ourselves at a safe point, for example by atomically decrementing a num-threads-running variable or similar. Care must be taken so that if we're doing a global operation such as GC and a C thread calls `Py_END_ALLOW_THREADS`, then it isn't able to proceed until the global operation is complete.
+The original purpose is to release the GIL so that other Python threads can do their thing, but we could repurpose it to declare that this thread won't touch Python objects, and does not need to participate in safepoint coordination. This is in fact what [PEP 703 - Making the Global Interpreter Lock Optional in CPython](https://peps.python.org/pep-0703/) does - a thread gets a PyThreadState of Attached, Detached and GC, Py_BEGIN_ALLOW_THREADS detaches the thread, Py_END_ALLOW_THREADS attaches the thread, and safepointing blocks only until there are no more attached threads.
 
 clovervm will only implement the limited API.
 
