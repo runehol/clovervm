@@ -102,6 +102,11 @@ namespace cl
         throw std::runtime_error("AttributeError: cannot assign attribute");
     }
 
+    NOINLINE Value method_lookup_error(PARAMS)
+    {
+        throw std::runtime_error("AttributeError");
+    }
+
     NOINLINE Value wrong_arity_error(PARAMS)
     {
         throw std::runtime_error("TypeError: wrong number of arguments");
@@ -288,6 +293,25 @@ namespace cl
         {
             MUSTTAIL return attribute_assignment_error(ARGS);
         }
+        COMPLETE();
+    }
+
+    static Value op_load_method(PARAMS)
+    {
+        START(4);
+        int8_t receiver_reg = pc[1];
+        uint8_t const_offset = pc[2];
+        int8_t call_base_reg = pc[3];
+        TValue<String> attr_name(
+            code_object->constant_table[const_offset].as_value());
+        Value callable = Value::not_present();
+        Value self = Value::not_present();
+        if(unlikely(!load_method(fp[receiver_reg], attr_name, callable, self)))
+        {
+            MUSTTAIL return method_lookup_error(ARGS);
+        }
+        fp[call_base_reg] = callable;
+        fp[call_base_reg - 1] = self;
         COMPLETE();
     }
 
@@ -729,6 +753,72 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_call_method(PARAMS)
+    {
+        int8_t reg = pc[1];
+        uint8_t n_user_args = pc[2];
+        Value self = fp[reg - 1];
+        uint8_t n_args = n_user_args;
+        if(self.is_not_present())
+        {
+            for(uint8_t arg_idx = 0; arg_idx < n_user_args; ++arg_idx)
+            {
+                fp[reg - 1 - int8_t(arg_idx)] = fp[reg - 2 - int8_t(arg_idx)];
+            }
+        }
+        else
+        {
+            n_args = n_user_args + 1;
+        }
+
+        Value fun = fp[reg];
+
+        if(unlikely(!fun.is_ptr()))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        if(fun.get_ptr()->klass == &BuiltinFunction::klass)
+        {
+            BuiltinFunction *builtin = fun.get_ptr<BuiltinFunction>();
+            if(unlikely(!builtin->accepts_arity(n_args)))
+            {
+                MUSTTAIL return wrong_arity_error(ARGS);
+            }
+
+            {
+                CallArguments args(&fp[reg], n_args);
+                accumulator =
+                    builtin->callback(ThreadState::get_active(), args);
+            }
+
+            pc += 3;
+
+            START(0);
+            COMPLETE();
+        }
+
+        if(unlikely(fun.get_ptr()->klass != &Function::klass))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        pc += 3;
+
+        Value *new_fp = fp + reg - n_args - FrameHeaderSizeAboveFp;
+
+        new_fp[0].as.ptr = (Object *)fp;
+        new_fp[-1] = Value::from_oop(code_object);
+        new_fp[-2].as.ptr = (Object *)pc;
+
+        fp = new_fp;
+        code_object = fun.get_ptr<Function>()->code_object.extract();
+        pc = code_object->code.data();
+
+        START(0);
+        COMPLETE();
+    }
+
     static Value op_get_iter(PARAMS)
     {
         START(1);
@@ -1020,6 +1110,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);
         SET_TABLE_ENTRY(Bytecode::LoadAttr, op_load_attr);
         SET_TABLE_ENTRY(Bytecode::StoreAttr, op_store_attr);
+        SET_TABLE_ENTRY(Bytecode::LoadMethod, op_load_method);
 
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
@@ -1027,6 +1118,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);
 
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
+        SET_TABLE_ENTRY(Bytecode::CallMethod, op_call_method);
         SET_TABLE_ENTRY(Bytecode::GetIter, op_get_iter);
         SET_TABLE_ENTRY(Bytecode::ForIter, op_for_iter);
         SET_TABLE_ENTRY(Bytecode::ForPrepRange1, op_for_prep_range1);

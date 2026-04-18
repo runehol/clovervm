@@ -45,6 +45,15 @@ static Value builtin_sum(ThreadState *, const CallArguments &args)
     return Value::from_smi(total);
 }
 
+static Value builtin_identity(ThreadState *, const CallArguments &args)
+{
+    if(args.n_args != 1)
+    {
+        throw std::runtime_error("builtin_identity expected exactly one arg");
+    }
+    return args[0];
+}
+
 static Value run_file(const wchar_t *str)
 {
     test::VmTestContext test_context;
@@ -249,6 +258,74 @@ TEST(Interpreter, attribute_load_and_store_syntax)
     Value actual = test_context.thread()->run(code_obj);
     EXPECT_EQ(Value::from_smi(7), actual);
     EXPECT_EQ(Value::from_smi(7), instance->get_own_property(attr_name));
+}
+
+TEST(Interpreter, direct_method_call_inserts_self_for_class_functions)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> cls_name(
+        test_context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> obj_name(
+        test_context.vm().get_or_create_interned_string_value(L"obj"));
+    TValue<String> method_name(
+        test_context.vm().get_or_create_interned_string_value(L"method"));
+    TValue<String> value_name(
+        test_context.vm().get_or_create_interned_string_value(L"value"));
+
+    CodeObject *method_code =
+        test_context.thread()->compile(L"def method(self, x):\n"
+                                       L"    return self.value + x\n",
+                                       StartRule::File);
+    (void)test_context.thread()->run(method_code);
+    Value method_value =
+        method_code->module_scope.extract()->get_by_name(method_name);
+
+    ClassObject *cls =
+        test_context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+    cls->set_member(method_name, method_value);
+    Instance *instance = test_context.thread()->make_refcounted_raw<Instance>(
+        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+    instance->set_own_property(value_name, Value::from_smi(3));
+
+    CodeObject *code_obj = test_context.compile_file(L"obj.method(4)\n");
+    code_obj->module_scope.extract()->set_by_name(obj_name,
+                                                  Value::from_oop(instance));
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(7), actual);
+}
+
+TEST(Interpreter,
+     direct_method_call_does_not_insert_self_for_non_function_callables)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> cls_name(
+        test_context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> obj_name(
+        test_context.vm().get_or_create_interned_string_value(L"obj"));
+    TValue<String> method_name(
+        test_context.vm().get_or_create_interned_string_value(L"method"));
+
+    TValue<BuiltinFunction> identity =
+        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+            builtin_identity, 1, 1);
+
+    ClassObject *cls =
+        test_context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+    cls->set_member(method_name, identity);
+    Instance *instance = test_context.thread()->make_refcounted_raw<Instance>(
+        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+
+    CodeObject *code_obj = test_context.compile_file(L"obj.method(4)\n");
+    code_obj->module_scope.extract()->set_by_name(obj_name,
+                                                  Value::from_oop(instance));
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(4), actual);
 }
 
 TEST(Interpreter, function_local_shadows_global)

@@ -1,5 +1,6 @@
 #include "attr.h"
 #include "class_object.h"
+#include "function.h"
 #include "instance.h"
 #include "klass.h"
 #include <cwchar>
@@ -25,6 +26,77 @@ namespace cl
         }
 
         return Value::from_oop(const_cast<Klass *>(object->klass));
+    }
+
+    bool load_method(Value obj, TValue<String> name, Value &callable_out,
+                     Value &self_out)
+    {
+        if(is_dunder_class(name))
+        {
+            callable_out = load_dunder_class(obj);
+            self_out = Value::not_present();
+            return !callable_out.is_not_present();
+        }
+
+        if(!obj.is_ptr())
+        {
+            callable_out = Value::not_present();
+            self_out = Value::not_present();
+            return false;
+        }
+
+        Object *object = obj.get_ptr<Object>();
+        if(object->klass == &Instance::klass)
+        {
+            Instance *instance = static_cast<Instance *>(object);
+            Value own_property = instance->get_own_property(name);
+            if(!own_property.is_not_present())
+            {
+                callable_out = own_property;
+                self_out = Value::not_present();
+                return true;
+            }
+
+            Value cls = instance->get_class();
+            if(cls.is_ptr() &&
+               cls.get_ptr<Object>()->klass == &ClassObject::klass)
+            {
+                Value member = cls.get_ptr<ClassObject>()->get_member(name);
+                if(member.is_not_present())
+                {
+                    callable_out = Value::not_present();
+                    self_out = Value::not_present();
+                    return false;
+                }
+
+                callable_out = member;
+                if(member.is_ptr() &&
+                   member.get_ptr<Object>()->klass == &Function::klass)
+                {
+                    self_out = obj;
+                }
+                else
+                {
+                    self_out = Value::not_present();
+                }
+                return true;
+            }
+
+            callable_out = Value::not_present();
+            self_out = Value::not_present();
+            return false;
+        }
+
+        if(object->klass == &ClassObject::klass)
+        {
+            callable_out = static_cast<ClassObject *>(object)->get_member(name);
+            self_out = Value::not_present();
+            return !callable_out.is_not_present();
+        }
+
+        callable_out = Value::not_present();
+        self_out = Value::not_present();
+        return false;
     }
 
     Value load_attr(Value obj, TValue<String> name)

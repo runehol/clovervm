@@ -66,6 +66,8 @@ namespace cl
         // attribute access
         LoadAttr,
         StoreAttr,
+        LoadMethod,
+        CallMethod,
 
         // binary on accumulator. reg op acc
         Add,

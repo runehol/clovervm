@@ -262,6 +262,30 @@ TEST(Codegen, attribute_store_uses_register_receiver_and_accumulator_value)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, direct_method_call_uses_loadmethod_and_callmethod)
+{
+    const wchar_t *test_case = L"def invoke(obj, value):\n"
+                               "    return obj.method(value)\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 CreateFunction c[0]\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 Halt\n"
+                           "Constant 0: Code object:\n"
+                           "    0 LoadMethod a0, c[0], r0\n"
+                           "    4 Ldar a1\n"
+                           "    6 Star2\n"
+                           "    7 CallMethod r0, 1\n"
+                           "   10 Return\n"
+                           "   11 LdaNone\n"
+                           "   12 Return\n"
+                           "Constant 0: \n"
+                           "\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
 {
     std::string expected = "Code object:\n"

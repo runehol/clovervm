@@ -383,6 +383,30 @@ namespace cl
             uint32_t source_offset = av.source_offsets[node_idx];
             AstChildren args = av.children[children[1]];
 
+            if(av.kinds[children[0]].node_kind ==
+               AstNodeKind::EXPRESSION_ATTRIBUTE)
+            {
+                AstChildren method_children = av.children[children[0]];
+                TemporaryReg regs(this, 2 + args.size());
+                uint8_t constant_idx =
+                    code_obj->allocate_constant(av.constants[children[0]]);
+                ScopedRegister receiver_reg =
+                    codegen_node_to_register(method_children[0], mode);
+                code_obj->emit_opcode_reg_constant_idx_reg(
+                    source_offset, Bytecode::LoadMethod, receiver_reg.reg,
+                    constant_idx, regs);
+
+                for(size_t i = 0; i < args.size(); ++i)
+                {
+                    codegen_node(args[i], mode);
+                    code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                              regs + 2 + i);
+                }
+                code_obj->emit_opcode_reg_range(
+                    source_offset, Bytecode::CallMethod, regs, args.size());
+                return;
+            }
+
             TemporaryReg regs(this,
                               1 + args.size());  // a register for the function
                                                  // itself and all arguments
