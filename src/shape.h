@@ -23,6 +23,25 @@ namespace cl
         Delete,
     };
 
+    enum class StorageKind : uint8_t
+    {
+        Inline,
+        Overflow,
+    };
+
+    struct StorageLocation
+    {
+        int32_t physical_idx;
+        StorageKind kind;
+
+        static StorageLocation not_found()
+        {
+            return StorageLocation{-1, StorageKind::Inline};
+        }
+
+        bool is_found() const { return physical_idx >= 0; }
+    };
+
     class ClassObject : public Object
     {
     public:
@@ -71,10 +90,9 @@ namespace cl
         bool delete_own_property(TValue<String> name);
 
     private:
-        Value read_slot_by_physical_index(uint32_t physical_slot_index) const;
-        void write_slot_by_physical_index(uint32_t physical_slot_index,
-                                          Value value);
-        OverflowSlots *ensure_overflow_slot(uint32_t overflow_slot_index);
+        Value read_storage_location(StorageLocation location) const;
+        void write_storage_location(StorageLocation location, Value value);
+        OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
 
         MemberValue cls;
         MemberValue shape;
@@ -139,21 +157,24 @@ namespace cl
         class PropertyDescriptor
         {
         public:
-            PropertyDescriptor(TValue<String> name,
-                               uint32_t physical_slot_index)
-                : name(name), physical_slot_index(physical_slot_index)
+            PropertyDescriptor(TValue<String> name, int32_t slot_index,
+                               StorageLocation storage_location)
+                : name(name), slot_index(slot_index),
+                  storage_location(storage_location)
             {
             }
 
             TValue<String> get_name() const { return name; }
-            uint32_t get_physical_slot_index() const
+            int32_t get_slot_index() const { return slot_index; }
+            StorageLocation get_storage_location() const
             {
-                return physical_slot_index;
+                return storage_location;
             }
 
         private:
             OwnedTValue<String> name;
-            uint32_t physical_slot_index;
+            int32_t slot_index;
+            StorageLocation storage_location;
         };
 
         class Transition
@@ -176,12 +197,11 @@ namespace cl
             OwnedTValue<Shape> next_shape;
         };
 
-        Shape(Value owner_class, Value previous_shape,
-              uint32_t next_physical_slot);
+        Shape(Value owner_class, Value previous_shape, int32_t next_slot_index);
 
         ClassObject *get_owner_class() const;
         Shape *get_previous_shape() const;
-        uint32_t get_next_physical_slot() const { return next_physical_slot; }
+        int32_t get_next_slot_index() const { return next_slot_index; }
         uint32_t get_inline_slot_capacity() const;
 
         uint32_t property_count() const { return descriptors.size(); }
@@ -189,14 +209,20 @@ namespace cl
         {
             return descriptors[property_idx].get_name();
         }
-        uint32_t get_property_physical_slot_index(uint32_t property_idx) const
+        int32_t get_property_slot_index(uint32_t property_idx) const
         {
-            return descriptors[property_idx].get_physical_slot_index();
+            return descriptors[property_idx].get_slot_index();
+        }
+        StorageLocation
+        get_property_storage_location(uint32_t property_idx) const
+        {
+            return descriptors[property_idx].get_storage_location();
         }
 
         uint32_t transition_count() const { return transitions.size(); }
 
-        int32_t lookup_property(TValue<String> name) const;
+        int32_t lookup_property_index(TValue<String> name) const;
+        StorageLocation resolve_own_property(TValue<String> name) const;
         Shape *lookup_transition(TValue<String> name,
                                  ShapeTransitionVerb verb) const;
         Shape *derive_transition(TValue<String> name, ShapeTransitionVerb verb);
@@ -207,7 +233,7 @@ namespace cl
 
         MemberValue owner_class;
         Shape *previous_shape;
-        uint32_t next_physical_slot;
+        int32_t next_slot_index;
         std::vector<PropertyDescriptor> descriptors;
         std::vector<Transition> transitions;
 

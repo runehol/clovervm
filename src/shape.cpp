@@ -58,25 +58,22 @@ namespace cl
 
     Value Instance::get_own_property(TValue<String> name) const
     {
-        int32_t property_idx = get_shape()->lookup_property(name);
-        if(property_idx < 0)
+        StorageLocation location = get_shape()->resolve_own_property(name);
+        if(!location.is_found())
         {
             return Value::not_present();
         }
 
-        return read_slot_by_physical_index(
-            get_shape()->get_property_physical_slot_index(property_idx));
+        return read_storage_location(location);
     }
 
     void Instance::set_own_property(TValue<String> name, Value value)
     {
         Shape *current_shape = get_shape();
-        int32_t property_idx = current_shape->lookup_property(name);
-        if(property_idx >= 0)
+        StorageLocation location = current_shape->resolve_own_property(name);
+        if(location.is_found())
         {
-            write_slot_by_physical_index(
-                current_shape->get_property_physical_slot_index(property_idx),
-                value);
+            write_storage_location(location, value);
             return;
         }
 
@@ -84,81 +81,82 @@ namespace cl
             current_shape->derive_transition(name, ShapeTransitionVerb::Add);
         shape = Value::from_oop(next_shape);
 
-        int32_t new_property_idx = next_shape->lookup_property(name);
-        assert(new_property_idx >= 0);
-        write_slot_by_physical_index(
-            next_shape->get_property_physical_slot_index(new_property_idx),
-            value);
+        StorageLocation new_location = next_shape->resolve_own_property(name);
+        assert(new_location.is_found());
+        write_storage_location(new_location, value);
     }
 
     bool Instance::delete_own_property(TValue<String> name)
     {
         Shape *current_shape = get_shape();
-        int32_t property_idx = current_shape->lookup_property(name);
-        if(property_idx < 0)
+        StorageLocation location = current_shape->resolve_own_property(name);
+        if(!location.is_found())
         {
             return false;
         }
 
-        uint32_t physical_slot_index =
-            current_shape->get_property_physical_slot_index(property_idx);
         Shape *next_shape =
             current_shape->derive_transition(name, ShapeTransitionVerb::Delete);
         shape = Value::from_oop(next_shape);
-        write_slot_by_physical_index(physical_slot_index, Value::not_present());
+        write_storage_location(location, Value::not_present());
         return true;
     }
 
-    Value
-    Instance::read_slot_by_physical_index(uint32_t physical_slot_index) const
+    Value Instance::read_storage_location(StorageLocation location) const
     {
-        uint32_t inline_slot_capacity = get_shape()->get_inline_slot_capacity();
-        if(physical_slot_index < inline_slot_capacity)
+        switch(location.kind)
         {
-            return inline_slots[physical_slot_index];
+            case StorageKind::Inline:
+                return inline_slots[location.physical_idx];
+            case StorageKind::Overflow:
+                {
+                    OverflowSlots *overflow_slots = get_overflow_slots();
+                    if(overflow_slots == nullptr)
+                    {
+                        return Value::not_present();
+                    }
+                    if(uint32_t(location.physical_idx) >=
+                       overflow_slots->get_size())
+                    {
+                        return Value::not_present();
+                    }
+                    return overflow_slots->get(location.physical_idx);
+                }
         }
-
-        OverflowSlots *overflow_slots = get_overflow_slots();
-        if(overflow_slots == nullptr)
-        {
-            return Value::not_present();
-        }
-
-        uint32_t overflow_slot_index =
-            physical_slot_index - inline_slot_capacity;
-        if(overflow_slot_index >= overflow_slots->get_size())
-        {
-            return Value::not_present();
-        }
-        return overflow_slots->get(overflow_slot_index);
+        __builtin_unreachable();
     }
 
-    void Instance::write_slot_by_physical_index(uint32_t physical_slot_index,
-                                                Value value)
+    void Instance::write_storage_location(StorageLocation location, Value value)
     {
-        uint32_t inline_slot_capacity = get_shape()->get_inline_slot_capacity();
-        if(physical_slot_index < inline_slot_capacity)
+        switch(location.kind)
         {
-            Value old_value = inline_slots[physical_slot_index];
-            inline_slots[physical_slot_index] = incref(value);
-            decref(old_value);
-            return;
+            case StorageKind::Inline:
+                {
+                    Value old_value = inline_slots[location.physical_idx];
+                    inline_slots[location.physical_idx] = incref(value);
+                    decref(old_value);
+                    return;
+                }
+            case StorageKind::Overflow:
+                {
+                    OverflowSlots *overflow_slots =
+                        ensure_overflow_slot(location.physical_idx);
+                    overflow_slots->set(location.physical_idx, value);
+                    overflow_slots->set_size(
+                        std::max(overflow_slots->get_size(),
+                                 uint32_t(location.physical_idx + 1)));
+                    return;
+                }
         }
-
-        uint32_t overflow_slot_index =
-            physical_slot_index - inline_slot_capacity;
-        OverflowSlots *overflow_slots =
-            ensure_overflow_slot(overflow_slot_index);
-        overflow_slots->set(overflow_slot_index, value);
-        overflow_slots->set_size(
-            std::max(overflow_slots->get_size(), overflow_slot_index + 1));
+        __builtin_unreachable();
     }
 
-    OverflowSlots *Instance::ensure_overflow_slot(uint32_t overflow_slot_index)
+    OverflowSlots *Instance::ensure_overflow_slot(int32_t physical_idx)
     {
+        assert(physical_idx >= 0);
         OverflowSlots *overflow_slots = get_overflow_slots();
         if(overflow_slots != nullptr &&
-           overflow_slot_index < overflow_slots->get_capacity())
+           uint32_t(physical_idx) < overflow_slots->get_capacity())
         {
             return overflow_slots;
         }
@@ -166,7 +164,7 @@ namespace cl
         uint32_t old_capacity =
             overflow_slots == nullptr ? 0 : overflow_slots->get_capacity();
         uint32_t new_capacity = std::max<uint32_t>(4, old_capacity);
-        while(overflow_slot_index >= new_capacity)
+        while(uint32_t(physical_idx) >= new_capacity)
         {
             new_capacity *= 2;
         }
@@ -208,12 +206,12 @@ namespace cl
     }
 
     Shape::Shape(Value _owner_class, Value _previous_shape,
-                 uint32_t _next_physical_slot)
+                 int32_t _next_slot_index)
         : Object(&klass, compact_layout()), owner_class(_owner_class),
           previous_shape(_previous_shape == Value::None()
                              ? nullptr
                              : _previous_shape.get_ptr<Shape>()),
-          next_physical_slot(_next_physical_slot)
+          next_slot_index(_next_slot_index)
     {
     }
 
@@ -229,7 +227,7 @@ namespace cl
         return get_owner_class()->get_inline_slot_capacity();
     }
 
-    int32_t Shape::lookup_property(TValue<String> name) const
+    int32_t Shape::lookup_property_index(TValue<String> name) const
     {
         for(uint32_t property_idx = 0; property_idx < descriptors.size();
             ++property_idx)
@@ -240,6 +238,17 @@ namespace cl
             }
         }
         return -1;
+    }
+
+    StorageLocation Shape::resolve_own_property(TValue<String> name) const
+    {
+        int32_t property_index = lookup_property_index(name);
+        if(property_index < 0)
+        {
+            return StorageLocation::not_found();
+        }
+
+        return descriptors[property_index].get_storage_location();
     }
 
     Shape *Shape::lookup_transition(TValue<String> name,
@@ -281,24 +290,38 @@ namespace cl
 
     Shape *Shape::derive_add_transition(TValue<String> name)
     {
-        if(lookup_property(name) >= 0)
+        if(lookup_property_index(name) >= 0)
         {
             throw std::runtime_error(
                 "shape add transition requires a new property");
         }
 
+        StorageLocation storage_location;
+        if(uint32_t(next_slot_index) < get_inline_slot_capacity())
+        {
+            storage_location =
+                StorageLocation{next_slot_index, StorageKind::Inline};
+        }
+        else
+        {
+            storage_location = StorageLocation{
+                next_slot_index - int32_t(get_inline_slot_capacity()),
+                StorageKind::Overflow};
+        }
+
         Shape *next_shape =
             ThreadState::get_active()->make_refcounted_raw<Shape>(
                 owner_class.as_value(), Value::from_oop(this),
-                next_physical_slot + 1);
+                next_slot_index + 1);
         next_shape->descriptors = descriptors;
-        next_shape->descriptors.emplace_back(name, next_physical_slot);
+        next_shape->descriptors.emplace_back(name, next_slot_index,
+                                             storage_location);
         return next_shape;
     }
 
     Shape *Shape::derive_delete_transition(TValue<String> name)
     {
-        if(lookup_property(name) < 0)
+        if(lookup_property_index(name) < 0)
         {
             throw std::runtime_error(
                 "shape delete transition requires an existing property");
@@ -306,8 +329,7 @@ namespace cl
 
         Shape *next_shape =
             ThreadState::get_active()->make_refcounted_raw<Shape>(
-                owner_class.as_value(), Value::from_oop(this),
-                next_physical_slot);
+                owner_class.as_value(), Value::from_oop(this), next_slot_index);
         next_shape->descriptors.reserve(descriptors.size() - 1);
         for(const PropertyDescriptor &descriptor: descriptors)
         {

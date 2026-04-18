@@ -20,7 +20,7 @@ TEST(Shape, ClassOwnsRootShape)
     EXPECT_EQ(cls, root_shape->get_owner_class());
     EXPECT_EQ(nullptr, root_shape->get_previous_shape());
     EXPECT_EQ(0u, root_shape->property_count());
-    EXPECT_EQ(0u, root_shape->get_next_physical_slot());
+    EXPECT_EQ(0, root_shape->get_next_slot_index());
     EXPECT_EQ(2u, root_shape->get_inline_slot_capacity());
 }
 
@@ -55,22 +55,28 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
 
     ASSERT_EQ(1u, shape_with_a->property_count());
     EXPECT_STREQ(L"a", shape_with_a->get_property_name(0).extract()->data);
-    EXPECT_EQ(0u, shape_with_a->get_property_physical_slot_index(0));
-    EXPECT_EQ(1u, shape_with_a->get_next_physical_slot());
+    EXPECT_EQ(0, shape_with_a->get_property_slot_index(0));
+    EXPECT_EQ(StorageKind::Inline,
+              shape_with_a->get_property_storage_location(0).kind);
+    EXPECT_EQ(0, shape_with_a->get_property_storage_location(0).physical_idx);
+    EXPECT_EQ(1, shape_with_a->get_next_slot_index());
 
     ASSERT_EQ(2u, shape_with_ab->property_count());
     EXPECT_STREQ(L"a", shape_with_ab->get_property_name(0).extract()->data);
     EXPECT_STREQ(L"b", shape_with_ab->get_property_name(1).extract()->data);
-    EXPECT_EQ(0u, shape_with_ab->get_property_physical_slot_index(0));
-    EXPECT_EQ(1u, shape_with_ab->get_property_physical_slot_index(1));
+    EXPECT_EQ(0, shape_with_ab->get_property_slot_index(0));
+    EXPECT_EQ(1, shape_with_ab->get_property_slot_index(1));
+    EXPECT_EQ(StorageKind::Inline,
+              shape_with_ab->get_property_storage_location(1).kind);
+    EXPECT_EQ(1, shape_with_ab->get_property_storage_location(1).physical_idx);
     EXPECT_EQ(shape_with_a, shape_with_ab->get_previous_shape());
-    EXPECT_EQ(2u, shape_with_ab->get_next_physical_slot());
+    EXPECT_EQ(2, shape_with_ab->get_next_slot_index());
 
     ASSERT_EQ(1u, shape_with_b->property_count());
     EXPECT_STREQ(L"b", shape_with_b->get_property_name(0).extract()->data);
-    EXPECT_EQ(1u, shape_with_b->get_property_physical_slot_index(0));
+    EXPECT_EQ(1, shape_with_b->get_property_slot_index(0));
     EXPECT_EQ(shape_with_ab, shape_with_b->get_previous_shape());
-    EXPECT_EQ(2u, shape_with_b->get_next_physical_slot());
+    EXPECT_EQ(2, shape_with_b->get_next_slot_index());
 }
 
 TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
@@ -100,9 +106,12 @@ TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
     ASSERT_EQ(2u, shape_with_ba->property_count());
     EXPECT_STREQ(L"b", shape_with_ba->get_property_name(0).extract()->data);
     EXPECT_STREQ(L"a", shape_with_ba->get_property_name(1).extract()->data);
-    EXPECT_EQ(1u, shape_with_ba->get_property_physical_slot_index(0));
-    EXPECT_EQ(2u, shape_with_ba->get_property_physical_slot_index(1));
-    EXPECT_EQ(3u, shape_with_ba->get_next_physical_slot());
+    EXPECT_EQ(1, shape_with_ba->get_property_slot_index(0));
+    EXPECT_EQ(2, shape_with_ba->get_property_slot_index(1));
+    EXPECT_EQ(StorageKind::Overflow,
+              shape_with_ba->get_property_storage_location(1).kind);
+    EXPECT_EQ(1, shape_with_ba->get_property_storage_location(1).physical_idx);
+    EXPECT_EQ(3, shape_with_ba->get_next_slot_index());
     EXPECT_EQ(1u, shape_with_ba->get_inline_slot_capacity());
 }
 
@@ -140,7 +149,7 @@ TEST(Shape, InstanceStoresAndLoadsInlineOwnProperty)
 
     EXPECT_EQ(Value::from_smi(7), instance->get_own_property(a_name));
     EXPECT_EQ(1u, instance->get_shape()->property_count());
-    EXPECT_EQ(1u, instance->get_shape()->get_next_physical_slot());
+    EXPECT_EQ(1, instance->get_shape()->get_next_slot_index());
     EXPECT_EQ(nullptr, instance->get_overflow_slots());
 }
 
@@ -209,7 +218,7 @@ TEST(Shape, DeleteClearsSlotAndAllowsFreshReAdd)
 
     instance->set_own_property(a_name, Value::from_smi(12));
     EXPECT_EQ(Value::from_smi(12), instance->get_own_property(a_name));
-    EXPECT_EQ(3u, instance->get_shape()->get_next_physical_slot());
+    EXPECT_EQ(3, instance->get_shape()->get_next_slot_index());
 }
 
 TEST(Shape, TwoInstancesShareShapeTransitionsButHoldDistinctValues)
