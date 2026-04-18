@@ -1,5 +1,6 @@
 #include "interpreter.h"
 
+#include "attr.h"
 #include "builtin_function.h"
 #include "code_object.h"
 #include "code_object_print.h"
@@ -89,6 +90,16 @@ namespace cl
     NOINLINE Value not_callable_error(PARAMS)
     {
         throw std::runtime_error("TypeError: object is not callable");
+    }
+
+    NOINLINE Value attribute_error(PARAMS)
+    {
+        throw std::runtime_error("AttributeError");
+    }
+
+    NOINLINE Value attribute_assignment_error(PARAMS)
+    {
+        throw std::runtime_error("AttributeError: cannot assign attribute");
     }
 
     NOINLINE Value wrong_arity_error(PARAMS)
@@ -248,6 +259,35 @@ namespace cl
         int32_t slot_idx = read_uint32_le(&pc[1]);
         code_object->module_scope.extract()->set_by_slot_index(slot_idx,
                                                                accumulator);
+        COMPLETE();
+    }
+
+    static Value op_load_attr(PARAMS)
+    {
+        START(3);
+        int8_t reg = pc[1];
+        uint8_t const_offset = pc[2];
+        TValue<String> attr_name(
+            code_object->constant_table[const_offset].as_value());
+        accumulator = load_attr(fp[reg], attr_name);
+        if(unlikely(accumulator.is_not_present()))
+        {
+            MUSTTAIL return attribute_error(ARGS);
+        }
+        COMPLETE();
+    }
+
+    static Value op_store_attr(PARAMS)
+    {
+        START(3);
+        int8_t reg = pc[1];
+        uint8_t const_offset = pc[2];
+        TValue<String> attr_name(
+            code_object->constant_table[const_offset].as_value());
+        if(unlikely(!store_attr(fp[reg], attr_name, accumulator)))
+        {
+            MUSTTAIL return attribute_assignment_error(ARGS);
+        }
         COMPLETE();
     }
 
@@ -978,6 +1018,8 @@ namespace cl
 
         SET_TABLE_ENTRY(Bytecode::LdaGlobal, op_lda_global);
         SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);
+        SET_TABLE_ENTRY(Bytecode::LoadAttr, op_load_attr);
+        SET_TABLE_ENTRY(Bytecode::StoreAttr, op_store_attr);
 
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);

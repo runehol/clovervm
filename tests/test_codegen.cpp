@@ -220,6 +220,48 @@ TEST(Codegen, string_literal_constant_value)
                              code_obj->constant_table[0].as_value())));
 }
 
+TEST(Codegen, attribute_load_uses_register_receiver)
+{
+    const wchar_t *test_case = L"def get(obj):\n"
+                               "    return obj.value\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 CreateFunction c[0]\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 Halt\n"
+                           "Constant 0: Code object:\n"
+                           "    0 LoadAttr a0, c[0]\n"
+                           "    3 Return\n"
+                           "    4 LdaNone\n"
+                           "    5 Return\n"
+                           "Constant 0: \n"
+                           "\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, attribute_store_uses_register_receiver_and_accumulator_value)
+{
+    const wchar_t *test_case = L"def set(obj, value):\n"
+                               "    obj.value = value\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 CreateFunction c[0]\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 Halt\n"
+                           "Constant 0: Code object:\n"
+                           "    0 Ldar a1\n"
+                           "    2 StoreAttr a0, c[0]\n"
+                           "    5 LdaNone\n"
+                           "    6 Return\n"
+                           "Constant 0: \n"
+                           "\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
 {
     std::string expected = "Code object:\n"

@@ -1,5 +1,6 @@
 #include "codegen.h"
 #include "ast.h"
+#include "attr.h"
 #include "scope.h"
 #include "thread_state.h"
 #include "tokenizer.h"
@@ -386,6 +387,68 @@ namespace cl
                                             regs, args.size());
         }
 
+        void codegen_attribute_assignment(int32_t node_idx, Mode mode)
+        {
+            AstKind kind = av.kinds[node_idx];
+            AstChildren children = av.children[node_idx];
+            uint32_t source_offset = av.source_offsets[node_idx];
+            int32_t lhs_idx = children[0];
+            AstChildren lhs_children = av.children[lhs_idx];
+            uint8_t constant_idx =
+                code_obj->allocate_constant(av.constants[lhs_idx]);
+            ScopedRegister receiver_reg =
+                codegen_node_to_register(lhs_children[0], mode);
+
+            if(kind.operator_kind == AstOperatorKind::NOP)
+            {
+                codegen_node(children[1], mode);
+                code_obj->emit_opcode_reg_constant_idx(
+                    source_offset, Bytecode::StoreAttr, receiver_reg.reg,
+                    constant_idx);
+                return;
+            }
+
+            OpTableEntry entry = get_operator_entry(kind.operator_kind);
+            bool rhs_is_small_number =
+                av.kinds[children[1]] == NumericalConstant &&
+                av.constants[children[1]].as_value().is_smi8();
+            bool use_binary_acc_smi =
+                entry.binary_acc_smi != Bytecode::Invalid &&
+                rhs_is_small_number;
+
+            if(kind.operator_kind == AstOperatorKind::LEFTSHIFT &&
+               use_binary_acc_smi)
+            {
+                int64_t shift_count =
+                    av.constants[children[1]].as_value().get_smi();
+                use_binary_acc_smi = shift_count >= 0 && shift_count < 64;
+            }
+
+            code_obj->emit_opcode_reg_constant_idx(
+                source_offset, Bytecode::LoadAttr, receiver_reg.reg,
+                constant_idx);
+
+            if(use_binary_acc_smi)
+            {
+                code_obj->emit_opcode_smi(
+                    source_offset, entry.binary_acc_smi,
+                    av.constants[children[1]].as_value().get_smi());
+            }
+            else
+            {
+                TemporaryReg lhs_value_reg(this);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          lhs_value_reg);
+                codegen_node(children[1], mode);
+                code_obj->emit_opcode_reg(source_offset, entry.standard,
+                                          lhs_value_reg);
+            }
+
+            code_obj->emit_opcode_reg_constant_idx(
+                source_offset, Bytecode::StoreAttr, receiver_reg.reg,
+                constant_idx);
+        }
+
         std::optional<uint8_t> direct_range_call_arity(int32_t node_idx) const
         {
             if(av.kinds[node_idx].node_kind != AstNodeKind::EXPRESSION_CALL)
@@ -654,13 +717,22 @@ namespace cl
                     {
 
                         int32_t lhs_idx = children[0];
-                        if(av.kinds[lhs_idx].node_kind !=
-                           AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                        AstNodeKind lhs_kind = av.kinds[lhs_idx].node_kind;
+                        if(lhs_kind !=
+                               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE &&
+                           lhs_kind != AstNodeKind::EXPRESSION_ATTRIBUTE)
                         {
                             throw std::runtime_error(
                                 "We don't support assignment to anything but "
-                                "simple variables yet");
+                                "simple variables and attributes yet");
                         }
+
+                        if(lhs_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
+                        {
+                            codegen_attribute_assignment(node_idx, mode);
+                            break;
+                        }
+
                         uint32_t slot_idx = prepare_variable_assignment(
                             TValue<String>(av.constants[lhs_idx]), mode);
 
@@ -807,6 +879,18 @@ namespace cl
                 case AstNodeKind::EXPRESSION_CALL:
                     codegen_function_call(node_idx, mode);
                     break;
+
+                case AstNodeKind::EXPRESSION_ATTRIBUTE:
+                    {
+                        ScopedRegister receiver_reg =
+                            codegen_node_to_register(children[0], mode);
+                        uint8_t constant_idx =
+                            code_obj->allocate_constant(av.constants[node_idx]);
+                        code_obj->emit_opcode_reg_constant_idx(
+                            source_offset, Bytecode::LoadAttr, receiver_reg.reg,
+                            constant_idx);
+                        break;
+                    }
 
                 case AstNodeKind::STATEMENT_SEQUENCE:
                 case AstNodeKind::STATEMENT_EXPRESSION:

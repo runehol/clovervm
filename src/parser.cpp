@@ -759,6 +759,21 @@ namespace cl
             {
                 switch(peek())
                 {
+                    case Token::DOT:
+                        {
+                            uint32_t source_pos = source_pos_and_advance();
+                            consume(Token::NAME);
+                            std::wstring name =
+                                std::wstring(string_for_name_token(
+                                    *ast.compilation_unit,
+                                    source_pos_for_previous_token()));
+                            Value name_value =
+                                vm.get_or_create_interned_string_value(name);
+                            result = ast.emplace_back(
+                                AstNodeKind::EXPRESSION_ATTRIBUTE, source_pos,
+                                AstChildren{result}, name_value);
+                            break;
+                        }
                     case Token::LPAR:  // function call
                         {
                             uint32_t source_pos =
@@ -799,12 +814,7 @@ namespace cl
                                     ch);
         }
 
-        int32_t primary()
-        {
-            int32_t first = atom();
-            // todo parse atom.name, atom[slices], atom(arguments) here
-            return first;
-        }
+        int32_t primary() { return atom(); }
 
         int32_t atom()
         {
@@ -899,14 +909,15 @@ namespace cl
         void validate_assignment_target(int32_t lhs)
         {
             if(ast.kinds[lhs].node_kind ==
-               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                   AstNodeKind::EXPRESSION_VARIABLE_REFERENCE ||
+               ast.kinds[lhs].node_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
             {
                 return;
             }
 
             throw std::runtime_error(
                 std::string("SyntaxError: assignment target must be a simple "
-                            "variable") +
+                            "variable or attribute") +
                 format_error_context(assignment_target_source_pos(lhs)));
         }
 

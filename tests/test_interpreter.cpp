@@ -1,6 +1,8 @@
 #include "builtin_function.h"
+#include "class_object.h"
 #include "codegen.h"
 #include "compilation_unit.h"
+#include "instance.h"
 #include "interpreter.h"
 #include "parser.h"
 #include "range_iterator.h"
@@ -219,6 +221,34 @@ TEST(Interpreter, string_literal_value)
     Value actual = test_context.run_file(L"\"abc\"\n");
 
     EXPECT_STREQ(L"abc", string_as_wchar_t(TValue<String>(actual)));
+}
+
+TEST(Interpreter, attribute_load_and_store_syntax)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> cls_name(
+        test_context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> obj_name(
+        test_context.vm().get_or_create_interned_string_value(L"obj"));
+    TValue<String> attr_name(
+        test_context.vm().get_or_create_interned_string_value(L"value"));
+
+    ClassObject *cls =
+        test_context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+    cls->set_member(attr_name, Value::from_smi(3));
+    Instance *instance = test_context.thread()->make_refcounted_raw<Instance>(
+        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+
+    CodeObject *code_obj = test_context.compile_file(L"obj.value = 7\n"
+                                                     L"obj.value\n");
+    code_obj->module_scope.extract()->set_by_name(obj_name,
+                                                  Value::from_oop(instance));
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(7), actual);
+    EXPECT_EQ(Value::from_smi(7), instance->get_own_property(attr_name));
 }
 
 TEST(Interpreter, function_local_shadows_global)

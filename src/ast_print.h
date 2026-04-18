@@ -182,6 +182,13 @@ template <> struct fmt::formatter<cl::AstVector>
                               cl::TValue<cl::String>(av.constants[node_idx]))));
                 break;
 
+            case cl::AstNodeKind::EXPRESSION_ATTRIBUTE:
+                render_node(av, out, children[0], indent, self_precedence);
+                format_to(out, ".{}",
+                          narrow_wstring_view_ast(string_as_wchar_t(
+                              cl::TValue<cl::String>(av.constants[node_idx]))));
+                break;
+
             case cl::AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
                 throw std::runtime_error("should be handled elsewhere");
 

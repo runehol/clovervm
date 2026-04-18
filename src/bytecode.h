@@ -63,6 +63,10 @@ namespace cl
         LdaGlobal,
         StaGlobal,
 
+        // attribute access
+        LoadAttr,
+        StoreAttr,
+
         // binary on accumulator. reg op acc
         Add,
         Sub,

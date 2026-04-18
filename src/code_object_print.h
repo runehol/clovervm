@@ -102,6 +102,10 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "LdaGlobal");
             case cl::Bytecode::StaGlobal:
                 return format_to(out, "StaGlobal");
+            case cl::Bytecode::LoadAttr:
+                return format_to(out, "LoadAttr");
+            case cl::Bytecode::StoreAttr:
+                return format_to(out, "StoreAttr");
 
             case cl::Bytecode::Add:
                 return format_to(out, "Add");
@@ -365,6 +369,14 @@ template <> struct fmt::formatter<cl::CodeObject>
                 format_to(out, " ");
                 disassemble_global_ref(code_obj, out, pc);
                 pc += 4;
+                break;
+
+            case cl::Bytecode::LoadAttr:
+            case cl::Bytecode::StoreAttr:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_constant(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::Add:

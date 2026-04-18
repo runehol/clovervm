@@ -197,6 +197,16 @@ TEST(Parser, rec_call)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, attribute_expression_and_assignment)
+{
+    std::string expected = ("obj.value\n"
+                            "obj.value = 1\n");
+    std::string actual = parse(L"obj.value\n"
+                               L"obj.value = 1\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, missing_colon_in_if_stmt)
 {
     expect_parse_error(L"if True\n"
@@ -222,11 +232,12 @@ TEST(Parser, class_def_not_implemented)
 
 TEST(Parser, for_stmt_target_not_supported)
 {
-    expect_parse_error(L"for a, b in pairs:\n"
-                       L"    a\n",
-                       "SyntaxError: assignment target must be a simple "
-                       "variable at offset 4 (line 1, column 5), near "
-                       "\"for a, b in pairs:\"");
+    expect_parse_error(
+        L"for a, b in pairs:\n"
+        L"    a\n",
+        "SyntaxError: assignment target must be a simple "
+        "variable or attribute at offset 4 (line 1, column 5), near "
+        "\"for a, b in pairs:\"");
 }
 
 TEST(Parser, yield_stmt_not_implemented)
@@ -238,18 +249,20 @@ TEST(Parser, yield_stmt_not_implemented)
 
 TEST(Parser, tuple_assignment_target_not_supported)
 {
-    expect_parse_error(L"a, b = 1, 2\n",
-                       "SyntaxError: assignment target must be a simple "
-                       "variable at offset 0 (line 1, column 1), near "
-                       "\"a, b = 1, 2\"");
+    expect_parse_error(
+        L"a, b = 1, 2\n",
+        "SyntaxError: assignment target must be a simple "
+        "variable or attribute at offset 0 (line 1, column 1), near "
+        "\"a, b = 1, 2\"");
 }
 
 TEST(Parser, expression_assignment_target_not_supported)
 {
-    expect_parse_error(L"a + b = 1\n",
-                       "SyntaxError: assignment target must be a simple "
-                       "variable at offset 0 (line 1, column 1), near "
-                       "\"a + b = 1\"");
+    expect_parse_error(
+        L"a + b = 1\n",
+        "SyntaxError: assignment target must be a simple "
+        "variable or attribute at offset 0 (line 1, column 1), near "
+        "\"a + b = 1\"");
 }
 
 TEST(Parser, unexpected_token_reports_location)

@@ -50,6 +50,7 @@ namespace cl
         EXPRESSION_COMPARISON_FRAGMENT,
         EXPRESSION_SHORTCUTTING_BINARY,
         EXPRESSION_CALL,
+        EXPRESSION_ATTRIBUTE,
 
     };
 
@@ -83,6 +84,7 @@ namespace cl
             case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
             case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
             case AstNodeKind::EXPRESSION_CALL:
+            case AstNodeKind::EXPRESSION_ATTRIBUTE:
                 return true;
         }
     }
@@ -195,6 +197,10 @@ namespace cl
             return ExpressionPrecedence::Atom;
         }
         else if(k.node_kind == AstNodeKind::EXPRESSION_CALL)
+        {
+            return ExpressionPrecedence::Primary;
+        }
+        else if(k.node_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
         {
             return ExpressionPrecedence::Primary;
         }
