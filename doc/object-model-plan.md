@@ -764,16 +764,37 @@ Expose the runtime model through Python `class` definitions:
 - class object creation
 - method installation onto class member tables
 
-Recommended choice:
+Current refinement:
 
-- execute class bodies in a temporary scope or dictionary-like environment
-- construct the class object from that environment afterward
-- start with no inheritance syntax or single-base syntax only, while keeping
-  the representation ready for multiple inheritance
+- `class` definitions now parse and lower from source code
+- bases syntax is parsed, but non-empty base lists are currently rejected in
+  codegen
+- class bodies compile in `Mode::Class` and execute in an ordinary VM frame
+- class-body locals remain frame-backed at runtime; the local-scope metadata is
+  used for slot layout, ordered name discovery, and later class materialization
+- `def` inside a class body uses the existing `CreateFunction` plus local-store
+  path, which naturally installs methods into the class-definition namespace
+- `CreateClass` enters the nested class-body code object and `BuildClass`
+  materializes the resulting `ClassObject` from the finished class-body frame
+- class-body code objects carry their source-level names, just like function
+  code objects and the top-level `"<module>"` code object
+- `return` is rejected outside function scope, so class and module bodies
+  cannot bypass `BuildClass`
 
 Exit criteria:
 
 - user code can define a basic class with methods and instantiate it
+
+Current status:
+
+- partially reached
+- user code can now define basic classes, execute class bodies, install
+  methods, and instantiate them without manual C++ `ClassObject` / `Instance`
+  scaffolding
+- the natural next step inside this phase is to support minimal `__init__`
+  handling during instantiation
+- inheritance semantics, metaclass machinery, and full MRO support remain for
+  later phases
 
 ### Phase 8: Add full inheritance and MRO
 
@@ -828,6 +849,9 @@ Method-call optimization was the next step after that slice, and is now in
 place. The natural next step is Phase 7: Python class parsing and definition,
 because it is now more awkward to test and use method calls from source code
 than it is to support the runtime machinery they need.
+
+That Phase 7 step is now underway and already usable for the single-class,
+no-inheritance subset.
 
 ### Concrete checklist
 
@@ -954,10 +978,14 @@ Current reached stopping point:
 - `LoadAttr` / `StoreAttr` parser, bytecode, codegen, and interpreter support
 - `LoadMethod` / `CallMethod` direct method-call lowering without bound-method
   allocation on the immediate-call path
+- source-level `class` parsing, lowering, and class-body execution
+- `CreateClass` / `BuildClass` bytecodes for class construction
+- source-level class instantiation for the current minimal allocator path
+- interpreter tests migrated to use source-level class setup in the main cases
 
-The main missing ergonomic layer is now Python class syntax and definition.
-Runtime method support is ahead of source-language class support, which makes
-manual C++ scaffolding the current testing and usability bottleneck.
+The main remaining ergonomic gaps are now around inheritance, richer
+construction semantics, and the still-missing bound-method escape behavior
+rather than basic class definition itself.
 
 ## What Still Needs To Be Pinned Down
 
@@ -986,14 +1014,17 @@ Several of these are now pinned down and implemented:
 - attribute bytecodes use receiver registers plus interned-string constant
   indices
 - direct method calls use `LoadMethod` / `CallMethod`
+- class definitions lower through `CreateClass` / `BuildClass`
+- code objects now carry source-level names, with the module code object named
+  `"<module>"`
 
 The main remaining design questions are now above raw storage:
 
-- class parsing, class body execution, and class object construction
 - ancestor/MRO lookup representation
 - exception propagation substrate
 - escaping bound-method semantics for `obj.method` when the method value is
   observed directly
+- minimal `__init__` calling semantics during instantiation
 - whether generic lookup should keep the current minimal value-only API or
   grow a richer resolved-result form before inline caches
 
@@ -1007,16 +1038,18 @@ Add in order:
 2. class attribute lookup
 3. direct method calls
 4. source-level class definition and instantiation
-5. escaping method values
-6. attribute miss -> `AttributeError`
-7. exception propagation across nested calls
-8. `raise`
-9. `try` / `except`
+5. `__init__`-driven construction
+6. escaping method values
+7. attribute miss -> `AttributeError`
+8. exception propagation across nested calls
+9. `raise`
+10. `try` / `except`
 
 Keep codegen/JIT tests structural and focused on:
 
 - attribute bytecode shape
 - method-call lowering
+- class-definition lowering shape
 - shape-guard specialization decisions
 
 ## Open Questions
@@ -1073,6 +1106,8 @@ Start with:
 - attribute load/store bytecodes
 - VM-level exception propagation
 
-That runtime substrate is now far enough along that `class` syntax has become
-the natural next step rather than a premature one. It is now the main missing
-layer for testing and using method calls ergonomically from source code.
+That runtime substrate was far enough along that `class` syntax became the
+natural next step rather than a premature one. The first usable slice of that
+layer is now in place. The next likely job inside that slice is minimal
+`__init__` handling, followed by inheritance and the remaining
+exception/bound-method work.
