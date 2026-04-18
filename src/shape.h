@@ -6,6 +6,8 @@
 #include "owned_typed_value.h"
 #include "typed_value.h"
 #include "value.h"
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -13,6 +15,7 @@ namespace cl
 {
     class Shape;
     class ClassObject;
+    class OverflowSlots;
 
     enum class ShapeTransitionVerb : uint8_t
     {
@@ -48,20 +51,84 @@ namespace cl
     public:
         static constexpr Klass klass = Klass(L"Instance", nullptr);
 
-        Instance(Value cls, Value shape)
-            : Object(&klass, compact_layout()), cls(cls), shape(shape)
+        Instance(Value cls, Value shape);
+
+        static size_t size_for(uint32_t inline_slot_capacity)
         {
+            assert(inline_slot_capacity >= 1);
+            return sizeof(Instance) + sizeof(Value) * inline_slot_capacity -
+                   sizeof(Value);
         }
+
+        static DynamicLayoutSpec layout_spec_for(Value cls, Value shape);
 
         Value get_class() const { return cls.as_value(); }
         Shape *get_shape() const;
+        OverflowSlots *get_overflow_slots() const;
+
+        Value get_own_property(TValue<String> name) const;
+        void set_own_property(TValue<String> name, Value value);
+        bool delete_own_property(TValue<String> name);
 
     private:
+        Value read_slot_by_physical_index(uint32_t physical_slot_index) const;
+        void write_slot_by_physical_index(uint32_t physical_slot_index,
+                                          Value value);
+        OverflowSlots *ensure_overflow_slot(uint32_t overflow_slot_index);
+
         MemberValue cls;
         MemberValue shape;
+        MemberValue overflow;
+        Value inline_slots[1];
 
     public:
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Instance, cls, 2);
+        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(Instance, cls);
+    };
+
+    class OverflowSlots : public Object
+    {
+    public:
+        static constexpr Klass klass = Klass(L"OverflowSlots", nullptr);
+
+        OverflowSlots(uint32_t size, uint32_t capacity);
+
+        static size_t size_for(uint32_t capacity)
+        {
+            return sizeof(OverflowSlots) +
+                   sizeof(Value) * std::max<uint32_t>(capacity, 1) -
+                   sizeof(Value);
+        }
+
+        static DynamicLayoutSpec layout_spec_for(uint32_t size,
+                                                 uint32_t capacity)
+        {
+            return DynamicLayoutSpec{
+                round_up_to_16byte_units(size_for(capacity)), capacity};
+        }
+
+        uint32_t get_size() const { return size; }
+        uint32_t get_capacity() const { return capacity; }
+        void set_size(uint32_t new_size)
+        {
+            assert(new_size <= capacity);
+            size = new_size;
+        }
+
+        Value get(uint32_t slot_idx) const
+        {
+            assert(slot_idx < capacity);
+            return slots[slot_idx];
+        }
+
+        void set(uint32_t slot_idx, Value value);
+
+    private:
+        uint32_t size;
+        uint32_t capacity;
+        Value slots[1];
+
+    public:
+        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(OverflowSlots, slots);
     };
 
     class Shape : public Object
@@ -139,13 +206,13 @@ namespace cl
         Shape *derive_delete_transition(TValue<String> name);
 
         MemberValue owner_class;
-        MemberValue previous_shape;
+        Shape *previous_shape;
         uint32_t next_physical_slot;
         std::vector<PropertyDescriptor> descriptors;
         std::vector<Transition> transitions;
 
     public:
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Shape, owner_class, 2);
+        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Shape, owner_class, 1);
     };
 
 }  // namespace cl
