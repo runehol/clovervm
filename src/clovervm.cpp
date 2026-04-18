@@ -21,6 +21,12 @@ using namespace cl;
 std::wstring read_file(const char *filename)
 {
     std::ifstream ifs(filename, std::ios::binary);
+    if(!ifs)
+    {
+        throw std::runtime_error(
+            fmt::format("failed to open source file '{}'", filename));
+    }
+
     std::string bytes((std::istreambuf_iterator<char>(ifs)),
                       std::istreambuf_iterator<char>());
     const char *src = bytes.c_str();
