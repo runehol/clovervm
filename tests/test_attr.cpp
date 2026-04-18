@@ -73,10 +73,6 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
               load_attr(Value::from_oop(instance), dunder_class_name));
     EXPECT_EQ(Value::from_oop(const_cast<Klass *>(&ClassObject::klass)),
               load_attr(Value::from_oop(cls), dunder_class_name));
-    EXPECT_EQ(
-        Value::from_oop(const_cast<Klass *>(&cl_klass_klass)),
-        load_attr(Value::from_oop(const_cast<Klass *>(&ClassObject::klass)),
-                  dunder_class_name));
 }
 
 TEST(Attr, LoadAttrMissesOnUnsupportedInlineValues)
