@@ -16,6 +16,8 @@ add_library(libclovervm STATIC
     parser.cpp
     parser.h
     range_iterator.h
+    shape.cpp
+    shape.h
     token.cpp
     token.h
     token_print.h
