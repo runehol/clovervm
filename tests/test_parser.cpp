@@ -222,12 +222,28 @@ TEST(Parser, import_stmt_not_implemented)
                        "offset 0 (line 1, column 1), near \"import math\"");
 }
 
-TEST(Parser, class_def_not_implemented)
+TEST(Parser, class_def)
 {
-    expect_parse_error(L"class C:\n"
-                       L"    pass\n",
-                       "Not implemented: class definition (token CLASS) at "
-                       "offset 0 (line 1, column 1), near \"class C:\"");
+    std::string expected = ("class C:\n"
+                            "    pass\n");
+    std::string actual = parse(L"class C:\n"
+                               L"    pass\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, class_def_with_bases_and_members)
+{
+    std::string expected = ("class C(Base1, Base2):\n"
+                            "    value = 1\n"
+                            "    def method(self):\n"
+                            "        return self.value\n");
+    std::string actual = parse(L"class C(Base1, Base2):\n"
+                               L"    value = 1\n"
+                               L"    def method(self):\n"
+                               L"        return self.value\n");
+
+    EXPECT_EQ(expected, actual);
 }
 
 TEST(Parser, for_stmt_target_not_supported)

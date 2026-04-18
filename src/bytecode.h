@@ -129,6 +129,8 @@ namespace cl
 
         // allocations
         CreateFunction,
+        CreateClass,
+        BuildClass,
 
         // control flow
         Return,

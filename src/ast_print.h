@@ -267,6 +267,20 @@ template <> struct fmt::formatter<cl::AstVector>
                 render_node(av, out, children[1], indent + 1,
                             cl::ExpressionPrecedence::Lowest);
                 break;
+            case cl::AstNodeKind::STATEMENT_CLASS_DEF:
+                emit_indent(out, indent);
+                format_to(out, "class {}",
+                          narrow_wstring_view_ast(string_as_wchar_t(
+                              cl::TValue<cl::String>(av.constants[node_idx]))));
+                if(!av.children[children[0]].empty())
+                {
+                    render_node(av, out, children[0], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                }
+                format_to(out, ":\n");
+                render_node(av, out, children[1], indent + 1,
+                            cl::ExpressionPrecedence::Lowest);
+                break;
 
             case cl::AstNodeKind::STATEMENT_EXPRESSION:
                 emit_indent(out, indent);

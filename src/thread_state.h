@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "heap.h"
+#include "owned.h"
 #include "typed_value.h"
 #include "value.h"
 #include <type_traits>
@@ -70,6 +71,8 @@ namespace cl
         CodeObject *compile(const wchar_t *str, StartRule start_rule);
 
         VirtualMachine *get_machine() const { return machine; }
+        void push_pending_class_definition_name(Value class_name);
+        Value pop_pending_class_definition_name();
 
     private:
         VirtualMachine *machine;
@@ -78,6 +81,7 @@ namespace cl
 
         std::vector<Value> stack;
         std::deque<Value> zero_count_table;
+        std::vector<OwnedValue> pending_class_definition_names;
 
         static thread_local ThreadState *current_thread;
     };

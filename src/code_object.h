@@ -115,6 +115,17 @@ namespace cl
             return result;
         }
 
+        uint32_t emit_opcode_constant_idx_constant_idx(
+            uint32_t source_offset, Bytecode c, uint8_t first_constant_idx,
+            uint8_t second_constant_idx)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            emplace_back(source_offset, first_constant_idx);
+            emplace_back(source_offset, second_constant_idx);
+            return result;
+        }
+
         int8_t encode_reg(uint32_t reg)
         {
             return n_parameters - 1 + FrameHeaderSizeAboveFp - reg;

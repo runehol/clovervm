@@ -17,7 +17,7 @@ namespace cl
     {
         STATEMENT_FUNCTION_DEF,
         STATEMENT_IF,
-        // STATEMENT_CLASS_DEF,
+        STATEMENT_CLASS_DEF,
         // STATEMENT_WITH,
         STATEMENT_FOR,
         // STATEMENT_TRY,
@@ -60,6 +60,7 @@ namespace cl
         {
             case AstNodeKind::STATEMENT_FUNCTION_DEF:
             case AstNodeKind::STATEMENT_IF:
+            case AstNodeKind::STATEMENT_CLASS_DEF:
             case AstNodeKind::STATEMENT_FOR:
             case AstNodeKind::STATEMENT_WHILE:
             case AstNodeKind::STATEMENT_RETURN:

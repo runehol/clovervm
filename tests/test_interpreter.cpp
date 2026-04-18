@@ -224,6 +224,82 @@ TEST(Interpreter, function_implicit_return_none)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Interpreter, class_definition_binds_class_object)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
+                                                     L"    pass\n"
+                                                     L"Cls\n");
+
+    Value actual = test_context.thread()->run(code_obj);
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(&ClassObject::klass, actual.get_ptr<Object>()->klass);
+    EXPECT_STREQ(L"Cls",
+                 string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
+}
+
+TEST(Interpreter, class_body_assignment_becomes_class_member)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> cls_name(
+        test_context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> value_name(
+        test_context.vm().get_or_create_interned_string_value(L"value"));
+
+    CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
+                                                     L"    value = 7\n");
+    (void)test_context.thread()->run(code_obj);
+
+    Value cls_value = code_obj->module_scope.extract()->get_by_name(cls_name);
+    ASSERT_TRUE(cls_value.is_ptr());
+    ASSERT_EQ(&ClassObject::klass, cls_value.get_ptr<Object>()->klass);
+    EXPECT_EQ(Value::from_smi(7),
+              cls_value.get_ptr<ClassObject>()->get_member(value_name));
+}
+
+TEST(Interpreter, class_body_can_read_earlier_class_binding)
+{
+    Value actual = run_file(L"class Cls:\n"
+                            L"    x = 1\n"
+                            L"    y = x + 2\n"
+                            L"Cls.y\n");
+
+    EXPECT_EQ(Value::from_smi(3), actual);
+}
+
+TEST(Interpreter, class_call_allocates_instance)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
+                                                     L"    pass\n"
+                                                     L"Cls()\n");
+
+    Value actual = test_context.thread()->run(code_obj);
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(&Instance::klass, actual.get_ptr<Object>()->klass);
+    ASSERT_TRUE(actual.get_ptr<Instance>()->get_class().is_ptr());
+    EXPECT_EQ(&ClassObject::klass,
+              actual.get_ptr<Instance>()->get_class().get_ptr<Object>()->klass);
+}
+
+TEST(Interpreter, class_method_call_works_from_source)
+{
+    Value actual = run_file(L"class Cls:\n"
+                            L"    def method(self, x):\n"
+                            L"        return self.value + x\n"
+                            L"obj = Cls()\n"
+                            L"obj.value = 3\n"
+                            L"obj.method(4)\n");
+
+    EXPECT_EQ(Value::from_smi(7), actual);
+}
+
 TEST(Interpreter, string_literal_value)
 {
     test::VmTestContext test_context;
@@ -295,6 +371,21 @@ TEST(Interpreter, direct_method_call_inserts_self_for_class_functions)
 
     Value actual = test_context.thread()->run(code_obj);
     EXPECT_EQ(Value::from_smi(7), actual);
+}
+
+TEST(Interpreter, class_base_lists_are_rejected_in_codegen)
+{
+    expect_runtime_error(L"class Derived(Base):\n"
+                         L"    pass\n",
+                         "Class base lists are not supported yet");
+}
+
+TEST(Interpreter, class_call_rejects_arguments)
+{
+    expect_runtime_error(L"class Cls:\n"
+                         L"    pass\n"
+                         L"Cls(1)\n",
+                         "TypeError: wrong number of arguments");
 }
 
 TEST(Interpreter,

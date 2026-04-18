@@ -36,6 +36,19 @@ namespace cl
         return generate_code(av);
     }
 
+    void ThreadState::push_pending_class_definition_name(Value class_name)
+    {
+        pending_class_definition_names.emplace_back(class_name);
+    }
+
+    Value ThreadState::pop_pending_class_definition_name()
+    {
+        assert(!pending_class_definition_names.empty());
+        Value class_name = pending_class_definition_names.back().as_value();
+        pending_class_definition_names.pop_back();
+        return class_name;
+    }
+
     void ThreadState::add_to_active_zero_count_table(Value v)
     {
         ThreadState *ts = ThreadState::get_active();

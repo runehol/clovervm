@@ -103,6 +103,11 @@ namespace cl
 
         uint32_t size() const { return slot_values.size(); }
         bool empty() const { return slot_values.empty(); }
+        bool slot_is_named(int32_t slot_idx) const
+        {
+            return slot_metadata[slot_idx].is_named();
+        }
+        TValue<String> get_name_by_slot_index(int32_t slot_idx) const;
         uint32_t entry_count() const { return entries.size(); }
         int32_t get_entry_slot_index(uint32_t entry_idx) const
         {
@@ -193,7 +198,6 @@ namespace cl
         int32_t append_entry(int32_t slot_idx);
         int32_t allocate_slot(TValue<String> key, Value initial_value);
         void revive_slot(int32_t slot_idx);
-        TValue<String> get_name_by_slot_index(int32_t slot_idx) const;
 
         MemberValue parent_scope;
         std::vector<int32_t> name_table;

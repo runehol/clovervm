@@ -128,6 +128,9 @@ namespace cl
                     break;
 
                 case Mode::Class:
+                    local_scope =
+                        ts->make_refcounted_value<Scope>(code_obj->local_scope);
+                    break;
                 case Mode::Function:
                     local_scope =
                         ts->make_refcounted_value<Scope>(code_obj->local_scope);
@@ -190,6 +193,7 @@ namespace cl
         CodeObject *code_obj = nullptr;
 
         uint32_t _temporary_reg = FrameHeaderSize;
+        uint32_t _max_temporary_reg = FrameHeaderSize;
 
         class TemporaryReg
         {
@@ -200,6 +204,8 @@ namespace cl
             {
                 reg = cg->_temporary_reg;
                 cg->_temporary_reg += n_regs;
+                cg->_max_temporary_reg =
+                    std::max(cg->_max_temporary_reg, cg->_temporary_reg);
             }
 
             TemporaryReg(const TemporaryReg &) = delete;
@@ -241,6 +247,22 @@ namespace cl
 
         static constexpr AstKind NumericalConstant =
             AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER);
+
+        void finalize_code_object_register_counts(CodeObject *target) const
+        {
+            uint32_t local_scope_size = 0;
+            if(target->local_scope != Value::None())
+            {
+                local_scope_size = target->get_local_scope_ptr()->size();
+            }
+
+            uint32_t named_local_and_header_slots =
+                local_scope_size - target->n_parameters;
+            assert(named_local_and_header_slots >= FrameHeaderSize);
+            target->n_locals = named_local_and_header_slots - FrameHeaderSize;
+            assert(_max_temporary_reg >= local_scope_size);
+            target->n_temporaries = _max_temporary_reg - local_scope_size;
+        }
 
         ScopedRegister codegen_node_to_register(int32_t node_idx, Mode mode)
         {
@@ -335,6 +357,7 @@ namespace cl
             CodeObject *outer_obj = code_obj;
             CodeObject *fun_obj = make_code_obj(Mode::Function);
             uint32_t outer_temporary_reg = _temporary_reg;
+            uint32_t outer_max_temporary_reg = _max_temporary_reg;
             {
                 code_obj = fun_obj;
                 /*
@@ -355,6 +378,7 @@ namespace cl
                 collect_function_local_bindings(children[1]);
 
                 _temporary_reg = code_obj->get_local_scope_ptr()->size();
+                _max_temporary_reg = _temporary_reg;
 
                 // now generate code for the body
                 codegen_node(children[1], Mode::Function);
@@ -363,9 +387,11 @@ namespace cl
                 // have a return statement
                 code_obj->emit_opcode(source_offset, Bytecode::LdaNone);
                 code_obj->emit_opcode(source_offset, Bytecode::Return);
+                finalize_code_object_register_counts(code_obj);
             }
             code_obj = outer_obj;
             _temporary_reg = outer_temporary_reg;
+            _max_temporary_reg = outer_max_temporary_reg;
 
             // stick this code object into the constant table, load it, and call
             // the
@@ -373,6 +399,54 @@ namespace cl
                 code_obj->allocate_constant(Value::from_oop(fun_obj));
             code_obj->emit_opcode_constant_idx(
                 source_offset, Bytecode::CreateFunction, constant_idx);
+
+            perform_variable_assignment(source_offset, slot_idx, mode);
+        }
+
+        void codegen_class_definition(int32_t node_idx, Mode mode)
+        {
+            AstChildren children = av.children[node_idx];
+            uint32_t source_offset = av.source_offsets[node_idx];
+            int32_t bases_idx = children[0];
+            int32_t body_idx = children[1];
+
+            if(!av.children[bases_idx].empty())
+            {
+                throw std::runtime_error(
+                    "Class base lists are not supported yet");
+            }
+
+            uint32_t slot_idx = prepare_variable_assignment(
+                TValue<String>(av.constants[node_idx]), mode);
+
+            CodeObject *outer_obj = code_obj;
+            CodeObject *class_obj = make_code_obj(Mode::Class);
+            uint32_t outer_temporary_reg = _temporary_reg;
+            uint32_t outer_max_temporary_reg = _max_temporary_reg;
+            {
+                code_obj = class_obj;
+                code_obj->get_local_scope_ptr()->reserve_empty_slots(
+                    FrameHeaderSize);
+                collect_class_local_bindings(body_idx);
+
+                _temporary_reg = code_obj->get_local_scope_ptr()->size();
+                _max_temporary_reg = _temporary_reg;
+
+                codegen_node(body_idx, Mode::Class);
+                code_obj->emit_opcode(source_offset, Bytecode::BuildClass);
+                finalize_code_object_register_counts(code_obj);
+            }
+            code_obj = outer_obj;
+            _temporary_reg = outer_temporary_reg;
+            _max_temporary_reg = outer_max_temporary_reg;
+
+            uint32_t name_constant_idx =
+                code_obj->allocate_constant(av.constants[node_idx]);
+            uint32_t body_constant_idx =
+                code_obj->allocate_constant(Value::from_oop(class_obj));
+            code_obj->emit_opcode_constant_idx_constant_idx(
+                source_offset, Bytecode::CreateClass, name_constant_idx,
+                body_constant_idx);
 
             perform_variable_assignment(source_offset, slot_idx, mode);
         }
@@ -659,6 +733,7 @@ namespace cl
             switch(kind.node_kind)
             {
                 case AstNodeKind::STATEMENT_FUNCTION_DEF:
+                case AstNodeKind::STATEMENT_CLASS_DEF:
                     code_obj->get_local_scope_ptr()
                         ->register_slot_index_for_write(
                             TValue<String>(av.constants[node_idx]));
@@ -691,6 +766,50 @@ namespace cl
             for(int32_t child_idx: children)
             {
                 collect_function_local_bindings(child_idx);
+            }
+        }
+
+        void collect_class_local_bindings(int32_t node_idx)
+        {
+            AstKind kind = av.kinds[node_idx];
+            AstChildren children = av.children[node_idx];
+
+            switch(kind.node_kind)
+            {
+                case AstNodeKind::STATEMENT_FUNCTION_DEF:
+                case AstNodeKind::STATEMENT_CLASS_DEF:
+                    code_obj->get_local_scope_ptr()
+                        ->register_slot_index_for_write(
+                            TValue<String>(av.constants[node_idx]));
+                    return;
+
+                case AstNodeKind::STATEMENT_ASSIGN:
+                case AstNodeKind::EXPRESSION_ASSIGN:
+                    {
+                        int32_t lhs_idx = children[0];
+                        if(av.kinds[lhs_idx].node_kind ==
+                           AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                        {
+                            code_obj->get_local_scope_ptr()
+                                ->register_slot_index_for_write(
+                                    TValue<String>(av.constants[lhs_idx]));
+                        }
+                        break;
+                    }
+
+                case AstNodeKind::STATEMENT_FOR:
+                    code_obj->get_local_scope_ptr()
+                        ->register_slot_index_for_write(
+                            TValue<String>(av.constants[children[0]]));
+                    break;
+
+                default:
+                    break;
+            }
+
+            for(int32_t child_idx: children)
+            {
+                collect_class_local_bindings(child_idx);
             }
         }
 
@@ -1075,6 +1194,10 @@ namespace cl
 
                 case AstNodeKind::STATEMENT_FUNCTION_DEF:
                     codegen_function_definition(node_idx, mode);
+                    break;
+
+                case AstNodeKind::STATEMENT_CLASS_DEF:
+                    codegen_class_definition(node_idx, mode);
                     break;
 
                 case AstNodeKind::EXPRESSION_TUPLE:

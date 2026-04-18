@@ -2,9 +2,11 @@
 
 #include "attr.h"
 #include "builtin_function.h"
+#include "class_object.h"
 #include "code_object.h"
 #include "code_object_print.h"
 #include "function.h"
+#include "instance.h"
 #include "range_iterator.h"
 #include "thread_state.h"
 #include "value.h"
@@ -110,6 +112,59 @@ namespace cl
     NOINLINE Value wrong_arity_error(PARAMS)
     {
         throw std::runtime_error("TypeError: wrong number of arguments");
+    }
+
+    static constexpr uint32_t kDefaultInstanceInlineSlotCount = 4;
+
+    static Value *make_nested_frame(Value *fp, CodeObject *body_code_object,
+                                    const uint8_t *return_pc,
+                                    CodeObject *return_code_object)
+    {
+        Value *new_fp =
+            fp - body_code_object->get_n_registers() - FrameHeaderSizeAboveFp;
+        new_fp[0].as.ptr = (Object *)fp;
+        new_fp[-1] = Value::from_oop(return_code_object);
+        new_fp[-2].as.ptr = (Object *)return_pc;
+        return new_fp;
+    }
+
+    static void initialize_class_body_frame(Value *fp, CodeObject *body_code)
+    {
+        Scope *local_scope = body_code->get_local_scope_ptr();
+        for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
+        {
+            if(!local_scope->slot_is_named(slot_idx))
+            {
+                continue;
+            }
+            fp[body_code->encode_reg(slot_idx)] =
+                local_scope->get_by_slot_index_fastpath_only(slot_idx);
+        }
+    }
+
+    static Value build_class_from_frame(Value *fp, CodeObject *body_code,
+                                        TValue<String> class_name)
+    {
+        TValue<ClassObject> cls =
+            ThreadState::get_active()->make_refcounted_value<ClassObject>(
+                class_name, kDefaultInstanceInlineSlotCount);
+        Scope *local_scope = body_code->get_local_scope_ptr();
+        for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
+        {
+            if(!local_scope->slot_is_named(slot_idx))
+            {
+                continue;
+            }
+
+            Value value = fp[body_code->encode_reg(slot_idx)];
+            if(value.is_not_present())
+            {
+                continue;
+            }
+            cls.extract()->set_member(
+                local_scope->get_name_by_slot_index(slot_idx), value);
+        }
+        return Value::from_oop(cls.extract());
     }
 
     NOINLINE Value not_iterable_error(PARAMS)
@@ -650,6 +705,45 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_create_class(PARAMS)
+    {
+        uint8_t name_const_offset = pc[1];
+        uint8_t body_const_offset = pc[2];
+        TValue<String> class_name(
+            code_object->constant_table[name_const_offset].as_value());
+        TValue<CodeObject> body_code(
+            code_object->constant_table[body_const_offset].as_value());
+        ThreadState::get_active()->push_pending_class_definition_name(
+            class_name);
+
+        const uint8_t *return_pc = pc + 3;
+        Value *new_fp =
+            make_nested_frame(fp, body_code.extract(), return_pc, code_object);
+        initialize_class_body_frame(new_fp, body_code.extract());
+
+        fp = new_fp;
+        code_object = body_code.extract();
+        pc = code_object->code.data();
+
+        START(0);
+        COMPLETE();
+    }
+
+    static Value op_build_class(PARAMS)
+    {
+        Value class_name =
+            ThreadState::get_active()->pop_pending_class_definition_name();
+        accumulator =
+            build_class_from_frame(fp, code_object, TValue<String>(class_name));
+
+        pc = (const uint8_t *)fp[-2].as.ptr;
+        code_object = fp[-1].get_ptr<CodeObject>();
+        fp = (Value *)fp[0].as.ptr;
+
+        START(0);
+        COMPLETE();
+    }
+
     static Value op_jump(PARAMS)
     {
         int16_t rel_target = read_int16_le(&pc[1]);
@@ -707,6 +801,25 @@ namespace cl
         if(unlikely(!fun.is_ptr()))
         {
             MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        if(fun.get_ptr()->klass == &ClassObject::klass)
+        {
+            if(unlikely(n_args != 0))
+            {
+                MUSTTAIL return wrong_arity_error(ARGS);
+            }
+
+            ClassObject *cls = fun.get_ptr<ClassObject>();
+            accumulator = Value::from_oop(
+                ThreadState::get_active()->make_refcounted_raw<Instance>(
+                    Value::from_oop(cls),
+                    Value::from_oop(cls->get_initial_shape())));
+
+            pc += 3;
+
+            START(0);
+            COMPLETE();
         }
 
         if(fun.get_ptr()->klass == &BuiltinFunction::klass)
@@ -1116,6 +1229,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
 
         SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);
+        SET_TABLE_ENTRY(Bytecode::CreateClass, op_create_class);
+        SET_TABLE_ENTRY(Bytecode::BuildClass, op_build_class);
 
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
         SET_TABLE_ENTRY(Bytecode::CallMethod, op_call_method);

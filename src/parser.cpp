@@ -1033,6 +1033,14 @@ namespace cl
                                     {});
         }
 
+        int32_t pass_stmt()
+        {
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::PASS);
+            return ast.emplace_back(AstNodeKind::STATEMENT_PASS, source_pos,
+                                    AstChildren{});
+        }
+
         int32_t global_stmt() { return not_implemented("global statement"); }
 
         int32_t nonlocal_stmt()
@@ -1060,6 +1068,8 @@ namespace cl
                     return break_stmt();
                 case Token::CONTINUE:
                     return continue_stmt();
+                case Token::PASS:
+                    return pass_stmt();
                 case Token::GLOBAL:
                     return global_stmt();
                 case Token::NONLOCAL:
@@ -1177,7 +1187,30 @@ namespace cl
                                     children);
         }
 
-        int32_t class_def() { return not_implemented("class definition"); }
+        int32_t class_def()
+        {
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::CLASS);
+            consume(Token::NAME);
+            std::wstring name = std::wstring(string_for_name_token(
+                *ast.compilation_unit, source_pos_for_previous_token()));
+            Value name_str = vm.get_or_create_interned_string_value(name);
+
+            AstChildren children;
+            int32_t bases = ast.emplace_back(AstNodeKind::PARAMETER_SEQUENCE,
+                                             source_pos, AstChildren{});
+            if(match(Token::LPAR))
+            {
+                bases = args();
+                consume(Token::RPAR);
+            }
+            children.push_back(bases);
+
+            consume(Token::COLON);
+            children.push_back(block());
+            return ast.emplace_back(AstNodeKind::STATEMENT_CLASS_DEF,
+                                    source_pos, children, name_str);
+        }
 
         int32_t with_stmt() { return not_implemented("with statement"); }
 
