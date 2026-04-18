@@ -154,26 +154,6 @@ namespace cl
     public:
         static constexpr Klass klass = Klass(L"Shape", nullptr);
 
-        class PropertyDescriptor
-        {
-        public:
-            PropertyDescriptor(TValue<String> name,
-                               StorageLocation storage_location)
-                : name(name), storage_location(storage_location)
-            {
-            }
-
-            TValue<String> get_name() const { return name; }
-            StorageLocation get_storage_location() const
-            {
-                return storage_location;
-            }
-
-        private:
-            OwnedTValue<String> name;
-            StorageLocation storage_location;
-        };
-
         class Transition
         {
         public:
@@ -194,22 +174,42 @@ namespace cl
             OwnedTValue<Shape> next_shape;
         };
 
-        Shape(Value owner_class, Value previous_shape, int32_t next_slot_index);
+        Shape(Value owner_class, Value previous_shape, int32_t next_slot_index,
+              uint32_t property_count);
+
+        static size_t size_for(uint32_t property_count)
+        {
+            return sizeof(Shape) + sizeof(Value) * property_count -
+                   sizeof(Value) + sizeof(StorageLocation) * property_count;
+        }
+
+        static DynamicLayoutSpec layout_spec_for(Value owner_class,
+                                                 Value previous_shape,
+                                                 int32_t next_slot_index,
+                                                 uint32_t property_count)
+        {
+            return DynamicLayoutSpec{
+                round_up_to_16byte_units(size_for(property_count)),
+                uint64_t(1 + property_count)};
+        }
 
         ClassObject *get_owner_class() const;
         Shape *get_previous_shape() const;
         int32_t get_next_slot_index() const { return next_slot_index; }
         uint32_t get_inline_slot_capacity() const;
 
-        uint32_t property_count() const { return descriptors.size(); }
+        uint32_t property_count() const { return property_count_; }
         TValue<String> get_property_name(uint32_t property_idx) const
         {
-            return descriptors[property_idx].get_name();
+            assert(property_idx < property_count_);
+            return TValue<String>::unsafe_unchecked(
+                descriptor_names[property_idx]);
         }
         StorageLocation
         get_property_storage_location(uint32_t property_idx) const
         {
-            return descriptors[property_idx].get_storage_location();
+            assert(property_idx < property_count_);
+            return descriptor_storage_locations()[property_idx];
         }
 
         uint32_t transition_count() const { return transitions.size(); }
@@ -223,15 +223,26 @@ namespace cl
     private:
         Shape *derive_add_transition(TValue<String> name);
         Shape *derive_delete_transition(TValue<String> name);
+        StorageLocation *descriptor_storage_locations()
+        {
+            return reinterpret_cast<StorageLocation *>(
+                &descriptor_names[property_count_]);
+        }
+        const StorageLocation *descriptor_storage_locations() const
+        {
+            return reinterpret_cast<const StorageLocation *>(
+                &descriptor_names[property_count_]);
+        }
 
-        MemberValue owner_class;
         Shape *previous_shape;
         int32_t next_slot_index;
-        std::vector<PropertyDescriptor> descriptors;
+        uint32_t property_count_;
         std::vector<Transition> transitions;
+        MemberValue owner_class;
+        Value descriptor_names[1];
 
     public:
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Shape, owner_class, 1);
+        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(Shape, owner_class);
     };
 
 }  // namespace cl

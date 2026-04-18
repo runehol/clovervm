@@ -14,7 +14,7 @@ namespace cl
           inline_slot_capacity(_inline_slot_capacity),
           initial_shape(Value::from_oop(
               ThreadState::get_active()->make_refcounted_raw<Shape>(
-                  Value::from_oop(this), Value::None(), 0)))
+                  Value::from_oop(this), Value::None(), 0, 0)))
     {
     }
 
@@ -206,13 +206,18 @@ namespace cl
     }
 
     Shape::Shape(Value _owner_class, Value _previous_shape,
-                 int32_t _next_slot_index)
-        : Object(&klass, compact_layout()), owner_class(_owner_class),
+                 int32_t _next_slot_index, uint32_t _property_count)
+        : Object(&klass),
           previous_shape(_previous_shape == Value::None()
                              ? nullptr
                              : _previous_shape.get_ptr<Shape>()),
-          next_slot_index(_next_slot_index)
+          next_slot_index(_next_slot_index), property_count_(_property_count),
+          transitions(), owner_class(_owner_class)
     {
+        for(uint32_t idx = 0; idx < property_count_; ++idx)
+        {
+            descriptor_names[idx] = Value::None();
+        }
     }
 
     ClassObject *Shape::get_owner_class() const
@@ -229,10 +234,10 @@ namespace cl
 
     int32_t Shape::lookup_property_index(TValue<String> name) const
     {
-        for(uint32_t property_idx = 0; property_idx < descriptors.size();
+        for(uint32_t property_idx = 0; property_idx < property_count_;
             ++property_idx)
         {
-            if(string_eq(name, descriptors[property_idx].get_name()))
+            if(string_eq(name, get_property_name(property_idx)))
             {
                 return property_idx;
             }
@@ -248,7 +253,7 @@ namespace cl
             return StorageLocation::not_found();
         }
 
-        return descriptors[property_index].get_storage_location();
+        return get_property_storage_location(property_index);
     }
 
     Shape *Shape::lookup_transition(TValue<String> name,
@@ -312,9 +317,18 @@ namespace cl
         Shape *next_shape =
             ThreadState::get_active()->make_refcounted_raw<Shape>(
                 owner_class.as_value(), Value::from_oop(this),
-                next_slot_index + 1);
-        next_shape->descriptors = descriptors;
-        next_shape->descriptors.emplace_back(name, storage_location);
+                next_slot_index + 1, property_count_ + 1);
+        for(uint32_t property_idx = 0; property_idx < property_count_;
+            ++property_idx)
+        {
+            next_shape->descriptor_names[property_idx] =
+                incref(get_property_name(property_idx).as_value());
+            next_shape->descriptor_storage_locations()[property_idx] =
+                get_property_storage_location(property_idx);
+        }
+        next_shape->descriptor_names[property_count_] = incref(name.as_value());
+        next_shape->descriptor_storage_locations()[property_count_] =
+            storage_location;
         return next_shape;
     }
 
@@ -328,14 +342,22 @@ namespace cl
 
         Shape *next_shape =
             ThreadState::get_active()->make_refcounted_raw<Shape>(
-                owner_class.as_value(), Value::from_oop(this), next_slot_index);
-        next_shape->descriptors.reserve(descriptors.size() - 1);
-        for(const PropertyDescriptor &descriptor: descriptors)
+                owner_class.as_value(), Value::from_oop(this), next_slot_index,
+                property_count_ - 1);
+        uint32_t next_property_idx = 0;
+        for(uint32_t property_idx = 0; property_idx < property_count_;
+            ++property_idx)
         {
-            if(!string_eq(name, descriptor.get_name()))
+            if(string_eq(name, get_property_name(property_idx)))
             {
-                next_shape->descriptors.push_back(descriptor);
+                continue;
             }
+
+            next_shape->descriptor_names[next_property_idx] =
+                incref(get_property_name(property_idx).as_value());
+            next_shape->descriptor_storage_locations()[next_property_idx] =
+                get_property_storage_location(property_idx);
+            ++next_property_idx;
         }
         return next_shape;
     }
