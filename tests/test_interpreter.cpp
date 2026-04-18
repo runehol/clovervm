@@ -313,63 +313,35 @@ TEST(Interpreter, attribute_load_and_store_syntax)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    TValue<String> cls_name(
-        test_context.vm().get_or_create_interned_string_value(L"Cls"));
     TValue<String> obj_name(
         test_context.vm().get_or_create_interned_string_value(L"obj"));
     TValue<String> attr_name(
         test_context.vm().get_or_create_interned_string_value(L"value"));
 
-    ClassObject *cls =
-        test_context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
-    cls->set_member(attr_name, Value::from_smi(3));
-    Instance *instance = test_context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
-
-    CodeObject *code_obj = test_context.compile_file(L"obj.value = 7\n"
+    CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
+                                                     L"    pass\n"
+                                                     L"obj = Cls()\n"
+                                                     L"obj.value = 7\n"
                                                      L"obj.value\n");
-    code_obj->module_scope.extract()->set_by_name(obj_name,
-                                                  Value::from_oop(instance));
-
     Value actual = test_context.thread()->run(code_obj);
     EXPECT_EQ(Value::from_smi(7), actual);
-    EXPECT_EQ(Value::from_smi(7), instance->get_own_property(attr_name));
+    Scope *module_scope = code_obj->module_scope.extract();
+    Value obj_value = module_scope->get_by_name(obj_name);
+    ASSERT_TRUE(obj_value.is_ptr());
+    ASSERT_EQ(&Instance::klass, obj_value.get_ptr<Object>()->klass);
+    EXPECT_EQ(Value::from_smi(7),
+              obj_value.get_ptr<Instance>()->get_own_property(attr_name));
 }
 
 TEST(Interpreter, direct_method_call_inserts_self_for_class_functions)
 {
-    test::VmTestContext test_context;
-    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value actual = run_file(L"class Cls:\n"
+                            L"    def method(self, x):\n"
+                            L"        return self.value + x\n"
+                            L"obj = Cls()\n"
+                            L"obj.value = 3\n"
+                            L"obj.method(4)\n");
 
-    TValue<String> cls_name(
-        test_context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> obj_name(
-        test_context.vm().get_or_create_interned_string_value(L"obj"));
-    TValue<String> method_name(
-        test_context.vm().get_or_create_interned_string_value(L"method"));
-    TValue<String> value_name(
-        test_context.vm().get_or_create_interned_string_value(L"value"));
-
-    CodeObject *method_code =
-        test_context.thread()->compile(L"def method(self, x):\n"
-                                       L"    return self.value + x\n",
-                                       StartRule::File);
-    (void)test_context.thread()->run(method_code);
-    Value method_value =
-        method_code->module_scope.extract()->get_by_name(method_name);
-
-    ClassObject *cls =
-        test_context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
-    cls->set_member(method_name, method_value);
-    Instance *instance = test_context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
-    instance->set_own_property(value_name, Value::from_smi(3));
-
-    CodeObject *code_obj = test_context.compile_file(L"obj.method(4)\n");
-    code_obj->module_scope.extract()->set_by_name(obj_name,
-                                                  Value::from_oop(instance));
-
-    Value actual = test_context.thread()->run(code_obj);
     EXPECT_EQ(Value::from_smi(7), actual);
 }
 
@@ -408,8 +380,6 @@ TEST(Interpreter,
 
     TValue<String> cls_name(
         test_context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> obj_name(
-        test_context.vm().get_or_create_interned_string_value(L"obj"));
     TValue<String> method_name(
         test_context.vm().get_or_create_interned_string_value(L"method"));
 
@@ -417,15 +387,18 @@ TEST(Interpreter,
         test_context.thread()->make_refcounted_value<BuiltinFunction>(
             builtin_identity, 1, 1);
 
-    ClassObject *cls =
-        test_context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
-    cls->set_member(method_name, identity);
-    Instance *instance = test_context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+    CodeObject *setup_code = test_context.compile_file(L"class Cls:\n"
+                                                       L"    pass\n"
+                                                       L"obj = Cls()\n");
+    (void)test_context.thread()->run(setup_code);
+    Scope *module_scope = setup_code->module_scope.extract();
+    Value cls_value = module_scope->get_by_name(cls_name);
+    ASSERT_TRUE(cls_value.is_ptr());
+    ASSERT_EQ(&ClassObject::klass, cls_value.get_ptr<Object>()->klass);
+    cls_value.get_ptr<ClassObject>()->set_member(method_name, identity);
 
     CodeObject *code_obj = test_context.compile_file(L"obj.method(4)\n");
-    code_obj->module_scope.extract()->set_by_name(obj_name,
-                                                  Value::from_oop(instance));
+    code_obj->module_scope = Value::from_oop(module_scope);
 
     Value actual = test_context.thread()->run(code_obj);
     EXPECT_EQ(Value::from_smi(4), actual);
