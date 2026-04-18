@@ -616,7 +616,7 @@ Exit criteria:
 
 Status:
 
-- reached
+- not started
 
 ### Phase 2: Implement shape growth and storage semantics
 
@@ -713,7 +713,7 @@ Exit criteria:
 
 Status:
 
-- not started
+- reached
 
 ### Phase 6: Add method-call fast path
 
@@ -734,6 +734,26 @@ Exit criteria:
 - direct method calls work without bound-method allocation on the hot path
 - invalidation correctly handles inherited-method shadowing such as `B` gaining
   `f` after optimized calls previously resolved to `A.f`
+
+Status:
+
+- partially reached
+
+Current refinement:
+
+- direct `obj.method(args...)` syntax now lowers to `LoadMethod` /
+  `CallMethod`
+- method-aware lookup is currently implemented by `load_method(obj, name,
+  callable_out, self_out)`
+- instance own-property hits do not inject `self`
+- direct class-member hits inject `self` only when the resolved member is a
+  `Function`
+- non-`Function` class callables currently follow the plain callable path with
+  no implicit `self`
+- escaping method values such as `f = obj.method` still use ordinary
+  `LoadAttr`, so bound-method-object semantics remain for a later phase
+- inherited-method invalidation beyond the current single-base, value-only
+  lookup path is still pending
 
 ### Phase 7: Add Python class syntax
 
@@ -804,7 +824,10 @@ Build the system up through Phase 5:
 - VM-native exception propagation
 - attribute syntax and bytecode
 
-Method-call optimization is the next step after that slice is stable.
+Method-call optimization was the next step after that slice, and is now in
+place. The natural next step is Phase 7: Python class parsing and definition,
+because it is now more awkward to test and use method calls from source code
+than it is to support the runtime machinery they need.
 
 ### Concrete checklist
 
@@ -883,7 +906,22 @@ Method-call optimization is the next step after that slice is stable.
    Add `LoadAttr` / `StoreAttr` bytecodes.
    Add codegen lowering and interpreter support for the new bytecodes.
 
-8. Tests for the stopping point
+   Status:
+   This is now implemented end to end, including parser, AST, bytecode,
+   codegen, and interpreter support.
+
+8. Direct method-call fast path
+   Add method-aware lookup that distinguishes own properties from class
+   functions.
+   Lower direct `obj.method(args...)` syntax to a method-call fast path rather
+   than `LoadAttr` followed by a generic call.
+   Insert `self` only for direct class-function calls.
+
+   Status:
+   This is now implemented in the current direct-call form with
+   `LoadMethod` / `CallMethod`.
+
+9. Tests for the stopping point
    Cover storing and loading one inline property.
    Cover growing past inline capacity and using overflow storage.
    Cover reusing the same shape chain across two instances with identical add
@@ -913,6 +951,13 @@ Current reached stopping point:
 - ordered class member tables with single-base lookup
 - `method_version` invalidation metadata for method-shape changes
 - generic `load_attr` / `store_attr` helpers over `Value`
+- `LoadAttr` / `StoreAttr` parser, bytecode, codegen, and interpreter support
+- `LoadMethod` / `CallMethod` direct method-call lowering without bound-method
+  allocation on the immediate-call path
+
+The main missing ergonomic layer is now Python class syntax and definition.
+Runtime method support is ahead of source-language class support, which makes
+manual C++ scaffolding the current testing and usability bottleneck.
 
 ## What Still Needs To Be Pinned Down
 
@@ -938,12 +983,17 @@ Several of these are now pinned down and implemented:
 - class member tables are ordered contiguous vectors of
   `(TValue<String>, Value)` entries
 - lookup-relevant class invalidation currently uses `method_version`
+- attribute bytecodes use receiver registers plus interned-string constant
+  indices
+- direct method calls use `LoadMethod` / `CallMethod`
 
 The main remaining design questions are now above raw storage:
 
+- class parsing, class body execution, and class object construction
 - ancestor/MRO lookup representation
 - exception propagation substrate
-- attribute bytecode operand shape
+- escaping bound-method semantics for `obj.method` when the method value is
+  observed directly
 - whether generic lookup should keep the current minimal value-only API or
   grow a richer resolved-result form before inline caches
 
@@ -956,11 +1006,12 @@ Add in order:
 1. instance attribute store/load
 2. class attribute lookup
 3. direct method calls
-4. escaping method values
-5. attribute miss -> `AttributeError`
-6. exception propagation across nested calls
-7. `raise`
-8. `try` / `except`
+4. source-level class definition and instantiation
+5. escaping method values
+6. attribute miss -> `AttributeError`
+7. exception propagation across nested calls
+8. `raise`
+9. `try` / `except`
 
 Keep codegen/JIT tests structural and focused on:
 
@@ -1022,6 +1073,6 @@ Start with:
 - attribute load/store bytecodes
 - VM-level exception propagation
 
-Once those pieces are stable, `class` syntax becomes a relatively thin layer on
-top of a runtime that already knows how to represent objects, look up members,
-and fail correctly.
+That runtime substrate is now far enough along that `class` syntax has become
+the natural next step rather than a premature one. It is now the main missing
+layer for testing and using method calls ergonomically from source code.
