@@ -12,7 +12,12 @@ and some runtime behavior is intentionally narrow.
 - Module-style execution of expressions and simple statement sequences.
 - Integer, boolean, and `None` values.
 - Names, assignment, and augmented assignment such as `+=`.
+- Attribute access and assignment with `obj.name` and `obj.name = value`.
 - Function definitions, parameter passing, calls, recursion, and `return`.
+- Class definitions with executable class bodies and method definitions.
+- Basic instance creation with `Cls()`.
+- Direct method-call syntax such as `obj.method(...)`.
+- `pass`.
 - `if` / `elif` / `else` statements.
 - `for` loops over `range(...)`, including `break`, `continue`, and loop
   `else`.
@@ -32,8 +37,11 @@ and some runtime behavior is intentionally narrow.
 
 ## Known limitations
 
-- Much of Python is not implemented yet, including `import`, `class`, `try`,
-  `with`, `global`, `nonlocal`, `del`, and `yield`.
+- Much of Python is not implemented yet, including `import`, `try`, `with`,
+  `global`, `nonlocal`, `del`, and `yield`.
+- Class support is still intentionally narrow:
+  no inheritance semantics yet, no `__init__` calls during instantiation, no
+  metaclass machinery, and no escaping bound-method objects.
 - Assignment is currently much narrower than Python. In practice, codegen only
   supports simple variable targets cleanly.
 - String support still does not include triple-quoted literals, bytes literals,
