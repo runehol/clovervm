@@ -1,6 +1,8 @@
 find_package(Threads)
 
 add_library(libclovervm STATIC
+    attr.cpp
+    attr.h
     ast.h
     ast_print.h
     bytecode.h
