@@ -59,10 +59,10 @@ Represents the layout of an instance.
 
 Minimum contents:
 
-- stable shape id
+- stable shape identity by pointer
 - pointer to owning class
-- number of in-object slots
-- mapping from attribute name to slot index
+- monotonic next-slot counter for successor-shape allocation
+- ordered property descriptors
 - transition table for "add attribute X" -> next shape
 - optional flags for future optimizations
 
@@ -71,6 +71,13 @@ Properties:
 - immutable after publication
 - shared by many instances
 - cheap to compare by pointer or id
+
+Current refinement:
+
+- shape identity is `Shape *`
+- the immutable descriptor payload is stored inline in the `Shape` allocation
+- transition caches may still be populated after publication
+- the back-pointer to the previous shape is non-owning
 
 ### `Class`
 
@@ -99,6 +106,13 @@ Minimum contents:
 - optional overflow slot array pointer
 
 The important invariant is that `Shape` fully determines the slot layout.
+
+Current refinement:
+
+- instances store both `cls` and `shape`
+- `cls` exists so `obj.__class__` is not treated as an own-property
+- overflow storage is currently a dedicated `Instance::OverflowSlots` runtime
+  object
 
 ### `Exception`
 
@@ -138,6 +152,15 @@ That gives us:
 - stable offsets for JIT specialization
 - predictable fast paths for common object shapes
 
+Current storage policy:
+
+- shapes assign new properties to inline storage while inline capacity remains
+- later properties spill into overflow storage
+- descriptor order is logical property order
+- descriptor storage location is separate from logical order
+- delete does not roll back slot allocation
+- delete + re-add appends at the end and gets a fresh storage location
+
 ## Attribute Lookup Strategy
 
 Stage attribute access in layers.
@@ -159,6 +182,11 @@ Behavior:
 - if still not found, raise attribute error later
 
 This stage can use helper calls and does not need inline caches yet.
+
+Prerequisite now completed:
+
+- instance own-property storage and shape transitions exist independently of
+  parser/codegen support
 
 ### Stage 2: Monomorphic inline caches in the interpreter
 
@@ -566,6 +594,10 @@ Exit criteria:
 - tests can allocate classes and instances manually from C++ helpers
 - tests can inspect shapes, inline slots, and overflow slots directly
 
+Status:
+
+- reached
+
 ### Phase 2: Implement shape growth and storage semantics
 
 Before any syntax work, make attribute storage real:
@@ -585,6 +617,10 @@ Exit criteria:
 
 - two instances with the same property-add order share shape transitions
 - instances continue to work after spilling into overflow storage
+
+Status:
+
+- reached
 
 ### Phase 3: Implement generic lookup semantics
 
@@ -609,6 +645,10 @@ Exit criteria:
 - generic lookup works correctly for instance hits, defining-class hits,
   inherited hits, and misses
 
+Status:
+
+- not started
+
 ### Phase 4: Add VM-native exception propagation
 
 Stop using C++ exceptions as the execution model:
@@ -628,6 +668,10 @@ Exit criteria:
 - nested interpreter calls propagate exceptions without `throw`
 - attribute misses produce VM-managed exception objects
 
+Status:
+
+- not started
+
 ### Phase 5: Add attribute syntax and bytecode
 
 Connect the runtime machinery to the language pipeline:
@@ -646,6 +690,10 @@ Recommended choice:
 Exit criteria:
 
 - attribute access works end to end from source text
+
+Status:
+
+- not started
 
 ### Phase 6: Add method-call fast path
 
@@ -741,22 +789,30 @@ Method-call optimization is the next step after that slice is stable.
 ### Concrete checklist
 
 1. Runtime data structures
-   Add `src/shape.h` and `src/shape.cpp`.
-   Define `Shape` with stable identity, owning `Class *`, property count,
-   inline capacity, property-to-slot metadata, and a transition table.
-   Add slot metadata recording logical property slot, inline-vs-overflow
-   storage, and physical storage index.
-   Add or extend a `Class` runtime type with class name, member table, inline
-   single-base pointer, optional bases array, optional MRO placeholder,
-   initial instance shape, and invalidation metadata.
-   Add `Instance` with `Class *`, `Shape *`, inline slot capacity, and overflow
-   slot array pointer.
+   Add `src/shape.h` / `src/shape.cpp`.
+   Define `Shape` with pointer identity, owning `ClassObject *`, property
+   count, monotonic next-slot counter, inline descriptor payload, and a
+   transition table.
+   Add descriptor metadata recording property name plus resolved storage
+   location.
+   Add a `ClassObject` runtime type with class name, inline slot capacity, and
+   initial instance shape.
+   Add `Instance` with `cls`, `shape`, inline slots, and overflow slot array
+   pointer.
+
+   Status:
+   This is now implemented, with the runtime types split across
+   `src/shape.*`, `src/class_object.*`, and `src/instance.*`.
 
 2. Overflow storage
    Choose the overflow representation.
    Add helpers to allocate the first overflow array lazily, grow it without
    moving the instance object, and read/write both inline and overflow slots.
    Ensure refcounting is correct for overflow-stored values.
+
+   Status:
+   This is now implemented with `Instance::OverflowSlots`, geometric growth,
+   and `not_present` initialization for every capacity slot.
 
 3. Shape transitions
    Implement "lookup existing transition by property name".
@@ -766,6 +822,9 @@ Method-call optimization is the next step after that slice is stable.
    Preserve shape sharing across instances that add properties in the same
    order.
 
+   Status:
+   This is now implemented for add/delete transitions on own properties.
+
 4. Class and ancestor lookup
    Add helper to look up one member in a class member table.
    Add helper to walk a class linearization until hit or miss.
@@ -773,6 +832,9 @@ Method-call optimization is the next step after that slice is stable.
    a single-base chain.
    Optimize the implementation so the single-base case uses the inline base
    pointer without an extra array or MRO indirection.
+
+   Status:
+   This is now the next natural runtime step.
 
 5. VM exception substrate
    Add pending-exception state to `ThreadState` or equivalent VM-owned state.
@@ -788,6 +850,11 @@ Method-call optimization is the next step after that slice is stable.
    Create new shapes on new-property stores.
    Spill into overflow storage when inline capacity is exhausted.
    Raise `AttributeError` on full lookup miss.
+
+   Status:
+   Partially started only in the narrow sense that own-property helpers exist.
+   Full generic attribute lookup is still pending on class/ancestor lookup and
+   exception propagation.
 
 7. Syntax and bytecode
    Extend the parser for attribute expressions `obj.name`.
@@ -815,6 +882,14 @@ After this slice, the VM should have:
 - VM-native exception propagation
 - a clean substrate for later class syntax and method optimizations
 
+Current reached stopping point:
+
+- shape-backed instances
+- class-owned root shapes
+- add/delete shape transitions
+- inline and overflow own-property storage
+- string-keyed own-property get/set/delete helpers
+
 ## What Still Needs To Be Pinned Down
 
 The plan now hangs together directionally, but a few details still need one
@@ -830,7 +905,20 @@ more short appendix before coding starts in earnest:
 - the exact bytecode operand shape for `LoadAttr`, `StoreAttr`, and likely
   `LoadMethod` / `CallMethod`
 
-Once those are pinned down, the first slice is detailed enough to implement.
+Several of these are now pinned down and implemented:
+
+- `Klass` remains the VM meta-type description
+- `ClassObject` is the current Python-level class runtime scaffold
+- shape transition tables are cached per-shape and keyed by `(name, verb)`
+- overflow storage is `Instance::OverflowSlots`
+
+The main remaining design questions are now above raw storage:
+
+- class member table representation
+- ancestor/MRO lookup representation
+- generic lookup result shape
+- exception propagation substrate
+- attribute bytecode operand shape
 
 ## Testing Strategy
 

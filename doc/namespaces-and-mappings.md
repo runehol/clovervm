@@ -249,8 +249,12 @@ The first representation should therefore be:
 where each descriptor contains:
 
 - property name
+- storage location
+
+where storage location is:
+
 - storage kind: inline or overflow
-- physical storage index
+- physical storage index within that storage
 
 The logical property index can simply be the descriptor index in the shape.
 
@@ -267,9 +271,9 @@ multiple separately allocated helper arrays.
 The likely layout is:
 
 - fixed shape header
-- optional transition metadata or transition pointers
-- contiguous property-name storage
-- compact raw packed descriptor metadata
+- out-of-line transition metadata or transition pointers
+- contiguous property-name storage in the trailing `Value` region
+- trailing raw storage-location metadata after the `Value` prefix
 
 This keeps published shapes compact and read-friendly.
 
@@ -316,8 +320,34 @@ to several parallel tiny arrays. A good fit is:
 - contiguous property-name storage in the `Value` region
 - a compact raw metadata tail storing storage kind and physical index
 
+That is now the chosen direction for `Shape`.
+
+The current runtime design uses:
+
+- an immutable shape payload allocated inline with the `Shape` object
+- trailing `Value` cells for descriptor names
+- trailing raw `StorageLocation` metadata immediately after those values
+- out-of-line transition cache records that may be populated after publication
+
+This keeps the hot descriptor payload contiguous while still allowing shape
+transition caching to grow over time.
+
 If needed, the physical index can use a smaller packed integer width rather
 than a full machine-word field.
+
+The runtime also keeps a monotonic `next_slot_index` on each shape family.
+That counter is not stored per descriptor. It is only used to allocate the
+next logical slot when creating a successor shape.
+
+Current delete/reinsert policy for shapes is:
+
+- deleting a property removes its descriptor from the successor shape
+- deleting a property does not decrement `next_slot_index`
+- reinserting the same property name appends a fresh descriptor at the end
+- reinserting the same property name gets a fresh storage location
+
+This means shape order remains dictionary-like even though physical storage is
+specialized.
 
 ## Globals, Locals, And Mapping Views
 
@@ -400,7 +430,9 @@ The likely direction is:
   - hot payload cells like `[value]`
 
 - `Shape`
-  - ordered property descriptors like `[key, storage_kind, physical_index]`
+  - ordered property descriptors like `[key, storage_location]`
+  - storage location is `[storage_kind, physical_index]`
+  - monotonic `next_slot_index` stored on the shape, not per descriptor
   - optional side index later if needed
 
 - `Dict`
@@ -483,6 +515,32 @@ What remains for scope-related work is mostly cleanup and follow-on layering:
 - decide how future mapping views should iterate and filter scope entries
 - keep the slot/entry invariants clear as object-model work lands
 
+## Shape Progress
+
+The current implementation has completed the first storage slice for shapes and
+instances:
+
+- `Shape` exists as its own runtime type
+- shape identity is pointer identity
+- shapes are immutable in payload after publication
+- transition caches may still grow after publication
+- shape descriptors are stored inline in the `Shape` allocation
+- descriptor lookup is insertion-ordered linear scan
+- descriptor metadata resolves directly to a storage location
+- instances store their class and current shape separately
+- instance storage is split into inline slots and an overflow slot array
+- overflow storage is a dedicated nested runtime object owned by `Instance`
+- own-property get/set/delete helpers are implemented for string keys only
+- deleting a property clears its old slot to `not_present`
+- shape back-pointers are non-owning to avoid refcount cycles
+
+What remains for shape-related work is now above the raw storage layer:
+
+- class member tables and ancestor lookup
+- generic attribute helpers layered over own-property storage
+- `obj.__dict__` and other mapping views
+- later optimization work such as inline caches and JIT guards
+
 ## Near-Term Implementation Plan
 
 1. Add the VM-managed storage support needed for variable-sized runtime
@@ -496,8 +554,9 @@ What remains for scope-related work is mostly cleanup and follow-on layering:
 6. Keep scope ordering and slot identity decoupled so a future `globals()` view
    can present dict-like iteration behavior without disturbing compiled slot
    identity.
-7. Implement `Shape` as a single immutable contiguous allocation containing
-   ordered property names, packed storage metadata, and transition metadata.
+7. Keep `Shape` as a single immutable contiguous allocation containing ordered
+   property names and packed storage metadata, with transition caches growing
+   separately.
 8. Preserve logical property order separately from physical storage choices so
    a future `obj.__dict__` view can present dict-like behavior without forcing
    unnecessary object-storage churn.
