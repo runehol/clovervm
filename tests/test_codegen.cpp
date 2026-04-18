@@ -130,16 +130,56 @@ TEST(Codegen, function_multiple_parameters)
                            "   22 CallSimple r0, r1r3\n"
                            "   25 Halt\n"
                            "Constant 0: Code object:\n"
-                           "    0 Ldar a0\n"
-                           "    2 Star0\n"
-                           "    3 Ldar a1\n"
-                           "    5 Add r0\n"
-                           "    7 Star0\n"
-                           "    8 Ldar a2\n"
-                           "   10 Add r0\n"
-                           "   12 Return\n"
-                           "   13 LdaNone\n"
-                           "   14 Return\n"
+                           "    0 Ldar a1\n"
+                           "    2 Add a0\n"
+                           "    4 Star0\n"
+                           "    5 Ldar a2\n"
+                           "    7 Add r0\n"
+                           "    9 Return\n"
+                           "   10 LdaNone\n"
+                           "   11 Return\n"
+                           "\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, binary_expression_reuses_local_register_operand)
+{
+    const wchar_t *test_case = L"def add(a, b):\n"
+                               "    return a + b\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 CreateFunction c[0]\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 Halt\n"
+                           "Constant 0: Code object:\n"
+                           "    0 Ldar a1\n"
+                           "    2 Add a0\n"
+                           "    4 Return\n"
+                           "    5 LdaNone\n"
+                           "    6 Return\n"
+                           "\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, comparison_reuses_local_register_operand)
+{
+    const wchar_t *test_case = L"def lt(a, b):\n"
+                               "    return a < b\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 CreateFunction c[0]\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 Halt\n"
+                           "Constant 0: Code object:\n"
+                           "    0 Ldar a1\n"
+                           "    2 TestLess a0\n"
+                           "    4 Return\n"
+                           "    5 LdaNone\n"
+                           "    6 Return\n"
                            "\n";
     std::string actual = bytecode_str_from_file(test_case);
 

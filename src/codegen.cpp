@@ -88,6 +88,8 @@ namespace cl
     class Codegen
     {
     public:
+        using RegisterIndex = int32_t;
+
         Codegen(const AstVector &_av)
             : av(_av),
               module_scope(
@@ -172,8 +174,25 @@ namespace cl
                 cg->_temporary_reg += n_regs;
             }
 
+            TemporaryReg(const TemporaryReg &) = delete;
+            TemporaryReg &operator=(const TemporaryReg &) = delete;
+
+            TemporaryReg(TemporaryReg &&other) noexcept
+                : cg(other.cg), n_regs(other.n_regs), reg(other.reg)
+            {
+                other.cg = nullptr;
+                other.n_regs = 0;
+                other.reg = 0;
+            }
+
+            TemporaryReg &operator=(TemporaryReg &&other) = delete;
+
             ~TemporaryReg()
             {
+                if(cg == nullptr)
+                {
+                    return;
+                }
                 cg->_temporary_reg -= n_regs;
                 assert(reg == cg->_temporary_reg);
             }
@@ -186,8 +205,49 @@ namespace cl
             uint32_t reg;
         };
 
+        struct ScopedRegister
+        {
+            RegisterIndex reg;
+            std::optional<TemporaryReg> temp;
+        };
+
         static constexpr AstKind NumericalConstant =
             AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER);
+
+        ScopedRegister codegen_node_to_register(int32_t node_idx, Mode mode)
+        {
+            AstKind kind = av.kinds[node_idx];
+            if(kind.node_kind == AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+            {
+                switch(mode)
+                {
+                    case Mode::Class:
+                    case Mode::Function:
+                        {
+                            int32_t slot_idx =
+                                code_obj->get_local_scope_ptr()
+                                    ->lookup_slot_index_local(
+                                        TValue<String>(av.constants[node_idx]));
+                            if(slot_idx >= 0)
+                            {
+                                return {slot_idx, std::nullopt};
+                            }
+                            break;
+                        }
+
+                    case Mode::Module:
+                        break;
+                }
+            }
+
+            uint32_t source_offset = av.source_offsets[node_idx];
+            codegen_node(node_idx, mode);
+            std::optional<TemporaryReg> temp;
+            temp.emplace(this);
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                      RegisterIndex(*temp));
+            return {RegisterIndex(*temp), std::move(temp)};
+        }
 
         // used for both regular binary expressions and augmented assignment, so
         // pull out
@@ -221,14 +281,11 @@ namespace cl
             }
             else
             {
-                codegen_node(children[0], mode);
-                TemporaryReg temp_reg(this);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          temp_reg);
-
+                ScopedRegister lhs_reg =
+                    codegen_node_to_register(children[0], mode);
                 codegen_node(children[1], mode);
                 code_obj->emit_opcode_reg(source_offset, entry.standard,
-                                          temp_reg);
+                                          lhs_reg.reg);
             }
         }
 
@@ -695,14 +752,11 @@ namespace cl
                     {
                         JumpTarget skip_target(code_obj);
 
-                        uint32_t n_temporaries = children.size() > 2 ? 2 : 1;
-                        TemporaryReg regs(this, n_temporaries);
-                        int32_t recv = regs;
-                        int32_t prod = regs + 1;
-
-                        codegen_node(children[0], mode);
-                        code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                                  recv);
+                        ScopedRegister recv_reg =
+                            codegen_node_to_register(children[0], mode);
+                        TemporaryReg prod_reg(this);
+                        int32_t recv = recv_reg.reg;
+                        int32_t prod = prod_reg;
                         for(size_t i = 1; i < children.size(); ++i)
                         {
                             bool last = i == children.size() - 1;
