@@ -86,7 +86,7 @@ namespace cl
         ClassObject *get_owner_class() const;
         Shape *get_previous_shape() const;
         int32_t get_next_slot_index() const { return next_slot_index; }
-        uint32_t get_inline_slot_capacity() const;
+        uint32_t get_instance_inline_slot_count() const;
 
         uint32_t property_count() const { return property_count_; }
         TValue<String> get_property_name(uint32_t property_idx) const

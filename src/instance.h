@@ -64,11 +64,11 @@ namespace cl
 
         Instance(Value cls, Value shape);
 
-        static size_t size_for(uint32_t inline_slot_capacity)
+        static size_t size_for(uint32_t instance_inline_slot_count)
         {
-            assert(inline_slot_capacity >= 1);
-            return sizeof(Instance) + sizeof(Value) * inline_slot_capacity -
-                   sizeof(Value);
+            assert(instance_inline_slot_count >= 1);
+            return sizeof(Instance) +
+                   sizeof(Value) * instance_inline_slot_count - sizeof(Value);
         }
 
         static DynamicLayoutSpec layout_spec_for(Value cls, Value shape);

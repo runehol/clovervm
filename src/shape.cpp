@@ -29,9 +29,9 @@ namespace cl
 
     Shape *Shape::get_previous_shape() const { return previous_shape; }
 
-    uint32_t Shape::get_inline_slot_capacity() const
+    uint32_t Shape::get_instance_inline_slot_count() const
     {
-        return get_owner_class()->get_inline_slot_capacity();
+        return get_owner_class()->get_instance_inline_slot_count();
     }
 
     int32_t Shape::lookup_property_index(TValue<String> name) const
@@ -104,7 +104,7 @@ namespace cl
         }
 
         StorageLocation storage_location;
-        if(uint32_t(next_slot_index) < get_inline_slot_capacity())
+        if(uint32_t(next_slot_index) < get_instance_inline_slot_count())
         {
             storage_location =
                 StorageLocation{next_slot_index, StorageKind::Inline};
@@ -112,7 +112,7 @@ namespace cl
         else
         {
             storage_location = StorageLocation{
-                next_slot_index - int32_t(get_inline_slot_capacity()),
+                next_slot_index - int32_t(get_instance_inline_slot_count()),
                 StorageKind::Overflow};
         }
 

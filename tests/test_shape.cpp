@@ -1,4 +1,6 @@
+#include "builtin_function.h"
 #include "class_object.h"
+#include "function.h"
 #include "instance.h"
 #include "shape.h"
 #include "test_helpers.h"
@@ -23,7 +25,7 @@ TEST(Shape, ClassOwnsRootShape)
     EXPECT_EQ(nullptr, root_shape->get_previous_shape());
     EXPECT_EQ(0u, root_shape->property_count());
     EXPECT_EQ(0, root_shape->get_next_slot_index());
-    EXPECT_EQ(2u, root_shape->get_inline_slot_capacity());
+    EXPECT_EQ(2u, root_shape->get_instance_inline_slot_count());
 }
 
 TEST(Shape, AddAndDeleteTransitionsAreCached)
@@ -108,7 +110,7 @@ TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
               shape_with_ba->get_property_storage_location(1).kind);
     EXPECT_EQ(1, shape_with_ba->get_property_storage_location(1).physical_idx);
     EXPECT_EQ(3, shape_with_ba->get_next_slot_index());
-    EXPECT_EQ(1u, shape_with_ba->get_inline_slot_capacity());
+    EXPECT_EQ(1u, shape_with_ba->get_instance_inline_slot_count());
 }
 
 TEST(Shape, InstanceStoresClassAndShapeSeparately)
@@ -245,4 +247,107 @@ TEST(Shape, TwoInstancesShareShapeTransitionsButHoldDistinctValues)
     EXPECT_EQ(Value::from_smi(2), first->get_own_property(b_name));
     EXPECT_EQ(Value::from_smi(10), second->get_own_property(a_name));
     EXPECT_EQ(Value::from_smi(20), second->get_own_property(b_name));
+}
+
+TEST(ClassObject, MembersPreserveInsertionOrderAndCompactOnDelete)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> a_name(
+        context.vm().get_or_create_interned_string_value(L"a"));
+    TValue<String> b_name(
+        context.vm().get_or_create_interned_string_value(L"b"));
+    ClassObject *cls =
+        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+
+    cls->set_member(a_name, Value::from_smi(1));
+    cls->set_member(b_name, Value::from_smi(2));
+
+    ASSERT_EQ(2u, cls->member_count());
+    EXPECT_STREQ(L"a", cls->get_member_name(0).extract()->data);
+    EXPECT_STREQ(L"b", cls->get_member_name(1).extract()->data);
+
+    EXPECT_TRUE(cls->delete_member(a_name));
+
+    ASSERT_EQ(1u, cls->member_count());
+    EXPECT_STREQ(L"b", cls->get_member_name(0).extract()->data);
+
+    cls->set_member(a_name, Value::from_smi(3));
+
+    ASSERT_EQ(2u, cls->member_count());
+    EXPECT_STREQ(L"b", cls->get_member_name(0).extract()->data);
+    EXPECT_STREQ(L"a", cls->get_member_name(1).extract()->data);
+}
+
+TEST(ClassObject, MemberLookupFallsBackToBaseChain)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> method_name(
+        context.vm().get_or_create_interned_string_value(L"m"));
+    ClassObject *base =
+        context.thread()->make_refcounted_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_refcounted_raw<ClassObject>(
+        child_name, 2, Value::from_oop(base));
+
+    base->set_member(method_name, Value::from_smi(7));
+
+    EXPECT_EQ(Value::from_smi(7), child->get_member(method_name));
+}
+
+TEST(ClassObject, MethodVersionTracksOnlyMethodShapeChanges)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> data_name(
+        context.vm().get_or_create_interned_string_value(L"data"));
+    TValue<String> method_name(
+        context.vm().get_or_create_interned_string_value(L"method"));
+    ClassObject *cls =
+        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+    CodeObject *code_obj = context.compile_file(L"def f():\n    return 1\n");
+    Function *fun1 = context.thread()->make_refcounted_raw<Function>(
+        TValue<CodeObject>::from_oop(code_obj));
+    Function *fun2 = context.thread()->make_refcounted_raw<Function>(
+        TValue<CodeObject>::from_oop(code_obj));
+
+    EXPECT_EQ(0u, cls->get_method_version());
+
+    cls->set_member(data_name, Value::from_smi(1));
+    EXPECT_EQ(0u, cls->get_method_version());
+
+    cls->set_member(data_name, Value::from_smi(2));
+    EXPECT_EQ(0u, cls->get_method_version());
+
+    cls->set_member(method_name, Value::from_oop(fun1));
+    EXPECT_EQ(1u, cls->get_method_version());
+
+    cls->set_member(method_name, Value::from_oop(fun2));
+    EXPECT_EQ(2u, cls->get_method_version());
+
+    cls->set_member(method_name, Value::from_oop(fun2));
+    EXPECT_EQ(2u, cls->get_method_version());
+
+    cls->set_member(method_name, Value::from_smi(3));
+    EXPECT_EQ(3u, cls->get_method_version());
+
+    cls->delete_member(data_name);
+    EXPECT_EQ(3u, cls->get_method_version());
+
+    cls->set_member(method_name, Value::from_oop(fun1));
+    EXPECT_EQ(4u, cls->get_method_version());
+
+    cls->delete_member(method_name);
+    EXPECT_EQ(5u, cls->get_method_version());
 }
