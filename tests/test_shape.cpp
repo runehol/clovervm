@@ -1,3 +1,5 @@
+#include "class_object.h"
+#include "instance.h"
 #include "shape.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -178,7 +180,7 @@ TEST(Shape, InstanceSpillsIntoGeometricallyGrowingOverflowStorage)
     instance->set_own_property(e_name, Value::from_smi(5));
     instance->set_own_property(f_name, Value::from_smi(6));
 
-    OverflowSlots *overflow_slots = instance->get_overflow_slots();
+    Instance::OverflowSlots *overflow_slots = instance->get_overflow_slots();
     ASSERT_NE(nullptr, overflow_slots);
     EXPECT_EQ(5u, overflow_slots->get_size());
     EXPECT_EQ(8u, overflow_slots->get_capacity());

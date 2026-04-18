@@ -5,6 +5,8 @@ add_library(libclovervm STATIC
     ast_print.h
     bytecode.h
     code_object.h
+    class_object.cpp
+    class_object.h
     codegen.cpp
     codegen.h
     compilation_unit.h
@@ -12,6 +14,8 @@ add_library(libclovervm STATIC
     heap.h
     indirect_dict.cpp
     indirect_dict.h
+    instance.cpp
+    instance.h
     interpreter.cpp
     parser.cpp
     parser.h
