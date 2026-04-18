@@ -97,7 +97,11 @@ namespace cl
                   ThreadState::get_active()->make_refcounted_value<Scope>(
                       ThreadState::get_active()
                           ->get_machine()
-                          ->get_builtin_scope()))
+                          ->get_builtin_scope())),
+              module_name(
+                  ThreadState::get_active()
+                      ->get_machine()
+                      ->get_or_create_interned_string_value(L"<module>"))
 
         {
         }
@@ -122,14 +126,17 @@ namespace cl
         {
             ThreadState *ts = ThreadState::get_active();
             Value local_scope = Value::None();
+            Value name = Value::None();
             switch(mode)
             {
                 case Mode::Module:
+                    name = module_name;
                     break;
 
                 case Mode::Class:
                     local_scope =
                         ts->make_refcounted_value<Scope>(code_obj->local_scope);
+                    name = code_obj->name.as_value();
                     break;
                 case Mode::Function:
                     local_scope =
@@ -138,7 +145,7 @@ namespace cl
             }
 
             return ts->make_refcounted_raw<CodeObject>(
-                av.compilation_unit, module_scope, local_scope);
+                av.compilation_unit, module_scope, local_scope, name);
         }
 
         struct LoopTargetSet
@@ -190,6 +197,7 @@ namespace cl
 
         const AstVector &av;
         TValue<Scope> module_scope;
+        TValue<String> module_name;
         CodeObject *code_obj = nullptr;
 
         uint32_t _temporary_reg = FrameHeaderSize;
@@ -360,6 +368,7 @@ namespace cl
             uint32_t outer_max_temporary_reg = _max_temporary_reg;
             {
                 code_obj = fun_obj;
+                code_obj->name = av.constants[node_idx];
                 /*
                   Now we're generating code for the function
                 */
@@ -425,6 +434,7 @@ namespace cl
             uint32_t outer_max_temporary_reg = _max_temporary_reg;
             {
                 code_obj = class_obj;
+                code_obj->name = av.constants[node_idx];
                 code_obj->get_local_scope_ptr()->reserve_empty_slots(
                     FrameHeaderSize);
                 collect_class_local_bindings(body_idx);
@@ -1176,6 +1186,11 @@ namespace cl
                     break;
 
                 case AstNodeKind::STATEMENT_RETURN:
+                    if(mode != Mode::Function)
+                    {
+                        throw std::runtime_error(
+                            "SyntaxError: 'return' outside function");
+                    }
                     if(!children.empty())
                     {
                         codegen_node(children[0], mode);

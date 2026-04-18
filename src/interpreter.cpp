@@ -707,14 +707,9 @@ namespace cl
 
     static Value op_create_class(PARAMS)
     {
-        uint8_t name_const_offset = pc[1];
         uint8_t body_const_offset = pc[2];
-        TValue<String> class_name(
-            code_object->constant_table[name_const_offset].as_value());
         TValue<CodeObject> body_code(
             code_object->constant_table[body_const_offset].as_value());
-        ThreadState::get_active()->push_pending_class_definition_name(
-            class_name);
 
         const uint8_t *return_pc = pc + 3;
         Value *new_fp =
@@ -731,10 +726,8 @@ namespace cl
 
     static Value op_build_class(PARAMS)
     {
-        Value class_name =
-            ThreadState::get_active()->pop_pending_class_definition_name();
-        accumulator =
-            build_class_from_frame(fp, code_object, TValue<String>(class_name));
+        accumulator = build_class_from_frame(fp, code_object,
+                                             TValue<String>(code_object->name));
 
         pc = (const uint8_t *)fp[-2].as.ptr;
         code_object = fp[-1].get_ptr<CodeObject>();

@@ -388,6 +388,18 @@ TEST(Interpreter, class_call_rejects_arguments)
                          "TypeError: wrong number of arguments");
 }
 
+TEST(Interpreter, return_in_class_body_is_rejected)
+{
+    expect_runtime_error(L"class Cls:\n"
+                         L"    return 1\n",
+                         "SyntaxError: 'return' outside function");
+}
+
+TEST(Interpreter, return_in_module_body_is_rejected)
+{
+    expect_runtime_error(L"return\n", "SyntaxError: 'return' outside function");
+}
+
 TEST(Interpreter,
      direct_method_call_does_not_insert_self_for_non_function_callables)
 {

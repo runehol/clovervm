@@ -2,6 +2,7 @@
 #define CL_CODE_OBJECT_H
 
 #include "bytecode.h"
+#include "owned.h"
 #include "owned_typed_value.h"
 #include "scope.h"
 #include "value.h"
@@ -49,14 +50,16 @@ namespace cl
         static constexpr Klass klass = Klass(L"CodeObject", nullptr);
 
         CodeObject(const CompilationUnit *_compilation_unit,
-                   TValue<Scope> _module_scope, Value _local_scope)
+                   TValue<Scope> _module_scope, Value _local_scope, Value _name)
             : Object(&klass, compact_layout()), module_scope(_module_scope),
-              local_scope(_local_scope), compilation_unit(_compilation_unit)
+              local_scope(_local_scope), name(_name),
+              compilation_unit(_compilation_unit)
         {
         }
 
         MemberTValue<Scope> module_scope;
         MemberValue local_scope;
+        MemberValue name;
         const CompilationUnit *compilation_unit;
 
         uint32_t n_parameters = 0;
@@ -244,7 +247,7 @@ namespace cl
             code[pos + 1] = (v >> 8) & 0xff;
         }
 
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(CodeObject, module_scope, 2);
+        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(CodeObject, module_scope, 3);
     };
 
     inline void JumpTarget::resolve_relocation(uint32_t pos)
