@@ -101,31 +101,48 @@ The intended lookup shape is:
 - ordered scope entry -> slot index
 - slot index -> live value / `not_present` state
 
-The current implementation only partially matches this shape.
+The current direction for `Scope` is now more slot-centered than the original
+`name -> entry -> slot` sketch.
 
-Today, `IndirectDict` provides:
+The implementation has moved away from `IndirectDict` and now treats the slot
+as the primary identity:
 
-- a probe table
-- an insertion-ordered name table
+- probe table maps `name -> slot index`
+- ordered entry table stores insertion order as `slot index` records
+- slot index addresses the live value storage directly
 
-and `Scope` separately stores slot payloads by slot index.
+The slot itself also carries the metadata needed for slot-addressed mutation:
 
-What does not exist yet is an explicit ordered scope-entry layer that maps
-ordered entries to stable slot indices. That still needs to be implemented.
+- canonical slot name for named namespace slots
+- current ordered-entry index
+- auxiliary cold metadata such as `extra`
 
-So the current implementation is only close to the desired model; it does not
-yet realize the full probe table -> ordered scope entry -> slot index -> value
-structure.
+This means the effective lookup shape for scopes is:
 
-The key consequence is that scope slot identity and mapping insertion order are
-not the same thing.
+- probe table -> slot index
+- slot index -> live value
+- slot index -> current ordered entry when order metadata is needed
+
+That is a deliberate specialization for scopes. It keeps slot-addressed
+bytecodes natural while still preserving a distinct ordered-entry layer for
+future mapping views.
+
+The key consequence remains the same:
+
+- slot identity is stable
+- mapping insertion order is separate
+
+but the indirection now hangs off the slot rather than sitting on the hot name
+lookup path.
 
 ## Scope Delete/Reinsert Semantics
 
 Delete and reinsert should be handled as follows:
 
 - deleting a name marks the slot as not present
-- deleting a name tombstones the ordered mapping entry
+- deleting a name may leave the current ordered entry in place temporarily
+- reinserting a deleted variable tombstones the superseded ordered entry when a
+  fresh ordered occurrence is created
 - reinserting the same name reuses the original slot index
 - reinserting the same name creates or reactivates a logical ordered entry at
   the end
@@ -139,6 +156,12 @@ In other words:
 
 - slot identity is permanent
 - ordered-entry identity is not necessarily permanent
+
+For the current scope implementation, an ordered entry can also be absent
+entirely for a tracked-but-never-bound name. This happens when a scope creates
+a placeholder slot only to cache parent-scope lookup information. Such a slot
+has a stable name and slot index, but no ordered-entry representative until it
+is actually bound locally.
 
 ## Parent Scope Lookup
 
@@ -157,6 +180,19 @@ rather than repeated name probing at runtime.
 
 This is an important property to preserve when changing the storage
 representation.
+
+Because stores can also happen by slot index alone, scope must be able to
+reconstruct local-binding insertion semantics from the slot itself. That is why
+the slot metadata keeps:
+
+- the canonical name for named namespace slots
+- the current ordered-entry index, or `-1` if no ordered entry exists yet
+
+This lets slot-addressed stores revive a deleted binding by:
+
+- reusing the stable slot
+- appending a fresh ordered entry at the end
+- tombstoning the superseded ordered entry if there was one
 
 ## Object Attribute Storage And Mapping Views
 
@@ -350,8 +386,18 @@ For scope and shape tables, other payload layouts are more appropriate.
 The likely direction is:
 
 - `ScopeNameTable`
-  - ordered entries like `[key, slot_index]`
+  - string-keyed probe table mapping `key -> slot_index`
   - optional cached string hash
+
+- `Scope` ordered entries
+  - ordered records like `[slot_index]`
+  - tombstoned by storing `-1`
+
+- `Scope` slot metadata
+  - cold metadata like `[key-or-None, current_entry_index, extra]`
+
+- `Scope` slot values
+  - hot payload cells like `[value]`
 
 - `Shape`
   - ordered property descriptors like `[key, storage_kind, physical_index]`
@@ -361,8 +407,9 @@ The likely direction is:
   - ordered entries like `[hash, key, value]`
 
 Scope does not need `[hash, key, value]` because the live value already lives
-in the slot array. Duplicating it in the ordered table would add sync problems
-without helping the compiled fast path.
+in the slot-value array, while the canonical name lives in cold slot metadata.
+Duplicating either in the ordered table would add sync problems without helping
+the compiled fast path.
 
 ## GC-Friendly Object Layout
 
@@ -408,17 +455,44 @@ The direction should be to replace its storage substrate with VM-managed arrays
 and then specialize upward from there, rather than stretching it into a single
 universal dictionary type.
 
+For `Scope`, that specialization has now effectively happened in-place:
+
+- `Scope` owns its own string-keyed probe table
+- `Scope` owns its own ordered entry array
+- `Scope` owns split hot/cold slot storage
+
+So `IndirectDict` should no longer be treated as the likely long-term substrate
+for scope lookup itself.
+
+## Scope Progress
+
+The current implementation has completed the first specialization step for
+scopes:
+
+- `IndirectDict` has been removed from `Scope`
+- scope lookup is now `name -> slot index`
+- ordered scope entries exist and are distinct from slots
+- reinsertion reuses the original slot and appends a fresh ordered entry
+- slot-addressed stores can revive deleted bindings correctly
+- slot storage is split into hot value cells and cold metadata
+- tracked-but-never-bound names may have a slot with no ordered entry yet
+
+What remains for scope-related work is mostly cleanup and follow-on layering:
+
+- replace `std::vector` backing storage with VM-managed arrays
+- decide how future mapping views should iterate and filter scope entries
+- keep the slot/entry invariants clear as object-model work lands
+
 ## Near-Term Implementation Plan
 
 1. Add the VM-managed storage support needed for variable-sized runtime
    objects.
-2. Replace `IndirectDict` backing storage with VM-managed storage.
-3. Preserve the current probe-table plus ordered-name-table shape for scope
-   name lookup.
-4. Introduce explicit ordered scope entries that map logical insertion order to
-   stable slot indices.
-5. Keep scope slot storage separate from ordered mapping entries, so slot
-   identity remains stable across delete and reinsert.
+2. Replace current scope backing storage with VM-managed storage.
+3. Preserve the current `name -> slot` probe-table shape for scope lookup.
+4. Keep explicit ordered scope entries distinct from slot storage so logical
+   insertion order remains decoupled from stable slot identity.
+5. Keep slot metadata rich enough to support slot-addressed revival and parent
+   lookup without repeated name probing.
 6. Keep scope ordering and slot identity decoupled so a future `globals()` view
    can present dict-like iteration behavior without disturbing compiled slot
    identity.

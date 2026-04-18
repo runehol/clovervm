@@ -17,6 +17,7 @@ target_sources(test_clovervm PRIVATE
 	test_parser.cpp
 	test_tokenizer.cpp
 	test_interpreter.cpp
+	test_scope.cpp
 	test_typed_value.cpp
 	)
 

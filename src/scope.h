@@ -1,40 +1,18 @@
 #ifndef CL_SCOPE_H
 #define CL_SCOPE_H
 
-#include "indirect_dict.h"
 #include "klass.h"
 #include "object.h"
 #include "owned.h"
+#include "owned_typed_value.h"
+#include "str.h"
 #include "typed_value.h"
 #include "value.h"
+#include <cstdint>
 #include <vector>
 
 namespace cl
 {
-
-    class SlotEntry
-    {
-    public:
-        SlotEntry(Value _value, Value _extra = Value::None())
-            : value(_value), extra(_extra)
-        {
-        }
-
-        void set_value(Value _value) { value = _value; }
-
-        void set_extra(Value _extra) { extra = _extra; }
-
-        Value get_value() const { return value.as_value(); }
-
-        Value get_extra() const { return extra.as_value(); }
-
-    private:
-        OwnedValue value;
-        OwnedValue extra;  // extra is used for registering invalidation arrays
-                           // for global scopes, and closure usage for local
-                           // scopes
-    };
-
     class Scope : public Object
     {
     public:
@@ -57,12 +35,22 @@ namespace cl
 
         Value get_by_name(TValue<String> name) const;
 
+        ALWAYSINLINE bool slot_is_live(int32_t slot_idx) const
+        {
+            return !slot_values[slot_idx].get_value().is_not_present();
+        }
+
+        ALWAYSINLINE bool entry_is_live(int32_t entry_idx) const
+        {
+            return entries[entry_idx].get_slot_idx() >= 0;
+        }
+
         ALWAYSINLINE Value
         get_by_slot_index_fastpath_only(int32_t slot_idx) const
         {
             assert(slot_idx >= 0);
-            Value v = slots[slot_idx].get_value();
-            if(!v.is_not_present())
+            Value v = slot_values[slot_idx].get_value();
+            if(slot_is_live(slot_idx))
                 return v;
             int32_t parent_slot_idx = v.get_not_present_index();
             if(likely(parent_slot_idx >= 0))
@@ -79,8 +67,8 @@ namespace cl
         NOINLINE Value get_by_slot_index(int32_t slot_idx) const
         {
             assert(slot_idx >= 0);
-            Value v = slots[slot_idx].get_value();
-            if(!v.is_not_present())
+            Value v = slot_values[slot_idx].get_value();
+            if(slot_is_live(slot_idx))
                 return v;
             int32_t parent_slot_idx = v.get_not_present_index();
             if(likely(parent_slot_idx >= 0))
@@ -93,7 +81,7 @@ namespace cl
                 if(unlikely(parent_scope != Value::None()))
                 {
                     return get_parent_scope_ptr()->get_by_name(
-                        indirect_dict.get_key_by_slot_index(slot_idx));
+                        get_name_by_slot_index(slot_idx));
                 }
                 return Value::not_present();
             }
@@ -103,25 +91,115 @@ namespace cl
 
         ALWAYSINLINE void set_by_slot_index(int32_t slot_idx, Value val)
         {
-            slots[slot_idx].set_value(val);
+            if(unlikely(!slot_is_live(slot_idx) && !val.is_not_present() &&
+                        slot_metadata[slot_idx].is_named()))
+            {
+                revive_slot(slot_idx);
+            }
+            slot_values[slot_idx].set_value(val);
         }
 
         void reserve_empty_slots(size_t n_slots);
 
-        uint32_t size() const { return slots.size(); }
-        bool empty() const { return slots.empty(); }
+        uint32_t size() const { return slot_values.size(); }
+        bool empty() const { return slot_values.empty(); }
+        uint32_t entry_count() const { return entries.size(); }
+        int32_t get_entry_slot_index(uint32_t entry_idx) const
+        {
+            return entries[entry_idx].get_slot_idx();
+        }
+        TValue<String> get_entry_key(uint32_t entry_idx) const
+        {
+            int32_t slot_idx = entries[entry_idx].get_slot_idx();
+            assert(slot_idx >= 0);
+            return slot_metadata[slot_idx].get_name();
+        }
 
     private:
+        class SlotValue
+        {
+        public:
+            explicit SlotValue(Value _value) : value(_value) {}
+
+            void set_value(Value _value) { value = _value; }
+
+            Value get_value() const { return value.as_value(); }
+
+        private:
+            OwnedValue value;
+        };
+
+        class SlotMetadata
+        {
+        public:
+            SlotMetadata(Value _name, int32_t _current_entry_idx,
+                         Value _extra = Value::None())
+                : name(_name), current_entry_idx(_current_entry_idx),
+                  extra(_extra)
+            {
+            }
+
+            TValue<String> get_name() const
+            {
+                assert(name != Value::None());
+                return TValue<String>::unsafe_unchecked(name);
+            }
+
+            bool is_named() const { return name != Value::None(); }
+
+            int32_t get_current_entry_idx() const { return current_entry_idx; }
+            void set_current_entry_idx(int32_t idx) { current_entry_idx = idx; }
+
+            Value get_extra() const { return extra.as_value(); }
+            void set_extra(Value _extra) { extra = _extra; }
+
+        private:
+            OwnedValue name;
+            int32_t current_entry_idx;
+            OwnedValue extra;
+        };
+
+        class Entry
+        {
+        public:
+            explicit Entry(int32_t _slot_idx) : slot_idx(_slot_idx) {}
+
+            int32_t get_slot_idx() const { return slot_idx; }
+            void set_slot_idx(int32_t idx) { slot_idx = idx; }
+
+        private:
+            int32_t slot_idx;
+        };
+
+        static constexpr uint32_t max_load_nom = 3;
+        static constexpr uint32_t max_load_denom = 4;
+        static constexpr int32_t hash_not_present = -1;
+
         Scope *get_parent_scope_ptr() const
         {
             return parent_scope.as_value().get_ptr<Scope>();
         }
+        const int32_t *find_name_table_entry(TValue<String> key) const;
+        int32_t *find_name_table_entry(TValue<String> key);
+        void maybe_grow_name_table()
+        {
+            if(slot_values.size() >
+               name_table.size() * max_load_nom / max_load_denom)
+            {
+                grow_name_table();
+            }
+        }
+        void grow_name_table();
+        int32_t append_entry(int32_t slot_idx);
+        int32_t allocate_slot(TValue<String> key, Value initial_value);
+        void revive_slot(int32_t slot_idx);
+        TValue<String> get_name_by_slot_index(int32_t slot_idx) const;
 
         MemberValue parent_scope;
-        IndirectDict indirect_dict;
-        // TODO these need to be CL arrays at some point, but we're not ready
-        // for that yet
-        std::vector<SlotEntry> slots;
+        std::vector<int32_t> name_table;
+        std::vector<Entry> entries;
+        std::vector<SlotValue> slot_values;
+        std::vector<SlotMetadata> slot_metadata;
 
     public:
         CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Scope, parent_scope, 1);
