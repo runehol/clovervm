@@ -94,6 +94,15 @@ Minimum contents:
 - version tag for member-table invalidation later
 - constructor / call metadata if needed
 
+Current refinement:
+
+- the Python-level class runtime object is `ClassObject`
+- class members live in an ordered vector of `(TValue<String>, Value)` entries
+- deleting a class member erases and compacts the vector
+- class objects currently support a single inline `base` pointer
+- `method_version` tracks lookup-relevant method-shape changes without bumping
+  on ordinary non-method member writes
+
 ### `Instance`
 
 Represents a Python object instance.
@@ -187,6 +196,17 @@ Prerequisite now completed:
 
 - instance own-property storage and shape transitions exist independently of
   parser/codegen support
+
+Current runtime status:
+
+- `load_attr(obj, name)` and `store_attr(obj, name, value)` now exist as
+  minimal value-only helpers
+- `load_attr` special-cases `__class__` for object-backed values
+- `load_attr` checks instance own properties first, then class/base-chain
+  members
+- `store_attr` writes instance own properties or class members directly
+- unsupported inline values and rejected writes currently return
+  `Value::not_present()` / `false` rather than raising VM-native exceptions
 
 ### Stage 2: Monomorphic inline caches in the interpreter
 
@@ -647,7 +667,7 @@ Exit criteria:
 
 Status:
 
-- not started
+- partially reached
 
 ### Phase 4: Add VM-native exception propagation
 
@@ -834,7 +854,8 @@ Method-call optimization is the next step after that slice is stable.
    pointer without an extra array or MRO indirection.
 
    Status:
-   This is now the next natural runtime step.
+   This is now implemented in the current single-base form through
+   `ClassObject::get_member()`, with full MRO still pending.
 
 5. VM exception substrate
    Add pending-exception state to `ThreadState` or equivalent VM-owned state.
@@ -852,9 +873,9 @@ Method-call optimization is the next step after that slice is stable.
    Raise `AttributeError` on full lookup miss.
 
    Status:
-   Partially started only in the narrow sense that own-property helpers exist.
-   Full generic attribute lookup is still pending on class/ancestor lookup and
-   exception propagation.
+   Implemented in the current minimal form. `load_attr` and `store_attr` now
+   handle `Instance`, `ClassObject`, and `__class__` for object-backed values.
+   Full VM-native miss behavior and richer lookup results are still pending.
 
 7. Syntax and bytecode
    Extend the parser for attribute expressions `obj.name`.
@@ -889,6 +910,9 @@ Current reached stopping point:
 - add/delete shape transitions
 - inline and overflow own-property storage
 - string-keyed own-property get/set/delete helpers
+- ordered class member tables with single-base lookup
+- `method_version` invalidation metadata for method-shape changes
+- generic `load_attr` / `store_attr` helpers over `Value`
 
 ## What Still Needs To Be Pinned Down
 
@@ -911,14 +935,17 @@ Several of these are now pinned down and implemented:
 - `ClassObject` is the current Python-level class runtime scaffold
 - shape transition tables are cached per-shape and keyed by `(name, verb)`
 - overflow storage is `Instance::OverflowSlots`
+- class member tables are ordered contiguous vectors of
+  `(TValue<String>, Value)` entries
+- lookup-relevant class invalidation currently uses `method_version`
 
 The main remaining design questions are now above raw storage:
 
-- class member table representation
 - ancestor/MRO lookup representation
-- generic lookup result shape
 - exception propagation substrate
 - attribute bytecode operand shape
+- whether generic lookup should keep the current minimal value-only API or
+  grow a richer resolved-result form before inline caches
 
 ## Testing Strategy
 
@@ -947,8 +974,8 @@ Keep codegen/JIT tests structural and focused on:
 
 Best initial answer:
 
-- in a dictionary-like class member table
-- with invalidation metadata for optimized lookups
+- in an ordered vector-backed class member table
+- with `method_version` invalidation metadata for lookup-relevant changes
 
 ### How should inheritance be represented?
 
