@@ -419,6 +419,31 @@ namespace
         }
         return total;
     }
+
+    int64_t class_method_loop_value(int64_t n)
+    {
+        static constexpr int64_t kScale = 3;
+        static constexpr int64_t kBias = 5;
+
+        int64_t total = 0;
+        for(int64_t i = 0; i < n; ++i)
+        {
+            int64_t seed = i;
+            int64_t instance_total = i;
+
+            int64_t local0 = i + seed;
+            instance_total += local0 * kScale + kBias;
+            total += instance_total;
+
+            int64_t local1 = (i + 1) + seed;
+            instance_total += local1 * kScale + kBias;
+            total += instance_total;
+
+            total += kBias;
+        }
+
+        return total;
+    }
 }  // namespace
 
 template <typename Program>
@@ -485,6 +510,20 @@ static void BM_NestedForLoop(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_NestedForLoop, CloverProgram)
     ->Name("BM_NestedForLoop")
+    ->Arg(1000)
+    ->Arg(10000)
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ClassMethodLoop(benchmark::State &state)
+{
+    const int64_t iterations = state.range(0);
+    run_benchmark_case<Program>(
+        state, "benchmark/interpreter_class_method_loop.py", iterations,
+        class_method_loop_value(iterations), iterations);
+}
+BENCHMARK_TEMPLATE(BM_ClassMethodLoop, CloverProgram)
+    ->Name("BM_ClassMethodLoop")
     ->Arg(1000)
     ->Arg(10000)
     ->Arg(100000);
