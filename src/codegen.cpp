@@ -158,6 +158,33 @@ namespace cl
             return operator_table.table[size_t(ok)];
         }
 
+        std::optional<int8_t> check_binary_acc_smi_immediate(
+            AstOperatorKind op_kind, OpTableEntry entry, int32_t rhs_idx) const
+        {
+            AstKind rhs_kind = av.kinds[rhs_idx];
+            if(entry.binary_acc_smi == Bytecode::Invalid ||
+               rhs_kind.node_kind != NumericalConstant.node_kind ||
+               rhs_kind.operator_kind != NumericalConstant.operator_kind)
+            {
+                return std::nullopt;
+            }
+
+            Value rhs = av.constants[rhs_idx].as_value();
+            if(!rhs.is_smi8())
+            {
+                return std::nullopt;
+            }
+
+            int8_t immediate = rhs.get_smi();
+            if(op_kind == AstOperatorKind::LEFTSHIFT &&
+               (immediate < 0 || immediate >= 64))
+            {
+                return std::nullopt;
+            }
+
+            return immediate;
+        }
+
         const AstVector &av;
         TValue<Scope> module_scope;
         CodeObject *code_obj = nullptr;
@@ -258,27 +285,14 @@ namespace cl
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
-            bool rhs_is_small_number =
-                av.kinds[children[1]] == NumericalConstant &&
-                av.constants[children[1]].as_value().is_smi8();
-            bool use_binary_acc_smi =
-                entry.binary_acc_smi != Bytecode::Invalid &&
-                rhs_is_small_number;
+            std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
+                kind.operator_kind, entry, children[1]);
 
-            if(kind.operator_kind == AstOperatorKind::LEFTSHIFT &&
-               use_binary_acc_smi)
-            {
-                int64_t shift_count =
-                    av.constants[children[1]].as_value().get_smi();
-                use_binary_acc_smi = shift_count >= 0 && shift_count < 64;
-            }
-
-            if(use_binary_acc_smi)
+            if(immediate.has_value())
             {
                 codegen_node(children[0], mode);
-                code_obj->emit_opcode_smi(
-                    source_offset, entry.binary_acc_smi,
-                    av.constants[children[1]].as_value().get_smi());
+                code_obj->emit_opcode_smi(source_offset, entry.binary_acc_smi,
+                                          *immediate);
             }
             else
             {
@@ -409,30 +423,17 @@ namespace cl
             }
 
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
-            bool rhs_is_small_number =
-                av.kinds[children[1]] == NumericalConstant &&
-                av.constants[children[1]].as_value().is_smi8();
-            bool use_binary_acc_smi =
-                entry.binary_acc_smi != Bytecode::Invalid &&
-                rhs_is_small_number;
-
-            if(kind.operator_kind == AstOperatorKind::LEFTSHIFT &&
-               use_binary_acc_smi)
-            {
-                int64_t shift_count =
-                    av.constants[children[1]].as_value().get_smi();
-                use_binary_acc_smi = shift_count >= 0 && shift_count < 64;
-            }
+            std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
+                kind.operator_kind, entry, children[1]);
 
             code_obj->emit_opcode_reg_constant_idx(
                 source_offset, Bytecode::LoadAttr, receiver_reg.reg,
                 constant_idx);
 
-            if(use_binary_acc_smi)
+            if(immediate.has_value())
             {
-                code_obj->emit_opcode_smi(
-                    source_offset, entry.binary_acc_smi,
-                    av.constants[children[1]].as_value().get_smi());
+                code_obj->emit_opcode_smi(source_offset, entry.binary_acc_smi,
+                                          *immediate);
             }
             else
             {
