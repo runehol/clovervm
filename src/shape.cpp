@@ -314,8 +314,7 @@ namespace cl
                 owner_class.as_value(), Value::from_oop(this),
                 next_slot_index + 1);
         next_shape->descriptors = descriptors;
-        next_shape->descriptors.emplace_back(name, next_slot_index,
-                                             storage_location);
+        next_shape->descriptors.emplace_back(name, storage_location);
         return next_shape;
     }
 

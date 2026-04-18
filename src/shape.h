@@ -157,15 +157,13 @@ namespace cl
         class PropertyDescriptor
         {
         public:
-            PropertyDescriptor(TValue<String> name, int32_t slot_index,
+            PropertyDescriptor(TValue<String> name,
                                StorageLocation storage_location)
-                : name(name), slot_index(slot_index),
-                  storage_location(storage_location)
+                : name(name), storage_location(storage_location)
             {
             }
 
             TValue<String> get_name() const { return name; }
-            int32_t get_slot_index() const { return slot_index; }
             StorageLocation get_storage_location() const
             {
                 return storage_location;
@@ -173,7 +171,6 @@ namespace cl
 
         private:
             OwnedTValue<String> name;
-            int32_t slot_index;
             StorageLocation storage_location;
         };
 
@@ -208,10 +205,6 @@ namespace cl
         TValue<String> get_property_name(uint32_t property_idx) const
         {
             return descriptors[property_idx].get_name();
-        }
-        int32_t get_property_slot_index(uint32_t property_idx) const
-        {
-            return descriptors[property_idx].get_slot_index();
         }
         StorageLocation
         get_property_storage_location(uint32_t property_idx) const

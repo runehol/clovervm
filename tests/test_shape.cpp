@@ -55,7 +55,6 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
 
     ASSERT_EQ(1u, shape_with_a->property_count());
     EXPECT_STREQ(L"a", shape_with_a->get_property_name(0).extract()->data);
-    EXPECT_EQ(0, shape_with_a->get_property_slot_index(0));
     EXPECT_EQ(StorageKind::Inline,
               shape_with_a->get_property_storage_location(0).kind);
     EXPECT_EQ(0, shape_with_a->get_property_storage_location(0).physical_idx);
@@ -64,8 +63,6 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
     ASSERT_EQ(2u, shape_with_ab->property_count());
     EXPECT_STREQ(L"a", shape_with_ab->get_property_name(0).extract()->data);
     EXPECT_STREQ(L"b", shape_with_ab->get_property_name(1).extract()->data);
-    EXPECT_EQ(0, shape_with_ab->get_property_slot_index(0));
-    EXPECT_EQ(1, shape_with_ab->get_property_slot_index(1));
     EXPECT_EQ(StorageKind::Inline,
               shape_with_ab->get_property_storage_location(1).kind);
     EXPECT_EQ(1, shape_with_ab->get_property_storage_location(1).physical_idx);
@@ -74,7 +71,6 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
 
     ASSERT_EQ(1u, shape_with_b->property_count());
     EXPECT_STREQ(L"b", shape_with_b->get_property_name(0).extract()->data);
-    EXPECT_EQ(1, shape_with_b->get_property_slot_index(0));
     EXPECT_EQ(shape_with_ab, shape_with_b->get_previous_shape());
     EXPECT_EQ(2, shape_with_b->get_next_slot_index());
 }
@@ -106,8 +102,6 @@ TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
     ASSERT_EQ(2u, shape_with_ba->property_count());
     EXPECT_STREQ(L"b", shape_with_ba->get_property_name(0).extract()->data);
     EXPECT_STREQ(L"a", shape_with_ba->get_property_name(1).extract()->data);
-    EXPECT_EQ(1, shape_with_ba->get_property_slot_index(0));
-    EXPECT_EQ(2, shape_with_ba->get_property_slot_index(1));
     EXPECT_EQ(StorageKind::Overflow,
               shape_with_ba->get_property_storage_location(1).kind);
     EXPECT_EQ(1, shape_with_ba->get_property_storage_location(1).physical_idx);
