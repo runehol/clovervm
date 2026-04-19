@@ -67,12 +67,7 @@ and some runtime behavior is intentionally narrow.
 ## Benchmarking
 
 The repository includes Google Benchmark-based microbenchmarks that run both
-clovervm and CPython on the same workloads:
-
-- Recursive Fibonacci.
-- A `while` loop accumulator.
-- A `for x in range(...)` loop accumulator.
-- A nested `for` loop accumulator.
+clovervm and CPython on the same workloads.
 
 Build and run them with:
 

@@ -420,30 +420,21 @@ namespace
         return total;
     }
 
-    int64_t class_method_loop_value(int64_t n)
-    {
-        static constexpr int64_t kScale = 3;
-        static constexpr int64_t kBias = 5;
+    int64_t class_instantiation_value(int64_t n) { return n; }
 
+    int64_t instance_attribute_write_value(int64_t n)
+    {
         int64_t total = 0;
         for(int64_t i = 0; i < n; ++i)
         {
-            int64_t seed = i;
-            int64_t instance_total = i;
-
-            int64_t local0 = i + seed;
-            instance_total += local0 * kScale + kBias;
-            total += instance_total;
-
-            int64_t local1 = (i + 1) + seed;
-            instance_total += local1 * kScale + kBias;
-            total += instance_total;
-
-            total += kBias;
+            int64_t left = i;
+            int64_t right = i + 1;
+            total += left + right;
         }
-
         return total;
     }
+
+    int64_t method_call_value(int64_t n) { return triangular_number(n) + n; }
 }  // namespace
 
 template <typename Program>
@@ -513,15 +504,41 @@ BENCHMARK_TEMPLATE(BM_NestedForLoop, CloverProgram)
     ->Arg(100000);
 
 template <typename Program>
-static void BM_ClassMethodLoop(benchmark::State &state)
+static void BM_ClassInstantiation(benchmark::State &state)
 {
     const int64_t iterations = state.range(0);
-    run_benchmark_case<Program>(state, "benchmark/class_method_loop.py",
-                                iterations, class_method_loop_value(iterations),
-                                iterations);
+    run_benchmark_case<Program>(
+        state, "benchmark/class_instantiation.py", iterations,
+        class_instantiation_value(iterations), iterations);
 }
-BENCHMARK_TEMPLATE(BM_ClassMethodLoop, CloverProgram)
-    ->Name("BM_ClassMethodLoop")
+BENCHMARK_TEMPLATE(BM_ClassInstantiation, CloverProgram)
+    ->Name("BM_ClassInstantiation")
+    ->Arg(1000)
+    ->Arg(10000)
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_InstanceAttributeWrite(benchmark::State &state)
+{
+    const int64_t iterations = state.range(0);
+    run_benchmark_case<Program>(
+        state, "benchmark/instance_attribute_write.py", iterations,
+        instance_attribute_write_value(iterations), iterations);
+}
+BENCHMARK_TEMPLATE(BM_InstanceAttributeWrite, CloverProgram)
+    ->Name("BM_InstanceAttributeWrite")
+    ->Arg(1000)
+    ->Arg(10000)
+    ->Arg(100000);
+
+template <typename Program> static void BM_MethodCall(benchmark::State &state)
+{
+    const int64_t iterations = state.range(0);
+    run_benchmark_case<Program>(state, "benchmark/method_call.py", iterations,
+                                method_call_value(iterations), iterations);
+}
+BENCHMARK_TEMPLATE(BM_MethodCall, CloverProgram)
+    ->Name("BM_MethodCall")
     ->Arg(1000)
     ->Arg(10000)
     ->Arg(100000);
