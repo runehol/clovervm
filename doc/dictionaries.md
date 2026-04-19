@@ -43,6 +43,14 @@ Scopes:
 - open probe hash table to insertion order table
 - insertion order table
 
+Status note:
+
+- the VM-managed array substrate and scope-specific split storage have now
+  landed
+- `Scope` no longer uses `std::vector`
+- the remaining work here is to build full dictionary payloads and mapping
+  behavior on top of that substrate
+
 The insertion order table should contain:
 
 - `CLValue` key

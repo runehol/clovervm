@@ -115,7 +115,6 @@ The slot itself also carries the metadata needed for slot-addressed mutation:
 
 - canonical slot name for named namespace slots
 - current ordered-entry index
-- auxiliary cold metadata such as `extra`
 
 This means the effective lookup shape for scopes is:
 
@@ -477,14 +476,14 @@ It is closest to the shared ordered-hash-table substrate:
 
 Its current limitations are:
 
-- uses `std::vector`
+- still models only string-keyed indirection rather than a full dict payload
 - only stores keys and slot indices indirectly through external structures
 - does not express the final delete/reinsert semantics directly
 - does not represent Python dict payloads
 - does not represent shape transition semantics
 
-The direction should be to replace its storage substrate with VM-managed arrays
-and then specialize upward from there, rather than stretching it into a single
+Its VM-managed storage substrate is now in place, so the remaining direction is
+to specialize upward from there rather than stretching it into a single
 universal dictionary type.
 
 For `Scope`, that specialization has now effectively happened in-place:
@@ -507,11 +506,13 @@ scopes:
 - reinsertion reuses the original slot and appends a fresh ordered entry
 - slot-addressed stores can revive deleted bindings correctly
 - slot storage is split into hot value cells and cold metadata
+- `Scope` backing storage now uses VM-managed arrays instead of `std::vector`
+- `IndirectDict` backing storage now uses VM-managed arrays instead of
+  `std::vector`
 - tracked-but-never-bound names may have a slot with no ordered entry yet
 
 What remains for scope-related work is mostly cleanup and follow-on layering:
 
-- replace `std::vector` backing storage with VM-managed arrays
 - decide how future mapping views should iterate and filter scope entries
 - keep the slot/entry invariants clear as object-model work lands
 
@@ -543,21 +544,18 @@ What remains for shape-related work is now above the raw storage layer:
 
 ## Near-Term Implementation Plan
 
-1. Add the VM-managed storage support needed for variable-sized runtime
-   objects.
-2. Replace current scope backing storage with VM-managed storage.
-3. Preserve the current `name -> slot` probe-table shape for scope lookup.
-4. Keep explicit ordered scope entries distinct from slot storage so logical
+1. Preserve the current `name -> slot` probe-table shape for scope lookup.
+2. Keep explicit ordered scope entries distinct from slot storage so logical
    insertion order remains decoupled from stable slot identity.
-5. Keep slot metadata rich enough to support slot-addressed revival and parent
+3. Keep slot metadata rich enough to support slot-addressed revival and parent
    lookup without repeated name probing.
-6. Keep scope ordering and slot identity decoupled so a future `globals()` view
+4. Keep scope ordering and slot identity decoupled so a future `globals()` view
    can present dict-like iteration behavior without disturbing compiled slot
    identity.
-7. Keep `Shape` as a single immutable contiguous allocation containing ordered
+5. Keep `Shape` as a single immutable contiguous allocation containing ordered
    property names and packed storage metadata, with transition caches growing
    separately.
-8. Preserve logical property order separately from physical storage choices so
+6. Preserve logical property order separately from physical storage choices so
    a future `obj.__dict__` view can present dict-like behavior without forcing
    unnecessary object-storage churn.
 9. Implement Python `dict` separately, with full Python key, hash, equality,

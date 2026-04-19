@@ -20,8 +20,8 @@ tracks the most reasonable next steps after reviewing the current codebase,
   Where: class call/instantiation runtime path, method lookup/call helpers,
   `tests/test_interpreter.cpp`.
 
-- [ ] Build the namespace/mapping substrate + VM-managed arrays (foundation layer)
-      Why: Current IndirectDict and Scope still rely on std::vector with a TODO calling out conversion to CL arrays. Almost every major next feature (dict literals, better globals/builtins behavior, object mapping views) depends on these invariants being real instead of aspirational.
+- [x] Build the namespace/mapping substrate + VM-managed arrays (foundation layer)
+      Why: This was the prerequisite for making namespace-like storage real instead of aspirational. `RawArray<T>` / `ValueArray<T>` now back `IndirectDict` and `Scope`, and `Scope` now uses the slot-centered parallel-array shape described in the design docs rather than `std::vector`.
 
 - [ ] Implement list/dict types and literals + subscripting end-to-end (next language unlock)
       Why: Gives immediate practical expressiveness (most Python-ish programs need containers). Creates pressure to harden object model/mappings in realistic ways (good pressure). Enables richer benchmark workloads that matter.
@@ -101,4 +101,3 @@ tracks the most reasonable next steps after reviewing the current codebase,
   multiply the number of refcounted heap paths. It is worth locking down the
   invariants early instead of retrofitting them after object graphs get larger.
   Where: memory-management docs, `src/refcount.h`, allocator and object tests.
-
