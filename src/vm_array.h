@@ -136,12 +136,14 @@ namespace cl
         iterator end() { return data() + size(); }
         const_iterator end() const { return data() + size(); }
 
+        T &get(size_t idx) { return (*this)[idx]; }
         T &operator[](size_t idx)
         {
             assert(idx < size());
             return data()[idx];
         }
 
+        const T &get(size_t idx) const { return (*this)[idx]; }
         const T &operator[](size_t idx) const
         {
             assert(idx < size());
@@ -227,6 +229,12 @@ namespace cl
                 new(data() + idx) T(value);
             }
             set_size(requested_size);
+        }
+
+        void set(size_t idx, const T &value)
+        {
+            assert(idx < size());
+            data()[idx] = value;
         }
 
         template <typename... Args> T &emplace_back(Args &&...args)
@@ -318,7 +326,6 @@ namespace cl
 
         using value_type = T;
         using size_type = size_t;
-        using iterator = T *;
         using const_iterator = const T *;
 
         ValueArray()
@@ -353,13 +360,6 @@ namespace cl
 
         bool empty() const { return size() == 0; }
 
-        T *data()
-        {
-            return backing == Value::None()
-                       ? nullptr
-                       : reinterpret_cast<T *>(backing_ptr()->elements);
-        }
-
         const T *data() const
         {
             return backing == Value::None()
@@ -367,42 +367,24 @@ namespace cl
                        : reinterpret_cast<const T *>(backing_ptr()->elements);
         }
 
-        iterator begin() { return data(); }
         const_iterator begin() const { return data(); }
-        iterator end() { return data() + size(); }
         const_iterator end() const { return data() + size(); }
 
-        T &operator[](size_t idx)
+        T get(size_t idx) const { return (*this)[idx]; }
+
+        T operator[](size_t idx) const
         {
             assert(idx < size());
             return data()[idx];
         }
 
-        const T &operator[](size_t idx) const
-        {
-            assert(idx < size());
-            return data()[idx];
-        }
-
-        T &front()
+        T front() const
         {
             assert(!empty());
             return (*this)[0];
         }
 
-        const T &front() const
-        {
-            assert(!empty());
-            return (*this)[0];
-        }
-
-        T &back()
-        {
-            assert(!empty());
-            return (*this)[size() - 1];
-        }
-
-        const T &back() const
+        T back() const
         {
             assert(!empty());
             return (*this)[size() - 1];
@@ -467,7 +449,7 @@ namespace cl
             reserve(requested_size);
             while(current_size < requested_size)
             {
-                T *slot = data() + current_size;
+                T *slot = mutable_data() + current_size;
                 new(slot) T(value);
                 incref_element(slot);
                 ++current_size;
@@ -475,16 +457,16 @@ namespace cl
             set_size(current_size);
         }
 
-        void set(size_t idx, const T &value)
+        void set(size_t idx, T value)
         {
             assert(idx < size());
-            T *slot = data() + idx;
+            T *slot = mutable_data() + idx;
             clear_element(slot);
             new(slot) T(value);
             incref_element(slot);
         }
 
-        template <typename... Args> T &emplace_back(Args &&...args)
+        template <typename... Args> T emplace_back(Args &&...args)
         {
             size_t current_size = size();
             if(current_size == capacity())
@@ -492,7 +474,7 @@ namespace cl
                 reserve(detail::grown_capacity(capacity(), current_size + 1));
             }
 
-            T *slot = data() + current_size;
+            T *slot = mutable_data() + current_size;
             new(slot) T(std::forward<Args>(args)...);
             incref_element(slot);
             set_size(current_size + 1);
@@ -510,6 +492,13 @@ namespace cl
         static const Value *element_cells(const T *element)
         {
             return reinterpret_cast<const Value *>(element);
+        }
+
+        T *mutable_data()
+        {
+            return backing == Value::None()
+                       ? nullptr
+                       : reinterpret_cast<T *>(backing_ptr()->elements);
         }
 
         static void incref_element(T *element)
@@ -540,7 +529,7 @@ namespace cl
 
             for(size_t idx = start_idx; idx < end_idx; ++idx)
             {
-                clear_element(data() + idx);
+                clear_element(mutable_data() + idx);
             }
         }
 
