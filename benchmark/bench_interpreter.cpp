@@ -450,8 +450,8 @@ template <typename Program>
 static void BM_RecursiveFibonacci(benchmark::State &state)
 {
     const int64_t n = state.range(0);
-    run_benchmark_case<Program>(state, "benchmark/interpreter_recursive_fib.py",
-                                n, fibonacci_value(n), fibonacci_call_count(n));
+    run_benchmark_case<Program>(state, "benchmark/recursive_fib.py", n,
+                                fibonacci_value(n), fibonacci_call_count(n));
 }
 BENCHMARK_TEMPLATE(BM_RecursiveFibonacci, CloverProgram)
     ->Name("BM_RecursiveFibonacci")
@@ -461,9 +461,8 @@ BENCHMARK_TEMPLATE(BM_RecursiveFibonacci, CloverProgram)
 template <typename Program> static void BM_WhileLoop(benchmark::State &state)
 {
     const int64_t iterations = state.range(0);
-    run_benchmark_case<Program>(state, "benchmark/interpreter_while_loop.py",
-                                iterations, triangular_number(iterations),
-                                iterations);
+    run_benchmark_case<Program>(state, "benchmark/while_loop.py", iterations,
+                                triangular_number(iterations), iterations);
 }
 BENCHMARK_TEMPLATE(BM_WhileLoop, CloverProgram)
     ->Name("BM_WhileLoop")
@@ -474,9 +473,8 @@ BENCHMARK_TEMPLATE(BM_WhileLoop, CloverProgram)
 template <typename Program> static void BM_ForLoop(benchmark::State &state)
 {
     const int64_t iterations = state.range(0);
-    run_benchmark_case<Program>(state, "benchmark/interpreter_for_loop.py",
-                                iterations, triangular_number(iterations),
-                                iterations);
+    run_benchmark_case<Program>(state, "benchmark/for_loop.py", iterations,
+                                triangular_number(iterations), iterations);
 }
 BENCHMARK_TEMPLATE(BM_ForLoop, CloverProgram)
     ->Name("BM_ForLoop")
@@ -488,9 +486,9 @@ template <typename Program>
 static void BM_ForLoopSlowPath(benchmark::State &state)
 {
     const int64_t iterations = state.range(0);
-    run_benchmark_case<Program>(
-        state, "benchmark/interpreter_for_loop_slow_path.py", iterations,
-        triangular_number(iterations), iterations);
+    run_benchmark_case<Program>(state, "benchmark/for_loop_slow_path.py",
+                                iterations, triangular_number(iterations),
+                                iterations);
 }
 BENCHMARK_TEMPLATE(BM_ForLoopSlowPath, CloverProgram)
     ->Name("BM_ForLoopSlowPath")
@@ -503,10 +501,10 @@ static void BM_NestedForLoop(benchmark::State &state)
 {
     const int64_t iterations = state.range(0);
     static constexpr int64_t kInnerIterations = 10;
-    run_benchmark_case<Program>(
-        state, "benchmark/interpreter_nested_for_loop.py", iterations,
-        sum_of_products(iterations, kInnerIterations),
-        iterations * kInnerIterations);
+    run_benchmark_case<Program>(state, "benchmark/nested_for_loop.py",
+                                iterations,
+                                sum_of_products(iterations, kInnerIterations),
+                                iterations * kInnerIterations);
 }
 BENCHMARK_TEMPLATE(BM_NestedForLoop, CloverProgram)
     ->Name("BM_NestedForLoop")
@@ -518,9 +516,9 @@ template <typename Program>
 static void BM_ClassMethodLoop(benchmark::State &state)
 {
     const int64_t iterations = state.range(0);
-    run_benchmark_case<Program>(
-        state, "benchmark/interpreter_class_method_loop.py", iterations,
-        class_method_loop_value(iterations), iterations);
+    run_benchmark_case<Program>(state, "benchmark/class_method_loop.py",
+                                iterations, class_method_loop_value(iterations),
+                                iterations);
 }
 BENCHMARK_TEMPLATE(BM_ClassMethodLoop, CloverProgram)
     ->Name("BM_ClassMethodLoop")
