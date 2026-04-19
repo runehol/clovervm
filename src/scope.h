@@ -94,7 +94,7 @@ namespace cl
             {
                 revive_slot(slot_idx);
             }
-            slot_values[slot_idx] = val;
+            slot_values.set(slot_idx, val);
         }
 
         void reserve_empty_slots(size_t n_slots);
@@ -162,7 +162,13 @@ namespace cl
         RawArray<int32_t> slot_current_entry_indices;
 
     public:
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Scope, parent_scope, 1);
+        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(
+            Scope, parent_scope,
+            1 + decltype(name_table)::embedded_value_count +
+                decltype(entries)::embedded_value_count +
+                decltype(slot_values)::embedded_value_count +
+                decltype(slot_names)::embedded_value_count +
+                decltype(slot_current_entry_indices)::embedded_value_count);
     };
 
 };  // namespace cl

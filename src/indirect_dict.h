@@ -46,7 +46,10 @@ namespace cl
         ValueArray<Value> keys;
 
     public:
-        CL_DECLARE_STATIC_LAYOUT_NO_VALUES(IndirectDict);
+        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(
+            IndirectDict, hash_table,
+            decltype(hash_table)::embedded_value_count +
+                decltype(keys)::embedded_value_count);
     };
 
 };  // namespace cl

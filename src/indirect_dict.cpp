@@ -88,8 +88,7 @@ namespace cl
     void IndirectDict::grow()
     {
         // make one that's twice the size
-        RawArray<int32_t> new_hash_table(hash_table.size() * 2, -1);
-        std::swap(hash_table, new_hash_table);
+        hash_table.assign(hash_table.size() * 2, -1);
 
         // and then just insert all the keys again
         for(int32_t idx = 0; idx < int32_t(keys.size()); ++idx)

@@ -3,7 +3,8 @@
 
 #include "klass.h"
 #include "object.h"
-#include "refcount.h"
+#include "owned.h"
+#include "owned_typed_value.h"
 #include "thread_state.h"
 #include "typed_value.h"
 #include "value.h"
@@ -19,23 +20,22 @@ namespace cl
 {
     namespace detail
     {
-        inline uint32_t checked_array_size(size_t size)
+        inline size_t checked_array_size(size_t size)
         {
-            assert(size <= uint32_t(-1));
-            return static_cast<uint32_t>(size);
+            assert(size <= static_cast<size_t>(INT64_MAX >> value_tag_bits));
+            return size;
         }
 
-        inline uint32_t grown_capacity(uint32_t current_capacity,
-                                       uint32_t minimum_capacity)
+        inline size_t grown_capacity(size_t current_capacity,
+                                     size_t minimum_capacity)
         {
-            uint64_t grown =
-                current_capacity == 0 ? 1 : uint64_t(current_capacity) * 2;
+            size_t grown = current_capacity == 0 ? 1 : current_capacity * 2;
             if(grown < minimum_capacity)
             {
                 grown = minimum_capacity;
             }
-            assert(grown <= uint32_t(-1));
-            return static_cast<uint32_t>(grown);
+            assert(grown <= static_cast<size_t>(INT64_MAX >> value_tag_bits));
+            return grown;
         }
     }  // namespace detail
 
@@ -52,19 +52,19 @@ namespace cl
             using Storage = std::aligned_storage_t<sizeof(T), alignof(T)>;
             static constexpr Klass klass = Klass(L"RawArrayBacking", nullptr);
 
-            explicit Backing(uint32_t capacity) : Object(&klass)
+            explicit Backing(size_t capacity) : Object(&klass)
             {
                 (void)capacity;
             }
 
-            static size_t size_for(uint32_t capacity)
+            static size_t size_for(size_t capacity)
             {
                 assert(capacity >= 1);
                 return sizeof(Backing) + sizeof(Storage) * capacity -
                        sizeof(Storage);
             }
 
-            static DynamicLayoutSpec layout_spec_for(uint32_t capacity)
+            static DynamicLayoutSpec layout_spec_for(size_t capacity)
             {
                 return DynamicLayoutSpec{
                     round_up_to_16byte_units(size_for(capacity)), 0};
@@ -78,76 +78,73 @@ namespace cl
         static_assert(std::is_trivially_destructible_v<Backing>);
 
     public:
+        static constexpr uint64_t embedded_value_count = 3;
+
         using value_type = T;
         using size_type = size_t;
         using iterator = T *;
         using const_iterator = const T *;
 
-        RawArray() = default;
-
-        explicit RawArray(size_t count) { resize(count); }
-
-        RawArray(size_t count, const T &value) { resize(count, value); }
-
-        RawArray(RawArray &&other) noexcept
-            : backing_(other.backing_), size_(other.size_),
-              capacity_(other.capacity_)
+        RawArray()
+            : size_value(Value::from_smi(0)),
+              capacity_value(Value::from_smi(0)), backing(Value::None())
         {
-            other.backing_ = Value::None();
-            other.size_ = 0;
-            other.capacity_ = 0;
         }
 
-        RawArray &operator=(RawArray &&other) noexcept
+        explicit RawArray(size_t count) : RawArray() { resize(count); }
+
+        RawArray(size_t count, const T &value) : RawArray()
         {
-            if(this != &other)
-            {
-                decref(backing_);
-                backing_ = other.backing_;
-                size_ = other.size_;
-                capacity_ = other.capacity_;
-                other.backing_ = Value::None();
-                other.size_ = 0;
-                other.capacity_ = 0;
-            }
-            return *this;
+            resize(count, value);
         }
 
         RawArray(const RawArray &) = delete;
         RawArray &operator=(const RawArray &) = delete;
+        RawArray(RawArray &&) = delete;
+        RawArray &operator=(RawArray &&) = delete;
 
-        ~RawArray() { decref(backing_); }
+        size_t size() const { return static_cast<size_t>(len().extract()); }
 
-        size_t size() const { return size_; }
-        size_t capacity() const { return capacity_; }
-        bool empty() const { return size_ == 0; }
+        TValue<SMI> len() const
+        {
+            return TValue<SMI>::unsafe_unchecked(size_value.as_value());
+        }
+
+        size_t capacity() const
+        {
+            return static_cast<size_t>(capacity_value.extract());
+        }
+
+        bool empty() const { return size() == 0; }
 
         T *data()
         {
-            return backing_ == Value::None()
+            return backing == Value::None()
                        ? nullptr
                        : reinterpret_cast<T *>(backing_ptr()->elements);
         }
+
         const T *data() const
         {
-            return backing_ == Value::None()
+            return backing == Value::None()
                        ? nullptr
                        : reinterpret_cast<const T *>(backing_ptr()->elements);
         }
 
         iterator begin() { return data(); }
         const_iterator begin() const { return data(); }
-        iterator end() { return data() + size_; }
-        const_iterator end() const { return data() + size_; }
+        iterator end() { return data() + size(); }
+        const_iterator end() const { return data() + size(); }
 
         T &operator[](size_t idx)
         {
-            assert(idx < size_);
+            assert(idx < size());
             return data()[idx];
         }
+
         const T &operator[](size_t idx) const
         {
-            assert(idx < size_);
+            assert(idx < size());
             return data()[idx];
         }
 
@@ -156,6 +153,7 @@ namespace cl
             assert(!empty());
             return (*this)[0];
         }
+
         const T &front() const
         {
             assert(!empty());
@@ -165,21 +163,22 @@ namespace cl
         T &back()
         {
             assert(!empty());
-            return (*this)[size_ - 1];
+            return (*this)[size() - 1];
         }
+
         const T &back() const
         {
             assert(!empty());
-            return (*this)[size_ - 1];
+            return (*this)[size() - 1];
         }
 
-        void clear() { size_ = 0; }
+        void clear() { set_size(0); }
 
         void reserve(size_t new_capacity)
         {
-            uint32_t requested_capacity =
+            size_t requested_capacity =
                 detail::checked_array_size(new_capacity);
-            if(requested_capacity <= capacity_)
+            if(requested_capacity <= capacity())
             {
                 return;
             }
@@ -188,60 +187,87 @@ namespace cl
                 ThreadState::get_active()->make_refcounted_raw<Backing>(
                     requested_capacity);
             T *new_data = reinterpret_cast<T *>(new_backing->elements);
-            for(uint32_t idx = 0; idx < size_; ++idx)
+            size_t current_size = size();
+            for(size_t idx = 0; idx < current_size; ++idx)
             {
                 new(new_data + idx) T((*this)[idx]);
             }
 
-            Value old_backing = backing_;
-            backing_ = incref(Value::from_oop(new_backing));
-            capacity_ = requested_capacity;
-            decref(old_backing);
+            backing = Value::from_oop(new_backing);
+            set_capacity(requested_capacity);
         }
 
         void resize(size_t new_size) { resize(new_size, T()); }
 
         void resize(size_t new_size, const T &value)
         {
-            uint32_t requested_size = detail::checked_array_size(new_size);
-            if(requested_size < size_)
+            size_t requested_size = detail::checked_array_size(new_size);
+            size_t current_size = size();
+            if(requested_size < current_size)
             {
-                size_ = requested_size;
+                set_size(requested_size);
                 return;
             }
 
             reserve(requested_size);
-            while(size_ < requested_size)
+            while(current_size < requested_size)
             {
-                new(data() + size_) T(value);
-                ++size_;
+                new(data() + current_size) T(value);
+                ++current_size;
             }
+            set_size(current_size);
+        }
+
+        void assign(size_t count, const T &value)
+        {
+            size_t requested_size = detail::checked_array_size(count);
+            reserve(requested_size);
+            for(size_t idx = 0; idx < requested_size; ++idx)
+            {
+                new(data() + idx) T(value);
+            }
+            set_size(requested_size);
         }
 
         template <typename... Args> T &emplace_back(Args &&...args)
         {
-            if(size_ == capacity_)
+            size_t current_size = size();
+            if(current_size == capacity())
             {
-                reserve(detail::grown_capacity(capacity_, size_ + 1));
+                reserve(detail::grown_capacity(capacity(), current_size + 1));
             }
 
-            new(data() + size_) T(std::forward<Args>(args)...);
-            ++size_;
+            new(data() + current_size) T(std::forward<Args>(args)...);
+            set_size(current_size + 1);
             return back();
         }
 
         void push_back(const T &value) { emplace_back(value); }
 
     private:
-        Backing *backing_ptr() { return backing_.get_ptr<Backing>(); }
-        const Backing *backing_ptr() const
+        void set_size(size_t new_size)
         {
-            return backing_.get_ptr<Backing>();
+            size_value = Value::from_smi(static_cast<int64_t>(new_size));
         }
 
-        Value backing_ = Value::None();
-        uint32_t size_ = 0;
-        uint32_t capacity_ = 0;
+        void set_capacity(size_t new_capacity)
+        {
+            capacity_value =
+                Value::from_smi(static_cast<int64_t>(new_capacity));
+        }
+
+        Backing *backing_ptr()
+        {
+            return backing.as_value().template get_ptr<Backing>();
+        }
+        const Backing *backing_ptr() const
+        {
+            return backing.as_value().template get_ptr<Backing>();
+        }
+
+        MemberTValue<SMI> size_value;
+        MemberTValue<SMI> capacity_value;
+        MemberValue backing;
     };
 
     template <typename T> class ValueArray
@@ -260,12 +286,12 @@ namespace cl
         public:
             static constexpr Klass klass = Klass(L"ValueArrayBacking", nullptr);
 
-            explicit Backing(uint32_t capacity) : Object(&klass)
+            explicit Backing(size_t capacity) : Object(&klass)
             {
                 (void)capacity;
             }
 
-            static size_t size_for(uint32_t capacity)
+            static size_t size_for(size_t capacity)
             {
                 assert(capacity >= 1);
                 return sizeof(Backing) +
@@ -273,7 +299,7 @@ namespace cl
                        sizeof(Value);
             }
 
-            static DynamicLayoutSpec layout_spec_for(uint32_t capacity)
+            static DynamicLayoutSpec layout_spec_for(size_t capacity)
             {
                 return DynamicLayoutSpec{
                     round_up_to_16byte_units(size_for(capacity)),
@@ -288,81 +314,73 @@ namespace cl
         static_assert(std::is_trivially_destructible_v<Backing>);
 
     public:
+        static constexpr uint64_t embedded_value_count = 3;
+
         using value_type = T;
         using size_type = size_t;
         using iterator = T *;
         using const_iterator = const T *;
 
-        ValueArray() = default;
-
-        explicit ValueArray(size_t count) { resize(count); }
-
-        ValueArray(size_t count, const T &value) { resize(count, value); }
-
-        ValueArray(ValueArray &&other) noexcept
-            : backing_(other.backing_), size_(other.size_),
-              capacity_(other.capacity_)
+        ValueArray()
+            : size_value(Value::from_smi(0)),
+              capacity_value(Value::from_smi(0)), backing(Value::None())
         {
-            other.backing_ = Value::None();
-            other.size_ = 0;
-            other.capacity_ = 0;
         }
 
-        ValueArray &operator=(ValueArray &&other) noexcept
+        explicit ValueArray(size_t count) : ValueArray() { resize(count); }
+
+        ValueArray(size_t count, const T &value) : ValueArray()
         {
-            if(this != &other)
-            {
-                clear();
-                decref(backing_);
-                backing_ = other.backing_;
-                size_ = other.size_;
-                capacity_ = other.capacity_;
-                other.backing_ = Value::None();
-                other.size_ = 0;
-                other.capacity_ = 0;
-            }
-            return *this;
+            resize(count, value);
         }
 
         ValueArray(const ValueArray &) = delete;
         ValueArray &operator=(const ValueArray &) = delete;
+        ValueArray(ValueArray &&) = delete;
+        ValueArray &operator=(ValueArray &&) = delete;
 
-        ~ValueArray()
+        size_t size() const { return static_cast<size_t>(len().extract()); }
+
+        TValue<SMI> len() const
         {
-            clear();
-            decref(backing_);
+            return TValue<SMI>::unsafe_unchecked(size_value.as_value());
         }
 
-        size_t size() const { return size_; }
-        size_t capacity() const { return capacity_; }
-        bool empty() const { return size_ == 0; }
+        size_t capacity() const
+        {
+            return static_cast<size_t>(capacity_value.extract());
+        }
+
+        bool empty() const { return size() == 0; }
 
         T *data()
         {
-            return backing_ == Value::None()
+            return backing == Value::None()
                        ? nullptr
                        : reinterpret_cast<T *>(backing_ptr()->elements);
         }
+
         const T *data() const
         {
-            return backing_ == Value::None()
+            return backing == Value::None()
                        ? nullptr
                        : reinterpret_cast<const T *>(backing_ptr()->elements);
         }
 
         iterator begin() { return data(); }
         const_iterator begin() const { return data(); }
-        iterator end() { return data() + size_; }
-        const_iterator end() const { return data() + size_; }
+        iterator end() { return data() + size(); }
+        const_iterator end() const { return data() + size(); }
 
         T &operator[](size_t idx)
         {
-            assert(idx < size_);
+            assert(idx < size());
             return data()[idx];
         }
+
         const T &operator[](size_t idx) const
         {
-            assert(idx < size_);
+            assert(idx < size());
             return data()[idx];
         }
 
@@ -371,6 +389,7 @@ namespace cl
             assert(!empty());
             return (*this)[0];
         }
+
         const T &front() const
         {
             assert(!empty());
@@ -380,25 +399,26 @@ namespace cl
         T &back()
         {
             assert(!empty());
-            return (*this)[size_ - 1];
+            return (*this)[size() - 1];
         }
+
         const T &back() const
         {
             assert(!empty());
-            return (*this)[size_ - 1];
+            return (*this)[size() - 1];
         }
 
         void clear()
         {
-            clear_elements(0, size_);
-            size_ = 0;
+            clear_elements(0, size());
+            set_size(0);
         }
 
         void reserve(size_t new_capacity)
         {
-            uint32_t requested_capacity =
+            size_t requested_capacity =
                 detail::checked_array_size(new_capacity);
-            if(requested_capacity <= capacity_)
+            if(requested_capacity <= capacity())
             {
                 return;
             }
@@ -411,19 +431,20 @@ namespace cl
                             values_per_element);
 
             T *new_data = reinterpret_cast<T *>(new_backing->elements);
-            for(uint32_t idx = 0; idx < size_; ++idx)
+            size_t current_size = size();
+            for(size_t idx = 0; idx < current_size; ++idx)
             {
                 new(new_data + idx) T((*this)[idx]);
+                incref_element(new_data + idx);
             }
 
-            Value old_backing = backing_;
-            if(old_backing != Value::None())
+            if(backing != Value::None())
             {
-                object_clear_value_ownership(old_backing.get_ptr<Object>());
+                object_clear_value_ownership(
+                    backing.as_value().template get_ptr<Object>());
             }
-            backing_ = incref(Value::from_oop(new_backing));
-            capacity_ = requested_capacity;
-            decref(old_backing);
+            backing = Value::from_oop(new_backing);
+            set_capacity(requested_capacity);
         }
 
         void resize(size_t new_size)
@@ -434,36 +455,48 @@ namespace cl
 
         void resize(size_t new_size, const T &value)
         {
-            uint32_t requested_size = detail::checked_array_size(new_size);
-            if(requested_size < size_)
+            size_t requested_size = detail::checked_array_size(new_size);
+            size_t current_size = size();
+            if(requested_size < current_size)
             {
-                clear_elements(requested_size, size_);
-                size_ = requested_size;
+                clear_elements(requested_size, current_size);
+                set_size(requested_size);
                 return;
             }
 
             reserve(requested_size);
-            while(size_ < requested_size)
+            while(current_size < requested_size)
             {
-                T *slot = data() + size_;
+                T *slot = data() + current_size;
                 new(slot) T(value);
                 incref_element(slot);
-                ++size_;
+                ++current_size;
             }
+            set_size(current_size);
+        }
+
+        void set(size_t idx, const T &value)
+        {
+            assert(idx < size());
+            T *slot = data() + idx;
+            clear_element(slot);
+            new(slot) T(value);
+            incref_element(slot);
         }
 
         template <typename... Args> T &emplace_back(Args &&...args)
         {
-            if(size_ == capacity_)
+            size_t current_size = size();
+            if(current_size == capacity())
             {
-                reserve(detail::grown_capacity(capacity_, size_ + 1));
+                reserve(detail::grown_capacity(capacity(), current_size + 1));
             }
 
-            T *slot = data() + size_;
+            T *slot = data() + current_size;
             new(slot) T(std::forward<Args>(args)...);
             incref_element(slot);
-            ++size_;
-            return back();
+            set_size(current_size + 1);
+            return *slot;
         }
 
         void push_back(const T &value) { emplace_back(value); }
@@ -498,28 +531,42 @@ namespace cl
             }
         }
 
-        void clear_elements(uint32_t start_idx, uint32_t end_idx)
+        void clear_elements(size_t start_idx, size_t end_idx)
         {
-            if(backing_ == Value::None())
+            if(backing == Value::None())
             {
                 return;
             }
 
-            for(uint32_t idx = start_idx; idx < end_idx; ++idx)
+            for(size_t idx = start_idx; idx < end_idx; ++idx)
             {
                 clear_element(data() + idx);
             }
         }
 
-        Backing *backing_ptr() { return backing_.get_ptr<Backing>(); }
-        const Backing *backing_ptr() const
+        void set_size(size_t new_size)
         {
-            return backing_.get_ptr<Backing>();
+            size_value = Value::from_smi(static_cast<int64_t>(new_size));
         }
 
-        Value backing_ = Value::None();
-        uint32_t size_ = 0;
-        uint32_t capacity_ = 0;
+        void set_capacity(size_t new_capacity)
+        {
+            capacity_value =
+                Value::from_smi(static_cast<int64_t>(new_capacity));
+        }
+
+        Backing *backing_ptr()
+        {
+            return backing.as_value().template get_ptr<Backing>();
+        }
+        const Backing *backing_ptr() const
+        {
+            return backing.as_value().template get_ptr<Backing>();
+        }
+
+        MemberTValue<SMI> size_value;
+        MemberTValue<SMI> capacity_value;
+        MemberValue backing;
     };
 
 }  // namespace cl

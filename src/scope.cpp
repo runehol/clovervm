@@ -42,9 +42,7 @@ namespace cl
 
     void Scope::grow_name_table()
     {
-        RawArray<int32_t> new_name_table(name_table.size() * 2,
-                                         hash_not_present);
-        std::swap(name_table, new_name_table);
+        name_table.assign(name_table.size() * 2, hash_not_present);
 
         for(int32_t entry_idx = 0; entry_idx < int32_t(entries.size());
             ++entry_idx)
