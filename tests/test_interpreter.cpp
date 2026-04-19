@@ -448,6 +448,85 @@ TEST(Interpreter, subscript_load_rejects_non_subscriptable_receiver)
     expect_runtime_error(L"1[0]\n", "TypeError: object is not subscriptable");
 }
 
+TEST(Interpreter, attribute_load_through_list_subscript)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    pass\n"
+                                 L"obj = Cls()\n"
+                                 L"obj.value = 7\n"
+                                 L"lst = [obj]\n"
+                                 L"lst[0].value\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(7), actual);
+}
+
+TEST(Interpreter, attribute_store_through_list_subscript)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    pass\n"
+                                 L"obj = Cls()\n"
+                                 L"obj.value = 7\n"
+                                 L"lst = [obj]\n"
+                                 L"lst[0].value = 11\n"
+                                 L"obj.value\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(11), actual);
+}
+
+TEST(Interpreter, attribute_augmented_assignment_through_list_subscript)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    pass\n"
+                                 L"obj = Cls()\n"
+                                 L"obj.value = 7\n"
+                                 L"lst = [obj]\n"
+                                 L"lst[0].value += 5\n"
+                                 L"obj.value\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(12), actual);
+}
+
+TEST(Interpreter, subscript_load_through_object_attribute)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    pass\n"
+                                 L"obj = Cls()\n"
+                                 L"obj.lst = [4, 7, 9]\n"
+                                 L"obj.lst[1]\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(7), actual);
+}
+
+TEST(Interpreter, subscript_store_through_object_attribute)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    pass\n"
+                                 L"obj = Cls()\n"
+                                 L"obj.lst = [4, 7, 9]\n"
+                                 L"obj.lst[1] = 11\n"
+                                 L"obj.lst[1]\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(11), actual);
+}
+
+TEST(Interpreter, subscript_augmented_assignment_through_object_attribute)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    pass\n"
+                                 L"obj = Cls()\n"
+                                 L"obj.lst = [4, 7, 9]\n"
+                                 L"obj.lst[1] += 5\n"
+                                 L"obj.lst[1]\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(12), actual);
+}
+
 TEST(Interpreter, attribute_load_and_store_syntax)
 {
     test::VmTestContext test_context;
