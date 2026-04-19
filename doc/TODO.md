@@ -5,6 +5,21 @@ tracks the most reasonable next steps after reviewing the current codebase,
 [README.md](/Users/runehol/projects/clovervm/README.md), the completed
 `for`-loop plan, and the longer-term design notes.
 
+## Top priority (next implementation slice)
+
+- [ ] Implement constructor semantics for class instantiation (`__init__` call path).
+  Why: this is currently one of the biggest semantic gaps in day-to-day Python
+  behavior and blocks realistic class-oriented programs. `Cls(...)` needs to
+  drive instance creation plus `__init__` invocation with correct argument
+  handling and error behavior.
+  Scope:
+  1. call `__init__` automatically during `Cls(...)`
+  2. support argument forwarding and arity errors
+  3. define/validate return-value behavior for `__init__`
+  4. add interpreter-first tests for constructor success and failure modes
+  Where: class call/instantiation runtime path, method lookup/call helpers,
+  `tests/test_interpreter.cpp`.
+
 ## Immediate cleanup and correctness
 
 - [x] Tighten string literal handling, or explicitly document the narrow subset.
@@ -13,12 +28,6 @@ tracks the most reasonable next steps after reviewing the current codebase,
   over, and it is currently larger than the rest of the documented language
   subset implies.
   Where: `src/tokenizer.cpp`, `tests/test_tokenizer.cpp`, `README.md`.
-
-- [ ] Turn `short_vector` assertion failures into runtime exceptions and add tests.
-  Why: `src/short_vector.h` still has explicit `TODO` comments for this. Bounds
-  and type failures should not rely on debug-only assertions once more runtime
-  features start using the container.
-  Where: `src/short_vector.h`, targeted tests.
 
 - [ ] Replace generic runtime errors on important slow paths with specific exceptions.
   Why: arithmetic overflow and non-SMI fallbacks in `src/interpreter.cpp` still
