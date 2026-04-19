@@ -72,7 +72,7 @@ namespace cl
     int32_t Scope::allocate_slot(TValue<String> key, Value initial_value)
     {
         int32_t slot_idx = slot_values.size();
-        slot_values.emplace_back(initial_value);
+        slot_values.push_back(initial_value);
         slot_names.emplace_back(key.as_value());
         slot_current_entry_indices.emplace_back(-1);
         return slot_idx;
@@ -187,7 +187,7 @@ namespace cl
     {
         for(size_t i = 0; i < n_slots; ++i)
         {
-            slot_values.emplace_back(Value::not_present());
+            slot_values.push_back(Value::not_present());
             slot_names.emplace_back(Value::None());
             slot_current_entry_indices.emplace_back(-1);
         }

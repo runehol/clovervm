@@ -35,7 +35,7 @@ namespace cl
 
         ALWAYSINLINE bool slot_is_live(int32_t slot_idx) const
         {
-            return !slot_values[slot_idx].get_value().is_not_present();
+            return !slot_values[slot_idx].is_not_present();
         }
 
         ALWAYSINLINE bool entry_is_live(int32_t entry_idx) const
@@ -47,7 +47,7 @@ namespace cl
         get_by_slot_index_fastpath_only(int32_t slot_idx) const
         {
             assert(slot_idx >= 0);
-            Value v = slot_values[slot_idx].get_value();
+            Value v = slot_values[slot_idx];
             if(slot_is_live(slot_idx))
                 return v;
             int32_t parent_slot_idx = v.get_not_present_index();
@@ -65,7 +65,7 @@ namespace cl
         NOINLINE Value get_by_slot_index(int32_t slot_idx) const
         {
             assert(slot_idx >= 0);
-            Value v = slot_values[slot_idx].get_value();
+            Value v = slot_values[slot_idx];
             if(slot_is_live(slot_idx))
                 return v;
             int32_t parent_slot_idx = v.get_not_present_index();
@@ -94,7 +94,7 @@ namespace cl
             {
                 revive_slot(slot_idx);
             }
-            slot_values[slot_idx].set_value(val);
+            slot_values[slot_idx] = val;
         }
 
         void reserve_empty_slots(size_t n_slots);
@@ -119,24 +119,6 @@ namespace cl
         }
 
     private:
-        class SlotValue
-        {
-        public:
-            explicit SlotValue(Value _value) : value(_value) {}
-
-            void set_value(Value _value)
-            {
-                _value = incref(_value);
-                decref(value);
-                value = _value;
-            }
-
-            Value get_value() const { return value; }
-
-        private:
-            Value value;
-        };
-
         class Entry
         {
         public:
@@ -175,7 +157,7 @@ namespace cl
         MemberValue parent_scope;
         RawArray<int32_t> name_table;
         RawArray<Entry> entries;
-        ValueArray<SlotValue> slot_values;
+        ValueArray<Value> slot_values;
         ValueArray<Value> slot_names;
         RawArray<int32_t> slot_current_entry_indices;
 
