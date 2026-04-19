@@ -1,6 +1,6 @@
 # CloverVM Function Calling Convention
 
-This note documents the calling convention currently implemented by CloverVM's bytecode compiler and interpreter. It is based on the runtime behavior in [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp) and the lowering logic in [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp).
+This note documents the calling convention currently implemented by CloverVM's bytecode compiler and interpreter. It is based on the runtime behavior in [src/interpreter.cpp](../src/interpreter.cpp) and the lowering logic in [src/codegen.cpp](../src/codegen.cpp).
 
 ## Executive Summary
 
@@ -28,7 +28,7 @@ The CloverVM frame layout is only part of the calling convention. The threaded i
 #define ARGS fp, pc, accumulator, dispatch, code_object
 ```
 
-from [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp).
+from [src/interpreter.cpp](../src/interpreter.cpp).
 
 Conceptually:
 
@@ -42,7 +42,7 @@ With the `MUSTTAIL` threaded-dispatch style in the interpreter, these values are
 
 ## Relevant Definitions
 
-In [src/code_object.h](/Users/runehol/projects/clovervm/src/code_object.h):
+In [src/code_object.h](../src/code_object.h):
 
 ```cpp
 static constexpr int32_t FrameHeaderSizeAboveFp = 2;
@@ -68,17 +68,17 @@ uint32_t get_n_registers() const
 
 Codegen reserves the header slots in function and class scopes before collecting locals:
 
-- function bodies: [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp)
-- class bodies: [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp)
+- function bodies: [src/codegen.cpp](../src/codegen.cpp)
+- class bodies: [src/codegen.cpp](../src/codegen.cpp)
 
 ## Register Naming and Placement
 
-The bytecode printer exposes the register naming convention in [src/code_object_print.h](/Users/runehol/projects/clovervm/src/code_object_print.h):
+The bytecode printer exposes the register naming convention in [src/code_object_print.h](../src/code_object_print.h):
 
 - `a0`, `a1`, ... are argument/parameter registers
 - `r0`, `r1`, ... are local/temporary registers
 
-The encoding rule is in [src/code_object.h](/Users/runehol/projects/clovervm/src/code_object.h):
+The encoding rule is in [src/code_object.h](../src/code_object.h):
 
 ```cpp
 int8_t encode_reg(uint32_t reg)
@@ -125,7 +125,7 @@ For a direct call like `f(x, y)`, codegen emits:
 2. each argument into the next registers in sequence
 3. `CallSimple base, n_args`
 
-The lowering is in `codegen_function_call` in [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp):
+The lowering is in `codegen_function_call` in [src/codegen.cpp](../src/codegen.cpp):
 
 ```cpp
 TemporaryReg regs(this, 1 + args.size());
@@ -163,7 +163,7 @@ For `obj.method(x)`, codegen reserves one extra slot:
 - slot for `self`
 - slots for user arguments
 
-in [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp):
+in [src/codegen.cpp](../src/codegen.cpp):
 
 ```cpp
 TemporaryReg regs(this, 2 + args.size());
@@ -181,7 +181,7 @@ At runtime `LoadMethod` writes:
 - callable at `fp[call_base_reg]`
 - `self` at `fp[call_base_reg - 1]`
 
-from [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp):
+from [src/interpreter.cpp](../src/interpreter.cpp):
 
 ```cpp
 fp[call_base_reg] = callable;
@@ -196,7 +196,7 @@ If the resolved method is not a normal function needing implicit `self`, `self` 
 
 ## Function Entry
 
-The core transition for function calls is in `op_call_simple` and `op_call_method` in [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp):
+The core transition for function calls is in `op_call_simple` and `op_call_method` in [src/interpreter.cpp](../src/interpreter.cpp):
 
 ```cpp
 Value *new_fp = fp + reg - n_args - FrameHeaderSizeAboveFp;
@@ -282,7 +282,7 @@ After `new_fp = fp + reg - n_args - 2`:
 
 ## Return Path
 
-Returning is the inverse operation. `op_return` in [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp) restores the caller context from the frame header:
+Returning is the inverse operation. `op_return` in [src/interpreter.cpp](../src/interpreter.cpp) restores the caller context from the frame header:
 
 ```cpp
 pc = (const uint8_t *)fp[-2].as.ptr;
@@ -306,7 +306,7 @@ The module entrypoint is special. `ThreadState::run` starts interpretation at a 
 return run_interpreter(&stack[stack.size() - 1024], obj, 0);
 ```
 
-from [src/thread_state.cpp](/Users/runehol/projects/clovervm/src/thread_state.cpp).
+from [src/thread_state.cpp](../src/thread_state.cpp).
 
 Top-level module code is not expected to execute `Return`; the parser/codegen reject `return` outside a function. So the normal saved-caller metadata contract applies to nested function/class execution, not to the initial module entry frame.
 
@@ -322,8 +322,8 @@ If you are reasoning about CloverVM calls, the safest mental model is:
 
 ## Source Pointers
 
-- Call lowering: [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp)
-- Frame/header constants and register encoding: [src/code_object.h](/Users/runehol/projects/clovervm/src/code_object.h)
-- Register names in disassembly: [src/code_object_print.h](/Users/runehol/projects/clovervm/src/code_object_print.h)
-- Call and return execution: [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
-- Top-level interpreter entry: [src/thread_state.cpp](/Users/runehol/projects/clovervm/src/thread_state.cpp)
+- Call lowering: [src/codegen.cpp](../src/codegen.cpp)
+- Frame/header constants and register encoding: [src/code_object.h](../src/code_object.h)
+- Register names in disassembly: [src/code_object_print.h](../src/code_object_print.h)
+- Call and return execution: [src/interpreter.cpp](../src/interpreter.cpp)
+- Top-level interpreter entry: [src/thread_state.cpp](../src/thread_state.cpp)

@@ -2,7 +2,7 @@
 
 The earlier "lowest-hanging fruit" checklist is mostly complete. This file now
 tracks the most reasonable next steps after reviewing the current codebase,
-[README.md](/Users/runehol/projects/clovervm/README.md), the completed
+[README.md](../README.md), the completed
 `for`-loop plan, and the longer-term design notes.
 
 ## Top priority (next implementation slice)

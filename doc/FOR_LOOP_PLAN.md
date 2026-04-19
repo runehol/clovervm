@@ -58,9 +58,9 @@ This gives end-to-end `for` loop semantics with minimal surface area.
 
 Files:
 
-- [src/ast.h](/Users/runehol/projects/clovervm/src/ast.h)
-- [src/parser.cpp](/Users/runehol/projects/clovervm/src/parser.cpp)
-- [src/ast_print.h](/Users/runehol/projects/clovervm/src/ast_print.h)
+- [src/ast.h](../src/ast.h)
+- [src/parser.cpp](../src/parser.cpp)
+- [src/ast_print.h](../src/ast_print.h)
 
 Changes:
 
@@ -89,19 +89,19 @@ Suggested child layout:
 
 Status:
 
-- Implemented in [src/ast.h](/Users/runehol/projects/clovervm/src/ast.h),
-  [src/parser.cpp](/Users/runehol/projects/clovervm/src/parser.cpp), and
-  [src/ast_print.h](/Users/runehol/projects/clovervm/src/ast_print.h)
+- Implemented in [src/ast.h](../src/ast.h),
+  [src/parser.cpp](../src/parser.cpp), and
+  [src/ast_print.h](../src/ast_print.h)
 - Parser tests added in
-  [tests/test_parser.cpp](/Users/runehol/projects/clovervm/tests/test_parser.cpp)
+  [tests/test_parser.cpp](../tests/test_parser.cpp)
 - Current behavior intentionally remains limited to simple variable targets
 
 ### 2. Introduce builtin-function runtime support [done]
 
 Files:
 
-- new runtime object header/source, likely alongside [src/function.h](/Users/runehol/projects/clovervm/src/function.h)
-- [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+- new runtime object header/source, likely alongside [src/function.h](../src/function.h)
+- [src/interpreter.cpp](../src/interpreter.cpp)
 - builtin-scope setup code, likely in thread or VM initialization
 
 Changes:
@@ -125,24 +125,24 @@ Suggested direction:
 Status:
 
 - Implemented in
-  [src/builtin_function.h](/Users/runehol/projects/clovervm/src/builtin_function.h)
-  and [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+  [src/builtin_function.h](../src/builtin_function.h)
+  and [src/interpreter.cpp](../src/interpreter.cpp)
 - `CallSimple` now dispatches to either bytecode `Function` or native
   `BuiltinFunction`
 - The builtin calling interface uses `CallArguments` instead of copying values
   out of the interpreter stack
 - Arity handling now supports exact arity, bounded multi-arity, and varargs
 - Interpreter tests added in
-  [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp)
+  [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
 
 ### 3. Add a builtin scope [done]
 
 Files:
 
 - scope setup path used by code generation/runtime startup
-- [src/scope.h](/Users/runehol/projects/clovervm/src/scope.h)
-- [src/scope.cpp](/Users/runehol/projects/clovervm/src/scope.cpp)
-- potentially [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp) depending on where root scopes are created
+- [src/scope.h](../src/scope.h)
+- [src/scope.cpp](../src/scope.cpp)
+- potentially [src/codegen.cpp](../src/codegen.cpp) depending on where root scopes are created
 
 Changes:
 
@@ -167,7 +167,7 @@ Files:
 
 - new runtime object file for range iterator
 - builtin registration site
-- [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+- [src/interpreter.cpp](../src/interpreter.cpp)
 
 Changes:
 
@@ -185,22 +185,22 @@ the already-working `RangeIterator` behavior in `for` loops.
 
 Status:
 
-- Implemented in [src/range_iterator.h](/Users/runehol/projects/clovervm/src/range_iterator.h)
-  and [src/virtual_machine.cpp](/Users/runehol/projects/clovervm/src/virtual_machine.cpp)
+- Implemented in [src/range_iterator.h](../src/range_iterator.h)
+  and [src/virtual_machine.cpp](../src/virtual_machine.cpp)
 - `range` is registered in the builtin scope as a normal builtin callable
 - `RangeIterator` stores `current`, `stop`, and `step`
 - The builtin currently supports `range(stop)`, `range(start, stop)`, and
   `range(start, stop, step)`
 - Interpreter tests added in
-  [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp)
+  [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
 
 ### 5. Add generic iterator bytecodes [done]
 
 Files:
 
-- [src/bytecode.h](/Users/runehol/projects/clovervm/src/bytecode.h)
-- [src/code_object_print.h](/Users/runehol/projects/clovervm/src/code_object_print.h)
-- [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+- [src/bytecode.h](../src/bytecode.h)
+- [src/code_object_print.h](../src/code_object_print.h)
+- [src/interpreter.cpp](../src/interpreter.cpp)
 
 Changes:
 
@@ -223,24 +223,24 @@ the baseline semantics.
 
 Status:
 
-- Implemented in [src/bytecode.h](/Users/runehol/projects/clovervm/src/bytecode.h),
-  [src/code_object.h](/Users/runehol/projects/clovervm/src/code_object.h),
-  [src/code_object_print.h](/Users/runehol/projects/clovervm/src/code_object_print.h),
-  and [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+- Implemented in [src/bytecode.h](../src/bytecode.h),
+  [src/code_object.h](../src/code_object.h),
+  [src/code_object_print.h](../src/code_object_print.h),
+  and [src/interpreter.cpp](../src/interpreter.cpp)
 - Added `GetIter` and `ForIter` bytecodes plus code-object emission support for
   iterator register + jump-target operands
 - The interpreter now advances `RangeIterator` instances directly and jumps on
   exhaustion
 - Focused temporary tests were added in
-  [tests/test_codegen.cpp](/Users/runehol/projects/clovervm/tests/test_codegen.cpp)
-  and [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp);
+  [tests/test_codegen.cpp](../tests/test_codegen.cpp)
+  and [tests/test_interpreter.cpp](../tests/test_interpreter.cpp);
   these should be removed once step 6 adds end-to-end `for`-loop lowering
 
 ### 6. Lower `for` loops in codegen [done]
 
 Files:
 
-- [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp)
+- [src/codegen.cpp](../src/codegen.cpp)
 
 Changes:
 
@@ -261,14 +261,14 @@ Suggested lowering shape:
 
 Status:
 
-- Implemented in [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp)
+- Implemented in [src/codegen.cpp](../src/codegen.cpp)
 - `STATEMENT_FOR` now lowers through the generic `GetIter`/`ForIter` path
 - `break`, `continue`, and loop `else` reuse the existing `loop_targets`
   mechanism, matching `while` loop control-flow behavior
 - Temporary manual iterator-bytecode tests were removed and replaced with
   end-to-end `for` loop coverage in
-  [tests/test_codegen.cpp](/Users/runehol/projects/clovervm/tests/test_codegen.cpp)
-  and [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp)
+  [tests/test_codegen.cpp](../tests/test_codegen.cpp)
+  and [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
 3. Store iterator in a temporary register.
 4. Mark loop-head target.
 5. Emit `ForIter`, jumping to the loop-else or done target on exhaustion.
@@ -290,7 +290,7 @@ Desired behavior:
 
 Files:
 
-- [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+- [src/interpreter.cpp](../src/interpreter.cpp)
 
 Changes:
 
@@ -311,14 +311,14 @@ implicit for now.
 
 Status:
 
-- Implemented in [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+- Implemented in [src/interpreter.cpp](../src/interpreter.cpp)
 - The dispatch table now includes `GetIter` and `ForIter`
 - `GetIter` validates that the accumulator holds an iterable runtime value the
   VM knows how to drive
 - `ForIter` advances `RangeIterator` state in place, leaves the next value in
   the accumulator, and jumps on exhaustion without exposing `StopIteration`
 - Interpreter coverage lives in
-  [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp),
+  [tests/test_interpreter.cpp](../tests/test_interpreter.cpp),
   including exhaustion, `else`, `break`, `continue`, negative-step iteration,
   non-iterable rejection, and nested-loop sanity
 
@@ -326,10 +326,10 @@ Status:
 
 Files:
 
-- [src/bytecode.h](/Users/runehol/projects/clovervm/src/bytecode.h)
-- [src/code_object_print.h](/Users/runehol/projects/clovervm/src/code_object_print.h)
-- [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp)
-- [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+- [src/bytecode.h](../src/bytecode.h)
+- [src/code_object_print.h](../src/code_object_print.h)
+- [src/codegen.cpp](../src/codegen.cpp)
+- [src/interpreter.cpp](../src/interpreter.cpp)
 
 Changes:
 
@@ -377,19 +377,19 @@ Why stage this later:
 
 Status:
 
-- Implemented in [src/bytecode.h](/Users/runehol/projects/clovervm/src/bytecode.h),
-  [src/code_object_print.h](/Users/runehol/projects/clovervm/src/code_object_print.h),
-  [src/codegen.cpp](/Users/runehol/projects/clovervm/src/codegen.cpp), and
-  [src/interpreter.cpp](/Users/runehol/projects/clovervm/src/interpreter.cpp)
+- Implemented in [src/bytecode.h](../src/bytecode.h),
+  [src/code_object_print.h](../src/code_object_print.h),
+  [src/codegen.cpp](../src/codegen.cpp), and
+  [src/interpreter.cpp](../src/interpreter.cpp)
 - Direct builtin `range(...)` `for` loops now lower through guarded
   `ForPrepRange1` / `ForPrepRange2` / `ForPrepRange3` and
   `ForIterRange1` / `ForIterRangeStep` bytecodes
 - The optimization checks for the exact builtin `range` object and falls back
   to the shared generic iterator lowering when `range` is shadowed
 - Codegen coverage added in
-  [tests/test_codegen.cpp](/Users/runehol/projects/clovervm/tests/test_codegen.cpp)
+  [tests/test_codegen.cpp](../tests/test_codegen.cpp)
 - Interpreter coverage added in
-  [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp),
+  [tests/test_interpreter.cpp](../tests/test_interpreter.cpp),
   including one-, two-, and three-argument direct `range(...)` loops plus the
   generic fallback path
 
@@ -415,7 +415,7 @@ iteration state machine in a Python-visible exception path.
 
 File:
 
-- [tests/test_parser.cpp](/Users/runehol/projects/clovervm/tests/test_parser.cpp)
+- [tests/test_parser.cpp](../tests/test_parser.cpp)
 
 Add coverage for:
 
@@ -428,7 +428,7 @@ Add coverage for:
 
 File:
 
-- [tests/test_codegen.cpp](/Users/runehol/projects/clovervm/tests/test_codegen.cpp)
+- [tests/test_codegen.cpp](../tests/test_codegen.cpp)
 
 Add structural coverage for:
 
@@ -448,7 +448,7 @@ semantics.
 
 File:
 
-- [tests/test_interpreter.cpp](/Users/runehol/projects/clovervm/tests/test_interpreter.cpp)
+- [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
 
 Add semantic coverage for:
 
