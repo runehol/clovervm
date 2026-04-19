@@ -45,6 +45,18 @@ TEST(List, UncheckedOperationsSupportAppendSetInsertAndErase)
     EXPECT_EQ(Value::from_smi(42), list->item_unchecked(1));
 }
 
+TEST(List, SizedConstructorInitializesEntriesToNotPresent)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    List *list = context.thread()->make_refcounted_raw<List>(3);
+
+    ASSERT_EQ(3u, list->size());
+    EXPECT_TRUE(list->item_unchecked(0).is_not_present());
+    EXPECT_TRUE(list->item_unchecked(1).is_not_present());
+    EXPECT_TRUE(list->item_unchecked(2).is_not_present());
+}
+
 TEST(List, CheckedIndexingSupportsNegativeIndices)
 {
     test::VmTestContext context;

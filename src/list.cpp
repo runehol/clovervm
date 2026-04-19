@@ -4,6 +4,11 @@
 
 namespace cl
 {
+    List::List(size_t size) : Object(&klass, compact_layout())
+    {
+        items.resize(size, Value::not_present());
+    }
+
     void List::insert_item_unchecked(size_t idx, Value value)
     {
         assert(idx <= size());

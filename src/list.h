@@ -17,6 +17,7 @@ namespace cl
         static constexpr Klass klass = Klass(L"List", nullptr);
 
         List() : Object(&klass, compact_layout()) {}
+        explicit List(size_t size);
 
         size_t size() const { return items.size(); }
         bool empty() const { return items.empty(); }
