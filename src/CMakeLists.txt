@@ -32,6 +32,8 @@ add_library(libclovervm STATIC
     virtual_machine.h
     klass.cpp
     klass.h
+    list.cpp
+    list.h
     object.h
     owned.h
     owned_typed_value.h
