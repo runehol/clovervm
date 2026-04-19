@@ -9,6 +9,7 @@
 #include "instance.h"
 #include "list.h"
 #include "range_iterator.h"
+#include "subscript.h"
 #include "thread_state.h"
 #include "value.h"
 #include "virtual_machine.h"
@@ -103,6 +104,11 @@ namespace cl
     NOINLINE Value attribute_assignment_error(PARAMS)
     {
         throw std::runtime_error("AttributeError: cannot assign attribute");
+    }
+
+    NOINLINE Value subscript_error(PARAMS)
+    {
+        throw std::runtime_error("TypeError: object is not subscriptable");
     }
 
     NOINLINE Value method_lookup_error(PARAMS)
@@ -348,6 +354,31 @@ namespace cl
         if(unlikely(!store_attr(fp[reg], attr_name, accumulator)))
         {
             MUSTTAIL return attribute_assignment_error(ARGS);
+        }
+        COMPLETE();
+    }
+
+    static Value op_load_subscript(PARAMS)
+    {
+        START(2);
+        int8_t reg = pc[1];
+        accumulator = load_subscript(fp[reg], accumulator);
+        if(unlikely(accumulator.is_not_present()))
+        {
+            MUSTTAIL return subscript_error(ARGS);
+        }
+        COMPLETE();
+    }
+
+    static Value op_store_subscript(PARAMS)
+    {
+        START(3);
+        int8_t receiver_reg = pc[1];
+        int8_t key_reg = pc[2];
+        if(unlikely(
+               !store_subscript(fp[receiver_reg], fp[key_reg], accumulator)))
+        {
+            MUSTTAIL return subscript_error(ARGS);
         }
         COMPLETE();
     }
@@ -1234,6 +1265,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);
         SET_TABLE_ENTRY(Bytecode::LoadAttr, op_load_attr);
         SET_TABLE_ENTRY(Bytecode::StoreAttr, op_store_attr);
+        SET_TABLE_ENTRY(Bytecode::LoadSubscript, op_load_subscript);
+        SET_TABLE_ENTRY(Bytecode::StoreSubscript, op_store_subscript);
         SET_TABLE_ENTRY(Bytecode::LoadMethod, op_load_method);
 
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);

@@ -179,6 +179,16 @@ namespace cl
             return result;
         }
 
+        uint32_t emit_opcode_reg_reg(uint32_t source_offset, Bytecode c,
+                                     uint32_t first_reg, uint32_t second_reg)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            emplace_back(source_offset, encode_reg(first_reg));
+            emplace_back(source_offset, encode_reg(second_reg));
+            return result;
+        }
+
         uint32_t emit_opcode_reg_constant_idx_reg(uint32_t source_offset,
                                                   Bytecode c,
                                                   uint32_t first_reg,

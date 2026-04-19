@@ -47,6 +47,8 @@ add_library(libclovervm STATIC
     slab_allocator.h
     str.cpp
     str.h
+    subscript.cpp
+    subscript.h
     thread_state.cpp
     thread_state.h
     typed_value.h

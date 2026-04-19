@@ -785,6 +785,17 @@ namespace cl
                                                  source_pos, result, args);
                             break;
                         }
+                    case Token::LSQB:
+                        {
+                            uint32_t source_pos = source_pos_and_advance();
+                            int32_t index = expression();
+                            consume(Token::RSQB);
+                            result = ast.emplace_back(
+                                AstKind(AstNodeKind::EXPRESSION_BINARY,
+                                        AstOperatorKind::SUBSCRIPT),
+                                source_pos, result, index);
+                            break;
+                        }
 
                     default:
                         return result;
@@ -930,14 +941,16 @@ namespace cl
         {
             if(ast.kinds[lhs].node_kind ==
                    AstNodeKind::EXPRESSION_VARIABLE_REFERENCE ||
-               ast.kinds[lhs].node_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
+               ast.kinds[lhs].node_kind == AstNodeKind::EXPRESSION_ATTRIBUTE ||
+               (ast.kinds[lhs].node_kind == AstNodeKind::EXPRESSION_BINARY &&
+                ast.kinds[lhs].operator_kind == AstOperatorKind::SUBSCRIPT))
             {
                 return;
             }
 
             throw std::runtime_error(
                 std::string("SyntaxError: assignment target must be a simple "
-                            "variable or attribute") +
+                            "variable, attribute, or subscript") +
                 format_error_context(assignment_target_source_pos(lhs)));
         }
 

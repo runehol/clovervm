@@ -152,6 +152,15 @@ template <> struct fmt::formatter<cl::AstVector>
 
             case cl::AstNodeKind::EXPRESSION_BINARY:
             case cl::AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
+                if(kind.operator_kind == cl::AstOperatorKind::SUBSCRIPT)
+                {
+                    render_node(av, out, children[0], indent, self_precedence);
+                    format_to(out, "[");
+                    render_node(av, out, children[1], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                    format_to(out, "]");
+                    break;
+                }
                 render_node(av, out, children[0], indent, self_precedence);
                 format_to(out, " {} ", kind.operator_kind);
                 render_node(av, out, children[1], indent, self_precedence);

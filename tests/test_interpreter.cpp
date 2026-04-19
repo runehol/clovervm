@@ -381,6 +381,73 @@ TEST(Interpreter, list_literal_evaluates_elements_left_to_right)
     EXPECT_EQ(Value::from_smi(2), list->item_unchecked(2));
 }
 
+TEST(Interpreter, subscript_load_reads_list_item)
+{
+    test::FileRunner file_runner(L"xs = [4, 7, 9]\n"
+                                 L"xs[1]\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(7), actual);
+}
+
+TEST(Interpreter, subscript_store_writes_list_item)
+{
+    test::FileRunner file_runner(L"xs = [4, 7, 9]\n"
+                                 L"xs[1] = 11\n"
+                                 L"xs[1]\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(11), actual);
+}
+
+TEST(Interpreter, subscript_augmented_assignment_updates_list_item)
+{
+    test::FileRunner file_runner(L"xs = [4, 7, 9]\n"
+                                 L"xs[1] += 5\n"
+                                 L"xs[1]\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(12), actual);
+}
+
+TEST(Interpreter,
+     subscript_augmented_assignment_evaluates_receiver_and_index_once)
+{
+    g_next_counter = 0;
+
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj =
+        test_context.compile_file(L"xs = [10, 20, 30]\n"
+                                  L"def get_list():\n"
+                                  L"    return xs\n"
+                                  L"get_list()[next_counter()] += 7\n"
+                                  L"xs[0]\n");
+
+    TValue<String> name =
+        test_context.vm().get_or_create_interned_string_value(L"next_counter");
+    Value builtin =
+        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+            builtin_next_counter, 0, 0);
+    code_obj->module_scope.extract()->set_by_name(name, builtin);
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(17), actual);
+    EXPECT_EQ(1, g_next_counter);
+}
+
+TEST(Interpreter, subscript_load_rejects_non_integer_list_index)
+{
+    expect_runtime_error(L"xs = [1, 2, 3]\n"
+                         L"xs[False]\n",
+                         "TypeError: list indices must be integers");
+}
+
+TEST(Interpreter, subscript_load_rejects_non_subscriptable_receiver)
+{
+    expect_runtime_error(L"1[0]\n", "TypeError: object is not subscriptable");
+}
+
 TEST(Interpreter, attribute_load_and_store_syntax)
 {
     test::VmTestContext test_context;

@@ -522,6 +522,56 @@ namespace cl
                                             regs, children.size());
         }
 
+        void codegen_subscript_assignment(int32_t node_idx, Mode mode)
+        {
+            AstKind kind = av.kinds[node_idx];
+            AstChildren children = av.children[node_idx];
+            uint32_t source_offset = av.source_offsets[node_idx];
+            int32_t lhs_idx = children[0];
+            AstChildren lhs_children = av.children[lhs_idx];
+            ScopedRegister receiver_reg =
+                codegen_node_to_register(lhs_children[0], mode);
+            ScopedRegister key_reg =
+                codegen_node_to_register(lhs_children[1], mode);
+
+            if(kind.operator_kind == AstOperatorKind::NOP)
+            {
+                codegen_node(children[1], mode);
+                code_obj->emit_opcode_reg_reg(source_offset,
+                                              Bytecode::StoreSubscript,
+                                              receiver_reg.reg, key_reg.reg);
+                return;
+            }
+
+            OpTableEntry entry = get_operator_entry(kind.operator_kind);
+            std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
+                kind.operator_kind, entry, children[1]);
+
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Ldar,
+                                      key_reg.reg);
+            code_obj->emit_opcode_reg(source_offset, Bytecode::LoadSubscript,
+                                      receiver_reg.reg);
+
+            if(immediate.has_value())
+            {
+                code_obj->emit_opcode_smi(source_offset, entry.binary_acc_smi,
+                                          *immediate);
+            }
+            else
+            {
+                TemporaryReg lhs_value_reg(this);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          lhs_value_reg);
+                codegen_node(children[1], mode);
+                code_obj->emit_opcode_reg(source_offset, entry.standard,
+                                          lhs_value_reg);
+            }
+
+            code_obj->emit_opcode_reg_reg(source_offset,
+                                          Bytecode::StoreSubscript,
+                                          receiver_reg.reg, key_reg.reg);
+        }
+
         void codegen_attribute_assignment(int32_t node_idx, Mode mode)
         {
             AstKind kind = av.kinds[node_idx];
@@ -887,16 +937,25 @@ namespace cl
                         AstNodeKind lhs_kind = av.kinds[lhs_idx].node_kind;
                         if(lhs_kind !=
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE &&
-                           lhs_kind != AstNodeKind::EXPRESSION_ATTRIBUTE)
+                           lhs_kind != AstNodeKind::EXPRESSION_ATTRIBUTE &&
+                           !(lhs_kind == AstNodeKind::EXPRESSION_BINARY &&
+                             av.kinds[lhs_idx].operator_kind ==
+                                 AstOperatorKind::SUBSCRIPT))
                         {
                             throw std::runtime_error(
                                 "We don't support assignment to anything but "
-                                "simple variables and attributes yet");
+                                "simple variables, attributes, and subscripts "
+                                "yet");
                         }
 
                         if(lhs_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
                         {
                             codegen_attribute_assignment(node_idx, mode);
+                            break;
+                        }
+                        if(lhs_kind == AstNodeKind::EXPRESSION_BINARY)
+                        {
+                            codegen_subscript_assignment(node_idx, mode);
                             break;
                         }
 
@@ -919,6 +978,16 @@ namespace cl
                     }
 
                 case AstNodeKind::EXPRESSION_BINARY:
+                    if(kind.operator_kind == AstOperatorKind::SUBSCRIPT)
+                    {
+                        ScopedRegister receiver_reg =
+                            codegen_node_to_register(children[0], mode);
+                        codegen_node(children[1], mode);
+                        code_obj->emit_opcode_reg(source_offset,
+                                                  Bytecode::LoadSubscript,
+                                                  receiver_reg.reg);
+                        break;
+                    }
                     codegen_binary_expression(node_idx, mode);
                     break;
 

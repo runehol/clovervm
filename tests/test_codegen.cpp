@@ -323,6 +323,69 @@ TEST(Codegen, list_literal_uses_createlist_with_contiguous_register_range)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, subscript_load_uses_receiver_register_and_accumulator_key)
+{
+    const wchar_t *test_case = L"def get(obj, idx):\n"
+                               L"    return obj[idx]\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 CreateFunction c[0]\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 Halt\n"
+                           "Constant 0: Code object:\n"
+                           "    0 Ldar a1\n"
+                           "    2 LoadSubscript a0\n"
+                           "    4 Return\n"
+                           "    5 LdaNone\n"
+                           "    6 Return\n"
+                           "\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, subscript_store_uses_receiver_and_key_registers)
+{
+    const wchar_t *test_case = L"def set(obj, idx, value):\n"
+                               L"    obj[idx] = value\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 CreateFunction c[0]\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 Halt\n"
+                           "Constant 0: Code object:\n"
+                           "    0 Ldar a2\n"
+                           "    2 StoreSubscript a0, a1\n"
+                           "    5 LdaNone\n"
+                           "    6 Return\n"
+                           "\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, subscript_augmented_assignment_evaluates_receiver_and_key_once)
+{
+    const wchar_t *test_case = L"def bump(obj, idx):\n"
+                               L"    obj[idx] += 1\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 CreateFunction c[0]\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 Halt\n"
+                           "Constant 0: Code object:\n"
+                           "    0 Ldar a1\n"
+                           "    2 LoadSubscript a0\n"
+                           "    4 AddSmi 1\n"
+                           "    6 StoreSubscript a0, a1\n"
+                           "    9 LdaNone\n"
+                           "   10 Return\n"
+                           "\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
 {
     std::string expected = "Code object:\n"
