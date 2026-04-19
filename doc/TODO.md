@@ -43,6 +43,14 @@ tracks the most reasonable next steps after reviewing the current codebase,
   much easier to debug and will keep future behavior changes testable.
   Where: `src/interpreter.cpp`, `tests/test_interpreter.cpp`.
 
+- [ ] Clean up built-in function calls. Right now we detect the function kind and dispatch
+      to builtins using a different calling convention. But this is error-prone and multiplies
+      with the number of call opcodes and special cases. Instead, I'd like us to generate a small
+      python function trampoline that indirects into the builtin function using a purpose-built
+      opcode. This way, we can also support multiple builtin-function calling conventions,
+      which might be very handy as not everyone needs full arg parsing, and we might want a
+      CloverVM convention that's slimmer than the full Python C API one
+
 ## Next language and runtime slice
 
 
