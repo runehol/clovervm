@@ -41,8 +41,6 @@ add_library(libclovervm STATIC
     refcount.h
     scope.cpp
     scope.h
-    short_vector.cpp
-    short_vector.h
     slab_allocator.cpp
     slab_allocator.h
     str.cpp

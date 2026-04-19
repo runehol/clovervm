@@ -4,7 +4,6 @@
 #include "object.h"
 #include "parser.h"
 #include "refcount.h"
-#include "short_vector.h"
 #include "string.h"
 #include "thread_state.h"
 #include "value.h"
