@@ -3,13 +3,11 @@
 
 #include "klass.h"
 #include "object.h"
-#include "owned.h"
-#include "owned_typed_value.h"
 #include "str.h"
 #include "typed_value.h"
 #include "value.h"
+#include "vm_array.h"
 #include <cstdint>
-#include <vector>
 
 namespace cl
 {
@@ -92,7 +90,7 @@ namespace cl
         ALWAYSINLINE void set_by_slot_index(int32_t slot_idx, Value val)
         {
             if(unlikely(!slot_is_live(slot_idx) && !val.is_not_present() &&
-                        slot_metadata[slot_idx].is_named()))
+                        slot_names[slot_idx] != Value::None()))
             {
                 revive_slot(slot_idx);
             }
@@ -105,7 +103,7 @@ namespace cl
         bool empty() const { return slot_values.empty(); }
         bool slot_is_named(int32_t slot_idx) const
         {
-            return slot_metadata[slot_idx].is_named();
+            return slot_names[slot_idx] != Value::None();
         }
         TValue<String> get_name_by_slot_index(int32_t slot_idx) const;
         uint32_t entry_count() const { return entries.size(); }
@@ -117,7 +115,7 @@ namespace cl
         {
             int32_t slot_idx = entries[entry_idx].get_slot_idx();
             assert(slot_idx >= 0);
-            return slot_metadata[slot_idx].get_name();
+            return TValue<String>::unsafe_unchecked(slot_names[slot_idx]);
         }
 
     private:
@@ -126,42 +124,17 @@ namespace cl
         public:
             explicit SlotValue(Value _value) : value(_value) {}
 
-            void set_value(Value _value) { value = _value; }
-
-            Value get_value() const { return value.as_value(); }
-
-        private:
-            OwnedValue value;
-        };
-
-        class SlotMetadata
-        {
-        public:
-            SlotMetadata(Value _name, int32_t _current_entry_idx,
-                         Value _extra = Value::None())
-                : name(_name), current_entry_idx(_current_entry_idx),
-                  extra(_extra)
+            void set_value(Value _value)
             {
+                _value = incref(_value);
+                decref(value);
+                value = _value;
             }
 
-            TValue<String> get_name() const
-            {
-                assert(name != Value::None());
-                return TValue<String>::unsafe_unchecked(name);
-            }
-
-            bool is_named() const { return name != Value::None(); }
-
-            int32_t get_current_entry_idx() const { return current_entry_idx; }
-            void set_current_entry_idx(int32_t idx) { current_entry_idx = idx; }
-
-            Value get_extra() const { return extra.as_value(); }
-            void set_extra(Value _extra) { extra = _extra; }
+            Value get_value() const { return value; }
 
         private:
-            OwnedValue name;
-            int32_t current_entry_idx;
-            OwnedValue extra;
+            Value value;
         };
 
         class Entry
@@ -200,10 +173,11 @@ namespace cl
         void revive_slot(int32_t slot_idx);
 
         MemberValue parent_scope;
-        std::vector<int32_t> name_table;
-        std::vector<Entry> entries;
-        std::vector<SlotValue> slot_values;
-        std::vector<SlotMetadata> slot_metadata;
+        RawArray<int32_t> name_table;
+        RawArray<Entry> entries;
+        ValueArray<SlotValue> slot_values;
+        ValueArray<Value> slot_names;
+        RawArray<int32_t> slot_current_entry_indices;
 
     public:
         CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Scope, parent_scope, 1);

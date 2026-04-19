@@ -467,6 +467,7 @@ TEST(Interpreter, call_non_callable)
 TEST(Interpreter, call_builtin_function)
 {
     test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
     CodeObject *code_obj = test_context.compile_file(L"native_add(4, 7)\n");
 
     Scope *module_scope = code_obj->module_scope.extract();
@@ -662,6 +663,7 @@ TEST(Interpreter, module_scope_can_shadow_builtin_scope)
 TEST(Interpreter, builtin_wrong_arity)
 {
     test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
     CodeObject *code_obj = test_context.compile_file(L"native_add(4)\n");
 
     Scope *module_scope = code_obj->module_scope.extract();
@@ -710,6 +712,7 @@ TEST(Interpreter, for_loop_rejects_non_iterable)
 TEST(Interpreter, builtin_multiple_arities)
 {
     test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
     Scope *module_scope = nullptr;
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"native_sum");
@@ -732,6 +735,7 @@ TEST(Interpreter, builtin_multiple_arities)
 TEST(Interpreter, builtin_varargs)
 {
     test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"native_sum");
     Value builtin =

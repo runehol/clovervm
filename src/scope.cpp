@@ -24,7 +24,8 @@ namespace cl
             {
                 return &name_table[hash_idx];
             }
-            if(string_eq(key, slot_metadata[slot_idx].get_name()))
+            if(string_eq(
+                   key, TValue<String>::unsafe_unchecked(slot_names[slot_idx])))
             {
                 return &name_table[hash_idx];
             }
@@ -41,8 +42,8 @@ namespace cl
 
     void Scope::grow_name_table()
     {
-        std::vector<int32_t> new_name_table(name_table.size() * 2,
-                                            hash_not_present);
+        RawArray<int32_t> new_name_table(name_table.size() * 2,
+                                         hash_not_present);
         std::swap(name_table, new_name_table);
 
         for(int32_t entry_idx = 0; entry_idx < int32_t(entries.size());
@@ -54,8 +55,8 @@ namespace cl
                 continue;
             }
 
-            int32_t *name_table_entry =
-                find_name_table_entry(slot_metadata[slot_idx].get_name());
+            int32_t *name_table_entry = find_name_table_entry(
+                TValue<String>::unsafe_unchecked(slot_names[slot_idx]));
             *name_table_entry = slot_idx;
         }
     }
@@ -64,7 +65,7 @@ namespace cl
     {
         int32_t entry_idx = entries.size();
         entries.emplace_back(slot_idx);
-        slot_metadata[slot_idx].set_current_entry_idx(entry_idx);
+        slot_current_entry_indices[slot_idx] = entry_idx;
         return entry_idx;
     }
 
@@ -72,14 +73,14 @@ namespace cl
     {
         int32_t slot_idx = slot_values.size();
         slot_values.emplace_back(initial_value);
-        slot_metadata.emplace_back(key.as_value(), -1);
+        slot_names.emplace_back(key.as_value());
+        slot_current_entry_indices.emplace_back(-1);
         return slot_idx;
     }
 
     void Scope::revive_slot(int32_t slot_idx)
     {
-        int32_t current_entry_idx =
-            slot_metadata[slot_idx].get_current_entry_idx();
+        int32_t current_entry_idx = slot_current_entry_indices[slot_idx];
         if(current_entry_idx >= 0)
         {
             entries[current_entry_idx].set_slot_idx(-1);
@@ -88,15 +89,16 @@ namespace cl
         int32_t new_entry_idx = append_entry(slot_idx);
         (void)new_entry_idx;
 
-        TValue<String> name = slot_metadata[slot_idx].get_name();
+        TValue<String> name =
+            TValue<String>::unsafe_unchecked(slot_names[slot_idx]);
         int32_t *name_table_entry = find_name_table_entry(name);
         *name_table_entry = slot_idx;
     }
 
     TValue<String> Scope::get_name_by_slot_index(int32_t slot_idx) const
     {
-        assert(slot_metadata[slot_idx].is_named());
-        return slot_metadata[slot_idx].get_name();
+        assert(slot_names[slot_idx] != Value::None());
+        return TValue<String>::unsafe_unchecked(slot_names[slot_idx]);
     }
 
     /* For a write, we just insert a regular not-present value with no parent
@@ -186,7 +188,8 @@ namespace cl
         for(size_t i = 0; i < n_slots; ++i)
         {
             slot_values.emplace_back(Value::not_present());
-            slot_metadata.emplace_back(Value::None(), -1);
+            slot_names.emplace_back(Value::None());
+            slot_current_entry_indices.emplace_back(-1);
         }
     }
 

@@ -76,6 +76,22 @@ namespace cl
         return object_layout_expanded_bit | value_offset_in_words;
     }
 
+    constexpr bool layout_is_expanded(uint32_t layout)
+    {
+        return (layout & object_layout_expanded_bit) != 0;
+    }
+
+    constexpr uint32_t compact_layout_value_count(uint32_t layout)
+    {
+        return (layout >> object_layout_count_shift) & object_layout_count_mask;
+    }
+
+    constexpr uint32_t compact_layout_without_value_count(uint32_t layout)
+    {
+        return layout &
+               ~(object_layout_count_mask << object_layout_count_shift);
+    }
+
 #define CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(type, first_value_member,         \
                                              value_count_expr)                 \
     static constexpr bool has_dynamic_layout = false;                          \
@@ -159,6 +175,31 @@ namespace cl
         int32_t refcount;
         uint32_t layout;
     };
+
+    inline ExpandedHeader *expanded_header_for_object(Object *obj)
+    {
+        assert(layout_is_expanded(obj->layout));
+        return reinterpret_cast<ExpandedHeader *>(
+            reinterpret_cast<char *>(obj) - sizeof(ExpandedHeader));
+    }
+
+    inline const ExpandedHeader *expanded_header_for_object(const Object *obj)
+    {
+        assert(layout_is_expanded(obj->layout));
+        return reinterpret_cast<const ExpandedHeader *>(
+            reinterpret_cast<const char *>(obj) - sizeof(ExpandedHeader));
+    }
+
+    inline void object_clear_value_ownership(Object *obj)
+    {
+        if(layout_is_expanded(obj->layout))
+        {
+            expanded_header_for_object(obj)->value_count = 0;
+            return;
+        }
+
+        obj->layout = compact_layout_without_value_count(obj->layout);
+    }
 
     static_assert(sizeof(DynamicLayoutSpec) == 16);
     static_assert(sizeof(ExpandedHeader) == 16);

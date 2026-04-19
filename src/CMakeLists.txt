@@ -50,6 +50,7 @@ add_library(libclovervm STATIC
     typed_value.h
     tokenizer.cpp
     value.h
+    vm_array.h
 )
 
 set_target_properties(libclovervm PROPERTIES

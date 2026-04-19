@@ -61,7 +61,7 @@ namespace cl
         {
             idx = keys.size();
             *entry = idx;
-            keys.emplace_back(key);
+            keys.emplace_back(key.as_value());
         }
         return idx;
     }
@@ -88,13 +88,13 @@ namespace cl
     void IndirectDict::grow()
     {
         // make one that's twice the size
-        std::vector<int32_t> new_hash_table(hash_table.size() * 2, -1);
+        RawArray<int32_t> new_hash_table(hash_table.size() * 2, -1);
         std::swap(hash_table, new_hash_table);
 
         // and then just insert all the keys again
         for(int32_t idx = 0; idx < int32_t(keys.size()); ++idx)
         {
-            if(!keys[idx].as_value().is_not_present())
+            if(!keys[idx].is_not_present())
             {
                 int32_t *entry =
                     find_entry(TValue<String>::unsafe_unchecked(keys[idx]));

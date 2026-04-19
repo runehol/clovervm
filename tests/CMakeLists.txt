@@ -21,6 +21,7 @@ target_sources(test_clovervm PRIVATE
 	test_shape.cpp
 	test_scope.cpp
 	test_typed_value.cpp
+	test_vm_array.cpp
 	)
 
 target_link_libraries(test_clovervm PRIVATE gtest_main)

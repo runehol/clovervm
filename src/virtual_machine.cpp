@@ -60,9 +60,10 @@ namespace cl
           interned_global_heap(GlobalHeap::interned_heap()),
           interned_strings(&interned_global_heap)
     {
-        initialize_builtin_scope();
         // make the main thread
-        make_new_thread();
+        ThreadState *default_thread = make_new_thread();
+        ThreadState::ActivationScope activation_scope(default_thread);
+        initialize_builtin_scope();
     }
 
     VirtualMachine::~VirtualMachine()

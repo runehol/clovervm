@@ -3,9 +3,8 @@
 
 #include "klass.h"
 #include "object.h"
-#include "owned.h"
 #include "typed_value.h"
-#include <vector>
+#include "vm_array.h"
 
 namespace cl
 {
@@ -43,10 +42,8 @@ namespace cl
 
         void grow();
 
-        // TODO these need to be CL arrays at some point, but we're not ready
-        // for that yet
-        std::vector<int32_t> hash_table;
-        std::vector<OwnedValue> keys;
+        RawArray<int32_t> hash_table;
+        ValueArray<Value> keys;
 
     public:
         CL_DECLARE_STATIC_LAYOUT_NO_VALUES(IndirectDict);
