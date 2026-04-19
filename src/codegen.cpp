@@ -450,13 +450,10 @@ namespace cl
             _temporary_reg = outer_temporary_reg;
             _max_temporary_reg = outer_max_temporary_reg;
 
-            uint32_t name_constant_idx =
-                code_obj->allocate_constant(av.constants[node_idx]);
             uint32_t body_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(class_obj));
-            code_obj->emit_opcode_constant_idx_constant_idx(
-                source_offset, Bytecode::CreateClass, name_constant_idx,
-                body_constant_idx);
+            code_obj->emit_opcode_constant_idx(
+                source_offset, Bytecode::CreateClass, body_constant_idx);
 
             perform_variable_assignment(source_offset, slot_idx, mode);
         }

@@ -707,11 +707,11 @@ namespace cl
 
     static Value op_create_class(PARAMS)
     {
-        uint8_t body_const_offset = pc[2];
+        uint8_t body_const_offset = pc[1];
         TValue<CodeObject> body_code(
             code_object->constant_table[body_const_offset].as_value());
 
-        const uint8_t *return_pc = pc + 3;
+        const uint8_t *return_pc = pc + 2;
         Value *new_fp =
             make_nested_frame(fp, body_code.extract(), return_pc, code_object);
         initialize_class_body_frame(new_fp, body_code.extract());
