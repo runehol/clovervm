@@ -88,7 +88,9 @@ namespace cl
     void IndirectDict::grow()
     {
         // make one that's twice the size
-        hash_table.assign(hash_table.size() * 2, -1);
+        size_t new_size = hash_table.size() * 2;
+        hash_table.resize(0);
+        hash_table.resize(new_size, -1);
 
         // and then just insert all the keys again
         for(int32_t idx = 0; idx < int32_t(keys.size()); ++idx)

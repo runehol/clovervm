@@ -42,7 +42,9 @@ namespace cl
 
     void Scope::grow_name_table()
     {
-        name_table.assign(name_table.size() * 2, hash_not_present);
+        size_t new_size = name_table.size() * 2;
+        name_table.resize(0);
+        name_table.resize(new_size, hash_not_present);
 
         for(int32_t entry_idx = 0; entry_idx < int32_t(entries.size());
             ++entry_idx)
