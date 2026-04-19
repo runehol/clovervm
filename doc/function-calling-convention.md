@@ -188,7 +188,7 @@ fp[call_base_reg] = callable;
 fp[call_base_reg - 1] = self;
 ```
 
-If the resolved method is not a normal function needing implicit `self`, `self` remains `not_present`. `CallMethod` then shifts the user arguments down by one slot so the call still presents a normal contiguous `callable, arg0, arg1, ...` layout. If `self` is present, `CallMethod` increases the effective arity by one so the callee sees:
+If the resolved method is not a normal function needing implicit `self`, `self` remains `not_present`. `CallMethod` then treats `reg - 1` as the effective call base, so the existing user arguments can stay where they already are. If `self` is present, `CallMethod` keeps `reg` as the call base and increases the effective arity by one so the callee sees:
 
 - `a0 = self`
 - `a1 = first user arg`

@@ -204,6 +204,76 @@ namespace cl
         MUSTTAIL return raise_generic_exception(ARGS);
     }
 
+    static ALWAYSINLINE Value invoke_builtin_callback(Value *fp,
+                                                      BuiltinFunction *builtin,
+                                                      int32_t call_base_reg,
+                                                      uint32_t n_args)
+    {
+        CallArguments args(&fp[call_base_reg], n_args);
+        return builtin->callback(ThreadState::get_active(), args);
+    }
+
+    static ALWAYSINLINE void
+    enter_function_frame(Value *&fp, const uint8_t *&pc,
+                         CodeObject *&code_object, TValue<Function> fun,
+                         int32_t call_base_reg, uint32_t n_args)
+    {
+        pc += 3;
+
+        Value *new_fp =
+            fp + call_base_reg - int32_t(n_args) - FrameHeaderSizeAboveFp;
+
+        // these aren't really values. we're just going to whack them in and
+        // ask the refcounter to ignore them.
+        new_fp[0].as.ptr = (Object *)fp;
+        new_fp[-1] = Value::from_oop(code_object);
+        new_fp[-2].as.ptr = (Object *)pc;
+
+        fp = new_fp;
+        code_object = fun.extract()->code_object.extract();
+        pc = code_object->code.data();
+    }
+
+    NOINLINE static Value op_call_method_without_self(PARAMS)
+    {
+        int32_t reg = int8_t(pc[1]);
+        uint32_t n_user_args = uint8_t(pc[2]);
+        Value fun = fp[reg];
+
+        if(unlikely(!fun.is_ptr()))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        if(fun.get_ptr()->klass == &BuiltinFunction::klass)
+        {
+            BuiltinFunction *builtin = fun.get_ptr<BuiltinFunction>();
+            if(unlikely(!builtin->accepts_arity(n_user_args)))
+            {
+                MUSTTAIL return wrong_arity_error(ARGS);
+            }
+
+            accumulator =
+                invoke_builtin_callback(fp, builtin, reg - 1, n_user_args);
+
+            pc += 3;
+
+            START(0);
+            COMPLETE();
+        }
+
+        if(unlikely(fun.get_ptr()->klass != &Function::klass))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        enter_function_frame(fp, pc, code_object, TValue<Function>(fun),
+                             reg - 1, n_user_args);
+
+        START(0);
+        COMPLETE();
+    }
+
     static Value op_lda_constant(PARAMS)
     {
         START(2);
@@ -872,11 +942,7 @@ namespace cl
                 MUSTTAIL return wrong_arity_error(ARGS);
             }
 
-            {
-                CallArguments args(&fp[reg], n_args);
-                accumulator =
-                    builtin->callback(ThreadState::get_active(), args);
-            }
+            accumulator = invoke_builtin_callback(fp, builtin, reg, n_args);
 
             pc += 3;
 
@@ -889,20 +955,8 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        pc += 3;
-
-        // must save off pc, old code object and fp
-        Value *new_fp = fp + reg - n_args - FrameHeaderSizeAboveFp;
-
-        // these aren't really values. we're just going to whack them in and ask
-        // the refcounter to ignore them.
-        new_fp[0].as.ptr = (Object *)fp;
-        new_fp[-1] = Value::from_oop(code_object);
-        new_fp[-2].as.ptr = (Object *)pc;
-
-        fp = new_fp;
-        code_object = fun.get_ptr<Function>()->code_object.extract();
-        pc = code_object->code.data();
+        enter_function_frame(fp, pc, code_object, TValue<Function>(fun), reg,
+                             n_args);
 
         START(0);
         COMPLETE();
@@ -910,22 +964,13 @@ namespace cl
 
     static Value op_call_method(PARAMS)
     {
-        int8_t reg = pc[1];
-        uint8_t n_user_args = pc[2];
-        Value self = fp[reg - 1];
-        uint8_t n_args = n_user_args;
-        if(self.is_not_present())
+        int32_t reg = int8_t(pc[1]);
+        if(unlikely(fp[reg - 1].is_not_present()))
         {
-            for(uint8_t arg_idx = 0; arg_idx < n_user_args; ++arg_idx)
-            {
-                fp[reg - 1 - int8_t(arg_idx)] = fp[reg - 2 - int8_t(arg_idx)];
-            }
-        }
-        else
-        {
-            n_args = n_user_args + 1;
+            return op_call_method_without_self(ARGS);
         }
 
+        uint32_t n_user_args = uint8_t(pc[2]);
         Value fun = fp[reg];
 
         if(unlikely(!fun.is_ptr()))
@@ -936,16 +981,13 @@ namespace cl
         if(fun.get_ptr()->klass == &BuiltinFunction::klass)
         {
             BuiltinFunction *builtin = fun.get_ptr<BuiltinFunction>();
+            uint32_t n_args = n_user_args + 1;
             if(unlikely(!builtin->accepts_arity(n_args)))
             {
                 MUSTTAIL return wrong_arity_error(ARGS);
             }
 
-            {
-                CallArguments args(&fp[reg], n_args);
-                accumulator =
-                    builtin->callback(ThreadState::get_active(), args);
-            }
+            accumulator = invoke_builtin_callback(fp, builtin, reg, n_args);
 
             pc += 3;
 
@@ -958,17 +1000,8 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        pc += 3;
-
-        Value *new_fp = fp + reg - n_args - FrameHeaderSizeAboveFp;
-
-        new_fp[0].as.ptr = (Object *)fp;
-        new_fp[-1] = Value::from_oop(code_object);
-        new_fp[-2].as.ptr = (Object *)pc;
-
-        fp = new_fp;
-        code_object = fun.get_ptr<Function>()->code_object.extract();
-        pc = code_object->code.data();
+        enter_function_frame(fp, pc, code_object, TValue<Function>(fun), reg,
+                             n_user_args + 1);
 
         START(0);
         COMPLETE();
