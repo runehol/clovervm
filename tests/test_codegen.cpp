@@ -305,6 +305,24 @@ TEST(Codegen, direct_method_call_uses_loadmethod_and_callmethod)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, list_literal_uses_createlist_with_contiguous_register_range)
+{
+    const wchar_t *test_case = L"[1, 2, 4]\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 LdaSmi 1\n"
+                           "    2 Star0\n"
+                           "    3 LdaSmi 2\n"
+                           "    5 Star1\n"
+                           "    6 LdaSmi 4\n"
+                           "    8 Star2\n"
+                           "    9 CreateList r0, 3\n"
+                           "   12 Halt\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
 {
     std::string expected = "Code object:\n"

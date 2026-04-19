@@ -7,6 +7,7 @@
 #include "code_object_print.h"
 #include "function.h"
 #include "instance.h"
+#include "list.h"
 #include "range_iterator.h"
 #include "thread_state.h"
 #include "value.h"
@@ -705,6 +706,23 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_create_list(PARAMS)
+    {
+        START(3);
+        int8_t reg = pc[1];
+        uint8_t n_items = pc[2];
+
+        TValue<List> list =
+            ThreadState::get_active()->make_refcounted_value<List>(n_items);
+        for(uint8_t idx = 0; idx < n_items; ++idx)
+        {
+            list.extract()->set_item_unchecked(idx, fp[reg - int8_t(idx)]);
+        }
+        accumulator = list;
+
+        COMPLETE();
+    }
+
     static Value op_create_class(PARAMS)
     {
         uint8_t body_const_offset = pc[1];
@@ -1221,6 +1239,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
 
+        SET_TABLE_ENTRY(Bytecode::CreateList, op_create_list);
         SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);
         SET_TABLE_ENTRY(Bytecode::CreateClass, op_create_class);
         SET_TABLE_ENTRY(Bytecode::BuildClass, op_build_class);

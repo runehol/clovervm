@@ -207,6 +207,18 @@ TEST(Parser, attribute_expression_and_assignment)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, list_literals)
+{
+    std::string expected = ("[]\n"
+                            "[1, 2, 3]\n"
+                            "[1, 2]\n");
+    std::string actual = parse(L"[]\n"
+                               L"[1, 2, 3]\n"
+                               L"[1, 2,]\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, missing_colon_in_if_stmt)
 {
     expect_parse_error(L"if True\n"

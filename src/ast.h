@@ -197,6 +197,10 @@ namespace cl
         {
             return ExpressionPrecedence::Atom;
         }
+        else if(k.node_kind == AstNodeKind::EXPRESSION_LIST)
+        {
+            return ExpressionPrecedence::Atom;
+        }
         else if(k.node_kind == AstNodeKind::EXPRESSION_CALL)
         {
             return ExpressionPrecedence::Primary;

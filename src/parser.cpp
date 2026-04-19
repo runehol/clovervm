@@ -875,6 +875,26 @@ namespace cl
                         consume(Token::RPAR);
                         return result;
                     }
+                case Token::LSQB:
+                    {
+                        uint32_t list_start_pos = source_pos_and_advance();
+                        AstChildren children;
+                        if(peek() != Token::RSQB)
+                        {
+                            children.push_back(expression());
+                            while(match(Token::COMMA))
+                            {
+                                if(peek() == Token::RSQB)
+                                {
+                                    break;
+                                }
+                                children.push_back(expression());
+                            }
+                        }
+                        consume(Token::RSQB);
+                        return ast.emplace_back(AstNodeKind::EXPRESSION_LIST,
+                                                list_start_pos, children);
+                    }
 
                 default:
                     uint32_t source_pos = source_pos_for_token();

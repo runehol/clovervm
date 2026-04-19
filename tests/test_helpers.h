@@ -32,6 +32,24 @@ namespace cl::test
         VirtualMachine vm_;
     };
 
+    class FileRunner
+    {
+    public:
+        explicit FileRunner(const wchar_t *source)
+            : return_value(test_context_.run_file(source))
+        {
+        }
+
+        VmTestContext &test_context() { return test_context_; }
+        const VmTestContext &test_context() const { return test_context_; }
+
+    private:
+        VmTestContext test_context_;
+
+    public:
+        Value return_value;
+    };
+
     struct ParsedFile
     {
         explicit ParsedFile(const wchar_t *source)

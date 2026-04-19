@@ -128,6 +128,7 @@ namespace cl
         ForIterRangeStep,
 
         // allocations
+        CreateList,
         CreateFunction,
         CreateClass,
         BuildClass,
