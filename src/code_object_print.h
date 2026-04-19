@@ -493,8 +493,6 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::CreateClass:
                 format_to(out, " ");
                 disassemble_constant(code_obj, out, pc++);
-                format_to(out, ", ");
-                disassemble_constant(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::BuildClass:

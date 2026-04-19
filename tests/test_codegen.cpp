@@ -210,6 +210,25 @@ TEST(Codegen, function_implicit_return_none)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, class_definition_uses_code_object_name_in_create_class)
+{
+    const wchar_t *test_case = L"class Cls:\n"
+                               "    pass\n"
+                               "Cls\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 CreateClass c[0]\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 LdaGlobal [0]\n"
+                           "   12 Halt\n"
+                           "Constant 0: Code object:\n"
+                           "    0 BuildClass\n"
+                           "\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, string_literal_constant_value)
 {
     test::VmTestContext test_context;
