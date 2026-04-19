@@ -20,14 +20,22 @@ tracks the most reasonable next steps after reviewing the current codebase,
   Where: class call/instantiation runtime path, method lookup/call helpers,
   `tests/test_interpreter.cpp`.
 
-## Immediate cleanup and correctness
+- [ ] Build the namespace/mapping substrate + VM-managed arrays (foundation layer)
+      Why: Current IndirectDict and Scope still rely on std::vector with a TODO calling out conversion to CL arrays. Almost every major next feature (dict literals, better globals/builtins behavior, object mapping views) depends on these invariants being real instead of aspirational.
 
-- [x] Tighten string literal handling, or explicitly document the narrow subset.
-  Why: `src/tokenizer.cpp` still only recognizes a very small double-quoted
-  string form with no escapes or single quotes. That limitation is easy to trip
-  over, and it is currently larger than the rest of the documented language
-  subset implies.
-  Where: `src/tokenizer.cpp`, `tests/test_tokenizer.cpp`, `README.md`.
+- [ ] Implement list/dict types and literals + subscripting end-to-end (next language unlock)
+      Why: Gives immediate practical expressiveness (most Python-ish programs need containers). Creates pressure to harden object model/mappings in realistic ways (good pressure). Enables richer benchmark workloads that matter.
+
+- [ ] Replace generic runtime failures with specific VM exceptions (debuggability + compatibility)
+      Why: Improves test specificity and speeds future refactors. Essential prerequisite for proper iterator protocol and broader Python semantics.
+
+- [ ] Local-slot discovery / function-scope analysis rewrite (compiler robustness)
+      Why: Reduces brittleness as grammar expands (containers, richer call signatures, more statements). Avoids compounding technical debt in codegen and scope interactions.
+
+- [ ] Build a simple version of the reclaimer that discovers Values in objects and decrefs them
+      Why: This is best done early for correctness, before the number of object kinds get too unwieldy.
+
+## Immediate cleanup and correctness
 
 - [ ] Replace generic runtime errors on important slow paths with specific exceptions.
   Why: arithmetic overflow and non-SMI fallbacks in `src/interpreter.cpp` still
@@ -37,11 +45,6 @@ tracks the most reasonable next steps after reviewing the current codebase,
 
 ## Next language and runtime slice
 
-- [ ] Make local-slot discovery less ad hoc before adding more statement forms.
-  Why: the current TODO list and the present codegen structure both point to
-  local analysis as a weak spot. Scanning function bodies for locals up front
-  will make control flow, nested blocks, and upcoming syntax work less brittle.
-  Where: `src/codegen.cpp`, `src/scope.cpp`, function-related tests.
 
 - [ ] Add one more builtin on top of the new builtin-function path.
   Why: `range` proved out the mechanism. Adding a small second builtin such as
@@ -69,33 +72,6 @@ tracks the most reasonable next steps after reviewing the current codebase,
 
 ## Data structures and object model
 
-- [ ] Implement the namespace and mapping substrate described in `doc/namespaces-and-mappings.md`.
-  Why: the runtime now needs a clearer split between scope slot identity,
-  ordered mapping behavior, immutable shape metadata, and future Python-visible
-  mapping views. The near-term priority is the storage and layout work,
-  especially around shapes and ordered property metadata, rather than exposing
-  `globals()` or `obj.__dict__` immediately.
-  Where: `src/indirect_dict.h`, `src/scope.h`, new shape/object runtime types,
-  and later mapping-view objects.
-
-- [ ] Stage the hidden-class object model described in `doc/object-model-plan.md`.
-  Why: the long-term direction is shape-based objects with slot layouts that
-  can be specialized by the JIT. The immediate next work is the first
-  implementation slice in that doc: shapes, instances, generic attribute
-  bytecodes/helpers, and VM-native exception propagation. This now partially
-  depends on the namespace and mapping invariants written down in
-  `doc/namespaces-and-mappings.md`, especially around shape layout, ordered
-  property metadata, and keeping room for future mapping views.
-  Where: new runtime object types, attribute bytecodes, and interpreter/JIT
-  support.
-
-- [ ] Turn the placeholder scope/container storage into real VM-managed arrays.
-  Why: both `src/indirect_dict.h` and `src/scope.h` still say some backing
-  structures "need to be CL arrays at some point". This is an important step if
-  the VM is going to grow beyond the current narrow subset without leaning on
-  host-side containers forever.
-  Where: `src/indirect_dict.h`, `src/scope.h`, related allocation/runtime code.
-
 - [ ] Start implementing the dictionary design described in `doc/dictionaries.md`.
   Why: dictionaries unlock globals/scopes, object storage, and eventually Python
   dict semantics. The design note is specific enough that this can become a real
@@ -118,12 +94,3 @@ tracks the most reasonable next steps after reviewing the current codebase,
   invariants early instead of retrofitting them after object graphs get larger.
   Where: memory-management docs, `src/refcount.h`, allocator and object tests.
 
-## Performance and benchmarking
-
-- [ ] Use the new benchmark harness to establish a small tracked baseline before further feature work.
-  Why: the benchmark target now covers recursive calls plus `while` and `for`
-  loops. Capturing a baseline and adding one or two more workloads tied to the
-  next feature slice will make future regressions visible.
-  Good candidates: function-call-heavy code, builtin calls, and container-heavy
-  loops once lists/dicts exist.
-  Where: `benchmark/`, benchmark documentation, and release-build workflow.
