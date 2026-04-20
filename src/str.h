@@ -91,8 +91,30 @@ namespace cl
     }
 
     uint64_t string_hash(TValue<String> s);
-    bool string_eq(TValue<String> a, TValue<String> b);
+    bool string_eq_slow_path(TValue<String> a, TValue<String> b);
+
     const cl_wchar *string_as_wchar_t(TValue<String> s);
+
+    static inline bool string_eq(TValue<String> a, TValue<String> b)
+    {
+        {
+            // pointer equality -> true
+            if(a.as_value().as.integer == b.as_value().as.integer)
+            {
+                return true;
+            }
+
+            // if both are interned, that's good enough
+            if((a.as_value().as.integer & b.as_value().as.integer) &
+               value_interned_ptr_tag)
+            {
+                return false;
+            }
+
+            // otherwise compare the strings byte per byte
+            return string_eq_slow_path(a, b);
+        }
+    }
 
     static_assert(std::is_trivially_destructible_v<String>);
 }  // namespace cl

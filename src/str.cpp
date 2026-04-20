@@ -28,15 +28,8 @@ namespace cl
         return c;
     }
 
-    bool string_eq(TValue<String> a, TValue<String> b)
+    bool string_eq_slow_path(TValue<String> a, TValue<String> b)
     {
-        // value equality -> true
-        if(a.as_value().as.integer == b.as_value().as.integer)
-            return true;
-
-        if(!a.as_value().is_refcounted_ptr() ||
-           !b.as_value().is_refcounted_ptr())
-            return false;
 
         const String *sa = a.extract();
         const String *sb = b.extract();
