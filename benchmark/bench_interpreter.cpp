@@ -773,9 +773,7 @@ template <typename Program> static void BM_PystoneLite(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_PystoneLite, CloverProgram)
     ->Name("BM_PystoneLite")
-    ->Arg(100)
-    ->Arg(1000)
-    ->Arg(10000);
+    ->Arg(1000);
 
 template <typename Program>
 static void BM_PystoneArithmetic(benchmark::State &state)
@@ -787,9 +785,7 @@ static void BM_PystoneArithmetic(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_PystoneArithmetic, CloverProgram)
     ->Name("BM_PystoneArithmetic")
-    ->Arg(100)
-    ->Arg(1000)
-    ->Arg(10000);
+    ->Arg(1000);
 
 int main(int argc, char **argv)
 {
