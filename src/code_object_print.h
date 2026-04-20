@@ -215,6 +215,8 @@ template <> struct fmt::formatter<cl::Bytecode>
             case cl::Bytecode::ForIterRangeStep:
                 return format_to(out, "ForIterRangeStep");
 
+            case cl::Bytecode::CreateDict:
+                return format_to(out, "CreateDict");
             case cl::Bytecode::CreateFunction:
                 return format_to(out, "CreateFunction");
             case cl::Bytecode::CreateClass:
@@ -503,6 +505,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 pc += 2;
                 break;
 
+            case cl::Bytecode::CreateDict:
             case cl::Bytecode::CreateList:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);

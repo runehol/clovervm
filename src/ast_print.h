@@ -227,6 +227,23 @@ template <> struct fmt::formatter<cl::AstVector>
                 format_to(out, "]");
                 break;
 
+            case cl::AstNodeKind::EXPRESSION_DICT:
+                format_to(out, "{{");
+                for(size_t i = 0; i < children.size(); i += 2)
+                {
+                    if(i != 0)
+                    {
+                        format_to(out, ", ");
+                    }
+                    render_node(av, out, children[i], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                    format_to(out, ": ");
+                    render_node(av, out, children[i + 1], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                }
+                format_to(out, "}}");
+                break;
+
             case cl::AstNodeKind::EXPRESSION_TUPLE:
                 format_to(out, "(");
                 for(size_t i = 0; i < children.size(); ++i)

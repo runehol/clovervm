@@ -2,6 +2,7 @@
 #include "class_object.h"
 #include "codegen.h"
 #include "compilation_unit.h"
+#include "dict.h"
 #include "instance.h"
 #include "interpreter.h"
 #include "list.h"
@@ -388,6 +389,85 @@ TEST(Interpreter, subscript_load_reads_list_item)
     Value actual = file_runner.return_value;
 
     EXPECT_EQ(Value::from_smi(7), actual);
+}
+
+TEST(Interpreter, dict_literal_returns_dict_object)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    Value actual = test_context.run_file(L"key = \"alpha\"\n"
+                                         L"{key: 7, \"beta\": 9}\n");
+
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(&Dict::klass, actual.get_ptr<Object>()->klass);
+    Dict *dict = actual.get_ptr<Dict>();
+    EXPECT_EQ(2u, dict->size());
+
+    Value alpha =
+        test_context.vm().get_or_create_interned_string_value(L"alpha");
+    Value beta = test_context.vm().get_or_create_interned_string_value(L"beta");
+    EXPECT_EQ(Value::from_smi(7), dict->get_item(alpha));
+    EXPECT_EQ(Value::from_smi(9), dict->get_item(beta));
+}
+
+TEST(Interpreter, subscript_load_reads_dict_item)
+{
+    test::FileRunner file_runner(L"key = \"alpha\"\n"
+                                 L"xs = {key: 4, \"beta\": 7}\n"
+                                 L"xs[key]\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(4), actual);
+}
+
+TEST(Interpreter, subscript_store_writes_dict_item)
+{
+    test::FileRunner file_runner(L"xs = {\"alpha\": 4, \"beta\": 7}\n"
+                                 L"xs[\"beta\"] = 11\n"
+                                 L"xs[\"beta\"]\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(11), actual);
+}
+
+TEST(Interpreter, subscript_augmented_assignment_updates_dict_item)
+{
+    test::FileRunner file_runner(L"xs = {\"alpha\": 4, \"beta\": 7}\n"
+                                 L"xs[\"beta\"] += 5\n"
+                                 L"xs[\"beta\"]\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(12), actual);
+}
+
+TEST(Interpreter,
+     dict_subscript_augmented_assignment_evaluates_receiver_and_key_once)
+{
+    g_next_counter = 0;
+
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj =
+        test_context.compile_file(L"xs = {\"alpha\": 10, \"beta\": 20}\n"
+                                  L"def get_dict():\n"
+                                  L"    return xs\n"
+                                  L"def next_key():\n"
+                                  L"    next_counter()\n"
+                                  L"    return \"alpha\"\n"
+                                  L"get_dict()[next_key()] += 7\n"
+                                  L"xs[\"alpha\"]\n");
+
+    TValue<String> name =
+        test_context.vm().get_or_create_interned_string_value(L"next_counter");
+    Value builtin =
+        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+            builtin_next_counter, 0, 0);
+    code_obj->module_scope.extract()->set_by_name(name, builtin);
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(17), actual);
+    EXPECT_EQ(1, g_next_counter);
 }
 
 TEST(Interpreter, subscript_store_writes_list_item)

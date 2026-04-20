@@ -1,5 +1,6 @@
 #include "subscript.h"
 
+#include "dict.h"
 #include "list.h"
 #include <stdexcept>
 
@@ -28,6 +29,10 @@ namespace cl
             return static_cast<List *>(object)->get_item(
                 list_index_from_value(key));
         }
+        if(object->klass == &Dict::klass)
+        {
+            return static_cast<Dict *>(object)->get_item(key);
+        }
 
         return Value::not_present();
     }
@@ -44,6 +49,11 @@ namespace cl
         {
             static_cast<List *>(object)->set_item(list_index_from_value(key),
                                                   value);
+            return true;
+        }
+        if(object->klass == &Dict::klass)
+        {
+            static_cast<Dict *>(object)->set_item(key, value);
             return true;
         }
 

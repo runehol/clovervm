@@ -219,6 +219,18 @@ TEST(Parser, list_literals)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, dict_literals)
+{
+    std::string expected = ("{}\n"
+                            "{1: 2, 3: 4}\n"
+                            "{1: 2}\n");
+    std::string actual = parse(L"{}\n"
+                               L"{1: 2, 3: 4}\n"
+                               L"{1: 2,}\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, subscript_expression_and_assignment)
 {
     std::string expected = ("obj[1]\n"

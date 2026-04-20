@@ -323,6 +323,26 @@ TEST(Codegen, list_literal_uses_createlist_with_contiguous_register_range)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, dict_literal_uses_createdict_with_contiguous_register_pairs)
+{
+    const wchar_t *test_case = L"{1: 2, 4: 8}\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 LdaSmi 1\n"
+                           "    2 Star0\n"
+                           "    3 LdaSmi 2\n"
+                           "    5 Star1\n"
+                           "    6 LdaSmi 4\n"
+                           "    8 Star2\n"
+                           "    9 LdaSmi 8\n"
+                           "   11 Star3\n"
+                           "   12 CreateDict r0, 2\n"
+                           "   15 Halt\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, subscript_load_uses_receiver_register_and_accumulator_key)
 {
     const wchar_t *test_case = L"def get(obj, idx):\n"

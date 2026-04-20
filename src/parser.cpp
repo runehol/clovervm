@@ -906,6 +906,30 @@ namespace cl
                         return ast.emplace_back(AstNodeKind::EXPRESSION_LIST,
                                                 list_start_pos, children);
                     }
+                case Token::LBRACE:
+                    {
+                        uint32_t dict_start_pos = source_pos_and_advance();
+                        AstChildren children;
+                        if(peek() != Token::RBRACE)
+                        {
+                            children.push_back(expression());
+                            consume(Token::COLON);
+                            children.push_back(expression());
+                            while(match(Token::COMMA))
+                            {
+                                if(peek() == Token::RBRACE)
+                                {
+                                    break;
+                                }
+                                children.push_back(expression());
+                                consume(Token::COLON);
+                                children.push_back(expression());
+                            }
+                        }
+                        consume(Token::RBRACE);
+                        return ast.emplace_back(AstNodeKind::EXPRESSION_DICT,
+                                                dict_start_pos, children);
+                    }
 
                 default:
                     uint32_t source_pos = source_pos_for_token();

@@ -522,6 +522,22 @@ namespace cl
                                             regs, children.size());
         }
 
+        void codegen_dict_literal(int32_t node_idx, Mode mode)
+        {
+            AstChildren children = av.children[node_idx];
+            uint32_t source_offset = av.source_offsets[node_idx];
+
+            TemporaryReg regs(this, std::max<size_t>(children.size(), 1));
+            for(size_t i = 0; i < children.size(); ++i)
+            {
+                codegen_node(children[i], mode);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          regs + i);
+            }
+            code_obj->emit_opcode_reg_range(source_offset, Bytecode::CreateDict,
+                                            regs, children.size() / 2);
+        }
+
         void codegen_subscript_assignment(int32_t node_idx, Mode mode)
         {
             AstKind kind = av.kinds[node_idx];
@@ -1302,6 +1318,10 @@ namespace cl
 
                 case AstNodeKind::EXPRESSION_LIST:
                     codegen_list_literal(node_idx, mode);
+                    break;
+
+                case AstNodeKind::EXPRESSION_DICT:
+                    codegen_dict_literal(node_idx, mode);
                     break;
 
                 case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:

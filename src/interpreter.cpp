@@ -5,6 +5,7 @@
 #include "class_object.h"
 #include "code_object.h"
 #include "code_object_print.h"
+#include "dict.h"
 #include "function.h"
 #include "instance.h"
 #include "list.h"
@@ -824,6 +825,25 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_create_dict(PARAMS)
+    {
+        START(3);
+        int8_t reg = pc[1];
+        uint8_t n_items = pc[2];
+
+        TValue<Dict> dict =
+            ThreadState::get_active()->make_refcounted_value<Dict>();
+        for(uint8_t idx = 0; idx < n_items; ++idx)
+        {
+            Value key = fp[reg - int8_t(idx * 2)];
+            Value value = fp[reg - int8_t(idx * 2 + 1)];
+            dict.extract()->set_item(key, value);
+        }
+        accumulator = dict;
+
+        COMPLETE();
+    }
+
     static Value op_create_class(PARAMS)
     {
         uint8_t body_const_offset = pc[1];
@@ -1305,6 +1325,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
 
+        SET_TABLE_ENTRY(Bytecode::CreateDict, op_create_dict);
         SET_TABLE_ENTRY(Bytecode::CreateList, op_create_list);
         SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);
         SET_TABLE_ENTRY(Bytecode::CreateClass, op_create_class);

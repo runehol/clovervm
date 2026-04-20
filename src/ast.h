@@ -40,6 +40,7 @@ namespace cl
         PARAMETER_SEQUENCE,
         EXPRESSION_TUPLE,
         EXPRESSION_LIST,
+        EXPRESSION_DICT,
         EXPRESSION_ASSIGN,
         EXPRESSION_BINARY,
         EXPRESSION_UNARY,
@@ -76,6 +77,7 @@ namespace cl
                 return false;
             case AstNodeKind::EXPRESSION_TUPLE:
             case AstNodeKind::EXPRESSION_LIST:
+            case AstNodeKind::EXPRESSION_DICT:
             case AstNodeKind::EXPRESSION_ASSIGN:
             case AstNodeKind::EXPRESSION_BINARY:
             case AstNodeKind::EXPRESSION_UNARY:
@@ -198,6 +200,10 @@ namespace cl
             return ExpressionPrecedence::Atom;
         }
         else if(k.node_kind == AstNodeKind::EXPRESSION_LIST)
+        {
+            return ExpressionPrecedence::Atom;
+        }
+        else if(k.node_kind == AstNodeKind::EXPRESSION_DICT)
         {
             return ExpressionPrecedence::Atom;
         }
