@@ -2,7 +2,6 @@
 #define CL_FUNCTION_H
 
 #include "code_object.h"
-#include "indirect_dict.h"
 #include "klass.h"
 #include "object.h"
 #include "owned_typed_value.h"

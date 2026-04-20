@@ -16,8 +16,6 @@ add_library(libclovervm STATIC
     dict.h
     heap.cpp
     heap.h
-    indirect_dict.cpp
-    indirect_dict.h
     instance.cpp
     instance.h
     interpreter.cpp
