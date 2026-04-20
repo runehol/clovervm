@@ -12,6 +12,8 @@ add_library(libclovervm STATIC
     codegen.cpp
     codegen.h
     compilation_unit.h
+    dict.cpp
+    dict.h
     heap.cpp
     heap.h
     indirect_dict.cpp
