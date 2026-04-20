@@ -118,6 +118,10 @@ namespace cl
             *iidx = tombstone;
             --n_valid_entries;
         }
+        else
+        {
+            throw std::runtime_error("KeyError");
+        }
     }
 
     void Dict::set_item(Value key, Value value)
