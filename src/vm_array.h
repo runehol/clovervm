@@ -370,21 +370,21 @@ namespace cl
         const_iterator begin() const { return data(); }
         const_iterator end() const { return data() + size(); }
 
-        T get(size_t idx) const { return (*this)[idx]; }
+        const T get(size_t idx) const { return (*this)[idx]; }
 
-        T operator[](size_t idx) const
+        const T operator[](size_t idx) const
         {
             assert(idx < size());
             return data()[idx];
         }
 
-        T front() const
+        const T front() const
         {
             assert(!empty());
             return (*this)[0];
         }
 
-        T back() const
+        const T back() const
         {
             assert(!empty());
             return (*this)[size() - 1];
@@ -466,7 +466,7 @@ namespace cl
             incref_element(slot);
         }
 
-        template <typename... Args> T emplace_back(Args &&...args)
+        template <typename... Args> const T emplace_back(Args &&...args)
         {
             size_t current_size = size();
             if(current_size == capacity())
