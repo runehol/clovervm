@@ -1,6 +1,7 @@
 #include <benchmark/benchmark.h>
 
 #include "code_object.h"
+#include "cpp_benchmarks.h"
 #include "parser.h"
 #include "thread_state.h"
 #include "value.h"
@@ -23,6 +24,53 @@
 namespace
 {
     using namespace cl;
+
+    struct BenchmarkCase
+    {
+        int64_t (*run)(int64_t);
+        int64_t (*items)(int64_t);
+    };
+
+    BenchmarkCase get_benchmark_case(const char *relative_path)
+    {
+        static const std::unordered_map<std::string, BenchmarkCase> cases = {
+            {"benchmark/recursive_fib.py",
+             {benchmark_cpp::recursive_fib_run,
+              benchmark_cpp::recursive_fib_items}},
+            {"benchmark/while_loop.py",
+             {benchmark_cpp::while_loop_run, benchmark_cpp::while_loop_items}},
+            {"benchmark/for_loop.py",
+             {benchmark_cpp::for_loop_run, benchmark_cpp::for_loop_items}},
+            {"benchmark/for_loop_slow_path.py",
+             {benchmark_cpp::for_loop_slow_path_run,
+              benchmark_cpp::for_loop_slow_path_items}},
+            {"benchmark/nested_for_loop.py",
+             {benchmark_cpp::nested_for_loop_run,
+              benchmark_cpp::nested_for_loop_items}},
+            {"benchmark/class_instantiation.py",
+             {benchmark_cpp::class_instantiation_run,
+              benchmark_cpp::class_instantiation_items}},
+            {"benchmark/instance_attribute_write.py",
+             {benchmark_cpp::instance_attribute_write_run,
+              benchmark_cpp::instance_attribute_write_items}},
+            {"benchmark/method_call.py",
+             {benchmark_cpp::method_call_run,
+              benchmark_cpp::method_call_items}},
+            {"benchmark/pystone_lite.py",
+             {benchmark_cpp::pystone_lite_run,
+              benchmark_cpp::pystone_lite_items}},
+            {"benchmark/pystone_arithmetic.py",
+             {benchmark_cpp::pystone_arithmetic_run,
+              benchmark_cpp::pystone_arithmetic_items}},
+        };
+
+        auto it = cases.find(relative_path);
+        if(it == cases.end())
+        {
+            throw std::runtime_error("no C++ benchmark equivalent registered");
+        }
+        return it->second;
+    }
 
     std::string load_program_source(const char *relative_path)
     {
@@ -70,6 +118,21 @@ namespace
         VirtualMachine vm_;
         ThreadState *thread_;
         CodeObject *code_;
+    };
+
+    class CppProgram
+    {
+    public:
+        CppProgram(const char *relative_path, int64_t n)
+            : fn_(get_benchmark_case(relative_path).run), n_(n)
+        {
+        }
+
+        int64_t run() { return fn_(n_); }
+
+    private:
+        int64_t (*fn_)(int64_t);
+        int64_t n_;
     };
 
     class PythonSubprocess
@@ -240,79 +303,10 @@ namespace
         return version;
     }
 
-    int64_t fibonacci_value(int64_t n)
-    {
-        if(n <= 1)
-        {
-            return n;
-        }
-        return fibonacci_value(n - 1) + fibonacci_value(n - 2);
-    }
-
-    int64_t fibonacci_call_count(int64_t n)
-    {
-        if(n <= 1)
-        {
-            return 1;
-        }
-
-        int64_t prev2 = 1;
-        int64_t prev1 = 1;
-        for(int64_t i = 2; i <= n; ++i)
-        {
-            int64_t current = 1 + prev1 + prev2;
-            prev2 = prev1;
-            prev1 = current;
-        }
-        return prev1;
-    }
-
-    int64_t triangular_number(int64_t n) { return n * (n - 1) / 2; }
-
-    void set_cpython_comparison_counter(benchmark::State &state,
-                                        const char *relative_path, int64_t n,
-                                        int64_t expected,
-                                        int64_t items_per_iteration);
-
     template <typename Program>
     std::unique_ptr<Program> make_program(const char *relative_path, int64_t n)
     {
         return std::make_unique<Program>(relative_path, n);
-    }
-
-    template <typename Program>
-    void run_benchmark_case(benchmark::State &state, const char *relative_path,
-                            int64_t n, int64_t expected,
-                            int64_t items_per_iteration)
-    {
-        std::unique_ptr<Program> program;
-        try
-        {
-            program = make_program<Program>(relative_path, n);
-        }
-        catch(const std::exception &err)
-        {
-            state.SkipWithError(err.what());
-            return;
-        }
-
-        if(program->run() != expected)
-        {
-            throw std::runtime_error("benchmark produced unexpected result");
-        }
-
-        for(auto _: state)
-        {
-            benchmark::DoNotOptimize(program->run());
-        }
-
-        state.SetItemsProcessed(state.iterations() * items_per_iteration);
-
-        if constexpr(std::is_same_v<Program, CloverProgram>)
-        {
-            set_cpython_comparison_counter(state, relative_path, n, expected,
-                                           items_per_iteration);
-        }
     }
 
     double measure_python_items_per_second(const char *relative_path, int64_t n,
@@ -355,9 +349,10 @@ namespace
         return throughput;
     }
 
-    double measure_clover_items_per_second(const char *relative_path, int64_t n,
-                                           int64_t expected,
-                                           int64_t items_per_iteration)
+    template <typename Program>
+    double measure_items_per_second(const char *relative_path, int64_t n,
+                                    int64_t expected,
+                                    int64_t items_per_iteration)
     {
         static std::unordered_map<std::string, double> cache;
 
@@ -368,7 +363,7 @@ namespace
             return it->second;
         }
 
-        CloverProgram program(relative_path, n);
+        Program program(relative_path, n);
         if(program.run() != expected)
         {
             throw std::runtime_error("benchmark produced unexpected result");
@@ -395,276 +390,67 @@ namespace
         return throughput;
     }
 
-    void set_cpython_comparison_counter(benchmark::State &state,
-                                        const char *relative_path, int64_t n,
-                                        int64_t expected,
-                                        int64_t items_per_iteration)
+    void set_comparison_counters(benchmark::State &state,
+                                 const char *relative_path, int64_t n,
+                                 int64_t expected, int64_t items_per_iteration)
     {
+        double clover_items_per_second =
+            measure_items_per_second<CloverProgram>(relative_path, n, expected,
+                                                    items_per_iteration);
         state.counters["vs_cpython"] =
-            measure_clover_items_per_second(relative_path, n, expected,
-                                            items_per_iteration) /
+            clover_items_per_second /
             measure_python_items_per_second(relative_path, n, expected,
                                             items_per_iteration);
+        state.counters["vs_cpp"] =
+            clover_items_per_second /
+            measure_items_per_second<CppProgram>(relative_path, n, expected,
+                                                 items_per_iteration);
     }
 
-    int64_t sum_of_products(int64_t n, int64_t inner_iterations)
+    template <typename Program>
+    void run_benchmark_case(benchmark::State &state, const char *relative_path,
+                            int64_t n)
     {
-        int64_t total = 0;
-        for(int64_t x = 0; x < n; ++x)
+        BenchmarkCase benchmark_case = get_benchmark_case(relative_path);
+        int64_t expected = benchmark_case.run(n);
+        int64_t items_per_iteration = benchmark_case.items(n);
+
+        std::unique_ptr<Program> program;
+        try
         {
-            for(int64_t y = 0; y < inner_iterations; ++y)
-            {
-                total += x * y;
-            }
+            program = make_program<Program>(relative_path, n);
         }
-        return total;
-    }
-
-    int64_t class_instantiation_value(int64_t n) { return n; }
-
-    int64_t instance_attribute_write_value(int64_t n)
-    {
-        int64_t total = 0;
-        for(int64_t i = 0; i < n; ++i)
+        catch(const std::exception &err)
         {
-            int64_t left = i;
-            int64_t right = i + 1;
-            total += left + right;
-        }
-        return total;
-    }
-
-    int64_t method_call_value(int64_t n) { return triangular_number(n) + n; }
-
-    struct PystoneLiteRecord
-    {
-        PystoneLiteRecord *ptr_comp = nullptr;
-        int64_t discr = 0;
-        int64_t enum_comp = 0;
-        int64_t int_comp = 0;
-    };
-
-    struct PystoneLiteContext
-    {
-        int64_t int_glob = 0;
-        PystoneLiteRecord ptr_glb_next;
-        PystoneLiteRecord ptr_glb;
-        PystoneLiteRecord record_template;
-    };
-
-    void pystone_lite_copy_record(const PystoneLiteRecord &src,
-                                  PystoneLiteRecord &dst)
-    {
-        dst.ptr_comp = src.ptr_comp;
-        dst.discr = src.discr;
-        dst.enum_comp = src.enum_comp;
-        dst.int_comp = src.int_comp;
-    }
-
-    int64_t pystone_lite_proc6(int64_t enum_par_in)
-    {
-        if(enum_par_in == 1)
-        {
-            return 2;
-        }
-        if(enum_par_in == 2)
-        {
-            return 3;
-        }
-        if(enum_par_in == 3)
-        {
-            return 1;
-        }
-        return 1;
-    }
-
-    int64_t pystone_lite_proc7(int64_t int_par_i1, int64_t int_par_i2)
-    {
-        return int_par_i2 + int_par_i1 + 2;
-    }
-
-    PystoneLiteRecord *pystone_lite_proc3(PystoneLiteContext &ctx,
-                                          PystoneLiteRecord *ptr_par_out)
-    {
-        if(ptr_par_out != nullptr)
-        {
-            ctx.int_glob = pystone_lite_proc7(10, ctx.int_glob);
-            return ptr_par_out->ptr_comp;
+            state.SkipWithError(err.what());
+            return;
         }
 
-        return &ctx.ptr_glb;
-    }
-
-    int64_t pystone_lite_proc2(PystoneLiteContext &ctx, int64_t int_par_io)
-    {
-        int64_t int_loc = int_par_io + 10;
-        while(int_loc > 3)
+        if(program->run() != expected)
         {
-            --int_loc;
-            ctx.int_glob += int_loc;
-        }
-        return int_par_io + ctx.int_glob;
-    }
-
-    int64_t pystone_lite_proc1(PystoneLiteContext &ctx,
-                               PystoneLiteRecord &ptr_par_in)
-    {
-        PystoneLiteRecord &next_record = *ptr_par_in.ptr_comp;
-        pystone_lite_copy_record(ctx.record_template, next_record);
-        ptr_par_in.int_comp = 5;
-        next_record.int_comp = ptr_par_in.int_comp;
-        next_record.ptr_comp = ptr_par_in.ptr_comp;
-        next_record.ptr_comp = pystone_lite_proc3(ctx, next_record.ptr_comp);
-        if(next_record.discr == 1)
-        {
-            next_record.int_comp = 6;
-            next_record.enum_comp = pystone_lite_proc6(ptr_par_in.enum_comp);
-            next_record.int_comp = pystone_lite_proc7(next_record.int_comp, 10);
-        }
-        else
-        {
-            pystone_lite_copy_record(next_record, ptr_par_in);
-        }
-        return ptr_par_in.int_comp + next_record.int_comp +
-               next_record.enum_comp;
-    }
-
-    int64_t pystone_lite_value(int64_t n)
-    {
-        PystoneLiteContext ctx;
-        ctx.ptr_glb_next = {nullptr, 1, 3, 0};
-        ctx.ptr_glb = {&ctx.ptr_glb_next, 1, 3, 40};
-        ctx.record_template = {&ctx.ptr_glb, 1, 3, 0};
-
-        int64_t total = 0;
-        for(int64_t i = 0; i < n; ++i)
-        {
-            total += pystone_lite_proc1(ctx, ctx.ptr_glb);
-            total += pystone_lite_proc2(ctx, 2);
-            total += pystone_lite_proc7(2, 3);
-
-            ctx.ptr_glb.enum_comp = pystone_lite_proc6(ctx.ptr_glb.enum_comp);
-            ctx.ptr_glb.int_comp += 1;
-            if(ctx.ptr_glb.int_comp > 50)
-            {
-                ctx.ptr_glb.int_comp -= 7;
-            }
-
-            total += ctx.ptr_glb.int_comp;
-            total += ctx.ptr_glb.ptr_comp->int_comp;
-            total += ctx.int_glob;
+            throw std::runtime_error("benchmark produced unexpected result");
         }
 
-        return total + ctx.ptr_glb.enum_comp + ctx.ptr_glb.int_comp +
-               ctx.ptr_glb.ptr_comp->int_comp;
-    }
-
-    struct PystoneArithmeticContext
-    {
-        int64_t tag = 0;
-        int64_t accum = 0;
-    };
-
-    int64_t pystone_arithmetic_proc7(int64_t a, int64_t b) { return a + b + 2; }
-
-    int64_t pystone_arithmetic_proc2(int64_t seed, int64_t limit)
-    {
-        int64_t total = 0;
-        int64_t i = 0;
-        while(i < limit)
+        for(auto _: state)
         {
-            total += pystone_arithmetic_proc7(seed, i);
-            if(total > 1000)
-            {
-                total -= 333;
-            }
-            else
-            {
-                total += 17;
-            }
-            ++i;
-        }
-        return total;
-    }
-
-    int64_t pystone_arithmetic_proc6(int64_t tag)
-    {
-        if(tag == 1)
-        {
-            return 2;
-        }
-        if(tag == 2)
-        {
-            return 3;
-        }
-        if(tag == 3)
-        {
-            return 1;
-        }
-        return 1;
-    }
-
-    int64_t pystone_arithmetic_proc1(PystoneArithmeticContext &ctx,
-                                     int64_t seed)
-    {
-        int64_t acc = seed;
-        int64_t outer = 0;
-        while(outer < 5)
-        {
-            acc += pystone_arithmetic_proc2(acc + outer, 6);
-            if(acc > 5000)
-            {
-                acc -= 777;
-            }
-            else
-            {
-                acc += 111;
-            }
-            ++outer;
-        }
-        ctx.tag = pystone_arithmetic_proc6(ctx.tag);
-        ctx.accum += acc;
-        return acc + ctx.tag;
-    }
-
-    int64_t pystone_arithmetic_value(int64_t n)
-    {
-        PystoneArithmeticContext ctx{1, 0};
-
-        int64_t total = 0;
-        int64_t i = 0;
-        int64_t seed = 3;
-        while(i < n)
-        {
-            total += pystone_arithmetic_proc1(ctx, seed);
-            total += pystone_arithmetic_proc2(seed, 4);
-            if(total > 20000)
-            {
-                total -= 5000;
-            }
-            else
-            {
-                total += ctx.tag;
-            }
-
-            ++seed;
-            if(seed > 8)
-            {
-                seed = 3;
-            }
-            ++i;
+            benchmark::DoNotOptimize(program->run());
         }
 
-        return total + ctx.accum + ctx.tag;
+        state.SetItemsProcessed(state.iterations() * items_per_iteration);
+
+        if constexpr(std::is_same_v<Program, CloverProgram>)
+        {
+            set_comparison_counters(state, relative_path, n, expected,
+                                    items_per_iteration);
+        }
     }
 }  // namespace
 
 template <typename Program>
 static void BM_RecursiveFibonacci(benchmark::State &state)
 {
-    const int64_t n = state.range(0);
-    run_benchmark_case<Program>(state, "benchmark/recursive_fib.py", n,
-                                fibonacci_value(n), fibonacci_call_count(n));
+    run_benchmark_case<Program>(state, "benchmark/recursive_fib.py",
+                                state.range(0));
 }
 BENCHMARK_TEMPLATE(BM_RecursiveFibonacci, CloverProgram)
     ->Name("BM_RecursiveFibonacci")
@@ -673,9 +459,8 @@ BENCHMARK_TEMPLATE(BM_RecursiveFibonacci, CloverProgram)
 
 template <typename Program> static void BM_WhileLoop(benchmark::State &state)
 {
-    const int64_t iterations = state.range(0);
-    run_benchmark_case<Program>(state, "benchmark/while_loop.py", iterations,
-                                triangular_number(iterations), iterations);
+    run_benchmark_case<Program>(state, "benchmark/while_loop.py",
+                                state.range(0));
 }
 BENCHMARK_TEMPLATE(BM_WhileLoop, CloverProgram)
     ->Name("BM_WhileLoop")
@@ -685,9 +470,7 @@ BENCHMARK_TEMPLATE(BM_WhileLoop, CloverProgram)
 
 template <typename Program> static void BM_ForLoop(benchmark::State &state)
 {
-    const int64_t iterations = state.range(0);
-    run_benchmark_case<Program>(state, "benchmark/for_loop.py", iterations,
-                                triangular_number(iterations), iterations);
+    run_benchmark_case<Program>(state, "benchmark/for_loop.py", state.range(0));
 }
 BENCHMARK_TEMPLATE(BM_ForLoop, CloverProgram)
     ->Name("BM_ForLoop")
@@ -698,10 +481,8 @@ BENCHMARK_TEMPLATE(BM_ForLoop, CloverProgram)
 template <typename Program>
 static void BM_ForLoopSlowPath(benchmark::State &state)
 {
-    const int64_t iterations = state.range(0);
     run_benchmark_case<Program>(state, "benchmark/for_loop_slow_path.py",
-                                iterations, triangular_number(iterations),
-                                iterations);
+                                state.range(0));
 }
 BENCHMARK_TEMPLATE(BM_ForLoopSlowPath, CloverProgram)
     ->Name("BM_ForLoopSlowPath")
@@ -712,12 +493,8 @@ BENCHMARK_TEMPLATE(BM_ForLoopSlowPath, CloverProgram)
 template <typename Program>
 static void BM_NestedForLoop(benchmark::State &state)
 {
-    const int64_t iterations = state.range(0);
-    static constexpr int64_t kInnerIterations = 10;
     run_benchmark_case<Program>(state, "benchmark/nested_for_loop.py",
-                                iterations,
-                                sum_of_products(iterations, kInnerIterations),
-                                iterations * kInnerIterations);
+                                state.range(0));
 }
 BENCHMARK_TEMPLATE(BM_NestedForLoop, CloverProgram)
     ->Name("BM_NestedForLoop")
@@ -728,10 +505,8 @@ BENCHMARK_TEMPLATE(BM_NestedForLoop, CloverProgram)
 template <typename Program>
 static void BM_ClassInstantiation(benchmark::State &state)
 {
-    const int64_t iterations = state.range(0);
-    run_benchmark_case<Program>(
-        state, "benchmark/class_instantiation.py", iterations,
-        class_instantiation_value(iterations), iterations);
+    run_benchmark_case<Program>(state, "benchmark/class_instantiation.py",
+                                state.range(0));
 }
 BENCHMARK_TEMPLATE(BM_ClassInstantiation, CloverProgram)
     ->Name("BM_ClassInstantiation")
@@ -742,10 +517,8 @@ BENCHMARK_TEMPLATE(BM_ClassInstantiation, CloverProgram)
 template <typename Program>
 static void BM_InstanceAttributeWrite(benchmark::State &state)
 {
-    const int64_t iterations = state.range(0);
-    run_benchmark_case<Program>(
-        state, "benchmark/instance_attribute_write.py", iterations,
-        instance_attribute_write_value(iterations), iterations);
+    run_benchmark_case<Program>(state, "benchmark/instance_attribute_write.py",
+                                state.range(0));
 }
 BENCHMARK_TEMPLATE(BM_InstanceAttributeWrite, CloverProgram)
     ->Name("BM_InstanceAttributeWrite")
@@ -755,9 +528,8 @@ BENCHMARK_TEMPLATE(BM_InstanceAttributeWrite, CloverProgram)
 
 template <typename Program> static void BM_MethodCall(benchmark::State &state)
 {
-    const int64_t iterations = state.range(0);
-    run_benchmark_case<Program>(state, "benchmark/method_call.py", iterations,
-                                method_call_value(iterations), iterations);
+    run_benchmark_case<Program>(state, "benchmark/method_call.py",
+                                state.range(0));
 }
 BENCHMARK_TEMPLATE(BM_MethodCall, CloverProgram)
     ->Name("BM_MethodCall")
@@ -767,9 +539,8 @@ BENCHMARK_TEMPLATE(BM_MethodCall, CloverProgram)
 
 template <typename Program> static void BM_PystoneLite(benchmark::State &state)
 {
-    const int64_t iterations = state.range(0);
-    run_benchmark_case<Program>(state, "benchmark/pystone_lite.py", iterations,
-                                pystone_lite_value(iterations), iterations);
+    run_benchmark_case<Program>(state, "benchmark/pystone_lite.py",
+                                state.range(0));
 }
 BENCHMARK_TEMPLATE(BM_PystoneLite, CloverProgram)
     ->Name("BM_PystoneLite")
@@ -778,10 +549,8 @@ BENCHMARK_TEMPLATE(BM_PystoneLite, CloverProgram)
 template <typename Program>
 static void BM_PystoneArithmetic(benchmark::State &state)
 {
-    const int64_t iterations = state.range(0);
-    run_benchmark_case<Program>(
-        state, "benchmark/pystone_arithmetic.py", iterations,
-        pystone_arithmetic_value(iterations), iterations);
+    run_benchmark_case<Program>(state, "benchmark/pystone_arithmetic.py",
+                                state.range(0));
 }
 BENCHMARK_TEMPLATE(BM_PystoneArithmetic, CloverProgram)
     ->Name("BM_PystoneArithmetic")
