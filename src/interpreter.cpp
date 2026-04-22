@@ -124,15 +124,34 @@ namespace cl
 
     static constexpr uint32_t kDefaultInstanceInlineSlotCount = 4;
 
+    static ALWAYSINLINE void
+    initialize_frame_header(Value *new_fp, Value *previous_fp,
+                            CodeObject *return_code_object,
+                            const uint8_t *return_pc)
+    {
+        // these aren't really values. we're just going to whack them in and
+        // ask the refcounter to ignore them.
+        new_fp[0].as.ptr = (Object *)previous_fp;
+        new_fp[-1] = Value::from_oop(return_code_object);
+        new_fp[-2].as.ptr = (Object *)return_pc;
+    }
+
+    static ALWAYSINLINE void restore_frame_header(Value *&fp,
+                                                  const uint8_t *&pc,
+                                                  CodeObject *&code_object)
+    {
+        pc = (const uint8_t *)fp[-2].as.ptr;
+        code_object = fp[-1].get_ptr<CodeObject>();
+        fp = (Value *)fp[0].as.ptr;
+    }
+
     static Value *make_nested_frame(Value *fp, CodeObject *body_code_object,
                                     const uint8_t *return_pc,
                                     CodeObject *return_code_object)
     {
         Value *new_fp =
             fp - body_code_object->get_n_registers() - FrameHeaderSizeAboveFp;
-        new_fp[0].as.ptr = (Object *)fp;
-        new_fp[-1] = Value::from_oop(return_code_object);
-        new_fp[-2].as.ptr = (Object *)return_pc;
+        initialize_frame_header(new_fp, fp, return_code_object, return_pc);
         return new_fp;
     }
 
@@ -224,11 +243,7 @@ namespace cl
         Value *new_fp =
             fp + call_base_reg - int32_t(n_args) - FrameHeaderSizeAboveFp;
 
-        // these aren't really values. we're just going to whack them in and
-        // ask the refcounter to ignore them.
-        new_fp[0].as.ptr = (Object *)fp;
-        new_fp[-1] = Value::from_oop(code_object);
-        new_fp[-2].as.ptr = (Object *)pc;
+        initialize_frame_header(new_fp, fp, code_object, pc);
 
         fp = new_fp;
         code_object = fun.extract()->code_object.extract();
@@ -868,9 +883,7 @@ namespace cl
         accumulator = build_class_from_frame(fp, code_object,
                                              TValue<String>(code_object->name));
 
-        pc = (const uint8_t *)fp[-2].as.ptr;
-        code_object = fp[-1].get_ptr<CodeObject>();
-        fp = (Value *)fp[0].as.ptr;
+        restore_frame_header(fp, pc, code_object);
 
         START(0);
         COMPLETE();
@@ -1263,9 +1276,7 @@ namespace cl
 
     static Value op_return(PARAMS)
     {
-        pc = (const uint8_t *)fp[-2].as.ptr;
-        code_object = fp[-1].get_ptr<CodeObject>();
-        fp = (Value *)fp[0].as.ptr;
+        restore_frame_header(fp, pc, code_object);
 
         START(0);
         COMPLETE();
