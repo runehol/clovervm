@@ -132,16 +132,16 @@ namespace cl
         // these aren't really values. we're just going to whack them in and
         // ask the refcounter to ignore them.
         new_fp[0].as.ptr = (Object *)previous_fp;
-        new_fp[-1] = Value::from_oop(return_code_object);
-        new_fp[-2].as.ptr = (Object *)return_pc;
+        new_fp[1] = Value::from_oop(return_code_object);
+        new_fp[-1].as.ptr = (Object *)return_pc;
     }
 
     static ALWAYSINLINE void restore_frame_header(Value *&fp,
                                                   const uint8_t *&pc,
                                                   CodeObject *&code_object)
     {
-        pc = (const uint8_t *)fp[-2].as.ptr;
-        code_object = fp[-1].get_ptr<CodeObject>();
+        pc = (const uint8_t *)fp[-1].as.ptr;
+        code_object = fp[1].get_ptr<CodeObject>();
         fp = (Value *)fp[0].as.ptr;
     }
 

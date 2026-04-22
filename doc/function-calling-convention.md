@@ -19,12 +19,11 @@ bytecode compiler and interpreter. It is based on the runtime behavior in
 - Parameters live at negative offsets from `fp`.
 - Locals and temporaries live at positive offsets from `fp`.
 - A small frame header is reserved around `fp`; current call paths store:
-  - return program counter at `fp[-2]`
-  - return code object at `fp[-1]`
+  - return program counter at `fp[-1]`
   - previous frame pointer at `fp[0]`
-- One reserved header slot at `fp[1]` exists today but is not populated by the
-  current call paths. Keeping locals at `fp[2]` preserves the current physical
-  frame spacing while allowing return metadata to sit below `fp`.
+  - return code object at `fp[1]`
+- One reserved header slot at `fp[-2]` exists today but is not populated by the
+  current call paths.
 
 ## Native Interpreter State
 
@@ -124,10 +123,10 @@ higher addresses
     fp[4]                  r2
     fp[3]                  r1
     fp[2]                  r0
-    fp[1]                  reserved header slot
+    fp[1]                  return code object
 fp->fp[0]                  previous frame pointer
-    fp[-1]                 return code object
-    fp[-2]                 return program counter
+    fp[-1]                 return program counter
+    fp[-2]                 reserved header slot
     fp[-3]                 a(n-1)
     ...
     fp[-n-1]               a1
@@ -274,7 +273,7 @@ that:
 
 - the first parameter lands at `fp[-n_args - 2]`
 - the last parameter lands at `fp[-3]`
-- header words occupy `fp[-2]`, `fp[-1]`, `fp[0]`, and the reserved `fp[1]`
+- header words occupy `fp[-2]`, `fp[-1]`, `fp[0]`, and `fp[1]`
 
 For zero-argument calls, no argument cells are reinterpreted. The callable slot
 remains below the callee's reserved/header area.
@@ -293,10 +292,10 @@ stack grows upward
 
     fp[3]   r1
     fp[2]   r0   first local/temporary
-    fp[1]        reserved header slot
+    fp[1]        return code object
 fp  fp[0]        previous frame pointer
-    fp[-1]       return code object
-    fp[-2]       return PC
+    fp[-1]       return PC
+    fp[-2]       reserved header slot
     fp[-3]  a2   last parameter
     fp[-4]  a1
     fp[-5]  a0   first parameter
@@ -319,10 +318,10 @@ After `new_fp = fp + reg + n_args + 3`:
 
     new_fp[-4]  a0 = x
     new_fp[-3]  a1 = y
-    new_fp[-2]      return PC
-    new_fp[-1]      return code object
+    new_fp[-2]      reserved
+    new_fp[-1]      return PC
     new_fp[0]       previous fp
-    new_fp[1]       reserved
+    new_fp[1]       return code object
     new_fp[2]   r0
     ...
 ```
@@ -334,8 +333,8 @@ Returning is the inverse operation. `op_return` in
 the frame header:
 
 ```cpp
-pc = (const uint8_t *)fp[-2].as.ptr;
-code_object = fp[-1].get_ptr<CodeObject>();
+pc = (const uint8_t *)fp[-1].as.ptr;
+code_object = fp[1].get_ptr<CodeObject>();
 fp = (Value *)fp[0].as.ptr;
 ```
 
@@ -346,7 +345,7 @@ So the full convention is:
 
 - arguments flow into the callee through frame slots
 - return values flow back in the accumulator
-- return control state is restored from `fp[-2]`, `fp[-1]`, and `fp[0]`
+- return control state is restored from `fp[-1]`, `fp[0]`, and `fp[1]`
 
 ## Top-Level Entry
 
@@ -372,7 +371,7 @@ If you are reasoning about CloverVM calls, the safest mental model is:
 1. Codegen lays out `callable, arg0, arg1, ...` in a contiguous upward-growing
    register window.
 2. The interpreter moves `fp` so those argument cells become `a0`, `a1`, ...
-3. `fp[-2]`, `fp[-1]`, and `fp[0]` hold the caller state needed by `Return`.
+3. `fp[-1]`, `fp[0]`, and `fp[1]` hold the caller state needed by `Return`.
 4. Locals/temporaries for the callee start at `r0 = fp[2]`.
 5. The accumulator carries the return value across the `Return` instruction.
 
