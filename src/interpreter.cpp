@@ -145,6 +145,22 @@ namespace cl
         fp = (Value *)fp[0].as.ptr;
     }
 
+    static ALWAYSINLINE Value *reg_ptr(Value *fp, int8_t reg)
+    {
+        return fp + reg;
+    }
+
+    static ALWAYSINLINE Value *reg_range_slot(Value *fp, int8_t first_reg,
+                                              uint32_t idx)
+    {
+        return reg_ptr(fp, first_reg + int8_t(idx));
+    }
+
+    static ALWAYSINLINE int8_t call_method_self_reg(int8_t call_base_reg)
+    {
+        return call_base_reg + 1;
+    }
+
     static ALWAYSINLINE int32_t frame_positive_slot_count(CodeObject *code_obj)
     {
         return FrameHeaderSizeAboveFp + int32_t(code_obj->n_locals) +
@@ -275,8 +291,8 @@ namespace cl
                 MUSTTAIL return wrong_arity_error(ARGS);
             }
 
-            accumulator =
-                invoke_builtin_callback(fp, builtin, reg + 1, n_user_args);
+            accumulator = invoke_builtin_callback(
+                fp, builtin, call_method_self_reg(reg), n_user_args);
 
             pc += 3;
 
@@ -290,7 +306,7 @@ namespace cl
         }
 
         enter_function_frame(fp, pc, code_object, TValue<Function>(fun),
-                             reg + 1, n_user_args);
+                             call_method_self_reg(reg), n_user_args);
 
         START(0);
         COMPLETE();
@@ -490,7 +506,7 @@ namespace cl
             MUSTTAIL return method_lookup_error(ARGS);
         }
         fp[call_base_reg] = callable;
-        fp[call_base_reg + 1] = self;
+        *reg_ptr(fp, call_method_self_reg(call_base_reg)) = self;
         COMPLETE();
     }
 
@@ -839,7 +855,8 @@ namespace cl
             ThreadState::get_active()->make_refcounted_value<List>(n_items);
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
-            list.extract()->set_item_unchecked(idx, fp[reg + int32_t(idx)]);
+            list.extract()->set_item_unchecked(idx,
+                                               *reg_range_slot(fp, reg, idx));
         }
         accumulator = list;
 
@@ -856,8 +873,8 @@ namespace cl
             ThreadState::get_active()->make_refcounted_value<Dict>();
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
-            Value key = fp[reg + int32_t(idx) * 2];
-            Value value = fp[reg + int32_t(idx) * 2 + 1];
+            Value key = *reg_range_slot(fp, reg, idx * 2);
+            Value value = *reg_range_slot(fp, reg, idx * 2 + 1);
             dict.extract()->set_item(key, value);
         }
         accumulator = dict;
@@ -1004,7 +1021,7 @@ namespace cl
     static Value op_call_method(PARAMS)
     {
         int32_t reg = int8_t(pc[1]);
-        if(unlikely(fp[reg + 1].is_not_present()))
+        if(unlikely(reg_ptr(fp, call_method_self_reg(reg))->is_not_present()))
         {
             return op_call_method_without_self(ARGS);
         }
@@ -1129,7 +1146,7 @@ namespace cl
         }
         else
         {
-            Value stop = fp[reg + 1];
+            Value stop = *reg_range_slot(fp, reg, 1);
             if(unlikely(!stop.is_integer()))
             {
                 MUSTTAIL return range_integer_argument_error(ARGS);
@@ -1154,14 +1171,14 @@ namespace cl
         }
         else
         {
-            Value start = fp[reg + 1];
-            Value stop = fp[reg + 2];
+            Value start = *reg_range_slot(fp, reg, 1);
+            Value stop = *reg_range_slot(fp, reg, 2);
             if(unlikely(!start.is_integer() || !stop.is_integer()))
             {
                 MUSTTAIL return range_integer_argument_error(ARGS);
             }
             fp[reg] = start;
-            fp[reg + 1] = stop;
+            *reg_range_slot(fp, reg, 1) = stop;
         }
 
         START(0);
@@ -1181,9 +1198,9 @@ namespace cl
         }
         else
         {
-            Value start = fp[reg + 1];
-            Value stop = fp[reg + 2];
-            Value step = fp[reg + 3];
+            Value start = *reg_range_slot(fp, reg, 1);
+            Value stop = *reg_range_slot(fp, reg, 2);
+            Value step = *reg_range_slot(fp, reg, 3);
             if(unlikely(!start.is_integer() || !stop.is_integer() ||
                         !step.is_integer()))
             {
@@ -1194,8 +1211,8 @@ namespace cl
                 MUSTTAIL return range_zero_step_error(ARGS);
             }
             fp[reg] = start;
-            fp[reg + 1] = stop;
-            fp[reg + 2] = step;
+            *reg_range_slot(fp, reg, 1) = stop;
+            *reg_range_slot(fp, reg, 2) = step;
         }
 
         START(0);
@@ -1207,7 +1224,7 @@ namespace cl
         int8_t reg = pc[1];
         int16_t rel_target = read_int16_le(&pc[2]);
         Value current = fp[reg];
-        Value stop = fp[reg + 1];
+        Value stop = *reg_range_slot(fp, reg, 1);
 
         if(unlikely(!current.is_smi() || !stop.is_smi()))
         {
@@ -1241,8 +1258,8 @@ namespace cl
         int8_t reg = pc[1];
         int16_t rel_target = read_int16_le(&pc[2]);
         Value current = fp[reg];
-        Value stop = fp[reg + 1];
-        Value step = fp[reg + 2];
+        Value stop = *reg_range_slot(fp, reg, 1);
+        Value step = *reg_range_slot(fp, reg, 2);
 
         if(unlikely(!current.is_smi() || !stop.is_smi() || !step.is_smi()))
         {
