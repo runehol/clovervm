@@ -9,6 +9,16 @@ namespace cl
         items.resize(size, Value::not_present());
     }
 
+    List::List(Value *elements, size_t n_elements)
+        : Object(&klass, compact_layout())
+    {
+        items.resize(n_elements);
+        for(size_t idx = 0; idx < n_elements; ++idx)
+        {
+            items.set(idx, elements[idx]);
+        }
+    }
+
     void List::insert_item_unchecked(size_t idx, Value value)
     {
         assert(idx <= size());

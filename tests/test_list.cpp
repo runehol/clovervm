@@ -57,6 +57,23 @@ TEST(List, SizedConstructorInitializesEntriesToNotPresent)
     EXPECT_TRUE(list->item_unchecked(2).is_not_present());
 }
 
+TEST(List, ConstructorCopiesContiguousElements)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    String *first = make_string(context, L"first");
+    String *second = make_string(context, L"second");
+    Value elements[] = {Value::from_oop(first), Value::from_smi(17),
+                        Value::from_oop(second)};
+    List *list = context.thread()->make_refcounted_raw<List>(elements, 3);
+
+    ASSERT_EQ(3u, list->size());
+    EXPECT_EQ(Value::from_oop(first), list->item_unchecked(0));
+    EXPECT_EQ(Value::from_smi(17), list->item_unchecked(1));
+    EXPECT_EQ(Value::from_oop(second), list->item_unchecked(2));
+}
+
 TEST(List, CheckedIndexingSupportsNegativeIndices)
 {
     test::VmTestContext context;

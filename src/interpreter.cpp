@@ -835,11 +835,8 @@ namespace cl
         uint8_t n_items = pc[2];
 
         TValue<List> list =
-            ThreadState::get_active()->make_refcounted_value<List>(n_items);
-        for(uint8_t idx = 0; idx < n_items; ++idx)
-        {
-            list.extract()->set_item_unchecked(idx, fp[reg + int32_t(idx)]);
-        }
+            ThreadState::get_active()->make_refcounted_value<List>(&fp[reg],
+                                                                   n_items);
         accumulator = list;
 
         COMPLETE();
