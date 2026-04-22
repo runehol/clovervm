@@ -18,7 +18,7 @@ namespace cl
 
         List() : Object(&klass, compact_layout()) {}
         explicit List(size_t size);
-        List(const Value *elements, size_t n_elements);
+        List(Value *elements, size_t n_elements);
 
         size_t size() const { return items.size(); }
         bool empty() const { return items.empty(); }
