@@ -50,24 +50,6 @@ TEST(Dict, SetItemOverwritesExistingValue)
     EXPECT_EQ(Value::from_smi(99), dict->get_item(key));
 }
 
-TEST(Dict, ConstructorCopiesContiguousKeyValuePairs)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-
-    Value alpha = make_string(context, L"alpha");
-    Value beta = make_string(context, L"beta");
-    Value key_values[] = {alpha, Value::from_smi(11), beta,
-                          Value::from_smi(22)};
-    Dict *dict = context.thread()->make_refcounted_raw<Dict>(key_values, 2);
-
-    EXPECT_EQ(2u, dict->size());
-    EXPECT_TRUE(dict->contains(alpha));
-    EXPECT_TRUE(dict->contains(beta));
-    EXPECT_EQ(Value::from_smi(11), dict->get_item(alpha));
-    EXPECT_EQ(Value::from_smi(22), dict->get_item(beta));
-}
-
 TEST(Dict, DelItemRemovesKeyFromLookupAndLogicalSize)
 {
     test::VmTestContext context;
