@@ -11,11 +11,13 @@ This note documents the calling convention currently implemented by CloverVM's b
 - The stack grows toward lower addresses.
 - Parameters live at positive offsets from `fp`.
 - Locals and temporaries live at negative offsets from `fp`.
-- A small frame header is reserved around `fp`; current call paths store:
+- A small frame header is kept around `fp`; current call paths store:
+  - compiled return PC at `fp[1]`
   - previous frame pointer at `fp[0]`
-  - return code object at `fp[-1]`
-  - return program counter at `fp[-2]`
-- One reserved header slot at `fp[1]` exists today but is not populated by the current call paths.
+  - interpreter return code object at `fp[-1]`
+  - interpreter return program counter at `fp[-2]`
+
+This matches the Native AArch64 calling convention for compiled code, while still having enough metadata to jump back to the interpreter when needed.
 
 ## Native Interpreter State
 
@@ -97,10 +99,10 @@ higher addresses
     ...
     fp[3]                  a(n-2)
     fp[2]                  a(n-1)
-    fp[1]                  reserved header slot (currently unused)
+    fp[1]                  compiled return PC (when JITed)
 fp->fp[0]                  previous frame pointer
-    fp[-1]                 return code object
-    fp[-2]                 return program counter
+    fp[-1]                 interpreter return code object
+    fp[-2]                 interpreter return program counter
     fp[-3]                 r0
     fp[-4]                 r1
     fp[-5]                 r2
@@ -247,10 +249,10 @@ stack grows downward
     fp[4]   a0   first parameter
     fp[3]   a1
     fp[2]   a2   last parameter
-    fp[1]        reserved header slot (currently unused)
+    fp[1]        compiled return PC (when jitted)
 fp  fp[0]        previous frame pointer
-    fp[-1]       return code object
-    fp[-2]       return PC
+    fp[-1]       interpreter return code object
+    fp[-2]       interpreter return PC
     fp[-3]  r0   first local/temporary
     fp[-4]  r1
 
@@ -272,10 +274,10 @@ After `new_fp = fp + reg - n_args - 2`:
 
     new_fp[3]  a0 = x
     new_fp[2]  a1 = y
-    new_fp[1]      reserved
+    new_fp[1]      compiled return PC
     new_fp[0]      previous fp
-    new_fp[-1]     return code object
-    new_fp[-2]     return PC
+    new_fp[-1]     interpreter return code object
+    new_fp[-2]     interpreter return PC
     new_fp[-3]     r0
     ...
 ```
