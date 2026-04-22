@@ -132,16 +132,16 @@ namespace cl
         // these aren't really values. we're just going to whack them in and
         // ask the refcounter to ignore them.
         new_fp[0].as.ptr = (Object *)previous_fp;
-        new_fp[1] = Value::from_oop(return_code_object);
-        new_fp[-1].as.ptr = (Object *)return_pc;
+        new_fp[-1] = Value::from_oop(return_code_object);
+        new_fp[-2].as.ptr = (Object *)return_pc;
     }
 
     static ALWAYSINLINE void restore_frame_header(Value *&fp,
                                                   const uint8_t *&pc,
                                                   CodeObject *&code_object)
     {
-        pc = (const uint8_t *)fp[-1].as.ptr;
-        code_object = fp[1].get_ptr<CodeObject>();
+        pc = (const uint8_t *)fp[-2].as.ptr;
+        code_object = fp[-1].get_ptr<CodeObject>();
         fp = (Value *)fp[0].as.ptr;
     }
 
@@ -153,26 +153,20 @@ namespace cl
     static ALWAYSINLINE Value *reg_range_slot(Value *fp, int8_t first_reg,
                                               uint32_t idx)
     {
-        return reg_ptr(fp, first_reg + int8_t(idx));
+        return reg_ptr(fp, first_reg - int8_t(idx));
     }
 
     static ALWAYSINLINE int8_t call_method_self_reg(int8_t call_base_reg)
     {
-        return call_base_reg + 1;
+        return call_base_reg - 1;
     }
 
-    static ALWAYSINLINE int32_t frame_positive_slot_count(CodeObject *code_obj)
-    {
-        return FrameHeaderSizeAboveFp + int32_t(code_obj->n_locals) +
-               int32_t(code_obj->n_temporaries);
-    }
-
-    static Value *make_nested_frame(Value *fp, CodeObject *caller_code_object,
+    static Value *make_nested_frame(Value *fp, CodeObject *body_code_object,
                                     const uint8_t *return_pc,
                                     CodeObject *return_code_object)
     {
-        Value *new_fp = fp + frame_positive_slot_count(caller_code_object) +
-                        FrameHeaderSizeBelowFp;
+        Value *new_fp =
+            fp - body_code_object->get_n_registers() - FrameHeaderSizeAboveFp;
         initialize_frame_header(new_fp, fp, return_code_object, return_pc);
         return new_fp;
     }
@@ -263,7 +257,7 @@ namespace cl
         pc += 3;
 
         Value *new_fp =
-            fp + call_base_reg + int32_t(n_args) + FrameHeaderSizeBelowFp + 1;
+            fp + call_base_reg - int32_t(n_args) - FrameHeaderSizeAboveFp;
 
         initialize_frame_header(new_fp, fp, code_object, pc);
 
@@ -370,14 +364,14 @@ namespace cl
     static Value op_ldar##idx(PARAMS)                                          \
     {                                                                          \
         START(1);                                                              \
-        int8_t reg = idx + cl::FrameHeaderSizeAboveFp;                         \
+        int8_t reg = -idx - cl::FrameHeaderSizeBelowFp - 1;                    \
         accumulator = fp[reg];                                                 \
         COMPLETE();                                                            \
     }                                                                          \
     static Value op_star##idx(PARAMS)                                          \
     {                                                                          \
         START(1);                                                              \
-        int8_t reg = idx + cl::FrameHeaderSizeAboveFp;                         \
+        int8_t reg = -idx - cl::FrameHeaderSizeBelowFp - 1;                    \
         fp[reg] = accumulator;                                                 \
         COMPLETE();                                                            \
     }
@@ -890,7 +884,7 @@ namespace cl
 
         const uint8_t *return_pc = pc + 2;
         Value *new_fp =
-            make_nested_frame(fp, code_object, return_pc, code_object);
+            make_nested_frame(fp, body_code.extract(), return_pc, code_object);
         initialize_class_body_frame(new_fp, body_code.extract());
 
         fp = new_fp;

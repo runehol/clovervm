@@ -251,17 +251,15 @@ template <> struct fmt::formatter<cl::CodeObject>
     void print_reg(Out &out, const cl::CodeObject &code_obj,
                    int8_t encoded_reg) const
     {
-        if(encoded_reg < 0)
+        if(encoded_reg >= 0)
         {
-            uint32_t reg =
-                uint32_t(int32_t(encoded_reg) + int32_t(code_obj.n_parameters) +
-                         cl::FrameHeaderSizeBelowFp);
+            uint32_t reg = code_obj.n_parameters - 1 +
+                           cl::FrameHeaderSizeAboveFp - encoded_reg;
             format_to(out, "a{}", reg);
         }
-        else
+        else if(encoded_reg < 0)
         {
-            uint32_t reg =
-                uint32_t(int32_t(encoded_reg) - cl::FrameHeaderSizeAboveFp);
+            uint32_t reg = -encoded_reg - cl::FrameHeaderSizeBelowFp - 1;
             format_to(out, "r{}", reg);
         }
     }
@@ -482,10 +480,10 @@ template <> struct fmt::formatter<cl::CodeObject>
                     if(n_args > 0)
                     {
                         format_to(out, ", ");
-                        print_reg(out, code_obj, reg + 1);
+                        print_reg(out, code_obj, reg - 1);
                         if(n_args > 1)
                         {
-                            print_reg(out, code_obj, reg + n_args);
+                            print_reg(out, code_obj, reg - n_args);
                         }
                     }
                 }

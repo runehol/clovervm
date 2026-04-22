@@ -13,9 +13,6 @@ namespace cl
     struct CompilationUnit;
     struct CodeObject;
 
-    // Above and below are physical directions relative to fp: above means
-    // positive fp offsets and below means negative fp offsets. They do not
-    // imply parameter-side or local-side ownership.
     static constexpr int32_t FrameHeaderSizeAboveFp = 2;
     static constexpr int32_t FrameHeaderSizeBelowFp = 2;
     static constexpr int32_t FrameHeaderSize =
@@ -134,10 +131,7 @@ namespace cl
 
         int8_t encode_reg(uint32_t reg)
         {
-            int32_t encoded =
-                int32_t(reg) - int32_t(n_parameters) - FrameHeaderSizeBelowFp;
-            assert(encoded == int8_t(encoded));
-            return int8_t(encoded);
+            return n_parameters - 1 + FrameHeaderSizeAboveFp - reg;
         }
 
         uint32_t emit_opcode_reg(uint32_t source_offset, Bytecode c,
@@ -145,7 +139,7 @@ namespace cl
         {
             assert(c != Bytecode::Invalid);
             int8_t encoded_reg = encode_reg(reg);
-            int8_t r_offset = encoded_reg - FrameHeaderSizeAboveFp;
+            int8_t r_offset = -encoded_reg - FrameHeaderSizeBelowFp - 1;
             if(r_offset >= 0 && r_offset < n_fastpath_ldar_star)
             {
                 if(c == Bytecode::Ldar)
