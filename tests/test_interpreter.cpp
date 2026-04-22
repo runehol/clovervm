@@ -292,6 +292,23 @@ TEST(Interpreter, class_body_can_read_earlier_class_binding)
     EXPECT_EQ(Value::from_smi(3), actual);
 }
 
+TEST(Interpreter, class_definition_inside_function_preserves_caller_frame)
+{
+    test::FileRunner file_runner(L"def outer(seed):\n"
+                                 L"    a = seed + 1\n"
+                                 L"    b = seed + 2\n"
+                                 L"    c = (a + b) * (seed + 3)\n"
+                                 L"    class Cls:\n"
+                                 L"        x = 11\n"
+                                 L"        y = x + 13\n"
+                                 L"    d = (a + b) * (c + Cls.y)\n"
+                                 L"    return d + a + b + c\n"
+                                 L"outer(4)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(1199), actual);
+}
+
 TEST(Interpreter, class_call_allocates_instance)
 {
     test::VmTestContext test_context;
