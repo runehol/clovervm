@@ -1,0 +1,315 @@
+# Object Model
+
+## Core Concepts
+
+### Shape
+A **Shape** is an immutable descriptor of an object’s structural state:
+
+- property layout
+- storage strategy
+- property lookup behavior
+- type identity
+
+Every object has an associated Shape.
+
+---
+
+### Type on Shape
+
+The **type** of an object is stored on its Shape:
+
+```
+object.shape.__class__
+```
+
+This applies uniformly to:
+
+- instances
+- classes (which are themselves objects)
+
+---
+
+## Immutability
+
+Shapes are immutable.
+
+No operation mutates a Shape in place. When an object’s structure or type changes, the object transitions to a new Shape.
+
+---
+
+## Transitions
+
+A **Transition** moves an object from one Shape to another.
+
+Transitions occur when:
+
+- a property is added or removed
+- property attributes change
+- lookup behavior changes
+- the object’s type changes
+
+The previous Shape remains valid for any other objects that still reference it.
+
+---
+
+## Fixed slots
+
+Some Shapes may define required fixed slots.
+
+For class objects, certain members may be present in fixed slots rather
+than being introduced through ordinary property addition. These members
+always exist for class objects and cannot be deleted.
+
+For example, `__mro__`, `__name__`, `__bases__` may always occupy the first slots in every class object.
+
+We ensure this by making the root shape hold these slots.
+
+This allows class Shapes to begin with a shared mandatory layout, while
+still permitting additional class properties to be represented.
+It also allows key machinery like base search to assume fixed layouts
+without having to track potential invalidations.
+
+However, crucially, these objects are still tracked by the Shape and
+can be looked up using the normal attribute lookup machinery -
+they do not need special-casing.
+
+---
+
+## Objects
+
+All runtime entities are objects:
+
+- instances
+- classes
+
+Each object has:
+
+- a Shape
+- property storage consistent with that Shape
+
+---
+
+## Classes as Objects
+
+Classes are ordinary objects with Shapes.
+
+They may contain:
+
+- methods (stored as properties)
+- metadata
+- a metaclass relationship
+
+---
+
+## Class Relationships
+
+### Instance → Class
+
+Each instance is associated with a class via:
+
+```
+__class__
+```
+
+Assigning to `__class__`:
+
+```
+obj.__class__ = NewClass
+```
+
+causes the object to transition to a new Shape whose `__class__`
+reflects `NewClass`.
+
+The previous Shape remains valid for other objects that still reference it.
+
+---
+
+### Class → Metaclass
+
+Similarly, each class is associated with a metaclass via:
+
+```
+__class__
+```
+
+Assigning to `__class__`:
+
+```
+Class.__class__ = NewMeta
+```
+
+causes the object to transition to a new Shape whose `__class__`
+reflects `NewMeta`.
+
+The previous Shape remains valid for other objects that still reference it.
+
+---
+
+## Property Placement
+
+Properties may exist on:
+
+- the object itself
+- related objects (e.g., class objects)
+
+Shapes encode how property lookup resolves across these relationships.
+
+---
+
+## Method Definition
+
+Methods defined on classes are ordinary properties on class objects.
+
+They are:
+
+- writable
+- replaceable
+- not treated as constant
+
+Method behavior is determined by lookup rules defined by the Shape.
+
+---
+
+## Design Principles
+
+1. Shapes are immutable
+2. All structural changes occur via Transitions
+3. Objects never mutate Shapes in place
+4. Classes and instances are uniform objects
+5. class is stored on the Shape
+6. Relationships - `__class__` are expressed via Shape transitions
+
+---
+
+## Summary
+
+- Objects reference immutable Shapes
+- Shapes define structure, type, and lookup behavior
+- Mutations cause transitions to new Shapes
+- Existing Shapes remain valid and reusable
+- Classes and instances share the same object model
+
+---
+
+# Inline Caches and Lookup Validity Cells
+
+## Inline Caches
+
+Attribute access is accelerated using **inline caches (ICs)**.
+
+Each cache entry records:
+
+- the receiver’s **Shape**
+- a **lookup validity cell** or null
+- a **slot pointer** to the resolved storage location
+
+On execution:
+
+```
+if obj.shape != cached_shape: miss
+if lookup_cell != null and !lookup_cell.valid: miss
+value = *slot_ptr
+```
+
+The receiver Shape protects receiver-local structure.
+
+---
+
+## Lookup Validity Cells
+
+A lookup validity cell represents:
+
+> Lookup through a given class and its base chain is still valid.
+
+Each class object may hold a **primary lookup cell**, reused across caches.
+
+---
+
+## Inline Cache Contents
+
+| Field              | Meaning |
+|--------------------|--------|
+| `receiver_shape`   | guards receiver layout |
+| `lookup_cell`      | null (self) or class-chain validity |
+| `slot_ptr`         | resolved storage location |
+
+---
+
+## Class Object State
+
+| Field                    | Meaning |
+|--------------------------|--------|
+| `primary_lookup_cell`    | shared validity cell |
+| `attached_lookup_cells`  | dependent cells |
+
+---
+
+## Registration
+
+Lookup cells are registered in all classes consulted:
+
+```
+for K in C.__mro__:
+    K.attached_lookup_cells.add(cell)
+```
+
+---
+
+## Invalidation
+
+On lookup-relevant mutation:
+
+```
+for cell in self.attached_lookup_cells:
+    cell.valid = false
+self.attached_lookup_cells.clear()
+
+self.primary_lookup_cell = null
+```
+
+---
+
+## Self Lookup
+
+Self lookup uses:
+
+- `lookup_cell = null`
+- only Shape + slot_ptr
+
+---
+
+## Call Behavior
+
+| Case | Condition | Behavior |
+|------|----------|---------|
+| Atribute on self | null cell | no self |
+| Through __class__ | non-null | pass self |
+
+---
+
+## Garbage Collection
+
+Inline caches must ensure that all pointers used on the fast path
+remain live. If an object has the cached receiver Shape, then that
+Shape is live and may be dereferenced. From the receiver Shape, the
+runtime can reach the object’s class and that class’s
+__mro__. Therefore any class object consulted during lookup remains
+live through the receiver object and its Shape. If the lookup validity
+cell is valid, then the cached lookup path still resolves to the same
+owning object and slot. Therefore the cached slot_ptr is safe to
+dereference. The lookup validity cell itself is not reached through
+the receiver object and must therefore be kept alive separately. In a
+refcounting runtime, this is done by having inline caches (and class
+objects, only when they're still valid) hold references to the
+cell. Lookup validity cells do not themselves hold references to the
+classes they protect, which avoids introducing reference cycles.
+
+---
+
+## Summary
+
+- Shapes guard structure
+- Lookup cells guard lookup paths
+- Slot pointers give access
+- Null cell = self lookup
+- No cycles in refcounting GC
