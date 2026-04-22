@@ -9,7 +9,7 @@ namespace cl
         items.resize(size, Value::not_present());
     }
 
-    List::List(Value *elements, size_t n_elements)
+    List::List(const Value *elements, size_t n_elements)
         : Object(&klass, compact_layout())
     {
         items.resize(n_elements);
