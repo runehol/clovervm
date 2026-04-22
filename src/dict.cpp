@@ -26,6 +26,14 @@ namespace cl
     {
     }
 
+    Dict::Dict(const Value *key_values, size_t n_items) : Dict()
+    {
+        for(size_t idx = 0; idx < n_items; ++idx)
+        {
+            set_item(key_values[idx * 2], key_values[idx * 2 + 1]);
+        }
+    }
+
     Dict::Dict(const Dict &other)
         : Object(&klass, compact_layout()), n_valid_entries(0),
           hash_table(min_table_size, not_present)

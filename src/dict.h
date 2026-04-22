@@ -35,6 +35,10 @@ namespace cl
 
         Dict();
 
+        // key_values stores n_items interleaved key/value pairs:
+        // key0, value0, key1, value1, ...
+        Dict(const Value *key_values, size_t n_items);
+
         Dict(const Dict &other);
 
         void set_item(Value key, Value value);

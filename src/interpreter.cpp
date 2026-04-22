@@ -849,13 +849,8 @@ namespace cl
         uint8_t n_items = pc[2];
 
         TValue<Dict> dict =
-            ThreadState::get_active()->make_refcounted_value<Dict>();
-        for(uint8_t idx = 0; idx < n_items; ++idx)
-        {
-            Value key = fp[reg + int32_t(idx) * 2];
-            Value value = fp[reg + int32_t(idx) * 2 + 1];
-            dict.extract()->set_item(key, value);
-        }
+            ThreadState::get_active()->make_refcounted_value<Dict>(&fp[reg],
+                                                                   n_items);
         accumulator = dict;
 
         COMPLETE();
