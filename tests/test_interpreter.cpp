@@ -645,6 +645,17 @@ TEST(Interpreter, direct_method_call_inserts_self_for_class_functions)
     EXPECT_EQ(Value::from_smi(7), actual);
 }
 
+TEST(Interpreter, direct_method_call_on_class_does_not_insert_self)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    def method(x):\n"
+                                 L"        return x + 3\n"
+                                 L"Cls.method(4)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(7), actual);
+}
+
 TEST(Interpreter, class_base_lists_are_rejected_in_codegen)
 {
     expect_runtime_error(L"class Derived(Base):\n"
