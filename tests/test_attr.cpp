@@ -10,13 +10,13 @@
 
 using namespace cl;
 
-static Value builtin_identity(ThreadState *, const CallArguments &args)
+static Value builtin_identity(Value *parameters, size_t n_parameters)
 {
-    if(args.n_args != 1)
+    if(n_parameters != 1)
     {
         throw std::runtime_error("builtin_identity expected exactly one arg");
     }
-    return args[0];
+    return parameters[0];
 }
 
 TEST(Attr, LoadAttrReturnsInstanceOwnPropertyBeforeClassMember)

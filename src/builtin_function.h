@@ -4,36 +4,12 @@
 #include "klass.h"
 #include "object.h"
 #include "value.h"
+#include <cstddef>
 #include <cstdint>
 
 namespace cl
 {
-    class ThreadState;
-
-    struct CallArguments
-    {
-        CallArguments(Value *_callable_slot, uint32_t _n_args)
-            : callable_slot(_callable_slot), n_args(_n_args)
-        {
-        }
-
-        Value operator[](uint32_t i) const
-        {
-            assert(i < n_args);
-            return *arg_slot(i);
-        }
-
-        Value *arg_slot(uint32_t i) const
-        {
-            assert(i < n_args);
-            return callable_slot + 1 + int32_t(i);
-        }
-
-        Value *callable_slot;
-        uint32_t n_args;
-    };
-
-    using BuiltinCallback = Value (*)(ThreadState *, const CallArguments &args);
+    using BuiltinCallback = Value (*)(Value *parameters, size_t n_parameters);
 
     class BuiltinFunction : public Object
     {

@@ -7,38 +7,38 @@
 
 namespace cl
 {
-    static TValue<CLInt> require_range_integer_arg(const CallArguments &args,
-                                                   uint32_t index)
+    static TValue<CLInt> require_range_integer_arg(Value *parameters,
+                                                   size_t index)
     {
-        if(!args[index].is_integer())
+        if(!parameters[index].is_integer())
         {
             throw std::runtime_error(
                 "TypeError: range() arguments must be integers");
         }
-        return TValue<CLInt>(args[index]);
+        return TValue<CLInt>(parameters[index]);
     }
 
-    static Value builtin_range(ThreadState *thread, const CallArguments &args)
+    static Value builtin_range(Value *parameters, size_t n_parameters)
     {
         Value start = Value::from_smi(0);
         Value stop = Value::None();
         Value step = Value::from_smi(1);
 
-        switch(args.n_args)
+        switch(n_parameters)
         {
             case 1:
-                stop = require_range_integer_arg(args, 0);
+                stop = require_range_integer_arg(parameters, 0);
                 break;
 
             case 2:
-                start = require_range_integer_arg(args, 0);
-                stop = require_range_integer_arg(args, 1);
+                start = require_range_integer_arg(parameters, 0);
+                stop = require_range_integer_arg(parameters, 1);
                 break;
 
             case 3:
-                start = require_range_integer_arg(args, 0);
-                stop = require_range_integer_arg(args, 1);
-                step = require_range_integer_arg(args, 2);
+                start = require_range_integer_arg(parameters, 0);
+                stop = require_range_integer_arg(parameters, 1);
+                step = require_range_integer_arg(parameters, 2);
                 if(step.get_smi() == 0)
                 {
                     throw std::runtime_error(
@@ -51,7 +51,7 @@ namespace cl
                     "TypeError: wrong number of arguments");
         }
 
-        return thread->make_refcounted_value<RangeIterator>(
+        return ThreadState::get_active()->make_refcounted_value<RangeIterator>(
             TValue<CLInt>(start), TValue<CLInt>(stop), TValue<CLInt>(step));
     }
 
