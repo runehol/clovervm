@@ -26,7 +26,7 @@ namespace cl
         Value *arg_slot(uint32_t i) const
         {
             assert(i < n_args);
-            return callable_slot - 1 - int32_t(i);
+            return callable_slot + 1 + int32_t(i);
         }
 
         Value *callable_slot;

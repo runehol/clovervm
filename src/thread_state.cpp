@@ -23,7 +23,7 @@ namespace cl
     Value ThreadState::run(CodeObject *obj)
     {
         ActivationScope activation_scope(this);
-        return run_interpreter(&stack[stack.size() - 1024], obj, 0);
+        return run_interpreter(&stack[1024], obj, 0);
     }
 
     CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule)
