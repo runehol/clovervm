@@ -235,7 +235,8 @@ namespace cl
                                                       int32_t call_base_reg,
                                                       uint32_t n_args)
     {
-        return builtin->callback(&fp[call_base_reg + 1], n_args);
+        CallArguments args(&fp[call_base_reg], n_args);
+        return builtin->callback(ThreadState::get_active(), args);
     }
 
     static ALWAYSINLINE void

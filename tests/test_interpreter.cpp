@@ -23,37 +23,37 @@ using namespace cl;
 
 static constexpr int64_t kMinSmi = -288230376151711744LL;
 
-static Value builtin_add(Value *parameters, size_t n_parameters)
+static Value builtin_add(ThreadState *, const CallArguments &args)
 {
-    if(n_parameters != 2 || !parameters[0].is_smi() || !parameters[1].is_smi())
+    if(args.n_args != 2 || !args[0].is_smi() || !args[1].is_smi())
     {
         throw std::runtime_error("builtin_add received unexpected arguments");
     }
-    return Value::from_smi(parameters[0].get_smi() + parameters[1].get_smi());
+    return Value::from_smi(args[0].get_smi() + args[1].get_smi());
 }
 
-static Value builtin_sum(Value *parameters, size_t n_parameters)
+static Value builtin_sum(ThreadState *, const CallArguments &args)
 {
     int64_t total = 0;
-    for(size_t i = 0; i < n_parameters; ++i)
+    for(uint32_t i = 0; i < args.n_args; ++i)
     {
-        if(!parameters[i].is_smi())
+        if(!args[i].is_smi())
         {
             throw std::runtime_error(
                 "builtin_sum received unexpected arguments");
         }
-        total += parameters[i].get_smi();
+        total += args[i].get_smi();
     }
     return Value::from_smi(total);
 }
 
-static Value builtin_identity(Value *parameters, size_t n_parameters)
+static Value builtin_identity(ThreadState *, const CallArguments &args)
 {
-    if(n_parameters != 1)
+    if(args.n_args != 1)
     {
         throw std::runtime_error("builtin_identity expected exactly one arg");
     }
-    return parameters[0];
+    return args[0];
 }
 
 static void expect_runtime_error(const wchar_t *source,
@@ -85,9 +85,9 @@ static void expect_range_iterator(Value actual, int64_t expected_current,
 
 static int64_t g_next_counter = 0;
 
-static Value builtin_next_counter(Value *, size_t n_parameters)
+static Value builtin_next_counter(ThreadState *, const CallArguments &args)
 {
-    if(n_parameters != 0)
+    if(args.n_args != 0)
     {
         throw std::runtime_error("builtin_next_counter expected no arguments");
     }
