@@ -357,15 +357,25 @@ Attribute access is accelerated using **inline caches (ICs)**.
 Each cache entry records:
 
 - the receiver's **Shape**
-- a **lookup validity cell** or null
-- a **slot pointer** to the resolved storage location
+- a **lookup validity cell** or `Value::not_present()`
+- a **location** field
+
+The `location` field has dual meaning:
+
+- if `lookup_cell == Value::not_present()`, `location` is a
+  receiver-relative slot index
+- otherwise, `lookup_cell` is a validity cell and `location` is a
+  direct pointer to the resolved owning slot
 
 On execution:
 
 ```text
 if obj.shape != cached_shape: miss
-if lookup_cell != null and !lookup_cell.valid: miss
-value = *slot_ptr
+if lookup_cell != Value::not_present() and !lookup_cell.valid: miss
+if lookup_cell == Value::not_present():
+    value = obj.slots[location.slot_index]
+else:
+    value = *location.slot_ptr
 ```
 
 The receiver Shape protects receiver-local structure.
@@ -388,8 +398,8 @@ caches.
 | Field | Meaning |
 |---|---|
 | `receiver_shape` | guards receiver layout |
-| `lookup_cell` | null (self) or class-chain validity |
-| `slot_ptr` | resolved storage location |
+| `lookup_cell` | `Value::not_present()` (self) or class-chain validity |
+| `location` | slot index (self) or direct slot pointer (class-chain) |
 
 ---
 
@@ -422,7 +432,7 @@ for cell in self.attached_lookup_cells:
     cell.valid = false
 self.attached_lookup_cells.clear()
 
-self.primary_lookup_cell = null
+self.primary_lookup_cell = Value::not_present()
 ```
 
 ---
@@ -431,8 +441,8 @@ self.primary_lookup_cell = null
 
 Self lookup uses:
 
-- `lookup_cell = null`
-- only Shape + slot pointer
+- `lookup_cell = Value::not_present()`
+- Shape + receiver-relative slot index
 
 ---
 
@@ -440,8 +450,8 @@ Self lookup uses:
 
 | Case | Condition | Behavior |
 |---|---|---|
-| Attribute on self | null cell | no implicit self |
-| Through `__class__` | non-null | pass self |
+| Attribute on self | `lookup_cell == Value::not_present()` | no implicit self |
+| Through `__class__` | validity cell present | pass self |
 
 ---
 
@@ -458,7 +468,7 @@ Shape.
 
 If the lookup validity cell is valid, then the cached lookup path still
 resolves to the same owning object and slot. Therefore the cached
-`slot_ptr` is safe to dereference.
+`location.slot_ptr` is safe to dereference.
 
 The lookup validity cell itself is not reached through the receiver
 object and must therefore be kept alive separately. In a refcounting
