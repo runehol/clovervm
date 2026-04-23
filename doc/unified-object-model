@@ -338,6 +338,33 @@ Ordinary object lookup scans only the present descriptor region.
 
 Latent descriptors are ignored on this path.
 
+### Implicit Dunder Lookup
+
+Dunder method lookup triggered implicitly by the runtime machinery does
+not necessarily follow ordinary object lookup.
+
+For operations such as:
+
+```text
+obj()  ->  __call__
+```
+
+lookup should skip the object itself and search on the class hierarchy
+instead.
+
+This applies to protocol-driven dispatch where the runtime is asking
+what operation the object's type supports, rather than what attribute
+the object instance exposes directly.
+
+By contrast, if user code explicitly performs an attribute lookup such
+as:
+
+```text
+obj.__call__
+```
+
+that uses the normal object attribute lookup path.
+
 ### Insertion
 
 When inserting an attribute:
