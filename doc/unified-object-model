@@ -143,17 +143,35 @@ it.
 
 Each Shape descriptor carries an ordered set of attribute descriptors.
 
-Each descriptor entry contains:
+At the representation level, a Shape may hold parallel arrays such as:
 
-- attribute name
+- `descriptor_names`
+- `descriptor_infos`
+
+`descriptor_names[i]` identifies the attribute name.
+
+`descriptor_infos[i]` carries the metadata for that attribute,
+including:
+
 - slot index
 - flags
+- physical storage location
+
+One plausible C++ shape for `descriptor_infos` is:
+
+```cpp
+struct DescriptorInfo {
+    int32_t physical_idx;
+    StorageKind kind;
+    uint16_t flags;
+};
+```
 
 One compact representation is:
 
 - 64-bit name
 - 32-bit slot index
-- 32-bit flags
+- 16-bit flags
 
 which fits in 128 bits per descriptor entry.
 
@@ -162,6 +180,19 @@ index.
 
 This is needed so a name may keep a stable slot assignment even when it
 is not currently present in the object's normal attribute set.
+
+The current storage split already distinguishes physical placement, for
+example with:
+
+```cpp
+enum class StorageKind : uint8_t {
+    Inline,
+    Overflow,
+};
+```
+
+Attaching attribute flags to `descriptor_infos` keeps physical storage
+policy and attribute policy together.
 
 The initial flag set is intentionally small:
 
