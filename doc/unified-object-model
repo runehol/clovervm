@@ -96,6 +96,13 @@ Each instance is associated with a class via:
 __class__
 ```
 
+`__class__` is represented in two places:
+
+- on the Shape, as the object's structural type identity
+- in the object itself, as a fixed read-only attribute slot
+
+These must always remain in sync.
+
 Assigning to `__class__`:
 
 ```text
@@ -140,12 +147,32 @@ Each descriptor entry contains:
 
 - attribute name
 - slot index
+- flags
+
+One compact representation is:
+
+- 64-bit name
+- 32-bit slot index
+- 32-bit flags
+
+which fits in 128 bits per descriptor entry.
 
 The slot index is explicit. Descriptor position is not itself the slot
 index.
 
 This is needed so a name may keep a stable slot assignment even when it
 is not currently present in the object's normal attribute set.
+
+The initial flag set is intentionally small:
+
+- `READ_ONLY`
+- `STABLE_SLOT`
+
+`READ_ONLY` means ordinary attribute assignment and deletion are not
+allowed.
+
+`STABLE_SLOT` means the slot index remains reserved across related
+Shapes, even when the name moves to the latent region.
 
 ---
 
@@ -228,7 +255,8 @@ Other always-present class metadata such as `__mro__`, `__name__`, and
 
 The important distinction is:
 
-- always-present fixed metadata lives in the present region for every
+- always-present fixed metadata such as `__class__`, `__mro__`,
+  `__name__`, and `__bases__` lives in the present region for every
   class Shape
 - optional predefined dunder names may move between the present and
   latent regions while keeping the same slot index
@@ -236,6 +264,14 @@ The important distinction is:
 This gives us CPython-like fixed locations for hot protocol names while
 still preserving correct "not present here, continue to bases"
 semantics.
+
+Typical flag usage:
+
+- `__class__`: `READ_ONLY | STABLE_SLOT`
+- `__mro__`: `READ_ONLY | STABLE_SLOT`
+- `__bases__`: `READ_ONLY | STABLE_SLOT`
+- `__new__`: `STABLE_SLOT`
+- `__init__`: `STABLE_SLOT`
 
 ---
 
@@ -256,6 +292,11 @@ This redundancy is intentional.
 Shape metadata is the authority for compile-time lookup structure and
 base-class resolution. Object slot contents are still useful for runtime
 fast paths that operate on a concrete object.
+
+For `__class__`, the object slot is not merely a convenience cache: it
+allows ordinary attribute lookup to treat `obj.__class__` like any other
+fixed attribute and avoids forcing a special case through the lookup
+path.
 
 For example, a fast path for constructing an instance of a class may
 check:
