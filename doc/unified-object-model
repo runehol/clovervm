@@ -66,11 +66,16 @@ All runtime entities are objects:
 
 - instances
 - classes
+- builtin objects such as `String` and `List`
 
 Each object has:
 
 - a Shape
 - property storage consistent with that Shape
+
+Builtin objects such as `String` and `List` also carry Shapes and
+participate in the same object protocol as user-visible instances and
+classes.
 
 ---
 
@@ -83,6 +88,46 @@ They may contain:
 - methods (stored as properties)
 - metadata
 - a metaclass relationship
+
+---
+
+## C++ Runtime Layout
+
+Although the Python-level model is uniform, runtime objects do not need
+to have identical native C++ layouts.
+
+At the C++ level we may use distinct runtime types such as:
+
+- `Object`
+- `InstanceObject`
+- `ClassObject`
+- builtin object types such as `StringObject` and `ListObject`
+
+This lets the runtime give different object kinds different fixed native
+fields while still making them behave as ordinary objects at the Python
+level.
+
+Common runtime state should still be available across object kinds,
+including:
+
+- a Shape reference
+- fixed inline slots where applicable
+- a pointer to overflow or "extra" slot storage for attributes that do
+  not fit in the inline portion
+
+The Shape remains the semantic authority for logical slot meaning. The
+native C++ object layout only determines where a given logical slot is
+stored physically.
+
+This is why slot metadata needs to distinguish physical storage, for
+example:
+
+- inline storage in the native object
+- overflow storage in the extra slot array
+
+From the Python side, these objects still behave uniformly: builtin
+objects, user instances, and classes all present as ordinary objects
+with Shapes and slots.
 
 ---
 
