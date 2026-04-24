@@ -901,6 +901,75 @@ Self lookup uses:
 
 ---
 
+## Bound Method Escape
+
+Direct method-call syntax and method-value lookup are different semantic
+cases.
+
+For a direct call such as:
+
+```text
+obj.method(args...)
+```
+
+the runtime should use a method-call path that carries both:
+
+- the resolved callable
+- the receiver to use as `self` when binding rules require it
+
+This path must not allocate an intermediate bound-method object merely to
+call it immediately.
+
+The preferred opcode shape for this direct-call form is a fused
+attribute-call operation:
+
+```text
+CallMethodAttr name, cache_index, receiver, argc, args...
+```
+
+The opcode performs attribute lookup in call context and then calls the
+resolved target. The inline cache records the lookup result and binding
+convention, so the interpreter does not need to materialize an
+intermediate `(callable, maybe_self)` pair in interpreter-visible
+registers.
+
+Different lookup results decide whether and how an implicit receiver is
+inserted:
+
+- receiver-local callable: call with the explicit arguments only
+- descriptor that binds to the receiver: call with the receiver inserted
+- descriptor that binds to the class: call with the class inserted
+- descriptor that does not bind: call with the explicit arguments only
+- custom lookup fallback: perform the generic lookup, then call the
+  resulting value
+
+At JIT compilation time, a populated `CallMethodAttr` inline cache should
+identify the concrete path selected by the observed lookup. Compiled code
+can then lower directly to that path with the cache's guards, instead of
+emitting a runtime switch over all binding cases.
+
+For an attribute lookup such as:
+
+```text
+f = obj.method
+```
+
+the resulting value is observable. If descriptor lookup produces a bound
+method, the runtime must expose a first-class callable value with the
+receiver bound according to the descriptor protocol.
+
+The initial implementation may allocate a real bound-method wrapper only
+when the method value escapes. Later implementations may replace that
+wrapper with a smaller specialized callable representation, as long as
+observable Python behavior is preserved.
+
+The important split is:
+
+- direct method calls may stay allocation-free on the hot path
+- escaped method values pay for a real observable callable
+
+---
+
 ## Garbage Collection
 
 Inline caches must ensure that all pointers used on the fast path remain
@@ -925,6 +994,29 @@ runtime, this is done by having inline caches (and class objects, only
 when they're still valid) hold references to the cell. Lookup validity
 cells do not themselves hold references to the classes they protect,
 which avoids introducing reference cycles.
+
+## Testing Direction
+
+Prefer interpreter-level semantic tests for object-model behavior:
+
+1. instance attribute store and load
+2. class attribute lookup
+3. direct method calls
+4. class definition and instantiation
+5. `__init__`-driven construction
+6. escaped method values such as `f = obj.method`
+7. attribute miss producing `AttributeError`
+8. exception propagation across nested calls
+9. `raise`
+10. `try` / `except`
+
+Keep codegen and JIT tests structural. They should pin down high-value
+lowering guarantees such as:
+
+- attribute bytecode shape
+- method-call lowering
+- class-definition lowering shape
+- shape-guard and lookup-cell specialization decisions
 
 ## Summary
 
