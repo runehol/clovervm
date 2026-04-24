@@ -349,22 +349,31 @@ The unified-object-model doc describes lookup validity cells as the long-term
 replacement for ad hoc invalidation. That work should come after classes and
 instances both use the same shape-based lookup model.
 
-Inline caches should store a resolved object plus a storage location
+Inline caches should store a cached resolved value for class-chain hits, not a
+raw pointer to the resolved slot. Because every successful class attribute write
+invalidates attached lookup validity cells, replacing a class attribute kills
+the cache before the stale resolved value can be used again.
+
+Receiver-slot hits still need a receiver-relative storage location
 (`StorageKind` and slot index), not a raw pointer to the resolved slot. Overflow
 or extra-slot storage may be reallocated by unrelated mutations, so direct slot
-pointers are not stable enough for cached class-chain lookup.
+pointers are not stable enough.
 
-The lookup validity cell should be independent of the resolved object. A
+The lookup validity cell should be independent of the cached value. A
 receiver-local slot hit still needs validity for class-chain assumptions,
 because installing a data descriptor for the same name on the class or a base
-class must invalidate the self-slot fast path. The access kind, not the
-presence of a resolved object, should decide whether the storage location is
-receiver-relative or resolved-object-relative.
+class must invalidate the self-slot fast path.
 
 Inline caches should also record the resolved access kind explicitly rather
-than inferring binding behavior from resolved-object presence. The access kind
-decides whether the cached storage location is returned directly, passed
-through descriptor `__get__`, or treated as a miss / `__getattr__` fallback.
+than inferring binding behavior from cached-value presence. The access kind
+decides whether the receiver slot is read, the cached resolved value is returned
+directly, the cached resolved value is passed through descriptor `__get__`, or
+the access is treated as a miss / `__getattr__` fallback.
+
+If class-write invalidation later becomes more selective, for example by
+preserving lookup cells for ordinary value-to-ordinary-value writes, class-chain
+caches should switch back to storing a resolved object plus storage location so
+they can reread the current slot contents while the lookup cell remains valid.
 
 Receiver-local slot caches need descriptor-precedence protection. They should
 only be emitted when the class-chain lookup for the same name either misses or

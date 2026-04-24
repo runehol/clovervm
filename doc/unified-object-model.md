@@ -711,8 +711,8 @@ Each cache entry records:
 | `lookup_mode` | attribute algorithm being specialized |
 | `lookup_cell` | validity for class-chain lookup assumptions |
 | `access_kind` | semantic action for the resolved attribute |
-| `resolved_object` | object found by lookup when the cache needs one; otherwise unused / `Value::not_present()` |
-| `storage_location` | storage kind plus slot index relative to receiver or resolved object |
+| `cached_value` | resolved class-chain value for `ResolvedValue` and descriptor cache kinds; otherwise unused |
+| `receiver_storage_location` | storage kind plus slot index relative to the receiver for `ReceiverSlot` |
 
 The lookup mode says which attribute algorithm was specialized. This is
 important because `InstanceAttribute` and `ClassAttribute` search
@@ -728,7 +728,7 @@ The access kind records the semantic action represented by the cache:
 ```cpp
 enum class AttributeAccessKind : uint8_t {
     ReceiverSlot,
-    ResolvedSlot,
+    ResolvedValue,
     DataDescriptorGet,
     NonDataDescriptorGet,
     GetAttrFallback,
@@ -738,7 +738,7 @@ enum class AttributeAccessKind : uint8_t {
 
 The access kind decides whether the cached value is returned directly,
 passed through descriptor `__get__`, or treated as a miss/fallback. It
-must not be inferred from the resolved object field.
+must not be inferred from the presence of a cached value.
 
 Descriptor access also needs to retain the receiver convention selected
 by the lookup mode and winning path:
@@ -751,11 +751,12 @@ enum class DescriptorReceiverKind : uint8_t {
 };
 ```
 
-The access kind determines where the value is loaded from:
+The access kind determines where the value comes from:
 
-- `ReceiverSlot` uses a storage location relative to the receiver
-- `ResolvedSlot` and descriptor access kinds use a storage location
-  relative to the resolved object
+- `ReceiverSlot` reads from a storage location relative to the receiver
+- `ResolvedValue` returns the cached resolved value directly
+- descriptor access kinds call descriptor protocol on the cached resolved
+  value
 
 The lookup validity cell is independent of the value location. Even a
 receiver-local slot hit may depend on class-chain lookup remaining
@@ -772,16 +773,29 @@ On execution:
 ```text
 if obj.shape != cached_shape: miss
 if !lookup_cell.valid: miss
-if access_kind == GetAttrFallback:
+if access_kind == Missing:
+    return missing
+else if access_kind == GetAttrFallback:
     return fallback full lookup
 else if access_kind requires receiver storage:
-    value = read_slot(obj, storage_location)
+    value = read_slot(obj, receiver_storage_location)
 else:
-    value = read_slot(resolved_object, storage_location)
+    value = cached_value
 apply access_kind to value
 ```
 
 The receiver Shape protects receiver-local structure.
+
+Because every successful class attribute write invalidates attached
+lookup validity cells, class-chain cache entries do not need to reread
+the defining class slot. If a class attribute is replaced, the lookup
+cell becomes invalid before the cached value can be used again.
+
+If CloverVM later makes class-write invalidation more selective, for
+example by preserving lookup cells for ordinary value-to-ordinary-value
+writes, then class-chain cache entries would need to store a resolved
+object plus storage location instead of a cached value so they can reread
+the current slot contents while the lookup cell remains valid.
 
 ---
 
@@ -885,7 +899,6 @@ Self lookup uses:
 
 - a lookup validity cell guarding the relevant class-chain assumptions
 - `access_kind = AttributeAccessKind::ReceiverSlot`
-- `resolved_object = Value::not_present()`
 - Shape + receiver-relative storage location
 
 ---
@@ -895,7 +908,7 @@ Self lookup uses:
 | Case | Condition | Behavior |
 |---|---|---|
 | Receiver slot | `access_kind == ReceiverSlot` | no implicit self |
-| Resolved slot | `access_kind == ResolvedSlot` | no implicit self |
+| Resolved value | `access_kind == ResolvedValue` | no implicit self |
 | Descriptor get | `access_kind == DataDescriptorGet` or `NonDataDescriptorGet` | descriptor decides binding |
 | `__getattr__` fallback | `access_kind == GetAttrFallback` | fallback decides result |
 
@@ -981,12 +994,12 @@ object's class and that class's `__mro__`. Therefore any class object
 consulted during lookup remains live through the receiver object and its
 Shape.
 
-If the lookup validity cell is valid, then the cached lookup path still
-resolves to the same resolved object and storage location. The cache must
-not rely on a raw pointer to a slot, because overflow or extra-slot
-storage may be reallocated during unrelated mutations. Instead it keeps
-the resolved object alive when one is used and rereads the slot through
-the cached storage kind and slot index.
+If the lookup validity cell is valid, then the cached class-chain path
+still resolves to the same cached value. The cache must keep that value
+alive. Receiver-slot caches store only a storage kind and slot index
+relative to the receiver; they must not rely on a raw pointer to a slot,
+because overflow or extra-slot storage may be reallocated during
+unrelated mutations.
 
 The lookup validity cell itself is not reached through the receiver
 object and must therefore be kept alive separately. In a refcounting
