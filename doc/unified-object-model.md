@@ -424,6 +424,36 @@ Ordinary object lookup scans only the present descriptor region.
 
 Latent descriptors are ignored on this path.
 
+Full Python-compatible lookup also has to account for descriptors. The
+normal instance-attribute algorithm is:
+
+1. Resolve the attribute name through the receiver's class chain.
+2. If the class-chain result is a data descriptor, invoke it and return
+   the result.
+3. Otherwise, search the receiver's own present attributes.
+4. If the receiver has the attribute, return that value.
+5. If the class-chain result is a non-data descriptor, invoke it and
+   return the result.
+6. If the class-chain result is an ordinary value, return it.
+7. Otherwise, fall back to `__getattr__` if one is defined.
+
+For instance lookup, descriptor invocation passes the original receiver:
+
+```text
+descriptor.__get__(obj, obj.__class__)
+```
+
+For class-object lookup through the metaclass chain, the class object is
+the receiver:
+
+```text
+descriptor.__get__(Class, Class.__class__)
+```
+
+Ordinary values stored directly on the receiver are not descriptors for
+this purpose. Descriptor behavior comes from attributes found outside the
+receiver's own storage, through the class or metaclass chain.
+
 ### Implicit Dunder Lookup
 
 Dunder method lookup triggered implicitly by the runtime machinery does
@@ -535,25 +565,28 @@ Attribute access is accelerated using **inline caches (ICs)**.
 Each cache entry records:
 
 - the receiver's **Shape**
-- a **lookup validity cell** or `Value::not_present()`
+- a **lookup validity cell**
 - a cached owner object or `Value::not_present()`
 - a **storage location** field
 
-The owner field has dual meaning:
+The cached owner determines where the value is loaded from:
 
-- if `lookup_cell == Value::not_present()`, the cached owner is
-  `Value::not_present()` and the storage location is relative to the
-  receiver
-- otherwise, `lookup_cell` is a validity cell, the cached owner is the
-  object that owns the resolved slot, and the storage location is
-  relative to that owner
+- if the cached owner is `Value::not_present()`, the storage location is
+  relative to the receiver
+- otherwise, the cached owner is the object that owns the resolved slot,
+  and the storage location is relative to that owner
+
+The lookup validity cell is independent of the value location. Even a
+receiver-local slot hit may depend on class-chain lookup remaining
+unchanged, because installing a data descriptor for the same name on the
+class or a base class would take precedence over the receiver slot.
 
 On execution:
 
 ```text
 if obj.shape != cached_shape: miss
-if lookup_cell != Value::not_present() and !lookup_cell.valid: miss
-if lookup_cell == Value::not_present():
+if !lookup_cell.valid: miss
+if cached_owner == Value::not_present():
     value = read_slot(obj, storage_location)
 else:
     value = read_slot(cached_owner, storage_location)
@@ -579,7 +612,7 @@ caches.
 | Field | Meaning |
 |---|---|
 | `receiver_shape` | guards receiver layout |
-| `lookup_cell` | `Value::not_present()` (self) or class-chain validity |
+| `lookup_cell` | validity for class-chain lookup assumptions |
 | `cached_owner` | `Value::not_present()` (self) or owning object |
 | `storage_location` | storage kind plus slot index relative to receiver or owner |
 
@@ -623,7 +656,7 @@ self.primary_lookup_cell = Value::not_present()
 
 Self lookup uses:
 
-- `lookup_cell = Value::not_present()`
+- a lookup validity cell guarding the relevant class-chain assumptions
 - `cached_owner = Value::not_present()`
 - Shape + receiver-relative storage location
 
@@ -633,8 +666,8 @@ Self lookup uses:
 
 | Case | Condition | Behavior |
 |---|---|---|
-| Attribute on self | `lookup_cell == Value::not_present()` | no implicit self |
-| Through `__class__` | validity cell present | pass self |
+| Attribute on self | `cached_owner == Value::not_present()` | no implicit self |
+| Through `__class__` | cached owner present | pass self |
 
 ---
 

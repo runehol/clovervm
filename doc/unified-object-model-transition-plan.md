@@ -244,6 +244,20 @@ Descriptor handling will be layered onto the resolved class-chain result, so
 descriptor objects decide binding behavior rather than the cache inferring it
 only from where the attribute was found.
 
+This resolver must eventually implement Python descriptor precedence:
+
+- data descriptors found in the class/metaclass chain override receiver-local
+  attributes
+- receiver-local attributes override non-data descriptors and ordinary
+  class-chain values
+- non-data descriptors bind only after receiver-local lookup misses
+- missing attributes fall through to `__getattr__` when supported
+
+For descriptor invocation, pass the original lookup receiver. Instance lookup
+invokes descriptors as `descriptor.__get__(obj, obj.__class__)`; class-object
+lookup through the metaclass chain invokes them as
+`descriptor.__get__(Class, Class.__class__)`.
+
 Primary files:
 
 - [src/class_object.cpp](../src/class_object.cpp)
@@ -295,6 +309,9 @@ Add or rewrite coverage for:
 - `__class__` shape/object-slot synchronization
 - class objects storing ordinary properties via Shapes
 - class-chain lookup continuing past latent descriptors
+- data descriptors overriding receiver-local attributes
+- receiver-local attributes overriding non-data descriptors
+- descriptor invocation receiving the original lookup receiver
 
 Primary files:
 
@@ -312,6 +329,13 @@ Inline caches should store an owning object plus a storage location
 (`StorageKind` and slot index), not a raw pointer to the resolved slot. Overflow
 or extra-slot storage may be reallocated by unrelated mutations, so direct slot
 pointers are not stable enough for cached class-chain lookup.
+
+The lookup validity cell should be independent of the cached owner. A
+receiver-local slot hit still needs validity for class-chain assumptions,
+because installing a data descriptor for the same name on the class or a base
+class must invalidate the self-slot fast path. The cached owner, not the
+presence of a validity cell, should decide whether the storage location is
+receiver-relative or owner-relative.
 
 Because `method_version` is currently unused, there is no need to preserve it
 while introducing lookup cells later.
