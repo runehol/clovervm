@@ -8,7 +8,7 @@ Move from the current split model:
 - classes have a separate member vector and base-chain lookup
 
 to the unified model described in
-[doc/unified-object-model](./unified-object-model):
+[doc/unified-object-model.md](./unified-object-model.md):
 
 - every object has a Shape
 - `__class__` lives on the Shape and in a fixed object slot
@@ -141,12 +141,16 @@ Primary files:
 
 Rework instance add/delete transitions so that:
 
-- delete moves a descriptor from present to latent
-- reinsertion reuses the latent descriptor's slot
+- deleting a predefined fixed-slot descriptor moves it from present to latent
+- deleting an ordinary user attribute may drop or compact its descriptor instead
+  of preserving it forever
+- reinsertion reuses the latent descriptor's slot when a retained latent
+  descriptor exists
 - present descriptors preserve insertion order
 - shape presence becomes separate from slot allocation
 
-This replaces the current delete-and-forget behavior.
+This replaces the current delete-and-forget behavior for fixed slots without
+requiring unbounded latent descriptor retention for arbitrary user attributes.
 
 Primary files:
 
@@ -222,7 +226,7 @@ Primary files:
 - [src/shape.h](../src/shape.h)
 - [src/shape.cpp](../src/shape.cpp)
 
-### 7. Rework class-chain lookup to use Shape presence
+### 7. Rework attribute lookup to use Shape presence
 
 Replace vector lookup plus `base` recursion with a resolver that understands:
 
@@ -233,16 +237,19 @@ Replace vector lookup plus `base` recursion with a resolver that understands:
 This is the semantic change that makes latent predefined dunder slots useful
 for class lookup.
 
-The same resolver should be used for instance and class-object lookup:
+The implementation should share class-chain search primitives across lookup
+modes, but instance lookup and class-object lookup are different algorithms:
 
-- instance lookup enters the chain through `obj.__class__`, then searches the
-  class and its bases
-- class-object lookup enters the chain through `Class.__class__`, then searches
-  the metaclass and its bases
+- instance lookup searches `obj.__class__.__mro__`, then the receiver object's
+  own storage, then the class-chain result as appropriate
+- class-object lookup searches both `Class.__class__.__mro__` and
+  `Class.__mro__`; descriptors found on the metaclass path are invoked with the
+  class object as receiver, while descriptors found on the class path are
+  invoked with no instance receiver
 
-Descriptor handling will be layered onto the resolved class-chain result, so
-descriptor objects decide binding behavior rather than the cache inferring it
-only from where the attribute was found.
+Descriptor handling will be layered onto the resolved result, so descriptor
+objects decide binding behavior with the correct receiver convention rather
+than the cache inferring it only from where the value is stored.
 
 This resolver must eventually implement Python descriptor precedence:
 
@@ -253,10 +260,18 @@ This resolver must eventually implement Python descriptor precedence:
 - non-data descriptors bind only after receiver-local lookup misses
 - missing attributes fall through to `__getattr__` when supported
 
-For descriptor invocation, pass the original lookup receiver. Instance lookup
-invokes descriptors as `descriptor.__get__(obj, obj.__class__)`; class-object
-lookup through the metaclass chain invokes them as
-`descriptor.__get__(Class, Class.__class__)`.
+For descriptor invocation, keep track of the winning lookup path. Instance
+lookup invokes descriptors as `descriptor.__get__(obj, obj.__class__)`.
+Class-object lookup through the metaclass path invokes descriptors as
+`descriptor.__get__(Class, Class.__class__)`. Class-object lookup through
+`Class.__mro__` invokes descriptors as `descriptor.__get__(Value::None(),
+Class)`.
+
+Store and delete paths need matching descriptor-aware semantics. The generic
+store/delete path must respect `__setattr__` and `__delattr__` overrides when
+present, and the default path must consult the class/metaclass chain for data
+descriptors with `__set__` or `__delete__` before mutating receiver-local
+storage directly.
 
 Primary files:
 
@@ -290,6 +305,9 @@ Primary files:
 Change class-body result construction to populate class properties through the
 new object-property API instead of `set_member()`.
 
+After class properties are installed, `BuildClass` should run the
+`__set_name__` notification pass for class-body values that define it.
+
 Also ensure instance construction uses initial shapes whose predefined
 `__class__` invariants are already established.
 
@@ -305,13 +323,16 @@ object model.
 Add or rewrite coverage for:
 
 - present vs latent descriptor behavior
-- stable slot reuse after delete/re-add
+- stable predefined-slot reuse after delete/re-add
 - `__class__` shape/object-slot synchronization
 - class objects storing ordinary properties via Shapes
 - class-chain lookup continuing past latent descriptors
 - data descriptors overriding receiver-local attributes
 - receiver-local attributes overriding non-data descriptors
 - descriptor invocation receiving the original lookup receiver
+- descriptor `__set__` / `__delete__` taking precedence over direct storage
+- custom `__getattribute__`, `__setattr__`, and `__delattr__` disabling the
+  default fast paths
 
 Primary files:
 
@@ -336,6 +357,11 @@ because installing a data descriptor for the same name on the class or a base
 class must invalidate the self-slot fast path. The cached owner, not the
 presence of a validity cell, should decide whether the storage location is
 receiver-relative or owner-relative.
+
+Inline caches should also record the resolved access kind explicitly rather
+than inferring binding behavior from owner presence. The access kind decides
+whether the cached storage location is returned directly, passed through
+descriptor `__get__`, or treated as a miss / `__getattr__` fallback.
 
 Because `method_version` is currently unused, there is no need to preserve it
 while introducing lookup cells later.

@@ -418,14 +418,32 @@ They are writable and replaceable, not treated as constant.
 
 ## Lookup Rules
 
-### Ordinary Lookup on an Object
+### Lookup Modes
 
-Ordinary object lookup scans only the present descriptor region.
+Attribute lookup has several modes. They share the same Shape and
+class-chain primitives, but they are not all the same algorithm:
+
+```cpp
+enum class AttributeLookupMode : uint8_t {
+    InstanceAttribute,
+    ClassAttribute,
+    ImplicitProtocol,
+};
+```
+
+- `InstanceAttribute` is normal lookup on an instance, such as `obj.x`.
+- `ClassAttribute` is normal lookup on a class object, such as `C.x`.
+- `ImplicitProtocol` is runtime protocol lookup, such as resolving
+  `__call__` for `obj()`.
+
+Ordinary receiver-local lookup scans only the present descriptor region.
 
 Latent descriptors are ignored on this path.
 
+### Instance Attribute Lookup
+
 Full Python-compatible lookup also has to account for descriptors. The
-normal instance-attribute algorithm is:
+normal default `__getattribute__` instance-attribute algorithm is:
 
 1. Resolve the attribute name through the receiver's class chain.
 2. If the class-chain result is a data descriptor, invoke it and return
@@ -443,6 +461,38 @@ For instance lookup, descriptor invocation passes the original receiver:
 descriptor.__get__(obj, obj.__class__)
 ```
 
+Ordinary values stored directly on the receiver are not descriptors for
+this purpose. Descriptor behavior comes from attributes found outside the
+receiver's own storage, through the class chain.
+
+If the receiver's Shape says that its type uses a custom
+`__getattribute__`, this default lookup algorithm is not valid. The
+runtime must call the override or use a cache specialized for that
+override.
+
+### Class Attribute Lookup
+
+Normal lookup on a class object is not just instance lookup with
+`Class.__class__` substituted for `obj.__class__`. It has two lookup
+axes:
+
+- the metaclass path, `Class.__class__.__mro__`
+- the class path, `Class.__mro__`
+
+The default class-attribute algorithm is:
+
+1. Resolve the attribute name through the metaclass path.
+2. If the metaclass result is a data descriptor, invoke it with the class
+   object as receiver and return the result.
+3. Resolve the attribute name through the class path.
+4. If the class-path result is a descriptor, invoke it with no instance
+   receiver and return the result.
+5. If the class-path result is an ordinary value, return it.
+6. If the metaclass result is a non-data descriptor, invoke it with the
+   class object as receiver and return the result.
+7. If the metaclass result is an ordinary value, return it.
+8. Otherwise, fall back to `__getattr__` if one is defined.
+
 For class-object lookup through the metaclass chain, the class object is
 the receiver:
 
@@ -450,9 +500,39 @@ the receiver:
 descriptor.__get__(Class, Class.__class__)
 ```
 
-Ordinary values stored directly on the receiver are not descriptors for
-this purpose. Descriptor behavior comes from attributes found outside the
-receiver's own storage, through the class or metaclass chain.
+For descriptors found through the class path, lookup is access through a
+class rather than through an instance:
+
+```text
+descriptor.__get__(Value::None(), Class)
+```
+
+This distinction matters for ordinary functions, `staticmethod`,
+`classmethod`, `property`, and user descriptors. The resolver must
+surface which path produced the descriptor so the descriptor call receives
+the correct receiver arguments.
+
+### Store and Delete on an Object
+
+Store and delete operations have their own descriptor protocol.
+
+For the default store path:
+
+1. If the receiver's Shape says that its type uses a custom
+   `__setattr__`, call that override.
+2. Otherwise, resolve the name through the receiver's class chain.
+3. If the class-chain result has descriptor `__set__`, call it.
+4. Otherwise, mutate receiver-local storage normally, subject to
+   read-only flags and layout rules.
+
+For the default delete path:
+
+1. If the receiver's Shape says that its type uses a custom
+   `__delattr__`, call that override.
+2. Otherwise, resolve the name through the receiver's class chain.
+3. If the class-chain result has descriptor `__delete__`, call it.
+4. Otherwise, delete from receiver-local storage normally, subject to
+   read-only flags and layout rules.
 
 ### Implicit Dunder Lookup
 
@@ -532,14 +612,12 @@ When resolving an attribute through a class chain:
 This is why Shape-level presence matters even when object slot contents
 also encode `Value::not_present()`.
 
-The same resolver structure applies whether lookup starts from an
-instance or from a class object. Instance lookup reaches the instance's
-class through `obj.__class__` and then searches that class and its bases.
-Class-object lookup reaches the metaclass through `Class.__class__` and
-then searches the metaclass and its bases. Descriptor handling is layered
-on top of this resolution process so objects such as functions,
-`staticmethod`, `classmethod`, and `property` can decide the final bound
-value.
+The same class-chain search primitive can be reused by different lookup
+modes, but the full lookup algorithms differ. Instance lookup combines a
+class-chain search with receiver-local storage. Class-object lookup
+combines a metaclass-chain search with a `Class.__mro__` search. The
+winning path determines how descriptors such as functions,
+`staticmethod`, `classmethod`, and `property` receive their arguments.
 
 ---
 
@@ -565,9 +643,44 @@ Attribute access is accelerated using **inline caches (ICs)**.
 Each cache entry records:
 
 - the receiver's **Shape**
+- a **lookup mode**
 - a **lookup validity cell**
+- an **access kind**
 - a cached owner object or `Value::not_present()`
 - a **storage location** field
+
+The lookup mode says which attribute algorithm was specialized. This is
+important because `InstanceAttribute` and `ClassAttribute` search
+different chains and invoke descriptors with different receiver
+arguments.
+
+The access kind records the semantic action represented by the cache:
+
+```cpp
+enum class AttributeAccessKind : uint8_t {
+    ReceiverSlot,
+    OwnerSlot,
+    DataDescriptorGet,
+    NonDataDescriptorGet,
+    GetAttrFallback,
+    Missing,
+};
+```
+
+The access kind decides whether the cached value is returned directly,
+passed through descriptor `__get__`, or treated as a miss/fallback. It
+must not be inferred from the cached owner field.
+
+Descriptor access also needs to retain the receiver convention selected
+by the lookup mode and winning path:
+
+```cpp
+enum class DescriptorReceiverKind : uint8_t {
+    InstanceReceiver,    // __get__(obj, obj.__class__)
+    ClassReceiver,       // __get__(Class, Class.__class__)
+    ClassAttribute,      // __get__(Value::None(), Class)
+};
+```
 
 The cached owner determines where the value is loaded from:
 
@@ -581,15 +694,23 @@ receiver-local slot hit may depend on class-chain lookup remaining
 unchanged, because installing a data descriptor for the same name on the
 class or a base class would take precedence over the receiver slot.
 
+Descriptor data-ness is itself lookup-sensitive. A descriptor becomes a
+data descriptor when its own type defines `__set__` or `__delete__`, so a
+cache that depends on "this class-chain result is not a data descriptor"
+must also depend on the descriptor object's type/protocol Shape. Mutating
+that descriptor type can invalidate a receiver-local slot hit even when
+the owner class still has the same attribute value.
+
 On execution:
 
 ```text
 if obj.shape != cached_shape: miss
 if !lookup_cell.valid: miss
-if cached_owner == Value::not_present():
+if access_kind requires receiver storage:
     value = read_slot(obj, storage_location)
 else:
     value = read_slot(cached_owner, storage_location)
+apply access_kind to value
 ```
 
 The receiver Shape protects receiver-local structure.
@@ -612,7 +733,9 @@ caches.
 | Field | Meaning |
 |---|---|
 | `receiver_shape` | guards receiver layout |
+| `lookup_mode` | attribute algorithm being specialized |
 | `lookup_cell` | validity for class-chain lookup assumptions |
+| `access_kind` | semantic action for the resolved attribute |
 | `cached_owner` | `Value::not_present()` (self) or owning object |
 | `storage_location` | storage kind plus slot index relative to receiver or owner |
 
@@ -657,6 +780,7 @@ self.primary_lookup_cell = Value::not_present()
 Self lookup uses:
 
 - a lookup validity cell guarding the relevant class-chain assumptions
+- `access_kind = AttributeAccessKind::ReceiverSlot`
 - `cached_owner = Value::not_present()`
 - Shape + receiver-relative storage location
 
@@ -666,8 +790,10 @@ Self lookup uses:
 
 | Case | Condition | Behavior |
 |---|---|---|
-| Attribute on self | `cached_owner == Value::not_present()` | no implicit self |
-| Through `__class__` | cached owner present | pass self |
+| Receiver slot | `access_kind == ReceiverSlot` | no implicit self |
+| Plain owner slot | `access_kind == OwnerSlot` | no implicit self |
+| Descriptor get | `access_kind == DataDescriptorGet` or `NonDataDescriptorGet` | descriptor decides binding |
+| `__getattr__` fallback | `access_kind == GetAttrFallback` | fallback decides result |
 
 ---
 
@@ -704,7 +830,7 @@ which avoids introducing reference cycles.
 - Shapes define structure, type, and lookup behavior
 - Descriptor order and slot index are separate
 - Present attributes are insertion-ordered
-- Latent attributes preserve stable slot assignment
+- Latent predefined attributes preserve stable slot assignment
 - Presence is tracked on the Shape
 - Object slots mirror predefined not-present state with
   `Value::not_present()`
