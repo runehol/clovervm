@@ -183,24 +183,7 @@ Primary files:
 - [src/shape.h](../src/shape.h)
 - [src/shape.cpp](../src/shape.cpp)
 
-### 5. Give `ClassObject` a real Shape and slot-backed property storage
-
-Migrate class attributes off the `members` vector and onto the same kind of
-shape-driven property storage used by instances.
-
-The C++ layout can still remain class-specific. The important change is that
-class-visible properties become ordinary object properties with descriptor and
-slot metadata.
-
-This is also the point where `method_version` can be deleted.
-
-Primary files:
-
-- [src/class_object.h](../src/class_object.h)
-- [src/class_object.cpp](../src/class_object.cpp)
-- [tests/test_shape.cpp](../tests/test_shape.cpp)
-
-### 6. Define class-specific predefined slots
+### 5. Define class-specific predefined slots
 
 Reserve stable slots for class metadata and hot protocol names. Stable latent
 slot retention is a guarantee for these predefined fixed slots, not a blanket
@@ -227,6 +210,24 @@ Primary files:
 - [src/class_object.cpp](../src/class_object.cpp)
 - [src/shape.h](../src/shape.h)
 - [src/shape.cpp](../src/shape.cpp)
+
+### 6. Give `ClassObject` a real Shape and slot-backed property storage
+
+After the class predefined-slot scheme exists, migrate class attributes off the
+`members` vector and onto the same kind of shape-driven property storage used by
+instances.
+
+The C++ layout can still remain class-specific. The important change is that
+class-visible properties become ordinary object properties with descriptor and
+slot metadata.
+
+This is also the point where `method_version` can be deleted.
+
+Primary files:
+
+- [src/class_object.h](../src/class_object.h)
+- [src/class_object.cpp](../src/class_object.cpp)
+- [tests/test_shape.cpp](../tests/test_shape.cpp)
 
 ### 7. Rework attribute lookup to use Shape presence
 
@@ -387,11 +388,12 @@ If this work is done in multiple PRs, the safest order is:
 2. Upgrade `Shape` to support present/latent descriptors and flags.
 3. Switch instance transitions to the new descriptor semantics.
 4. Move instance `__class__` to predefined shape-backed slots.
-5. Migrate `ClassObject` storage from `members` to shape-backed slots.
-6. Delete `method_version`.
-7. Rework class lookup to use shape presence and latent descriptors.
-8. Update interpreter class construction paths.
-9. Add lookup validity cells and inline-cache integration later.
+5. Define class-specific predefined slots.
+6. Migrate `ClassObject` storage from `members` to shape-backed slots.
+7. Delete `method_version`.
+8. Rework class lookup to use shape presence and latent descriptors.
+9. Update interpreter class construction paths.
+10. Add lookup validity cells and inline-cache integration later.
 
 ## Main Risk To Avoid
 
@@ -402,4 +404,5 @@ an immediate second rewrite of the class side.
 So the critical sequencing rule is:
 
 - upgrade `Shape` first
+- define class-specific predefined slots
 - then migrate `ClassObject`

@@ -308,9 +308,13 @@ be used:
 - `HasCustomDelAttribute`: `__delattr__` overrides default delete
   semantics
 
-These flags are not just hints. They are compact summaries of lookup
-behavior and should change through Shape transitions when the relevant
-dunder attributes are added, removed, or replaced.
+These flags are not just hints. They are compact summaries of whether the
+relevant dunder slots are present. They change through Shape transitions
+when those attributes are added or removed, but replacing the contents of
+an already-present slot does not change the Shape. These flags exclude
+hard custom getter/setter cases from the default fast paths; the runtime
+does not inspect a custom getter or setter and try to accelerate its
+specific implementation.
 
 ---
 
@@ -695,12 +699,14 @@ Attribute access is accelerated using **inline caches (ICs)**.
 
 Each cache entry records:
 
-- the receiver's **Shape**
-- a **lookup mode**
-- a **lookup validity cell**
-- an **access kind**
-- a cached owner object or `Value::not_present()`
-- a **storage location** field
+| Field | Meaning |
+|---|---|
+| `receiver_shape` | guards receiver layout |
+| `lookup_mode` | attribute algorithm being specialized |
+| `lookup_cell` | validity for class-chain lookup assumptions |
+| `access_kind` | semantic action for the resolved attribute |
+| `cached_owner` | `Value::not_present()` (self) or owning object |
+| `storage_location` | storage kind plus slot index relative to receiver or owner |
 
 The lookup mode says which attribute algorithm was specialized. This is
 important because `InstanceAttribute` and `ClassAttribute` search
@@ -752,16 +758,9 @@ unchanged, because installing a data descriptor for the same name on the
 class or a base class would take precedence over the receiver slot.
 
 Descriptor data-ness is itself lookup-sensitive. A descriptor becomes a
-data descriptor when its own type defines `__set__` or `__delete__`, so a
-cache that depends on "this class-chain result is not a data descriptor"
-must also depend on the descriptor object's type/protocol Shape. Mutating
-that descriptor type can invalidate a receiver-local slot hit even when
-the owner class still has the same attribute value.
-
-If the descriptor object's type Shape has `IsImmutableType`, the cache
-can treat that descriptor classification as stable under the Shape
-guards. Mutable descriptor types require either an explicit dependency,
-a broader invalidation mechanism, or conservative refusal to specialize.
+data descriptor when its own type defines `__set__` or `__delete__`, so
+receiver-slot caches have extra eligibility and invalidation rules. Those
+rules are described below in Descriptor-Precedence Invalidation.
 
 On execution:
 
@@ -779,6 +778,55 @@ The receiver Shape protects receiver-local structure.
 
 ---
 
+## Descriptor-Precedence Invalidation
+
+A receiver-slot hit is valid only while no class-chain attribute for the
+same name has data-descriptor precedence. CloverVM handles the relevant
+cases with three complementary rules:
+
+1. **Shape transitions invalidate lookup cells.**
+
+   Adding or deleting a class attribute changes the class object's Shape.
+   The transition invalidates attached lookup validity cells for lookups
+   that depended on the previous class-chain membership facts.
+
+2. **All class attribute writes invalidate lookup cells.**
+
+   Assigning a new value into an already-present class attribute may keep
+   the same Shape if membership is unchanged. The new value may have
+   different descriptor behavior from the old value, so every successful
+   class attribute write invalidates the class object's attached lookup
+   validity cells regardless of the value being written.
+
+   This applies to every path that mutates class-object attribute
+   storage, including bytecode stores, class construction helpers,
+   internal runtime setters, and default metaclass attribute assignment.
+
+3. **Receiver-slot caches require stable descriptor classification.**
+
+   A receiver-local slot cache is legal only when the class-chain lookup
+   for the same name either misses or resolves to a value whose type
+   Shape has `IsImmutableType`. The object itself may be mutable; the
+   requirement is that its class cannot later gain `__set__` or
+   `__delete__` and thereby turn the existing value into a data
+   descriptor.
+
+   Objects whose current type is immutable also do not support
+   `__class__` reassignment, so the cached descriptor classification
+   cannot be invalidated by changing the value's type identity.
+
+Together these rules cover the descriptor-precedence hazards:
+
+- adding or deleting a descriptor or ordinary class attribute is a Shape
+  transition
+- replacing an existing class attribute with a value of different
+  descriptor-ness is caught by class-write invalidation
+- mutating a descriptor value's type to add `__set__` or `__delete__` is
+  avoided by refusing receiver-slot caches unless the value's type is
+  immutable
+
+---
+
 ## Lookup Validity Cells
 
 A lookup validity cell represents:
@@ -787,19 +835,6 @@ A lookup validity cell represents:
 
 Each class object may hold a **primary lookup cell**, reused across
 caches.
-
----
-
-## Inline Cache Contents
-
-| Field | Meaning |
-|---|---|
-| `receiver_shape` | guards receiver layout |
-| `lookup_mode` | attribute algorithm being specialized |
-| `lookup_cell` | validity for class-chain lookup assumptions |
-| `access_kind` | semantic action for the resolved attribute |
-| `cached_owner` | `Value::not_present()` (self) or owning object |
-| `storage_location` | storage kind plus slot index relative to receiver or owner |
 
 ---
 
@@ -883,62 +918,6 @@ runtime, this is done by having inline caches (and class objects, only
 when they're still valid) hold references to the cell. Lookup validity
 cells do not themselves hold references to the classes they protect,
 which avoids introducing reference cycles.
-
----
-
-## Descriptor-Precedence Invalidation
-
-The intended invalidation model ties optimized attribute access to Shape
-transitions. That is simple for membership changes, but data descriptors
-make receiver-slot caches depend on facts that are not always captured by
-the receiver or owner class Shape alone.
-
-A receiver-slot hit is valid only while no class-chain attribute for the
-same name has data-descriptor precedence. CloverVM handles the relevant
-cases with three complementary rules:
-
-1. **Shape transitions invalidate lookup cells.**
-
-   Adding or deleting a class attribute changes the class object's Shape.
-   The transition invalidates attached lookup validity cells for lookups
-   that depended on the previous class-chain membership facts.
-
-2. **All class attribute writes invalidate lookup cells.**
-
-   Assigning a new value into an already-present class attribute may keep
-   the same Shape if membership is unchanged. The new value may have
-   different descriptor behavior from the old value, so every successful
-   class attribute write invalidates the class object's attached lookup
-   validity cells regardless of the value being written.
-
-   This applies to every path that mutates class-object attribute
-   storage, including bytecode stores, class construction helpers,
-   internal runtime setters, and default metaclass attribute assignment.
-
-3. **Receiver-slot caches require stable descriptor classification.**
-
-   A receiver-local slot cache is legal only when the class-chain lookup
-   for the same name either misses or resolves to a value whose type
-   Shape has `IsImmutableType`. The object itself may be mutable; the
-   requirement is that its class cannot later gain `__set__` or
-   `__delete__` and thereby turn the existing value into a data
-   descriptor.
-
-   Objects whose current type is immutable also do not support
-   `__class__` reassignment, so the cached descriptor classification
-   cannot be invalidated by changing the value's type identity.
-
-Together these rules cover the descriptor-precedence hazards:
-
-- adding or deleting a descriptor or ordinary class attribute is a Shape
-  transition
-- replacing an existing class attribute with a value of different
-  descriptor-ness is caught by class-write invalidation
-- mutating a descriptor value's type to add `__set__` or `__delete__` is
-  avoided by refusing receiver-slot caches unless the value's type is
-  immutable
-
----
 
 ## Summary
 
