@@ -622,10 +622,13 @@ that uses the normal object attribute lookup path.
 
 When inserting an attribute:
 
-1. Search the latent region for an existing descriptor with the same
+1. Search the existing Shape transitions for a cached insertion
+   transition for this attribute. If one exists, use the cached target
+   Shape.
+2. Search the latent region for an existing descriptor with the same
    name.
-2. If found, reuse its slot index.
-3. Build a new Shape whose descriptor array:
+3. If found, reuse its slot index.
+4. Build a new Shape whose descriptor array:
    - keeps existing present entries in their current order
    - appends the inserted name at the end of the present region
    - copies the remaining latent entries after the new `present_count`
@@ -644,11 +647,14 @@ descriptors for non-fixed names as long as observable lookup and
 
 When deleting a present attribute:
 
-1. Build a new Shape.
-2. Copy all remaining present descriptors in order.
-3. Append the deleted descriptor to the latent region.
-4. Preserve its slot index.
-5. Store `Value::not_present()` in the corresponding object slot.
+1. Search the existing Shape transitions for a cached deletion
+   transition for this attribute. If one exists, use the cached target
+   Shape.
+2. Build a new Shape.
+3. Copy all remaining present descriptors in order.
+4. Append the deleted descriptor to the latent region.
+5. Preserve its slot index.
+6. Store `Value::not_present()` in the corresponding object slot.
 
 This preserves insertion order for present attributes while keeping the
 stable slot available for reinsertion when the descriptor is one of the
@@ -705,8 +711,8 @@ Each cache entry records:
 | `lookup_mode` | attribute algorithm being specialized |
 | `lookup_cell` | validity for class-chain lookup assumptions |
 | `access_kind` | semantic action for the resolved attribute |
-| `cached_owner` | `Value::not_present()` (self) or owning object |
-| `storage_location` | storage kind plus slot index relative to receiver or owner |
+| `resolved_object` | object found by lookup when the cache needs one; otherwise unused / `Value::not_present()` |
+| `storage_location` | storage kind plus slot index relative to receiver or resolved object |
 
 The lookup mode says which attribute algorithm was specialized. This is
 important because `InstanceAttribute` and `ClassAttribute` search
@@ -722,7 +728,7 @@ The access kind records the semantic action represented by the cache:
 ```cpp
 enum class AttributeAccessKind : uint8_t {
     ReceiverSlot,
-    OwnerSlot,
+    ResolvedSlot,
     DataDescriptorGet,
     NonDataDescriptorGet,
     GetAttrFallback,
@@ -732,7 +738,7 @@ enum class AttributeAccessKind : uint8_t {
 
 The access kind decides whether the cached value is returned directly,
 passed through descriptor `__get__`, or treated as a miss/fallback. It
-must not be inferred from the cached owner field.
+must not be inferred from the resolved object field.
 
 Descriptor access also needs to retain the receiver convention selected
 by the lookup mode and winning path:
@@ -745,12 +751,11 @@ enum class DescriptorReceiverKind : uint8_t {
 };
 ```
 
-The cached owner determines where the value is loaded from:
+The access kind determines where the value is loaded from:
 
-- if the cached owner is `Value::not_present()`, the storage location is
-  relative to the receiver
-- otherwise, the cached owner is the object that owns the resolved slot,
-  and the storage location is relative to that owner
+- `ReceiverSlot` uses a storage location relative to the receiver
+- `ResolvedSlot` and descriptor access kinds use a storage location
+  relative to the resolved object
 
 The lookup validity cell is independent of the value location. Even a
 receiver-local slot hit may depend on class-chain lookup remaining
@@ -767,10 +772,12 @@ On execution:
 ```text
 if obj.shape != cached_shape: miss
 if !lookup_cell.valid: miss
-if access_kind requires receiver storage:
+if access_kind == GetAttrFallback:
+    return fallback full lookup
+else if access_kind requires receiver storage:
     value = read_slot(obj, storage_location)
 else:
-    value = read_slot(cached_owner, storage_location)
+    value = read_slot(resolved_object, storage_location)
 apply access_kind to value
 ```
 
@@ -878,7 +885,7 @@ Self lookup uses:
 
 - a lookup validity cell guarding the relevant class-chain assumptions
 - `access_kind = AttributeAccessKind::ReceiverSlot`
-- `cached_owner = Value::not_present()`
+- `resolved_object = Value::not_present()`
 - Shape + receiver-relative storage location
 
 ---
@@ -888,7 +895,7 @@ Self lookup uses:
 | Case | Condition | Behavior |
 |---|---|---|
 | Receiver slot | `access_kind == ReceiverSlot` | no implicit self |
-| Plain owner slot | `access_kind == OwnerSlot` | no implicit self |
+| Resolved slot | `access_kind == ResolvedSlot` | no implicit self |
 | Descriptor get | `access_kind == DataDescriptorGet` or `NonDataDescriptorGet` | descriptor decides binding |
 | `__getattr__` fallback | `access_kind == GetAttrFallback` | fallback decides result |
 
@@ -906,11 +913,11 @@ consulted during lookup remains live through the receiver object and its
 Shape.
 
 If the lookup validity cell is valid, then the cached lookup path still
-resolves to the same owning object and storage location. The cache must
+resolves to the same resolved object and storage location. The cache must
 not rely on a raw pointer to a slot, because overflow or extra-slot
 storage may be reallocated during unrelated mutations. Instead it keeps
-the owning object alive and rereads the slot through the cached storage
-kind and slot index.
+the resolved object alive when one is used and rereads the slot through
+the cached storage kind and slot index.
 
 The lookup validity cell itself is not reached through the receiver
 object and must therefore be kept alive separately. In a refcounting
