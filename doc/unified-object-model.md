@@ -267,6 +267,53 @@ convention `dunder_class`, `dunder_new`, `dunder_init`, and so on.
 
 ---
 
+## Shape Flags
+
+Shape-level flags summarize semantic facts that affect lookup and JIT
+specialization. Once a Shape is created its flags do not change, but an
+object may transition to a new Shape with different flags when lookup
+behavior changes.
+
+One plausible initial set is:
+
+```cpp
+enum class ShapeFlag : uint16_t {
+    IsClassObject = 1 << 0,
+    IsImmutableType = 1 << 1,
+    HasCustomGetAttribute = 1 << 2,
+    HasCustomGetAttrFallback = 1 << 3,
+    HasCustomSetAttribute = 1 << 4,
+    HasCustomDelAttribute = 1 << 5,
+};
+```
+
+`IsClassObject` means objects with this Shape are class objects. This
+duplicates a native object-kind fact, but it lets a Shape guard select
+the correct lookup mode without an additional object-kind guard.
+
+`IsImmutableType` means a class object's namespace and protocol behavior
+cannot change. This flag is meaningful only for class-object Shapes. It
+is useful when analyzing descriptor values: if `descriptor.__class__` has
+an immutable Shape, then descriptor data-ness and protocol behavior are
+stable under a Shape guard.
+
+The custom attribute flags summarize whether default attribute access can
+be used:
+
+- `HasCustomGetAttribute`: `__getattribute__` overrides default load
+  semantics
+- `HasCustomGetAttrFallback`: missing loads may call `__getattr__`
+- `HasCustomSetAttribute`: `__setattr__` overrides default store
+  semantics
+- `HasCustomDelAttribute`: `__delattr__` overrides default delete
+  semantics
+
+These flags are not just hints. They are compact summaries of lookup
+behavior and should change through Shape transitions when the relevant
+dunder attributes are added, removed, or replaced.
+
+---
+
 ## Present and Latent Descriptor Regions
 
 The descriptor array is partitioned into two regions:
@@ -436,6 +483,11 @@ enum class AttributeLookupMode : uint8_t {
 - `ImplicitProtocol` is runtime protocol lookup, such as resolving
   `__call__` for `obj()`.
 
+`IsClassObject` on the receiver Shape selects between
+`InstanceAttribute` and `ClassAttribute` for ordinary attribute access.
+Custom attribute flags on the receiver's type Shape determine whether the
+default algorithm is valid.
+
 Ordinary receiver-local lookup scans only the present descriptor region.
 
 Latent descriptors are ignored on this path.
@@ -465,10 +517,11 @@ Ordinary values stored directly on the receiver are not descriptors for
 this purpose. Descriptor behavior comes from attributes found outside the
 receiver's own storage, through the class chain.
 
-If the receiver's Shape says that its type uses a custom
-`__getattribute__`, this default lookup algorithm is not valid. The
-runtime must call the override or use a cache specialized for that
-override.
+If the receiver's type Shape has `HasCustomGetAttribute`, this default
+lookup algorithm is not valid. The runtime must call the override or use
+a cache specialized for that override. If the receiver's type Shape has
+`HasCustomGetAttrFallback`, a missing result may need to call
+`__getattr__`.
 
 ### Class Attribute Lookup
 
@@ -518,8 +571,8 @@ Store and delete operations have their own descriptor protocol.
 
 For the default store path:
 
-1. If the receiver's Shape says that its type uses a custom
-   `__setattr__`, call that override.
+1. If the receiver's type Shape has `HasCustomSetAttribute`, call that
+   override.
 2. Otherwise, resolve the name through the receiver's class chain.
 3. If the class-chain result has descriptor `__set__`, call it.
 4. Otherwise, mutate receiver-local storage normally, subject to
@@ -527,8 +580,8 @@ For the default store path:
 
 For the default delete path:
 
-1. If the receiver's Shape says that its type uses a custom
-   `__delattr__`, call that override.
+1. If the receiver's type Shape has `HasCustomDelAttribute`, call that
+   override.
 2. Otherwise, resolve the name through the receiver's class chain.
 3. If the class-chain result has descriptor `__delete__`, call it.
 4. Otherwise, delete from receiver-local storage normally, subject to
@@ -654,6 +707,10 @@ important because `InstanceAttribute` and `ClassAttribute` search
 different chains and invoke descriptors with different receiver
 arguments.
 
+The cached receiver Shape's `IsClassObject` flag must agree with the
+lookup mode. Custom attribute flags on the relevant type Shape control
+whether a default lookup specialization is legal at all.
+
 The access kind records the semantic action represented by the cache:
 
 ```cpp
@@ -700,6 +757,11 @@ cache that depends on "this class-chain result is not a data descriptor"
 must also depend on the descriptor object's type/protocol Shape. Mutating
 that descriptor type can invalidate a receiver-local slot hit even when
 the owner class still has the same attribute value.
+
+If the descriptor object's type Shape has `IsImmutableType`, the cache
+can treat that descriptor classification as stable under the Shape
+guards. Mutable descriptor types require either an explicit dependency,
+a broader invalidation mechanism, or conservative refusal to specialize.
 
 On execution:
 

@@ -125,6 +125,8 @@ with:
 - explicit slot index
 - storage kind
 - descriptor flags
+- Shape flags such as `IsClassObject`, `IsImmutableType`, and custom attribute
+  access markers
 - `present_count`
 - present and latent descriptor regions
 
