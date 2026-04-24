@@ -157,13 +157,17 @@ Primary files:
 ### 4. Move instance `__class__` into the shape-backed model
 
 Replace the current special-case `__class__` logic with a predefined
-read-only stable slot.
+read-only stable slot. Ordinary attribute stores to that slot should be
+rejected; supported `__class__` reassignment must go through a dedicated
+checked transition path.
 
 Invariants to establish:
 
 - the object's fixed `__class__` slot and the Shape's type identity match
 - ordinary `obj.__class__` lookup can use the normal object attribute path
-- changing `__class__` becomes a shape transition, not a bespoke write path
+- valid `__class__` reassignment updates the Shape and fixed object slot
+  together after compatibility checks
+- invalid `__class__` reassignment does not reach the ordinary slot write path
 
 Primary files:
 
@@ -192,7 +196,9 @@ Primary files:
 
 ### 6. Define class-specific predefined slots
 
-Reserve stable slots for class metadata and hot protocol names.
+Reserve stable slots for class metadata and hot protocol names. Stable latent
+slot retention is a guarantee for these predefined fixed slots, not a blanket
+requirement for every user-created attribute name.
 
 Always-present candidates:
 
@@ -226,6 +232,17 @@ Replace vector lookup plus `base` recursion with a resolver that understands:
 
 This is the semantic change that makes latent predefined dunder slots useful
 for class lookup.
+
+The same resolver should be used for instance and class-object lookup:
+
+- instance lookup enters the chain through `obj.__class__`, then searches the
+  class and its bases
+- class-object lookup enters the chain through `Class.__class__`, then searches
+  the metaclass and its bases
+
+Descriptor handling will be layered onto the resolved class-chain result, so
+descriptor objects decide binding behavior rather than the cache inferring it
+only from where the attribute was found.
 
 Primary files:
 
@@ -290,6 +307,11 @@ Primary files:
 The unified-object-model doc describes lookup validity cells as the long-term
 replacement for ad hoc invalidation. That work should come after classes and
 instances both use the same shape-based lookup model.
+
+Inline caches should store an owning object plus a storage location
+(`StorageKind` and slot index), not a raw pointer to the resolved slot. Overflow
+or extra-slot storage may be reallocated by unrelated mutations, so direct slot
+pointers are not stable enough for cached class-chain lookup.
 
 Because `method_version` is currently unused, there is no need to preserve it
 while introducing lookup cells later.

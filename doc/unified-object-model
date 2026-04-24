@@ -148,14 +148,20 @@ __class__
 
 These must always remain in sync.
 
-Assigning to `__class__`:
+Ordinary writes to the `__class__` slot are not allowed. Supported
+`__class__` reassignment goes through a dedicated checked path rather
+than the normal attribute-store path.
+
+For an assignment such as:
 
 ```text
 obj.__class__ = NewClass
 ```
 
-causes the object to transition to a new Shape whose `__class__`
-reflects `NewClass`.
+the runtime must first validate that the old and new classes are
+compatible for the existing object layout. If the assignment is valid,
+the object transitions to a new Shape whose `__class__` reflects
+`NewClass`, and the fixed object slot is updated at the same time.
 
 The previous Shape remains valid for other objects that still reference
 it.
@@ -170,14 +176,18 @@ Similarly, each class is associated with a metaclass via:
 __class__
 ```
 
-Assigning to `__class__`:
+Ordinary writes to the class object's `__class__` slot are also not
+allowed. Supported metaclass reassignment, if any, goes through the same
+kind of dedicated checked transition path.
+
+For an assignment such as:
 
 ```text
 Class.__class__ = NewMeta
 ```
 
-causes the object to transition to a new Shape whose `__class__`
-reflects `NewMeta`.
+the runtime must validate metaclass compatibility before transitioning
+the class object to a new Shape whose `__class__` reflects `NewMeta`.
 
 The previous Shape remains valid for other objects that still reference
 it.
@@ -297,7 +307,7 @@ used dunder names.
 
 ## Stable Slots and Presence
 
-For some names, especially hot class-level dunder names such as
+For predefined names, especially hot class-level dunder names such as
 `__new__` and `__init__`, we want:
 
 - a stable slot index across related class Shapes
@@ -314,10 +324,10 @@ The meaning of the descriptor state is:
 - no descriptor entry: this Shape has no structural knowledge of the
   name
 
-This is important for JIT compilation and class-chain resolution,
-because the compiler may need to determine whether lookup should stop at
-this class or continue to bases without having a concrete object
-available to inspect.
+This is important for JIT compilation and class-chain resolution for
+predefined slots, because the compiler may need to determine whether
+lookup should stop at this class or continue to bases without having a
+concrete object available to inspect.
 
 ---
 
@@ -456,6 +466,13 @@ When inserting an attribute:
 If the name is not found in the latent region, insertion allocates a new
 slot and appends a new descriptor to the end of the present region.
 
+Only predefined fixed-slot names are guaranteed to remain pinned in the
+latent region across related Shapes. Ordinary user attributes do not
+need permanent latent descriptors merely to preserve Python-visible
+attribute order; an implementation may compact or drop latent
+descriptors for non-fixed names as long as observable lookup and
+`__dict__` behavior remain correct.
+
 ### Deletion
 
 When deleting a present attribute:
@@ -467,7 +484,10 @@ When deleting a present attribute:
 5. Store `Value::not_present()` in the corresponding object slot.
 
 This preserves insertion order for present attributes while keeping the
-stable slot available for reinsertion.
+stable slot available for reinsertion when the descriptor is one of the
+predefined fixed-slot names. For ordinary user attributes, preserving a
+latent descriptor is an implementation choice, not a semantic
+requirement.
 
 ### Base-Class Resolution
 
@@ -481,6 +501,15 @@ When resolving an attribute through a class chain:
 
 This is why Shape-level presence matters even when object slot contents
 also encode `Value::not_present()`.
+
+The same resolver structure applies whether lookup starts from an
+instance or from a class object. Instance lookup reaches the instance's
+class through `obj.__class__` and then searches that class and its bases.
+Class-object lookup reaches the metaclass through `Class.__class__` and
+then searches the metaclass and its bases. Descriptor handling is layered
+on top of this resolution process so objects such as functions,
+`staticmethod`, `classmethod`, and `property` can decide the final bound
+value.
 
 ---
 
@@ -507,14 +536,17 @@ Each cache entry records:
 
 - the receiver's **Shape**
 - a **lookup validity cell** or `Value::not_present()`
-- a **location** field
+- a cached owner object or `Value::not_present()`
+- a **storage location** field
 
-The `location` field has dual meaning:
+The owner field has dual meaning:
 
-- if `lookup_cell == Value::not_present()`, `location` is a
-  receiver-relative slot index
-- otherwise, `lookup_cell` is a validity cell and `location` is a
-  direct pointer to the resolved owning slot
+- if `lookup_cell == Value::not_present()`, the cached owner is
+  `Value::not_present()` and the storage location is relative to the
+  receiver
+- otherwise, `lookup_cell` is a validity cell, the cached owner is the
+  object that owns the resolved slot, and the storage location is
+  relative to that owner
 
 On execution:
 
@@ -522,9 +554,9 @@ On execution:
 if obj.shape != cached_shape: miss
 if lookup_cell != Value::not_present() and !lookup_cell.valid: miss
 if lookup_cell == Value::not_present():
-    value = obj.slots[location.slot_index]
+    value = read_slot(obj, storage_location)
 else:
-    value = *location.slot_ptr
+    value = read_slot(cached_owner, storage_location)
 ```
 
 The receiver Shape protects receiver-local structure.
@@ -548,7 +580,8 @@ caches.
 |---|---|
 | `receiver_shape` | guards receiver layout |
 | `lookup_cell` | `Value::not_present()` (self) or class-chain validity |
-| `location` | slot index (self) or direct slot pointer (class-chain) |
+| `cached_owner` | `Value::not_present()` (self) or owning object |
+| `storage_location` | storage kind plus slot index relative to receiver or owner |
 
 ---
 
@@ -591,7 +624,8 @@ self.primary_lookup_cell = Value::not_present()
 Self lookup uses:
 
 - `lookup_cell = Value::not_present()`
-- Shape + receiver-relative slot index
+- `cached_owner = Value::not_present()`
+- Shape + receiver-relative storage location
 
 ---
 
@@ -616,8 +650,11 @@ consulted during lookup remains live through the receiver object and its
 Shape.
 
 If the lookup validity cell is valid, then the cached lookup path still
-resolves to the same owning object and slot. Therefore the cached
-`location.slot_ptr` is safe to dereference.
+resolves to the same owning object and storage location. The cache must
+not rely on a raw pointer to a slot, because overflow or extra-slot
+storage may be reallocated during unrelated mutations. Instead it keeps
+the owning object alive and rereads the slot through the cached storage
+kind and slot index.
 
 The lookup validity cell itself is not reached through the receiver
 object and must therefore be kept alive separately. In a refcounting
