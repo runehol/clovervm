@@ -886,9 +886,7 @@ which avoids introducing reference cycles.
 
 ---
 
-## Open Issues
-
-### Descriptor-Precedence Invalidation
+## Descriptor-Precedence Invalidation
 
 The intended invalidation model ties optimized attribute access to Shape
 transitions. That is simple for membership changes, but data descriptors
@@ -896,42 +894,49 @@ make receiver-slot caches depend on facts that are not always captured by
 the receiver or owner class Shape alone.
 
 A receiver-slot hit is valid only while no class-chain attribute for the
-same name has data-descriptor precedence. The following cases need an
-explicit invalidation strategy before inline caches or JIT lowering rely
-on this fast path:
+same name has data-descriptor precedence. CloverVM handles the relevant
+cases with three complementary rules:
 
-1. **Mutable descriptor class changes protocol.**
+1. **Shape transitions invalidate lookup cells.**
 
-   A class-chain value may initially be an ordinary value or non-data
-   descriptor, allowing the receiver slot to win. If that value's class
-   later gains `__set__` or `__delete__`, the existing value becomes a
-   data descriptor and must jump ahead of the receiver slot, even though
-   the owner class that stores the value did not change.
+   Adding or deleting a class attribute changes the class object's Shape.
+   The transition invalidates attached lookup validity cells for lookups
+   that depended on the previous class-chain membership facts.
 
-2. **Existing class attribute is overwritten with a data descriptor.**
+2. **All class attribute writes invalidate lookup cells.**
 
    Assigning a new value into an already-present class attribute may keep
-   the same Shape if membership is unchanged. If the new value is a data
-   descriptor, previous receiver-slot caches for that name must be
-   invalidated despite the stable class Shape.
+   the same Shape if membership is unchanged. The new value may have
+   different descriptor behavior from the old value, so every successful
+   class attribute write invalidates the class object's attached lookup
+   validity cells regardless of the value being written.
 
-3. **New data descriptor class attribute is added.**
+   This applies to every path that mutates class-object attribute
+   storage, including bytecode stores, class construction helpers,
+   internal runtime setters, and default metaclass attribute assignment.
 
-   Adding a new class attribute that is a data descriptor is a Shape
-   transition and should naturally invalidate receiver-slot caches that
-   depended on the class-chain absence of that name. This case is the
-   easiest one for Shape-based invalidation, but it should remain an
-   explicit test case because it is the same semantic hazard as the two
-   cases above.
+3. **Receiver-slot caches require stable descriptor classification.**
 
-CPython avoids much of this problem by refusing to specialize
-receiver-slot loads when the class/MRO already has a candidate for the
-same name unless the descriptor behavior is known to be immutable. It
-also invalidates a type version on ordinary class attribute writes, not
-only on membership-changing layout transitions. CloverVM still needs to
-choose whether to add a separate class lookup version, track descriptor
-protocol dependencies, conservatively avoid receiver-slot specialization
-in these cases, or use a broader invalidation epoch.
+   A receiver-local slot cache is legal only when the class-chain lookup
+   for the same name either misses or resolves to a value whose type
+   Shape has `IsImmutableType`. The object itself may be mutable; the
+   requirement is that its class cannot later gain `__set__` or
+   `__delete__` and thereby turn the existing value into a data
+   descriptor.
+
+   Objects whose current type is immutable also do not support
+   `__class__` reassignment, so the cached descriptor classification
+   cannot be invalidated by changing the value's type identity.
+
+Together these rules cover the descriptor-precedence hazards:
+
+- adding or deleting a descriptor or ordinary class attribute is a Shape
+  transition
+- replacing an existing class attribute with a value of different
+  descriptor-ness is caught by class-write invalidation
+- mutating a descriptor value's type to add `__set__` or `__delete__` is
+  avoided by refusing receiver-slot caches unless the value's type is
+  immutable
 
 ---
 

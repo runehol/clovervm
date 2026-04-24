@@ -365,6 +365,17 @@ than inferring binding behavior from owner presence. The access kind decides
 whether the cached storage location is returned directly, passed through
 descriptor `__get__`, or treated as a miss / `__getattr__` fallback.
 
+Receiver-local slot caches need descriptor-precedence protection. They should
+only be emitted when the class-chain lookup for the same name either misses or
+resolves to a value whose type Shape has `IsImmutableType`. This permits mutable
+descriptor objects while requiring immutable descriptor protocol behavior.
+
+Class-object writes must invalidate attached lookup validity cells even when
+the write updates an already-present attribute and therefore does not change the
+class object's Shape. This catches replacement of an ordinary value or non-data
+descriptor with a data descriptor. Class attribute deletes remain covered by
+Shape-transition invalidation.
+
 Because `method_version` is currently unused, there is no need to preserve it
 while introducing lookup cells later.
 
