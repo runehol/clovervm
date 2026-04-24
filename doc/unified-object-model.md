@@ -824,6 +824,55 @@ which avoids introducing reference cycles.
 
 ---
 
+## Open Issues
+
+### Descriptor-Precedence Invalidation
+
+The intended invalidation model ties optimized attribute access to Shape
+transitions. That is simple for membership changes, but data descriptors
+make receiver-slot caches depend on facts that are not always captured by
+the receiver or owner class Shape alone.
+
+A receiver-slot hit is valid only while no class-chain attribute for the
+same name has data-descriptor precedence. The following cases need an
+explicit invalidation strategy before inline caches or JIT lowering rely
+on this fast path:
+
+1. **Mutable descriptor class changes protocol.**
+
+   A class-chain value may initially be an ordinary value or non-data
+   descriptor, allowing the receiver slot to win. If that value's class
+   later gains `__set__` or `__delete__`, the existing value becomes a
+   data descriptor and must jump ahead of the receiver slot, even though
+   the owner class that stores the value did not change.
+
+2. **Existing class attribute is overwritten with a data descriptor.**
+
+   Assigning a new value into an already-present class attribute may keep
+   the same Shape if membership is unchanged. If the new value is a data
+   descriptor, previous receiver-slot caches for that name must be
+   invalidated despite the stable class Shape.
+
+3. **New data descriptor class attribute is added.**
+
+   Adding a new class attribute that is a data descriptor is a Shape
+   transition and should naturally invalidate receiver-slot caches that
+   depended on the class-chain absence of that name. This case is the
+   easiest one for Shape-based invalidation, but it should remain an
+   explicit test case because it is the same semantic hazard as the two
+   cases above.
+
+CPython avoids much of this problem by refusing to specialize
+receiver-slot loads when the class/MRO already has a candidate for the
+same name unless the descriptor behavior is known to be immutable. It
+also invalidates a type version on ordinary class attribute writes, not
+only on membership-changing layout transitions. CloverVM still needs to
+choose whether to add a separate class lookup version, track descriptor
+protocol dependencies, conservatively avoid receiver-slot specialization
+in these cases, or use a broader invalidation epoch.
+
+---
+
 ## Summary
 
 - Objects reference immutable Shapes
