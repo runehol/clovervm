@@ -968,6 +968,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         ClassObject *cls = test_context.vm().class_for_native_layout(
             expected.native_layout_id);
         ASSERT_NE(nullptr, cls);
+        EXPECT_EQ(type_class, cls->Object::get_class());
         EXPECT_EQ(-1, cls->refcount);
         EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsClassObject));
         EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsImmutableType));

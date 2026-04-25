@@ -10,6 +10,12 @@
 
 namespace cl
 {
+    class ClassObject;
+
+    struct BootstrapObjectTag
+    {
+    };
+
     struct ExpandedHeader
     {
         uint64_t object_size_in_16byte_units;
@@ -161,20 +167,57 @@ namespace cl
     */
     struct Object
     {
-        constexpr Object(NativeLayoutId _native_layout_id, uint32_t _layout)
-            : refcount(0), layout(_layout), native_layout(_native_layout_id)
+        Object(ClassObject *_cls, NativeLayoutId _native_layout_id,
+               uint32_t _layout)
+            : refcount(0), layout(_layout), cls(_cls),
+              native_layout(_native_layout_id)
+        {
+            assert(cls != nullptr);
+        }
+
+        Object(ClassObject *_cls, NativeLayoutId _native_layout_id)
+            : refcount(0), layout(0), cls(_cls),
+              native_layout(_native_layout_id)
+        {
+            assert(cls != nullptr);
+        }
+
+        Object(BootstrapObjectTag, NativeLayoutId _native_layout_id,
+               uint32_t _layout)
+            : refcount(0), layout(_layout), cls(nullptr),
+              native_layout(_native_layout_id)
         {
         }
 
-        constexpr Object(NativeLayoutId _native_layout_id)
-            : refcount(0), layout(0), native_layout(_native_layout_id)
+        Object(BootstrapObjectTag, NativeLayoutId _native_layout_id)
+            : refcount(0), layout(0), cls(nullptr),
+              native_layout(_native_layout_id)
         {
+        }
+
+        Object(NativeLayoutId _native_layout_id, uint32_t _layout)
+            : Object(BootstrapObjectTag{}, _native_layout_id, _layout)
+        {
+        }
+
+        Object(NativeLayoutId _native_layout_id)
+            : Object(BootstrapObjectTag{}, _native_layout_id)
+        {
+        }
+
+        void install_bootstrap_class(ClassObject *new_cls)
+        {
+            assert(cls == nullptr);
+            assert(new_cls != nullptr);
+            cls = new_cls;
         }
 
         NativeLayoutId native_layout_id() const { return native_layout; }
+        ClassObject *get_class() const { return cls; }
 
         int32_t refcount;
         uint32_t layout;
+        ClassObject *cls;
         NativeLayoutId native_layout;
     };
 
@@ -235,7 +278,7 @@ namespace cl
 
     static_assert(sizeof(DynamicLayoutSpec) == 16);
     static_assert(sizeof(ExpandedHeader) == 16);
-    static_assert(sizeof(Object) == 12);
+    static_assert(sizeof(Object) == 24);
     static_assert(std::is_trivially_destructible_v<Object>);
 
 }  // namespace cl

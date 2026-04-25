@@ -31,6 +31,18 @@ namespace cl
         static constexpr uint32_t kClassPredefinedSlotCount = 4;
         static constexpr uint32_t kClassInlineSlotCount = 8;
 
+        ClassObject(BootstrapObjectTag, TValue<String> name,
+                    uint32_t factory_default_inline_slot_count,
+                    Value base = Value::None(),
+                    ShapeFlags class_shape_flags =
+                        shape_flag(ShapeFlag::IsClassObject));
+
+        ClassObject(ClassObject *metaclass, TValue<String> name,
+                    uint32_t factory_default_inline_slot_count,
+                    Value base = Value::None(),
+                    ShapeFlags class_shape_flags =
+                        shape_flag(ShapeFlag::IsClassObject));
+
         ClassObject(TValue<String> name,
                     uint32_t factory_default_inline_slot_count,
                     Value base = Value::None(),
