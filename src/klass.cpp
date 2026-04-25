@@ -9,8 +9,7 @@ namespace cl
         const Klass *k = (const Klass *)v.get_ptr();
         const cl_wchar *klass_name = k->klass_name;
 
-        return ThreadState::get_active()->make_refcounted_value<String>(
-            klass_name);
+        return make_refcounted_value<String>(klass_name);
     }
 
     Klass cl_klass_klass(L"class", klass_str);

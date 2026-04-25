@@ -82,6 +82,22 @@ namespace cl
         static thread_local ThreadState *current_thread;
     };
 
+    inline ThreadState *active_thread() { return ThreadState::get_active(); }
+
+    template <typename T, typename... Args>
+    T *make_refcounted_raw(Args &&...args)
+    {
+        return active_thread()->make_refcounted_raw<T>(
+            std::forward<Args>(args)...);
+    }
+
+    template <typename T, typename... Args>
+    TValue<T> make_refcounted_value(Args &&...args)
+    {
+        return active_thread()->make_refcounted_value<T>(
+            std::forward<Args>(args)...);
+    }
+
 }  // namespace cl
 
 #endif  // CL_THREAD_STATE_H

@@ -1,8 +1,7 @@
 #include "instance.h"
 #include "refcount.h"
+#include "runtime_helpers.h"
 #include "shape_backed_object.h"
-#include "thread_state.h"
-#include "virtual_machine.h"
 
 namespace cl
 {
@@ -18,10 +17,7 @@ namespace cl
             inline_slots[slot_idx] = Value::not_present();
         }
 
-        TValue<String> dunder_class_name =
-            ThreadState::get_active()
-                ->get_machine()
-                ->get_or_create_interned_string_value(L"__class__");
+        TValue<String> dunder_class_name = interned_string(L"__class__");
         StorageLocation class_location =
             get_shape()->resolve_present_property(dunder_class_name);
         assert(class_location.is_found());
@@ -141,10 +137,9 @@ namespace cl
             new_capacity *= 2;
         }
 
-        OverflowSlots *new_overflow_slots =
-            ThreadState::get_active()->make_refcounted_raw<OverflowSlots>(
-                overflow_slots == nullptr ? 0 : overflow_slots->get_size(),
-                new_capacity);
+        OverflowSlots *new_overflow_slots = make_refcounted_raw<OverflowSlots>(
+            overflow_slots == nullptr ? 0 : overflow_slots->get_size(),
+            new_capacity);
         if(overflow_slots != nullptr)
         {
             for(uint32_t slot_idx = 0;

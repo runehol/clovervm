@@ -10,10 +10,9 @@
 #include "instance.h"
 #include "list.h"
 #include "range_iterator.h"
+#include "runtime_helpers.h"
 #include "subscript.h"
-#include "thread_state.h"
 #include "value.h"
-#include "virtual_machine.h"
 #include <fmt/core.h>
 
 namespace cl
@@ -172,10 +171,7 @@ namespace cl
     reject_set_name_notifications_until_supported(Value *fp,
                                                   CodeObject *body_code)
     {
-        TValue<String> set_name_name(
-            ThreadState::get_active()
-                ->get_machine()
-                ->get_or_create_interned_string_value(L"__set_name__"));
+        TValue<String> set_name_name(interned_string(L"__set_name__"));
 
         Scope *local_scope = body_code->get_local_scope_ptr();
         for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
@@ -205,9 +201,8 @@ namespace cl
     static Value build_class_from_frame(Value *fp, CodeObject *body_code,
                                         TValue<String> class_name)
     {
-        TValue<ClassObject> cls =
-            ThreadState::get_active()->make_refcounted_value<ClassObject>(
-                class_name, kDefaultFactoryInlineSlotCount);
+        TValue<ClassObject> cls = make_refcounted_value<ClassObject>(
+            class_name, kDefaultFactoryInlineSlotCount);
         Scope *local_scope = body_code->get_local_scope_ptr();
         for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
         {
@@ -268,7 +263,7 @@ namespace cl
                                                       uint32_t n_args)
     {
         CallArguments args(&fp[call_base_reg], n_args);
-        return builtin->callback(ThreadState::get_active(), args);
+        return builtin->callback(active_thread(), args);
     }
 
     static ALWAYSINLINE void
@@ -854,9 +849,7 @@ namespace cl
         TValue<CodeObject> code_obj(
             code_object->constant_table[const_offset].as_value());
 
-        accumulator =
-            ThreadState::get_active()->make_refcounted_value<Function>(
-                code_obj);
+        accumulator = make_refcounted_value<Function>(code_obj);
 
         COMPLETE();
     }
@@ -867,8 +860,7 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue<List> list =
-            ThreadState::get_active()->make_refcounted_value<List>(n_items);
+        TValue<List> list = make_refcounted_value<List>(n_items);
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             list.extract()->set_item_unchecked(idx, fp[reg - int8_t(idx)]);
@@ -884,8 +876,7 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue<Dict> dict =
-            ThreadState::get_active()->make_refcounted_value<Dict>();
+        TValue<Dict> dict = make_refcounted_value<Dict>();
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             Value key = fp[reg - int8_t(idx * 2)];
@@ -993,10 +984,9 @@ namespace cl
             }
 
             ClassObject *cls = fun.get_ptr<ClassObject>();
-            accumulator = Value::from_oop(
-                ThreadState::get_active()->make_refcounted_raw<Instance>(
-                    Value::from_oop(cls),
-                    Value::from_oop(cls->get_initial_shape())));
+            accumulator = Value::from_oop(make_refcounted_raw<Instance>(
+                Value::from_oop(cls),
+                Value::from_oop(cls->get_initial_shape())));
 
             pc += 3;
 
@@ -1153,8 +1143,7 @@ namespace cl
         int16_t rel_target = read_int16_le(&pc[2]);
         Value callable = fp[reg];
         pc += 4;
-        if(callable !=
-           ThreadState::get_active()->get_machine()->get_range_builtin())
+        if(callable != active_vm()->get_range_builtin())
         {
             pc += rel_target;
         }
@@ -1178,8 +1167,7 @@ namespace cl
         int16_t rel_target = read_int16_le(&pc[2]);
         Value callable = fp[reg];
         pc += 4;
-        if(callable !=
-           ThreadState::get_active()->get_machine()->get_range_builtin())
+        if(callable != active_vm()->get_range_builtin())
         {
             pc += rel_target;
         }
@@ -1205,8 +1193,7 @@ namespace cl
         int16_t rel_target = read_int16_le(&pc[2]);
         Value callable = fp[reg];
         pc += 4;
-        if(callable !=
-           ThreadState::get_active()->get_machine()->get_range_builtin())
+        if(callable != active_vm()->get_range_builtin())
         {
             pc += rel_target;
         }

@@ -1,10 +1,9 @@
 #include "codegen.h"
 #include "ast.h"
 #include "attr.h"
+#include "runtime_helpers.h"
 #include "scope.h"
-#include "thread_state.h"
 #include "tokenizer.h"
-#include "virtual_machine.h"
 #include <fmt/core.h>
 #include <optional>
 
@@ -92,16 +91,9 @@ namespace cl
         using RegisterIndex = int32_t;
 
         Codegen(const AstVector &_av)
-            : av(_av),
-              module_scope(
-                  ThreadState::get_active()->make_refcounted_value<Scope>(
-                      ThreadState::get_active()
-                          ->get_machine()
-                          ->get_builtin_scope())),
-              module_name(
-                  ThreadState::get_active()
-                      ->get_machine()
-                      ->get_or_create_interned_string_value(L"<module>"))
+            : av(_av), module_scope(make_refcounted_value<Scope>(
+                           active_vm()->get_builtin_scope())),
+              module_name(interned_string(L"<module>"))
 
         {
         }
@@ -124,7 +116,6 @@ namespace cl
 
         CodeObject *make_code_obj(Mode mode)
         {
-            ThreadState *ts = ThreadState::get_active();
             Value local_scope = Value::None();
             Value name = Value::None();
             switch(mode)
@@ -135,16 +126,16 @@ namespace cl
 
                 case Mode::Class:
                     local_scope =
-                        ts->make_refcounted_value<Scope>(code_obj->local_scope);
+                        make_refcounted_value<Scope>(code_obj->local_scope);
                     name = code_obj->name.as_value();
                     break;
                 case Mode::Function:
                     local_scope =
-                        ts->make_refcounted_value<Scope>(code_obj->local_scope);
+                        make_refcounted_value<Scope>(code_obj->local_scope);
                     break;
             }
 
-            return ts->make_refcounted_raw<CodeObject>(
+            return make_refcounted_raw<CodeObject>(
                 av.compilation_unit, module_scope, local_scope, name);
         }
 
@@ -652,10 +643,7 @@ namespace cl
                 return std::nullopt;
             }
 
-            TValue<String> range_name =
-                ThreadState::get_active()
-                    ->get_machine()
-                    ->get_or_create_interned_string_value(L"range");
+            TValue<String> range_name = interned_string(L"range");
             if(av.constants[callable_idx] != Value(range_name))
             {
                 return std::nullopt;

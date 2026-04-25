@@ -1,9 +1,8 @@
 #include "class_object.h"
 #include "list.h"
+#include "runtime_helpers.h"
 #include "shape_backed_object.h"
 #include "str.h"
-#include "thread_state.h"
-#include "virtual_machine.h"
 #include <algorithm>
 
 namespace cl
@@ -17,9 +16,7 @@ namespace cl
           overflow(Value::None()),
           factory_default_inline_slot_count(_factory_default_inline_slot_count)
     {
-        VirtualMachine *vm = ThreadState::get_active()->get_machine();
-        TValue<String> dunder_class_name =
-            vm->get_or_create_interned_string_value(L"__class__");
+        TValue<String> dunder_class_name = interned_string(L"__class__");
         DescriptorFlags instance_class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly);
         instance_class_flags |= descriptor_flag(DescriptorFlag::StableSlot);
@@ -29,12 +26,9 @@ namespace cl
                                  instance_class_flags),
             1));
 
-        TValue<String> dunder_name_name =
-            vm->get_or_create_interned_string_value(L"__name__");
-        TValue<String> dunder_bases_name =
-            vm->get_or_create_interned_string_value(L"__bases__");
-        TValue<String> dunder_mro_name =
-            vm->get_or_create_interned_string_value(L"__mro__");
+        TValue<String> dunder_name_name = interned_string(L"__name__");
+        TValue<String> dunder_bases_name = interned_string(L"__bases__");
+        TValue<String> dunder_mro_name = interned_string(L"__mro__");
         DescriptorFlags class_metadata_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot);
@@ -289,10 +283,9 @@ namespace cl
         }
 
         Instance::OverflowSlots *new_overflow_slots =
-            ThreadState::get_active()
-                ->make_refcounted_raw<Instance::OverflowSlots>(
-                    overflow_slots == nullptr ? 0 : overflow_slots->get_size(),
-                    new_capacity);
+            make_refcounted_raw<Instance::OverflowSlots>(
+                overflow_slots == nullptr ? 0 : overflow_slots->get_size(),
+                new_capacity);
         if(overflow_slots != nullptr)
         {
             for(uint32_t slot_idx = 0;
@@ -309,7 +302,7 @@ namespace cl
 
     Value ClassObject::make_bases_list() const
     {
-        List *bases = ThreadState::get_active()->make_refcounted_raw<List>();
+        List *bases = make_refcounted_raw<List>();
         if(base != Value::None())
         {
             bases->append(base.as_value());
@@ -319,7 +312,7 @@ namespace cl
 
     Value ClassObject::make_mro_list() const
     {
-        List *mro = ThreadState::get_active()->make_refcounted_raw<List>();
+        List *mro = make_refcounted_raw<List>();
         mro->append(Value::from_oop(const_cast<ClassObject *>(this)));
         ClassObject *base_ptr = get_base();
         while(base_ptr != nullptr)

@@ -57,7 +57,7 @@ namespace cl
         uint32_t descriptor_count, int32_t next_slot_index,
         ShapeFlags shape_flags)
     {
-        Shape *shape = ThreadState::get_active()->make_refcounted_raw<Shape>(
+        Shape *shape = make_refcounted_raw<Shape>(
             owner_class, Value::None(), next_slot_index, descriptor_count,
             shape_flags, descriptor_count);
         for(uint32_t descriptor_idx = 0; descriptor_idx < descriptor_count;
@@ -218,11 +218,10 @@ namespace cl
             next_property_count = property_count_ + 1;
         }
 
-        Shape *next_shape =
-            ThreadState::get_active()->make_refcounted_raw<Shape>(
-                owner_class.as_value(), Value::from_oop(this),
-                next_slot_index_for_shape, next_property_count, shape_flags,
-                present_count_ + 1);
+        Shape *next_shape = make_refcounted_raw<Shape>(
+            owner_class.as_value(), Value::from_oop(this),
+            next_slot_index_for_shape, next_property_count, shape_flags,
+            present_count_ + 1);
         uint32_t next_property_idx = 0;
         for(uint32_t property_idx = 0; property_idx < present_count_;
             ++property_idx)
@@ -266,10 +265,9 @@ namespace cl
         bool keep_latent = descriptor.info.has_flag(DescriptorFlag::StableSlot);
         uint32_t next_property_count =
             keep_latent ? property_count_ : property_count_ - 1;
-        Shape *next_shape =
-            ThreadState::get_active()->make_refcounted_raw<Shape>(
-                owner_class.as_value(), Value::from_oop(this), next_slot_index,
-                next_property_count, shape_flags, present_count_ - 1);
+        Shape *next_shape = make_refcounted_raw<Shape>(
+            owner_class.as_value(), Value::from_oop(this), next_slot_index,
+            next_property_count, shape_flags, present_count_ - 1);
         uint32_t next_property_idx = 0;
         for(uint32_t property_idx = 0; property_idx < present_count_;
             ++property_idx)
