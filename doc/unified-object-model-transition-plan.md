@@ -2,7 +2,7 @@
 
 ## Goal
 
-Move from the current split model:
+Move from the original split model:
 
 - instances have Shapes and slot storage
 - classes have a separate member vector and base-chain lookup
@@ -17,34 +17,38 @@ to the unified model described in
 
 ## Current Implementation Summary
 
-Today the runtime is only partially aligned with that design.
+Today the runtime is substantially closer to that design for user-created
+instances and classes, but it is not yet a unified object model.
 
 ### Instances already use Shapes
 
-Instances store both a class pointer and a Shape pointer, and own-property
-updates go through shape transitions and slot storage.
+Instances use shape-backed own-property storage. Their `__class__` value lives
+in a predefined read-only stable slot and is kept in sync with the Shape's type
+identity.
 
 Relevant code:
 
 - [src/instance.h](../src/instance.h)
 - [src/instance.cpp](../src/instance.cpp)
 
-### Classes still have compatibility lookup shims
+### Classes use Shapes, with compatibility shims
 
 `ClassObject` now uses shape-backed storage for class attributes, but the old
-member-facing API remains as a compatibility shim and class-chain lookup still
-falls back recursively through `base`.
+member-facing API remains as a compatibility shim. Class metadata such as
+`__class__`, `__name__`, `__bases__`, and `__mro__` is stored in predefined
+Shape-backed slots.
 
 Relevant code:
 
 - [src/class_object.h](../src/class_object.h)
 - [src/class_object.cpp](../src/class_object.cpp)
 
-### Shapes are simpler than the target model
+### Shapes support present and latent descriptors
 
-Current `Shape` objects model only a flat ordered list of present properties.
-Deleting a property removes its descriptor entirely. Re-adding the same name
-allocates a fresh slot instead of reusing a latent stable slot.
+`Shape` now models present and latent descriptors, explicit storage locations,
+descriptor flags, Shape flags, and stable predefined slots. This supports the
+class and instance storage work already completed, while still leaving the
+broader object-header and builtin-object migration unfinished.
 
 Relevant code:
 
@@ -52,36 +56,98 @@ Relevant code:
 - [src/shape.cpp](../src/shape.cpp)
 - [tests/test_shape.cpp](../tests/test_shape.cpp)
 
-### Attribute lookup hard-codes the split
+### Attribute lookup still has split-model remnants
 
-Attribute lookup and method binding distinguish instances from classes and
-special-case `__class__`.
+Attribute lookup now uses Shape presence and materialized `__mro__` for the
+class chain, but it still distinguishes native object kinds directly and still
+contains compatibility behavior around `__class__` and C++ `Klass` type
+identity.
 
 Relevant code:
 
 - [src/attr.cpp](../src/attr.cpp)
 
-### Class hierarchy state is not yet MRO-shaped
+### Class hierarchy state is MRO-shaped, but not fully typed
 
-`ClassObject` currently stores a single optional `base` pointer and recursive
-lookup walks that chain directly. The unified model talks in terms of
-`__bases__` and `__mro__`, so the migration needs an explicit bridge from the
-current single-base representation to a slot-backed class hierarchy.
+`ClassObject` materializes `__bases__` and `__mro__` from the current
+single-base representation. Lookup consumes that MRO, but builtin root type
+objects such as `object` and `type` are not yet bootstrapped.
 
 Relevant code:
 
 - [src/class_object.h](../src/class_object.h)
 - [src/class_object.cpp](../src/class_object.cpp)
 
-### Class construction also hard-codes the split
+### Class construction is shape-backed for user classes
 
-Class body execution builds a `ClassObject` and installs attributes through
-`set_member()`, while calling a class allocates an `Instance` from the class's
-initial instance shape.
+Class body execution now installs attributes through the class mutation helper,
+and class calls allocate instances from the class's initial Shape. This path
+still assumes the default metaclass story because builtin `type` does not exist
+as a real type object yet.
 
 Relevant code:
 
 - [src/interpreter.cpp](../src/interpreter.cpp)
+
+### Shape ownership is not yet on `Object`
+
+`Instance` and `ClassObject` now carry Shapes, but the common `Object` header
+still carries the native C++ `Klass` tag rather than the unified model's Shape
+reference.
+
+That means generic runtime code still cannot ask any object for its Shape
+without first knowing the object's concrete C++ layout.
+
+Relevant code:
+
+- [src/object.h](../src/object.h)
+- [src/instance.h](../src/instance.h)
+- [src/class_object.h](../src/class_object.h)
+
+### Builtin objects are not yet shape-backed
+
+Builtin runtime objects such as `String`, `List`, `Dict`, `Function`,
+`BuiltinFunction`, `Scope`, and iterator objects are still represented by
+native C++ `Klass` dispatch tags only. They do not yet have Python-visible type
+objects, Shapes, or ordinary attribute storage.
+
+Relevant code:
+
+- [src/str.h](../src/str.h)
+- [src/list.h](../src/list.h)
+- [src/dict.h](../src/dict.h)
+- [src/function.h](../src/function.h)
+- [src/builtin_function.h](../src/builtin_function.h)
+- [src/scope.h](../src/scope.h)
+
+### `Klass` is still the runtime type authority
+
+The runtime still uses `Object::klass` and static `Klass` instances for native
+dispatch, type checks, allocation support, and refcount finalization. The
+unified model instead wants Python-visible type identity to come from the
+object's Shape and its `__class__` slot.
+
+`Klass` may remain as native implementation metadata, but it should stop being
+the Python-level type identity.
+
+Relevant code:
+
+- [src/object.h](../src/object.h)
+- [src/klass.h](../src/klass.h)
+- [src/typed_value.h](../src/typed_value.h)
+
+### Builtin `type` is not bootstrapped
+
+The current runtime has user class objects and C++ `Klass` tags, but it does
+not yet have the builtin type object cycle:
+
+```text
+type.__class__ == type
+object.__class__ == type
+```
+
+Until that exists, user classes cannot fully have a real metaclass slot, and
+class-object `__class__` remains partly a compatibility bridge.
 
 ## Important Note About `method_version`
 
@@ -303,7 +369,7 @@ the linear chain `[Class, base, ..., object]` derived from the existing `base`
 field, but the lookup code should consume `__mro__` rather than recursively
 following `base`.
 
-During this phase, define the bootstrap story for the builtin type objects:
+The original version of this step tried to include the builtin type bootstrap:
 
 - what Shape is used for class objects whose `__class__` is the builtin `type`
 - how the `type.__class__ == type` cycle is represented without partially
@@ -311,9 +377,9 @@ During this phase, define the bootstrap story for the builtin type objects:
 - which builtin class Shapes are marked `IsImmutableType`
 - when predefined class slots are populated relative to class allocation
 
-That bootstrap decision should land with tests before ordinary user classes are
-migrated, because every later lookup rule depends on these root objects being
-well-formed.
+That was too much for the class-storage phase. Those decisions are now moved to
+steps 11-15, where the common object header, builtin type objects, and native
+`Klass` bridge can be handled together.
 
 Primary files:
 
@@ -559,11 +625,285 @@ Primary files:
 - [tests/test_attr.cpp](../tests/test_attr.cpp)
 - [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
 
-### 11. Add lookup invalidation only after the storage model is unified
+## Next Transition Plan
+
+The completed steps above should be treated as phase 1: user instances and user
+classes now share Shape-backed property storage closely enough to exercise the
+descriptor machinery. They did not complete the unified object model.
+
+The next phase should make all Python-visible objects have Shapes and real
+Python-visible type objects. Lookup validity cells are deliberately moved behind
+that work.
+
+### 11. Move Shape ownership into the common object header
+
+Status: not started.
+
+Give every heap object a common way to expose its current Shape. The target is
+not necessarily one identical property layout for every native object, but it
+must become possible for generic attribute code to ask any object:
+
+- what Shape are you using?
+- what Python-visible type object does that Shape identify?
+- do you have ordinary attribute storage?
+- if so, where are your inline and overflow slots?
+
+This likely means moving a Shape reference, or a compact equivalent that can
+produce a Shape, into `Object`. Existing `Instance` and `ClassObject` Shape
+fields should then collapse into the shared mechanism.
+
+Keep native `Klass` during this step. It is still useful for C++ dispatch,
+allocation, finalization, and low-level fast type predicates. The semantic
+change is that `klass` stops being the source of Python-visible `__class__`.
+
+Implementation notes:
+
+- introduce common `Object` helpers for `get_shape()` and type-shape access
+- preserve concrete object slot helpers for layouts that differ by native type
+- migrate `Instance` and `ClassObject` to the common Shape reference first
+- add assertions that `obj.__class__` lookup agrees with `obj->get_shape()`
+- keep `TValue<T>` checks based on native `Klass` until type-object dispatch is
+  ready
+
+Primary files:
+
+- [src/object.h](../src/object.h)
+- [src/instance.h](../src/instance.h)
+- [src/instance.cpp](../src/instance.cpp)
+- [src/class_object.h](../src/class_object.h)
+- [src/class_object.cpp](../src/class_object.cpp)
+- [src/shape_backed_object.h](../src/shape_backed_object.h)
+
+### 12. Define builtin type objects and the bootstrap roots
+
+Status: not started.
+
+Create real runtime objects for the builtin types that anchor the model. At a
+minimum this needs:
+
+- `type`
+- `object`
+- `str`
+- `list`
+- `dict`
+- `function`
+- `builtin_function`
+- any iterator or scope types that are directly user-visible
+
+The bootstrap must explicitly handle the self-cycle:
+
+```text
+type.__class__ == type
+object.__class__ == type
+str.__class__ == type
+```
+
+Do this with a small, well-contained bootstrap path rather than ad hoc partial
+initialization spread across constructors. The bootstrap path should allocate
+the root type objects, create their Shapes, install fixed metadata slots, and
+then seal the invariants before normal runtime allocation starts using them.
+
+Required invariants:
+
+- every builtin type object is a `ClassObject` or the chosen type-object native
+  representation
+- every builtin type object has a class-object Shape
+- builtin type object Shapes use `ShapeFlag::IsClassObject`
+- immutable builtin type Shapes use `ShapeFlag::IsImmutableType`
+- `type` is its own `__class__`
+- all root type objects expose ordinary read-only `__name__`, `__bases__`, and
+  `__mro__` metadata
+
+Primary files:
+
+- [src/virtual_machine.h](../src/virtual_machine.h)
+- [src/virtual_machine.cpp](../src/virtual_machine.cpp)
+- [src/class_object.h](../src/class_object.h)
+- [src/class_object.cpp](../src/class_object.cpp)
+- [src/shape.h](../src/shape.h)
+- [src/shape.cpp](../src/shape.cpp)
+
+### 13. Give builtin instances Shapes
+
+Status: not started.
+
+After builtin type objects exist, migrate builtin runtime objects so their
+Shapes point at those type objects. This is the point where `String`, `List`,
+`Dict`, `Function`, `BuiltinFunction`, and similar objects start participating
+in ordinary `__class__` lookup.
+
+Not every builtin object needs dynamic user attributes in the first cut. The
+plan should distinguish:
+
+- fixed-shape builtin values with no ordinary instance dictionary yet
+- builtin values with fixed native fields plus optional overflow attributes
+- builtin values that should reject arbitrary attributes until their Python
+  semantics are implemented
+
+That distinction belongs in Shape flags and object-local storage helpers, not
+in `attr.cpp` special cases. A builtin object can be shape-backed before it
+supports arbitrary attribute writes.
+
+Implementation notes:
+
+- add root Shapes for each builtin instance kind
+- initialize builtin object Shapes at allocation time
+- make `obj.__class__` for builtin values use Shape-backed lookup
+- reject ordinary attribute writes through the generic path when the builtin
+  type does not yet support extra attributes
+- add interpreter tests for `().__class__`-style equivalents as each value kind
+  exists in the language
+
+Primary files:
+
+- [src/str.h](../src/str.h)
+- [src/list.h](../src/list.h)
+- [src/dict.h](../src/dict.h)
+- [src/function.h](../src/function.h)
+- [src/builtin_function.h](../src/builtin_function.h)
+- [src/virtual_machine.cpp](../src/virtual_machine.cpp)
+- [src/attr.cpp](../src/attr.cpp)
+
+### 14. Reframe `Klass` as native implementation metadata
+
+Status: not started.
+
+Once builtin objects have Shapes, split the responsibilities currently bundled
+into `Klass`.
+
+Keep `Klass` for native concerns:
+
+- C++ layout identity
+- allocation and finalization support
+- fast unchecked casts used by `TValue<T>`
+- debugging names for native object kinds
+
+Move Python-visible type concerns to Shapes and type objects:
+
+- `__class__`
+- user-visible type names
+- class hierarchy and MRO
+- descriptor lookup through type objects
+- metaclass behavior
+
+The end state should make this distinction clear in APIs. Code that needs a
+native layout asks for `native_klass` or equivalent. Code that needs Python type
+identity asks for the object's Shape/type object.
+
+Migration steps:
+
+- rename or wrap call sites where `klass` is being used for Python semantics
+- make `load_dunder_class()` return the Shape/type object for every object
+- keep native `klass` checks for low-level dispatch until replaced deliberately
+- update tests that currently assert `&ClassObject::klass` for Python type
+  behavior
+
+Primary files:
+
+- [src/object.h](../src/object.h)
+- [src/klass.h](../src/klass.h)
+- [src/typed_value.h](../src/typed_value.h)
+- [src/attr.cpp](../src/attr.cpp)
+- [tests/test_attr.cpp](../tests/test_attr.cpp)
+- [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
+
+### 15. Make class-object `__class__` a real metaclass slot
+
+Status: not started.
+
+After `type` exists and `Klass` no longer supplies Python type identity, remove
+the remaining class-object `__class__` compatibility behavior. User classes
+should have an ordinary read-only stable `__class__` slot whose value is their
+metaclass, initially `type`.
+
+This step should also make class creation consume the metaclass object
+explicitly, even if the language still only supports the default metaclass.
+That keeps the constructor path honest for later custom metaclass support.
+
+Required behavior:
+
+- `Cls.__class__ is type` for ordinary user classes
+- `type.__class__ is type`
+- class-object lookup of `__class__` goes through normal shape-backed storage
+- ordinary assignment to class `__class__` is rejected
+- any future supported metaclass reassignment goes through a checked transition
+  path
+
+Primary files:
+
+- [src/class_object.h](../src/class_object.h)
+- [src/class_object.cpp](../src/class_object.cpp)
+- [src/interpreter.cpp](../src/interpreter.cpp)
+- [src/attr.cpp](../src/attr.cpp)
+- [tests/test_attr.cpp](../tests/test_attr.cpp)
+- [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
+
+### 16. Move generic attribute access onto the object protocol
+
+Status: not started.
+
+With every Python-visible object carrying a Shape, `attr.cpp` should stop being
+a dispatch table over `Instance` versus `ClassObject` versus builtin native
+types. It should become the default object protocol:
+
+- receiver-local present lookup
+- type/MRO lookup
+- descriptor classification
+- descriptor invocation
+- custom `__getattribute__`, `__getattr__`, `__setattr__`, and `__delattr__`
+  hooks as they become implemented
+
+Native kinds may still supply layout helpers, but they should not define
+separate Python attribute semantics unless the language requires it.
+
+This is also the right time to delete the old member compatibility API and any
+remaining special case that returns C++ `Klass` as a Python-visible type.
+
+Primary files:
+
+- [src/attr.cpp](../src/attr.cpp)
+- [src/shape_backed_object.h](../src/shape_backed_object.h)
+- [src/class_object.h](../src/class_object.h)
+- [src/class_object.cpp](../src/class_object.cpp)
+- [src/instance.h](../src/instance.h)
+- [src/instance.cpp](../src/instance.cpp)
+
+### 17. Complete descriptor and custom attribute semantics
+
+Status: not started.
+
+The current lookup code preserves existing method binding behavior, but the
+full unified model needs Python descriptor precedence before caches are worth
+building.
+
+Add or complete:
+
+- data descriptor precedence over receiver-local attributes
+- non-data descriptor binding after receiver-local lookup misses
+- `__get__`, `__set__`, and `__delete__` invocation
+- `__set_name__` notification during class creation
+- `staticmethod`, `classmethod`, and `property`
+- `__getattribute__`, `__getattr__`, `__setattr__`, and `__delattr__`
+- explicit disabling of default fast paths when custom hooks are present
+
+Descriptor classification must itself use the unified type lookup path. Cache
+eligibility can be conservative until immutable type Shapes and lookup cells
+exist.
+
+Primary files:
+
+- [src/attr.cpp](../src/attr.cpp)
+- [src/interpreter.cpp](../src/interpreter.cpp)
+- [src/builtin_function.h](../src/builtin_function.h)
+- [tests/test_attr.cpp](../tests/test_attr.cpp)
+- [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
+
+### 18. Add lookup invalidation only after the object model is unified
 
 The unified-object-model doc describes lookup validity cells as the long-term
 replacement for ad hoc invalidation. That work should come after classes and
-instances both use the same shape-based lookup model.
+instances, builtin objects, and builtin type objects all use the same
+shape-based lookup model.
 
 Inline caches should store a cached resolved value for class-chain hits, not a
 raw pointer to the resolved slot. Because every successful class attribute write
@@ -621,33 +961,33 @@ while introducing lookup cells later.
 
 ## Recommended Implementation Order
 
-If this work is done in multiple PRs, the safest order is:
+The first ten steps are the completed class/instance storage phase. The next
+safe order is:
 
-1. Refactor toward a shared shape-backed object API.
-2. Upgrade `Shape` to support present/latent descriptors and flags.
-3. Switch instance transitions to the new descriptor semantics.
-4. Move instance `__class__` to predefined shape-backed slots.
-5. Define class-specific predefined slots, bootstrap type-object Shapes, and
-   materialized `__mro__`.
-6. Migrate `ClassObject` storage from `members` to shape-backed slots behind a
-   temporary compatibility shim.
-7. Route all class mutation through the centralized class mutation helper and
-   delete `method_version`.
-8. Rework class lookup to use `__mro__`, Shape presence, latent descriptors,
-   and centralized descriptor classification.
-9. Update interpreter class construction paths and run `__set_name__` after
-   shape-backed attribute installation.
-10. Delete the `members` compatibility shim once all callers have moved.
-11. Add lookup validity cells and inline-cache integration later.
+1. Move Shape ownership/access into the common `Object` header while preserving
+   native `Klass` for C++ implementation concerns.
+2. Bootstrap real builtin type objects, including the `type.__class__ == type`
+   cycle.
+3. Give builtin runtime objects Shapes that point at their builtin type
+   objects.
+4. Reframe `Klass` APIs so Python-visible type identity comes from Shapes and
+   type objects.
+5. Make user class `__class__` a real metaclass slot, initially always `type`.
+6. Move generic attribute access onto the shared object protocol and delete
+   remaining class-member compatibility APIs.
+7. Complete descriptor and custom attribute semantics.
+8. Add lookup validity cells and inline-cache integration.
 
 ## Main Risk To Avoid
 
-The biggest trap is migrating class storage onto Shapes before `Shape` can
-express latent descriptors and predefined stable slots. Doing that would force
-an immediate second rewrite of the class side.
+The biggest trap now is adding lookup validity cells before type identity is
+actually unified. A cache built around native `Klass` or special-cased builtin
+objects would immediately need a second design once builtin type objects and
+Shape-backed builtin instances land.
 
-So the critical sequencing rule is:
+So the critical sequencing rule for the next phase is:
 
-- upgrade `Shape` first
-- define class-specific predefined slots
-- then migrate `ClassObject`
+- common Shape access first
+- builtin `type` / builtin type objects second
+- builtin object Shapes third
+- lookup caches last
