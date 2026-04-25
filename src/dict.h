@@ -34,10 +34,8 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout_id = NativeLayoutId::Dict;
 
-        Dict();
         explicit Dict(ClassObject *cls);
 
-        Dict(const Dict &other);
         Dict(ClassObject *cls, const Dict &other);
 
         void set_item(Value key, Value value);

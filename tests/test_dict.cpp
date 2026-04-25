@@ -19,7 +19,7 @@ TEST(Dict, SetGetAndContainsWorkForStringKeys)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    Dict *dict = context.thread()->make_refcounted_raw<Dict>();
+    Dict *dict = context.thread()->make_refcounted_object_raw<Dict>();
 
     Value alpha = make_string(context, L"alpha");
     Value beta = make_string(context, L"beta");
@@ -39,7 +39,7 @@ TEST(Dict, SetItemOverwritesExistingValue)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    Dict *dict = context.thread()->make_refcounted_raw<Dict>();
+    Dict *dict = context.thread()->make_refcounted_object_raw<Dict>();
 
     Value key = make_string(context, L"shared");
 
@@ -54,7 +54,7 @@ TEST(Dict, DelItemRemovesKeyFromLookupAndLogicalSize)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    Dict *dict = context.thread()->make_refcounted_raw<Dict>();
+    Dict *dict = context.thread()->make_refcounted_object_raw<Dict>();
 
     Value keep = make_string(context, L"keep");
     Value erase = make_string(context, L"erase");
@@ -74,7 +74,7 @@ TEST(Dict, CopyConstructorPreservesLiveEntriesOnly)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    Dict *dict = context.thread()->make_refcounted_raw<Dict>();
+    Dict *dict = context.thread()->make_refcounted_object_raw<Dict>();
 
     Value first = make_string(context, L"first");
     Value second = make_string(context, L"second");
@@ -83,7 +83,8 @@ TEST(Dict, CopyConstructorPreservesLiveEntriesOnly)
     dict->set_item(second, Value::from_smi(20));
     dict->del_item(first);
 
-    Dict copy(*dict);
+    Dict copy(context.thread()->class_for_native_layout(Dict::native_layout_id),
+              *dict);
 
     EXPECT_EQ(1u, copy.size());
     EXPECT_FALSE(copy.contains(first));
@@ -96,7 +97,7 @@ TEST(Dict, ClearRemovesAllEntriesAndAllowsReuse)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    Dict *dict = context.thread()->make_refcounted_raw<Dict>();
+    Dict *dict = context.thread()->make_refcounted_object_raw<Dict>();
 
     Value alpha = make_string(context, L"alpha");
     Value beta = make_string(context, L"beta");
