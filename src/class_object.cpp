@@ -13,8 +13,7 @@ namespace cl
                              uint32_t _factory_default_inline_slot_count,
                              Value _base, ShapeFlags class_shape_flags)
         : Object(BootstrapObjectTag{}, native_layout_id, compact_layout()),
-          name(_name), base(_base), initial_shape(nullptr), shape(nullptr),
-          overflow(nullptr),
+          name(_name), base(_base), initial_shape(nullptr),
           factory_default_inline_slot_count(_factory_default_inline_slot_count)
     {
         TValue<String> dunder_class_name = interned_string(L"__class__");
@@ -55,9 +54,9 @@ namespace cl
                     StorageLocation{kClassSlotMro, StorageKind::Inline},
                     class_metadata_flags)},
         };
-        shape = Shape::make_root_with_descriptors(
+        set_shape(Shape::make_root_with_descriptors(
             Value::from_oop(this), descriptors, kClassPredefinedSlotCount,
-            kClassPredefinedSlotCount, class_shape_flags);
+            kClassPredefinedSlotCount, class_shape_flags));
 
         for(uint32_t slot_idx = 0; slot_idx < kClassInlineSlotCount; ++slot_idx)
         {
@@ -129,10 +128,6 @@ namespace cl
         cls->install_bootstrap_class(cls);
         return builtin_class_definition(cls, native_layout_ids);
     }
-
-    Shape *ClassObject::get_shape() const { return shape.extract(); }
-
-    void ClassObject::set_shape(Shape *new_shape) { shape = new_shape; }
 
     Shape *ClassObject::get_initial_shape() const
     {
@@ -220,19 +215,7 @@ namespace cl
                 assert(uint32_t(location.physical_idx) < kClassInlineSlotCount);
                 return class_slots[location.physical_idx].as_value();
             case StorageKind::Overflow:
-                {
-                    OverflowSlots *overflow_slots = get_overflow_slots();
-                    if(overflow_slots == nullptr)
-                    {
-                        return Value::not_present();
-                    }
-                    if(uint32_t(location.physical_idx) >=
-                       overflow_slots->get_size())
-                    {
-                        return Value::not_present();
-                    }
-                    return overflow_slots->get(location.physical_idx);
-                }
+                return Object::read_storage_location(location);
         }
         __builtin_unreachable();
     }
@@ -250,15 +233,8 @@ namespace cl
                     return;
                 }
             case StorageKind::Overflow:
-                {
-                    OverflowSlots *overflow_slots =
-                        ensure_overflow_slot(location.physical_idx);
-                    overflow_slots->set(location.physical_idx, value);
-                    overflow_slots->set_size(
-                        std::max(overflow_slots->get_size(),
-                                 uint32_t(location.physical_idx + 1)));
-                    return;
-                }
+                Object::write_storage_location(location, value);
+                return;
         }
         __builtin_unreachable();
     }
@@ -267,50 +243,6 @@ namespace cl
     {
         assert(slot_idx < kClassInlineSlotCount);
         return class_slots[slot_idx].as_value();
-    }
-
-    OverflowSlots *ClassObject::get_overflow_slots() const
-    {
-        if(overflow == nullptr)
-        {
-            return nullptr;
-        }
-        return overflow.extract();
-    }
-
-    OverflowSlots *ClassObject::ensure_overflow_slot(int32_t physical_idx)
-    {
-        assert(physical_idx >= 0);
-        OverflowSlots *overflow_slots = get_overflow_slots();
-        if(overflow_slots != nullptr &&
-           uint32_t(physical_idx) < overflow_slots->get_capacity())
-        {
-            return overflow_slots;
-        }
-
-        uint32_t old_capacity =
-            overflow_slots == nullptr ? 0 : overflow_slots->get_capacity();
-        uint32_t new_capacity = std::max<uint32_t>(4, old_capacity);
-        while(uint32_t(physical_idx) >= new_capacity)
-        {
-            new_capacity *= 2;
-        }
-
-        OverflowSlots *new_overflow_slots = make_internal_raw<OverflowSlots>(
-            overflow_slots == nullptr ? 0 : overflow_slots->get_size(),
-            new_capacity);
-        if(overflow_slots != nullptr)
-        {
-            for(uint32_t slot_idx = 0;
-                slot_idx < overflow_slots->get_capacity(); ++slot_idx)
-            {
-                new_overflow_slots->set(slot_idx,
-                                        overflow_slots->get(slot_idx));
-            }
-        }
-
-        overflow = new_overflow_slots;
-        return new_overflow_slots;
     }
 
     Value ClassObject::make_bases_list() const

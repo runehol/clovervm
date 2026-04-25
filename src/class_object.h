@@ -4,7 +4,6 @@
 #include "builtin_class_registry.h"
 #include "instance.h"
 #include "object.h"
-#include "overflow_slots.h"
 #include "owned.h"
 #include "owned_typed_value.h"
 #include "shape.h"
@@ -65,8 +64,6 @@ namespace cl
         {
             return kClassInlineSlotCount;
         }
-        Shape *get_shape() const;
-        void set_shape(Shape *new_shape);
         Shape *get_initial_shape() const;
         ClassObject *get_base() const;
 
@@ -84,22 +81,18 @@ namespace cl
 
     private:
         Value read_inline_slot(uint32_t slot_idx) const;
-        OverflowSlots *get_overflow_slots() const;
-        OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
         Value make_bases_list() const;
         Value make_mro_list() const;
 
         MemberTValue<String> name;
         MemberValue base;
         MemberHeapPtr<Shape> initial_shape;
-        MemberHeapPtr<Shape> shape;
-        MemberHeapPtr<OverflowSlots> overflow;
         MemberValue class_slots[kClassInlineSlotCount];
         uint32_t factory_default_inline_slot_count;
 
     public:
         CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(ClassObject, name,
-                                             5 + kClassInlineSlotCount);
+                                             3 + kClassInlineSlotCount);
     };
 
     class VirtualMachine;
