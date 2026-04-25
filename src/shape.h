@@ -190,6 +190,11 @@ namespace cl
               uint32_t property_count, ShapeFlags shape_flags,
               uint32_t present_count);
 
+        static Shape *make_root_with_single_descriptor(
+            Value owner_class, TValue<String> name, DescriptorInfo info,
+            int32_t next_slot_index,
+            ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
+
         static size_t size_for(uint32_t property_count)
         {
             return sizeof(Shape) + sizeof(Value) * property_count -

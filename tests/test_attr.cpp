@@ -81,6 +81,8 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
         Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
 
     EXPECT_EQ(Value::from_oop(cls),
+              instance->get_own_property(dunder_class_name));
+    EXPECT_EQ(Value::from_oop(cls),
               load_attr(Value::from_oop(instance), dunder_class_name));
     EXPECT_EQ(Value::from_oop(const_cast<Klass *>(&ClassObject::klass)),
               load_attr(Value::from_oop(cls), dunder_class_name));
@@ -138,7 +140,7 @@ TEST(Attr, StoreAttrWritesClassMember)
     EXPECT_EQ(Value::from_smi(5), load_attr(Value::from_oop(cls), attr_name));
 }
 
-TEST(Attr, StoreAttrRejectsDunderClassAndUnsupportedInlineValues)
+TEST(Attr, StoreAttrHandlesDunderClassAndUnsupportedInlineValues)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -151,11 +153,15 @@ TEST(Attr, StoreAttrRejectsDunderClassAndUnsupportedInlineValues)
         context.vm().get_or_create_interned_string_value(L"__class__"));
     ClassObject *cls =
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+    ClassObject *other_cls =
+        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
         Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
 
+    EXPECT_TRUE(store_attr(Value::from_oop(instance), dunder_class_name,
+                           Value::from_oop(cls)));
     EXPECT_FALSE(store_attr(Value::from_oop(instance), dunder_class_name,
-                            Value::from_oop(cls)));
+                            Value::from_oop(other_cls)));
     EXPECT_EQ(Value::from_oop(cls),
               load_attr(Value::from_oop(instance), dunder_class_name));
 

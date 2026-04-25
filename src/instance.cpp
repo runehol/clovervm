@@ -2,6 +2,7 @@
 #include "refcount.h"
 #include "shape_backed_object.h"
 #include "thread_state.h"
+#include "virtual_machine.h"
 
 namespace cl
 {
@@ -16,6 +17,15 @@ namespace cl
         {
             inline_slots[slot_idx] = Value::not_present();
         }
+
+        TValue<String> dunder_class_name =
+            ThreadState::get_active()
+                ->get_machine()
+                ->get_or_create_interned_string_value(L"__class__");
+        StorageLocation class_location =
+            get_shape()->resolve_present_property(dunder_class_name);
+        assert(class_location.is_found());
+        write_storage_location(class_location, _cls);
     }
 
     DynamicLayoutSpec Instance::layout_spec_for(Value cls, Value shape)

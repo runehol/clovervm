@@ -3,6 +3,7 @@
 #include "function.h"
 #include "str.h"
 #include "thread_state.h"
+#include "virtual_machine.h"
 
 namespace cl
 {
@@ -11,11 +12,19 @@ namespace cl
                              uint32_t _instance_inline_slot_count, Value _base)
         : Object(&klass, compact_layout()), name(_name),
           instance_inline_slot_count(_instance_inline_slot_count),
-          method_version(0), base(_base),
-          initial_shape(Value::from_oop(
-              ThreadState::get_active()->make_refcounted_raw<Shape>(
-                  Value::from_oop(this), Value::None(), 0, 0)))
+          method_version(0), base(_base), initial_shape(Value::None())
     {
+        TValue<String> dunder_class_name =
+            ThreadState::get_active()
+                ->get_machine()
+                ->get_or_create_interned_string_value(L"__class__");
+        DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly);
+        flags |= descriptor_flag(DescriptorFlag::StableSlot);
+        initial_shape = Value::from_oop(Shape::make_root_with_single_descriptor(
+            Value::from_oop(this), dunder_class_name,
+            DescriptorInfo::make(StorageLocation{0, StorageKind::Inline},
+                                 flags),
+            1));
     }
 
     Shape *ClassObject::get_initial_shape() const

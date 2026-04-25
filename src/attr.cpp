@@ -20,18 +20,14 @@ namespace cl
         }
 
         Object *object = obj.get_ptr<Object>();
-        if(object->klass == &Instance::klass)
-        {
-            return obj.get_ptr<Instance>()->get_class();
-        }
-
         return Value::from_oop(const_cast<Klass *>(object->klass));
     }
 
     bool load_method(Value obj, TValue<String> name, Value &callable_out,
                      Value &self_out)
     {
-        if(is_dunder_class(name))
+        if(is_dunder_class(name) &&
+           (!obj.is_ptr() || obj.get_ptr<Object>()->klass != &Instance::klass))
         {
             callable_out = load_dunder_class(obj);
             self_out = Value::not_present();
@@ -101,7 +97,8 @@ namespace cl
 
     Value load_attr(Value obj, TValue<String> name)
     {
-        if(is_dunder_class(name))
+        if(is_dunder_class(name) &&
+           (!obj.is_ptr() || obj.get_ptr<Object>()->klass != &Instance::klass))
         {
             return load_dunder_class(obj);
         }
@@ -141,7 +138,7 @@ namespace cl
 
     bool store_attr(Value obj, TValue<String> name, Value value)
     {
-        if(is_dunder_class(name) || !obj.is_ptr())
+        if(!obj.is_ptr())
         {
             return false;
         }
@@ -149,8 +146,18 @@ namespace cl
         Object *object = obj.get_ptr<Object>();
         if(object->klass == &Instance::klass)
         {
-            return static_cast<Instance *>(object)->set_own_property(name,
-                                                                     value);
+            Instance *instance = static_cast<Instance *>(object);
+            if(is_dunder_class(name))
+            {
+                return value == instance->get_class();
+            }
+
+            return instance->set_own_property(name, value);
+        }
+
+        if(is_dunder_class(name))
+        {
+            return false;
         }
 
         if(object->klass == &ClassObject::klass)

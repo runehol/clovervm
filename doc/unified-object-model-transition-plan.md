@@ -230,6 +230,11 @@ Primary files:
 
 ### 4. Move instance `__class__` into the shape-backed model
 
+Status: done. New instance root Shapes now contain a predefined read-only,
+stable `__class__` descriptor at inline slot 0, `Instance` construction
+initializes that slot to the class object, and instance `obj.__class__` lookup
+now travels through the ordinary shape-backed own-property path.
+
 Replace the current special-case `__class__` logic with a predefined
 read-only stable slot. Ordinary attribute stores to that slot should be
 rejected; supported `__class__` reassignment must go through a dedicated

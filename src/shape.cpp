@@ -41,6 +41,19 @@ namespace cl
         }
     }
 
+    Shape *Shape::make_root_with_single_descriptor(Value owner_class,
+                                                   TValue<String> name,
+                                                   DescriptorInfo info,
+                                                   int32_t next_slot_index,
+                                                   ShapeFlags shape_flags)
+    {
+        Shape *shape = ThreadState::get_active()->make_refcounted_raw<Shape>(
+            owner_class, Value::None(), next_slot_index, 1, shape_flags, 1);
+        shape->descriptor_names[0] = incref(name.as_value());
+        shape->descriptor_infos()[0] = info;
+        return shape;
+    }
+
     ClassObject *Shape::get_owner_class() const
     {
         return owner_class.as_value().get_ptr<ClassObject>();
