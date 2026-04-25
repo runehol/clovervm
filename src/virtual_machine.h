@@ -39,13 +39,27 @@ namespace cl
         template <typename Source>
         TValue<String> get_or_create_interned_string_value(const Source &str)
         {
-            return interned_strings.get_or_create_value(str);
+            return TValue<String>::from_oop(
+                get_or_create_interned_string_raw(str));
         }
 
         template <typename Source>
         String *get_or_create_interned_string_raw(const Source &str)
         {
-            return interned_strings.get_or_create_raw(str);
+            return interned_strings.get_or_create_raw_with_factory(
+                str, [this](const Source &value) {
+                    if(str_class_ != nullptr)
+                    {
+                        assert(str_instance_root_shape_ != nullptr);
+                        String *string =
+                            interned_global_heap.make_global_raw<String>(value);
+                        string->install_bootstrap_class_and_shape(
+                            Value::from_oop(str_class_),
+                            Value::from_oop(str_instance_root_shape_));
+                        return string;
+                    }
+                    return interned_global_heap.make_global_raw<String>(value);
+                });
         }
 
         TValue<Scope> get_builtin_scope() const { return builtin_scope; }
@@ -62,6 +76,10 @@ namespace cl
         ClassObject *str_class() const
         {
             return class_for_native_layout(NativeLayoutId::String);
+        }
+        Shape *str_instance_root_shape() const
+        {
+            return str_instance_root_shape_;
         }
         ClassObject *list_class() const
         {
@@ -114,6 +132,7 @@ namespace cl
             static_cast<size_t>(NativeLayoutId::Count);
 
         void register_builtin_class(const BuiltinClassDefinition &definition);
+        void install_bootstrap_string_class();
         void initialize_builtin_types();
         void initialize_builtin_scope();
 
@@ -122,6 +141,8 @@ namespace cl
         GlobalHeap interned_global_heap;
         InternStore<std::wstring, String> interned_strings;
         ClassObject *type_class_ = nullptr;
+        ClassObject *str_class_ = nullptr;
+        Shape *str_instance_root_shape_ = nullptr;
         std::array<ClassObject *, NativeLayoutCount> class_for_native_layouts =
             {};
         std::vector<ClassObject *> builtin_classes;

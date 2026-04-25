@@ -106,12 +106,30 @@ namespace cl
         }
     }
 
+    void VirtualMachine::install_bootstrap_string_class()
+    {
+        str_class_ = class_for_native_layout(NativeLayoutId::String);
+        assert(str_class_ != nullptr);
+        str_instance_root_shape_ = str_class_->get_initial_shape();
+        assert(str_instance_root_shape_ != nullptr);
+
+        Value cls = Value::from_oop(str_class_);
+        Value shape = Value::from_oop(str_instance_root_shape_);
+        interned_strings.for_each_raw([cls, shape](String *string) {
+            if(string->get_class() == Value::None())
+            {
+                string->install_bootstrap_class_and_shape(cls, shape);
+            }
+        });
+    }
+
     void VirtualMachine::initialize_builtin_types()
     {
         BuiltinClassDefinition type_definition = make_type_class(this);
         type_class_ = type_definition.cls;
         register_builtin_class(type_definition);
         register_builtin_class(make_str_class(this));
+        install_bootstrap_string_class();
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_function_class(this));

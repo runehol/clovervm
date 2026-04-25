@@ -980,8 +980,20 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
             test_context.vm().get_or_create_interned_string_value(
                 expected.name);
         EXPECT_EQ(name, cls->get_name());
+        EXPECT_EQ(Value::from_oop(test_context.vm().str_class()),
+                  name.extract()->get_class());
+        EXPECT_EQ(test_context.vm().str_instance_root_shape(),
+                  name.extract()->get_shape());
         EXPECT_EQ(Value::from_oop(cls), builtins->get_by_name(name));
     }
+
+    TValue<String> post_bootstrap_name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"post_bootstrap_name");
+    EXPECT_EQ(Value::from_oop(test_context.vm().str_class()),
+              post_bootstrap_name.extract()->get_class());
+    EXPECT_EQ(test_context.vm().str_instance_root_shape(),
+              post_bootstrap_name.extract()->get_shape());
 
     EXPECT_EQ(Value::from_oop(type_class),
               type_class->get_own_property(
