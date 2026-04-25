@@ -1,7 +1,7 @@
 #ifndef CL_SHAPE_H
 #define CL_SHAPE_H
 
-#include "object.h"
+#include "heap_object.h"
 #include "owned.h"
 #include "owned_typed_value.h"
 #include "typed_value.h"

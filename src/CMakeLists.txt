@@ -20,6 +20,7 @@ add_library(libclovervm STATIC
     function.cpp
     heap.cpp
     heap.h
+    heap_object.h
     instance.cpp
     instance.h
     interpreter.cpp
