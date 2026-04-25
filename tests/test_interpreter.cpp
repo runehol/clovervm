@@ -293,6 +293,48 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
     EXPECT_STREQ(L"value", cls->get_member_name(0).extract()->data);
 }
 
+TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> cls_name(
+        test_context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> first_name(
+        test_context.vm().get_or_create_interned_string_value(L"first"));
+    TValue<String> second_name(
+        test_context.vm().get_or_create_interned_string_value(L"second"));
+    TValue<String> third_name(
+        test_context.vm().get_or_create_interned_string_value(L"third"));
+
+    CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
+                                                     L"    first = 1\n"
+                                                     L"    second = 2\n"
+                                                     L"    third = 3\n");
+    (void)test_context.thread()->run(code_obj);
+
+    Value cls_value = code_obj->module_scope.extract()->get_by_name(cls_name);
+    ASSERT_TRUE(cls_value.is_ptr());
+    ASSERT_EQ(&ClassObject::klass, cls_value.get_ptr<Object>()->klass);
+    ClassObject *cls = cls_value.get_ptr<ClassObject>();
+
+    TValue<String> names[] = {first_name, second_name, third_name};
+    for(uint32_t idx = 0; idx < 3; ++idx)
+    {
+        EXPECT_STREQ(string_as_wchar_t(names[idx]),
+                     string_as_wchar_t(cls->get_member_name(idx)));
+
+        StorageLocation location =
+            cls->get_shape()->resolve_present_property(names[idx]);
+        ASSERT_TRUE(location.is_found());
+        EXPECT_EQ(StorageKind::Inline, location.kind);
+        EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotCount + idx),
+                  location.physical_idx);
+        EXPECT_EQ(Value::from_smi(idx + 1),
+                  cls->read_storage_location(location));
+    }
+}
+
 TEST(Interpreter, class_body_readonly_metadata_store_is_rejected)
 {
     expect_runtime_error(L"class Cls:\n"

@@ -516,6 +516,16 @@ Primary files:
 
 ### 10. Rewrite tests around the new invariants
 
+Status: done for the runtime features that currently exist. The test suite now
+checks present/latent descriptor behavior, predefined stable slot reuse,
+shape-backed instance `__class__`, shape-backed class property storage,
+class-chain lookup through materialized `__mro__`, readonly predefined class
+metadata, and class construction installing properties through the class
+mutation helper in insertion order. Descriptor invocation and custom
+`__getattribute__` / `__setattr__` / `__delattr__` fast-path disabling remain
+future test items because those runtime objects and hooks are not implemented
+yet.
+
 The tests need to move from the current split assumptions to the unified
 object model.
 

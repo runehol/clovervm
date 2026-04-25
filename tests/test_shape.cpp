@@ -632,12 +632,23 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     EXPECT_EQ(Value::from_oop(cls),
               mro_value.get_ptr<List>()->item_unchecked(0));
 
-    EXPECT_FALSE(
-        cls->set_own_property(dunder_name_name, other_name.as_value()));
-    EXPECT_FALSE(cls->delete_own_property(dunder_name_name));
-    EXPECT_FALSE(cls->store_own_property_direct(dunder_name_name,
-                                                other_name.as_value()));
-    EXPECT_FALSE(cls->delete_own_property_direct(dunder_name_name));
+    TValue<String> readonly_names[] = {dunder_class_name, dunder_name_name,
+                                       dunder_bases_name, dunder_mro_name};
+    Value readonly_values[] = {Value::None(), cls_name.as_value(), bases_value,
+                               mro_value};
+    for(uint32_t idx = 0; idx < ClassObject::kClassPredefinedSlotCount; ++idx)
+    {
+        Shape *before_shape = cls->get_shape();
+        EXPECT_FALSE(
+            cls->set_own_property(readonly_names[idx], other_name.as_value()));
+        EXPECT_FALSE(cls->delete_own_property(readonly_names[idx]));
+        EXPECT_FALSE(cls->store_own_property_direct(readonly_names[idx],
+                                                    other_name.as_value()));
+        EXPECT_FALSE(cls->delete_own_property_direct(readonly_names[idx]));
+        EXPECT_EQ(before_shape, cls->get_shape());
+        EXPECT_EQ(readonly_values[idx],
+                  cls->get_own_property(readonly_names[idx]));
+    }
     EXPECT_EQ(cls_name.as_value(), cls->get_own_property(dunder_name_name));
 }
 
