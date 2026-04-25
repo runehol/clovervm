@@ -7,7 +7,7 @@
 namespace cl
 {
     List::List(BootstrapObjectTag, size_t size)
-        : Object(native_layout_id, compact_layout())
+        : Object(BootstrapObjectTag{}, native_layout_id, compact_layout())
     {
         items.resize(size, Value::not_present());
     }

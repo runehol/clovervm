@@ -9,7 +9,8 @@ namespace cl
 {
 
     Instance::Instance(Value _cls, Shape *_shape)
-        : Object(native_layout_id), cls(_cls), shape(_shape), overflow(nullptr)
+        : Object(_cls.get_ptr<ClassObject>(), native_layout_id), cls(_cls),
+          shape(_shape), overflow(nullptr)
     {
         uint32_t factory_default_inline_slot_count =
             get_shape()->get_factory_default_inline_slot_count();

@@ -208,16 +208,6 @@ namespace cl
         {
         }
 
-        Object(NativeLayoutId _native_layout_id, uint32_t _layout)
-            : Object(BootstrapObjectTag{}, _native_layout_id, _layout)
-        {
-        }
-
-        Object(NativeLayoutId _native_layout_id)
-            : Object(BootstrapObjectTag{}, _native_layout_id)
-        {
-        }
-
         void install_bootstrap_class(ClassObject *new_cls)
         {
             assert(cls == nullptr);
