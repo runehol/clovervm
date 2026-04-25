@@ -2,7 +2,6 @@
 #define CL_CLASS_OBJECT_H
 
 #include "instance.h"
-#include "klass.h"
 #include "object.h"
 #include "owned.h"
 #include "owned_typed_value.h"
@@ -16,7 +15,6 @@ namespace cl
     class ClassObject : public Object
     {
     public:
-        static constexpr Klass klass = Klass(L"Class", nullptr);
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::ClassObject;
         static constexpr uint32_t kClassSlotClass = 0;

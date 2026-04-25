@@ -14,15 +14,13 @@ namespace cl
 {
     typedef wchar_t cl_wchar;
 
-    extern struct Klass cl_string_klass;
-
     struct String : public Object
     {
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::String;
 
         String(const cl_wchar *_data, TValue<SMI> _count)
-            : Object(native_layout_id, &cl_string_klass)
+            : Object(native_layout_id)
         {
             size_t n_chars = _count.extract();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -30,8 +28,7 @@ namespace cl
             count = _count;
         }
 
-        String(const cl_wchar *_data)
-            : Object(native_layout_id, &cl_string_klass)
+        String(const cl_wchar *_data) : Object(native_layout_id)
         {
             size_t n_chars = wcslen(_data);
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -39,8 +36,7 @@ namespace cl
             count = TValue<SMI>(Value::from_smi(n_chars));
         }
 
-        String(const std::wstring &str)
-            : Object(native_layout_id, &cl_string_klass)
+        String(const std::wstring &str) : Object(native_layout_id)
         {
             size_t n_chars = str.size();
             memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));

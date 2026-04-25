@@ -2,7 +2,6 @@
 #include "class_object.h"
 #include "function.h"
 #include "instance.h"
-#include "klass.h"
 #include <cwchar>
 
 namespace cl
@@ -12,24 +11,20 @@ namespace cl
         return std::wcscmp(name.extract()->data, L"__class__") == 0;
     }
 
-    static Value load_dunder_class(Value obj)
-    {
-        if(!obj.is_ptr())
-        {
-            return Value::not_present();
-        }
-
-        Object *object = obj.get_ptr<Object>();
-        return Value::from_oop(const_cast<Klass *>(object->klass));
-    }
-
     bool load_method(Value obj, TValue<String> name, Value &callable_out,
                      Value &self_out)
     {
         if(is_dunder_class(name) &&
-           (!obj.is_ptr() || obj.get_ptr<Object>()->klass != &Instance::klass))
+           (!obj.is_ptr() || !can_convert_to<Instance>(obj)))
         {
-            callable_out = load_dunder_class(obj);
+            if(ClassObject *cls = try_convert_to<ClassObject>(obj))
+            {
+                callable_out = cls->lookup_class_chain(name);
+            }
+            else
+            {
+                callable_out = Value::not_present();
+            }
             self_out = Value::not_present();
             return !callable_out.is_not_present();
         }
@@ -42,7 +37,7 @@ namespace cl
         }
 
         Object *object = obj.get_ptr<Object>();
-        if(object->klass == &Instance::klass)
+        if(object->native_layout_id() == NativeLayoutId::Instance)
         {
             Instance *instance = static_cast<Instance *>(object);
             Value own_property = instance->get_own_property(name);
@@ -54,11 +49,10 @@ namespace cl
             }
 
             Value cls = instance->get_class();
-            if(cls.is_ptr() &&
-               cls.get_ptr<Object>()->klass == &ClassObject::klass)
+            ClassObject *class_object = try_convert_to<ClassObject>(cls);
+            if(class_object != nullptr)
             {
-                Value class_property =
-                    cls.get_ptr<ClassObject>()->lookup_class_chain(name);
+                Value class_property = class_object->lookup_class_chain(name);
                 if(class_property.is_not_present())
                 {
                     callable_out = Value::not_present();
@@ -67,8 +61,7 @@ namespace cl
                 }
 
                 callable_out = class_property;
-                if(class_property.is_ptr() &&
-                   class_property.get_ptr<Object>()->klass == &Function::klass)
+                if(can_convert_to<Function>(class_property))
                 {
                     self_out = obj;
                 }
@@ -84,7 +77,7 @@ namespace cl
             return false;
         }
 
-        if(object->klass == &ClassObject::klass)
+        if(object->native_layout_id() == NativeLayoutId::ClassObject)
         {
             callable_out =
                 static_cast<ClassObject *>(object)->lookup_class_chain(name);
@@ -100,9 +93,13 @@ namespace cl
     Value load_attr(Value obj, TValue<String> name)
     {
         if(is_dunder_class(name) &&
-           (!obj.is_ptr() || obj.get_ptr<Object>()->klass != &Instance::klass))
+           (!obj.is_ptr() || !can_convert_to<Instance>(obj)))
         {
-            return load_dunder_class(obj);
+            if(ClassObject *cls = try_convert_to<ClassObject>(obj))
+            {
+                return cls->lookup_class_chain(name);
+            }
+            return Value::not_present();
         }
 
         if(!obj.is_ptr())
@@ -111,7 +108,7 @@ namespace cl
         }
 
         Object *object = obj.get_ptr<Object>();
-        if(object->klass == &Instance::klass)
+        if(object->native_layout_id() == NativeLayoutId::Instance)
         {
             Instance *instance = static_cast<Instance *>(object);
             Value own_property = instance->get_own_property(name);
@@ -121,16 +118,16 @@ namespace cl
             }
 
             Value cls = instance->get_class();
-            if(cls.is_ptr() &&
-               cls.get_ptr<Object>()->klass == &ClassObject::klass)
+            ClassObject *class_object = try_convert_to<ClassObject>(cls);
+            if(class_object != nullptr)
             {
-                return cls.get_ptr<ClassObject>()->lookup_class_chain(name);
+                return class_object->lookup_class_chain(name);
             }
 
             return Value::not_present();
         }
 
-        if(object->klass == &ClassObject::klass)
+        if(object->native_layout_id() == NativeLayoutId::ClassObject)
         {
             return static_cast<ClassObject *>(object)->lookup_class_chain(name);
         }
@@ -146,7 +143,7 @@ namespace cl
         }
 
         Object *object = obj.get_ptr<Object>();
-        if(object->klass == &Instance::klass)
+        if(object->native_layout_id() == NativeLayoutId::Instance)
         {
             Instance *instance = static_cast<Instance *>(object);
             if(is_dunder_class(name))
@@ -162,7 +159,7 @@ namespace cl
             return false;
         }
 
-        if(object->klass == &ClassObject::klass)
+        if(object->native_layout_id() == NativeLayoutId::ClassObject)
         {
             return static_cast<ClassObject *>(object)->set_own_property(name,
                                                                         value);

@@ -1,7 +1,6 @@
 #ifndef CL_LIST_H
 #define CL_LIST_H
 
-#include "klass.h"
 #include "object.h"
 #include "owned.h"
 #include "value.h"
@@ -14,10 +13,9 @@ namespace cl
     class List : public Object
     {
     public:
-        static constexpr Klass klass = Klass(L"List", nullptr);
         static constexpr NativeLayoutId native_layout_id = NativeLayoutId::List;
 
-        List() : Object(native_layout_id, &klass, compact_layout()) {}
+        List() : Object(native_layout_id, compact_layout()) {}
         explicit List(size_t size);
 
         size_t size() const { return items.size(); }

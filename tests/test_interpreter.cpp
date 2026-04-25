@@ -76,7 +76,8 @@ static void expect_range_iterator(Value actual, int64_t expected_current,
                                   int64_t expected_stop, int64_t expected_step)
 {
     ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(&RangeIterator::klass, actual.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::RangeIterator,
+              actual.get_ptr<Object>()->native_layout_id());
 
     RangeIterator *iterator = actual.get_ptr<RangeIterator>();
     EXPECT_EQ(Value::from_smi(expected_current), iterator->current);
@@ -256,7 +257,8 @@ TEST(Interpreter, class_definition_binds_class_object)
 
     Value actual = test_context.thread()->run(code_obj);
     ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(&ClassObject::klass, actual.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::ClassObject,
+              actual.get_ptr<Object>()->native_layout_id());
     EXPECT_STREQ(L"Cls",
                  string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
 }
@@ -277,7 +279,8 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
 
     Value cls_value = code_obj->module_scope.extract()->get_by_name(cls_name);
     ASSERT_TRUE(cls_value.is_ptr());
-    ASSERT_EQ(&ClassObject::klass, cls_value.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::ClassObject,
+              cls_value.get_ptr<Object>()->native_layout_id());
     ClassObject *cls = cls_value.get_ptr<ClassObject>();
     EXPECT_EQ(Value::from_smi(7), cls->lookup_class_chain(value_name));
 
@@ -321,7 +324,8 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
 
     Value cls_value = code_obj->module_scope.extract()->get_by_name(cls_name);
     ASSERT_TRUE(cls_value.is_ptr());
-    ASSERT_EQ(&ClassObject::klass, cls_value.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::ClassObject,
+              cls_value.get_ptr<Object>()->native_layout_id());
     ClassObject *cls = cls_value.get_ptr<ClassObject>();
 
     TValue<String> names[] = {first_name, second_name, third_name};
@@ -410,10 +414,13 @@ TEST(Interpreter, class_call_allocates_instance)
 
     Value actual = test_context.thread()->run(code_obj);
     ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(&Instance::klass, actual.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::Instance,
+              actual.get_ptr<Object>()->native_layout_id());
     ASSERT_TRUE(actual.get_ptr<Instance>()->get_class().is_ptr());
-    EXPECT_EQ(&ClassObject::klass,
-              actual.get_ptr<Instance>()->get_class().get_ptr<Object>()->klass);
+    EXPECT_EQ(NativeLayoutId::ClassObject, actual.get_ptr<Instance>()
+                                               ->get_class()
+                                               .get_ptr<Object>()
+                                               ->native_layout_id());
 }
 
 TEST(Interpreter, class_method_call_works_from_source)
@@ -443,7 +450,8 @@ TEST(Interpreter, list_literal_returns_list_object)
     Value actual = file_runner.return_value;
 
     ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(&List::klass, actual.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::List,
+              actual.get_ptr<Object>()->native_layout_id());
     List *list = actual.get_ptr<List>();
     ASSERT_EQ(3u, list->size());
     EXPECT_EQ(Value::from_smi(1), list->item_unchecked(0));
@@ -457,7 +465,8 @@ TEST(Interpreter, empty_list_literal_returns_empty_list)
     Value actual = file_runner.return_value;
 
     ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(&List::klass, actual.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::List,
+              actual.get_ptr<Object>()->native_layout_id());
     List *list = actual.get_ptr<List>();
     EXPECT_TRUE(list->empty());
     EXPECT_EQ(0u, list->size());
@@ -481,7 +490,8 @@ TEST(Interpreter, list_literal_evaluates_elements_left_to_right)
 
     Value actual = test_context.thread()->run(code_obj);
     ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(&List::klass, actual.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::List,
+              actual.get_ptr<Object>()->native_layout_id());
     List *list = actual.get_ptr<List>();
     ASSERT_EQ(3u, list->size());
     EXPECT_EQ(Value::from_smi(0), list->item_unchecked(0));
@@ -507,7 +517,8 @@ TEST(Interpreter, dict_literal_returns_dict_object)
                                          L"{key: 7, \"beta\": 9}\n");
 
     ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(&Dict::klass, actual.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::Dict,
+              actual.get_ptr<Object>()->native_layout_id());
     Dict *dict = actual.get_ptr<Dict>();
     EXPECT_EQ(2u, dict->size());
 
@@ -734,7 +745,8 @@ TEST(Interpreter, attribute_load_and_store_syntax)
     Scope *module_scope = code_obj->module_scope.extract();
     Value obj_value = module_scope->get_by_name(obj_name);
     ASSERT_TRUE(obj_value.is_ptr());
-    ASSERT_EQ(&Instance::klass, obj_value.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::Instance,
+              obj_value.get_ptr<Object>()->native_layout_id());
     EXPECT_EQ(Value::from_smi(7),
               obj_value.get_ptr<Instance>()->get_own_property(attr_name));
 }
@@ -812,7 +824,8 @@ TEST(Interpreter,
     Scope *module_scope = setup_code->module_scope.extract();
     Value cls_value = module_scope->get_by_name(cls_name);
     ASSERT_TRUE(cls_value.is_ptr());
-    ASSERT_EQ(&ClassObject::klass, cls_value.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::ClassObject,
+              cls_value.get_ptr<Object>()->native_layout_id());
     cls_value.get_ptr<ClassObject>()->set_own_property(method_name, identity);
 
     CodeObject *code_obj = test_context.compile_file(L"obj.method(4)\n");
@@ -916,7 +929,8 @@ TEST(Interpreter, builtin_scope_lookup)
     ASSERT_GE(slot_idx, 0);
 
     Value actual = test_context.thread()->run(code_obj);
-    EXPECT_EQ(&BuiltinFunction::klass, actual.get_ptr<Object>()->klass);
+    EXPECT_EQ(NativeLayoutId::BuiltinFunction,
+              actual.get_ptr<Object>()->native_layout_id());
     EXPECT_EQ(actual, module_scope->get_by_slot_index_fastpath_only(slot_idx));
 }
 

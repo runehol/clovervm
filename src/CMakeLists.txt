@@ -31,8 +31,6 @@ add_library(libclovervm STATIC
     tokenizer.h
     virtual_machine.cpp
     virtual_machine.h
-    klass.cpp
-    klass.h
     list.cpp
     list.h
     native_layout_id.h

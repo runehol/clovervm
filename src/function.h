@@ -2,7 +2,6 @@
 #define CL_FUNCTION_H
 
 #include "code_object.h"
-#include "klass.h"
 #include "object.h"
 #include "owned_typed_value.h"
 #include "value.h"
@@ -14,12 +13,11 @@ namespace cl
     class Function : public Object
     {
     public:
-        static constexpr Klass klass = Klass(L"Function", nullptr);
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::Function;
 
         Function(TValue<CodeObject> _code_object)
-            : Object(native_layout_id, &klass, compact_layout()),
+            : Object(native_layout_id, compact_layout()),
               code_object(_code_object)
         {
         }

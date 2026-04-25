@@ -1,7 +1,6 @@
 #ifndef CL_VM_ARRAY_H
 #define CL_VM_ARRAY_H
 
-#include "klass.h"
 #include "object.h"
 #include "owned.h"
 #include "owned_typed_value.h"
@@ -50,11 +49,10 @@ namespace cl
         {
         public:
             using Storage = std::aligned_storage_t<sizeof(T), alignof(T)>;
-            static constexpr Klass klass = Klass(L"RawArrayBacking", nullptr);
             static constexpr NativeLayoutId native_layout_id =
                 NativeLayoutId::Generic;
 
-            explicit Backing(size_t capacity) : Object(native_layout_id, &klass)
+            explicit Backing(size_t capacity) : Object(native_layout_id)
             {
                 (void)capacity;
             }
@@ -293,11 +291,10 @@ namespace cl
         class Backing : public Object
         {
         public:
-            static constexpr Klass klass = Klass(L"ValueArrayBacking", nullptr);
             static constexpr NativeLayoutId native_layout_id =
                 NativeLayoutId::Generic;
 
-            explicit Backing(size_t capacity) : Object(native_layout_id, &klass)
+            explicit Backing(size_t capacity) : Object(native_layout_id)
             {
                 (void)capacity;
             }

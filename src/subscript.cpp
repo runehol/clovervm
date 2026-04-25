@@ -24,12 +24,12 @@ namespace cl
         }
 
         Object *object = obj.get_ptr<Object>();
-        if(object->klass == &List::klass)
+        if(object->native_layout_id() == NativeLayoutId::List)
         {
             return static_cast<List *>(object)->get_item(
                 list_index_from_value(key));
         }
-        if(object->klass == &Dict::klass)
+        if(object->native_layout_id() == NativeLayoutId::Dict)
         {
             return static_cast<Dict *>(object)->get_item(key);
         }
@@ -45,13 +45,13 @@ namespace cl
         }
 
         Object *object = obj.get_ptr<Object>();
-        if(object->klass == &List::klass)
+        if(object->native_layout_id() == NativeLayoutId::List)
         {
             static_cast<List *>(object)->set_item(list_index_from_value(key),
                                                   value);
             return true;
         }
-        if(object->klass == &Dict::klass)
+        if(object->native_layout_id() == NativeLayoutId::Dict)
         {
             static_cast<Dict *>(object)->set_item(key, value);
             return true;

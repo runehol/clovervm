@@ -25,7 +25,7 @@ namespace cl
     Shape::Shape(Value _owner_class, Value _previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count,
                  ShapeFlags _shape_flags, uint32_t _present_count)
-        : Object(native_layout_id, &klass),
+        : Object(native_layout_id),
           previous_shape(_previous_shape == Value::None()
                              ? nullptr
                              : _previous_shape.get_ptr<Shape>()),

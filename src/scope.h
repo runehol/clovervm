@@ -1,7 +1,6 @@
 #ifndef CL_SCOPE_H
 #define CL_SCOPE_H
 
-#include "klass.h"
 #include "object.h"
 #include "str.h"
 #include "typed_value.h"
@@ -14,7 +13,6 @@ namespace cl
     class Scope : public Object
     {
     public:
-        static constexpr Klass klass = Klass(L"Scope", nullptr);
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::Scope;
 

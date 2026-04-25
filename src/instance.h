@@ -1,7 +1,6 @@
 #ifndef CL_INSTANCE_H
 #define CL_INSTANCE_H
 
-#include "klass.h"
 #include "object.h"
 #include "shape.h"
 #include "typed_value.h"
@@ -17,7 +16,6 @@ namespace cl
         class OverflowSlots : public Object
         {
         public:
-            static constexpr Klass klass = Klass(L"OverflowSlots", nullptr);
             static constexpr NativeLayoutId native_layout_id =
                 NativeLayoutId::InstanceOverflowSlots;
 
@@ -62,7 +60,6 @@ namespace cl
             CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(OverflowSlots, slots);
         };
 
-        static constexpr Klass klass = Klass(L"Instance", nullptr);
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::Instance;
 

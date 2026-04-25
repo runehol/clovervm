@@ -568,7 +568,8 @@ template <> struct fmt::formatter<cl::CodeObject>
             }
             else if(c.is_ptr())
             {
-                if(c.get_ptr()->klass == &cl::CodeObject::klass)
+                if(c.get_ptr()->native_layout_id() ==
+                   cl::NativeLayoutId::CodeObject)
                 {
                     format_to(out, "{}", *c.get_ptr<cl::CodeObject>());
                 }

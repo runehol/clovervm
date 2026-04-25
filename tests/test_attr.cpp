@@ -3,7 +3,6 @@
 #include "class_object.h"
 #include "function.h"
 #include "instance.h"
-#include "klass.h"
 #include "shape.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -120,7 +119,7 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
               instance->get_own_property(dunder_class_name));
     EXPECT_EQ(Value::from_oop(cls),
               load_attr(Value::from_oop(instance), dunder_class_name));
-    EXPECT_EQ(Value::from_oop(const_cast<Klass *>(&ClassObject::klass)),
+    EXPECT_EQ(Value::None(),
               load_attr(Value::from_oop(cls), dunder_class_name));
 }
 

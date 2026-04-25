@@ -10,7 +10,6 @@ namespace cl
         Invalid = 0,
         Generic,
 
-        Klass,
         String,
         List,
         Dict,

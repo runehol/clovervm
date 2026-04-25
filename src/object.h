@@ -10,8 +10,6 @@
 
 namespace cl
 {
-    struct Klass;
-
     struct ExpandedHeader
     {
         uint64_t object_size_in_16byte_units;
@@ -163,22 +161,18 @@ namespace cl
     */
     struct Object
     {
-        constexpr Object(NativeLayoutId _native_layout_id, const Klass *_klass,
-                         uint32_t _layout)
-            : klass(_klass), refcount(0), layout(_layout),
-              native_layout(_native_layout_id)
+        constexpr Object(NativeLayoutId _native_layout_id, uint32_t _layout)
+            : refcount(0), layout(_layout), native_layout(_native_layout_id)
         {
         }
 
-        constexpr Object(NativeLayoutId _native_layout_id, const Klass *_klass)
-            : klass(_klass), refcount(0), layout(0),
-              native_layout(_native_layout_id)
+        constexpr Object(NativeLayoutId _native_layout_id)
+            : refcount(0), layout(0), native_layout(_native_layout_id)
         {
         }
 
         NativeLayoutId native_layout_id() const { return native_layout; }
 
-        const struct Klass *klass;
         int32_t refcount;
         uint32_t layout;
         NativeLayoutId native_layout;
@@ -241,7 +235,7 @@ namespace cl
 
     static_assert(sizeof(DynamicLayoutSpec) == 16);
     static_assert(sizeof(ExpandedHeader) == 16);
-    static_assert(sizeof(Object) == 24);
+    static_assert(sizeof(Object) == 12);
     static_assert(std::is_trivially_destructible_v<Object>);
 
 }  // namespace cl

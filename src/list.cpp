@@ -4,7 +4,7 @@
 
 namespace cl
 {
-    List::List(size_t size) : Object(native_layout_id, &klass, compact_layout())
+    List::List(size_t size) : Object(native_layout_id, compact_layout())
     {
         items.resize(size, Value::not_present());
     }

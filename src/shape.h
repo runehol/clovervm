@@ -1,7 +1,6 @@
 #ifndef CL_SHAPE_H
 #define CL_SHAPE_H
 
-#include "klass.h"
 #include "object.h"
 #include "owned_typed_value.h"
 #include "typed_value.h"
@@ -161,7 +160,6 @@ namespace cl
     class Shape : public Object
     {
     public:
-        static constexpr Klass klass = Klass(L"Shape", nullptr);
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::Shape;
 

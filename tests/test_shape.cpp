@@ -643,12 +643,14 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
 
     Value bases_value = cls->get_own_property(dunder_bases_name);
     ASSERT_TRUE(bases_value.is_ptr());
-    ASSERT_EQ(&List::klass, bases_value.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::List,
+              bases_value.get_ptr<Object>()->native_layout_id());
     EXPECT_EQ(0u, bases_value.get_ptr<List>()->size());
 
     Value mro_value = cls->get_own_property(dunder_mro_name);
     ASSERT_TRUE(mro_value.is_ptr());
-    ASSERT_EQ(&List::klass, mro_value.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::List,
+              mro_value.get_ptr<Object>()->native_layout_id());
     ASSERT_EQ(1u, mro_value.get_ptr<List>()->size());
     EXPECT_EQ(Value::from_oop(cls),
               mro_value.get_ptr<List>()->item_unchecked(0));
@@ -690,14 +692,16 @@ TEST(ClassObject, PredefinedBasesAndMroReflectSingleBaseChain)
 
     Value bases_value = child->get_own_property(dunder_bases_name);
     ASSERT_TRUE(bases_value.is_ptr());
-    ASSERT_EQ(&List::klass, bases_value.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::List,
+              bases_value.get_ptr<Object>()->native_layout_id());
     ASSERT_EQ(1u, bases_value.get_ptr<List>()->size());
     EXPECT_EQ(Value::from_oop(base),
               bases_value.get_ptr<List>()->item_unchecked(0));
 
     Value mro_value = child->get_own_property(dunder_mro_name);
     ASSERT_TRUE(mro_value.is_ptr());
-    ASSERT_EQ(&List::klass, mro_value.get_ptr<Object>()->klass);
+    ASSERT_EQ(NativeLayoutId::List,
+              mro_value.get_ptr<Object>()->native_layout_id());
     ASSERT_EQ(2u, mro_value.get_ptr<List>()->size());
     EXPECT_EQ(Value::from_oop(child),
               mro_value.get_ptr<List>()->item_unchecked(0));

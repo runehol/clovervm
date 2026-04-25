@@ -1,7 +1,6 @@
 #ifndef CL_DICT_H
 #define CL_DICT_H
 
-#include "klass.h"
 #include "object.h"
 #include "typed_value.h"
 #include "vm_array.h"
@@ -31,7 +30,6 @@ namespace cl
         };
 
     public:
-        static constexpr Klass klass = Klass(L"dict", nullptr);
         static constexpr NativeLayoutId native_layout_id = NativeLayoutId::Dict;
 
         Dict();

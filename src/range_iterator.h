@@ -1,7 +1,6 @@
 #ifndef CL_RANGE_ITERATOR_H
 #define CL_RANGE_ITERATOR_H
 
-#include "klass.h"
 #include "object.h"
 #include "owned_typed_value.h"
 #include "value.h"
@@ -12,14 +11,13 @@ namespace cl
     class RangeIterator : public Object
     {
     public:
-        static constexpr Klass klass = Klass(L"RangeIterator", nullptr);
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::RangeIterator;
 
         RangeIterator(TValue<CLInt> _current, TValue<CLInt> _stop,
                       TValue<CLInt> _step)
-            : Object(native_layout_id, &klass, compact_layout()),
-              current(_current), stop(_stop), step(_step)
+            : Object(native_layout_id, compact_layout()), current(_current),
+              stop(_stop), step(_step)
         {
         }
 
