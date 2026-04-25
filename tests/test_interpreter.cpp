@@ -416,9 +416,10 @@ TEST(Interpreter, class_call_allocates_instance)
     ASSERT_TRUE(actual.is_ptr());
     ASSERT_EQ(NativeLayoutId::Instance,
               actual.get_ptr<Object>()->native_layout_id());
-    ASSERT_TRUE(actual.get_ptr<Instance>()->get_class().is_ptr());
+    ASSERT_TRUE(actual.get_ptr<Instance>()->get_class().as_value().is_ptr());
     EXPECT_EQ(NativeLayoutId::ClassObject, actual.get_ptr<Instance>()
                                                ->get_class()
+                                               .as_value()
                                                .get_ptr<Object>()
                                                ->native_layout_id());
 }
@@ -962,7 +963,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         ClassObject *cls = test_context.vm().class_for_native_layout(
             expected.native_layout_id);
         ASSERT_NE(nullptr, cls);
-        EXPECT_EQ(type_class, cls->Object::get_class());
+        EXPECT_EQ(type_class, cls->Object::get_class().extract());
         EXPECT_EQ(-1, cls->refcount);
         EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsClassObject));
         EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsImmutableType));
@@ -976,9 +977,10 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
                 expected.name);
         EXPECT_EQ(name, cls->get_name());
         EXPECT_EQ(test_context.vm().str_class(),
-                  name.extract()->Object::get_class());
-        EXPECT_EQ(test_context.vm().str_instance_root_shape(),
-                  name.extract()->Object::get_class()->get_initial_shape());
+                  name.extract()->Object::get_class().extract());
+        EXPECT_EQ(
+            test_context.vm().str_instance_root_shape(),
+            name.extract()->Object::get_class().extract()->get_initial_shape());
 
         TValue<String> dunder_bases_name =
             test_context.vm().get_or_create_interned_string_value(L"__bases__");
@@ -989,9 +991,9 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         ASSERT_TRUE(can_convert_to<List>(bases_value));
         ASSERT_TRUE(can_convert_to<List>(mro_value));
         EXPECT_EQ(test_context.vm().list_class(),
-                  bases_value.get_ptr<Object>()->get_class());
+                  bases_value.get_ptr<Object>()->get_class().extract());
         EXPECT_EQ(test_context.vm().list_class(),
-                  mro_value.get_ptr<Object>()->get_class());
+                  mro_value.get_ptr<Object>()->get_class().extract());
 
         if(expected.native_layout_id == NativeLayoutId::CodeObject)
         {
@@ -1007,10 +1009,11 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         test_context.vm().get_or_create_interned_string_value(
             L"post_bootstrap_name");
     EXPECT_EQ(test_context.vm().str_class(),
-              post_bootstrap_name.extract()->Object::get_class());
+              post_bootstrap_name.extract()->Object::get_class().extract());
     EXPECT_EQ(test_context.vm().str_instance_root_shape(),
               post_bootstrap_name.extract()
                   ->Object::get_class()
+                  .extract()
                   ->get_initial_shape());
 
     EXPECT_EQ(Value::from_oop(type_class),

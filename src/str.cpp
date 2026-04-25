@@ -11,13 +11,13 @@ namespace cl
     void String::install_bootstrap_class(ClassObject *new_cls)
     {
         assert(new_cls != nullptr);
-        if(Object::get_class() == nullptr)
+        if(!Object::is_class_bootstrapped())
         {
             Object::install_bootstrap_class(new_cls);
         }
         else
         {
-            assert(Object::get_class() == new_cls);
+            assert(Object::get_class().extract() == new_cls);
         }
     }
 

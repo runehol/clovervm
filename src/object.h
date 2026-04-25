@@ -14,7 +14,9 @@ namespace cl
     class ClassObject;
     class OverflowSlots;
     class Shape;
+    struct String;
     struct Value;
+    template <typename T> class TValue;
 
     struct BootstrapObjectTag
     {
@@ -29,16 +31,16 @@ namespace cl
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id,
                uint32_t _layout)
             : HeapObject(_layout), native_layout(_native_layout_id),
-              shape(nullptr), overflow_storage(nullptr), cls(_cls)
+              shape(nullptr), overflow_storage(nullptr), cls(nullptr)
         {
-            assert(cls != nullptr);
+            install_class(_cls);
         }
 
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id)
             : HeapObject(), native_layout(_native_layout_id), shape(nullptr),
-              overflow_storage(nullptr), cls(_cls)
+              overflow_storage(nullptr), cls(nullptr)
         {
-            assert(cls != nullptr);
+            install_class(_cls);
         }
 
         Object(BootstrapObjectTag, NativeLayoutId _native_layout_id,
@@ -57,15 +59,18 @@ namespace cl
         void install_bootstrap_class(ClassObject *new_cls)
         {
             assert(cls == nullptr);
-            assert(new_cls != nullptr);
-            cls = new_cls;
+            install_class(new_cls);
         }
 
         NativeLayoutId native_layout_id() const { return native_layout; }
-        ClassObject *get_class() const { return cls; }
+        TValue<ClassObject> get_class() const;
+        bool is_class_bootstrapped() const { return cls != nullptr; }
         Shape *get_shape() const { return shape; }
         void set_shape(Shape *new_shape);
         OverflowSlots *get_overflow_slots() const { return overflow_storage; }
+        Value get_own_property(TValue<String> name) const;
+        bool set_own_property(TValue<String> name, Value value);
+        bool delete_own_property(TValue<String> name);
         Value read_storage_location(StorageLocation location) const;
         void write_storage_location(StorageLocation location, Value value);
         Value *inline_slot_base() { return reinterpret_cast<Value *>(&cls); }
@@ -86,6 +91,7 @@ namespace cl
         ClassObject *cls;
 
     private:
+        void install_class(ClassObject *new_cls);
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
     };
 

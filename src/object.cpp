@@ -1,18 +1,49 @@
 #include "object.h"
+#include "class_object.h"
 #include "overflow_slots.h"
 #include "refcount.h"
 #include "shape.h"
+#include "shape_backed_object.h"
 #include "thread_state.h"
+#include "typed_value.h"
 #include "value.h"
 #include <algorithm>
 
 namespace cl
 {
+    void Object::install_class(ClassObject *new_cls)
+    {
+        assert(new_cls != nullptr);
+        cls = incref(new_cls);
+    }
+
+    TValue<ClassObject> Object::get_class() const
+    {
+        assert(cls != nullptr);
+        return TValue<ClassObject>::from_oop(cls);
+    }
+
     void Object::set_shape(Shape *new_shape)
     {
         Shape *old_shape = shape;
         shape = incref(new_shape);
         decref(old_shape);
+    }
+
+    Value Object::get_own_property(TValue<String> name) const
+    {
+        return shape_backed_object::get_own_property(this, name);
+    }
+
+    bool Object::set_own_property(TValue<String> name, Value value)
+    {
+        return shape_backed_object::set_own_property(this, name, value) ==
+               shape_backed_object::StoreOwnPropertyResult::Stored;
+    }
+
+    bool Object::delete_own_property(TValue<String> name)
+    {
+        return shape_backed_object::delete_own_property(this, name);
     }
 
     Value Object::read_storage_location(StorageLocation location) const

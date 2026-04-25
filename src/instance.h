@@ -3,13 +3,12 @@
 
 #include "builtin_class_registry.h"
 #include "object.h"
-#include "overflow_slots.h"
-#include "shape.h"
-#include "typed_value.h"
+#include "value.h"
 #include <cstdint>
 
 namespace cl
 {
+    class Shape;
     class VirtualMachine;
 
     class Instance : public Object
@@ -22,20 +21,10 @@ namespace cl
 
         static size_t size_for(uint32_t dynamic_inline_slot_count)
         {
-            return sizeof(Instance) +
-                   sizeof(Value) * dynamic_inline_slot_count - sizeof(Value);
+            return sizeof(Instance) + sizeof(Value) * dynamic_inline_slot_count;
         }
 
         static DynamicLayoutSpec layout_spec_for(Value cls, Shape *shape);
-
-        Value get_class() const;
-
-        Value get_own_property(TValue<String> name) const;
-        bool set_own_property(TValue<String> name, Value value);
-        bool delete_own_property(TValue<String> name);
-
-    private:
-        [[maybe_unused]] Value inline_slots[1];
 
     public:
         static constexpr bool has_dynamic_layout = true;

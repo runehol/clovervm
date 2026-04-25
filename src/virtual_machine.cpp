@@ -118,7 +118,7 @@ namespace cl
 
         ClassObject *cls = str_class_;
         interned_strings.for_each_raw([cls](String *string) {
-            if(string->Object::get_class() == nullptr)
+            if(!string->Object::is_class_bootstrapped())
             {
                 string->install_bootstrap_class(cls);
             }
@@ -130,7 +130,7 @@ namespace cl
     {
         assert(can_convert_to<List>(value));
         Object *object = value.get_ptr<Object>();
-        if(object->get_class() == nullptr)
+        if(!object->is_class_bootstrapped())
         {
             object->install_bootstrap_class(list_class);
         }

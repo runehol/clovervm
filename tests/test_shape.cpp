@@ -354,7 +354,7 @@ TEST(Shape, InstanceStoresClassAndShapeSeparately)
     Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), cls->get_initial_shape());
 
-    EXPECT_EQ(Value::from_oop(cls), instance->get_class());
+    EXPECT_EQ(cls, instance->get_class().extract());
     EXPECT_EQ(cls->get_initial_shape(), instance->get_shape());
 }
 

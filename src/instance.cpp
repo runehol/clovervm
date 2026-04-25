@@ -1,8 +1,6 @@
 #include "instance.h"
 #include "class_object.h"
-#include "refcount.h"
 #include "runtime_helpers.h"
-#include "shape_backed_object.h"
 #include "virtual_machine.h"
 
 namespace cl
@@ -11,7 +9,6 @@ namespace cl
     Instance::Instance(Value _cls, Shape *_shape)
         : Object(_cls.get_ptr<ClassObject>(), native_layout_id)
     {
-        incref(Object::get_class());
         set_shape(_shape);
         uint32_t factory_default_inline_slot_count =
             get_shape()->get_factory_default_inline_slot_count();
@@ -48,27 +45,6 @@ namespace cl
         return DynamicLayoutSpec{
             round_up_to_16byte_units(size_for(dynamic_inline_slot_count)),
             factory_default_inline_slot_count};
-    }
-
-    Value Instance::get_class() const
-    {
-        return Value::from_oop(Object::get_class());
-    }
-
-    Value Instance::get_own_property(TValue<String> name) const
-    {
-        return shape_backed_object::get_own_property(this, name);
-    }
-
-    bool Instance::set_own_property(TValue<String> name, Value value)
-    {
-        return shape_backed_object::set_own_property(this, name, value) ==
-               shape_backed_object::StoreOwnPropertyResult::Stored;
-    }
-
-    bool Instance::delete_own_property(TValue<String> name)
-    {
-        return shape_backed_object::delete_own_property(this, name);
     }
 
 }  // namespace cl
