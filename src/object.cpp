@@ -30,6 +30,27 @@ namespace cl
         decref(old_shape);
     }
 
+    void Object::initialize_shape_from_class()
+    {
+        initialize_shape(get_class().extract()->get_initial_shape());
+    }
+
+    void Object::initialize_shape(Shape *initial_shape)
+    {
+        assert(shape == nullptr);
+        set_shape(initial_shape);
+
+        uint32_t factory_default_inline_slot_count =
+            get_shape()->get_factory_default_inline_slot_count();
+        assert(factory_default_inline_slot_count >= 1);
+
+        for(uint32_t slot_idx = 1; slot_idx < factory_default_inline_slot_count;
+            ++slot_idx)
+        {
+            inline_slot_base()[slot_idx] = Value::not_present();
+        }
+    }
+
     Value Object::get_own_property(TValue<String> name) const
     {
         return shape_backed_object::get_own_property(this, name);

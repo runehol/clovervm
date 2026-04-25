@@ -34,6 +34,7 @@ namespace cl
               shape(nullptr), overflow_storage(nullptr), cls(nullptr)
         {
             install_class(_cls);
+            initialize_shape_from_class();
         }
 
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id)
@@ -41,6 +42,7 @@ namespace cl
               overflow_storage(nullptr), cls(nullptr)
         {
             install_class(_cls);
+            initialize_shape_from_class();
         }
 
         Object(BootstrapObjectTag, NativeLayoutId _native_layout_id,
@@ -92,6 +94,8 @@ namespace cl
 
     private:
         void install_class(ClassObject *new_cls);
+        void initialize_shape_from_class();
+        void initialize_shape(Shape *initial_shape);
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
     };
 

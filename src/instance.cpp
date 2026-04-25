@@ -1,29 +1,14 @@
 #include "instance.h"
 #include "class_object.h"
-#include "runtime_helpers.h"
+#include "shape.h"
 #include "virtual_machine.h"
 
 namespace cl
 {
 
-    Instance::Instance(Value _cls, Shape *_shape)
-        : Object(_cls.get_ptr<ClassObject>(), native_layout_id)
+    Instance::Instance(TValue<ClassObject> _cls)
+        : Object(_cls.extract(), native_layout_id)
     {
-        set_shape(_shape);
-        uint32_t factory_default_inline_slot_count =
-            get_shape()->get_factory_default_inline_slot_count();
-        for(uint32_t slot_idx = 1; slot_idx < factory_default_inline_slot_count;
-            ++slot_idx)
-        {
-            inline_slot_base()[slot_idx] = Value::not_present();
-        }
-
-        TValue<String> dunder_class_name = interned_string(L"__class__");
-        StorageLocation class_location =
-            get_shape()->resolve_present_property(dunder_class_name);
-        assert(class_location.is_found());
-        assert(class_location.kind == StorageKind::Inline);
-        assert(class_location.physical_idx == 0);
     }
 
     BuiltinClassDefinition make_instance_class(VirtualMachine *vm)
@@ -35,8 +20,9 @@ namespace cl
         return builtin_class_definition(cls, native_layout_ids);
     }
 
-    DynamicLayoutSpec Instance::layout_spec_for(Value cls, Shape *shape)
+    DynamicLayoutSpec Instance::layout_spec_for(TValue<ClassObject> cls)
     {
+        Shape *shape = cls.extract()->get_initial_shape();
         uint32_t factory_default_inline_slot_count =
             shape->get_factory_default_inline_slot_count();
         assert(factory_default_inline_slot_count >= 1);
