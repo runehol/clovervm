@@ -116,12 +116,11 @@ namespace cl
         str_instance_root_shape_ = str_class_->get_initial_shape();
         assert(str_instance_root_shape_ != nullptr);
 
-        Value cls = Value::from_oop(str_class_);
-        Shape *shape = str_instance_root_shape_;
-        interned_strings.for_each_raw([cls, shape](String *string) {
-            if(string->get_class() == Value::None())
+        ClassObject *cls = str_class_;
+        interned_strings.for_each_raw([cls](String *string) {
+            if(string->Object::get_class() == nullptr)
             {
-                string->install_bootstrap_class_and_shape(cls, shape);
+                string->install_bootstrap_class(cls);
             }
         });
     }

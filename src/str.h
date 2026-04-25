@@ -24,8 +24,8 @@ namespace cl
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::String;
 
-        String(const cl_wchar *_data, TValue<SMI> _count)
-            : Object(native_layout_id), cls(Value::None()), shape(nullptr)
+        String(ClassObject *cls, const cl_wchar *_data, TValue<SMI> _count)
+            : Object(cls, native_layout_id)
         {
             size_t n_chars = _count.extract();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -33,8 +33,17 @@ namespace cl
             count = _count;
         }
 
-        String(const cl_wchar *_data)
-            : Object(native_layout_id), cls(Value::None()), shape(nullptr)
+        String(const cl_wchar *_data, TValue<SMI> _count)
+            : Object(native_layout_id)
+        {
+            size_t n_chars = _count.extract();
+            memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
+            this->data[n_chars] = 0;  // zero terminate for good measure
+            count = _count;
+        }
+
+        String(ClassObject *cls, const cl_wchar *_data)
+            : Object(cls, native_layout_id)
         {
             size_t n_chars = wcslen(_data);
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -42,8 +51,16 @@ namespace cl
             count = TValue<SMI>(Value::from_smi(n_chars));
         }
 
-        String(const std::wstring &str)
-            : Object(native_layout_id), cls(Value::None()), shape(nullptr)
+        String(const cl_wchar *_data) : Object(native_layout_id)
+        {
+            size_t n_chars = wcslen(_data);
+            memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
+            this->data[n_chars] = 0;  // zero terminate for good measure
+            count = TValue<SMI>(Value::from_smi(n_chars));
+        }
+
+        String(ClassObject *cls, const std::wstring &str)
+            : Object(cls, native_layout_id)
         {
             size_t n_chars = str.size();
             memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
@@ -51,13 +68,16 @@ namespace cl
             count = TValue<SMI>(Value::from_smi(n_chars));
         }
 
-        void install_bootstrap_class_and_shape(Value new_cls, Shape *new_shape);
+        String(const std::wstring &str) : Object(native_layout_id)
+        {
+            size_t n_chars = str.size();
+            memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
+            this->data[n_chars] = 0;  // zero terminate for good measure
+            count = TValue<SMI>(Value::from_smi(n_chars));
+        }
 
-        Value get_class() const { return cls.as_value(); }
-        Shape *get_shape() const { return shape.extract(); }
+        void install_bootstrap_class(ClassObject *new_cls);
 
-        MemberValue cls;
-        MemberHeapPtr<Shape> shape;
         MemberTValue<SMI> count;
         cl_wchar data[1];
 
@@ -77,22 +97,40 @@ namespace cl
         static DynamicLayoutSpec layout_spec_for(TValue<SMI> count)
         {
             return DynamicLayoutSpec{
-                round_up_to_16byte_units(size_for(size_t(count.extract()))), 3};
+                round_up_to_16byte_units(size_for(size_t(count.extract()))), 1};
+        }
+
+        static DynamicLayoutSpec layout_spec_for(ClassObject *,
+                                                 TValue<SMI> count)
+        {
+            return layout_spec_for(count);
         }
 
         static DynamicLayoutSpec layout_spec_for(const cl_wchar *str)
         {
             return DynamicLayoutSpec{round_up_to_16byte_units(size_for(str)),
-                                     3};
+                                     1};
+        }
+
+        static DynamicLayoutSpec layout_spec_for(ClassObject *,
+                                                 const cl_wchar *str)
+        {
+            return layout_spec_for(str);
         }
 
         static DynamicLayoutSpec layout_spec_for(const std::wstring &str)
         {
             return DynamicLayoutSpec{round_up_to_16byte_units(size_for(str)),
-                                     3};
+                                     1};
         }
 
-        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(String, cls);
+        static DynamicLayoutSpec layout_spec_for(ClassObject *,
+                                                 const std::wstring &str)
+        {
+            return layout_spec_for(str);
+        }
+
+        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(String, count);
     };
 
     static inline bool operator==(const String &a, const std::wstring &b)

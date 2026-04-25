@@ -52,10 +52,8 @@ namespace cl
                     {
                         assert(str_instance_root_shape_ != nullptr);
                         String *string =
-                            interned_global_heap.make_global_raw<String>(value);
-                        string->install_bootstrap_class_and_shape(
-                            Value::from_oop(str_class_),
-                            str_instance_root_shape_);
+                            interned_global_heap.make_global_raw<String>(
+                                str_class_, value);
                         return string;
                     }
                     return interned_global_heap.make_global_raw<String>(value);

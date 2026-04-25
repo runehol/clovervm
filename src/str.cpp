@@ -8,13 +8,17 @@
 
 namespace cl
 {
-    void String::install_bootstrap_class_and_shape(Value new_cls,
-                                                   Shape *new_shape)
+    void String::install_bootstrap_class(ClassObject *new_cls)
     {
-        assert(cls == Value::None());
-        assert(shape == nullptr);
-        cls = new_cls;
-        shape = new_shape;
+        assert(new_cls != nullptr);
+        if(Object::get_class() == nullptr)
+        {
+            Object::install_bootstrap_class(new_cls);
+        }
+        else
+        {
+            assert(Object::get_class() == new_cls);
+        }
     }
 
     static Value builtin_str_str(ThreadState *, const CallArguments &args)
@@ -40,7 +44,7 @@ namespace cl
         String *right = args[1].get_ptr<String>();
         std::wstring result(left->data, size_t(left->count.extract()));
         result.append(right->data, size_t(right->count.extract()));
-        return thread->make_refcounted_value<String>(result);
+        return thread->make_refcounted_object_value<String>(result);
     }
 
     BuiltinClassDefinition make_str_class(VirtualMachine *vm)
