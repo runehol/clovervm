@@ -97,23 +97,21 @@ namespace cl
     {
         Value own_property = get_own_property(name);
         Value mro_value = read_inline_slot(kClassSlotMro);
-        if(!mro_value.is_ptr() ||
-           mro_value.get_ptr<Object>()->klass != &List::klass)
+        if(!can_convert_to<List>(mro_value))
         {
             return own_property;
         }
 
-        List *mro = mro_value.get_ptr<List>();
+        List *mro = try_convert_to<List>(mro_value);
         for(uint32_t mro_idx = 0; mro_idx < mro->size(); ++mro_idx)
         {
             Value class_value = mro->item_unchecked(mro_idx);
-            if(!class_value.is_ptr() ||
-               class_value.get_ptr<Object>()->klass != &ClassObject::klass)
+            ClassObject *cls = try_convert_to<ClassObject>(class_value);
+            if(cls == nullptr)
             {
                 continue;
             }
 
-            ClassObject *cls = class_value.get_ptr<ClassObject>();
             DescriptorLookup lookup =
                 cls->get_shape()->lookup_descriptor_including_latent(name);
             if(!lookup.is_present())

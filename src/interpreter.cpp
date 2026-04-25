@@ -294,9 +294,11 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        if(fun.get_ptr()->klass == &BuiltinFunction::klass)
+        Object *fun_object = fun.get_ptr();
+        if(fun_object->native_layout_id() == NativeLayoutId::BuiltinFunction)
         {
-            BuiltinFunction *builtin = fun.get_ptr<BuiltinFunction>();
+            BuiltinFunction *builtin =
+                static_cast<BuiltinFunction *>(fun_object);
             if(unlikely(!builtin->accepts_arity(n_user_args)))
             {
                 MUSTTAIL return wrong_arity_error(ARGS);
@@ -311,7 +313,7 @@ namespace cl
             COMPLETE();
         }
 
-        if(unlikely(fun.get_ptr()->klass != &Function::klass))
+        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
         {
             MUSTTAIL return not_callable_error(ARGS);
         }
@@ -976,14 +978,15 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        if(fun.get_ptr()->klass == &ClassObject::klass)
+        Object *fun_object = fun.get_ptr();
+        if(fun_object->native_layout_id() == NativeLayoutId::ClassObject)
         {
             if(unlikely(n_args != 0))
             {
                 MUSTTAIL return wrong_arity_error(ARGS);
             }
 
-            ClassObject *cls = fun.get_ptr<ClassObject>();
+            ClassObject *cls = static_cast<ClassObject *>(fun_object);
             accumulator = Value::from_oop(make_refcounted_raw<Instance>(
                 Value::from_oop(cls),
                 Value::from_oop(cls->get_initial_shape())));
@@ -994,9 +997,10 @@ namespace cl
             COMPLETE();
         }
 
-        if(fun.get_ptr()->klass == &BuiltinFunction::klass)
+        if(fun_object->native_layout_id() == NativeLayoutId::BuiltinFunction)
         {
-            BuiltinFunction *builtin = fun.get_ptr<BuiltinFunction>();
+            BuiltinFunction *builtin =
+                static_cast<BuiltinFunction *>(fun_object);
             if(unlikely(!builtin->accepts_arity(n_args)))
             {
                 MUSTTAIL return wrong_arity_error(ARGS);
@@ -1010,7 +1014,7 @@ namespace cl
             COMPLETE();
         }
 
-        if(unlikely(fun.get_ptr()->klass != &Function::klass))
+        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
         {
             MUSTTAIL return not_callable_error(ARGS);
         }
@@ -1038,9 +1042,11 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        if(fun.get_ptr()->klass == &BuiltinFunction::klass)
+        Object *fun_object = fun.get_ptr();
+        if(fun_object->native_layout_id() == NativeLayoutId::BuiltinFunction)
         {
-            BuiltinFunction *builtin = fun.get_ptr<BuiltinFunction>();
+            BuiltinFunction *builtin =
+                static_cast<BuiltinFunction *>(fun_object);
             uint32_t n_args = n_user_args + 1;
             if(unlikely(!builtin->accepts_arity(n_args)))
             {
@@ -1055,7 +1061,7 @@ namespace cl
             COMPLETE();
         }
 
-        if(unlikely(fun.get_ptr()->klass != &Function::klass))
+        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
         {
             MUSTTAIL return not_callable_error(ARGS);
         }
@@ -1075,7 +1081,9 @@ namespace cl
             MUSTTAIL return not_iterable_error(ARGS);
         }
 
-        if(unlikely(accumulator.get_ptr()->klass != &RangeIterator::klass))
+        Object *iterator_object = accumulator.get_ptr();
+        if(unlikely(iterator_object->native_layout_id() !=
+                    NativeLayoutId::RangeIterator))
         {
             MUSTTAIL return not_iterable_error(ARGS);
         }
@@ -1089,13 +1097,19 @@ namespace cl
         int16_t rel_target = read_int16_le(&pc[2]);
         Value iterator_value = fp[reg];
 
-        if(unlikely(!iterator_value.is_ptr() ||
-                    iterator_value.get_ptr()->klass != &RangeIterator::klass))
+        if(unlikely(!iterator_value.is_ptr()))
         {
             MUSTTAIL return not_iterator_error(ARGS);
         }
 
-        RangeIterator *iterator = iterator_value.get_ptr<RangeIterator>();
+        Object *iterator_object = iterator_value.get_ptr();
+        if(unlikely(iterator_object->native_layout_id() !=
+                    NativeLayoutId::RangeIterator))
+        {
+            MUSTTAIL return not_iterator_error(ARGS);
+        }
+
+        RangeIterator *iterator = static_cast<RangeIterator *>(iterator_object);
         Value current = iterator->current;
         Value stop = iterator->stop;
         Value step = iterator->step;
