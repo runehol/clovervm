@@ -1,7 +1,6 @@
 #include "class_object.h"
 #include "list.h"
 #include "runtime_helpers.h"
-#include "shape_backed_object.h"
 #include "str.h"
 #include "virtual_machine.h"
 

@@ -3,7 +3,6 @@
 #include "overflow_slots.h"
 #include "refcount.h"
 #include "shape.h"
-#include "shape_backed_object.h"
 #include "thread_state.h"
 #include "typed_value.h"
 #include "value.h"
@@ -11,6 +10,39 @@
 
 namespace cl
 {
+    namespace
+    {
+        enum class StoreOwnPropertyResult : uint8_t
+        {
+            Stored,
+            ReadOnly,
+            NotFound,
+        };
+
+        StoreOwnPropertyResult
+        set_existing_own_property_impl(Object *object, TValue<String> name,
+                                       Value value)
+        {
+            Shape *current_shape = object->get_shape();
+            int32_t descriptor_idx =
+                current_shape->lookup_descriptor_index(name);
+            if(descriptor_idx < 0)
+            {
+                return StoreOwnPropertyResult::NotFound;
+            }
+
+            DescriptorInfo info =
+                current_shape->get_descriptor_info(descriptor_idx);
+            if(info.has_flag(DescriptorFlag::ReadOnly))
+            {
+                return StoreOwnPropertyResult::ReadOnly;
+            }
+
+            object->write_storage_location(info.storage_location(), value);
+            return StoreOwnPropertyResult::Stored;
+        }
+    }  // namespace
+
     void Object::install_class(ClassObject *new_cls)
     {
         assert(new_cls != nullptr);
@@ -54,33 +86,76 @@ namespace cl
 
     Value Object::get_own_property(TValue<String> name) const
     {
-        return shape_backed_object::get_own_property(this, name);
+        StorageLocation location = get_shape()->resolve_present_property(name);
+        if(!location.is_found())
+        {
+            return Value::not_present();
+        }
+
+        return read_storage_location(location);
     }
 
     bool Object::define_own_property(TValue<String> name, Value value,
                                      DescriptorFlags descriptor_flags)
     {
-        return shape_backed_object::define_own_property(this, name, value,
-                                                        descriptor_flags) ==
-               shape_backed_object::StoreOwnPropertyResult::Stored;
+        Shape *current_shape = get_shape();
+        int32_t descriptor_idx = current_shape->lookup_descriptor_index(name);
+        if(descriptor_idx >= 0)
+        {
+            return false;
+        }
+
+        Shape *next_shape = current_shape->derive_transition(
+            name, ShapeTransitionVerb::Add, descriptor_flags);
+        set_shape(next_shape);
+
+        StorageLocation new_location =
+            next_shape->resolve_present_property(name);
+        assert(new_location.is_found());
+        write_storage_location(new_location, value);
+        return true;
     }
 
     bool Object::set_existing_own_property(TValue<String> name, Value value)
     {
-        return shape_backed_object::set_existing_own_property(this, name,
-                                                              value) ==
-               shape_backed_object::StoreOwnPropertyResult::Stored;
+        return set_existing_own_property_impl(this, name, value) ==
+               StoreOwnPropertyResult::Stored;
     }
 
     bool Object::set_own_property(TValue<String> name, Value value)
     {
-        return shape_backed_object::set_own_property(this, name, value) ==
-               shape_backed_object::StoreOwnPropertyResult::Stored;
+        StoreOwnPropertyResult result =
+            set_existing_own_property_impl(this, name, value);
+        if(result == StoreOwnPropertyResult::NotFound)
+        {
+            return define_own_property(name, value,
+                                       descriptor_flag(DescriptorFlag::None));
+        }
+
+        return result == StoreOwnPropertyResult::Stored;
     }
 
     bool Object::delete_own_property(TValue<String> name)
     {
-        return shape_backed_object::delete_own_property(this, name);
+        Shape *current_shape = get_shape();
+        int32_t descriptor_idx = current_shape->lookup_descriptor_index(name);
+        if(descriptor_idx < 0)
+        {
+            return false;
+        }
+
+        DescriptorInfo info =
+            current_shape->get_descriptor_info(descriptor_idx);
+        if(info.has_flag(DescriptorFlag::ReadOnly))
+        {
+            return false;
+        }
+
+        Shape *next_shape =
+            current_shape->derive_transition(name, ShapeTransitionVerb::Delete);
+        set_shape(next_shape);
+        write_storage_location(info.storage_location(), Value::not_present());
+        return true;
     }
 
     Value Object::read_storage_location(StorageLocation location) const
