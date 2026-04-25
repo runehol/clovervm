@@ -121,7 +121,7 @@ namespace cl
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
             BootstrapObjectTag{},
             vm->get_or_create_interned_string_value(L"type"),
-            ClassObject::kClassInlineSlotCount, Value::None(),
+            ClassObject::kClassObjectInlineSlotCount, Value::None(),
             class_shape_flags);
         cls->install_bootstrap_class(cls);
         return builtin_class_definition(cls, native_layout_ids);

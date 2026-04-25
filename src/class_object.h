@@ -29,7 +29,7 @@ namespace cl
         static constexpr uint32_t kClassSlotBases = 2;
         static constexpr uint32_t kClassSlotMro = 3;
         static constexpr uint32_t kClassPredefinedSlotCount = 4;
-        static constexpr uint32_t kClassInlineSlotCount = 8;
+        static constexpr uint32_t kClassObjectInlineSlotCount = 8;
 
         ClassObject(BootstrapObjectTag, TValue<String> name,
                     uint32_t instance_default_inline_slot_count,
@@ -60,9 +60,9 @@ namespace cl
         {
             return instance_default_inline_slot_count;
         }
-        uint32_t get_class_inline_slot_count() const
+        uint32_t get_class_object_inline_slot_count() const
         {
-            return kClassInlineSlotCount;
+            return kClassObjectInlineSlotCount;
         }
         Shape *get_instance_root_shape() const;
         ClassObject *get_base() const;
@@ -71,7 +71,7 @@ namespace cl
 
     private:
         static constexpr uint32_t kClassDynamicInlineSlotCount =
-            kClassInlineSlotCount - kClassPredefinedSlotCount;
+            kClassObjectInlineSlotCount - kClassPredefinedSlotCount;
 
         Value make_bases_list(Value base) const;
         Value make_mro_list() const;
