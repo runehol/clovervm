@@ -243,7 +243,51 @@ Primary files:
 - [src/shape.h](../src/shape.h)
 - [src/shape.cpp](../src/shape.cpp)
 
-### 3. Give builtin instances Shapes
+### 3. Clean up heap layout metadata
+
+Status: not started.
+
+The heap layout metadata still carries a variable `value_offset_in_words`,
+which was useful when value fields could begin at arbitrary offsets in each
+native layout. With `Object` now defining the Python-visible value region and
+subclasses layering fixed `Value` members after their base class, that
+flexibility is no longer buying us much. It also makes inherited value counts
+harder to express safely.
+
+Introduce layout declaration macros that understand static base layouts:
+
+- a derived static layout macro should name its base class
+- it should assert that the base class does not have dynamic layout
+- it should reuse the base class value-region offset
+- it should add the base class `static_value_count()` to the derived class's
+  own fixed `Value` field count
+- it should make layouts where `Value` fields begin outside the inherited
+  value region impossible
+
+Once that is in place, remove the ability for layouts to carry arbitrary
+`value_offset_in_words`. The compact and expanded heap layout encodings should
+only need object size and value count; the value-region start should come from
+the static C++ layout contract.
+
+Implementation notes:
+
+- add inherited static-layout declaration macros in `heap_object.h`
+- migrate `Object` subclasses before internal dynamic heap records
+- keep dynamic layout support for variable tail counts, but not for variable
+  value-region offsets
+- update `heap.h` allocation to stop encoding per-type value offsets
+- update [doc/object-metadata.md](./object-metadata.md) after the code changes
+
+Primary files:
+
+- [src/heap_object.h](../src/heap_object.h)
+- [src/heap.h](../src/heap.h)
+- [src/object.h](../src/object.h)
+- [src/class_object.h](../src/class_object.h)
+- [src/instance.h](../src/instance.h)
+- [doc/object-metadata.md](./object-metadata.md)
+
+### 4. Give builtin instances Shapes
 
 Status: partially complete.
 
@@ -282,7 +326,7 @@ Primary files:
 - [src/virtual_machine.cpp](../src/virtual_machine.cpp)
 - [src/attr.cpp](../src/attr.cpp)
 
-### 4. Reframe `Klass` as native implementation metadata
+### 5. Reframe `Klass` as native implementation metadata
 
 Status: completed by replacing `Klass` with `NativeLayoutId`.
 
@@ -320,7 +364,7 @@ Primary files:
 - [tests/test_attr.cpp](../tests/test_attr.cpp)
 - [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
 
-### 5. Make class-object `__class__` a real metaclass slot
+### 6. Make class-object `__class__` a real metaclass slot
 
 Status: completed for the default metaclass path.
 
@@ -350,7 +394,7 @@ Primary files:
 - [tests/test_attr.cpp](../tests/test_attr.cpp)
 - [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
 
-### 6. Move generic attribute access onto the object protocol
+### 7. Move generic attribute access onto the object protocol
 
 Status: not started.
 
@@ -379,7 +423,7 @@ Primary files:
 - [src/instance.h](../src/instance.h)
 - [src/instance.cpp](../src/instance.cpp)
 
-### 7. Complete descriptor and custom attribute semantics
+### 8. Complete descriptor and custom attribute semantics
 
 Status: not started.
 
@@ -409,7 +453,39 @@ Primary files:
 - [tests/test_attr.cpp](../tests/test_attr.cpp)
 - [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
 
-### 8. Add lookup invalidation only after the object model is unified
+### 9. Combine method lookup and method call bytecodes
+
+Status: not started.
+
+Before adding lookup validity cells, replace the current `LOAD_METHOD` /
+`CALL_METHOD` split with one combined method-call opcode. The split opcode pair
+is a useful interpreter shortcut today, but it is the wrong shape to cache
+directly: the interesting semantic unit is resolving an attribute in call
+context and immediately invoking it with the correct binding behavior.
+
+The combined opcode should:
+
+- keep the receiver and explicit arguments visible to one interpreter handler
+- perform method-context attribute resolution once
+- decide whether a receiver argument is inserted based on the resolved access
+  kind
+- avoid materializing a transient callable/self pair as the bytecode contract
+- leave ordinary escaped method-value lookup to normal attribute load semantics
+
+This gives lookup caches a single call-context operation to specialize later.
+The cache can then record the semantic result of the call lookup rather than
+coupling itself to the current two-op stack/register convention.
+
+Primary files:
+
+- [src/bytecode.h](../src/bytecode.h)
+- [src/codegen.cpp](../src/codegen.cpp)
+- [src/interpreter.cpp](../src/interpreter.cpp)
+- [src/attr.cpp](../src/attr.cpp)
+- [tests/test_codegen.cpp](../tests/test_codegen.cpp)
+- [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
+
+### 10. Add lookup invalidation only after the object model is unified
 
 The unified-object-model doc describes lookup validity cells as the long-term
 replacement for ad hoc invalidation. That work should come after classes and
@@ -473,10 +549,13 @@ The safe order is:
 
 1. Finish builtin instance attribute semantics on top of the shared `Object`
    protocol.
-2. Tighten the remaining ClassObject fixed-slot layout cleanup.
-3. Move generic attribute access onto the shared object protocol.
-4. Complete descriptor and custom attribute semantics.
-5. Add lookup validity cells and inline-cache integration.
+2. Clean up heap layout metadata so inherited fixed `Value` fields compose
+   safely.
+3. Tighten the remaining ClassObject fixed-slot layout cleanup.
+4. Move generic attribute access onto the shared object protocol.
+5. Complete descriptor and custom attribute semantics.
+6. Combine method lookup and method call into one opcode.
+7. Add lookup validity cells and inline-cache integration.
 
 ## Main Risk To Avoid
 
