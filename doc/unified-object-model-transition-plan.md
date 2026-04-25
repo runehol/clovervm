@@ -443,6 +443,11 @@ Primary files:
 
 ### 8. Route all class mutation through Shape transitions
 
+Status: done. Class mutation now has explicit direct store/delete methods on
+`ClassObject`; class construction, class attribute stores, and the member
+compatibility shim route through those methods, which are the future
+invalidation hook around Shape transitions and slot updates.
+
 Once classes are shape-backed, class attribute writes and deletes should use
 the same transition machinery as instances:
 

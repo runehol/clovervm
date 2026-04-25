@@ -165,23 +165,34 @@ namespace cl
 
     void ClassObject::set_member(TValue<String> name, Value value)
     {
-        set_own_property(name, value);
+        store_own_property_direct(name, value);
     }
 
-    bool ClassObject::set_own_property(TValue<String> name, Value value)
+    bool ClassObject::store_own_property_direct(TValue<String> name,
+                                                Value value)
     {
         return shape_backed_object::set_own_property(this, name, value) ==
                shape_backed_object::StoreOwnPropertyResult::Stored;
     }
 
+    bool ClassObject::delete_own_property_direct(TValue<String> name)
+    {
+        return shape_backed_object::delete_own_property(this, name);
+    }
+
+    bool ClassObject::set_own_property(TValue<String> name, Value value)
+    {
+        return store_own_property_direct(name, value);
+    }
+
     bool ClassObject::delete_member(TValue<String> name)
     {
-        return delete_own_property(name);
+        return delete_own_property_direct(name);
     }
 
     bool ClassObject::delete_own_property(TValue<String> name)
     {
-        return shape_backed_object::delete_own_property(this, name);
+        return delete_own_property_direct(name);
     }
 
     Value ClassObject::read_storage_location(StorageLocation location) const

@@ -52,6 +52,8 @@ namespace cl
         bool delete_member(TValue<String> name);
 
         Value get_own_property(TValue<String> name) const;
+        bool store_own_property_direct(TValue<String> name, Value value);
+        bool delete_own_property_direct(TValue<String> name);
         bool set_own_property(TValue<String> name, Value value);
         bool delete_own_property(TValue<String> name);
 

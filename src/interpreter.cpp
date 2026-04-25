@@ -187,7 +187,7 @@ namespace cl
             {
                 continue;
             }
-            cls.extract()->set_member(
+            cls.extract()->store_own_property_direct(
                 local_scope->get_name_by_slot_index(slot_idx), value);
         }
         return Value::from_oop(cls.extract());

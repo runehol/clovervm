@@ -635,6 +635,9 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     EXPECT_FALSE(
         cls->set_own_property(dunder_name_name, other_name.as_value()));
     EXPECT_FALSE(cls->delete_own_property(dunder_name_name));
+    EXPECT_FALSE(cls->store_own_property_direct(dunder_name_name,
+                                                other_name.as_value()));
+    EXPECT_FALSE(cls->delete_own_property_direct(dunder_name_name));
     EXPECT_EQ(cls_name.as_value(), cls->get_own_property(dunder_name_name));
 }
 
@@ -702,6 +705,37 @@ TEST(ClassObject, OwnPropertyApiDoesNotFallBackToBaseChain)
     EXPECT_TRUE(child->delete_own_property(attr_name));
     EXPECT_EQ(Value::not_present(), child->get_own_property(attr_name));
     EXPECT_EQ(Value::from_smi(7), child->get_member(attr_name));
+}
+
+TEST(ClassObject, DirectMutationDistinguishesSlotUpdateAddAndDelete)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"attr"));
+    ClassObject *cls =
+        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+
+    Shape *root_shape = cls->get_shape();
+    EXPECT_TRUE(cls->store_own_property_direct(attr_name, Value::from_smi(1)));
+    Shape *shape_with_attr = cls->get_shape();
+    EXPECT_NE(root_shape, shape_with_attr);
+    EXPECT_EQ(Value::from_smi(1), cls->get_own_property(attr_name));
+
+    StorageLocation location =
+        shape_with_attr->resolve_present_property(attr_name);
+    ASSERT_TRUE(location.is_found());
+    EXPECT_TRUE(cls->store_own_property_direct(attr_name, Value::from_smi(2)));
+    EXPECT_EQ(shape_with_attr, cls->get_shape());
+    EXPECT_EQ(Value::from_smi(2), cls->read_storage_location(location));
+
+    EXPECT_TRUE(cls->delete_own_property_direct(attr_name));
+    EXPECT_NE(shape_with_attr, cls->get_shape());
+    EXPECT_EQ(Value::not_present(), cls->read_storage_location(location));
+    EXPECT_EQ(Value::not_present(), cls->get_own_property(attr_name));
 }
 
 TEST(ClassObject, MemberLookupWalksMaterializedMro)
