@@ -986,8 +986,7 @@ namespace cl
                 MUSTTAIL return wrong_arity_error(ARGS);
             }
 
-            TValue<ClassObject> cls =
-                TValue<ClassObject>::unsafe_unchecked(fun);
+            ClassObject *cls = static_cast<ClassObject *>(fun_object);
             accumulator = Value::from_oop(make_internal_raw<Instance>(cls));
 
             pc += 3;

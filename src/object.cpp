@@ -30,9 +30,10 @@ namespace cl
         decref(old_shape);
     }
 
-    void Object::initialize_shape_from_class()
+    void Object::initialize_shape_for_class(ClassObject *class_object)
     {
-        initialize_shape(get_class().extract()->get_initial_shape());
+        assert(class_object != nullptr);
+        initialize_shape(class_object->get_initial_shape());
     }
 
     void Object::initialize_shape(Shape *initial_shape)

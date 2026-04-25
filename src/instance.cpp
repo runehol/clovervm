@@ -6,10 +6,7 @@
 namespace cl
 {
 
-    Instance::Instance(TValue<ClassObject> _cls)
-        : Object(_cls.extract(), native_layout_id)
-    {
-    }
+    Instance::Instance(ClassObject *_cls) : Object(_cls, native_layout_id) {}
 
     BuiltinClassDefinition make_instance_class(VirtualMachine *vm)
     {
@@ -20,9 +17,9 @@ namespace cl
         return builtin_class_definition(cls, native_layout_ids);
     }
 
-    DynamicLayoutSpec Instance::layout_spec_for(TValue<ClassObject> cls)
+    DynamicLayoutSpec Instance::layout_spec_for(ClassObject *cls)
     {
-        Shape *shape = cls.extract()->get_initial_shape();
+        Shape *shape = cls->get_initial_shape();
         uint32_t factory_default_inline_slot_count =
             shape->get_factory_default_inline_slot_count();
         assert(factory_default_inline_slot_count >= 1);

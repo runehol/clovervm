@@ -32,8 +32,7 @@ TEST(Attr, LoadAttrReturnsInstanceOwnPropertyBeforeClassMember)
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
     cls->set_own_property(attr_name, Value::from_smi(1));
 
-    Instance *instance = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(cls));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
     instance->set_own_property(attr_name, Value::from_smi(2));
 
     EXPECT_EQ(Value::from_smi(2),
@@ -57,8 +56,7 @@ TEST(Attr, LoadAttrFallsBackToClassAndBaseMembers)
     ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, Value::from_oop(base));
 
-    Instance *instance = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(child));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(child);
 
     EXPECT_EQ(Value::from_smi(7),
               load_attr(Value::from_oop(instance), inherited_name));
@@ -93,8 +91,7 @@ TEST(Attr, LoadAttrClassFallbackContinuesPastLatentDescriptor)
     child->write_storage_location(location, Value::from_smi(8));
     EXPECT_TRUE(child->delete_own_property(attr_name));
 
-    Instance *instance = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(child));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(child);
 
     EXPECT_EQ(Value::from_smi(7),
               load_attr(Value::from_oop(instance), attr_name));
@@ -112,8 +109,7 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
         context.vm().get_or_create_interned_string_value(L"__class__"));
     ClassObject *cls =
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
-    Instance *instance = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(cls));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     EXPECT_EQ(Value::from_oop(cls),
               instance->get_own_property(dunder_class_name));
@@ -149,8 +145,7 @@ TEST(Attr, StoreAttrWritesInstanceOwnProperty)
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls =
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
-    Instance *instance = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(cls));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     EXPECT_TRUE(
         store_attr(Value::from_oop(instance), attr_name, Value::from_smi(9)));
@@ -212,8 +207,7 @@ TEST(Attr, StoreAttrHandlesDunderClassAndUnsupportedInlineValues)
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
     ClassObject *other_cls =
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
-    Instance *instance = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(cls));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     EXPECT_TRUE(store_attr(Value::from_oop(instance), dunder_class_name,
                            Value::from_oop(cls)));
@@ -254,8 +248,7 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
                                                              1, 1);
     cls->set_own_property(builtin_name, builtin);
 
-    Instance *instance = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(cls));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
     instance->set_own_property(own_name, builtin);
 
     Value callable = Value::not_present();

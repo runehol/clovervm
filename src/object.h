@@ -34,7 +34,7 @@ namespace cl
               shape(nullptr), overflow_storage(nullptr), cls(nullptr)
         {
             install_class(_cls);
-            initialize_shape_from_class();
+            initialize_shape_for_class(_cls);
         }
 
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id)
@@ -42,7 +42,7 @@ namespace cl
               overflow_storage(nullptr), cls(nullptr)
         {
             install_class(_cls);
-            initialize_shape_from_class();
+            initialize_shape_for_class(_cls);
         }
 
         Object(BootstrapObjectTag, NativeLayoutId _native_layout_id,
@@ -69,17 +69,11 @@ namespace cl
         bool is_class_bootstrapped() const { return cls != nullptr; }
         Shape *get_shape() const { return shape; }
         void set_shape(Shape *new_shape);
-        OverflowSlots *get_overflow_slots() const { return overflow_storage; }
         Value get_own_property(TValue<String> name) const;
         bool set_own_property(TValue<String> name, Value value);
         bool delete_own_property(TValue<String> name);
         Value read_storage_location(StorageLocation location) const;
         void write_storage_location(StorageLocation location, Value value);
-        Value *inline_slot_base() { return reinterpret_cast<Value *>(&cls); }
-        const Value *inline_slot_base() const
-        {
-            return reinterpret_cast<const Value *>(&cls);
-        }
         static constexpr uint32_t static_value_offset_in_words()
         {
             static_assert(CL_OFFSETOF(Object, cls) % sizeof(uint64_t) == 0,
@@ -94,9 +88,15 @@ namespace cl
 
     private:
         void install_class(ClassObject *new_cls);
-        void initialize_shape_from_class();
+        void initialize_shape_for_class(ClassObject *class_object);
         void initialize_shape(Shape *initial_shape);
+        OverflowSlots *get_overflow_slots() const { return overflow_storage; }
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
+        Value *inline_slot_base() { return reinterpret_cast<Value *>(&cls); }
+        const Value *inline_slot_base() const
+        {
+            return reinterpret_cast<const Value *>(&cls);
+        }
     };
 
     template <typename T, typename = void>

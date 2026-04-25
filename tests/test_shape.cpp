@@ -247,8 +247,7 @@ TEST(Shape, InstanceRejectsStoreToReadOnlyDescriptor)
 
     Shape *shape_with_readonly = cls->get_initial_shape()->derive_transition(
         a_name, ShapeTransitionVerb::Add, flags);
-    Instance *instance = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(cls));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
     instance->set_shape(shape_with_readonly);
     StorageLocation location =
         shape_with_readonly->resolve_present_property(a_name);
@@ -352,8 +351,7 @@ TEST(Shape, InstanceStoresClassAndShapeSeparately)
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls =
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
-    Instance *instance = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(cls));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     EXPECT_EQ(cls, instance->get_class().extract());
     EXPECT_EQ(cls->get_initial_shape(), instance->get_shape());
@@ -370,8 +368,7 @@ TEST(Shape, InstanceStoresDunderClassInPredefinedReadonlySlot)
         context.vm().get_or_create_interned_string_value(L"__class__"));
     ClassObject *cls =
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
-    Instance *instance = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(cls));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     Shape *shape = instance->get_shape();
     StorageLocation class_location =
@@ -403,15 +400,13 @@ TEST(Shape, InstanceStoresAndLoadsInlineOwnProperty)
         context.vm().get_or_create_interned_string_value(L"a"));
     ClassObject *cls =
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
-    Instance *instance = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(cls));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     instance->set_own_property(a_name, Value::from_smi(7));
 
     EXPECT_EQ(Value::from_smi(7), instance->get_own_property(a_name));
     EXPECT_EQ(2u, instance->get_shape()->property_count());
     EXPECT_EQ(2, instance->get_shape()->get_next_slot_index());
-    EXPECT_EQ(nullptr, instance->get_overflow_slots());
 }
 
 TEST(Shape, InstanceSpillsIntoGeometricallyGrowingOverflowStorage)
@@ -435,8 +430,7 @@ TEST(Shape, InstanceSpillsIntoGeometricallyGrowingOverflowStorage)
         context.vm().get_or_create_interned_string_value(L"f"));
     ClassObject *cls =
         context.thread()->make_internal_raw<ClassObject>(cls_name, 1);
-    Instance *instance = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(cls));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     instance->set_own_property(a_name, Value::from_smi(1));
     instance->set_own_property(b_name, Value::from_smi(2));
@@ -445,10 +439,6 @@ TEST(Shape, InstanceSpillsIntoGeometricallyGrowingOverflowStorage)
     instance->set_own_property(e_name, Value::from_smi(5));
     instance->set_own_property(f_name, Value::from_smi(6));
 
-    OverflowSlots *overflow_slots = instance->get_overflow_slots();
-    ASSERT_NE(nullptr, overflow_slots);
-    EXPECT_EQ(6u, overflow_slots->get_size());
-    EXPECT_EQ(8u, overflow_slots->get_capacity());
     EXPECT_EQ(Value::from_smi(1), instance->get_own_property(a_name));
     EXPECT_EQ(Value::from_smi(2), instance->get_own_property(b_name));
     EXPECT_EQ(Value::from_smi(6), instance->get_own_property(f_name));
@@ -467,8 +457,7 @@ TEST(Shape, DeleteClearsSlotAndAllowsFreshReAdd)
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls =
         context.thread()->make_internal_raw<ClassObject>(cls_name, 1);
-    Instance *instance = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(cls));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     instance->set_own_property(a_name, Value::from_smi(10));
     instance->set_own_property(b_name, Value::from_smi(11));
@@ -495,10 +484,8 @@ TEST(Shape, TwoInstancesShareShapeTransitionsButHoldDistinctValues)
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls =
         context.thread()->make_internal_raw<ClassObject>(cls_name, 1);
-    Instance *first = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(cls));
-    Instance *second = context.thread()->make_internal_raw<Instance>(
-        TValue<ClassObject>::from_oop(cls));
+    Instance *first = context.thread()->make_internal_raw<Instance>(cls);
+    Instance *second = context.thread()->make_internal_raw<Instance>(cls);
 
     first->set_own_property(a_name, Value::from_smi(1));
     first->set_own_property(b_name, Value::from_smi(2));

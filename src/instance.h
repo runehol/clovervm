@@ -3,7 +3,6 @@
 
 #include "builtin_class_registry.h"
 #include "object.h"
-#include "typed_value.h"
 #include "value.h"
 #include <cstdint>
 
@@ -17,14 +16,14 @@ namespace cl
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::Instance;
 
-        explicit Instance(TValue<ClassObject> cls);
+        explicit Instance(ClassObject *cls);
 
         static size_t size_for(uint32_t dynamic_inline_slot_count)
         {
             return sizeof(Instance) + sizeof(Value) * dynamic_inline_slot_count;
         }
 
-        static DynamicLayoutSpec layout_spec_for(TValue<ClassObject> cls);
+        static DynamicLayoutSpec layout_spec_for(ClassObject *cls);
 
     public:
         static constexpr bool has_dynamic_layout = true;
