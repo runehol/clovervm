@@ -36,13 +36,14 @@ namespace cl
         static constexpr Klass klass = Klass(L"Class", nullptr);
         static constexpr uint32_t kClassPredefinedSlotCount = 4;
 
-        ClassObject(TValue<String> name, uint32_t instance_inline_slot_count,
+        ClassObject(TValue<String> name,
+                    uint32_t factory_default_inline_slot_count,
                     Value base = Value::None());
 
         TValue<String> get_name() const { return name; }
-        uint32_t get_instance_inline_slot_count() const
+        uint32_t get_factory_default_inline_slot_count() const
         {
-            return instance_inline_slot_count;
+            return factory_default_inline_slot_count;
         }
         Shape *get_shape() const;
         void set_shape(Shape *new_shape);
@@ -92,7 +93,7 @@ namespace cl
         MemberValue initial_shape;
         MemberValue shape;
         MemberValue class_slots[kClassPredefinedSlotCount];
-        uint32_t instance_inline_slot_count;
+        uint32_t factory_default_inline_slot_count;
         uint64_t method_version;
         std::vector<MemberEntry> members;
 

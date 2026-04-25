@@ -11,10 +11,11 @@ namespace cl
 {
 
     ClassObject::ClassObject(TValue<String> _name,
-                             uint32_t _instance_inline_slot_count, Value _base)
+                             uint32_t _factory_default_inline_slot_count,
+                             Value _base)
         : Object(&klass, compact_layout()), name(_name), base(_base),
           initial_shape(Value::None()), shape(Value::None()),
-          instance_inline_slot_count(_instance_inline_slot_count),
+          factory_default_inline_slot_count(_factory_default_inline_slot_count),
           method_version(0)
     {
         VirtualMachine *vm = ThreadState::get_active()->get_machine();

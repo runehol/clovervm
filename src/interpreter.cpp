@@ -122,7 +122,7 @@ namespace cl
         throw std::runtime_error("TypeError: wrong number of arguments");
     }
 
-    static constexpr uint32_t kDefaultInstanceInlineSlotCount = 4;
+    static constexpr uint32_t kDefaultFactoryInlineSlotCount = 4;
 
     static ALWAYSINLINE void
     initialize_frame_header(Value *new_fp, Value *previous_fp,
@@ -173,7 +173,7 @@ namespace cl
     {
         TValue<ClassObject> cls =
             ThreadState::get_active()->make_refcounted_value<ClassObject>(
-                class_name, kDefaultInstanceInlineSlotCount);
+                class_name, kDefaultFactoryInlineSlotCount);
         Scope *local_scope = body_code->get_local_scope_ptr();
         for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
         {

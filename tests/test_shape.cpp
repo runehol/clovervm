@@ -39,7 +39,7 @@ TEST(Shape, ClassOwnsRootShape)
     EXPECT_TRUE(root_shape->get_descriptor_info(0).has_flag(
         DescriptorFlag::StableSlot));
     EXPECT_EQ(1, root_shape->get_next_slot_index());
-    EXPECT_EQ(2u, root_shape->get_instance_inline_slot_count());
+    EXPECT_EQ(2u, root_shape->get_factory_default_inline_slot_count());
 }
 
 TEST(Shape, ShapeFlagsAreStoredOnShape)
@@ -320,7 +320,7 @@ TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
               shape_with_ba->get_property_storage_location(2).kind);
     EXPECT_EQ(2, shape_with_ba->get_property_storage_location(2).physical_idx);
     EXPECT_EQ(4, shape_with_ba->get_next_slot_index());
-    EXPECT_EQ(1u, shape_with_ba->get_instance_inline_slot_count());
+    EXPECT_EQ(1u, shape_with_ba->get_factory_default_inline_slot_count());
 }
 
 TEST(Shape, InstanceStoresClassAndShapeSeparately)

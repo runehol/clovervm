@@ -10,9 +10,9 @@ namespace cl
     Instance::Instance(Value _cls, Value _shape)
         : Object(&klass), cls(_cls), shape(_shape), overflow(Value::None())
     {
-        uint32_t instance_inline_slot_count =
-            get_shape()->get_instance_inline_slot_count();
-        for(uint32_t slot_idx = 0; slot_idx < instance_inline_slot_count;
+        uint32_t factory_default_inline_slot_count =
+            get_shape()->get_factory_default_inline_slot_count();
+        for(uint32_t slot_idx = 0; slot_idx < factory_default_inline_slot_count;
             ++slot_idx)
         {
             inline_slots[slot_idx] = Value::not_present();
@@ -31,11 +31,11 @@ namespace cl
     DynamicLayoutSpec Instance::layout_spec_for(Value cls, Value shape)
     {
         Shape *shape_ptr = shape.get_ptr<Shape>();
-        uint32_t instance_inline_slot_count =
-            shape_ptr->get_instance_inline_slot_count();
-        return DynamicLayoutSpec{
-            round_up_to_16byte_units(size_for(instance_inline_slot_count)),
-            3 + instance_inline_slot_count};
+        uint32_t factory_default_inline_slot_count =
+            shape_ptr->get_factory_default_inline_slot_count();
+        return DynamicLayoutSpec{round_up_to_16byte_units(size_for(
+                                     factory_default_inline_slot_count)),
+                                 3 + factory_default_inline_slot_count};
     }
 
     Shape *Instance::get_shape() const
