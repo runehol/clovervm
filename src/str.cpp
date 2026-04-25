@@ -44,7 +44,7 @@ namespace cl
         String *right = args[1].get_ptr<String>();
         std::wstring result(left->data, size_t(left->count.extract()));
         result.append(right->data, size_t(right->count.extract()));
-        return thread->make_refcounted_object_value<String>(result);
+        return thread->make_object_value<String>(result);
     }
 
     BuiltinClassDefinition make_str_class(VirtualMachine *vm)
@@ -54,12 +54,12 @@ namespace cl
         BuiltinClassMethod methods[] = {
             BuiltinClassMethod{
                 vm->get_or_create_interned_string_value(L"__str__"),
-                Value::from_oop(vm->make_immortal_object_raw<BuiltinFunction>(
-                    builtin_str_str, 1, 1))},
+                vm->make_immortal_object_value<BuiltinFunction>(builtin_str_str,
+                                                                1, 1)},
             BuiltinClassMethod{
                 vm->get_or_create_interned_string_value(L"__add__"),
-                Value::from_oop(vm->make_immortal_object_raw<BuiltinFunction>(
-                    builtin_str_add, 2, 2))},
+                vm->make_immortal_object_value<BuiltinFunction>(builtin_str_add,
+                                                                2, 2)},
         };
 
         ClassObject *cls = ClassObject::make_builtin_class(

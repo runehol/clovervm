@@ -181,7 +181,7 @@ namespace cl
             }
 
             Backing *new_backing =
-                make_refcounted_raw<Backing>(requested_capacity);
+                make_internal_raw<Backing>(requested_capacity);
             T *new_data = reinterpret_cast<T *>(new_backing->elements);
             size_t current_size = size();
             for(size_t idx = 0; idx < current_size; ++idx)
@@ -389,7 +389,7 @@ namespace cl
             }
 
             Backing *new_backing =
-                make_refcounted_raw<Backing>(requested_capacity);
+                make_internal_raw<Backing>(requested_capacity);
             std::memset(new_backing->elements, 0,
                         sizeof(Value) * requested_capacity *
                             values_per_element);

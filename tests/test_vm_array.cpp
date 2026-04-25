@@ -37,7 +37,7 @@ TEST(RawArray, GrowsAndPreservesValues)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    ArrayOwner *owner = context.thread()->make_refcounted_raw<ArrayOwner>();
+    ArrayOwner *owner = context.thread()->make_internal_raw<ArrayOwner>();
 
     RawArray<int32_t> &values = owner->raw_values;
     values.resize(2, -1);
@@ -61,7 +61,7 @@ TEST(ValueArray, SupportsTypedValueElementsAcrossGrowth)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    ArrayOwner *owner = context.thread()->make_refcounted_raw<ArrayOwner>();
+    ArrayOwner *owner = context.thread()->make_internal_raw<ArrayOwner>();
 
     TValue<String> name(
         context.vm().get_or_create_interned_string_value(L"answer"));
@@ -79,7 +79,7 @@ TEST(ValueArray, SupportsFlatValueStructElements)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    ArrayOwner *owner = context.thread()->make_refcounted_raw<ArrayOwner>();
+    ArrayOwner *owner = context.thread()->make_internal_raw<ArrayOwner>();
 
     ValueArray<ValuePair> &values = owner->pair_values;
     values.push_back(

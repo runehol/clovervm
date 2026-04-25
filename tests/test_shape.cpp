@@ -38,7 +38,7 @@ TEST(Shape, ClassOwnsRootShape)
     TValue<String> name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(name, 2);
+        context.thread()->make_internal_raw<ClassObject>(name, 2);
 
     Shape *root_shape = cls->get_initial_shape();
     ASSERT_NE(nullptr, root_shape);
@@ -69,11 +69,11 @@ TEST(Shape, ShapeFlagsAreStoredOnShape)
     TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
     ShapeFlags flags = shape_flag(ShapeFlag::IsClassObject);
     flags |= shape_flag(ShapeFlag::IsImmutableType);
 
-    Shape *shape = context.thread()->make_refcounted_raw<Shape>(
+    Shape *shape = context.thread()->make_internal_raw<Shape>(
         Value::from_oop(cls), nullptr, 0, 0, flags, 0);
 
     EXPECT_EQ(flags, shape->flags());
@@ -94,7 +94,7 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
     TValue<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
 
     Shape *root_shape = cls->get_initial_shape();
     Shape *shape_with_a =
@@ -159,7 +159,7 @@ TEST(Shape, DescriptorLookupReportsPresentAndAbsentProperties)
     TValue<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
 
     Shape *root_shape = cls->get_initial_shape();
     Shape *shape_with_a =
@@ -213,7 +213,7 @@ TEST(Shape, AddTransitionCanCarryDescriptorFlags)
     TValue<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly);
     flags |= descriptor_flag(DescriptorFlag::StableSlot);
 
@@ -242,12 +242,12 @@ TEST(Shape, InstanceRejectsStoreToReadOnlyDescriptor)
     TValue<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly);
 
     Shape *shape_with_readonly = cls->get_initial_shape()->derive_transition(
         a_name, ShapeTransitionVerb::Add, flags);
-    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+    Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), shape_with_readonly);
     StorageLocation location =
         shape_with_readonly->resolve_present_property(a_name);
@@ -275,7 +275,7 @@ TEST(Shape, StableSlotDeleteMovesDescriptorToLatentAndReAddReusesSlot)
     TValue<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
 
     Shape *root_shape = cls->get_initial_shape();
@@ -318,7 +318,7 @@ TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
     TValue<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 1);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 1);
 
     Shape *root_shape = cls->get_initial_shape();
     Shape *shape_with_a =
@@ -350,8 +350,8 @@ TEST(Shape, InstanceStoresClassAndShapeSeparately)
     TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
-    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
+    Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), cls->get_initial_shape());
 
     EXPECT_EQ(Value::from_oop(cls), instance->get_class());
@@ -368,8 +368,8 @@ TEST(Shape, InstanceStoresDunderClassInPredefinedReadonlySlot)
     TValue<String> dunder_class_name(
         context.vm().get_or_create_interned_string_value(L"__class__"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
-    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
+    Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), cls->get_initial_shape());
 
     Shape *shape = instance->get_shape();
@@ -401,8 +401,8 @@ TEST(Shape, InstanceStoresAndLoadsInlineOwnProperty)
     TValue<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
-    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
+    Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), cls->get_initial_shape());
 
     instance->set_own_property(a_name, Value::from_smi(7));
@@ -433,8 +433,8 @@ TEST(Shape, InstanceSpillsIntoGeometricallyGrowingOverflowStorage)
     TValue<String> f_name(
         context.vm().get_or_create_interned_string_value(L"f"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 1);
-    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 1);
+    Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), cls->get_initial_shape());
 
     instance->set_own_property(a_name, Value::from_smi(1));
@@ -465,8 +465,8 @@ TEST(Shape, DeleteClearsSlotAndAllowsFreshReAdd)
     TValue<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 1);
-    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 1);
+    Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), cls->get_initial_shape());
 
     instance->set_own_property(a_name, Value::from_smi(10));
@@ -493,10 +493,10 @@ TEST(Shape, TwoInstancesShareShapeTransitionsButHoldDistinctValues)
     TValue<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 1);
-    Instance *first = context.thread()->make_refcounted_raw<Instance>(
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 1);
+    Instance *first = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), cls->get_initial_shape());
-    Instance *second = context.thread()->make_refcounted_raw<Instance>(
+    Instance *second = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), cls->get_initial_shape());
 
     first->set_own_property(a_name, Value::from_smi(1));
@@ -523,7 +523,7 @@ TEST(ClassObject, ClassPropertiesPreserveInsertionOrderAndCompactOnDelete)
     TValue<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
 
     cls->set_own_property(a_name, Value::from_smi(1));
     cls->set_own_property(b_name, Value::from_smi(2));
@@ -561,7 +561,7 @@ TEST(ClassObject, ClassPropertiesUseShapeBackedInlineAndOverflowStorage)
         TValue<String>(context.vm().get_or_create_interned_string_value(L"e")),
     };
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
 
     for(uint32_t idx = 0; idx < 5; ++idx)
     {
@@ -607,7 +607,7 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     TValue<String> dunder_mro_name(
         context.vm().get_or_create_interned_string_value(L"__mro__"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
 
     Shape *shape = cls->get_shape();
     ASSERT_NE(nullptr, shape);
@@ -728,7 +728,7 @@ TEST(ClassObject, DefineAndSetExistingOwnPropertyHaveSeparateSemantics)
     TValue<String> missing_name(
         context.vm().get_or_create_interned_string_value(L"missing"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
 
     EXPECT_FALSE(cls->set_existing_own_property(attr_name, Value::from_smi(1)));
     EXPECT_TRUE(
@@ -759,8 +759,8 @@ TEST(ClassObject, PredefinedBasesAndMroReflectSingleBaseChain)
     TValue<String> dunder_mro_name(
         context.vm().get_or_create_interned_string_value(L"__mro__"));
     ClassObject *base =
-        context.thread()->make_refcounted_raw<ClassObject>(base_name, 2);
-    ClassObject *child = context.thread()->make_refcounted_raw<ClassObject>(
+        context.thread()->make_internal_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, Value::from_oop(base));
 
     Value bases_value = child->get_own_property(dunder_bases_name);
@@ -794,8 +794,8 @@ TEST(ClassObject, OwnPropertyApiDoesNotFallBackToBaseChain)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base =
-        context.thread()->make_refcounted_raw<ClassObject>(base_name, 2);
-    ClassObject *child = context.thread()->make_refcounted_raw<ClassObject>(
+        context.thread()->make_internal_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, Value::from_oop(base));
 
     base->set_own_property(attr_name, Value::from_smi(7));
@@ -823,7 +823,7 @@ TEST(ClassObject, MutationDistinguishesSlotUpdateAddAndDelete)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
 
     Shape *root_shape = cls->get_shape();
     EXPECT_TRUE(root_shape->has_flag(ShapeFlag::IsClassObject));
@@ -860,8 +860,8 @@ TEST(ClassObject, ClassLookupWalksMaterializedMro)
     TValue<String> method_name(
         context.vm().get_or_create_interned_string_value(L"m"));
     ClassObject *base =
-        context.thread()->make_refcounted_raw<ClassObject>(base_name, 2);
-    ClassObject *child = context.thread()->make_refcounted_raw<ClassObject>(
+        context.thread()->make_internal_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, Value::from_oop(base));
 
     base->set_own_property(method_name, Value::from_smi(7));
@@ -881,8 +881,8 @@ TEST(ClassObject, ClassLookupContinuesPastLatentDescriptor)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base =
-        context.thread()->make_refcounted_raw<ClassObject>(base_name, 2);
-    ClassObject *child = context.thread()->make_refcounted_raw<ClassObject>(
+        context.thread()->make_internal_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, Value::from_oop(base));
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
 

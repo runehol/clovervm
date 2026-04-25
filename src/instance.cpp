@@ -141,7 +141,7 @@ namespace cl
             new_capacity *= 2;
         }
 
-        OverflowSlots *new_overflow_slots = make_refcounted_raw<OverflowSlots>(
+        OverflowSlots *new_overflow_slots = make_internal_raw<OverflowSlots>(
             overflow_slots == nullptr ? 0 : overflow_slots->get_size(),
             new_capacity);
         if(overflow_slots != nullptr)

@@ -95,7 +95,7 @@ namespace cl
         void *allocate_global(size_t n_bytes);
 
         template <typename T, typename... Args>
-        T *make_global_raw(Args &&...args)
+        T *make_global_internal_raw(Args &&...args)
         {
             static_assert(std::is_base_of_v<HeapObject, T>);
             if constexpr(HasObjectLayout<T>::value && T::has_dynamic_layout)
@@ -112,10 +112,10 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        TValue<T> make_global_value(Args &&...args)
+        TValue<T> make_global_internal_value(Args &&...args)
         {
             return TValue<T>::from_oop(
-                make_global_raw<T>(std::forward<Args>(args)...));
+                make_global_internal_raw<T>(std::forward<Args>(args)...));
         }
 
         SlabAllocator *make_new_slab();

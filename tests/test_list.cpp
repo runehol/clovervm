@@ -12,7 +12,7 @@ namespace
     static String *make_string(test::VmTestContext &context,
                                const wchar_t *text)
     {
-        return context.thread()->make_refcounted_raw<String>(text);
+        return context.thread()->make_internal_raw<String>(text);
     }
 }  // namespace
 
@@ -20,7 +20,7 @@ TEST(List, UncheckedOperationsSupportAppendSetInsertAndErase)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    List *list = context.thread()->make_refcounted_object_raw<List>();
+    List *list = context.thread()->make_object_raw<List>();
 
     String *first = make_string(context, L"first");
     String *second = make_string(context, L"second");
@@ -49,7 +49,7 @@ TEST(List, SizedConstructorInitializesEntriesToNotPresent)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    List *list = context.thread()->make_refcounted_object_raw<List>(3);
+    List *list = context.thread()->make_object_raw<List>(3);
 
     ASSERT_EQ(3u, list->size());
     EXPECT_TRUE(list->item_unchecked(0).is_not_present());
@@ -61,7 +61,7 @@ TEST(List, CheckedIndexingSupportsNegativeIndices)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    List *list = context.thread()->make_refcounted_object_raw<List>();
+    List *list = context.thread()->make_object_raw<List>();
 
     list->append(Value::from_smi(10));
     list->append(Value::from_smi(20));
@@ -78,7 +78,7 @@ TEST(List, CheckedInsertClampsToPythonListSemantics)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    List *list = context.thread()->make_refcounted_object_raw<List>();
+    List *list = context.thread()->make_object_raw<List>();
 
     list->append(Value::from_smi(2));
     list->append(Value::from_smi(3));
@@ -97,7 +97,7 @@ TEST(List, PopItemSupportsDefaultAndNegativeIndices)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    List *list = context.thread()->make_refcounted_object_raw<List>();
+    List *list = context.thread()->make_object_raw<List>();
 
     String *first = make_string(context, L"first");
     String *second = make_string(context, L"second");
@@ -120,7 +120,7 @@ TEST(List, CheckedIndexingRaisesIndexError)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    List *list = context.thread()->make_refcounted_object_raw<List>();
+    List *list = context.thread()->make_object_raw<List>();
 
     list->append(Value::from_smi(1));
 

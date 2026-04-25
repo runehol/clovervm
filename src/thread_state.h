@@ -56,7 +56,7 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        T *make_refcounted_raw(Args &&...args)
+        T *make_internal_raw(Args &&...args)
         {
             static_assert(std::is_base_of_v<HeapObject, T>);
             static_assert(HasObjectLayout<T>::value);
@@ -64,10 +64,10 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        TValue<T> make_refcounted_value(Args &&...args)
+        TValue<T> make_internal_value(Args &&...args)
         {
             return TValue<T>::from_oop(
-                make_refcounted_raw<T>(std::forward<Args>(args)...));
+                make_internal_raw<T>(std::forward<Args>(args)...));
         }
 
         ClassObject *class_for_native_layout(NativeLayoutId id) const
@@ -76,20 +76,20 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        T *make_refcounted_object_raw(Args &&...args)
+        T *make_object_raw(Args &&...args)
         {
             static_assert(std::is_base_of_v<Object, T>);
             static_assert(HasNativeLayoutId<T>::value);
             ClassObject *cls = class_for_native_layout(T::native_layout_id);
             assert(cls != nullptr);
-            return make_refcounted_raw<T>(cls, std::forward<Args>(args)...);
+            return make_internal_raw<T>(cls, std::forward<Args>(args)...);
         }
 
         template <typename T, typename... Args>
-        TValue<T> make_refcounted_object_value(Args &&...args)
+        TValue<T> make_object_value(Args &&...args)
         {
             return TValue<T>::from_oop(
-                make_refcounted_object_raw<T>(std::forward<Args>(args)...));
+                make_object_raw<T>(std::forward<Args>(args)...));
         }
 
         CodeObject *compile(const wchar_t *str, StartRule start_rule);
@@ -109,31 +109,28 @@ namespace cl
 
     inline ThreadState *active_thread() { return ThreadState::get_active(); }
 
-    template <typename T, typename... Args>
-    T *make_refcounted_raw(Args &&...args)
+    template <typename T, typename... Args> T *make_internal_raw(Args &&...args)
     {
-        return active_thread()->make_refcounted_raw<T>(
+        return active_thread()->make_internal_raw<T>(
             std::forward<Args>(args)...);
     }
 
     template <typename T, typename... Args>
-    TValue<T> make_refcounted_value(Args &&...args)
+    TValue<T> make_internal_value(Args &&...args)
     {
-        return active_thread()->make_refcounted_value<T>(
+        return active_thread()->make_internal_value<T>(
             std::forward<Args>(args)...);
     }
 
-    template <typename T, typename... Args>
-    T *make_refcounted_object_raw(Args &&...args)
+    template <typename T, typename... Args> T *make_object_raw(Args &&...args)
     {
-        return active_thread()->make_refcounted_object_raw<T>(
-            std::forward<Args>(args)...);
+        return active_thread()->make_object_raw<T>(std::forward<Args>(args)...);
     }
 
     template <typename T, typename... Args>
-    TValue<T> make_refcounted_object_value(Args &&...args)
+    TValue<T> make_object_value(Args &&...args)
     {
-        return active_thread()->make_refcounted_object_value<T>(
+        return active_thread()->make_object_value<T>(
             std::forward<Args>(args)...);
     }
 

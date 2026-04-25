@@ -29,10 +29,10 @@ TEST(Attr, LoadAttrReturnsInstanceOwnPropertyBeforeClassMember)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
     cls->set_own_property(attr_name, Value::from_smi(1));
 
-    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+    Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), cls->get_initial_shape());
     instance->set_own_property(attr_name, Value::from_smi(2));
 
@@ -52,12 +52,12 @@ TEST(Attr, LoadAttrFallsBackToClassAndBaseMembers)
     TValue<String> inherited_name(
         context.vm().get_or_create_interned_string_value(L"inherited"));
     ClassObject *base =
-        context.thread()->make_refcounted_raw<ClassObject>(base_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(base_name, 2);
     base->set_own_property(inherited_name, Value::from_smi(7));
-    ClassObject *child = context.thread()->make_refcounted_raw<ClassObject>(
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, Value::from_oop(base));
 
-    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+    Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(child), child->get_initial_shape());
 
     EXPECT_EQ(Value::from_smi(7),
@@ -78,8 +78,8 @@ TEST(Attr, LoadAttrClassFallbackContinuesPastLatentDescriptor)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base =
-        context.thread()->make_refcounted_raw<ClassObject>(base_name, 2);
-    ClassObject *child = context.thread()->make_refcounted_raw<ClassObject>(
+        context.thread()->make_internal_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
         child_name, 2, Value::from_oop(base));
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
 
@@ -93,7 +93,7 @@ TEST(Attr, LoadAttrClassFallbackContinuesPastLatentDescriptor)
     child->write_storage_location(location, Value::from_smi(8));
     EXPECT_TRUE(child->delete_own_property(attr_name));
 
-    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+    Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(child), child->get_initial_shape());
 
     EXPECT_EQ(Value::from_smi(7),
@@ -111,8 +111,8 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
     TValue<String> dunder_class_name(
         context.vm().get_or_create_interned_string_value(L"__class__"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
-    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
+    Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), cls->get_initial_shape());
 
     EXPECT_EQ(Value::from_oop(cls),
@@ -148,8 +148,8 @@ TEST(Attr, StoreAttrWritesInstanceOwnProperty)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
-    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
+    Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), cls->get_initial_shape());
 
     EXPECT_TRUE(
@@ -168,7 +168,7 @@ TEST(Attr, StoreAttrWritesClassMember)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
 
     EXPECT_TRUE(
         store_attr(Value::from_oop(cls), attr_name, Value::from_smi(5)));
@@ -187,7 +187,7 @@ TEST(Attr, ClassMetadataAttributesAreReadonly)
     TValue<String> dunder_name_name(
         context.vm().get_or_create_interned_string_value(L"__name__"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
 
     EXPECT_EQ(cls_name.as_value(),
               load_attr(Value::from_oop(cls), dunder_name_name));
@@ -209,10 +209,10 @@ TEST(Attr, StoreAttrHandlesDunderClassAndUnsupportedInlineValues)
     TValue<String> dunder_class_name(
         context.vm().get_or_create_interned_string_value(L"__class__"));
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
     ClassObject *other_cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
-    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
+    Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), cls->get_initial_shape());
 
     EXPECT_TRUE(store_attr(Value::from_oop(instance), dunder_class_name,
@@ -247,14 +247,14 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
         method_code->module_scope.extract()->get_by_name(method_name);
 
     ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
     cls->set_own_property(method_name, method_value);
     TValue<BuiltinFunction> builtin =
-        context.thread()->make_refcounted_object_value<BuiltinFunction>(
-            builtin_identity, 1, 1);
+        context.thread()->make_object_value<BuiltinFunction>(builtin_identity,
+                                                             1, 1);
     cls->set_own_property(builtin_name, builtin);
 
-    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+    Instance *instance = context.thread()->make_internal_raw<Instance>(
         Value::from_oop(cls), cls->get_initial_shape());
     instance->set_own_property(own_name, builtin);
 

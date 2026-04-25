@@ -11,7 +11,7 @@ namespace
 {
     static Value make_string(test::VmTestContext &context, const wchar_t *text)
     {
-        return context.thread()->make_refcounted_value<String>(text);
+        return context.thread()->make_internal_value<String>(text);
     }
 }  // namespace
 
@@ -19,7 +19,7 @@ TEST(Dict, SetGetAndContainsWorkForStringKeys)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    Dict *dict = context.thread()->make_refcounted_object_raw<Dict>();
+    Dict *dict = context.thread()->make_object_raw<Dict>();
 
     Value alpha = make_string(context, L"alpha");
     Value beta = make_string(context, L"beta");
@@ -39,7 +39,7 @@ TEST(Dict, SetItemOverwritesExistingValue)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    Dict *dict = context.thread()->make_refcounted_object_raw<Dict>();
+    Dict *dict = context.thread()->make_object_raw<Dict>();
 
     Value key = make_string(context, L"shared");
 
@@ -54,7 +54,7 @@ TEST(Dict, DelItemRemovesKeyFromLookupAndLogicalSize)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    Dict *dict = context.thread()->make_refcounted_object_raw<Dict>();
+    Dict *dict = context.thread()->make_object_raw<Dict>();
 
     Value keep = make_string(context, L"keep");
     Value erase = make_string(context, L"erase");
@@ -74,7 +74,7 @@ TEST(Dict, CopyConstructorPreservesLiveEntriesOnly)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    Dict *dict = context.thread()->make_refcounted_object_raw<Dict>();
+    Dict *dict = context.thread()->make_object_raw<Dict>();
 
     Value first = make_string(context, L"first");
     Value second = make_string(context, L"second");
@@ -97,7 +97,7 @@ TEST(Dict, ClearRemovesAllEntriesAndAllowsReuse)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    Dict *dict = context.thread()->make_refcounted_object_raw<Dict>();
+    Dict *dict = context.thread()->make_object_raw<Dict>();
 
     Value alpha = make_string(context, L"alpha");
     Value beta = make_string(context, L"beta");

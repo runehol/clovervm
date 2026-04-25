@@ -96,7 +96,7 @@ namespace cl
                                        shape_flag(ShapeFlag::IsImmutableType);
         ClassObject *type = active_vm()->type_class();
         assert(type != nullptr);
-        ClassObject *cls = active_vm()->make_immortal_raw<ClassObject>(
+        ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
             type, name, factory_default_inline_slot_count, base,
             class_shape_flags);
 
@@ -121,7 +121,7 @@ namespace cl
             NativeLayoutId::ClassObject};
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
                                        shape_flag(ShapeFlag::IsImmutableType);
-        ClassObject *cls = active_vm()->make_immortal_raw<ClassObject>(
+        ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
             BootstrapObjectTag{},
             vm->get_or_create_interned_string_value(L"type"),
             ClassObject::kClassInlineSlotCount, Value::None(),
@@ -299,7 +299,7 @@ namespace cl
         }
 
         Instance::OverflowSlots *new_overflow_slots =
-            make_refcounted_raw<Instance::OverflowSlots>(
+            make_internal_raw<Instance::OverflowSlots>(
                 overflow_slots == nullptr ? 0 : overflow_slots->get_size(),
                 new_capacity);
         if(overflow_slots != nullptr)
@@ -319,8 +319,8 @@ namespace cl
     Value ClassObject::make_bases_list() const
     {
         List *bases = active_vm()->list_class() == nullptr
-                          ? make_refcounted_raw<List>(BootstrapObjectTag{})
-                          : make_refcounted_object_raw<List>();
+                          ? make_internal_raw<List>(BootstrapObjectTag{})
+                          : make_object_raw<List>();
         if(base != Value::None())
         {
             bases->append(base.as_value());
@@ -331,8 +331,8 @@ namespace cl
     Value ClassObject::make_mro_list() const
     {
         List *mro = active_vm()->list_class() == nullptr
-                        ? make_refcounted_raw<List>(BootstrapObjectTag{})
-                        : make_refcounted_object_raw<List>();
+                        ? make_internal_raw<List>(BootstrapObjectTag{})
+                        : make_object_raw<List>();
         mro->append(Value::from_oop(const_cast<ClassObject *>(this)));
         ClassObject *base_ptr = get_base();
         while(base_ptr != nullptr)

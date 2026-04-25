@@ -201,7 +201,7 @@ namespace cl
     static Value build_class_from_frame(Value *fp, CodeObject *body_code,
                                         TValue<String> class_name)
     {
-        TValue<ClassObject> cls = make_refcounted_value<ClassObject>(
+        TValue<ClassObject> cls = make_internal_value<ClassObject>(
             class_name, kDefaultFactoryInlineSlotCount);
         Scope *local_scope = body_code->get_local_scope_ptr();
         for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
@@ -851,7 +851,7 @@ namespace cl
         TValue<CodeObject> code_obj(
             code_object->constant_table[const_offset].as_value());
 
-        accumulator = make_refcounted_object_value<Function>(code_obj);
+        accumulator = make_object_value<Function>(code_obj);
 
         COMPLETE();
     }
@@ -862,7 +862,7 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue<List> list = make_refcounted_object_value<List>(n_items);
+        TValue<List> list = make_object_value<List>(n_items);
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             list.extract()->set_item_unchecked(idx, fp[reg - int8_t(idx)]);
@@ -878,7 +878,7 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue<Dict> dict = make_refcounted_object_value<Dict>();
+        TValue<Dict> dict = make_object_value<Dict>();
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             Value key = fp[reg - int8_t(idx * 2)];
@@ -987,7 +987,7 @@ namespace cl
             }
 
             ClassObject *cls = static_cast<ClassObject *>(fun_object);
-            accumulator = Value::from_oop(make_refcounted_raw<Instance>(
+            accumulator = Value::from_oop(make_internal_raw<Instance>(
                 Value::from_oop(cls), cls->get_initial_shape()));
 
             pc += 3;

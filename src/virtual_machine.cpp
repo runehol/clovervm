@@ -57,7 +57,7 @@ namespace cl
                     "TypeError: wrong number of arguments");
         }
 
-        return thread->make_refcounted_object_value<RangeIterator>(
+        return thread->make_object_value<RangeIterator>(
             TValue<CLInt>(start), TValue<CLInt>(stop), TValue<CLInt>(step));
     }
 
@@ -187,7 +187,7 @@ namespace cl
         initialize_builtin_types();
 
         builtin_scope = HeapPtr<Scope>(
-            refcounted_global_heap.make_global_raw<Scope>(nullptr));
+            refcounted_global_heap.make_global_internal_raw<Scope>(nullptr));
 
         for(ClassObject *cls: builtin_classes)
         {
@@ -202,7 +202,7 @@ namespace cl
         TValue<String> range_name =
             get_or_create_interned_string_value(L"range");
         range_builtin =
-            refcounted_global_heap.make_global_value<BuiltinFunction>(
+            refcounted_global_heap.make_global_internal_value<BuiltinFunction>(
                 builtin_function_class(), builtin_range, 1, 3);
         builtin_scope.extract()->set_by_name(range_name, range_builtin);
     }

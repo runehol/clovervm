@@ -91,7 +91,7 @@ namespace cl
         using RegisterIndex = int32_t;
 
         Codegen(const AstVector &_av)
-            : av(_av), module_scope(make_refcounted_raw<Scope>(
+            : av(_av), module_scope(make_internal_raw<Scope>(
                            active_vm()->get_builtin_scope().extract())),
               module_name(interned_string(L"<module>"))
 
@@ -125,18 +125,18 @@ namespace cl
                     break;
 
                 case Mode::Class:
-                    local_scope = make_refcounted_raw<Scope>(
+                    local_scope = make_internal_raw<Scope>(
                         code_obj->local_scope.extract());
                     name = code_obj->name.as_value();
                     break;
                 case Mode::Function:
-                    local_scope = make_refcounted_raw<Scope>(
+                    local_scope = make_internal_raw<Scope>(
                         code_obj->local_scope.extract());
                     break;
             }
 
-            return make_refcounted_object_raw<CodeObject>(
-                av.compilation_unit, module_scope, local_scope, name);
+            return make_object_raw<CodeObject>(av.compilation_unit,
+                                               module_scope, local_scope, name);
         }
 
         struct LoopTargetSet

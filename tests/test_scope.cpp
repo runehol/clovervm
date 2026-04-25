@@ -10,7 +10,7 @@ TEST(Scope, ReinsertByNameReusesSlotAndAppendsEntry)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    Scope *scope = context.thread()->make_refcounted_raw<Scope>(nullptr);
+    Scope *scope = context.thread()->make_internal_raw<Scope>(nullptr);
     TValue<String> name(
         context.vm().get_or_create_interned_string_value(L"answer"));
 
@@ -37,8 +37,8 @@ TEST(Scope, ReadTrackingSlotStartsWithoutEntryUntilBound)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    Scope *parent = context.thread()->make_refcounted_raw<Scope>(nullptr);
-    Scope *child = context.thread()->make_refcounted_raw<Scope>(parent);
+    Scope *parent = context.thread()->make_internal_raw<Scope>(nullptr);
+    Scope *child = context.thread()->make_internal_raw<Scope>(parent);
     TValue<String> name(
         context.vm().get_or_create_interned_string_value(L"tracked"));
 
@@ -61,8 +61,8 @@ TEST(Scope, DeletedChildSlotFallsBackToParentByCurrentEntryName)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    Scope *parent = context.thread()->make_refcounted_raw<Scope>(nullptr);
-    Scope *child = context.thread()->make_refcounted_raw<Scope>(parent);
+    Scope *parent = context.thread()->make_internal_raw<Scope>(nullptr);
+    Scope *child = context.thread()->make_internal_raw<Scope>(parent);
     TValue<String> name(
         context.vm().get_or_create_interned_string_value(L"shadowed"));
 
