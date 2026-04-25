@@ -245,6 +245,7 @@ namespace cl
         ClassObject *get_owner_class() const;
         Shape *get_previous_shape() const;
         int32_t get_next_slot_index() const { return next_slot_index; }
+        uint32_t get_inline_slot_count() const;
         uint32_t get_factory_default_inline_slot_count() const;
 
         uint32_t property_count() const { return property_count_; }

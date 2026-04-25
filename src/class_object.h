@@ -1,6 +1,7 @@
 #ifndef CL_CLASS_OBJECT_H
 #define CL_CLASS_OBJECT_H
 
+#include "instance.h"
 #include "klass.h"
 #include "object.h"
 #include "owned.h"
@@ -9,32 +10,15 @@
 #include "typed_value.h"
 #include "value.h"
 #include <cstdint>
-#include <vector>
 
 namespace cl
 {
     class ClassObject : public Object
     {
     public:
-        class MemberEntry
-        {
-        public:
-            MemberEntry(TValue<String> name, Value value)
-                : name(name), value(value)
-            {
-            }
-
-            TValue<String> get_name() const { return name; }
-            Value get_value() const { return value.as_value(); }
-            void set_value(Value new_value) { value = new_value; }
-
-        private:
-            OwnedTValue<String> name;
-            OwnedValue value;
-        };
-
         static constexpr Klass klass = Klass(L"Class", nullptr);
         static constexpr uint32_t kClassPredefinedSlotCount = 4;
+        static constexpr uint32_t kClassInlineSlotCount = 8;
 
         ClassObject(TValue<String> name,
                     uint32_t factory_default_inline_slot_count,
@@ -45,21 +29,18 @@ namespace cl
         {
             return factory_default_inline_slot_count;
         }
+        uint32_t get_class_inline_slot_count() const
+        {
+            return kClassInlineSlotCount;
+        }
         Shape *get_shape() const;
         void set_shape(Shape *new_shape);
         Shape *get_initial_shape() const;
         ClassObject *get_base() const;
-        uint64_t get_method_version() const { return method_version; }
 
-        uint32_t member_count() const { return members.size(); }
-        TValue<String> get_member_name(uint32_t member_idx) const
-        {
-            return members[member_idx].get_name();
-        }
-        Value get_member_value(uint32_t member_idx) const
-        {
-            return members[member_idx].get_value();
-        }
+        uint32_t member_count() const;
+        TValue<String> get_member_name(uint32_t member_idx) const;
+        Value get_member_value(uint32_t member_idx) const;
 
         Value get_member(TValue<String> name) const;
         void set_member(TValue<String> name, Value value);
@@ -81,10 +62,9 @@ namespace cl
             ClassSlotMro = 3,
         };
 
-        static bool is_method_value(Value value);
-        void maybe_bump_method_version_for_write(Value old_value,
-                                                 Value new_value);
-        int32_t lookup_member_index_local(TValue<String> name) const;
+        uint32_t member_descriptor_index(uint32_t member_idx) const;
+        Instance::OverflowSlots *get_overflow_slots() const;
+        Instance::OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
         Value make_bases_list() const;
         Value make_mro_list() const;
 
@@ -92,14 +72,13 @@ namespace cl
         MemberValue base;
         MemberValue initial_shape;
         MemberValue shape;
-        MemberValue class_slots[kClassPredefinedSlotCount];
+        MemberValue overflow;
+        MemberValue class_slots[kClassInlineSlotCount];
         uint32_t factory_default_inline_slot_count;
-        uint64_t method_version;
-        std::vector<MemberEntry> members;
 
     public:
         CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(ClassObject, name,
-                                             4 + kClassPredefinedSlotCount);
+                                             5 + kClassInlineSlotCount);
     };
 
 }  // namespace cl

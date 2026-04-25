@@ -29,11 +29,11 @@ Relevant code:
 - [src/instance.h](../src/instance.h)
 - [src/instance.cpp](../src/instance.cpp)
 
-### Classes are still separate
+### Classes still have compatibility lookup shims
 
-`ClassObject` does not use shape-backed property storage for class attributes.
-Instead it stores members in an ordered vector, does local lookup in that
-vector, and falls back recursively through `base`.
+`ClassObject` now uses shape-backed storage for class attributes, but the old
+member-facing API remains as a compatibility shim and class-chain lookup still
+falls back recursively through `base`.
 
 Relevant code:
 
@@ -85,10 +85,9 @@ Relevant code:
 
 ## Important Note About `method_version`
 
-`method_version` currently exists on `ClassObject`, but no runtime code appears
-to use it for lookup, caching, or invalidation. Because of that, it can be
-deleted directly once the class storage rewrite begins; it does not need a
-compatibility or migration phase.
+`method_version` previously existed on `ClassObject`, but no runtime code used
+it for lookup, caching, or invalidation. It was deleted as part of the class
+storage rewrite and does not need a compatibility or migration phase.
 
 Relevant code:
 
@@ -324,6 +323,11 @@ Primary files:
 - [src/shape.cpp](../src/shape.cpp)
 
 ### 6. Give `ClassObject` a real Shape and slot-backed property storage
+
+Status: done. `ClassObject` now stores ordinary class attributes through its
+class Shape and fixed/overflow slot storage, while the legacy member API remains
+as a compatibility view over present non-metadata descriptors. `method_version`
+and the separate member vector have been removed.
 
 After the class predefined-slot scheme exists, migrate class attributes off the
 `members` vector and onto the same kind of shape-driven property storage used by

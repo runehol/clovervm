@@ -1,7 +1,5 @@
 #include "attr.h"
-#include "builtin_function.h"
 #include "class_object.h"
-#include "function.h"
 #include "instance.h"
 #include "list.h"
 #include "shape.h"
@@ -523,6 +521,51 @@ TEST(ClassObject, MembersPreserveInsertionOrderAndCompactOnDelete)
     ASSERT_EQ(2u, cls->member_count());
     EXPECT_STREQ(L"b", cls->get_member_name(0).extract()->data);
     EXPECT_STREQ(L"a", cls->get_member_name(1).extract()->data);
+    EXPECT_EQ(Value::from_smi(2), cls->get_member_value(0));
+    EXPECT_EQ(Value::from_smi(3), cls->get_member_value(1));
+}
+
+TEST(ClassObject, MembersUseShapeBackedInlineAndOverflowStorage)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> names[] = {
+        TValue<String>(context.vm().get_or_create_interned_string_value(L"a")),
+        TValue<String>(context.vm().get_or_create_interned_string_value(L"b")),
+        TValue<String>(context.vm().get_or_create_interned_string_value(L"c")),
+        TValue<String>(context.vm().get_or_create_interned_string_value(L"d")),
+        TValue<String>(context.vm().get_or_create_interned_string_value(L"e")),
+    };
+    ClassObject *cls =
+        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+
+    for(uint32_t idx = 0; idx < 5; ++idx)
+    {
+        cls->set_member(names[idx], Value::from_smi(idx + 1));
+    }
+
+    Shape *shape = cls->get_shape();
+    ASSERT_EQ(9u, shape->property_count());
+    EXPECT_EQ(9u, shape->present_count());
+    EXPECT_EQ(9, shape->get_next_slot_index());
+    EXPECT_EQ(5u, cls->member_count());
+    EXPECT_EQ(Value::from_smi(1), cls->get_member_value(0));
+    EXPECT_EQ(Value::from_smi(5), cls->get_member_value(4));
+
+    StorageLocation first_location = shape->resolve_present_property(names[0]);
+    ASSERT_TRUE(first_location.is_found());
+    EXPECT_EQ(StorageKind::Inline, first_location.kind);
+    EXPECT_EQ(4, first_location.physical_idx);
+    EXPECT_EQ(Value::from_smi(1), cls->read_storage_location(first_location));
+
+    StorageLocation last_location = shape->resolve_present_property(names[4]);
+    ASSERT_TRUE(last_location.is_found());
+    EXPECT_EQ(StorageKind::Overflow, last_location.kind);
+    EXPECT_EQ(0, last_location.physical_idx);
+    EXPECT_EQ(Value::from_smi(5), cls->read_storage_location(last_location));
 }
 
 TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
@@ -553,6 +596,7 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     EXPECT_EQ(4u, shape->present_count());
     EXPECT_EQ(0u, shape->latent_count());
     EXPECT_EQ(4, shape->get_next_slot_index());
+    EXPECT_EQ(8u, shape->get_inline_slot_count());
 
     const cl_wchar *expected_names[] = {L"__class__", L"__name__", L"__bases__",
                                         L"__mro__"};
@@ -676,53 +720,4 @@ TEST(ClassObject, MemberLookupFallsBackToBaseChain)
     base->set_member(method_name, Value::from_smi(7));
 
     EXPECT_EQ(Value::from_smi(7), child->get_member(method_name));
-}
-
-TEST(ClassObject, MethodVersionTracksOnlyMethodShapeChanges)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-
-    TValue<String> cls_name(
-        context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> data_name(
-        context.vm().get_or_create_interned_string_value(L"data"));
-    TValue<String> method_name(
-        context.vm().get_or_create_interned_string_value(L"method"));
-    ClassObject *cls =
-        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
-    CodeObject *code_obj = context.compile_file(L"def f():\n    return 1\n");
-    Function *fun1 = context.thread()->make_refcounted_raw<Function>(
-        TValue<CodeObject>::from_oop(code_obj));
-    Function *fun2 = context.thread()->make_refcounted_raw<Function>(
-        TValue<CodeObject>::from_oop(code_obj));
-
-    EXPECT_EQ(0u, cls->get_method_version());
-
-    cls->set_member(data_name, Value::from_smi(1));
-    EXPECT_EQ(0u, cls->get_method_version());
-
-    cls->set_member(data_name, Value::from_smi(2));
-    EXPECT_EQ(0u, cls->get_method_version());
-
-    cls->set_member(method_name, Value::from_oop(fun1));
-    EXPECT_EQ(1u, cls->get_method_version());
-
-    cls->set_member(method_name, Value::from_oop(fun2));
-    EXPECT_EQ(2u, cls->get_method_version());
-
-    cls->set_member(method_name, Value::from_oop(fun2));
-    EXPECT_EQ(2u, cls->get_method_version());
-
-    cls->set_member(method_name, Value::from_smi(3));
-    EXPECT_EQ(3u, cls->get_method_version());
-
-    cls->delete_member(data_name);
-    EXPECT_EQ(3u, cls->get_method_version());
-
-    cls->set_member(method_name, Value::from_oop(fun1));
-    EXPECT_EQ(4u, cls->get_method_version());
-
-    cls->delete_member(method_name);
-    EXPECT_EQ(5u, cls->get_method_version());
 }
