@@ -191,6 +191,12 @@ Primary files:
 
 ### 3. Change instance transitions to use present/latent semantics
 
+Status: done. Instance add/delete now uses Shape descriptor presence rather than
+flat property membership: ordinary descriptors may be dropped on delete, stable
+slot descriptors move to the latent region and reuse their slot on re-add, and
+slot payloads are cleared to `Value::not_present()` when deletion succeeds.
+`READ_ONLY` descriptors reject ordinary store/delete before slot mutation.
+
 Rework instance add/delete transitions so that:
 
 - deleting a predefined fixed-slot descriptor moves it from present to latent

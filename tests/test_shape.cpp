@@ -224,6 +224,10 @@ TEST(Shape, InstanceRejectsStoreToReadOnlyDescriptor)
     EXPECT_FALSE(
         store_attr(Value::from_oop(instance), a_name, Value::from_smi(9)));
     EXPECT_EQ(Value::from_smi(7), instance->get_own_property(a_name));
+
+    EXPECT_FALSE(instance->delete_own_property(a_name));
+    EXPECT_EQ(Value::from_smi(7), instance->get_own_property(a_name));
+    EXPECT_EQ(shape_with_readonly, instance->get_shape());
 }
 
 TEST(Shape, StableSlotDeleteMovesDescriptorToLatentAndReAddReusesSlot)
