@@ -600,13 +600,16 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
 
     const cl_wchar *expected_names[] = {L"__class__", L"__name__", L"__bases__",
                                         L"__mro__"};
+    const uint32_t expected_slots[] = {
+        ClassObject::kClassSlotClass, ClassObject::kClassSlotName,
+        ClassObject::kClassSlotBases, ClassObject::kClassSlotMro};
     for(uint32_t idx = 0; idx < shape->property_count(); ++idx)
     {
         EXPECT_STREQ(expected_names[idx],
                      shape->get_property_name(idx).extract()->data);
         EXPECT_EQ(StorageKind::Inline,
                   shape->get_property_storage_location(idx).kind);
-        EXPECT_EQ(int32_t(idx),
+        EXPECT_EQ(int32_t(expected_slots[idx]),
                   shape->get_property_storage_location(idx).physical_idx);
         EXPECT_TRUE(
             shape->get_descriptor_info(idx).has_flag(DescriptorFlag::ReadOnly));
@@ -701,7 +704,7 @@ TEST(ClassObject, OwnPropertyApiDoesNotFallBackToBaseChain)
     EXPECT_EQ(Value::from_smi(7), child->get_member(attr_name));
 }
 
-TEST(ClassObject, MemberLookupFallsBackToBaseChain)
+TEST(ClassObject, MemberLookupWalksMaterializedMro)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -720,4 +723,39 @@ TEST(ClassObject, MemberLookupFallsBackToBaseChain)
     base->set_member(method_name, Value::from_smi(7));
 
     EXPECT_EQ(Value::from_smi(7), child->get_member(method_name));
+    EXPECT_EQ(Value::from_smi(7), child->lookup_class_chain(method_name));
+}
+
+TEST(ClassObject, MemberLookupContinuesPastLatentDescriptor)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"attr"));
+    ClassObject *base =
+        context.thread()->make_refcounted_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_refcounted_raw<ClassObject>(
+        child_name, 2, Value::from_oop(base));
+    DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
+
+    base->set_member(attr_name, Value::from_smi(7));
+    Shape *shape_with_attr = child->get_shape()->derive_transition(
+        attr_name, ShapeTransitionVerb::Add, flags);
+    child->set_shape(shape_with_attr);
+    StorageLocation location =
+        shape_with_attr->resolve_present_property(attr_name);
+    ASSERT_TRUE(location.is_found());
+    child->write_storage_location(location, Value::from_smi(8));
+    EXPECT_TRUE(child->delete_member(attr_name));
+
+    DescriptorLookup lookup =
+        child->get_shape()->lookup_descriptor_including_latent(attr_name);
+    ASSERT_TRUE(lookup.is_latent());
+    EXPECT_EQ(Value::not_present(), child->get_own_property(attr_name));
+    EXPECT_EQ(Value::from_smi(7), child->get_member(attr_name));
 }

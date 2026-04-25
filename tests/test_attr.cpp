@@ -4,6 +4,7 @@
 #include "function.h"
 #include "instance.h"
 #include "klass.h"
+#include "shape.h"
 #include "test_helpers.h"
 #include "thread_state.h"
 #include <gtest/gtest.h>
@@ -64,6 +65,41 @@ TEST(Attr, LoadAttrFallsBackToClassAndBaseMembers)
               load_attr(Value::from_oop(instance), inherited_name));
     EXPECT_EQ(Value::from_smi(7),
               load_attr(Value::from_oop(child), inherited_name));
+}
+
+TEST(Attr, LoadAttrClassFallbackContinuesPastLatentDescriptor)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"attr"));
+    ClassObject *base =
+        context.thread()->make_refcounted_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_refcounted_raw<ClassObject>(
+        child_name, 2, Value::from_oop(base));
+    DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
+
+    base->set_member(attr_name, Value::from_smi(7));
+    Shape *shape_with_attr = child->get_shape()->derive_transition(
+        attr_name, ShapeTransitionVerb::Add, flags);
+    child->set_shape(shape_with_attr);
+    StorageLocation location =
+        shape_with_attr->resolve_present_property(attr_name);
+    ASSERT_TRUE(location.is_found());
+    child->write_storage_location(location, Value::from_smi(8));
+    EXPECT_TRUE(child->delete_member(attr_name));
+
+    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+        Value::from_oop(child), Value::from_oop(child->get_initial_shape()));
+
+    EXPECT_EQ(Value::from_smi(7),
+              load_attr(Value::from_oop(instance), attr_name));
+    EXPECT_EQ(Value::from_smi(7), load_attr(Value::from_oop(child), attr_name));
 }
 
 TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)

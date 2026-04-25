@@ -17,6 +17,10 @@ namespace cl
     {
     public:
         static constexpr Klass klass = Klass(L"Class", nullptr);
+        static constexpr uint32_t kClassSlotClass = 0;
+        static constexpr uint32_t kClassSlotName = 1;
+        static constexpr uint32_t kClassSlotBases = 2;
+        static constexpr uint32_t kClassSlotMro = 3;
         static constexpr uint32_t kClassPredefinedSlotCount = 4;
         static constexpr uint32_t kClassInlineSlotCount = 8;
 
@@ -43,6 +47,7 @@ namespace cl
         Value get_member_value(uint32_t member_idx) const;
 
         Value get_member(TValue<String> name) const;
+        Value lookup_class_chain(TValue<String> name) const;
         void set_member(TValue<String> name, Value value);
         bool delete_member(TValue<String> name);
 
@@ -54,14 +59,7 @@ namespace cl
         void write_storage_location(StorageLocation location, Value value);
 
     private:
-        enum ClassPredefinedSlot : uint32_t
-        {
-            ClassSlotClass = 0,
-            ClassSlotName = 1,
-            ClassSlotBases = 2,
-            ClassSlotMro = 3,
-        };
-
+        Value read_inline_slot(uint32_t slot_idx) const;
         uint32_t member_descriptor_index(uint32_t member_idx) const;
         Instance::OverflowSlots *get_overflow_slots() const;
         Instance::OverflowSlots *ensure_overflow_slot(int32_t physical_idx);

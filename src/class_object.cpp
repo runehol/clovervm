@@ -42,22 +42,22 @@ namespace cl
             ShapeRootDescriptor{
                 dunder_class_name,
                 DescriptorInfo::make(
-                    StorageLocation{ClassSlotClass, StorageKind::Inline},
+                    StorageLocation{kClassSlotClass, StorageKind::Inline},
                     class_metadata_flags)},
             ShapeRootDescriptor{
                 dunder_name_name,
                 DescriptorInfo::make(
-                    StorageLocation{ClassSlotName, StorageKind::Inline},
+                    StorageLocation{kClassSlotName, StorageKind::Inline},
                     class_metadata_flags)},
             ShapeRootDescriptor{
                 dunder_bases_name,
                 DescriptorInfo::make(
-                    StorageLocation{ClassSlotBases, StorageKind::Inline},
+                    StorageLocation{kClassSlotBases, StorageKind::Inline},
                     class_metadata_flags)},
             ShapeRootDescriptor{
                 dunder_mro_name,
                 DescriptorInfo::make(
-                    StorageLocation{ClassSlotMro, StorageKind::Inline},
+                    StorageLocation{kClassSlotMro, StorageKind::Inline},
                     class_metadata_flags)},
         };
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject);
@@ -69,10 +69,10 @@ namespace cl
         {
             class_slots[slot_idx] = Value::not_present();
         }
-        class_slots[ClassSlotClass] = Value::None();
-        class_slots[ClassSlotName] = _name.as_value();
-        class_slots[ClassSlotBases] = make_bases_list();
-        class_slots[ClassSlotMro] = make_mro_list();
+        class_slots[kClassSlotClass] = Value::None();
+        class_slots[kClassSlotName] = _name.as_value();
+        class_slots[kClassSlotBases] = make_bases_list();
+        class_slots[kClassSlotMro] = make_mro_list();
     }
 
     Shape *ClassObject::get_shape() const
@@ -121,15 +121,38 @@ namespace cl
 
     Value ClassObject::get_member(TValue<String> name) const
     {
+        return lookup_class_chain(name);
+    }
+
+    Value ClassObject::lookup_class_chain(TValue<String> name) const
+    {
         Value own_property = get_own_property(name);
-        if(!own_property.is_not_present())
+        Value mro_value = read_inline_slot(kClassSlotMro);
+        if(!mro_value.is_ptr() ||
+           mro_value.get_ptr<Object>()->klass != &List::klass)
         {
             return own_property;
         }
 
-        if(ClassObject *base_ptr = get_base())
+        List *mro = mro_value.get_ptr<List>();
+        for(uint32_t mro_idx = 0; mro_idx < mro->size(); ++mro_idx)
         {
-            return base_ptr->get_member(name);
+            Value class_value = mro->item_unchecked(mro_idx);
+            if(!class_value.is_ptr() ||
+               class_value.get_ptr<Object>()->klass != &ClassObject::klass)
+            {
+                continue;
+            }
+
+            ClassObject *cls = class_value.get_ptr<ClassObject>();
+            DescriptorLookup lookup =
+                cls->get_shape()->lookup_descriptor_including_latent(name);
+            if(!lookup.is_present())
+            {
+                continue;
+            }
+
+            return cls->read_storage_location(lookup.storage_location());
         }
 
         return Value::not_present();
@@ -211,6 +234,12 @@ namespace cl
                 }
         }
         __builtin_unreachable();
+    }
+
+    Value ClassObject::read_inline_slot(uint32_t slot_idx) const
+    {
+        assert(slot_idx < kClassInlineSlotCount);
+        return class_slots[slot_idx].as_value();
     }
 
     uint32_t ClassObject::member_descriptor_index(uint32_t member_idx) const

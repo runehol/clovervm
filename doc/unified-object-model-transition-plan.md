@@ -362,6 +362,12 @@ Primary files:
 
 ### 7. Rework attribute lookup to use Shape presence
 
+Status: done for the current non-descriptor lookup model. Class-chain lookup
+now walks the materialized `__mro__` list and uses Shape descriptor presence:
+present descriptors read the class slot, while latent and absent descriptors
+continue through the MRO. Instance and class-object attribute lookup keep the
+existing binding behavior but now share that class-chain search primitive.
+
 Replace vector lookup plus `base` recursion with a resolver that understands:
 
 - present descriptor: found here
