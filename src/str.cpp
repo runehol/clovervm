@@ -54,11 +54,11 @@ namespace cl
         BuiltinClassMethod methods[] = {
             BuiltinClassMethod{
                 vm->get_or_create_interned_string_value(L"__str__"),
-                Value::from_oop(vm->make_immortal_raw<BuiltinFunction>(
+                Value::from_oop(vm->make_immortal_object_raw<BuiltinFunction>(
                     builtin_str_str, 1, 1))},
             BuiltinClassMethod{
                 vm->get_or_create_interned_string_value(L"__add__"),
-                Value::from_oop(vm->make_immortal_raw<BuiltinFunction>(
+                Value::from_oop(vm->make_immortal_object_raw<BuiltinFunction>(
                     builtin_str_add, 2, 2))},
         };
 

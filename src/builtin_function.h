@@ -8,6 +8,7 @@
 
 namespace cl
 {
+    class ClassObject;
     class ThreadState;
     class VirtualMachine;
 
@@ -37,10 +38,10 @@ namespace cl
             NativeLayoutId::BuiltinFunction;
         static constexpr uint32_t VarArgs = UINT32_MAX;
 
-        BuiltinFunction(BuiltinCallback _callback, uint32_t _min_arity,
-                        uint32_t _max_arity)
-            : Object(native_layout_id, compact_layout()), callback(_callback),
-              min_arity(_min_arity), max_arity(_max_arity)
+        BuiltinFunction(ClassObject *cls, BuiltinCallback _callback,
+                        uint32_t _min_arity, uint32_t _max_arity)
+            : Object(cls, native_layout_id, compact_layout()),
+              callback(_callback), min_arity(_min_arity), max_arity(_max_arity)
         {
         }
 

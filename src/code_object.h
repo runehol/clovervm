@@ -61,14 +61,6 @@ namespace cl
         {
         }
 
-        CodeObject(const CompilationUnit *_compilation_unit,
-                   Scope *_module_scope, Scope *_local_scope, Value _name)
-            : Object(native_layout_id, compact_layout()),
-              module_scope(_module_scope), local_scope(_local_scope),
-              name(_name), compilation_unit(_compilation_unit)
-        {
-        }
-
         MemberHeapPtr<Scope> module_scope;
         MemberHeapPtr<Scope> local_scope;
         MemberValue name;

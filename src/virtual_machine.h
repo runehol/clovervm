@@ -117,6 +117,19 @@ namespace cl
             return object;
         }
 
+        template <typename T, typename... Args>
+        T *make_immortal_object_raw(Args &&...args)
+        {
+            static_assert(std::is_base_of_v<Object, T>);
+            static_assert(HasNativeLayoutId<T>::value);
+            ClassObject *cls = class_for_native_layout(T::native_layout_id);
+            assert(cls != nullptr);
+            T *object = interned_global_heap.make_global_raw<T>(
+                cls, std::forward<Args>(args)...);
+            object->refcount = -1;
+            return object;
+        }
+
     private:
         static constexpr size_t NativeLayoutCount =
             static_cast<size_t>(NativeLayoutId::Count);

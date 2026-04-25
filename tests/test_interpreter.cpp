@@ -484,7 +484,7 @@ TEST(Interpreter, list_literal_evaluates_elements_left_to_right)
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value builtin =
-        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+        test_context.thread()->make_refcounted_object_value<BuiltinFunction>(
             builtin_next_counter, 0, 0);
     code_obj->module_scope.extract()->set_by_name(name, builtin);
 
@@ -579,7 +579,7 @@ TEST(Interpreter,
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value builtin =
-        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+        test_context.thread()->make_refcounted_object_value<BuiltinFunction>(
             builtin_next_counter, 0, 0);
     code_obj->module_scope.extract()->set_by_name(name, builtin);
 
@@ -625,7 +625,7 @@ TEST(Interpreter,
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value builtin =
-        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+        test_context.thread()->make_refcounted_object_value<BuiltinFunction>(
             builtin_next_counter, 0, 0);
     code_obj->module_scope.extract()->set_by_name(name, builtin);
 
@@ -814,7 +814,7 @@ TEST(Interpreter,
         test_context.vm().get_or_create_interned_string_value(L"method"));
 
     TValue<BuiltinFunction> identity =
-        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+        test_context.thread()->make_refcounted_object_value<BuiltinFunction>(
             builtin_identity, 1, 1);
 
     CodeObject *setup_code = test_context.compile_file(L"class Cls:\n"
@@ -909,7 +909,7 @@ TEST(Interpreter, call_builtin_function)
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"native_add");
     Value builtin =
-        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+        test_context.thread()->make_refcounted_object_value<BuiltinFunction>(
             builtin_add, 2, 2);
     module_scope->set_by_name(name, builtin);
 
@@ -1221,7 +1221,7 @@ TEST(Interpreter, builtin_wrong_arity)
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"native_add");
     Value builtin =
-        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+        test_context.thread()->make_refcounted_object_value<BuiltinFunction>(
             builtin_add, 2, 2);
     module_scope->set_by_name(name, builtin);
 
@@ -1268,7 +1268,7 @@ TEST(Interpreter, builtin_multiple_arities)
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"native_sum");
     Value builtin =
-        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+        test_context.thread()->make_refcounted_object_value<BuiltinFunction>(
             builtin_sum, 1, 3);
 
     CodeObject *one_arg = test_context.compile_file(L"native_sum(4)\n");
@@ -1290,7 +1290,7 @@ TEST(Interpreter, builtin_varargs)
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"native_sum");
     Value builtin =
-        test_context.thread()->make_refcounted_value<BuiltinFunction>(
+        test_context.thread()->make_refcounted_object_value<BuiltinFunction>(
             builtin_sum, 0, BuiltinFunction::VarArgs);
 
     CodeObject *zero_args = test_context.compile_file(L"native_sum()\n");

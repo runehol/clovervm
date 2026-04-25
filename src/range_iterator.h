@@ -24,13 +24,6 @@ namespace cl
         {
         }
 
-        RangeIterator(TValue<CLInt> _current, TValue<CLInt> _stop,
-                      TValue<CLInt> _step)
-            : Object(native_layout_id, compact_layout()), current(_current),
-              stop(_stop), step(_step)
-        {
-        }
-
         MemberTValue<CLInt> current;
         MemberTValue<CLInt> stop;
         MemberTValue<CLInt> step;

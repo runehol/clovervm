@@ -26,12 +26,6 @@ namespace cl
         {
         }
 
-        Function(TValue<CodeObject> _code_object)
-            : Object(native_layout_id, compact_layout()),
-              code_object(_code_object)
-        {
-        }
-
         MemberTValue<CodeObject> code_object;
 
         CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Function, code_object, 1);

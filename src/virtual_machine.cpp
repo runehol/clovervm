@@ -159,13 +159,13 @@ namespace cl
         BuiltinClassDefinition type_definition = make_type_class(this);
         type_class_ = type_definition.cls;
         register_builtin_class(type_definition);
+        register_builtin_class(make_builtin_function_class(this));
         register_builtin_class(make_str_class(this));
         install_bootstrap_string_class();
         register_builtin_class(make_list_class(this));
         install_bootstrap_list_class();
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_function_class(this));
-        register_builtin_class(make_builtin_function_class(this));
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));
         register_builtin_class(make_instance_class(this));
@@ -203,7 +203,7 @@ namespace cl
             get_or_create_interned_string_value(L"range");
         range_builtin =
             refcounted_global_heap.make_global_value<BuiltinFunction>(
-                builtin_range, 1, 3);
+                builtin_function_class(), builtin_range, 1, 3);
         builtin_scope.extract()->set_by_name(range_name, range_builtin);
     }
 

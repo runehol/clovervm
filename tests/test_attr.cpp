@@ -250,7 +250,7 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
     cls->set_own_property(method_name, method_value);
     TValue<BuiltinFunction> builtin =
-        context.thread()->make_refcounted_value<BuiltinFunction>(
+        context.thread()->make_refcounted_object_value<BuiltinFunction>(
             builtin_identity, 1, 1);
     cls->set_own_property(builtin_name, builtin);
 
