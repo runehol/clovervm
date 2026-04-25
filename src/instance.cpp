@@ -52,9 +52,10 @@ namespace cl
         return shape_backed_object::get_own_property(this, name);
     }
 
-    void Instance::set_own_property(TValue<String> name, Value value)
+    bool Instance::set_own_property(TValue<String> name, Value value)
     {
-        shape_backed_object::set_own_property(this, name, value);
+        return shape_backed_object::set_own_property(this, name, value) ==
+               shape_backed_object::StoreOwnPropertyResult::Stored;
     }
 
     bool Instance::delete_own_property(TValue<String> name)

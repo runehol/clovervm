@@ -9,6 +9,12 @@
 
 namespace cl::shape_backed_object
 {
+    enum class StoreOwnPropertyResult : uint8_t
+    {
+        Stored,
+        ReadOnly,
+    };
+
     template <typename ObjectT>
     Value get_own_property(const ObjectT *object, TValue<String> name)
     {
@@ -23,15 +29,23 @@ namespace cl::shape_backed_object
     }
 
     template <typename ObjectT>
-    void set_own_property(ObjectT *object, TValue<String> name, Value value)
+    StoreOwnPropertyResult set_own_property(ObjectT *object,
+                                            TValue<String> name, Value value)
     {
         Shape *current_shape = object->get_shape();
-        StorageLocation location =
-            current_shape->resolve_present_property(name);
-        if(location.is_found())
+        int32_t descriptor_idx = current_shape->lookup_descriptor_index(name);
+        if(descriptor_idx >= 0)
         {
+            DescriptorInfo info =
+                current_shape->get_descriptor_info(descriptor_idx);
+            if(info.has_flag(DescriptorFlag::ReadOnly))
+            {
+                return StoreOwnPropertyResult::ReadOnly;
+            }
+
+            StorageLocation location = info.storage_location();
             object->write_storage_location(location, value);
-            return;
+            return StoreOwnPropertyResult::Stored;
         }
 
         Shape *next_shape =
@@ -42,6 +56,7 @@ namespace cl::shape_backed_object
             next_shape->resolve_present_property(name);
         assert(new_location.is_found());
         object->write_storage_location(new_location, value);
+        return StoreOwnPropertyResult::Stored;
     }
 
     template <typename ObjectT>

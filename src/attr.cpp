@@ -149,8 +149,8 @@ namespace cl
         Object *object = obj.get_ptr<Object>();
         if(object->klass == &Instance::klass)
         {
-            static_cast<Instance *>(object)->set_own_property(name, value);
-            return true;
+            return static_cast<Instance *>(object)->set_own_property(name,
+                                                                     value);
         }
 
         if(object->klass == &ClassObject::klass)

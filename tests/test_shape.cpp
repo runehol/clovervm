@@ -1,3 +1,4 @@
+#include "attr.h"
 #include "builtin_function.h"
 #include "class_object.h"
 #include "function.h"
@@ -24,8 +25,32 @@ TEST(Shape, ClassOwnsRootShape)
     EXPECT_EQ(cls, root_shape->get_owner_class());
     EXPECT_EQ(nullptr, root_shape->get_previous_shape());
     EXPECT_EQ(0u, root_shape->property_count());
+    EXPECT_EQ(0u, root_shape->present_count());
+    EXPECT_EQ(0u, root_shape->latent_count());
+    EXPECT_FALSE(root_shape->has_flag(ShapeFlag::IsClassObject));
     EXPECT_EQ(0, root_shape->get_next_slot_index());
     EXPECT_EQ(2u, root_shape->get_instance_inline_slot_count());
+}
+
+TEST(Shape, ShapeFlagsAreStoredOnShape)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    ClassObject *cls =
+        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+    ShapeFlags flags = shape_flag(ShapeFlag::IsClassObject);
+    flags |= shape_flag(ShapeFlag::IsImmutableType);
+
+    Shape *shape = context.thread()->make_refcounted_raw<Shape>(
+        Value::from_oop(cls), Value::None(), 0, 0, flags, 0);
+
+    EXPECT_EQ(flags, shape->flags());
+    EXPECT_TRUE(shape->has_flag(ShapeFlag::IsClassObject));
+    EXPECT_TRUE(shape->has_flag(ShapeFlag::IsImmutableType));
+    EXPECT_FALSE(shape->has_flag(ShapeFlag::HasCustomGetAttribute));
 }
 
 TEST(Shape, AddAndDeleteTransitionsAreCached)
@@ -58,13 +83,19 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
     EXPECT_EQ(shape_with_b, shape_with_b_again);
 
     ASSERT_EQ(1u, shape_with_a->property_count());
+    EXPECT_EQ(1u, shape_with_a->present_count());
+    EXPECT_EQ(0u, shape_with_a->latent_count());
     EXPECT_STREQ(L"a", shape_with_a->get_property_name(0).extract()->data);
     EXPECT_EQ(StorageKind::Inline,
               shape_with_a->get_property_storage_location(0).kind);
     EXPECT_EQ(0, shape_with_a->get_property_storage_location(0).physical_idx);
+    EXPECT_FALSE(shape_with_a->get_descriptor_info(0).has_flag(
+        DescriptorFlag::ReadOnly));
     EXPECT_EQ(1, shape_with_a->get_next_slot_index());
 
     ASSERT_EQ(2u, shape_with_ab->property_count());
+    EXPECT_EQ(2u, shape_with_ab->present_count());
+    EXPECT_EQ(0u, shape_with_ab->latent_count());
     EXPECT_STREQ(L"a", shape_with_ab->get_property_name(0).extract()->data);
     EXPECT_STREQ(L"b", shape_with_ab->get_property_name(1).extract()->data);
     EXPECT_EQ(StorageKind::Inline,
@@ -74,6 +105,8 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
     EXPECT_EQ(2, shape_with_ab->get_next_slot_index());
 
     ASSERT_EQ(1u, shape_with_b->property_count());
+    EXPECT_EQ(1u, shape_with_b->present_count());
+    EXPECT_EQ(0u, shape_with_b->latent_count());
     EXPECT_STREQ(L"b", shape_with_b->get_property_name(0).extract()->data);
     EXPECT_EQ(shape_with_ab, shape_with_b->get_previous_shape());
     EXPECT_EQ(2, shape_with_b->get_next_slot_index());
@@ -97,22 +130,141 @@ TEST(Shape, DescriptorLookupReportsPresentAndAbsentProperties)
     Shape *shape_with_a =
         root_shape->derive_transition(a_name, ShapeTransitionVerb::Add);
 
-    DescriptorLookup a_lookup = shape_with_a->lookup_descriptor(a_name);
+    DescriptorLookup a_lookup =
+        shape_with_a->lookup_descriptor_including_latent(a_name);
     EXPECT_EQ(DescriptorPresence::Present, a_lookup.presence);
     EXPECT_TRUE(a_lookup.is_present());
     EXPECT_FALSE(a_lookup.is_latent());
     EXPECT_EQ(0, a_lookup.descriptor_idx);
-    EXPECT_TRUE(a_lookup.storage_location.is_found());
+    EXPECT_TRUE(a_lookup.storage_location().is_found());
 
-    DescriptorLookup b_lookup = shape_with_a->lookup_descriptor(b_name);
+    DescriptorLookup b_lookup =
+        shape_with_a->lookup_descriptor_including_latent(b_name);
     EXPECT_EQ(DescriptorPresence::Absent, b_lookup.presence);
     EXPECT_FALSE(b_lookup.is_present());
     EXPECT_FALSE(b_lookup.is_latent());
     EXPECT_EQ(-1, b_lookup.descriptor_idx);
-    EXPECT_FALSE(b_lookup.storage_location.is_found());
+    EXPECT_FALSE(b_lookup.storage_location().is_found());
 
     EXPECT_TRUE(shape_with_a->resolve_present_property(a_name).is_found());
     EXPECT_FALSE(shape_with_a->resolve_present_property(b_name).is_found());
+}
+
+TEST(Shape, DescriptorInfoPacksStorageAndFlags)
+{
+    StorageLocation location{17, StorageKind::Overflow};
+    DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly);
+    flags |= descriptor_flag(DescriptorFlag::StableSlot);
+    DescriptorInfo info = DescriptorInfo::make(location, flags);
+
+    EXPECT_EQ(8u, sizeof(DescriptorInfo));
+    EXPECT_EQ(17, info.physical_idx);
+    EXPECT_EQ(StorageKind::Overflow, info.kind);
+    EXPECT_EQ(0, info.reserved);
+    EXPECT_TRUE(info.has_flag(DescriptorFlag::ReadOnly));
+    EXPECT_TRUE(info.has_flag(DescriptorFlag::StableSlot));
+    EXPECT_FALSE(info.has_flag(DescriptorFlag::None));
+    EXPECT_EQ(17, info.storage_location().physical_idx);
+    EXPECT_EQ(StorageKind::Overflow, info.storage_location().kind);
+}
+
+TEST(Shape, AddTransitionCanCarryDescriptorFlags)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> a_name(
+        context.vm().get_or_create_interned_string_value(L"a"));
+    ClassObject *cls =
+        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+    DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly);
+    flags |= descriptor_flag(DescriptorFlag::StableSlot);
+
+    Shape *root_shape = cls->get_initial_shape();
+    Shape *shape_with_a =
+        root_shape->derive_transition(a_name, ShapeTransitionVerb::Add, flags);
+
+    DescriptorLookup lookup =
+        shape_with_a->lookup_descriptor_including_latent(a_name);
+    ASSERT_TRUE(lookup.is_present());
+    EXPECT_TRUE(lookup.info.has_flag(DescriptorFlag::ReadOnly));
+    EXPECT_TRUE(lookup.info.has_flag(DescriptorFlag::StableSlot));
+    EXPECT_EQ(shape_with_a, root_shape->lookup_transition(
+                                a_name, ShapeTransitionVerb::Add, flags));
+    EXPECT_EQ(nullptr,
+              root_shape->lookup_transition(a_name, ShapeTransitionVerb::Add));
+}
+
+TEST(Shape, InstanceRejectsStoreToReadOnlyDescriptor)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> a_name(
+        context.vm().get_or_create_interned_string_value(L"a"));
+    ClassObject *cls =
+        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+    DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly);
+
+    Shape *shape_with_readonly = cls->get_initial_shape()->derive_transition(
+        a_name, ShapeTransitionVerb::Add, flags);
+    Instance *instance = context.thread()->make_refcounted_raw<Instance>(
+        Value::from_oop(cls), Value::from_oop(shape_with_readonly));
+    StorageLocation location =
+        shape_with_readonly->resolve_present_property(a_name);
+    ASSERT_TRUE(location.is_found());
+    instance->write_storage_location(location, Value::from_smi(7));
+
+    EXPECT_FALSE(instance->set_own_property(a_name, Value::from_smi(9)));
+    EXPECT_EQ(Value::from_smi(7), instance->get_own_property(a_name));
+    EXPECT_FALSE(
+        store_attr(Value::from_oop(instance), a_name, Value::from_smi(9)));
+    EXPECT_EQ(Value::from_smi(7), instance->get_own_property(a_name));
+}
+
+TEST(Shape, StableSlotDeleteMovesDescriptorToLatentAndReAddReusesSlot)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> a_name(
+        context.vm().get_or_create_interned_string_value(L"a"));
+    ClassObject *cls =
+        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+    DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
+
+    Shape *root_shape = cls->get_initial_shape();
+    Shape *shape_with_a =
+        root_shape->derive_transition(a_name, ShapeTransitionVerb::Add, flags);
+    Shape *shape_without_a =
+        shape_with_a->derive_transition(a_name, ShapeTransitionVerb::Delete);
+
+    EXPECT_EQ(1u, shape_without_a->property_count());
+    EXPECT_EQ(0u, shape_without_a->present_count());
+    EXPECT_EQ(1u, shape_without_a->latent_count());
+    DescriptorLookup latent_lookup =
+        shape_without_a->lookup_descriptor_including_latent(a_name);
+    EXPECT_TRUE(latent_lookup.is_latent());
+    EXPECT_EQ(0, latent_lookup.info.physical_idx);
+    EXPECT_EQ(1, shape_without_a->get_next_slot_index());
+    EXPECT_FALSE(shape_without_a->resolve_present_property(a_name).is_found());
+
+    Shape *shape_with_a_again =
+        shape_without_a->derive_transition(a_name, ShapeTransitionVerb::Add);
+    DescriptorLookup present_lookup =
+        shape_with_a_again->lookup_descriptor_including_latent(a_name);
+    EXPECT_TRUE(present_lookup.is_present());
+    EXPECT_EQ(0, present_lookup.info.physical_idx);
+    EXPECT_EQ(1u, shape_with_a_again->property_count());
+    EXPECT_EQ(1u, shape_with_a_again->present_count());
+    EXPECT_EQ(0u, shape_with_a_again->latent_count());
+    EXPECT_EQ(1, shape_with_a_again->get_next_slot_index());
 }
 
 TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)

@@ -144,6 +144,11 @@ here would make the class storage migration harder to review.
 
 ### 2. Extend `Shape` to represent the target descriptor model
 
+Status: done. Shape now stores packed 64-bit `DescriptorInfo` entries with
+storage location plus descriptor flags, has an explicit `present_count` boundary
+for present vs latent descriptor regions, carries Shape flags, and supports
+descriptor-flagged add transitions.
+
 Upgrade `Shape` from a flat list of present properties to a descriptor array
 with:
 
@@ -162,13 +167,17 @@ Make the transition API explicit about descriptor state. In addition to
 resolving present attributes for normal lookup, `Shape` should support queries
 roughly equivalent to:
 
-- `lookup_descriptor(name) -> {present, latent, absent, descriptor info}`
+- `lookup_descriptor_including_latent(name) -> {present, latent, absent,
+  descriptor info}` for structural transition code
+- `lookup_descriptor_index(name) -> present descriptor index or not found` for
+  the normal present-only path
 - `resolve_present_property(name) -> storage location or not found`
 - `find_latent_descriptor(name) -> descriptor info or not found`
 
-The current `lookup_property_index()` name is likely too vague once latent
-descriptors exist, because callers need to know whether a match is loadable or
-only reserves a stable slot.
+Keep the latent-aware operation deliberately explicit. Ordinary attribute
+resolution should use the shorter present-only lookup, while transition code
+that may reuse latent stable slots should call the longer
+`lookup_descriptor_including_latent()` form.
 
 Also separate `next_slot_index` from descriptor count early. Once deletion can
 move a descriptor to the latent region, the highest allocated slot and the

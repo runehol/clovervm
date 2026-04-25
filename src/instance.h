@@ -79,7 +79,7 @@ namespace cl
         OverflowSlots *get_overflow_slots() const;
 
         Value get_own_property(TValue<String> name) const;
-        void set_own_property(TValue<String> name, Value value);
+        bool set_own_property(TValue<String> name, Value value);
         bool delete_own_property(TValue<String> name);
         Value read_storage_location(StorageLocation location) const;
         void write_storage_location(StorageLocation location, Value value);
