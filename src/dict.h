@@ -64,9 +64,9 @@ namespace cl
 
         void grow();
 
-        size_t n_valid_entries;
         RawArray<int32_t> hash_table;
         ValueArray<Entry> entries;
+        size_t n_valid_entries;
 
     public:
         CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(

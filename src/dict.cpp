@@ -21,14 +21,14 @@ namespace cl
     }
 
     Dict::Dict()
-        : Object(&klass, compact_layout()), n_valid_entries(0),
-          hash_table(min_table_size, not_present)
+        : Object(&klass, compact_layout()),
+          hash_table(min_table_size, not_present), n_valid_entries(0)
     {
     }
 
     Dict::Dict(const Dict &other)
-        : Object(&klass, compact_layout()), n_valid_entries(0),
-          hash_table(min_table_size, not_present)
+        : Object(&klass, compact_layout()),
+          hash_table(min_table_size, not_present), n_valid_entries(0)
     {
         for(const Entry &e: other.entries)
         {

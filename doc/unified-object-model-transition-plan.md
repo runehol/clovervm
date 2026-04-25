@@ -15,6 +15,9 @@ to the unified model described in
 - class objects use the same shape/slot protocol as instances
 - Shapes track present vs latent descriptors and stable slots
 
+The builtin-object and native-layout direction is described in
+[doc/builtin-object-model.md](./builtin-object-model.md).
+
 ## Current Implementation Summary
 
 Today the runtime is substantially closer to that design for user-created
@@ -175,6 +178,8 @@ fields should then collapse into the shared mechanism.
 Keep native `Klass` during this step. It is still useful for C++ dispatch,
 allocation, finalization, and low-level fast type predicates. The semantic
 change is that `klass` stops being the source of Python-visible `__class__`.
+The longer-term replacement is a native layout id in the object header, as
+described in [doc/builtin-object-model.md](./builtin-object-model.md).
 
 Implementation notes:
 
