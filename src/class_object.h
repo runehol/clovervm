@@ -69,21 +69,10 @@ namespace cl
 
         Value lookup_class_chain(TValue<String> name) const;
 
-        Value get_own_property(TValue<String> name) const;
-        bool define_own_property(TValue<String> name, Value value,
-                                 DescriptorFlags descriptor_flags);
-        bool set_existing_own_property(TValue<String> name, Value value);
-        bool set_own_property(TValue<String> name, Value value);
-        bool delete_own_property(TValue<String> name);
-
-        Value read_storage_location(StorageLocation location) const;
-        void write_storage_location(StorageLocation location, Value value);
-
     private:
         static constexpr uint32_t kClassDynamicInlineSlotCount =
             kClassInlineSlotCount - kClassPredefinedSlotCount;
 
-        Value read_inline_slot(uint32_t slot_idx) const;
         Value make_bases_list(Value base) const;
         Value make_mro_list() const;
 

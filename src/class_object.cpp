@@ -1,11 +1,9 @@
 #include "class_object.h"
 #include "list.h"
-#include "refcount.h"
 #include "runtime_helpers.h"
 #include "shape_backed_object.h"
 #include "str.h"
 #include "virtual_machine.h"
-#include <algorithm>
 
 namespace cl
 {
@@ -137,7 +135,7 @@ namespace cl
 
     ClassObject *ClassObject::get_base() const
     {
-        Value bases_value = read_inline_slot(kClassSlotBases);
+        Value bases_value = inline_slot_base()[kClassSlotBases];
         if(!can_convert_to<List>(bases_value))
         {
             return nullptr;
@@ -156,7 +154,7 @@ namespace cl
     Value ClassObject::lookup_class_chain(TValue<String> name) const
     {
         Value own_property = get_own_property(name);
-        Value mro_value = read_inline_slot(kClassSlotMro);
+        Value mro_value = inline_slot_base()[kClassSlotMro];
         if(!can_convert_to<List>(mro_value))
         {
             return own_property;
@@ -183,79 +181,6 @@ namespace cl
         }
 
         return Value::not_present();
-    }
-
-    Value ClassObject::get_own_property(TValue<String> name) const
-    {
-        return shape_backed_object::get_own_property(this, name);
-    }
-
-    bool ClassObject::define_own_property(TValue<String> name, Value value,
-                                          DescriptorFlags descriptor_flags)
-    {
-        return shape_backed_object::define_own_property(this, name, value,
-                                                        descriptor_flags) ==
-               shape_backed_object::StoreOwnPropertyResult::Stored;
-    }
-
-    bool ClassObject::set_existing_own_property(TValue<String> name,
-                                                Value value)
-    {
-        return shape_backed_object::set_existing_own_property(this, name,
-                                                              value) ==
-               shape_backed_object::StoreOwnPropertyResult::Stored;
-    }
-
-    bool ClassObject::set_own_property(TValue<String> name, Value value)
-    {
-        return shape_backed_object::set_own_property(this, name, value) ==
-               shape_backed_object::StoreOwnPropertyResult::Stored;
-    }
-
-    bool ClassObject::delete_own_property(TValue<String> name)
-    {
-        return shape_backed_object::delete_own_property(this, name);
-    }
-
-    Value ClassObject::read_storage_location(StorageLocation location) const
-    {
-        switch(location.kind)
-        {
-            case StorageKind::Inline:
-                assert(uint32_t(location.physical_idx) < kClassInlineSlotCount);
-                return inline_slot_base()[location.physical_idx];
-            case StorageKind::Overflow:
-                return Object::read_storage_location(location);
-        }
-        __builtin_unreachable();
-    }
-
-    void ClassObject::write_storage_location(StorageLocation location,
-                                             Value value)
-    {
-        switch(location.kind)
-        {
-            case StorageKind::Inline:
-                {
-                    assert(uint32_t(location.physical_idx) <
-                           kClassInlineSlotCount);
-                    Value *slots = inline_slot_base();
-                    Value old_value = slots[location.physical_idx];
-                    slots[location.physical_idx] = incref(value);
-                    decref(old_value);
-                    return;
-                }
-            case StorageKind::Overflow:
-                Object::write_storage_location(location, value);
-                return;
-        }
-        __builtin_unreachable();
-    }
-
-    Value ClassObject::read_inline_slot(uint32_t slot_idx) const
-    {
-        assert(slot_idx < kClassInlineSlotCount);
-        return inline_slot_base()[slot_idx];
     }
 
     Value ClassObject::make_bases_list(Value base) const

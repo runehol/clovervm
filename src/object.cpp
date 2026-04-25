@@ -57,6 +57,21 @@ namespace cl
         return shape_backed_object::get_own_property(this, name);
     }
 
+    bool Object::define_own_property(TValue<String> name, Value value,
+                                     DescriptorFlags descriptor_flags)
+    {
+        return shape_backed_object::define_own_property(this, name, value,
+                                                        descriptor_flags) ==
+               shape_backed_object::StoreOwnPropertyResult::Stored;
+    }
+
+    bool Object::set_existing_own_property(TValue<String> name, Value value)
+    {
+        return shape_backed_object::set_existing_own_property(this, name,
+                                                              value) ==
+               shape_backed_object::StoreOwnPropertyResult::Stored;
+    }
+
     bool Object::set_own_property(TValue<String> name, Value value)
     {
         return shape_backed_object::set_own_property(this, name, value) ==

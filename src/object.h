@@ -56,6 +56,9 @@ namespace cl
         Shape *get_shape() const { return shape; }
         void set_shape(Shape *new_shape);
         Value get_own_property(TValue<String> name) const;
+        bool define_own_property(TValue<String> name, Value value,
+                                 DescriptorFlags descriptor_flags);
+        bool set_existing_own_property(TValue<String> name, Value value);
         bool set_own_property(TValue<String> name, Value value);
         bool delete_own_property(TValue<String> name);
         Value read_storage_location(StorageLocation location) const;
