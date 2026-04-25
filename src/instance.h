@@ -29,19 +29,12 @@ namespace cl
         static DynamicLayoutSpec layout_spec_for(Value cls, Shape *shape);
 
         Value get_class() const;
-        Shape *get_shape() const;
-        void set_shape(Shape *new_shape);
-        OverflowSlots *get_overflow_slots() const;
 
         Value get_own_property(TValue<String> name) const;
         bool set_own_property(TValue<String> name, Value value);
         bool delete_own_property(TValue<String> name);
-        Value read_storage_location(StorageLocation location) const;
-        void write_storage_location(StorageLocation location, Value value);
 
     private:
-        OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
-
         [[maybe_unused]] Value inline_slots[1];
 
     public:

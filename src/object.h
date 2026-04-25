@@ -13,6 +13,7 @@ namespace cl
     class ClassObject;
     class OverflowSlots;
     class Shape;
+    struct StorageLocation;
     struct Value;
 
     struct BootstrapObjectTag
@@ -62,6 +63,11 @@ namespace cl
 
         NativeLayoutId native_layout_id() const { return native_layout; }
         ClassObject *get_class() const { return cls; }
+        Shape *get_shape() const { return shape; }
+        void set_shape(Shape *new_shape);
+        OverflowSlots *get_overflow_slots() const { return overflow_storage; }
+        Value read_storage_location(StorageLocation location) const;
+        void write_storage_location(StorageLocation location, Value value);
         Value *inline_slot_base() { return reinterpret_cast<Value *>(&cls); }
         const Value *inline_slot_base() const
         {
@@ -78,6 +84,9 @@ namespace cl
         Shape *shape;
         OverflowSlots *overflow_storage;
         ClassObject *cls;
+
+    private:
+        OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
     };
 
     template <typename T, typename = void>

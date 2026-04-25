@@ -40,6 +40,7 @@ add_library(libclovervm STATIC
     list.cpp
     list.h
     native_layout_id.h
+    object.cpp
     object.h
     overflow_slots.cpp
     overflow_slots.h
