@@ -57,17 +57,18 @@ namespace cl
             if(cls.is_ptr() &&
                cls.get_ptr<Object>()->klass == &ClassObject::klass)
             {
-                Value member = cls.get_ptr<ClassObject>()->get_member(name);
-                if(member.is_not_present())
+                Value class_property =
+                    cls.get_ptr<ClassObject>()->lookup_class_chain(name);
+                if(class_property.is_not_present())
                 {
                     callable_out = Value::not_present();
                     self_out = Value::not_present();
                     return false;
                 }
 
-                callable_out = member;
-                if(member.is_ptr() &&
-                   member.get_ptr<Object>()->klass == &Function::klass)
+                callable_out = class_property;
+                if(class_property.is_ptr() &&
+                   class_property.get_ptr<Object>()->klass == &Function::klass)
                 {
                     self_out = obj;
                 }
@@ -85,7 +86,8 @@ namespace cl
 
         if(object->klass == &ClassObject::klass)
         {
-            callable_out = static_cast<ClassObject *>(object)->get_member(name);
+            callable_out =
+                static_cast<ClassObject *>(object)->lookup_class_chain(name);
             self_out = Value::not_present();
             return !callable_out.is_not_present();
         }
@@ -122,7 +124,7 @@ namespace cl
             if(cls.is_ptr() &&
                cls.get_ptr<Object>()->klass == &ClassObject::klass)
             {
-                return cls.get_ptr<ClassObject>()->get_member(name);
+                return cls.get_ptr<ClassObject>()->lookup_class_chain(name);
             }
 
             return Value::not_present();
@@ -130,7 +132,7 @@ namespace cl
 
         if(object->klass == &ClassObject::klass)
         {
-            return static_cast<ClassObject *>(object)->get_member(name);
+            return static_cast<ClassObject *>(object)->lookup_class_chain(name);
         }
 
         return Value::not_present();

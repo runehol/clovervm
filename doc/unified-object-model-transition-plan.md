@@ -31,12 +31,11 @@ Relevant code:
 - [src/instance.h](../src/instance.h)
 - [src/instance.cpp](../src/instance.cpp)
 
-### Classes use Shapes, with compatibility shims
+### Classes use Shapes
 
-`ClassObject` now uses shape-backed storage for class attributes, but the old
-member-facing API remains as a compatibility shim. Class metadata such as
-`__class__`, `__name__`, `__bases__`, and `__mro__` is stored in predefined
-Shape-backed slots.
+`ClassObject` now uses shape-backed storage for class attributes. Class
+metadata such as `__class__`, `__name__`, `__bases__`, and `__mro__` is stored
+in predefined Shape-backed slots, and class lookup walks the materialized MRO.
 
 Relevant code:
 
@@ -391,9 +390,8 @@ Primary files:
 ### 6. Give `ClassObject` a real Shape and slot-backed property storage
 
 Status: done. `ClassObject` now stores ordinary class attributes through its
-class Shape and fixed/overflow slot storage, while the legacy member API remains
-as a compatibility view over present non-metadata descriptors. `method_version`
-and the separate member vector have been removed.
+class Shape and fixed/overflow slot storage. The legacy member-facing API,
+`method_version`, and the separate member vector have been removed.
 
 After the class predefined-slot scheme exists, migrate class attributes off the
 `members` vector and onto the same kind of shape-driven property storage used by
@@ -405,14 +403,10 @@ slot metadata.
 
 This is also the point where `method_version` can be deleted.
 
-Use a compatibility shim while call sites move:
-
-- keep `get_member()`, `set_member()`, `delete_member()`, `member_count()`, and
-  member iteration temporarily, but implement them over the new slot-backed
-  storage
-- stop adding new direct uses of `members`
-- delete the vector and shim only after interpreter construction, tests, and
-  attribute lookup no longer depend on vector semantics
+The migration used a temporary compatibility shim while call sites moved. That
+shim is now gone; class reads use `lookup_class_chain()`, class mutation uses
+the own-property APIs, and tests that need insertion-order assertions inspect
+Shape descriptors directly.
 
 Class object storage also needs a clear placement policy. Fixed metadata and
 hot predefined slots should have stable inline locations. User-defined class
@@ -509,10 +503,9 @@ Primary files:
 
 ### 8. Route all class mutation through Shape transitions
 
-Status: done. Class mutation now has explicit direct store/delete methods on
-`ClassObject`; class construction, class attribute stores, and the member
-compatibility shim route through those methods, which are the future
-invalidation hook around Shape transitions and slot updates.
+Status: done. Class mutation now routes through the `ClassObject`
+own-property methods, which are the future invalidation hook around Shape
+transitions and slot updates.
 
 Once classes are shape-backed, class attribute writes and deletes should use
 the same transition machinery as instances:
@@ -522,8 +515,7 @@ the same transition machinery as instances:
 - deleting an attribute transitions to a new Shape and writes
   `Value::not_present()` into the slot
 
-After this step, the old `members` API should disappear or become a thin
-adapter over the shape-backed representation used only by tests.
+After this step, the old `members` API should disappear. It has been removed.
 
 Centralize class mutation behind one helper used by bytecode stores,
 interpreter class construction, tests, and internal runtime setup. That helper
@@ -554,8 +546,8 @@ notification sites are detected explicitly and currently raise the documented
 temporary unsupported error until the runtime has a generic internal call helper
 for descriptor callbacks.
 
-Change class-body result construction to populate class properties through the
-new object-property API instead of `set_member()`.
+Class-body result construction now populates class properties through the new
+object-property API.
 
 After class properties are installed, `BuildClass` should run the
 `__set_name__` notification pass for class-body values that define it.
@@ -973,8 +965,7 @@ safe order is:
 4. Reframe `Klass` APIs so Python-visible type identity comes from Shapes and
    type objects.
 5. Make user class `__class__` a real metaclass slot, initially always `type`.
-6. Move generic attribute access onto the shared object protocol and delete
-   remaining class-member compatibility APIs.
+6. Move generic attribute access onto the shared object protocol.
 7. Complete descriptor and custom attribute semantics.
 8. Add lookup validity cells and inline-cache integration.
 

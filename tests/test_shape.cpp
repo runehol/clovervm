@@ -5,9 +5,30 @@
 #include "shape.h"
 #include "test_helpers.h"
 #include "thread_state.h"
+#include <cassert>
 #include <gtest/gtest.h>
 
 using namespace cl;
+
+static uint32_t class_property_count(ClassObject *cls)
+{
+    Shape *shape = cls->get_shape();
+    assert(shape->present_count() >= ClassObject::kClassPredefinedSlotCount);
+    return shape->present_count() - ClassObject::kClassPredefinedSlotCount;
+}
+
+static TValue<String> class_property_name(ClassObject *cls, uint32_t idx)
+{
+    return cls->get_shape()->get_property_name(
+        ClassObject::kClassPredefinedSlotCount + idx);
+}
+
+static Value class_property_value(ClassObject *cls, uint32_t idx)
+{
+    DescriptorInfo info = cls->get_shape()->get_descriptor_info(
+        ClassObject::kClassPredefinedSlotCount + idx);
+    return cls->read_storage_location(info.storage_location());
+}
 
 TEST(Shape, ClassOwnsRootShape)
 {
@@ -490,7 +511,7 @@ TEST(Shape, TwoInstancesShareShapeTransitionsButHoldDistinctValues)
     EXPECT_EQ(Value::from_smi(20), second->get_own_property(b_name));
 }
 
-TEST(ClassObject, MembersPreserveInsertionOrderAndCompactOnDelete)
+TEST(ClassObject, ClassPropertiesPreserveInsertionOrderAndCompactOnDelete)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -504,28 +525,28 @@ TEST(ClassObject, MembersPreserveInsertionOrderAndCompactOnDelete)
     ClassObject *cls =
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
 
-    cls->set_member(a_name, Value::from_smi(1));
-    cls->set_member(b_name, Value::from_smi(2));
+    cls->set_own_property(a_name, Value::from_smi(1));
+    cls->set_own_property(b_name, Value::from_smi(2));
 
-    ASSERT_EQ(2u, cls->member_count());
-    EXPECT_STREQ(L"a", cls->get_member_name(0).extract()->data);
-    EXPECT_STREQ(L"b", cls->get_member_name(1).extract()->data);
+    ASSERT_EQ(2u, class_property_count(cls));
+    EXPECT_STREQ(L"a", class_property_name(cls, 0).extract()->data);
+    EXPECT_STREQ(L"b", class_property_name(cls, 1).extract()->data);
 
-    EXPECT_TRUE(cls->delete_member(a_name));
+    EXPECT_TRUE(cls->delete_own_property(a_name));
 
-    ASSERT_EQ(1u, cls->member_count());
-    EXPECT_STREQ(L"b", cls->get_member_name(0).extract()->data);
+    ASSERT_EQ(1u, class_property_count(cls));
+    EXPECT_STREQ(L"b", class_property_name(cls, 0).extract()->data);
 
-    cls->set_member(a_name, Value::from_smi(3));
+    cls->set_own_property(a_name, Value::from_smi(3));
 
-    ASSERT_EQ(2u, cls->member_count());
-    EXPECT_STREQ(L"b", cls->get_member_name(0).extract()->data);
-    EXPECT_STREQ(L"a", cls->get_member_name(1).extract()->data);
-    EXPECT_EQ(Value::from_smi(2), cls->get_member_value(0));
-    EXPECT_EQ(Value::from_smi(3), cls->get_member_value(1));
+    ASSERT_EQ(2u, class_property_count(cls));
+    EXPECT_STREQ(L"b", class_property_name(cls, 0).extract()->data);
+    EXPECT_STREQ(L"a", class_property_name(cls, 1).extract()->data);
+    EXPECT_EQ(Value::from_smi(2), class_property_value(cls, 0));
+    EXPECT_EQ(Value::from_smi(3), class_property_value(cls, 1));
 }
 
-TEST(ClassObject, MembersUseShapeBackedInlineAndOverflowStorage)
+TEST(ClassObject, ClassPropertiesUseShapeBackedInlineAndOverflowStorage)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -544,16 +565,16 @@ TEST(ClassObject, MembersUseShapeBackedInlineAndOverflowStorage)
 
     for(uint32_t idx = 0; idx < 5; ++idx)
     {
-        cls->set_member(names[idx], Value::from_smi(idx + 1));
+        cls->set_own_property(names[idx], Value::from_smi(idx + 1));
     }
 
     Shape *shape = cls->get_shape();
     ASSERT_EQ(9u, shape->property_count());
     EXPECT_EQ(9u, shape->present_count());
     EXPECT_EQ(9, shape->get_next_slot_index());
-    EXPECT_EQ(5u, cls->member_count());
-    EXPECT_EQ(Value::from_smi(1), cls->get_member_value(0));
-    EXPECT_EQ(Value::from_smi(5), cls->get_member_value(4));
+    EXPECT_EQ(5u, class_property_count(cls));
+    EXPECT_EQ(Value::from_smi(1), class_property_value(cls, 0));
+    EXPECT_EQ(Value::from_smi(5), class_property_value(cls, 4));
 
     StorageLocation first_location = shape->resolve_present_property(names[0]);
     ASSERT_TRUE(first_location.is_found());
@@ -642,9 +663,6 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
         EXPECT_FALSE(
             cls->set_own_property(readonly_names[idx], other_name.as_value()));
         EXPECT_FALSE(cls->delete_own_property(readonly_names[idx]));
-        EXPECT_FALSE(cls->store_own_property_direct(readonly_names[idx],
-                                                    other_name.as_value()));
-        EXPECT_FALSE(cls->delete_own_property_direct(readonly_names[idx]));
         EXPECT_EQ(before_shape, cls->get_shape());
         EXPECT_EQ(readonly_values[idx],
                   cls->get_own_property(readonly_names[idx]));
@@ -707,18 +725,18 @@ TEST(ClassObject, OwnPropertyApiDoesNotFallBackToBaseChain)
 
     EXPECT_EQ(Value::from_smi(7), base->get_own_property(attr_name));
     EXPECT_EQ(Value::not_present(), child->get_own_property(attr_name));
-    EXPECT_EQ(Value::from_smi(7), child->get_member(attr_name));
+    EXPECT_EQ(Value::from_smi(7), child->lookup_class_chain(attr_name));
 
     child->set_own_property(attr_name, Value::from_smi(8));
     EXPECT_EQ(Value::from_smi(8), child->get_own_property(attr_name));
-    EXPECT_EQ(Value::from_smi(8), child->get_member(attr_name));
+    EXPECT_EQ(Value::from_smi(8), child->lookup_class_chain(attr_name));
 
     EXPECT_TRUE(child->delete_own_property(attr_name));
     EXPECT_EQ(Value::not_present(), child->get_own_property(attr_name));
-    EXPECT_EQ(Value::from_smi(7), child->get_member(attr_name));
+    EXPECT_EQ(Value::from_smi(7), child->lookup_class_chain(attr_name));
 }
 
-TEST(ClassObject, DirectMutationDistinguishesSlotUpdateAddAndDelete)
+TEST(ClassObject, MutationDistinguishesSlotUpdateAddAndDelete)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -731,25 +749,29 @@ TEST(ClassObject, DirectMutationDistinguishesSlotUpdateAddAndDelete)
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
 
     Shape *root_shape = cls->get_shape();
-    EXPECT_TRUE(cls->store_own_property_direct(attr_name, Value::from_smi(1)));
+    EXPECT_TRUE(root_shape->has_flag(ShapeFlag::IsClassObject));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(1)));
     Shape *shape_with_attr = cls->get_shape();
     EXPECT_NE(root_shape, shape_with_attr);
+    EXPECT_TRUE(shape_with_attr->has_flag(ShapeFlag::IsClassObject));
     EXPECT_EQ(Value::from_smi(1), cls->get_own_property(attr_name));
 
     StorageLocation location =
         shape_with_attr->resolve_present_property(attr_name);
     ASSERT_TRUE(location.is_found());
-    EXPECT_TRUE(cls->store_own_property_direct(attr_name, Value::from_smi(2)));
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(2)));
     EXPECT_EQ(shape_with_attr, cls->get_shape());
     EXPECT_EQ(Value::from_smi(2), cls->read_storage_location(location));
 
-    EXPECT_TRUE(cls->delete_own_property_direct(attr_name));
-    EXPECT_NE(shape_with_attr, cls->get_shape());
+    EXPECT_TRUE(cls->delete_own_property(attr_name));
+    Shape *shape_without_attr = cls->get_shape();
+    EXPECT_NE(shape_with_attr, shape_without_attr);
+    EXPECT_TRUE(shape_without_attr->has_flag(ShapeFlag::IsClassObject));
     EXPECT_EQ(Value::not_present(), cls->read_storage_location(location));
     EXPECT_EQ(Value::not_present(), cls->get_own_property(attr_name));
 }
 
-TEST(ClassObject, MemberLookupWalksMaterializedMro)
+TEST(ClassObject, ClassLookupWalksMaterializedMro)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -765,13 +787,12 @@ TEST(ClassObject, MemberLookupWalksMaterializedMro)
     ClassObject *child = context.thread()->make_refcounted_raw<ClassObject>(
         child_name, 2, Value::from_oop(base));
 
-    base->set_member(method_name, Value::from_smi(7));
+    base->set_own_property(method_name, Value::from_smi(7));
 
-    EXPECT_EQ(Value::from_smi(7), child->get_member(method_name));
     EXPECT_EQ(Value::from_smi(7), child->lookup_class_chain(method_name));
 }
 
-TEST(ClassObject, MemberLookupContinuesPastLatentDescriptor)
+TEST(ClassObject, ClassLookupContinuesPastLatentDescriptor)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -788,7 +809,7 @@ TEST(ClassObject, MemberLookupContinuesPastLatentDescriptor)
         child_name, 2, Value::from_oop(base));
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
 
-    base->set_member(attr_name, Value::from_smi(7));
+    base->set_own_property(attr_name, Value::from_smi(7));
     Shape *shape_with_attr = child->get_shape()->derive_transition(
         attr_name, ShapeTransitionVerb::Add, flags);
     child->set_shape(shape_with_attr);
@@ -796,11 +817,11 @@ TEST(ClassObject, MemberLookupContinuesPastLatentDescriptor)
         shape_with_attr->resolve_present_property(attr_name);
     ASSERT_TRUE(location.is_found());
     child->write_storage_location(location, Value::from_smi(8));
-    EXPECT_TRUE(child->delete_member(attr_name));
+    EXPECT_TRUE(child->delete_own_property(attr_name));
 
     DescriptorLookup lookup =
         child->get_shape()->lookup_descriptor_including_latent(attr_name);
     ASSERT_TRUE(lookup.is_latent());
     EXPECT_EQ(Value::not_present(), child->get_own_property(attr_name));
-    EXPECT_EQ(Value::from_smi(7), child->get_member(attr_name));
+    EXPECT_EQ(Value::from_smi(7), child->lookup_class_chain(attr_name));
 }

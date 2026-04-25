@@ -31,7 +31,7 @@ TEST(Attr, LoadAttrReturnsInstanceOwnPropertyBeforeClassMember)
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls =
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
-    cls->set_member(attr_name, Value::from_smi(1));
+    cls->set_own_property(attr_name, Value::from_smi(1));
 
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
         Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
@@ -54,7 +54,7 @@ TEST(Attr, LoadAttrFallsBackToClassAndBaseMembers)
         context.vm().get_or_create_interned_string_value(L"inherited"));
     ClassObject *base =
         context.thread()->make_refcounted_raw<ClassObject>(base_name, 2);
-    base->set_member(inherited_name, Value::from_smi(7));
+    base->set_own_property(inherited_name, Value::from_smi(7));
     ClassObject *child = context.thread()->make_refcounted_raw<ClassObject>(
         child_name, 2, Value::from_oop(base));
 
@@ -84,7 +84,7 @@ TEST(Attr, LoadAttrClassFallbackContinuesPastLatentDescriptor)
         child_name, 2, Value::from_oop(base));
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
 
-    base->set_member(attr_name, Value::from_smi(7));
+    base->set_own_property(attr_name, Value::from_smi(7));
     Shape *shape_with_attr = child->get_shape()->derive_transition(
         attr_name, ShapeTransitionVerb::Add, flags);
     child->set_shape(shape_with_attr);
@@ -92,7 +92,7 @@ TEST(Attr, LoadAttrClassFallbackContinuesPastLatentDescriptor)
         shape_with_attr->resolve_present_property(attr_name);
     ASSERT_TRUE(location.is_found());
     child->write_storage_location(location, Value::from_smi(8));
-    EXPECT_TRUE(child->delete_member(attr_name));
+    EXPECT_TRUE(child->delete_own_property(attr_name));
 
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
         Value::from_oop(child), Value::from_oop(child->get_initial_shape()));
@@ -249,11 +249,11 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
 
     ClassObject *cls =
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
-    cls->set_member(method_name, method_value);
+    cls->set_own_property(method_name, method_value);
     TValue<BuiltinFunction> builtin =
         context.thread()->make_refcounted_value<BuiltinFunction>(
             builtin_identity, 1, 1);
-    cls->set_member(builtin_name, builtin);
+    cls->set_own_property(builtin_name, builtin);
 
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
         Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));

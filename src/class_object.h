@@ -42,18 +42,9 @@ namespace cl
         Shape *get_initial_shape() const;
         ClassObject *get_base() const;
 
-        uint32_t member_count() const;
-        TValue<String> get_member_name(uint32_t member_idx) const;
-        Value get_member_value(uint32_t member_idx) const;
-
-        Value get_member(TValue<String> name) const;
         Value lookup_class_chain(TValue<String> name) const;
-        void set_member(TValue<String> name, Value value);
-        bool delete_member(TValue<String> name);
 
         Value get_own_property(TValue<String> name) const;
-        bool store_own_property_direct(TValue<String> name, Value value);
-        bool delete_own_property_direct(TValue<String> name);
         bool set_own_property(TValue<String> name, Value value);
         bool delete_own_property(TValue<String> name);
 
@@ -62,7 +53,6 @@ namespace cl
 
     private:
         Value read_inline_slot(uint32_t slot_idx) const;
-        uint32_t member_descriptor_index(uint32_t member_idx) const;
         Instance::OverflowSlots *get_overflow_slots() const;
         Instance::OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
         Value make_bases_list() const;

@@ -279,9 +279,10 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
     ASSERT_TRUE(cls_value.is_ptr());
     ASSERT_EQ(&ClassObject::klass, cls_value.get_ptr<Object>()->klass);
     ClassObject *cls = cls_value.get_ptr<ClassObject>();
-    EXPECT_EQ(Value::from_smi(7), cls->get_member(value_name));
+    EXPECT_EQ(Value::from_smi(7), cls->lookup_class_chain(value_name));
 
     Shape *shape = cls->get_shape();
+    EXPECT_TRUE(shape->has_flag(ShapeFlag::IsClassObject));
     StorageLocation value_location =
         shape->resolve_present_property(value_name);
     ASSERT_TRUE(value_location.is_found());
@@ -289,8 +290,13 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
     EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotCount),
               value_location.physical_idx);
     EXPECT_EQ(Value::from_smi(7), cls->read_storage_location(value_location));
-    EXPECT_EQ(1u, cls->member_count());
-    EXPECT_STREQ(L"value", cls->get_member_name(0).extract()->data);
+    ASSERT_EQ(ClassObject::kClassPredefinedSlotCount + 1,
+              shape->present_count());
+    EXPECT_STREQ(
+        L"value",
+        shape->get_property_name(ClassObject::kClassPredefinedSlotCount)
+            .extract()
+            ->data);
 }
 
 TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
@@ -322,7 +328,8 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
     for(uint32_t idx = 0; idx < 3; ++idx)
     {
         EXPECT_STREQ(string_as_wchar_t(names[idx]),
-                     string_as_wchar_t(cls->get_member_name(idx)));
+                     string_as_wchar_t(cls->get_shape()->get_property_name(
+                         ClassObject::kClassPredefinedSlotCount + idx)));
 
         StorageLocation location =
             cls->get_shape()->resolve_present_property(names[idx]);
@@ -806,7 +813,7 @@ TEST(Interpreter,
     Value cls_value = module_scope->get_by_name(cls_name);
     ASSERT_TRUE(cls_value.is_ptr());
     ASSERT_EQ(&ClassObject::klass, cls_value.get_ptr<Object>()->klass);
-    cls_value.get_ptr<ClassObject>()->set_member(method_name, identity);
+    cls_value.get_ptr<ClassObject>()->set_own_property(method_name, identity);
 
     CodeObject *code_obj = test_context.compile_file(L"obj.method(4)\n");
     code_obj->module_scope = Value::from_oop(module_scope);

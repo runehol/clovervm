@@ -216,7 +216,7 @@ namespace cl
             {
                 continue;
             }
-            if(!cls.extract()->store_own_property_direct(
+            if(!cls.extract()->set_own_property(
                    local_scope->get_name_by_slot_index(slot_idx), value))
             {
                 throw std::runtime_error(

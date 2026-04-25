@@ -93,31 +93,6 @@ namespace cl
         return base.as_value().get_ptr<ClassObject>();
     }
 
-    uint32_t ClassObject::member_count() const
-    {
-        Shape *current_shape = get_shape();
-        assert(current_shape->present_count() >= kClassPredefinedSlotCount);
-        return current_shape->present_count() - kClassPredefinedSlotCount;
-    }
-
-    TValue<String> ClassObject::get_member_name(uint32_t member_idx) const
-    {
-        return get_shape()->get_property_name(
-            member_descriptor_index(member_idx));
-    }
-
-    Value ClassObject::get_member_value(uint32_t member_idx) const
-    {
-        DescriptorInfo info = get_shape()->get_descriptor_info(
-            member_descriptor_index(member_idx));
-        return read_storage_location(info.storage_location());
-    }
-
-    Value ClassObject::get_member(TValue<String> name) const
-    {
-        return lookup_class_chain(name);
-    }
-
     Value ClassObject::lookup_class_chain(TValue<String> name) const
     {
         Value own_property = get_own_property(name);
@@ -157,36 +132,15 @@ namespace cl
         return shape_backed_object::get_own_property(this, name);
     }
 
-    void ClassObject::set_member(TValue<String> name, Value value)
-    {
-        store_own_property_direct(name, value);
-    }
-
-    bool ClassObject::store_own_property_direct(TValue<String> name,
-                                                Value value)
+    bool ClassObject::set_own_property(TValue<String> name, Value value)
     {
         return shape_backed_object::set_own_property(this, name, value) ==
                shape_backed_object::StoreOwnPropertyResult::Stored;
     }
 
-    bool ClassObject::delete_own_property_direct(TValue<String> name)
-    {
-        return shape_backed_object::delete_own_property(this, name);
-    }
-
-    bool ClassObject::set_own_property(TValue<String> name, Value value)
-    {
-        return store_own_property_direct(name, value);
-    }
-
-    bool ClassObject::delete_member(TValue<String> name)
-    {
-        return delete_own_property_direct(name);
-    }
-
     bool ClassObject::delete_own_property(TValue<String> name)
     {
-        return delete_own_property_direct(name);
+        return shape_backed_object::delete_own_property(this, name);
     }
 
     Value ClassObject::read_storage_location(StorageLocation location) const
@@ -245,13 +199,6 @@ namespace cl
     {
         assert(slot_idx < kClassInlineSlotCount);
         return class_slots[slot_idx].as_value();
-    }
-
-    uint32_t ClassObject::member_descriptor_index(uint32_t member_idx) const
-    {
-        uint32_t descriptor_idx = kClassPredefinedSlotCount + member_idx;
-        assert(descriptor_idx < get_shape()->present_count());
-        return descriptor_idx;
     }
 
     Instance::OverflowSlots *ClassObject::get_overflow_slots() const
