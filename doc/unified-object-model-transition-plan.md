@@ -61,6 +61,18 @@ Relevant code:
 
 - [src/attr.cpp](../src/attr.cpp)
 
+### Class hierarchy state is not yet MRO-shaped
+
+`ClassObject` currently stores a single optional `base` pointer and recursive
+lookup walks that chain directly. The unified model talks in terms of
+`__bases__` and `__mro__`, so the migration needs an explicit bridge from the
+current single-base representation to a slot-backed class hierarchy.
+
+Relevant code:
+
+- [src/class_object.h](../src/class_object.h)
+- [src/class_object.cpp](../src/class_object.cpp)
+
 ### Class construction also hard-codes the split
 
 Class body execution builds a `ClassObject` and installs attributes through
@@ -95,6 +107,8 @@ and classes will need:
 - own-property load/store/delete by name
 - slot read/write helpers
 - overflow-slot management where needed
+- a way to ask whether a name is present, latent, or absent without reading the
+  slot payload
 
 The goal is to make class migration an internal storage change rather than a
 full API rewrite across the runtime.
@@ -114,8 +128,14 @@ Primary files:
 
 - [src/instance.h](../src/instance.h)
 - [src/instance.cpp](../src/instance.cpp)
+- [src/attr.cpp](../src/attr.cpp)
 - [src/class_object.h](../src/class_object.h)
 - [src/class_object.cpp](../src/class_object.cpp)
+
+Keep this layer narrow. It should expose object-local storage operations only;
+descriptor binding, base-chain traversal, `__getattr__`, and custom
+`__getattribute__` handling belong in the lookup layer. Mixing those concerns
+here would make the class storage migration harder to review.
 
 ### 2. Extend `Shape` to represent the target descriptor model
 
@@ -132,6 +152,22 @@ with:
 
 This step should land before migrating class storage, because classes need the
 full descriptor model immediately.
+
+Make the transition API explicit about descriptor state. In addition to
+resolving present attributes for normal lookup, `Shape` should support queries
+roughly equivalent to:
+
+- `lookup_descriptor(name) -> {present, latent, absent, descriptor info}`
+- `resolve_present_property(name) -> storage location or not found`
+- `find_latent_descriptor(name) -> descriptor info or not found`
+
+The current `lookup_property_index()` name is likely too vague once latent
+descriptors exist, because callers need to know whether a match is loadable or
+only reserves a stable slot.
+
+Also separate `next_slot_index` from descriptor count early. Once deletion can
+move a descriptor to the latent region, the highest allocated slot and the
+number of descriptors are no longer interchangeable.
 
 Primary files:
 
@@ -154,6 +190,18 @@ Rework instance add/delete transitions so that:
 This replaces the current delete-and-forget behavior for fixed slots without
 requiring unbounded latent descriptor retention for arbitrary user attributes.
 
+The slot payload must be updated as part of the object mutation, not only as
+part of Shape derivation:
+
+- transition to present: write the new value into the resolved slot
+- transition to latent: write `Value::not_present()` into the resolved slot
+- transition that drops an ordinary descriptor: clear or ignore the old storage
+  according to the chosen compaction policy
+
+Tests should assert both sides of the invariant: Shape membership says whether
+lookup should see a name, and the corresponding fixed slot holds
+`Value::not_present()` whenever a predefined descriptor is latent.
+
 Primary files:
 
 - [src/shape.cpp](../src/shape.cpp)
@@ -175,6 +223,18 @@ Invariants to establish:
   together after compatibility checks
 - invalid `__class__` reassignment does not reach the ordinary slot write path
 
+Do this in two cuts:
+
+1. Add the predefined descriptor and initialize the slot for newly-created
+   instances while keeping the existing special-case lookup as a fallback.
+2. Once the slot invariant is covered by tests, remove the special-case
+   `load_dunder_class()` path for instances and route lookup through the common
+   object-property path.
+
+The dedicated reassignment path can initially reject all `__class__`
+reassignment except identity-preserving assignments. That keeps the invariant
+honest without needing to solve layout compatibility in the same change.
+
 Primary files:
 
 - [src/attr.cpp](../src/attr.cpp)
@@ -194,7 +254,7 @@ Always-present candidates:
 - `__class__`
 - `__name__`
 - `__bases__`
-- later `__mro__`
+- `__mro__`
 
 Optional stable-slot candidates:
 
@@ -203,6 +263,25 @@ Optional stable-slot candidates:
 
 The key distinction is that some names are always present, while others may
 move between present and latent regions while keeping a stable slot.
+
+Do not postpone the shape of `__mro__` past class lookup migration. Even if the
+runtime still only supports single inheritance, materialize an MRO tuple/list
+slot for each class before the resolver is rewritten. The initial MRO can be
+the linear chain `[Class, base, ..., object]` derived from the existing `base`
+field, but the lookup code should consume `__mro__` rather than recursively
+following `base`.
+
+During this phase, define the bootstrap story for the builtin type objects:
+
+- what Shape is used for class objects whose `__class__` is the builtin `type`
+- how the `type.__class__ == type` cycle is represented without partially
+  initialized slots
+- which builtin class Shapes are marked `IsImmutableType`
+- when predefined class slots are populated relative to class allocation
+
+That bootstrap decision should land with tests before ordinary user classes are
+migrated, because every later lookup rule depends on these root objects being
+well-formed.
 
 Primary files:
 
@@ -222,6 +301,21 @@ class-visible properties become ordinary object properties with descriptor and
 slot metadata.
 
 This is also the point where `method_version` can be deleted.
+
+Use a compatibility shim while call sites move:
+
+- keep `get_member()`, `set_member()`, `delete_member()`, `member_count()`, and
+  member iteration temporarily, but implement them over the new slot-backed
+  storage
+- stop adding new direct uses of `members`
+- delete the vector and shim only after interpreter construction, tests, and
+  attribute lookup no longer depend on vector semantics
+
+Class object storage also needs a clear placement policy. Fixed metadata and
+hot predefined slots should have stable inline locations. User-defined class
+body attributes can use the same inline/overflow split as instances, but the
+transition plan should preserve insertion order for present class attributes so
+later `__dict__` behavior has a sensible base.
 
 Primary files:
 
@@ -276,6 +370,27 @@ present, and the default path must consult the class/metaclass chain for data
 descriptors with `__set__` or `__delete__` before mutating receiver-local
 storage directly.
 
+Split the implementation into reusable pieces before wiring the full algorithm:
+
+- object-local present lookup: searches only the present descriptor region
+- class-chain lookup: walks an already-materialized `__mro__` and treats latent
+  descriptors as "continue"
+- descriptor classification: determines data vs non-data descriptor by looking
+  for `__set__` or `__delete__` on the descriptor value's type
+- descriptor invocation: applies the receiver convention selected by the
+  winning path
+
+Descriptor classification is a semantic lookup of its own. Until lookup cells
+exist, keep it conservative and centralized so later cache eligibility can reuse
+the same rule instead of duplicating "is this a data descriptor?" checks in
+multiple places.
+
+The first migrated lookup can support the current feature set while preserving
+the new structure: functions-as-methods, receiver-local properties, class
+properties, and latent predefined slots. Add the full `property`,
+`staticmethod`, `classmethod`, `__getattr__`, and custom attribute override
+coverage as the corresponding runtime objects exist.
+
 Primary files:
 
 - [src/class_object.cpp](../src/class_object.cpp)
@@ -296,6 +411,17 @@ the same transition machinery as instances:
 After this step, the old `members` API should disappear or become a thin
 adapter over the shape-backed representation used only by tests.
 
+Centralize class mutation behind one helper used by bytecode stores,
+interpreter class construction, tests, and internal runtime setup. That helper
+is the future invalidation hook: even before lookup validity cells exist, it
+should be the only place that distinguishes "slot update on existing present
+descriptor" from "Shape transition".
+
+Read-only predefined class metadata should reject ordinary stores and deletes
+here. Supported changes to `__bases__`, `__mro__`, or class `__class__` should
+remain separate checked operations so they can recompute hierarchy state and
+transition Shape metadata together.
+
 Primary files:
 
 - [src/class_object.h](../src/class_object.h)
@@ -313,6 +439,19 @@ After class properties are installed, `BuildClass` should run the
 
 Also ensure instance construction uses initial shapes whose predefined
 `__class__` invariants are already established.
+
+Class creation should have a fixed order:
+
+1. allocate the class object with bootstrap metadata slots available
+2. compute and store `__bases__`
+3. compute and store `__mro__`
+4. install class-body attributes through the class mutation helper
+5. run `__set_name__`
+6. publish the completed class value
+
+If metaclass selection is not implemented yet, document and test the temporary
+rule explicitly: user classes are created with the builtin `type` metaclass, and
+class `__class__` reassignment is rejected by the checked path.
 
 Primary files:
 
@@ -336,6 +475,16 @@ Add or rewrite coverage for:
 - descriptor `__set__` / `__delete__` taking precedence over direct storage
 - custom `__getattribute__`, `__setattr__`, and `__delattr__` disabling the
   default fast paths
+- `__mro__`-driven lookup matching the old single-base behavior during the
+  transition
+- class `__class__`, `__name__`, `__bases__`, and `__mro__` rejecting ordinary
+  store/delete
+- deleting optional predefined class attributes leaves latent descriptors and
+  `Value::not_present()` payloads
+- class construction installs attributes through the class mutation helper and
+  preserves insertion order
+- bootstrap type objects satisfy `type.__class__ == type` and have immutable
+  type Shapes where expected
 
 Primary files:
 
@@ -370,6 +519,20 @@ decides whether the receiver slot is read, the cached resolved value is returned
 directly, the cached resolved value is passed through descriptor `__get__`, or
 the access is treated as a miss / `__getattr__` fallback.
 
+Plan cache structures around semantic results, not the current interpreter
+shortcut. A resolved lookup result should carry at least:
+
+- lookup mode
+- winning path, such as receiver slot, instance class chain, metaclass path, or
+  class path
+- access kind
+- descriptor receiver kind when descriptor invocation is needed
+- cached value or receiver-relative storage location
+- lookup validity cell
+
+That shape lets direct method calls, escaped method values, and ordinary
+attribute loads share resolution while still making different binding choices.
+
 If class-write invalidation later becomes more selective, for example by
 preserving lookup cells for ordinary value-to-ordinary-value writes, class-chain
 caches should switch back to storing a resolved object plus storage location so
@@ -397,12 +560,18 @@ If this work is done in multiple PRs, the safest order is:
 2. Upgrade `Shape` to support present/latent descriptors and flags.
 3. Switch instance transitions to the new descriptor semantics.
 4. Move instance `__class__` to predefined shape-backed slots.
-5. Define class-specific predefined slots.
-6. Migrate `ClassObject` storage from `members` to shape-backed slots.
-7. Delete `method_version`.
-8. Rework class lookup to use shape presence and latent descriptors.
-9. Update interpreter class construction paths.
-10. Add lookup validity cells and inline-cache integration later.
+5. Define class-specific predefined slots, bootstrap type-object Shapes, and
+   materialized `__mro__`.
+6. Migrate `ClassObject` storage from `members` to shape-backed slots behind a
+   temporary compatibility shim.
+7. Route all class mutation through the centralized class mutation helper and
+   delete `method_version`.
+8. Rework class lookup to use `__mro__`, Shape presence, latent descriptors,
+   and centralized descriptor classification.
+9. Update interpreter class construction paths and run `__set_name__` after
+   shape-backed attribute installation.
+10. Delete the `members` compatibility shim once all callers have moved.
+11. Add lookup validity cells and inline-cache integration later.
 
 ## Main Risk To Avoid
 
