@@ -15,6 +15,8 @@ namespace cl
     {
     public:
         static constexpr Klass klass = Klass(L"Scope", nullptr);
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::Scope;
 
         Scope(Value _parent_scope);
 

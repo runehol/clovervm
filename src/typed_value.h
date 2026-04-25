@@ -15,31 +15,29 @@ namespace cl
     struct CLInt
     {
     };
-    extern Klass cl_string_klass;
 
     template <typename T, typename Enable = void> struct ValueTypeTraits;
-    template <typename T> struct ExactKlassProvider
+    template <typename T> struct ExactNativeLayoutProvider
     {
-        static const Klass *expected_klass() { return &T::klass; }
+        static constexpr NativeLayoutId expected_native_layout_id()
+        {
+            return T::native_layout_id;
+        }
     };
 
-    struct StringKlassProvider
-    {
-        static const Klass *expected_klass() { return &cl_string_klass; }
-    };
-
-    template <typename T, typename KlassProvider, RefcountPolicy Policy>
+    template <typename T, typename NativeLayoutProvider, RefcountPolicy Policy>
     struct PointerBackedValueTypeTraits
     {
-        static const Klass *expected_klass()
+        static constexpr NativeLayoutId expected_native_layout_id()
         {
-            return KlassProvider::expected_klass();
+            return NativeLayoutProvider::expected_native_layout_id();
         }
 
         static bool is_instance(Value value)
         {
             return value.is_ptr() &&
-                   value.get_ptr<Object>()->klass == expected_klass();
+                   value.get_ptr<Object>()->native_layout_id() ==
+                       expected_native_layout_id();
         }
 
         using get_type = T *;
@@ -53,15 +51,15 @@ namespace cl
 
     template <typename T>
     struct ValueTypeTraits<T, std::enable_if_t<std::is_base_of_v<Object, T>>>
-        : PointerBackedValueTypeTraits<T, ExactKlassProvider<T>,
+        : PointerBackedValueTypeTraits<T, ExactNativeLayoutProvider<T>,
                                        RefcountPolicy::Always>
     {
     };
 
     template <>
     struct ValueTypeTraits<String>
-        : PointerBackedValueTypeTraits<String, StringKlassProvider,
-                                       RefcountPolicy::Maybe>
+        : PointerBackedValueTypeTraits<
+              String, ExactNativeLayoutProvider<String>, RefcountPolicy::Maybe>
     {
     };
 

@@ -162,6 +162,8 @@ namespace cl
     {
     public:
         static constexpr Klass klass = Klass(L"Shape", nullptr);
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::Shape;
 
         class Transition
         {

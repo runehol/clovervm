@@ -51,8 +51,10 @@ namespace cl
         public:
             using Storage = std::aligned_storage_t<sizeof(T), alignof(T)>;
             static constexpr Klass klass = Klass(L"RawArrayBacking", nullptr);
+            static constexpr NativeLayoutId native_layout_id =
+                NativeLayoutId::Generic;
 
-            explicit Backing(size_t capacity) : Object(&klass)
+            explicit Backing(size_t capacity) : Object(native_layout_id, &klass)
             {
                 (void)capacity;
             }
@@ -292,8 +294,10 @@ namespace cl
         {
         public:
             static constexpr Klass klass = Klass(L"ValueArrayBacking", nullptr);
+            static constexpr NativeLayoutId native_layout_id =
+                NativeLayoutId::Generic;
 
-            explicit Backing(size_t capacity) : Object(&klass)
+            explicit Backing(size_t capacity) : Object(native_layout_id, &klass)
             {
                 (void)capacity;
             }

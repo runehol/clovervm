@@ -6,8 +6,8 @@ namespace cl
 {
 
     Scope::Scope(Value _parent_scope)
-        : Object(&klass, compact_layout()), parent_scope(_parent_scope),
-          name_table(16, hash_not_present)
+        : Object(native_layout_id, &klass, compact_layout()),
+          parent_scope(_parent_scope), name_table(16, hash_not_present)
     {
     }
 

@@ -1,6 +1,8 @@
 #ifndef CL_OBJECT_H
 #define CL_OBJECT_H
 
+#include "native_layout_id.h"
+
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -161,20 +163,56 @@ namespace cl
     */
     struct Object
     {
-        constexpr Object(const Klass *_klass, uint32_t _layout)
-            : klass(_klass), refcount(0), layout(_layout)
+        constexpr Object(NativeLayoutId _native_layout_id, const Klass *_klass,
+                         uint32_t _layout)
+            : klass(_klass), refcount(0), layout(_layout),
+              native_layout(_native_layout_id)
         {
         }
 
-        constexpr Object(const Klass *_klass)
-            : klass(_klass), refcount(0), layout(0)
+        constexpr Object(NativeLayoutId _native_layout_id, const Klass *_klass)
+            : klass(_klass), refcount(0), layout(0),
+              native_layout(_native_layout_id)
         {
         }
+
+        NativeLayoutId native_layout_id() const { return native_layout; }
 
         const struct Klass *klass;
         int32_t refcount;
         uint32_t layout;
+        NativeLayoutId native_layout;
     };
+
+    template <typename T, typename = void>
+    struct HasNativeLayoutId : std::false_type
+    {
+    };
+
+    template <typename T>
+    struct HasNativeLayoutId<T, std::void_t<decltype(T::native_layout_id)>>
+        : std::true_type
+    {
+    };
+
+    template <typename T> bool can_convert_to(const Object *object)
+    {
+        static_assert(std::is_base_of_v<Object, T>);
+        static_assert(HasNativeLayoutId<T>::value);
+        return object != nullptr &&
+               object->native_layout_id() == T::native_layout_id;
+    }
+
+    template <typename T> T *try_convert_to(Object *object)
+    {
+        return can_convert_to<T>(object) ? static_cast<T *>(object) : nullptr;
+    }
+
+    template <typename T> const T *try_convert_to(const Object *object)
+    {
+        return can_convert_to<T>(object) ? static_cast<const T *>(object)
+                                         : nullptr;
+    }
 
     inline ExpandedHeader *expanded_header_for_object(Object *obj)
     {
@@ -203,7 +241,7 @@ namespace cl
 
     static_assert(sizeof(DynamicLayoutSpec) == 16);
     static_assert(sizeof(ExpandedHeader) == 16);
-    static_assert(sizeof(Object) == 16);
+    static_assert(sizeof(Object) == 24);
     static_assert(std::is_trivially_destructible_v<Object>);
 
 }  // namespace cl

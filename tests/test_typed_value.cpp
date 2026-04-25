@@ -22,7 +22,7 @@ TEST(TValue, StringAllowsCheckedConstructionFromNonInternedString)
     EXPECT_STREQ(L"hello", typed_string.extract()->data);
 }
 
-TEST(TValue, ScopeUsesConcreteKlassTrait)
+TEST(TValue, ScopeUsesNativeLayoutTrait)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -33,6 +33,25 @@ TEST(TValue, ScopeUsesConcreteKlassTrait)
 
     EXPECT_EQ(scope, typed_scope.extract());
     EXPECT_TRUE(typed_scope.extract()->empty());
+}
+
+TEST(NativeLayout, ObjectAndValueConversionHelpersUseExactLayout)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    String *string = context.thread()->make_refcounted_raw<String>(L"layout");
+    Value string_value = Value::from_oop(string);
+    Object *object = string_value.get_ptr<Object>();
+
+    EXPECT_EQ(NativeLayoutId::String, object->native_layout_id());
+    EXPECT_TRUE(can_convert_to<String>(object));
+    EXPECT_FALSE(can_convert_to<Scope>(object));
+    EXPECT_EQ(string, try_convert_to<String>(object));
+    EXPECT_EQ(nullptr, try_convert_to<Scope>(object));
+    EXPECT_TRUE(can_convert_to<String>(string_value));
+    EXPECT_EQ(string, try_convert_to<String>(string_value));
+    EXPECT_EQ(nullptr, try_convert_to<String>(Value::None()));
 }
 
 TEST(TValue, UnsafeUncheckedRoundTripsRawValue)

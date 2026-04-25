@@ -17,6 +17,8 @@ namespace cl
     {
     public:
         static constexpr Klass klass = Klass(L"Class", nullptr);
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::ClassObject;
         static constexpr uint32_t kClassSlotClass = 0;
         static constexpr uint32_t kClassSlotName = 1;
         static constexpr uint32_t kClassSlotBases = 2;

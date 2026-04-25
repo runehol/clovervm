@@ -33,12 +33,14 @@ namespace cl
     {
     public:
         static constexpr Klass klass = Klass(L"BuiltinFunction", nullptr);
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::BuiltinFunction;
         static constexpr uint32_t VarArgs = UINT32_MAX;
 
         BuiltinFunction(BuiltinCallback _callback, uint32_t _min_arity,
                         uint32_t _max_arity)
-            : Object(&klass, compact_layout()), callback(_callback),
-              min_arity(_min_arity), max_arity(_max_arity)
+            : Object(native_layout_id, &klass, compact_layout()),
+              callback(_callback), min_arity(_min_arity), max_arity(_max_arity)
         {
         }
 

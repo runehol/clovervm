@@ -214,6 +214,17 @@ namespace cl
         }
     };
 
+    template <typename T> bool can_convert_to(Value value)
+    {
+        return value.is_ptr() && can_convert_to<T>(value.get_ptr<Object>());
+    }
+
+    template <typename T> T *try_convert_to(Value value)
+    {
+        return value.is_ptr() ? try_convert_to<T>(value.get_ptr<Object>())
+                              : nullptr;
+    }
+
 }  // namespace cl
 
 #endif  // CL_VALUE_H

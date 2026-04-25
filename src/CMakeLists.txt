@@ -35,6 +35,7 @@ add_library(libclovervm STATIC
     klass.h
     list.cpp
     list.h
+    native_layout_id.h
     object.h
     owned.h
     owned_typed_value.h

@@ -32,6 +32,7 @@ namespace cl
 
     public:
         static constexpr Klass klass = Klass(L"dict", nullptr);
+        static constexpr NativeLayoutId native_layout_id = NativeLayoutId::Dict;
 
         Dict();
 

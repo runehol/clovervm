@@ -15,9 +15,12 @@ namespace cl
     {
     public:
         static constexpr Klass klass = Klass(L"Function", nullptr);
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::Function;
 
         Function(TValue<CodeObject> _code_object)
-            : Object(&klass, compact_layout()), code_object(_code_object)
+            : Object(native_layout_id, &klass, compact_layout()),
+              code_object(_code_object)
         {
         }
 

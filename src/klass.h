@@ -11,8 +11,11 @@ namespace cl
 
     struct Klass : public Object
     {
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::Klass;
+
         constexpr Klass(const cl_wchar *_klass_name, arity_one_function str_fun)
-            : Object(&cl_klass_klass, compact_layout()),
+            : Object(native_layout_id, &cl_klass_klass, compact_layout()),
               klass_name(_klass_name), str(str_fun)
         {
         }

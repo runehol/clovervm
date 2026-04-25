@@ -20,8 +20,10 @@ namespace
     struct ArrayOwner : public Object
     {
         static constexpr Klass klass = Klass(L"ArrayOwner", nullptr);
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::TestArrayOwner;
 
-        ArrayOwner() : Object(&klass, compact_layout()) {}
+        ArrayOwner() : Object(native_layout_id, &klass, compact_layout()) {}
 
         RawArray<int32_t> raw_values;
         ValueArray<TValue<String>> typed_values;

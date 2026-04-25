@@ -11,8 +11,8 @@ namespace cl
     ClassObject::ClassObject(TValue<String> _name,
                              uint32_t _factory_default_inline_slot_count,
                              Value _base)
-        : Object(&klass, compact_layout()), name(_name), base(_base),
-          initial_shape(Value::None()), shape(Value::None()),
+        : Object(native_layout_id, &klass, compact_layout()), name(_name),
+          base(_base), initial_shape(Value::None()), shape(Value::None()),
           overflow(Value::None()),
           factory_default_inline_slot_count(_factory_default_inline_slot_count)
     {

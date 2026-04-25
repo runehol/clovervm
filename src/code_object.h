@@ -48,12 +48,14 @@ namespace cl
     struct CodeObject : public Object
     {
         static constexpr Klass klass = Klass(L"CodeObject", nullptr);
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::CodeObject;
 
         CodeObject(const CompilationUnit *_compilation_unit,
                    TValue<Scope> _module_scope, Value _local_scope, Value _name)
-            : Object(&klass, compact_layout()), module_scope(_module_scope),
-              local_scope(_local_scope), name(_name),
-              compilation_unit(_compilation_unit)
+            : Object(native_layout_id, &klass, compact_layout()),
+              module_scope(_module_scope), local_scope(_local_scope),
+              name(_name), compilation_unit(_compilation_unit)
         {
         }
 

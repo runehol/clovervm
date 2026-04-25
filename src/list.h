@@ -15,8 +15,9 @@ namespace cl
     {
     public:
         static constexpr Klass klass = Klass(L"List", nullptr);
+        static constexpr NativeLayoutId native_layout_id = NativeLayoutId::List;
 
-        List() : Object(&klass, compact_layout()) {}
+        List() : Object(native_layout_id, &klass, compact_layout()) {}
         explicit List(size_t size);
 
         size_t size() const { return items.size(); }

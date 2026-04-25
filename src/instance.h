@@ -18,6 +18,8 @@ namespace cl
         {
         public:
             static constexpr Klass klass = Klass(L"OverflowSlots", nullptr);
+            static constexpr NativeLayoutId native_layout_id =
+                NativeLayoutId::InstanceOverflowSlots;
 
             OverflowSlots(uint32_t size, uint32_t capacity);
 
@@ -61,6 +63,8 @@ namespace cl
         };
 
         static constexpr Klass klass = Klass(L"Instance", nullptr);
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::Instance;
 
         Instance(Value cls, Value shape);
 

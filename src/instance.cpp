@@ -7,7 +7,8 @@ namespace cl
 {
 
     Instance::Instance(Value _cls, Value _shape)
-        : Object(&klass), cls(_cls), shape(_shape), overflow(Value::None())
+        : Object(native_layout_id, &klass), cls(_cls), shape(_shape),
+          overflow(Value::None())
     {
         uint32_t factory_default_inline_slot_count =
             get_shape()->get_factory_default_inline_slot_count();
@@ -155,7 +156,7 @@ namespace cl
     }
 
     Instance::OverflowSlots::OverflowSlots(uint32_t _size, uint32_t _capacity)
-        : Object(&klass), size(_size), capacity(_capacity)
+        : Object(native_layout_id, &klass), size(_size), capacity(_capacity)
     {
         assert(size <= capacity);
         for(uint32_t slot_idx = 0; slot_idx < capacity; ++slot_idx)
