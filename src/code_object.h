@@ -81,6 +81,20 @@ namespace cl
             return n_parameters + n_temporaries + n_locals;
         }
 
+        int32_t get_lowest_occupied_frame_offset() const
+        {
+            return -int32_t(FrameHeaderSizeBelowFp + n_locals + n_temporaries);
+        }
+
+        int32_t get_highest_occupied_frame_offset() const
+        {
+            if(n_parameters == 0)
+            {
+                return 0;
+            }
+            return int32_t(FrameHeaderSizeAboveFp + n_parameters - 1);
+        }
+
         size_t size() const
         {
             assert(code.size() == source_offsets.size());

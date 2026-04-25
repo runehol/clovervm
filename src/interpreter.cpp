@@ -145,13 +145,12 @@ namespace cl
         fp = (Value *)fp[0].as.ptr;
     }
 
-    static Value *make_nested_frame(Value *fp, CodeObject *body_code_object,
-                                    const uint8_t *return_pc,
-                                    CodeObject *return_code_object)
+    static Value *make_nested_frame(Value *fp, CodeObject *caller_code_object,
+                                    const uint8_t *return_pc)
     {
         Value *new_fp =
-            fp - body_code_object->get_n_registers() - FrameHeaderSizeAboveFp;
-        initialize_frame_header(new_fp, fp, return_code_object, return_pc);
+            fp + caller_code_object->get_lowest_occupied_frame_offset() - 1;
+        initialize_frame_header(new_fp, fp, caller_code_object, return_pc);
         return new_fp;
     }
 
@@ -866,8 +865,7 @@ namespace cl
             code_object->constant_table[body_const_offset].as_value());
 
         const uint8_t *return_pc = pc + 2;
-        Value *new_fp =
-            make_nested_frame(fp, body_code.extract(), return_pc, code_object);
+        Value *new_fp = make_nested_frame(fp, code_object, return_pc);
         initialize_class_body_frame(new_fp, body_code.extract());
 
         fp = new_fp;
