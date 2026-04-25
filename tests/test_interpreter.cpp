@@ -952,6 +952,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         {NativeLayoutId::Dict, L"dict"},
         {NativeLayoutId::Function, L"function"},
         {NativeLayoutId::BuiltinFunction, L"builtin_function"},
+        {NativeLayoutId::CodeObject, L"code"},
         {NativeLayoutId::RangeIterator, L"range_iterator"},
         {NativeLayoutId::Instance, L"object"},
     };
@@ -982,7 +983,14 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
                   name.extract()->get_class());
         EXPECT_EQ(test_context.vm().str_instance_root_shape(),
                   name.extract()->get_shape());
-        EXPECT_EQ(Value::from_oop(cls), builtins->get_by_name(name));
+        if(expected.native_layout_id == NativeLayoutId::CodeObject)
+        {
+            EXPECT_EQ(Value::not_present(), builtins->get_by_name(name));
+        }
+        else
+        {
+            EXPECT_EQ(Value::from_oop(cls), builtins->get_by_name(name));
+        }
     }
 
     TValue<String> post_bootstrap_name =

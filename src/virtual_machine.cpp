@@ -1,5 +1,6 @@
 #include "virtual_machine.h"
 #include "builtin_function.h"
+#include "code_object.h"
 #include "dict.h"
 #include "function.h"
 #include "instance.h"
@@ -131,6 +132,7 @@ namespace cl
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_builtin_function_class(this));
+        register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));
         register_builtin_class(make_instance_class(this));
 
@@ -155,6 +157,10 @@ namespace cl
 
         for(ClassObject *cls: builtin_classes)
         {
+            if(cls == code_class())
+            {
+                continue;
+            }
             builtin_scope.extract()->set_by_name(cls->get_name(),
                                                  Value::from_oop(cls));
         }

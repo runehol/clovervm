@@ -97,6 +97,10 @@ namespace cl
         {
             return class_for_native_layout(NativeLayoutId::BuiltinFunction);
         }
+        ClassObject *code_class() const
+        {
+            return class_for_native_layout(NativeLayoutId::CodeObject);
+        }
         ClassObject *range_iterator_class() const
         {
             return class_for_native_layout(NativeLayoutId::RangeIterator);
