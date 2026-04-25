@@ -566,17 +566,13 @@ template <> struct fmt::formatter<cl::CodeObject>
             {
                 format_to(out, "{}", c.get_smi());
             }
-            else if(c.is_ptr())
+            else if(c.is_ptr() && c.get_ptr<cl::Object>()->native_layout_id() ==
+                                      cl::NativeLayoutId::CodeObject)
             {
-                if(c.get_ptr()->native_layout_id() ==
-                   cl::NativeLayoutId::CodeObject)
-                {
-                    format_to(out, "{}", *c.get_ptr<cl::CodeObject>());
-                }
+                format_to(out, "{}", *c.get_ptr<cl::CodeObject>());
             }
             format_to(out, "\n");
         }
-
         return out;
     }
 };

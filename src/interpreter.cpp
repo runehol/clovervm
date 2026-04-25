@@ -988,8 +988,7 @@ namespace cl
 
             ClassObject *cls = static_cast<ClassObject *>(fun_object);
             accumulator = Value::from_oop(make_refcounted_raw<Instance>(
-                Value::from_oop(cls),
-                Value::from_oop(cls->get_initial_shape())));
+                Value::from_oop(cls), cls->get_initial_shape()));
 
             pc += 3;
 

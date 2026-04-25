@@ -45,17 +45,12 @@ namespace cl
         static_assert(std::is_trivially_copyable_v<T>);
         static_assert(std::is_trivially_destructible_v<T>);
 
-        class Backing : public Object
+        class Backing : public HeapObject
         {
         public:
             using Storage = std::aligned_storage_t<sizeof(T), alignof(T)>;
-            static constexpr NativeLayoutId native_layout_id =
-                NativeLayoutId::Generic;
 
-            explicit Backing(size_t capacity) : Object(native_layout_id)
-            {
-                (void)capacity;
-            }
+            explicit Backing(size_t capacity) : HeapObject() { (void)capacity; }
 
             static size_t size_for(size_t capacity)
             {
@@ -87,7 +82,7 @@ namespace cl
 
         RawArray()
             : size_value(Value::from_smi(0)),
-              capacity_value(Value::from_smi(0)), backing(Value::None())
+              capacity_value(Value::from_smi(0)), backing(nullptr)
         {
         }
 
@@ -119,14 +114,14 @@ namespace cl
 
         T *data()
         {
-            return backing == Value::None()
+            return backing == nullptr
                        ? nullptr
                        : reinterpret_cast<T *>(backing_ptr()->elements);
         }
 
         const T *data() const
         {
-            return backing == Value::None()
+            return backing == nullptr
                        ? nullptr
                        : reinterpret_cast<const T *>(backing_ptr()->elements);
         }
@@ -194,7 +189,7 @@ namespace cl
                 new(new_data + idx) T((*this)[idx]);
             }
 
-            backing = Value::from_oop(new_backing);
+            backing = new_backing;
             set_capacity(requested_capacity);
         }
 
@@ -263,18 +258,12 @@ namespace cl
                 Value::from_smi(static_cast<int64_t>(new_capacity));
         }
 
-        Backing *backing_ptr()
-        {
-            return backing.as_value().template get_ptr<Backing>();
-        }
-        const Backing *backing_ptr() const
-        {
-            return backing.as_value().template get_ptr<Backing>();
-        }
+        Backing *backing_ptr() { return backing.extract(); }
+        const Backing *backing_ptr() const { return backing.extract(); }
 
         MemberTValue<SMI> size_value;
         MemberTValue<SMI> capacity_value;
-        MemberValue backing;
+        MemberHeapPtr<Backing> backing;
     };
 
     template <typename T> class ValueArray
@@ -282,22 +271,16 @@ namespace cl
     private:
         static_assert(std::is_standard_layout_v<T>);
         static_assert(std::is_trivially_destructible_v<T>);
-        static_assert(!std::is_base_of_v<Object, T>);
+        static_assert(!std::is_base_of_v<HeapObject, T>);
         static_assert(alignof(T) <= alignof(Value));
         static_assert(sizeof(T) % sizeof(Value) == 0);
 
         static constexpr size_t values_per_element = sizeof(T) / sizeof(Value);
 
-        class Backing : public Object
+        class Backing : public HeapObject
         {
         public:
-            static constexpr NativeLayoutId native_layout_id =
-                NativeLayoutId::Generic;
-
-            explicit Backing(size_t capacity) : Object(native_layout_id)
-            {
-                (void)capacity;
-            }
+            explicit Backing(size_t capacity) : HeapObject() { (void)capacity; }
 
             static size_t size_for(size_t capacity)
             {
@@ -330,7 +313,7 @@ namespace cl
 
         ValueArray()
             : size_value(Value::from_smi(0)),
-              capacity_value(Value::from_smi(0)), backing(Value::None())
+              capacity_value(Value::from_smi(0)), backing(nullptr)
         {
         }
 
@@ -362,7 +345,7 @@ namespace cl
 
         const T *data() const
         {
-            return backing == Value::None()
+            return backing == nullptr
                        ? nullptr
                        : reinterpret_cast<const T *>(backing_ptr()->elements);
         }
@@ -419,12 +402,11 @@ namespace cl
                 incref_element(new_data + idx);
             }
 
-            if(backing != Value::None())
+            if(backing != nullptr)
             {
-                object_clear_value_ownership(
-                    backing.as_value().template get_ptr<Object>());
+                object_clear_value_ownership(backing.extract());
             }
-            backing = Value::from_oop(new_backing);
+            backing = new_backing;
             set_capacity(requested_capacity);
         }
 
@@ -495,7 +477,7 @@ namespace cl
 
         T *mutable_data()
         {
-            return backing == Value::None()
+            return backing == nullptr
                        ? nullptr
                        : reinterpret_cast<T *>(backing_ptr()->elements);
         }
@@ -521,7 +503,7 @@ namespace cl
 
         void clear_elements(size_t start_idx, size_t end_idx)
         {
-            if(backing == Value::None())
+            if(backing == nullptr)
             {
                 return;
             }
@@ -543,18 +525,12 @@ namespace cl
                 Value::from_smi(static_cast<int64_t>(new_capacity));
         }
 
-        Backing *backing_ptr()
-        {
-            return backing.as_value().template get_ptr<Backing>();
-        }
-        const Backing *backing_ptr() const
-        {
-            return backing.as_value().template get_ptr<Backing>();
-        }
+        Backing *backing_ptr() { return backing.extract(); }
+        const Backing *backing_ptr() const { return backing.extract(); }
 
         MemberTValue<SMI> size_value;
         MemberTValue<SMI> capacity_value;
-        MemberValue backing;
+        MemberHeapPtr<Backing> backing;
     };
 
 }  // namespace cl

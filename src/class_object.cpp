@@ -13,19 +13,19 @@ namespace cl
                              uint32_t _factory_default_inline_slot_count,
                              Value _base, ShapeFlags class_shape_flags)
         : Object(BootstrapObjectTag{}, native_layout_id, compact_layout()),
-          name(_name), base(_base), initial_shape(Value::None()),
-          shape(Value::None()), overflow(Value::None()),
+          name(_name), base(_base), initial_shape(nullptr), shape(nullptr),
+          overflow(nullptr),
           factory_default_inline_slot_count(_factory_default_inline_slot_count)
     {
         TValue<String> dunder_class_name = interned_string(L"__class__");
         DescriptorFlags instance_class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly);
         instance_class_flags |= descriptor_flag(DescriptorFlag::StableSlot);
-        initial_shape = Value::from_oop(Shape::make_root_with_single_descriptor(
+        initial_shape = Shape::make_root_with_single_descriptor(
             Value::from_oop(this), dunder_class_name,
             DescriptorInfo::make(StorageLocation{0, StorageKind::Inline},
                                  instance_class_flags),
-            1));
+            1);
 
         TValue<String> dunder_name_name = interned_string(L"__name__");
         TValue<String> dunder_bases_name = interned_string(L"__bases__");
@@ -55,9 +55,9 @@ namespace cl
                     StorageLocation{kClassSlotMro, StorageKind::Inline},
                     class_metadata_flags)},
         };
-        shape = Value::from_oop(Shape::make_root_with_descriptors(
+        shape = Shape::make_root_with_descriptors(
             Value::from_oop(this), descriptors, kClassPredefinedSlotCount,
-            kClassPredefinedSlotCount, class_shape_flags));
+            kClassPredefinedSlotCount, class_shape_flags);
 
         for(uint32_t slot_idx = 0; slot_idx < kClassInlineSlotCount; ++slot_idx)
         {
@@ -130,19 +130,13 @@ namespace cl
         return builtin_class_definition(cls, native_layout_ids);
     }
 
-    Shape *ClassObject::get_shape() const
-    {
-        return shape.as_value().get_ptr<Shape>();
-    }
+    Shape *ClassObject::get_shape() const { return shape.extract(); }
 
-    void ClassObject::set_shape(Shape *new_shape)
-    {
-        shape = Value::from_oop(new_shape);
-    }
+    void ClassObject::set_shape(Shape *new_shape) { shape = new_shape; }
 
     Shape *ClassObject::get_initial_shape() const
     {
-        return initial_shape.as_value().get_ptr<Shape>();
+        return initial_shape.extract();
     }
 
     ClassObject *ClassObject::get_base() const
@@ -278,11 +272,11 @@ namespace cl
 
     Instance::OverflowSlots *ClassObject::get_overflow_slots() const
     {
-        if(overflow == Value::None())
+        if(overflow == nullptr)
         {
             return nullptr;
         }
-        return overflow.as_value().get_ptr<Instance::OverflowSlots>();
+        return overflow.extract();
     }
 
     Instance::OverflowSlots *
@@ -318,7 +312,7 @@ namespace cl
             }
         }
 
-        overflow = Value::from_oop(new_overflow_slots);
+        overflow = new_overflow_slots;
         return new_overflow_slots;
     }
 

@@ -1,13 +1,11 @@
 #include "virtual_machine.h"
 #include "builtin_function.h"
-#include "code_object.h"
 #include "dict.h"
 #include "function.h"
 #include "instance.h"
 #include "list.h"
 #include "range_iterator.h"
 #include "scope.h"
-#include "shape.h"
 #include "thread_state.h"
 #include <cassert>
 #include <stdexcept>
@@ -97,7 +95,6 @@ namespace cl
         {
             NativeLayoutId native_layout_id = definition.native_layout_ids[idx];
             assert(native_layout_id != NativeLayoutId::Invalid);
-            assert(native_layout_id != NativeLayoutId::Generic);
             assert(static_cast<size_t>(native_layout_id) < NativeLayoutCount);
             assert(class_for_native_layouts[static_cast<size_t>(
                        native_layout_id)] == nullptr);
@@ -114,7 +111,7 @@ namespace cl
         assert(str_instance_root_shape_ != nullptr);
 
         Value cls = Value::from_oop(str_class_);
-        Value shape = Value::from_oop(str_instance_root_shape_);
+        Shape *shape = str_instance_root_shape_;
         interned_strings.for_each_raw([cls, shape](String *string) {
             if(string->get_class() == Value::None())
             {
@@ -135,9 +132,6 @@ namespace cl
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_builtin_function_class(this));
         register_builtin_class(make_range_iterator_class(this));
-        register_builtin_class(make_scope_class(this));
-        register_builtin_class(make_code_object_class(this));
-        register_builtin_class(make_shape_class(this));
         register_builtin_class(make_instance_class(this));
 
         ClassObject *type = type_class();
@@ -156,8 +150,8 @@ namespace cl
     {
         initialize_builtin_types();
 
-        builtin_scope =
-            refcounted_global_heap.make_global_value<Scope>(Value::None());
+        builtin_scope = HeapPtr<Scope>(
+            refcounted_global_heap.make_global_raw<Scope>(nullptr));
 
         for(ClassObject *cls: builtin_classes)
         {

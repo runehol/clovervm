@@ -91,8 +91,8 @@ namespace cl
         using RegisterIndex = int32_t;
 
         Codegen(const AstVector &_av)
-            : av(_av), module_scope(make_refcounted_value<Scope>(
-                           active_vm()->get_builtin_scope())),
+            : av(_av), module_scope(make_refcounted_raw<Scope>(
+                           active_vm()->get_builtin_scope().extract())),
               module_name(interned_string(L"<module>"))
 
         {
@@ -116,7 +116,7 @@ namespace cl
 
         CodeObject *make_code_obj(Mode mode)
         {
-            Value local_scope = Value::None();
+            Scope *local_scope = nullptr;
             Value name = Value::None();
             switch(mode)
             {
@@ -125,13 +125,13 @@ namespace cl
                     break;
 
                 case Mode::Class:
-                    local_scope =
-                        make_refcounted_value<Scope>(code_obj->local_scope);
+                    local_scope = make_refcounted_raw<Scope>(
+                        code_obj->local_scope.extract());
                     name = code_obj->name.as_value();
                     break;
                 case Mode::Function:
-                    local_scope =
-                        make_refcounted_value<Scope>(code_obj->local_scope);
+                    local_scope = make_refcounted_raw<Scope>(
+                        code_obj->local_scope.extract());
                     break;
             }
 
@@ -187,7 +187,7 @@ namespace cl
         }
 
         const AstVector &av;
-        TValue<Scope> module_scope;
+        Scope *module_scope;
         TValue<String> module_name;
         CodeObject *code_obj = nullptr;
 
@@ -250,7 +250,7 @@ namespace cl
         void finalize_code_object_register_counts(CodeObject *target) const
         {
             uint32_t local_scope_size = 0;
-            if(target->local_scope != Value::None())
+            if(target->local_scope != nullptr)
             {
                 local_scope_size = target->get_local_scope_ptr()->size();
             }

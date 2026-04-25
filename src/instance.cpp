@@ -8,9 +8,8 @@
 namespace cl
 {
 
-    Instance::Instance(Value _cls, Value _shape)
-        : Object(native_layout_id), cls(_cls), shape(_shape),
-          overflow(Value::None())
+    Instance::Instance(Value _cls, Shape *_shape)
+        : Object(native_layout_id), cls(_cls), shape(_shape), overflow(nullptr)
     {
         uint32_t factory_default_inline_slot_count =
             get_shape()->get_factory_default_inline_slot_count();
@@ -36,33 +35,26 @@ namespace cl
         return builtin_class_definition(cls, native_layout_ids);
     }
 
-    DynamicLayoutSpec Instance::layout_spec_for(Value cls, Value shape)
+    DynamicLayoutSpec Instance::layout_spec_for(Value cls, Shape *shape)
     {
-        Shape *shape_ptr = shape.get_ptr<Shape>();
         uint32_t factory_default_inline_slot_count =
-            shape_ptr->get_factory_default_inline_slot_count();
+            shape->get_factory_default_inline_slot_count();
         return DynamicLayoutSpec{round_up_to_16byte_units(size_for(
                                      factory_default_inline_slot_count)),
                                  3 + factory_default_inline_slot_count};
     }
 
-    Shape *Instance::get_shape() const
-    {
-        return shape.as_value().get_ptr<Shape>();
-    }
+    Shape *Instance::get_shape() const { return shape.extract(); }
 
-    void Instance::set_shape(Shape *new_shape)
-    {
-        shape = Value::from_oop(new_shape);
-    }
+    void Instance::set_shape(Shape *new_shape) { shape = new_shape; }
 
     Instance::OverflowSlots *Instance::get_overflow_slots() const
     {
-        if(overflow == Value::None())
+        if(overflow == nullptr)
         {
             return nullptr;
         }
-        return overflow.as_value().get_ptr<OverflowSlots>();
+        return overflow.extract();
     }
 
     Value Instance::get_own_property(TValue<String> name) const
@@ -162,12 +154,12 @@ namespace cl
             }
         }
 
-        overflow = Value::from_oop(new_overflow_slots);
+        overflow = new_overflow_slots;
         return new_overflow_slots;
     }
 
     Instance::OverflowSlots::OverflowSlots(uint32_t _size, uint32_t _capacity)
-        : Object(native_layout_id), size(_size), capacity(_capacity)
+        : HeapObject(), size(_size), capacity(_capacity)
     {
         assert(size <= capacity);
         for(uint32_t slot_idx = 0; slot_idx < capacity; ++slot_idx)

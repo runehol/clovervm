@@ -30,7 +30,7 @@ namespace cl
     template <typename T, typename AllocateFn, typename... Args>
     T *construct_dynamic_object(AllocateFn &&allocate_fn, Args &&...args)
     {
-        static_assert(std::is_base_of_v<Object, T>);
+        static_assert(std::is_base_of_v<HeapObject, T>);
         static_assert(HasObjectLayout<T>::value && T::has_dynamic_layout);
 
         DynamicLayoutSpec spec = T::layout_spec_for(args...);
@@ -69,7 +69,7 @@ namespace cl
     static constexpr size_t LargeAllocationSize = DefaultSlabSize / 2;
 
     class ThreadLocalHeap;
-    struct Object;
+    struct HeapObject;
 
     /* global heap, shared between threads */
 
@@ -97,7 +97,7 @@ namespace cl
         template <typename T, typename... Args>
         T *make_global_raw(Args &&...args)
         {
-            static_assert(std::is_base_of_v<Object, T>);
+            static_assert(std::is_base_of_v<HeapObject, T>);
             if constexpr(HasObjectLayout<T>::value && T::has_dynamic_layout)
             {
                 return construct_dynamic_object<T>(
@@ -161,7 +161,7 @@ namespace cl
 
         template <typename T, typename... Args> T *make(Args &&...args)
         {
-            static_assert(std::is_base_of_v<Object, T>);
+            static_assert(std::is_base_of_v<HeapObject, T>);
             static_assert(HasObjectLayout<T>::value);
             if constexpr(T::has_dynamic_layout)
             {

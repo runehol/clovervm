@@ -36,10 +36,10 @@ namespace cl
         return generate_code(av);
     }
 
-    void ThreadState::add_to_active_zero_count_table(Value v)
+    void ThreadState::add_to_active_zero_count_table(HeapObject *obj)
     {
         ThreadState *ts = ThreadState::get_active();
-        ts->zero_count_table.push_back(v);
+        ts->zero_count_table.push_back(obj);
     }
 
 }  // namespace cl

@@ -17,12 +17,9 @@ namespace
     static_assert(std::is_trivially_destructible_v<ValuePair>);
     static_assert(sizeof(ValuePair) == sizeof(Value) * 2);
 
-    struct ArrayOwner : public Object
+    struct ArrayOwner : public HeapObject
     {
-        static constexpr NativeLayoutId native_layout_id =
-            NativeLayoutId::TestArrayOwner;
-
-        ArrayOwner() : Object(native_layout_id, compact_layout()) {}
+        ArrayOwner() : HeapObject(compact_layout()) {}
 
         RawArray<int32_t> raw_values;
         ValueArray<TValue<String>> typed_values;

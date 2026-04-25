@@ -1,25 +1,14 @@
 #include "scope.h"
-#include "class_object.h"
 #include "str.h"
-#include "virtual_machine.h"
 #include <stdexcept>
 
 namespace cl
 {
 
-    Scope::Scope(Value _parent_scope)
-        : Object(native_layout_id, compact_layout()),
-          parent_scope(_parent_scope), name_table(16, hash_not_present)
+    Scope::Scope(Scope *_parent_scope)
+        : HeapObject(compact_layout()), parent_scope(_parent_scope),
+          name_table(16, hash_not_present)
     {
-    }
-
-    BuiltinClassDefinition make_scope_class(VirtualMachine *vm)
-    {
-        static constexpr NativeLayoutId native_layout_ids[] = {
-            NativeLayoutId::Scope};
-        ClassObject *cls = ClassObject::make_builtin_class(
-            vm->get_or_create_interned_string_value(L"scope"), 1, nullptr, 0);
-        return builtin_class_definition(cls, native_layout_ids);
     }
 
     const int32_t *Scope::find_name_table_entry(TValue<String> key) const
@@ -143,7 +132,7 @@ namespace cl
         }
 
         int32_t parent_idx = -1;
-        if(parent_scope != Value::None())
+        if(parent_scope != nullptr)
         {
             parent_idx =
                 get_parent_scope_ptr()->register_slot_index_for_read(key);
@@ -174,7 +163,7 @@ namespace cl
         {
             return get_by_slot_index(slot_idx);
         }
-        if(parent_scope != Value::None())
+        if(parent_scope != nullptr)
         {
             return get_parent_scope_ptr()->get_by_name(name);
         }

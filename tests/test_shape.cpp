@@ -74,7 +74,7 @@ TEST(Shape, ShapeFlagsAreStoredOnShape)
     flags |= shape_flag(ShapeFlag::IsImmutableType);
 
     Shape *shape = context.thread()->make_refcounted_raw<Shape>(
-        Value::from_oop(cls), Value::None(), 0, 0, flags, 0);
+        Value::from_oop(cls), nullptr, 0, 0, flags, 0);
 
     EXPECT_EQ(flags, shape->flags());
     EXPECT_TRUE(shape->has_flag(ShapeFlag::IsClassObject));
@@ -248,7 +248,7 @@ TEST(Shape, InstanceRejectsStoreToReadOnlyDescriptor)
     Shape *shape_with_readonly = cls->get_initial_shape()->derive_transition(
         a_name, ShapeTransitionVerb::Add, flags);
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(shape_with_readonly));
+        Value::from_oop(cls), shape_with_readonly);
     StorageLocation location =
         shape_with_readonly->resolve_present_property(a_name);
     ASSERT_TRUE(location.is_found());
@@ -352,7 +352,7 @@ TEST(Shape, InstanceStoresClassAndShapeSeparately)
     ClassObject *cls =
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+        Value::from_oop(cls), cls->get_initial_shape());
 
     EXPECT_EQ(Value::from_oop(cls), instance->get_class());
     EXPECT_EQ(cls->get_initial_shape(), instance->get_shape());
@@ -370,7 +370,7 @@ TEST(Shape, InstanceStoresDunderClassInPredefinedReadonlySlot)
     ClassObject *cls =
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+        Value::from_oop(cls), cls->get_initial_shape());
 
     Shape *shape = instance->get_shape();
     StorageLocation class_location =
@@ -403,7 +403,7 @@ TEST(Shape, InstanceStoresAndLoadsInlineOwnProperty)
     ClassObject *cls =
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+        Value::from_oop(cls), cls->get_initial_shape());
 
     instance->set_own_property(a_name, Value::from_smi(7));
 
@@ -435,7 +435,7 @@ TEST(Shape, InstanceSpillsIntoGeometricallyGrowingOverflowStorage)
     ClassObject *cls =
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 1);
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+        Value::from_oop(cls), cls->get_initial_shape());
 
     instance->set_own_property(a_name, Value::from_smi(1));
     instance->set_own_property(b_name, Value::from_smi(2));
@@ -467,7 +467,7 @@ TEST(Shape, DeleteClearsSlotAndAllowsFreshReAdd)
     ClassObject *cls =
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 1);
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+        Value::from_oop(cls), cls->get_initial_shape());
 
     instance->set_own_property(a_name, Value::from_smi(10));
     instance->set_own_property(b_name, Value::from_smi(11));
@@ -495,9 +495,9 @@ TEST(Shape, TwoInstancesShareShapeTransitionsButHoldDistinctValues)
     ClassObject *cls =
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 1);
     Instance *first = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+        Value::from_oop(cls), cls->get_initial_shape());
     Instance *second = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+        Value::from_oop(cls), cls->get_initial_shape());
 
     first->set_own_property(a_name, Value::from_smi(1));
     first->set_own_property(b_name, Value::from_smi(2));

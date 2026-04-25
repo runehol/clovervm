@@ -1,7 +1,6 @@
 #ifndef CL_CODE_OBJECT_H
 #define CL_CODE_OBJECT_H
 
-#include "builtin_class_registry.h"
 #include "bytecode.h"
 #include "owned.h"
 #include "owned_typed_value.h"
@@ -13,7 +12,6 @@ namespace cl
 {
     struct CompilationUnit;
     struct CodeObject;
-    class VirtualMachine;
 
     static constexpr int32_t FrameHeaderSizeAboveFp = 2;
     static constexpr int32_t FrameHeaderSizeBelowFp = 2;
@@ -53,15 +51,15 @@ namespace cl
             NativeLayoutId::CodeObject;
 
         CodeObject(const CompilationUnit *_compilation_unit,
-                   TValue<Scope> _module_scope, Value _local_scope, Value _name)
+                   Scope *_module_scope, Scope *_local_scope, Value _name)
             : Object(native_layout_id, compact_layout()),
               module_scope(_module_scope), local_scope(_local_scope),
               name(_name), compilation_unit(_compilation_unit)
         {
         }
 
-        MemberTValue<Scope> module_scope;
-        MemberValue local_scope;
+        MemberHeapPtr<Scope> module_scope;
+        MemberHeapPtr<Scope> local_scope;
         MemberValue name;
         const CompilationUnit *compilation_unit;
 
@@ -69,10 +67,7 @@ namespace cl
         uint32_t n_locals = 0;
         uint32_t n_temporaries = 0;
 
-        Scope *get_local_scope_ptr() const
-        {
-            return local_scope.as_value().get_ptr<Scope>();
-        }
+        Scope *get_local_scope_ptr() const { return local_scope.extract(); }
 
         std::vector<uint8_t> code;
 
@@ -296,8 +291,6 @@ namespace cl
         }
         unresolved_relocations.clear();
     }
-
-    BuiltinClassDefinition make_code_object_class(VirtualMachine *vm);
 
 }  // namespace cl
 

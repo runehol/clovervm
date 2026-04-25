@@ -1,7 +1,6 @@
 #ifndef CL_SCOPE_H
 #define CL_SCOPE_H
 
-#include "builtin_class_registry.h"
 #include "object.h"
 #include "str.h"
 #include "typed_value.h"
@@ -11,15 +10,10 @@
 
 namespace cl
 {
-    class VirtualMachine;
-
-    class Scope : public Object
+    class Scope : public HeapObject
     {
     public:
-        static constexpr NativeLayoutId native_layout_id =
-            NativeLayoutId::Scope;
-
-        Scope(Value _parent_scope);
+        Scope(Scope *_parent_scope);
 
         /* For a write, we just insert a regular not-present value with no
          * parent scope slot indication (-1) */
@@ -79,7 +73,7 @@ namespace cl
             }
             else
             {
-                if(unlikely(parent_scope != Value::None()))
+                if(unlikely(parent_scope != nullptr))
                 {
                     return get_parent_scope_ptr()->get_by_name(
                         get_name_by_slot_index(slot_idx));
@@ -138,10 +132,7 @@ namespace cl
         static constexpr uint32_t max_load_denom = 4;
         static constexpr int32_t hash_not_present = -1;
 
-        Scope *get_parent_scope_ptr() const
-        {
-            return parent_scope.as_value().get_ptr<Scope>();
-        }
+        Scope *get_parent_scope_ptr() const { return parent_scope.extract(); }
         const int32_t *find_name_table_entry(TValue<String> key) const;
         int32_t *find_name_table_entry(TValue<String> key);
         void maybe_grow_name_table()
@@ -157,7 +148,7 @@ namespace cl
         int32_t allocate_slot(TValue<String> key, Value initial_value);
         void revive_slot(int32_t slot_idx);
 
-        MemberValue parent_scope;
+        MemberHeapPtr<Scope> parent_scope;
         RawArray<int32_t> name_table;
         RawArray<Entry> entries;
         ValueArray<Value> slot_values;
@@ -174,8 +165,6 @@ namespace cl
                 decltype(slot_current_entry_indices)::embedded_value_count);
     };
 
-    BuiltinClassDefinition make_scope_class(VirtualMachine *vm);
-
-};  // namespace cl
+}  // namespace cl
 
 #endif  // CL_SCOPE_H

@@ -2,20 +2,27 @@
 #include "class_object.h"
 #include "str.h"
 #include "thread_state.h"
-#include "virtual_machine.h"
 #include <stdexcept>
 
 namespace cl
 {
+    Shape::Transition::Transition(TValue<String> _name,
+                                  ShapeTransitionVerb _verb,
+                                  DescriptorFlags _descriptor_flags,
+                                  Shape *_next_shape)
+        : name(_name), verb(_verb), descriptor_flags(_descriptor_flags),
+          next_shape(_next_shape)
+    {
+    }
 
-    Shape::Shape(Value _owner_class, Value _previous_shape,
+    Shape::Shape(Value _owner_class, Shape *_previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count)
         : Shape(_owner_class, _previous_shape, _next_slot_index,
                 _property_count, shape_flag(ShapeFlag::None))
     {
     }
 
-    Shape::Shape(Value _owner_class, Value _previous_shape,
+    Shape::Shape(Value _owner_class, Shape *_previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count,
                  ShapeFlags _shape_flags)
         : Shape(_owner_class, _previous_shape, _next_slot_index,
@@ -23,13 +30,10 @@ namespace cl
     {
     }
 
-    Shape::Shape(Value _owner_class, Value _previous_shape,
+    Shape::Shape(Value _owner_class, Shape *_previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count,
                  ShapeFlags _shape_flags, uint32_t _present_count)
-        : Object(native_layout_id),
-          previous_shape(_previous_shape == Value::None()
-                             ? nullptr
-                             : _previous_shape.get_ptr<Shape>()),
+        : HeapObject(), previous_shape(_previous_shape),
           next_slot_index(_next_slot_index), property_count_(_property_count),
           present_count_(_present_count), shape_flags(_shape_flags),
           transitions(), owner_class(_owner_class)
@@ -40,15 +44,6 @@ namespace cl
             descriptor_names[idx] = Value::None();
             descriptor_infos()[idx] = DescriptorInfo::not_found();
         }
-    }
-
-    BuiltinClassDefinition make_shape_class(VirtualMachine *vm)
-    {
-        static constexpr NativeLayoutId native_layout_ids[] = {
-            NativeLayoutId::Shape};
-        ClassObject *cls = ClassObject::make_builtin_class(
-            vm->get_or_create_interned_string_value(L"shape"), 1, nullptr, 0);
-        return builtin_class_definition(cls, native_layout_ids);
     }
 
     Shape *Shape::make_root_with_single_descriptor(Value owner_class,
@@ -68,7 +63,7 @@ namespace cl
         ShapeFlags shape_flags)
     {
         Shape *shape = make_refcounted_raw<Shape>(
-            owner_class, Value::None(), next_slot_index, descriptor_count,
+            owner_class, nullptr, next_slot_index, descriptor_count,
             shape_flags, descriptor_count);
         for(uint32_t descriptor_idx = 0; descriptor_idx < descriptor_count;
             ++descriptor_idx)
@@ -229,9 +224,8 @@ namespace cl
         }
 
         Shape *next_shape = make_refcounted_raw<Shape>(
-            owner_class.as_value(), Value::from_oop(this),
-            next_slot_index_for_shape, next_property_count, shape_flags,
-            present_count_ + 1);
+            owner_class.as_value(), this, next_slot_index_for_shape,
+            next_property_count, shape_flags, present_count_ + 1);
         uint32_t next_property_idx = 0;
         for(uint32_t property_idx = 0; property_idx < present_count_;
             ++property_idx)
@@ -276,8 +270,8 @@ namespace cl
         uint32_t next_property_count =
             keep_latent ? property_count_ : property_count_ - 1;
         Shape *next_shape = make_refcounted_raw<Shape>(
-            owner_class.as_value(), Value::from_oop(this), next_slot_index,
-            next_property_count, shape_flags, present_count_ - 1);
+            owner_class.as_value(), this, next_slot_index, next_property_count,
+            shape_flags, present_count_ - 1);
         uint32_t next_property_idx = 0;
         for(uint32_t property_idx = 0; property_idx < present_count_;
             ++property_idx)

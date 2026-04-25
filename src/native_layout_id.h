@@ -8,7 +8,6 @@ namespace cl
     enum class NativeLayoutId : uint8_t
     {
         Invalid = 0,
-        Generic,
 
         String,
         List,
@@ -16,16 +15,11 @@ namespace cl
         Function,
         BuiltinFunction,
         RangeIterator,
-        Scope,
         CodeObject,
-        Shape,
         ClassObject,
         Instance,
-        InstanceOverflowSlots,
 
         Count,
-
-        TestArrayOwner,
     };
 
 }  // namespace cl

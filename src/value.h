@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <type_traits>
 
 namespace cl
 {
@@ -139,7 +140,7 @@ namespace cl
         union
         {
             long long integer;
-            struct Object *ptr;
+            struct HeapObject *ptr;
         } as;
 
         bool operator==(Value o) const { return as.integer == o.as.integer; }
@@ -196,7 +197,9 @@ namespace cl
             return v >= -128 && v <= 127;
         }
 
-        template <typename T = Object> T *get_ptr() const
+        template <typename T = Object,
+                  typename = std::enable_if_t<std::is_base_of_v<Object, T>>>
+        T *get_ptr() const
         {
             assert(is_ptr());
             return reinterpret_cast<T *>(as.ptr);
@@ -213,6 +216,26 @@ namespace cl
             return (as.integer & value_truthy_mask) == 0;
         }
     };
+
+    template <typename T> class HeapPtr
+    {
+    public:
+        HeapPtr() : ptr_(nullptr) {}
+        HeapPtr(std::nullptr_t) : ptr_(nullptr) {}
+        HeapPtr(T *ptr) : ptr_(ptr) {}
+
+        T *get() const { return ptr_; }
+        T *extract() const { return ptr_; }
+
+        explicit operator bool() const { return ptr_ != nullptr; }
+        bool operator==(std::nullptr_t) const { return ptr_ == nullptr; }
+        bool operator!=(std::nullptr_t) const { return ptr_ != nullptr; }
+
+    private:
+        T *ptr_;
+    };
+
+    static_assert(sizeof(HeapPtr<HeapObject>) == sizeof(HeapObject *));
 
     template <typename T> bool can_convert_to(Value value)
     {

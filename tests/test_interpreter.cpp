@@ -829,7 +829,7 @@ TEST(Interpreter,
     cls_value.get_ptr<ClassObject>()->set_own_property(method_name, identity);
 
     CodeObject *code_obj = test_context.compile_file(L"obj.method(4)\n");
-    code_obj->module_scope = Value::from_oop(module_scope);
+    code_obj->module_scope = module_scope;
 
     Value actual = test_context.thread()->run(code_obj);
     EXPECT_EQ(Value::from_smi(4), actual);
@@ -953,9 +953,6 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         {NativeLayoutId::Function, L"function"},
         {NativeLayoutId::BuiltinFunction, L"builtin_function"},
         {NativeLayoutId::RangeIterator, L"range_iterator"},
-        {NativeLayoutId::Scope, L"scope"},
-        {NativeLayoutId::CodeObject, L"code"},
-        {NativeLayoutId::Shape, L"shape"},
         {NativeLayoutId::Instance, L"object"},
     };
 

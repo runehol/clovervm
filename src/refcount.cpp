@@ -4,8 +4,8 @@
 namespace cl
 {
 
-    void add_to_active_zero_count_table(Value v)
+    void add_to_active_zero_count_table(HeapObject *obj)
     {
-        ThreadState::add_to_active_zero_count_table(v);
+        ThreadState::add_to_active_zero_count_table(obj);
     }
 }  // namespace cl

@@ -16,12 +16,9 @@ namespace cl
     class Instance : public Object
     {
     public:
-        class OverflowSlots : public Object
+        class OverflowSlots : public HeapObject
         {
         public:
-            static constexpr NativeLayoutId native_layout_id =
-                NativeLayoutId::InstanceOverflowSlots;
-
             OverflowSlots(uint32_t size, uint32_t capacity);
 
             static size_t size_for(uint32_t capacity)
@@ -66,7 +63,7 @@ namespace cl
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::Instance;
 
-        Instance(Value cls, Value shape);
+        Instance(Value cls, Shape *shape);
 
         static size_t size_for(uint32_t factory_default_inline_slot_count)
         {
@@ -76,7 +73,7 @@ namespace cl
                    sizeof(Value);
         }
 
-        static DynamicLayoutSpec layout_spec_for(Value cls, Value shape);
+        static DynamicLayoutSpec layout_spec_for(Value cls, Shape *shape);
 
         Value get_class() const { return cls.as_value(); }
         Shape *get_shape() const;
@@ -93,8 +90,8 @@ namespace cl
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
 
         MemberValue cls;
-        MemberValue shape;
-        MemberValue overflow;
+        MemberHeapPtr<Shape> shape;
+        MemberHeapPtr<OverflowSlots> overflow;
         Value inline_slots[1];
 
     public:

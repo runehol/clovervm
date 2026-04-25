@@ -1,8 +1,8 @@
 #ifndef CL_SHAPE_H
 #define CL_SHAPE_H
 
-#include "builtin_class_registry.h"
 #include "object.h"
+#include "owned.h"
 #include "owned_typed_value.h"
 #include "typed_value.h"
 #include "value.h"
@@ -13,8 +13,6 @@
 namespace cl
 {
     class ClassObject;
-    class VirtualMachine;
-
     enum class ShapeTransitionVerb : uint8_t
     {
         Add,
@@ -159,21 +157,14 @@ namespace cl
         DescriptorInfo info;
     };
 
-    class Shape : public Object
+    class Shape : public HeapObject
     {
     public:
-        static constexpr NativeLayoutId native_layout_id =
-            NativeLayoutId::Shape;
-
         class Transition
         {
         public:
             Transition(TValue<String> name, ShapeTransitionVerb verb,
-                       DescriptorFlags descriptor_flags, Shape *next_shape)
-                : name(name), verb(verb), descriptor_flags(descriptor_flags),
-                  next_shape(TValue<Shape>::from_oop(next_shape))
-            {
-            }
+                       DescriptorFlags descriptor_flags, Shape *next_shape);
 
             TValue<String> get_name() const { return name; }
             ShapeTransitionVerb get_verb() const { return verb; }
@@ -187,14 +178,14 @@ namespace cl
             OwnedTValue<String> name;
             ShapeTransitionVerb verb;
             DescriptorFlags descriptor_flags;
-            OwnedTValue<Shape> next_shape;
+            OwnedHeapPtr<Shape> next_shape;
         };
 
-        Shape(Value owner_class, Value previous_shape, int32_t next_slot_index,
+        Shape(Value owner_class, Shape *previous_shape, int32_t next_slot_index,
               uint32_t property_count);
-        Shape(Value owner_class, Value previous_shape, int32_t next_slot_index,
+        Shape(Value owner_class, Shape *previous_shape, int32_t next_slot_index,
               uint32_t property_count, ShapeFlags shape_flags);
-        Shape(Value owner_class, Value previous_shape, int32_t next_slot_index,
+        Shape(Value owner_class, Shape *previous_shape, int32_t next_slot_index,
               uint32_t property_count, ShapeFlags shape_flags,
               uint32_t present_count);
 
@@ -214,7 +205,7 @@ namespace cl
         }
 
         static DynamicLayoutSpec layout_spec_for(Value owner_class,
-                                                 Value previous_shape,
+                                                 Shape *previous_shape,
                                                  int32_t next_slot_index,
                                                  uint32_t property_count)
         {
@@ -223,7 +214,7 @@ namespace cl
         }
 
         static DynamicLayoutSpec layout_spec_for(Value owner_class,
-                                                 Value previous_shape,
+                                                 Shape *previous_shape,
                                                  int32_t next_slot_index,
                                                  uint32_t property_count,
                                                  ShapeFlags shape_flags)
@@ -233,7 +224,7 @@ namespace cl
         }
 
         static DynamicLayoutSpec
-        layout_spec_for(Value owner_class, Value previous_shape,
+        layout_spec_for(Value owner_class, Shape *previous_shape,
                         int32_t next_slot_index, uint32_t property_count,
                         ShapeFlags shape_flags, uint32_t present_count)
         {
@@ -322,8 +313,6 @@ namespace cl
     public:
         CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(Shape, owner_class);
     };
-
-    BuiltinClassDefinition make_shape_class(VirtualMachine *vm);
 
 }  // namespace cl
 

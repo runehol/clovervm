@@ -33,7 +33,7 @@ TEST(Attr, LoadAttrReturnsInstanceOwnPropertyBeforeClassMember)
     cls->set_own_property(attr_name, Value::from_smi(1));
 
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+        Value::from_oop(cls), cls->get_initial_shape());
     instance->set_own_property(attr_name, Value::from_smi(2));
 
     EXPECT_EQ(Value::from_smi(2),
@@ -58,7 +58,7 @@ TEST(Attr, LoadAttrFallsBackToClassAndBaseMembers)
         child_name, 2, Value::from_oop(base));
 
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(child), Value::from_oop(child->get_initial_shape()));
+        Value::from_oop(child), child->get_initial_shape());
 
     EXPECT_EQ(Value::from_smi(7),
               load_attr(Value::from_oop(instance), inherited_name));
@@ -94,7 +94,7 @@ TEST(Attr, LoadAttrClassFallbackContinuesPastLatentDescriptor)
     EXPECT_TRUE(child->delete_own_property(attr_name));
 
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(child), Value::from_oop(child->get_initial_shape()));
+        Value::from_oop(child), child->get_initial_shape());
 
     EXPECT_EQ(Value::from_smi(7),
               load_attr(Value::from_oop(instance), attr_name));
@@ -113,7 +113,7 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
     ClassObject *cls =
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+        Value::from_oop(cls), cls->get_initial_shape());
 
     EXPECT_EQ(Value::from_oop(cls),
               instance->get_own_property(dunder_class_name));
@@ -150,7 +150,7 @@ TEST(Attr, StoreAttrWritesInstanceOwnProperty)
     ClassObject *cls =
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+        Value::from_oop(cls), cls->get_initial_shape());
 
     EXPECT_TRUE(
         store_attr(Value::from_oop(instance), attr_name, Value::from_smi(9)));
@@ -213,7 +213,7 @@ TEST(Attr, StoreAttrHandlesDunderClassAndUnsupportedInlineValues)
     ClassObject *other_cls =
         context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+        Value::from_oop(cls), cls->get_initial_shape());
 
     EXPECT_TRUE(store_attr(Value::from_oop(instance), dunder_class_name,
                            Value::from_oop(cls)));
@@ -255,7 +255,7 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
     cls->set_own_property(builtin_name, builtin);
 
     Instance *instance = context.thread()->make_refcounted_raw<Instance>(
-        Value::from_oop(cls), Value::from_oop(cls->get_initial_shape()));
+        Value::from_oop(cls), cls->get_initial_shape());
     instance->set_own_property(own_name, builtin);
 
     Value callable = Value::not_present();

@@ -8,6 +8,15 @@
 
 namespace cl
 {
+    void String::install_bootstrap_class_and_shape(Value new_cls,
+                                                   Shape *new_shape)
+    {
+        assert(cls == Value::None());
+        assert(shape == nullptr);
+        cls = new_cls;
+        shape = new_shape;
+    }
+
     static Value builtin_str_str(ThreadState *, const CallArguments &args)
     {
         if(args.n_args != 1 || !can_convert_to<String>(args[0]))

@@ -25,7 +25,7 @@ namespace cl
             NativeLayoutId::String;
 
         String(const cl_wchar *_data, TValue<SMI> _count)
-            : Object(native_layout_id), cls(Value::None()), shape(Value::None())
+            : Object(native_layout_id), cls(Value::None()), shape(nullptr)
         {
             size_t n_chars = _count.extract();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -34,7 +34,7 @@ namespace cl
         }
 
         String(const cl_wchar *_data)
-            : Object(native_layout_id), cls(Value::None()), shape(Value::None())
+            : Object(native_layout_id), cls(Value::None()), shape(nullptr)
         {
             size_t n_chars = wcslen(_data);
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -43,7 +43,7 @@ namespace cl
         }
 
         String(const std::wstring &str)
-            : Object(native_layout_id), cls(Value::None()), shape(Value::None())
+            : Object(native_layout_id), cls(Value::None()), shape(nullptr)
         {
             size_t n_chars = str.size();
             memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
@@ -51,19 +51,13 @@ namespace cl
             count = TValue<SMI>(Value::from_smi(n_chars));
         }
 
-        void install_bootstrap_class_and_shape(Value new_cls, Value new_shape)
-        {
-            assert(cls == Value::None());
-            assert(shape == Value::None());
-            cls = new_cls;
-            shape = new_shape;
-        }
+        void install_bootstrap_class_and_shape(Value new_cls, Shape *new_shape);
 
         Value get_class() const { return cls.as_value(); }
-        Shape *get_shape() const { return shape.as_value().get_ptr<Shape>(); }
+        Shape *get_shape() const { return shape.extract(); }
 
         MemberValue cls;
-        MemberValue shape;
+        MemberHeapPtr<Shape> shape;
         MemberTValue<SMI> count;
         cl_wchar data[1];
 

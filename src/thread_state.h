@@ -42,7 +42,7 @@ namespace cl
         ThreadState(VirtualMachine *_machine);
         ~ThreadState();
 
-        static void add_to_active_zero_count_table(Value v);
+        static void add_to_active_zero_count_table(HeapObject *obj);
 
         Value run(CodeObject *obj);
 
@@ -55,7 +55,7 @@ namespace cl
         template <typename T, typename... Args>
         T *make_refcounted_raw(Args &&...args)
         {
-            static_assert(std::is_base_of_v<Object, T>);
+            static_assert(std::is_base_of_v<HeapObject, T>);
             static_assert(HasObjectLayout<T>::value);
             return refcounted_heap.make<T>(std::forward<Args>(args)...);
         }
@@ -77,7 +77,7 @@ namespace cl
         ThreadLocalHeap refcounted_heap;
 
         std::vector<Value> stack;
-        std::deque<Value> zero_count_table;
+        std::deque<HeapObject *> zero_count_table;
 
         static thread_local ThreadState *current_thread;
     };

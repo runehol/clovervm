@@ -163,35 +163,48 @@ namespace cl
     static constexpr uint32_t static_value_offset_in_words() { return 0; }
 
     /*
-      Base class for all language objects, i.e. indirect values
+      Base class for all VM heap records. HeapObjects have the common header
+      needed for refcounting and value scanning, but are not necessarily
+      Python-visible objects.
     */
-    struct Object
+    struct HeapObject
+    {
+        explicit HeapObject(uint32_t _layout) : refcount(0), layout(_layout) {}
+
+        HeapObject() : refcount(0), layout(0) {}
+
+        int32_t refcount;
+        uint32_t layout;
+    };
+
+    /*
+      Base class for Python-visible objects. These are heap records that also
+      have Python class identity and concrete native layout identity.
+    */
+    struct Object : public HeapObject
     {
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id,
                uint32_t _layout)
-            : refcount(0), layout(_layout), cls(_cls),
-              native_layout(_native_layout_id)
+            : HeapObject(_layout), cls(_cls), native_layout(_native_layout_id)
         {
             assert(cls != nullptr);
         }
 
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id)
-            : refcount(0), layout(0), cls(_cls),
-              native_layout(_native_layout_id)
+            : HeapObject(), cls(_cls), native_layout(_native_layout_id)
         {
             assert(cls != nullptr);
         }
 
         Object(BootstrapObjectTag, NativeLayoutId _native_layout_id,
                uint32_t _layout)
-            : refcount(0), layout(_layout), cls(nullptr),
+            : HeapObject(_layout), cls(nullptr),
               native_layout(_native_layout_id)
         {
         }
 
         Object(BootstrapObjectTag, NativeLayoutId _native_layout_id)
-            : refcount(0), layout(0), cls(nullptr),
-              native_layout(_native_layout_id)
+            : HeapObject(), cls(nullptr), native_layout(_native_layout_id)
         {
         }
 
@@ -215,8 +228,6 @@ namespace cl
         NativeLayoutId native_layout_id() const { return native_layout; }
         ClassObject *get_class() const { return cls; }
 
-        int32_t refcount;
-        uint32_t layout;
         ClassObject *cls;
         NativeLayoutId native_layout;
     };
@@ -251,21 +262,22 @@ namespace cl
                                          : nullptr;
     }
 
-    inline ExpandedHeader *expanded_header_for_object(Object *obj)
+    inline ExpandedHeader *expanded_header_for_object(HeapObject *obj)
     {
         assert(layout_is_expanded(obj->layout));
         return reinterpret_cast<ExpandedHeader *>(
             reinterpret_cast<char *>(obj) - sizeof(ExpandedHeader));
     }
 
-    inline const ExpandedHeader *expanded_header_for_object(const Object *obj)
+    inline const ExpandedHeader *
+    expanded_header_for_object(const HeapObject *obj)
     {
         assert(layout_is_expanded(obj->layout));
         return reinterpret_cast<const ExpandedHeader *>(
             reinterpret_cast<const char *>(obj) - sizeof(ExpandedHeader));
     }
 
-    inline void object_clear_value_ownership(Object *obj)
+    inline void object_clear_value_ownership(HeapObject *obj)
     {
         if(layout_is_expanded(obj->layout))
         {
@@ -278,7 +290,9 @@ namespace cl
 
     static_assert(sizeof(DynamicLayoutSpec) == 16);
     static_assert(sizeof(ExpandedHeader) == 16);
+    static_assert(sizeof(HeapObject) == 8);
     static_assert(sizeof(Object) == 24);
+    static_assert(std::is_trivially_destructible_v<HeapObject>);
     static_assert(std::is_trivially_destructible_v<Object>);
 
 }  // namespace cl

@@ -1,3 +1,4 @@
+#include "dict.h"
 #include "owned_typed_value.h"
 #include "scope.h"
 #include "str.h"
@@ -22,17 +23,17 @@ TEST(TValue, StringAllowsCheckedConstructionFromNonInternedString)
     EXPECT_STREQ(L"hello", typed_string.extract()->data);
 }
 
-TEST(TValue, ScopeUsesNativeLayoutTrait)
+TEST(HeapPtr, ScopeUsesDirectHeapPointerHandle)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    Scope *scope = context.thread()->make_refcounted_raw<Scope>(Value::None());
+    Scope *scope = context.thread()->make_refcounted_raw<Scope>(nullptr);
 
-    TValue<Scope> typed_scope = TValue<Scope>::from_oop(scope);
+    HeapPtr<Scope> scope_ptr(scope);
 
-    EXPECT_EQ(scope, typed_scope.extract());
-    EXPECT_TRUE(typed_scope.extract()->empty());
+    EXPECT_EQ(scope, scope_ptr.get());
+    EXPECT_TRUE(scope_ptr.get()->empty());
 }
 
 TEST(NativeLayout, ObjectAndValueConversionHelpersUseExactLayout)
@@ -46,9 +47,9 @@ TEST(NativeLayout, ObjectAndValueConversionHelpersUseExactLayout)
 
     EXPECT_EQ(NativeLayoutId::String, object->native_layout_id());
     EXPECT_TRUE(can_convert_to<String>(object));
-    EXPECT_FALSE(can_convert_to<Scope>(object));
+    EXPECT_FALSE(can_convert_to<Dict>(object));
     EXPECT_EQ(string, try_convert_to<String>(object));
-    EXPECT_EQ(nullptr, try_convert_to<Scope>(object));
+    EXPECT_EQ(nullptr, try_convert_to<Dict>(object));
     EXPECT_TRUE(can_convert_to<String>(string_value));
     EXPECT_EQ(string, try_convert_to<String>(string_value));
     EXPECT_EQ(nullptr, try_convert_to<String>(Value::None()));
@@ -107,7 +108,7 @@ TEST(OwnedTValue, RetainsAndExposesTypedPointers)
 
 TEST(OwnedTValue, CheckedConstructionThrowsOnWrongType)
 {
-    EXPECT_THROW((void)OwnedTValue<Scope>(Value::None()), std::runtime_error);
+    EXPECT_THROW((void)OwnedTValue<String>(Value::None()), std::runtime_error);
 }
 
 TEST(OwnedTValue, SmiActsAsOwnedHandleWithoutRefcounting)

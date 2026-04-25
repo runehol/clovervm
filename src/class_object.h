@@ -90,9 +90,9 @@ namespace cl
 
         MemberTValue<String> name;
         MemberValue base;
-        MemberValue initial_shape;
-        MemberValue shape;
-        MemberValue overflow;
+        MemberHeapPtr<Shape> initial_shape;
+        MemberHeapPtr<Shape> shape;
+        MemberHeapPtr<Instance::OverflowSlots> overflow;
         MemberValue class_slots[kClassInlineSlotCount];
         uint32_t factory_default_inline_slot_count;
 

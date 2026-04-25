@@ -55,14 +55,14 @@ namespace cl
                             interned_global_heap.make_global_raw<String>(value);
                         string->install_bootstrap_class_and_shape(
                             Value::from_oop(str_class_),
-                            Value::from_oop(str_instance_root_shape_));
+                            str_instance_root_shape_);
                         return string;
                     }
                     return interned_global_heap.make_global_raw<String>(value);
                 });
         }
 
-        TValue<Scope> get_builtin_scope() const { return builtin_scope; }
+        HeapPtr<Scope> get_builtin_scope() const { return builtin_scope; }
         TValue<BuiltinFunction> get_range_builtin() const
         {
             return range_builtin;
@@ -101,18 +101,6 @@ namespace cl
         {
             return class_for_native_layout(NativeLayoutId::RangeIterator);
         }
-        ClassObject *scope_class() const
-        {
-            return class_for_native_layout(NativeLayoutId::Scope);
-        }
-        ClassObject *code_object_class() const
-        {
-            return class_for_native_layout(NativeLayoutId::CodeObject);
-        }
-        ClassObject *shape_class() const
-        {
-            return class_for_native_layout(NativeLayoutId::Shape);
-        }
         ClassObject *instance_class() const
         {
             return class_for_native_layout(NativeLayoutId::Instance);
@@ -146,7 +134,7 @@ namespace cl
         std::array<ClassObject *, NativeLayoutCount> class_for_native_layouts =
             {};
         std::vector<ClassObject *> builtin_classes;
-        OwnedTValue<Scope> builtin_scope;
+        OwnedHeapPtr<Scope> builtin_scope;
         OwnedTValue<BuiltinFunction> range_builtin;
     };
 
