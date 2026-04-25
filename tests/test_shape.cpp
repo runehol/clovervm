@@ -40,7 +40,7 @@ TEST(Shape, ClassOwnsRootShape)
     ClassObject *cls =
         context.thread()->make_internal_raw<ClassObject>(name, 2);
 
-    Shape *root_shape = cls->get_initial_shape();
+    Shape *root_shape = cls->get_instance_root_shape();
     ASSERT_NE(nullptr, root_shape);
     EXPECT_EQ(cls, root_shape->get_owner_class());
     EXPECT_EQ(nullptr, root_shape->get_previous_shape());
@@ -58,7 +58,7 @@ TEST(Shape, ClassOwnsRootShape)
     EXPECT_TRUE(root_shape->get_descriptor_info(0).has_flag(
         DescriptorFlag::StableSlot));
     EXPECT_EQ(1, root_shape->get_next_slot_index());
-    EXPECT_EQ(2u, root_shape->get_factory_default_inline_slot_count());
+    EXPECT_EQ(2u, root_shape->get_instance_default_inline_slot_count());
 }
 
 TEST(Shape, ShapeFlagsAreStoredOnShape)
@@ -96,7 +96,7 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
     ClassObject *cls =
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
 
-    Shape *root_shape = cls->get_initial_shape();
+    Shape *root_shape = cls->get_instance_root_shape();
     Shape *shape_with_a =
         root_shape->derive_transition(a_name, ShapeTransitionVerb::Add);
     Shape *shape_with_a_again =
@@ -161,7 +161,7 @@ TEST(Shape, DescriptorLookupReportsPresentAndAbsentProperties)
     ClassObject *cls =
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
 
-    Shape *root_shape = cls->get_initial_shape();
+    Shape *root_shape = cls->get_instance_root_shape();
     Shape *shape_with_a =
         root_shape->derive_transition(a_name, ShapeTransitionVerb::Add);
 
@@ -217,7 +217,7 @@ TEST(Shape, AddTransitionCanCarryDescriptorFlags)
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly);
     flags |= descriptor_flag(DescriptorFlag::StableSlot);
 
-    Shape *root_shape = cls->get_initial_shape();
+    Shape *root_shape = cls->get_instance_root_shape();
     Shape *shape_with_a =
         root_shape->derive_transition(a_name, ShapeTransitionVerb::Add, flags);
 
@@ -245,8 +245,9 @@ TEST(Shape, InstanceRejectsStoreToReadOnlyDescriptor)
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly);
 
-    Shape *shape_with_readonly = cls->get_initial_shape()->derive_transition(
-        a_name, ShapeTransitionVerb::Add, flags);
+    Shape *shape_with_readonly =
+        cls->get_instance_root_shape()->derive_transition(
+            a_name, ShapeTransitionVerb::Add, flags);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
     instance->set_shape(shape_with_readonly);
     StorageLocation location =
@@ -278,7 +279,7 @@ TEST(Shape, StableSlotDeleteMovesDescriptorToLatentAndReAddReusesSlot)
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
 
-    Shape *root_shape = cls->get_initial_shape();
+    Shape *root_shape = cls->get_instance_root_shape();
     Shape *shape_with_a =
         root_shape->derive_transition(a_name, ShapeTransitionVerb::Add, flags);
     Shape *shape_without_a =
@@ -320,7 +321,7 @@ TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
     ClassObject *cls =
         context.thread()->make_internal_raw<ClassObject>(cls_name, 1);
 
-    Shape *root_shape = cls->get_initial_shape();
+    Shape *root_shape = cls->get_instance_root_shape();
     Shape *shape_with_a =
         root_shape->derive_transition(a_name, ShapeTransitionVerb::Add);
     Shape *shape_with_ab =
@@ -339,7 +340,7 @@ TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
               shape_with_ba->get_property_storage_location(2).kind);
     EXPECT_EQ(2, shape_with_ba->get_property_storage_location(2).physical_idx);
     EXPECT_EQ(4, shape_with_ba->get_next_slot_index());
-    EXPECT_EQ(1u, shape_with_ba->get_factory_default_inline_slot_count());
+    EXPECT_EQ(1u, shape_with_ba->get_instance_default_inline_slot_count());
 }
 
 TEST(Shape, InstanceStoresClassAndShapeSeparately)
@@ -354,7 +355,7 @@ TEST(Shape, InstanceStoresClassAndShapeSeparately)
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     EXPECT_EQ(cls, instance->get_class().extract());
-    EXPECT_EQ(cls->get_initial_shape(), instance->get_shape());
+    EXPECT_EQ(cls->get_instance_root_shape(), instance->get_shape());
 }
 
 TEST(Shape, InstanceStoresDunderClassInPredefinedReadonlySlot)

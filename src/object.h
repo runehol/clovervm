@@ -85,7 +85,7 @@ namespace cl
     private:
         void install_class(ClassObject *new_cls);
         void initialize_shape_for_class(ClassObject *class_object);
-        void initialize_shape(Shape *initial_shape);
+        void initialize_shape(Shape *instance_root_shape);
         OverflowSlots *get_overflow_slots() const { return overflow_storage; }
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
     };

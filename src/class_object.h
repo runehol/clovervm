@@ -32,39 +32,39 @@ namespace cl
         static constexpr uint32_t kClassInlineSlotCount = 8;
 
         ClassObject(BootstrapObjectTag, TValue<String> name,
-                    uint32_t factory_default_inline_slot_count,
+                    uint32_t instance_default_inline_slot_count,
                     Value base = Value::None(),
                     ShapeFlags class_shape_flags =
                         shape_flag(ShapeFlag::IsClassObject));
 
         ClassObject(ClassObject *metaclass, TValue<String> name,
-                    uint32_t factory_default_inline_slot_count,
+                    uint32_t instance_default_inline_slot_count,
                     Value base = Value::None(),
                     ShapeFlags class_shape_flags =
                         shape_flag(ShapeFlag::IsClassObject));
 
         ClassObject(TValue<String> name,
-                    uint32_t factory_default_inline_slot_count,
+                    uint32_t instance_default_inline_slot_count,
                     Value base = Value::None(),
                     ShapeFlags class_shape_flags =
                         shape_flag(ShapeFlag::IsClassObject));
 
         static ClassObject *
         make_builtin_class(TValue<String> name,
-                           uint32_t factory_default_inline_slot_count,
+                           uint32_t instance_default_inline_slot_count,
                            const BuiltinClassMethod *methods,
                            uint32_t method_count, Value base = Value::None());
 
         TValue<String> get_name() const { return name; }
-        uint32_t get_factory_default_inline_slot_count() const
+        uint32_t get_instance_default_inline_slot_count() const
         {
-            return factory_default_inline_slot_count;
+            return instance_default_inline_slot_count;
         }
         uint32_t get_class_inline_slot_count() const
         {
             return kClassInlineSlotCount;
         }
-        Shape *get_initial_shape() const;
+        Shape *get_instance_root_shape() const;
         ClassObject *get_base() const;
 
         Value lookup_class_chain(TValue<String> name) const;
@@ -80,8 +80,8 @@ namespace cl
         MemberValue bases;
         MemberValue mro;
         MemberValue class_dynamic_slots[kClassDynamicInlineSlotCount];
-        MemberHeapPtr<Shape> initial_shape;
-        uint32_t factory_default_inline_slot_count;
+        MemberHeapPtr<Shape> instance_root_shape;
+        uint32_t instance_default_inline_slot_count;
 
     public:
         CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(ClassObject, name,

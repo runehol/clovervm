@@ -978,9 +978,11 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         EXPECT_EQ(name, cls->get_name());
         EXPECT_EQ(test_context.vm().str_class(),
                   name.extract()->Object::get_class().extract());
-        EXPECT_EQ(
-            test_context.vm().str_instance_root_shape(),
-            name.extract()->Object::get_class().extract()->get_initial_shape());
+        EXPECT_EQ(test_context.vm().str_instance_root_shape(),
+                  name.extract()
+                      ->Object::get_class()
+                      .extract()
+                      ->get_instance_root_shape());
 
         TValue<String> dunder_bases_name =
             test_context.vm().get_or_create_interned_string_value(L"__bases__");
@@ -1014,7 +1016,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
               post_bootstrap_name.extract()
                   ->Object::get_class()
                   .extract()
-                  ->get_initial_shape());
+                  ->get_instance_root_shape());
 
     EXPECT_EQ(Value::from_oop(type_class),
               type_class->get_own_property(

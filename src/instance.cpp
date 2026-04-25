@@ -22,15 +22,15 @@ namespace cl
 
     DynamicLayoutSpec Instance::layout_spec_for(ClassObject *cls)
     {
-        Shape *shape = cls->get_initial_shape();
-        uint32_t factory_default_inline_slot_count =
-            shape->get_factory_default_inline_slot_count();
-        assert(factory_default_inline_slot_count >= 1);
+        Shape *shape = cls->get_instance_root_shape();
+        uint32_t instance_default_inline_slot_count =
+            shape->get_instance_default_inline_slot_count();
+        assert(instance_default_inline_slot_count >= 1);
         uint32_t dynamic_inline_slot_count =
-            factory_default_inline_slot_count - 1;
+            instance_default_inline_slot_count - 1;
         return DynamicLayoutSpec{
             round_up_to_16byte_units(size_for(dynamic_inline_slot_count)),
-            factory_default_inline_slot_count};
+            instance_default_inline_slot_count};
     }
 
 }  // namespace cl

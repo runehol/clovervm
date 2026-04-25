@@ -33,20 +33,20 @@ namespace cl
     void Object::initialize_shape_for_class(ClassObject *class_object)
     {
         assert(class_object != nullptr);
-        initialize_shape(class_object->get_initial_shape());
+        initialize_shape(class_object->get_instance_root_shape());
     }
 
-    void Object::initialize_shape(Shape *initial_shape)
+    void Object::initialize_shape(Shape *instance_root_shape)
     {
         assert(shape == nullptr);
-        set_shape(initial_shape);
+        set_shape(instance_root_shape);
 
-        uint32_t factory_default_inline_slot_count =
-            get_shape()->get_factory_default_inline_slot_count();
-        assert(factory_default_inline_slot_count >= 1);
+        uint32_t instance_default_inline_slot_count =
+            get_shape()->get_instance_default_inline_slot_count();
+        assert(instance_default_inline_slot_count >= 1);
 
-        for(uint32_t slot_idx = 1; slot_idx < factory_default_inline_slot_count;
-            ++slot_idx)
+        for(uint32_t slot_idx = 1;
+            slot_idx < instance_default_inline_slot_count; ++slot_idx)
         {
             inline_slot_base()[slot_idx] = Value::not_present();
         }

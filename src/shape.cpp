@@ -90,12 +90,12 @@ namespace cl
             return get_owner_class()->get_class_inline_slot_count();
         }
 
-        return get_factory_default_inline_slot_count();
+        return get_instance_default_inline_slot_count();
     }
 
-    uint32_t Shape::get_factory_default_inline_slot_count() const
+    uint32_t Shape::get_instance_default_inline_slot_count() const
     {
-        return get_owner_class()->get_factory_default_inline_slot_count();
+        return get_owner_class()->get_instance_default_inline_slot_count();
     }
 
     int32_t Shape::lookup_descriptor_index(TValue<String> name) const

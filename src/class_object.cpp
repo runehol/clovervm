@@ -9,18 +9,18 @@ namespace cl
 {
 
     ClassObject::ClassObject(BootstrapObjectTag, TValue<String> _name,
-                             uint32_t _factory_default_inline_slot_count,
+                             uint32_t _instance_default_inline_slot_count,
                              Value _base, ShapeFlags class_shape_flags)
         : Object(BootstrapObjectTag{}, native_layout_id, compact_layout()),
           name(_name), bases(Value::not_present()), mro(Value::not_present()),
-          initial_shape(nullptr),
-          factory_default_inline_slot_count(_factory_default_inline_slot_count)
+          instance_root_shape(nullptr), instance_default_inline_slot_count(
+                                            _instance_default_inline_slot_count)
     {
         TValue<String> dunder_class_name = interned_string(L"__class__");
         DescriptorFlags instance_class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly);
         instance_class_flags |= descriptor_flag(DescriptorFlag::StableSlot);
-        initial_shape = Shape::make_root_with_single_descriptor(
+        instance_root_shape = Shape::make_root_with_single_descriptor(
             Value::from_oop(this), dunder_class_name,
             DescriptorInfo::make(StorageLocation{0, StorageKind::Inline},
                                  instance_class_flags),
@@ -68,26 +68,26 @@ namespace cl
     }
 
     ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
-                             uint32_t _factory_default_inline_slot_count,
+                             uint32_t _instance_default_inline_slot_count,
                              Value _base, ShapeFlags class_shape_flags)
         : ClassObject(BootstrapObjectTag{}, _name,
-                      _factory_default_inline_slot_count, _base,
+                      _instance_default_inline_slot_count, _base,
                       class_shape_flags)
     {
         install_bootstrap_class(metaclass);
     }
 
     ClassObject::ClassObject(TValue<String> _name,
-                             uint32_t _factory_default_inline_slot_count,
+                             uint32_t _instance_default_inline_slot_count,
                              Value _base, ShapeFlags class_shape_flags)
         : ClassObject(active_vm()->type_class(), _name,
-                      _factory_default_inline_slot_count, _base,
+                      _instance_default_inline_slot_count, _base,
                       class_shape_flags)
     {
     }
 
     ClassObject *ClassObject::make_builtin_class(
-        TValue<String> name, uint32_t factory_default_inline_slot_count,
+        TValue<String> name, uint32_t instance_default_inline_slot_count,
         const BuiltinClassMethod *methods, uint32_t method_count, Value base)
     {
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
@@ -95,7 +95,7 @@ namespace cl
         ClassObject *type = active_vm()->type_class();
         assert(type != nullptr);
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
-            type, name, factory_default_inline_slot_count, base,
+            type, name, instance_default_inline_slot_count, base,
             class_shape_flags);
 
         DescriptorFlags method_flags =
@@ -128,9 +128,9 @@ namespace cl
         return builtin_class_definition(cls, native_layout_ids);
     }
 
-    Shape *ClassObject::get_initial_shape() const
+    Shape *ClassObject::get_instance_root_shape() const
     {
-        return initial_shape.extract();
+        return instance_root_shape.extract();
     }
 
     ClassObject *ClassObject::get_base() const

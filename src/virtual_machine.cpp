@@ -113,7 +113,7 @@ namespace cl
     {
         str_class_ = class_for_native_layout(NativeLayoutId::String);
         assert(str_class_ != nullptr);
-        str_instance_root_shape_ = str_class_->get_initial_shape();
+        str_instance_root_shape_ = str_class_->get_instance_root_shape();
         assert(str_instance_root_shape_ != nullptr);
 
         ClassObject *cls = str_class_;
