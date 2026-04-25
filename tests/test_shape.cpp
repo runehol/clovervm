@@ -3,6 +3,7 @@
 #include "class_object.h"
 #include "function.h"
 #include "instance.h"
+#include "list.h"
 #include "shape.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -522,6 +523,107 @@ TEST(ClassObject, MembersPreserveInsertionOrderAndCompactOnDelete)
     ASSERT_EQ(2u, cls->member_count());
     EXPECT_STREQ(L"b", cls->get_member_name(0).extract()->data);
     EXPECT_STREQ(L"a", cls->get_member_name(1).extract()->data);
+}
+
+TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> other_name(
+        context.vm().get_or_create_interned_string_value(L"Other"));
+    TValue<String> dunder_class_name(
+        context.vm().get_or_create_interned_string_value(L"__class__"));
+    TValue<String> dunder_name_name(
+        context.vm().get_or_create_interned_string_value(L"__name__"));
+    TValue<String> dunder_bases_name(
+        context.vm().get_or_create_interned_string_value(L"__bases__"));
+    TValue<String> dunder_mro_name(
+        context.vm().get_or_create_interned_string_value(L"__mro__"));
+    ClassObject *cls =
+        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+
+    Shape *shape = cls->get_shape();
+    ASSERT_NE(nullptr, shape);
+    EXPECT_TRUE(shape->has_flag(ShapeFlag::IsClassObject));
+    EXPECT_FALSE(shape->has_flag(ShapeFlag::IsImmutableType));
+    ASSERT_EQ(4u, shape->property_count());
+    EXPECT_EQ(4u, shape->present_count());
+    EXPECT_EQ(0u, shape->latent_count());
+    EXPECT_EQ(4, shape->get_next_slot_index());
+
+    const cl_wchar *expected_names[] = {L"__class__", L"__name__", L"__bases__",
+                                        L"__mro__"};
+    for(uint32_t idx = 0; idx < shape->property_count(); ++idx)
+    {
+        EXPECT_STREQ(expected_names[idx],
+                     shape->get_property_name(idx).extract()->data);
+        EXPECT_EQ(StorageKind::Inline,
+                  shape->get_property_storage_location(idx).kind);
+        EXPECT_EQ(int32_t(idx),
+                  shape->get_property_storage_location(idx).physical_idx);
+        EXPECT_TRUE(
+            shape->get_descriptor_info(idx).has_flag(DescriptorFlag::ReadOnly));
+        EXPECT_TRUE(shape->get_descriptor_info(idx).has_flag(
+            DescriptorFlag::StableSlot));
+    }
+
+    EXPECT_EQ(Value::None(), cls->get_own_property(dunder_class_name));
+    EXPECT_EQ(cls_name.as_value(), cls->get_own_property(dunder_name_name));
+
+    Value bases_value = cls->get_own_property(dunder_bases_name);
+    ASSERT_TRUE(bases_value.is_ptr());
+    ASSERT_EQ(&List::klass, bases_value.get_ptr<Object>()->klass);
+    EXPECT_EQ(0u, bases_value.get_ptr<List>()->size());
+
+    Value mro_value = cls->get_own_property(dunder_mro_name);
+    ASSERT_TRUE(mro_value.is_ptr());
+    ASSERT_EQ(&List::klass, mro_value.get_ptr<Object>()->klass);
+    ASSERT_EQ(1u, mro_value.get_ptr<List>()->size());
+    EXPECT_EQ(Value::from_oop(cls),
+              mro_value.get_ptr<List>()->item_unchecked(0));
+
+    EXPECT_FALSE(
+        cls->set_own_property(dunder_name_name, other_name.as_value()));
+    EXPECT_FALSE(cls->delete_own_property(dunder_name_name));
+    EXPECT_EQ(cls_name.as_value(), cls->get_own_property(dunder_name_name));
+}
+
+TEST(ClassObject, PredefinedBasesAndMroReflectSingleBaseChain)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> dunder_bases_name(
+        context.vm().get_or_create_interned_string_value(L"__bases__"));
+    TValue<String> dunder_mro_name(
+        context.vm().get_or_create_interned_string_value(L"__mro__"));
+    ClassObject *base =
+        context.thread()->make_refcounted_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_refcounted_raw<ClassObject>(
+        child_name, 2, Value::from_oop(base));
+
+    Value bases_value = child->get_own_property(dunder_bases_name);
+    ASSERT_TRUE(bases_value.is_ptr());
+    ASSERT_EQ(&List::klass, bases_value.get_ptr<Object>()->klass);
+    ASSERT_EQ(1u, bases_value.get_ptr<List>()->size());
+    EXPECT_EQ(Value::from_oop(base),
+              bases_value.get_ptr<List>()->item_unchecked(0));
+
+    Value mro_value = child->get_own_property(dunder_mro_name);
+    ASSERT_TRUE(mro_value.is_ptr());
+    ASSERT_EQ(&List::klass, mro_value.get_ptr<Object>()->klass);
+    ASSERT_EQ(2u, mro_value.get_ptr<List>()->size());
+    EXPECT_EQ(Value::from_oop(child),
+              mro_value.get_ptr<List>()->item_unchecked(0));
+    EXPECT_EQ(Value::from_oop(base),
+              mro_value.get_ptr<List>()->item_unchecked(1));
 }
 
 TEST(ClassObject, OwnPropertyApiDoesNotFallBackToBaseChain)

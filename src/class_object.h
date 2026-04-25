@@ -34,6 +34,7 @@ namespace cl
         };
 
         static constexpr Klass klass = Klass(L"Class", nullptr);
+        static constexpr uint32_t kClassPredefinedSlotCount = 4;
 
         ClassObject(TValue<String> name, uint32_t instance_inline_slot_count,
                     Value base = Value::None());
@@ -43,6 +44,8 @@ namespace cl
         {
             return instance_inline_slot_count;
         }
+        Shape *get_shape() const;
+        void set_shape(Shape *new_shape);
         Shape *get_initial_shape() const;
         ClassObject *get_base() const;
         uint64_t get_method_version() const { return method_version; }
@@ -62,24 +65,40 @@ namespace cl
         bool delete_member(TValue<String> name);
 
         Value get_own_property(TValue<String> name) const;
-        void set_own_property(TValue<String> name, Value value);
+        bool set_own_property(TValue<String> name, Value value);
         bool delete_own_property(TValue<String> name);
 
+        Value read_storage_location(StorageLocation location) const;
+        void write_storage_location(StorageLocation location, Value value);
+
     private:
+        enum ClassPredefinedSlot : uint32_t
+        {
+            ClassSlotClass = 0,
+            ClassSlotName = 1,
+            ClassSlotBases = 2,
+            ClassSlotMro = 3,
+        };
+
         static bool is_method_value(Value value);
         void maybe_bump_method_version_for_write(Value old_value,
                                                  Value new_value);
         int32_t lookup_member_index_local(TValue<String> name) const;
+        Value make_bases_list() const;
+        Value make_mro_list() const;
 
         MemberTValue<String> name;
-        uint32_t instance_inline_slot_count;
-        uint64_t method_version;
         MemberValue base;
         MemberValue initial_shape;
+        MemberValue shape;
+        MemberValue class_slots[kClassPredefinedSlotCount];
+        uint32_t instance_inline_slot_count;
+        uint64_t method_version;
         std::vector<MemberEntry> members;
 
     public:
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(ClassObject, name, 3);
+        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(ClassObject, name,
+                                             4 + kClassPredefinedSlotCount);
     };
 
 }  // namespace cl

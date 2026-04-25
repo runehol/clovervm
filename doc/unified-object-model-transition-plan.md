@@ -270,6 +270,14 @@ Primary files:
 
 ### 5. Define class-specific predefined slots
 
+Status: done for user `ClassObject` metadata. Class objects now carry a
+class-object Shape with read-only stable descriptors for `__class__`,
+`__name__`, `__bases__`, and `__mro__`; `__bases__` and `__mro__` are
+materialized as `List` values from the current single-base chain. The native
+`type.__class__ == type` bootstrap cycle is intentionally deferred until the
+runtime has real builtin type objects instead of only C++ `Klass` dispatch
+tags.
+
 Reserve stable slots for class metadata and hot protocol names. Stable latent
 slot retention is a guarantee for these predefined fixed slots, not a blanket
 requirement for every user-created attribute name.

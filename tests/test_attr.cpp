@@ -140,6 +140,28 @@ TEST(Attr, StoreAttrWritesClassMember)
     EXPECT_EQ(Value::from_smi(5), load_attr(Value::from_oop(cls), attr_name));
 }
 
+TEST(Attr, ClassMetadataAttributesAreReadonly)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> replacement_name(
+        context.vm().get_or_create_interned_string_value(L"Replacement"));
+    TValue<String> dunder_name_name(
+        context.vm().get_or_create_interned_string_value(L"__name__"));
+    ClassObject *cls =
+        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+
+    EXPECT_EQ(cls_name.as_value(),
+              load_attr(Value::from_oop(cls), dunder_name_name));
+    EXPECT_FALSE(store_attr(Value::from_oop(cls), dunder_name_name,
+                            replacement_name.as_value()));
+    EXPECT_EQ(cls_name.as_value(),
+              load_attr(Value::from_oop(cls), dunder_name_name));
+}
+
 TEST(Attr, StoreAttrHandlesDunderClassAndUnsupportedInlineValues)
 {
     test::VmTestContext context;

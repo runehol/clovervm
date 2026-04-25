@@ -47,10 +47,27 @@ namespace cl
                                                    int32_t next_slot_index,
                                                    ShapeFlags shape_flags)
     {
+        ShapeRootDescriptor descriptor{name, info};
+        return make_root_with_descriptors(owner_class, &descriptor, 1,
+                                          next_slot_index, shape_flags);
+    }
+
+    Shape *Shape::make_root_with_descriptors(
+        Value owner_class, const ShapeRootDescriptor *descriptors,
+        uint32_t descriptor_count, int32_t next_slot_index,
+        ShapeFlags shape_flags)
+    {
         Shape *shape = ThreadState::get_active()->make_refcounted_raw<Shape>(
-            owner_class, Value::None(), next_slot_index, 1, shape_flags, 1);
-        shape->descriptor_names[0] = incref(name.as_value());
-        shape->descriptor_infos()[0] = info;
+            owner_class, Value::None(), next_slot_index, descriptor_count,
+            shape_flags, descriptor_count);
+        for(uint32_t descriptor_idx = 0; descriptor_idx < descriptor_count;
+            ++descriptor_idx)
+        {
+            shape->descriptor_names[descriptor_idx] =
+                incref(descriptors[descriptor_idx].name.as_value());
+            shape->descriptor_infos()[descriptor_idx] =
+                descriptors[descriptor_idx].info;
+        }
         return shape;
     }
 

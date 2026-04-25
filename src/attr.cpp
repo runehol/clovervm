@@ -162,8 +162,8 @@ namespace cl
 
         if(object->klass == &ClassObject::klass)
         {
-            static_cast<ClassObject *>(object)->set_member(name, value);
-            return true;
+            return static_cast<ClassObject *>(object)->set_own_property(name,
+                                                                        value);
         }
 
         return false;
