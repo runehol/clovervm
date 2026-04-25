@@ -11,6 +11,8 @@
 namespace cl
 {
     class ClassObject;
+    class Shape;
+    struct Value;
 
     struct BootstrapObjectTag
     {
@@ -185,26 +187,29 @@ namespace cl
     {
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id,
                uint32_t _layout)
-            : HeapObject(_layout), cls(_cls), native_layout(_native_layout_id)
+            : HeapObject(_layout), native_layout(_native_layout_id),
+              shape(nullptr), overflow_storage(nullptr), cls(_cls)
         {
             assert(cls != nullptr);
         }
 
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id)
-            : HeapObject(), cls(_cls), native_layout(_native_layout_id)
+            : HeapObject(), native_layout(_native_layout_id), shape(nullptr),
+              overflow_storage(nullptr), cls(_cls)
         {
             assert(cls != nullptr);
         }
 
         Object(BootstrapObjectTag, NativeLayoutId _native_layout_id,
                uint32_t _layout)
-            : HeapObject(_layout), cls(nullptr),
-              native_layout(_native_layout_id)
+            : HeapObject(_layout), native_layout(_native_layout_id),
+              shape(nullptr), overflow_storage(nullptr), cls(nullptr)
         {
         }
 
         Object(BootstrapObjectTag, NativeLayoutId _native_layout_id)
-            : HeapObject(), cls(nullptr), native_layout(_native_layout_id)
+            : HeapObject(), native_layout(_native_layout_id), shape(nullptr),
+              overflow_storage(nullptr), cls(nullptr)
         {
         }
 
@@ -217,9 +222,22 @@ namespace cl
 
         NativeLayoutId native_layout_id() const { return native_layout; }
         ClassObject *get_class() const { return cls; }
+        Value *inline_slot_base() { return reinterpret_cast<Value *>(&cls); }
+        const Value *inline_slot_base() const
+        {
+            return reinterpret_cast<const Value *>(&cls);
+        }
+        static constexpr uint32_t static_value_offset_in_words()
+        {
+            static_assert(CL_OFFSETOF(Object, cls) % sizeof(uint64_t) == 0,
+                          "Value region must start on a 64-bit word boundary");
+            return CL_OFFSETOF(Object, cls) / sizeof(uint64_t);
+        }
 
-        ClassObject *cls;
         NativeLayoutId native_layout;
+        Shape *shape;
+        HeapObject *overflow_storage;
+        ClassObject *cls;
     };
 
     template <typename T, typename = void>
@@ -281,7 +299,7 @@ namespace cl
     static_assert(sizeof(DynamicLayoutSpec) == 16);
     static_assert(sizeof(ExpandedHeader) == 16);
     static_assert(sizeof(HeapObject) == 8);
-    static_assert(sizeof(Object) == 24);
+    static_assert(sizeof(Object) == 40);
     static_assert(std::is_trivially_destructible_v<HeapObject>);
     static_assert(std::is_trivially_destructible_v<Object>);
 

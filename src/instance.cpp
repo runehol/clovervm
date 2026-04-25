@@ -9,22 +9,24 @@ namespace cl
 {
 
     Instance::Instance(Value _cls, Shape *_shape)
-        : Object(_cls.get_ptr<ClassObject>(), native_layout_id), cls(_cls),
-          shape(_shape), overflow(nullptr)
+        : Object(_cls.get_ptr<ClassObject>(), native_layout_id)
     {
+        incref(Object::get_class());
+        set_shape(_shape);
         uint32_t factory_default_inline_slot_count =
             get_shape()->get_factory_default_inline_slot_count();
-        for(uint32_t slot_idx = 0; slot_idx < factory_default_inline_slot_count;
+        for(uint32_t slot_idx = 1; slot_idx < factory_default_inline_slot_count;
             ++slot_idx)
         {
-            inline_slots[slot_idx] = Value::not_present();
+            inline_slot_base()[slot_idx] = Value::not_present();
         }
 
         TValue<String> dunder_class_name = interned_string(L"__class__");
         StorageLocation class_location =
             get_shape()->resolve_present_property(dunder_class_name);
         assert(class_location.is_found());
-        write_storage_location(class_location, _cls);
+        assert(class_location.kind == StorageKind::Inline);
+        assert(class_location.physical_idx == 0);
     }
 
     BuiltinClassDefinition make_instance_class(VirtualMachine *vm)
@@ -40,22 +42,35 @@ namespace cl
     {
         uint32_t factory_default_inline_slot_count =
             shape->get_factory_default_inline_slot_count();
-        return DynamicLayoutSpec{round_up_to_16byte_units(size_for(
-                                     factory_default_inline_slot_count)),
-                                 3 + factory_default_inline_slot_count};
+        assert(factory_default_inline_slot_count >= 1);
+        uint32_t dynamic_inline_slot_count =
+            factory_default_inline_slot_count - 1;
+        return DynamicLayoutSpec{
+            round_up_to_16byte_units(size_for(dynamic_inline_slot_count)),
+            factory_default_inline_slot_count};
     }
 
-    Shape *Instance::get_shape() const { return shape.extract(); }
+    Value Instance::get_class() const
+    {
+        return Value::from_oop(Object::get_class());
+    }
 
-    void Instance::set_shape(Shape *new_shape) { shape = new_shape; }
+    Shape *Instance::get_shape() const { return shape; }
+
+    void Instance::set_shape(Shape *new_shape)
+    {
+        Shape *old_shape = shape;
+        shape = incref(new_shape);
+        decref(old_shape);
+    }
 
     Instance::OverflowSlots *Instance::get_overflow_slots() const
     {
-        if(overflow == nullptr)
+        if(overflow_storage == nullptr)
         {
             return nullptr;
         }
-        return overflow.extract();
+        return static_cast<OverflowSlots *>(overflow_storage);
     }
 
     Value Instance::get_own_property(TValue<String> name) const
@@ -79,7 +94,7 @@ namespace cl
         switch(location.kind)
         {
             case StorageKind::Inline:
-                return inline_slots[location.physical_idx];
+                return inline_slot_base()[location.physical_idx];
             case StorageKind::Overflow:
                 {
                     OverflowSlots *overflow_slots = get_overflow_slots();
@@ -104,8 +119,9 @@ namespace cl
         {
             case StorageKind::Inline:
                 {
-                    Value old_value = inline_slots[location.physical_idx];
-                    inline_slots[location.physical_idx] = incref(value);
+                    Value *slots = inline_slot_base();
+                    Value old_value = slots[location.physical_idx];
+                    slots[location.physical_idx] = incref(value);
                     decref(old_value);
                     return;
                 }
@@ -155,7 +171,9 @@ namespace cl
             }
         }
 
-        overflow = new_overflow_slots;
+        HeapObject *old_overflow_storage = overflow_storage;
+        overflow_storage = incref(new_overflow_slots);
+        decref(old_overflow_storage);
         return new_overflow_slots;
     }
 

@@ -65,17 +65,15 @@ namespace cl
 
         Instance(Value cls, Shape *shape);
 
-        static size_t size_for(uint32_t factory_default_inline_slot_count)
+        static size_t size_for(uint32_t dynamic_inline_slot_count)
         {
-            assert(factory_default_inline_slot_count >= 1);
             return sizeof(Instance) +
-                   sizeof(Value) * factory_default_inline_slot_count -
-                   sizeof(Value);
+                   sizeof(Value) * dynamic_inline_slot_count - sizeof(Value);
         }
 
         static DynamicLayoutSpec layout_spec_for(Value cls, Shape *shape);
 
-        Value get_class() const { return cls.as_value(); }
+        Value get_class() const;
         Shape *get_shape() const;
         void set_shape(Shape *new_shape);
         OverflowSlots *get_overflow_slots() const;
@@ -89,13 +87,14 @@ namespace cl
     private:
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
 
-        MemberValue cls;
-        MemberHeapPtr<Shape> shape;
-        MemberHeapPtr<OverflowSlots> overflow;
-        Value inline_slots[1];
+        [[maybe_unused]] Value inline_slots[1];
 
     public:
-        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(Instance, cls);
+        static constexpr bool has_dynamic_layout = true;
+        static constexpr uint32_t static_value_offset_in_words()
+        {
+            return Object::static_value_offset_in_words();
+        }
     };
 
     BuiltinClassDefinition make_instance_class(VirtualMachine *vm);
