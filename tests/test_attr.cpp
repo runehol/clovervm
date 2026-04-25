@@ -64,6 +64,47 @@ TEST(Attr, LoadAttrFallsBackToClassAndBaseMembers)
               load_attr(Value::from_oop(child), inherited_name));
 }
 
+TEST(Attr, LoadAttrOnClassFallsBackToMetaclass)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> meta_name(
+        context.vm().get_or_create_interned_string_value(L"Meta"));
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"meta_attr"));
+    ClassObject *meta =
+        context.thread()->make_internal_raw<ClassObject>(meta_name, 2);
+    meta->set_own_property(attr_name, Value::from_smi(7));
+    ClassObject *cls =
+        context.thread()->make_internal_raw<ClassObject>(meta, cls_name, 2);
+
+    EXPECT_EQ(Value::from_smi(7), load_attr(Value::from_oop(cls), attr_name));
+}
+
+TEST(Attr, LoadAttrOnClassPrefersClassPathOverMetaclass)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> meta_name(
+        context.vm().get_or_create_interned_string_value(L"Meta"));
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"attr"));
+    ClassObject *meta =
+        context.thread()->make_internal_raw<ClassObject>(meta_name, 2);
+    meta->set_own_property(attr_name, Value::from_smi(7));
+    ClassObject *cls =
+        context.thread()->make_internal_raw<ClassObject>(meta, cls_name, 2);
+    cls->set_own_property(attr_name, Value::from_smi(11));
+
+    EXPECT_EQ(Value::from_smi(11), load_attr(Value::from_oop(cls), attr_name));
+}
+
 TEST(Attr, LoadAttrClassFallbackContinuesPastLatentDescriptor)
 {
     test::VmTestContext context;
@@ -117,6 +158,11 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
               load_attr(Value::from_oop(instance), dunder_class_name));
     EXPECT_EQ(Value::from_oop(context.vm().type_class()),
               load_attr(Value::from_oop(cls), dunder_class_name));
+
+    TValue<String> string_value(
+        context.vm().get_or_create_interned_string_value(L"hello"));
+    EXPECT_EQ(Value::from_oop(context.vm().str_class()),
+              load_attr(string_value.as_value(), dunder_class_name));
 }
 
 TEST(Attr, LoadAttrMissesOnUnsupportedInlineValues)
@@ -192,7 +238,7 @@ TEST(Attr, ClassMetadataAttributesAreReadonly)
               load_attr(Value::from_oop(cls), dunder_name_name));
 }
 
-TEST(Attr, StoreAttrHandlesDunderClassAndUnsupportedInlineValues)
+TEST(Attr, StoreAttrRejectsDunderClassAndUnsupportedInlineValues)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -209,8 +255,8 @@ TEST(Attr, StoreAttrHandlesDunderClassAndUnsupportedInlineValues)
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
-    EXPECT_TRUE(store_attr(Value::from_oop(instance), dunder_class_name,
-                           Value::from_oop(cls)));
+    EXPECT_FALSE(store_attr(Value::from_oop(instance), dunder_class_name,
+                            Value::from_oop(cls)));
     EXPECT_FALSE(store_attr(Value::from_oop(instance), dunder_class_name,
                             Value::from_oop(other_cls)));
     EXPECT_EQ(Value::from_oop(cls),
