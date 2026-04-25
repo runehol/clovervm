@@ -10,7 +10,7 @@ namespace cl
 
     ClassObject::ClassObject(TValue<String> _name,
                              uint32_t _factory_default_inline_slot_count,
-                             Value _base)
+                             Value _base, ShapeFlags class_shape_flags)
         : Object(native_layout_id, compact_layout()), name(_name), base(_base),
           initial_shape(Value::None()), shape(Value::None()),
           overflow(Value::None()),
@@ -54,7 +54,6 @@ namespace cl
                     StorageLocation{kClassSlotMro, StorageKind::Inline},
                     class_metadata_flags)},
         };
-        ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject);
         shape = Value::from_oop(Shape::make_root_with_descriptors(
             Value::from_oop(this), descriptors, kClassPredefinedSlotCount,
             kClassPredefinedSlotCount, class_shape_flags));
@@ -67,6 +66,29 @@ namespace cl
         class_slots[kClassSlotName] = _name.as_value();
         class_slots[kClassSlotBases] = make_bases_list();
         class_slots[kClassSlotMro] = make_mro_list();
+    }
+
+    ClassObject *ClassObject::make_builtin_class(
+        TValue<String> name, uint32_t factory_default_inline_slot_count,
+        const BuiltinClassMethod *methods, uint32_t method_count, Value base)
+    {
+        ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
+                                       shape_flag(ShapeFlag::IsImmutableType);
+        ClassObject *cls = make_refcounted_raw<ClassObject>(
+            name, factory_default_inline_slot_count, base, class_shape_flags);
+
+        DescriptorFlags method_flags =
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+            descriptor_flag(DescriptorFlag::StableSlot);
+        for(uint32_t method_idx = 0; method_idx < method_count; ++method_idx)
+        {
+            bool stored = cls->define_own_property(methods[method_idx].name,
+                                                   methods[method_idx].value,
+                                                   method_flags);
+            assert(stored);
+        }
+
+        return cls;
     }
 
     Shape *ClassObject::get_shape() const
@@ -128,6 +150,22 @@ namespace cl
     Value ClassObject::get_own_property(TValue<String> name) const
     {
         return shape_backed_object::get_own_property(this, name);
+    }
+
+    bool ClassObject::define_own_property(TValue<String> name, Value value,
+                                          DescriptorFlags descriptor_flags)
+    {
+        return shape_backed_object::define_own_property(this, name, value,
+                                                        descriptor_flags) ==
+               shape_backed_object::StoreOwnPropertyResult::Stored;
+    }
+
+    bool ClassObject::set_existing_own_property(TValue<String> name,
+                                                Value value)
+    {
+        return shape_backed_object::set_existing_own_property(this, name,
+                                                              value) ==
+               shape_backed_object::StoreOwnPropertyResult::Stored;
     }
 
     bool ClassObject::set_own_property(TValue<String> name, Value value)

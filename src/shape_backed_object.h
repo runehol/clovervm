@@ -13,6 +13,8 @@ namespace cl::shape_backed_object
     {
         Stored,
         ReadOnly,
+        NotFound,
+        AlreadyExists,
     };
 
     template <typename ObjectT>
@@ -29,27 +31,20 @@ namespace cl::shape_backed_object
     }
 
     template <typename ObjectT>
-    StoreOwnPropertyResult set_own_property(ObjectT *object,
-                                            TValue<String> name, Value value)
+    StoreOwnPropertyResult
+    define_own_property(ObjectT *object, TValue<String> name, Value value,
+                        DescriptorFlags descriptor_flags =
+                            descriptor_flag(DescriptorFlag::None))
     {
         Shape *current_shape = object->get_shape();
         int32_t descriptor_idx = current_shape->lookup_descriptor_index(name);
         if(descriptor_idx >= 0)
         {
-            DescriptorInfo info =
-                current_shape->get_descriptor_info(descriptor_idx);
-            if(info.has_flag(DescriptorFlag::ReadOnly))
-            {
-                return StoreOwnPropertyResult::ReadOnly;
-            }
-
-            StorageLocation location = info.storage_location();
-            object->write_storage_location(location, value);
-            return StoreOwnPropertyResult::Stored;
+            return StoreOwnPropertyResult::AlreadyExists;
         }
 
-        Shape *next_shape =
-            current_shape->derive_transition(name, ShapeTransitionVerb::Add);
+        Shape *next_shape = current_shape->derive_transition(
+            name, ShapeTransitionVerb::Add, descriptor_flags);
         object->set_shape(next_shape);
 
         StorageLocation new_location =
@@ -57,6 +52,41 @@ namespace cl::shape_backed_object
         assert(new_location.is_found());
         object->write_storage_location(new_location, value);
         return StoreOwnPropertyResult::Stored;
+    }
+
+    template <typename ObjectT>
+    StoreOwnPropertyResult
+    set_existing_own_property(ObjectT *object, TValue<String> name, Value value)
+    {
+        Shape *current_shape = object->get_shape();
+        int32_t descriptor_idx = current_shape->lookup_descriptor_index(name);
+        if(descriptor_idx < 0)
+        {
+            return StoreOwnPropertyResult::NotFound;
+        }
+
+        DescriptorInfo info =
+            current_shape->get_descriptor_info(descriptor_idx);
+        if(info.has_flag(DescriptorFlag::ReadOnly))
+        {
+            return StoreOwnPropertyResult::ReadOnly;
+        }
+
+        object->write_storage_location(info.storage_location(), value);
+        return StoreOwnPropertyResult::Stored;
+    }
+
+    template <typename ObjectT>
+    StoreOwnPropertyResult set_own_property(ObjectT *object,
+                                            TValue<String> name, Value value)
+    {
+        StoreOwnPropertyResult result =
+            set_existing_own_property(object, name, value);
+        if(result == StoreOwnPropertyResult::NotFound)
+        {
+            return define_own_property(object, name, value);
+        }
+        return result;
     }
 
     template <typename ObjectT>

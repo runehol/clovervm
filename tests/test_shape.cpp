@@ -672,6 +672,79 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     EXPECT_EQ(cls_name.as_value(), cls->get_own_property(dunder_name_name));
 }
 
+TEST(ClassObject, BuiltinClassRegistersReadonlyFixedMethods)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"str"));
+    TValue<String> method_name(
+        context.vm().get_or_create_interned_string_value(L"upper"));
+    TValue<String> other_method_name(
+        context.vm().get_or_create_interned_string_value(L"lower"));
+    BuiltinClassMethod methods[] = {
+        BuiltinClassMethod{method_name, Value::from_smi(11)},
+        BuiltinClassMethod{other_method_name, Value::from_smi(23)},
+    };
+
+    ClassObject *cls = ClassObject::make_builtin_class(cls_name, 2, methods, 2);
+
+    Shape *shape = cls->get_shape();
+    ASSERT_NE(nullptr, shape);
+    EXPECT_TRUE(shape->has_flag(ShapeFlag::IsClassObject));
+    EXPECT_TRUE(shape->has_flag(ShapeFlag::IsImmutableType));
+    ASSERT_EQ(2u, class_property_count(cls));
+    EXPECT_STREQ(L"upper", class_property_name(cls, 0).extract()->data);
+    EXPECT_STREQ(L"lower", class_property_name(cls, 1).extract()->data);
+    EXPECT_EQ(Value::from_smi(11), class_property_value(cls, 0));
+    EXPECT_EQ(Value::from_smi(23), class_property_value(cls, 1));
+
+    for(uint32_t idx = ClassObject::kClassPredefinedSlotCount;
+        idx < shape->present_count(); ++idx)
+    {
+        DescriptorInfo info = shape->get_descriptor_info(idx);
+        EXPECT_TRUE(info.has_flag(DescriptorFlag::ReadOnly));
+        EXPECT_TRUE(info.has_flag(DescriptorFlag::StableSlot));
+    }
+
+    Shape *before_shape = cls->get_shape();
+    EXPECT_FALSE(cls->set_own_property(method_name, Value::from_smi(99)));
+    EXPECT_FALSE(cls->delete_own_property(other_method_name));
+    EXPECT_EQ(before_shape, cls->get_shape());
+    EXPECT_EQ(Value::from_smi(11), cls->get_own_property(method_name));
+    EXPECT_EQ(Value::from_smi(23), cls->get_own_property(other_method_name));
+}
+
+TEST(ClassObject, DefineAndSetExistingOwnPropertyHaveSeparateSemantics)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"attr"));
+    TValue<String> missing_name(
+        context.vm().get_or_create_interned_string_value(L"missing"));
+    ClassObject *cls =
+        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+
+    EXPECT_FALSE(cls->set_existing_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_TRUE(
+        cls->define_own_property(attr_name, Value::from_smi(1),
+                                 descriptor_flag(DescriptorFlag::StableSlot)));
+    EXPECT_EQ(Value::from_smi(1), cls->get_own_property(attr_name));
+    EXPECT_FALSE(
+        cls->define_own_property(attr_name, Value::from_smi(2),
+                                 descriptor_flag(DescriptorFlag::StableSlot)));
+    EXPECT_TRUE(cls->set_existing_own_property(attr_name, Value::from_smi(3)));
+    EXPECT_EQ(Value::from_smi(3), cls->get_own_property(attr_name));
+    EXPECT_FALSE(
+        cls->set_existing_own_property(missing_name, Value::from_smi(4)));
+    EXPECT_EQ(Value::not_present(), cls->get_own_property(missing_name));
+}
+
 TEST(ClassObject, PredefinedBasesAndMroReflectSingleBaseChain)
 {
     test::VmTestContext context;

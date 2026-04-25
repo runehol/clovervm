@@ -12,6 +12,12 @@
 
 namespace cl
 {
+    struct BuiltinClassMethod
+    {
+        TValue<String> name;
+        Value value;
+    };
+
     class ClassObject : public Object
     {
     public:
@@ -26,7 +32,15 @@ namespace cl
 
         ClassObject(TValue<String> name,
                     uint32_t factory_default_inline_slot_count,
-                    Value base = Value::None());
+                    Value base = Value::None(),
+                    ShapeFlags class_shape_flags =
+                        shape_flag(ShapeFlag::IsClassObject));
+
+        static ClassObject *
+        make_builtin_class(TValue<String> name,
+                           uint32_t factory_default_inline_slot_count,
+                           const BuiltinClassMethod *methods,
+                           uint32_t method_count, Value base = Value::None());
 
         TValue<String> get_name() const { return name; }
         uint32_t get_factory_default_inline_slot_count() const
@@ -45,6 +59,9 @@ namespace cl
         Value lookup_class_chain(TValue<String> name) const;
 
         Value get_own_property(TValue<String> name) const;
+        bool define_own_property(TValue<String> name, Value value,
+                                 DescriptorFlags descriptor_flags);
+        bool set_existing_own_property(TValue<String> name, Value value);
         bool set_own_property(TValue<String> name, Value value);
         bool delete_own_property(TValue<String> name);
 
