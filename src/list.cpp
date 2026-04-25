@@ -11,6 +11,12 @@ namespace cl
         items.resize(size, Value::not_present());
     }
 
+    List::List(ClassObject *cls, size_t size)
+        : Object(cls, native_layout_id, compact_layout())
+    {
+        items.resize(size, Value::not_present());
+    }
+
     BuiltinClassDefinition make_list_class(VirtualMachine *vm)
     {
         static constexpr NativeLayoutId native_layout_ids[] = {

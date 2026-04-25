@@ -851,7 +851,7 @@ namespace cl
         TValue<CodeObject> code_obj(
             code_object->constant_table[const_offset].as_value());
 
-        accumulator = make_refcounted_value<Function>(code_obj);
+        accumulator = make_refcounted_object_value<Function>(code_obj);
 
         COMPLETE();
     }
@@ -862,7 +862,7 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue<List> list = make_refcounted_value<List>(n_items);
+        TValue<List> list = make_refcounted_object_value<List>(n_items);
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             list.extract()->set_item_unchecked(idx, fp[reg - int8_t(idx)]);
@@ -878,7 +878,7 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue<Dict> dict = make_refcounted_value<Dict>();
+        TValue<Dict> dict = make_refcounted_object_value<Dict>();
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             Value key = fp[reg - int8_t(idx * 2)];

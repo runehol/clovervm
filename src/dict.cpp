@@ -28,8 +28,27 @@ namespace cl
     {
     }
 
+    Dict::Dict(ClassObject *cls)
+        : Object(cls, native_layout_id, compact_layout()),
+          hash_table(min_table_size, not_present), n_valid_entries(0)
+    {
+    }
+
     Dict::Dict(const Dict &other)
         : Object(native_layout_id, compact_layout()),
+          hash_table(min_table_size, not_present), n_valid_entries(0)
+    {
+        for(const Entry &e: other.entries)
+        {
+            if(e.valid())
+            {
+                set_item(e.key, e.value);
+            }
+        }
+    }
+
+    Dict::Dict(ClassObject *cls, const Dict &other)
+        : Object(cls, native_layout_id, compact_layout()),
           hash_table(min_table_size, not_present), n_valid_entries(0)
     {
         for(const Entry &e: other.entries)

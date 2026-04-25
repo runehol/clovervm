@@ -8,6 +8,7 @@
 
 namespace cl
 {
+    class ClassObject;
     class VirtualMachine;
 
     class RangeIterator : public Object
@@ -15,6 +16,13 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::RangeIterator;
+
+        RangeIterator(ClassObject *cls, TValue<CLInt> _current,
+                      TValue<CLInt> _stop, TValue<CLInt> _step)
+            : Object(cls, native_layout_id, compact_layout()),
+              current(_current), stop(_stop), step(_step)
+        {
+        }
 
         RangeIterator(TValue<CLInt> _current, TValue<CLInt> _stop,
                       TValue<CLInt> _step)

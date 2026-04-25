@@ -10,6 +10,7 @@
 
 namespace cl
 {
+    class ClassObject;
     class VirtualMachine;
 
     // may need closures and stuff later. TBD
@@ -18,6 +19,12 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::Function;
+
+        Function(ClassObject *cls, TValue<CodeObject> _code_object)
+            : Object(cls, native_layout_id, compact_layout()),
+              code_object(_code_object)
+        {
+        }
 
         Function(TValue<CodeObject> _code_object)
             : Object(native_layout_id, compact_layout()),

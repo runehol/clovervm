@@ -57,7 +57,7 @@ namespace cl
                     "TypeError: wrong number of arguments");
         }
 
-        return thread->make_refcounted_value<RangeIterator>(
+        return thread->make_refcounted_object_value<RangeIterator>(
             TValue<CLInt>(start), TValue<CLInt>(stop), TValue<CLInt>(step));
     }
 
@@ -85,6 +85,11 @@ namespace cl
     ThreadState *VirtualMachine::make_new_thread()
     {
         return threads.emplace_back(std::make_unique<ThreadState>(this)).get();
+    }
+
+    ClassObject *class_for_native_layout(VirtualMachine *vm, NativeLayoutId id)
+    {
+        return vm->class_for_native_layout(id);
     }
 
     void VirtualMachine::register_builtin_class(
@@ -121,6 +126,35 @@ namespace cl
         });
     }
 
+    static void install_bootstrap_list_class_on_value(Value value,
+                                                      ClassObject *list_class)
+    {
+        assert(can_convert_to<List>(value));
+        Object *object = value.get_ptr<Object>();
+        if(object->get_class() == nullptr)
+        {
+            object->install_bootstrap_class(list_class);
+        }
+    }
+
+    void VirtualMachine::install_bootstrap_list_class()
+    {
+        ClassObject *list = list_class();
+        assert(list != nullptr);
+
+        for(ClassObject *cls: builtin_classes)
+        {
+            install_bootstrap_list_class_on_value(
+                cls->read_storage_location(StorageLocation{
+                    ClassObject::kClassSlotBases, StorageKind::Inline}),
+                list);
+            install_bootstrap_list_class_on_value(
+                cls->read_storage_location(StorageLocation{
+                    ClassObject::kClassSlotMro, StorageKind::Inline}),
+                list);
+        }
+    }
+
     void VirtualMachine::initialize_builtin_types()
     {
         BuiltinClassDefinition type_definition = make_type_class(this);
@@ -129,6 +163,7 @@ namespace cl
         register_builtin_class(make_str_class(this));
         install_bootstrap_string_class();
         register_builtin_class(make_list_class(this));
+        install_bootstrap_list_class();
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_builtin_function_class(this));

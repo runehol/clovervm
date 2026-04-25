@@ -135,7 +135,7 @@ namespace cl
                     break;
             }
 
-            return make_refcounted_raw<CodeObject>(
+            return make_refcounted_object_raw<CodeObject>(
                 av.compilation_unit, module_scope, local_scope, name);
         }
 

@@ -13,6 +13,7 @@ namespace cl
 {
     struct CompilationUnit;
     struct CodeObject;
+    class ClassObject;
     class VirtualMachine;
 
     static constexpr int32_t FrameHeaderSizeAboveFp = 2;
@@ -51,6 +52,14 @@ namespace cl
     {
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::CodeObject;
+
+        CodeObject(ClassObject *cls, const CompilationUnit *_compilation_unit,
+                   Scope *_module_scope, Scope *_local_scope, Value _name)
+            : Object(cls, native_layout_id, compact_layout()),
+              module_scope(_module_scope), local_scope(_local_scope),
+              name(_name), compilation_unit(_compilation_unit)
+        {
+        }
 
         CodeObject(const CompilationUnit *_compilation_unit,
                    Scope *_module_scope, Scope *_local_scope, Value _name)

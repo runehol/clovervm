@@ -125,6 +125,7 @@ namespace cl
 
         void register_builtin_class(const BuiltinClassDefinition &definition);
         void install_bootstrap_string_class();
+        void install_bootstrap_list_class();
         void initialize_builtin_types();
         void initialize_builtin_scope();
 
