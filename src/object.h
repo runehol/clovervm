@@ -3,6 +3,7 @@
 
 #include "heap_object.h"
 #include "native_layout_id.h"
+#include "shape_descriptor.h"
 
 #include <cassert>
 #include <cstdint>
@@ -13,7 +14,6 @@ namespace cl
     class ClassObject;
     class OverflowSlots;
     class Shape;
-    struct StorageLocation;
     struct Value;
 
     struct BootstrapObjectTag

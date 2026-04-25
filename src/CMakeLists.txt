@@ -50,6 +50,7 @@ add_library(libclovervm STATIC
     refcount.h
     scope.cpp
     scope.h
+    shape_descriptor.h
     slab_allocator.cpp
     slab_allocator.h
     str.cpp
