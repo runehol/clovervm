@@ -23,6 +23,8 @@ namespace cl
         Instance,
         InstanceOverflowSlots,
 
+        Count,
+
         TestArrayOwner,
     };
 

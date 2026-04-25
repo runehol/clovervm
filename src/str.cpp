@@ -1,7 +1,60 @@
 #include "str.h"
+#include "builtin_function.h"
+#include "class_object.h"
+#include "thread_state.h"
+#include "virtual_machine.h"
+#include <iterator>
+#include <stdexcept>
 
 namespace cl
 {
+    static Value builtin_str_str(ThreadState *, const CallArguments &args)
+    {
+        if(args.n_args != 1 || !can_convert_to<String>(args[0]))
+        {
+            throw std::runtime_error(
+                "TypeError: str.__str__ expects a str receiver");
+        }
+        return args[0];
+    }
+
+    static Value builtin_str_add(ThreadState *thread, const CallArguments &args)
+    {
+        if(args.n_args != 2 || !can_convert_to<String>(args[0]) ||
+           !can_convert_to<String>(args[1]))
+        {
+            throw std::runtime_error(
+                "TypeError: str.__add__ expects two str arguments");
+        }
+
+        String *left = args[0].get_ptr<String>();
+        String *right = args[1].get_ptr<String>();
+        std::wstring result(left->data, size_t(left->count.extract()));
+        result.append(right->data, size_t(right->count.extract()));
+        return thread->make_refcounted_value<String>(result);
+    }
+
+    BuiltinClassDefinition make_str_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId native_layout_ids[] = {
+            NativeLayoutId::String};
+        BuiltinClassMethod methods[] = {
+            BuiltinClassMethod{
+                vm->get_or_create_interned_string_value(L"__str__"),
+                Value::from_oop(vm->make_immortal_raw<BuiltinFunction>(
+                    builtin_str_str, 1, 1))},
+            BuiltinClassMethod{
+                vm->get_or_create_interned_string_value(L"__add__"),
+                Value::from_oop(vm->make_immortal_raw<BuiltinFunction>(
+                    builtin_str_add, 2, 2))},
+        };
+
+        ClassObject *cls = ClassObject::make_builtin_class(
+            vm->get_or_create_interned_string_value(L"str"), 1, methods,
+            std::size(methods));
+        return builtin_class_definition(cls, native_layout_ids);
+    }
+
     uint64_t string_hash(TValue<String> s)
     {
         String *str = s.extract();

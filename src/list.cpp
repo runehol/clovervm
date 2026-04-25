@@ -1,4 +1,6 @@
 #include "list.h"
+#include "class_object.h"
+#include "virtual_machine.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -7,6 +9,15 @@ namespace cl
     List::List(size_t size) : Object(native_layout_id, compact_layout())
     {
         items.resize(size, Value::not_present());
+    }
+
+    BuiltinClassDefinition make_list_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId native_layout_ids[] = {
+            NativeLayoutId::List};
+        ClassObject *cls = ClassObject::make_builtin_class(
+            vm->get_or_create_interned_string_value(L"list"), 1, nullptr, 0);
+        return builtin_class_definition(cls, native_layout_ids);
     }
 
     void List::insert_item_unchecked(size_t idx, Value value)

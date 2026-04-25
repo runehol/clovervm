@@ -1,6 +1,8 @@
 #include "dict.h"
+#include "class_object.h"
 #include "refcount.h"
 #include "str.h"
+#include "virtual_machine.h"
 
 namespace cl
 {
@@ -37,6 +39,15 @@ namespace cl
                 set_item(e.key, e.value);
             }
         }
+    }
+
+    BuiltinClassDefinition make_dict_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId native_layout_ids[] = {
+            NativeLayoutId::Dict};
+        ClassObject *cls = ClassObject::make_builtin_class(
+            vm->get_or_create_interned_string_value(L"dict"), 1, nullptr, 0);
+        return builtin_class_definition(cls, native_layout_ids);
     }
 
     const int32_t *Dict::find_entry(Value key) const

@@ -1,6 +1,7 @@
 #ifndef CL_INSTANCE_H
 #define CL_INSTANCE_H
 
+#include "builtin_class_registry.h"
 #include "object.h"
 #include "shape.h"
 #include "typed_value.h"
@@ -10,6 +11,8 @@
 
 namespace cl
 {
+    class VirtualMachine;
+
     class Instance : public Object
     {
     public:
@@ -97,6 +100,8 @@ namespace cl
     public:
         CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(Instance, cls);
     };
+
+    BuiltinClassDefinition make_instance_class(VirtualMachine *vm);
 
 }  // namespace cl
 

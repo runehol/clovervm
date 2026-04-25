@@ -1,6 +1,7 @@
 #ifndef CL_SHAPE_H
 #define CL_SHAPE_H
 
+#include "builtin_class_registry.h"
 #include "object.h"
 #include "owned_typed_value.h"
 #include "typed_value.h"
@@ -12,6 +13,7 @@
 namespace cl
 {
     class ClassObject;
+    class VirtualMachine;
 
     enum class ShapeTransitionVerb : uint8_t
     {
@@ -320,6 +322,8 @@ namespace cl
     public:
         CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(Shape, owner_class);
     };
+
+    BuiltinClassDefinition make_shape_class(VirtualMachine *vm);
 
 }  // namespace cl
 

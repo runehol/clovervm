@@ -1,6 +1,7 @@
 #ifndef CL_LIST_H
 #define CL_LIST_H
 
+#include "builtin_class_registry.h"
 #include "object.h"
 #include "owned.h"
 #include "value.h"
@@ -50,6 +51,9 @@ namespace cl
         CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(
             List, items, ValueArray<Value>::embedded_value_count);
     };
+
+    class VirtualMachine;
+    BuiltinClassDefinition make_list_class(VirtualMachine *vm);
 
 }  // namespace cl
 

@@ -3,6 +3,7 @@
 #include "runtime_helpers.h"
 #include "shape_backed_object.h"
 #include "str.h"
+#include "virtual_machine.h"
 #include <algorithm>
 
 namespace cl
@@ -74,7 +75,7 @@ namespace cl
     {
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
                                        shape_flag(ShapeFlag::IsImmutableType);
-        ClassObject *cls = make_refcounted_raw<ClassObject>(
+        ClassObject *cls = active_vm()->make_immortal_raw<ClassObject>(
             name, factory_default_inline_slot_count, base, class_shape_flags);
 
         DescriptorFlags method_flags =
@@ -86,9 +87,20 @@ namespace cl
                                                    methods[method_idx].value,
                                                    method_flags);
             assert(stored);
+            (void)stored;
         }
 
         return cls;
+    }
+
+    BuiltinClassDefinition make_type_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId native_layout_ids[] = {
+            NativeLayoutId::ClassObject};
+        ClassObject *cls = ClassObject::make_builtin_class(
+            vm->get_or_create_interned_string_value(L"type"),
+            ClassObject::kClassInlineSlotCount, nullptr, 0);
+        return builtin_class_definition(cls, native_layout_ids);
     }
 
     Shape *ClassObject::get_shape() const

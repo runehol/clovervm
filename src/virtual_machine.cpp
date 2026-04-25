@@ -1,8 +1,15 @@
 #include "virtual_machine.h"
 #include "builtin_function.h"
+#include "code_object.h"
+#include "dict.h"
+#include "function.h"
+#include "instance.h"
+#include "list.h"
 #include "range_iterator.h"
 #include "scope.h"
+#include "shape.h"
 #include "thread_state.h"
+#include <cassert>
 #include <stdexcept>
 
 namespace cl
@@ -81,10 +88,64 @@ namespace cl
         return threads.emplace_back(std::make_unique<ThreadState>(this)).get();
     }
 
+    void VirtualMachine::register_builtin_class(
+        const BuiltinClassDefinition &definition)
+    {
+        assert(definition.cls != nullptr);
+        builtin_classes.push_back(definition.cls);
+        for(size_t idx = 0; idx < definition.native_layout_id_count; ++idx)
+        {
+            NativeLayoutId native_layout_id = definition.native_layout_ids[idx];
+            assert(native_layout_id != NativeLayoutId::Invalid);
+            assert(native_layout_id != NativeLayoutId::Generic);
+            assert(static_cast<size_t>(native_layout_id) < NativeLayoutCount);
+            assert(class_for_native_layouts[static_cast<size_t>(
+                       native_layout_id)] == nullptr);
+            class_for_native_layouts[static_cast<size_t>(native_layout_id)] =
+                definition.cls;
+        }
+    }
+
+    void VirtualMachine::initialize_builtin_types()
+    {
+        BuiltinClassDefinition type_definition = make_type_class(this);
+        type_class_ = type_definition.cls;
+        register_builtin_class(type_definition);
+        register_builtin_class(make_str_class(this));
+        register_builtin_class(make_list_class(this));
+        register_builtin_class(make_dict_class(this));
+        register_builtin_class(make_function_class(this));
+        register_builtin_class(make_builtin_function_class(this));
+        register_builtin_class(make_range_iterator_class(this));
+        register_builtin_class(make_scope_class(this));
+        register_builtin_class(make_code_object_class(this));
+        register_builtin_class(make_shape_class(this));
+        register_builtin_class(make_instance_class(this));
+
+        ClassObject *type = type_class();
+        assert(type != nullptr);
+        for(ClassObject *cls: builtin_classes)
+        {
+            assert(cls != nullptr);
+            cls->write_storage_location(
+                StorageLocation{ClassObject::kClassSlotClass,
+                                StorageKind::Inline},
+                Value::from_oop(type));
+        }
+    }
+
     void VirtualMachine::initialize_builtin_scope()
     {
+        initialize_builtin_types();
+
         builtin_scope =
             refcounted_global_heap.make_global_value<Scope>(Value::None());
+
+        for(ClassObject *cls: builtin_classes)
+        {
+            builtin_scope.extract()->set_by_name(cls->get_name(),
+                                                 Value::from_oop(cls));
+        }
 
         TValue<String> range_name =
             get_or_create_interned_string_value(L"range");

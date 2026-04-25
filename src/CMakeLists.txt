@@ -5,8 +5,11 @@ add_library(libclovervm STATIC
     attr.h
     ast.h
     ast_print.h
+    builtin_class_registry.h
     bytecode.h
+    builtin_function.cpp
     code_object.h
+    code_object.cpp
     class_object.cpp
     class_object.h
     codegen.cpp
@@ -14,6 +17,7 @@ add_library(libclovervm STATIC
     compilation_unit.h
     dict.cpp
     dict.h
+    function.cpp
     heap.cpp
     heap.h
     instance.cpp
@@ -21,6 +25,7 @@ add_library(libclovervm STATIC
     interpreter.cpp
     parser.cpp
     parser.h
+    range_iterator.cpp
     range_iterator.h
     runtime_helpers.h
     shape.cpp

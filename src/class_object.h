@@ -1,6 +1,7 @@
 #ifndef CL_CLASS_OBJECT_H
 #define CL_CLASS_OBJECT_H
 
+#include "builtin_class_registry.h"
 #include "instance.h"
 #include "object.h"
 #include "owned.h"
@@ -87,6 +88,9 @@ namespace cl
         CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(ClassObject, name,
                                              5 + kClassInlineSlotCount);
     };
+
+    class VirtualMachine;
+    BuiltinClassDefinition make_type_class(VirtualMachine *vm);
 
 }  // namespace cl
 

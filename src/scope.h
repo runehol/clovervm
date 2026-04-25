@@ -1,6 +1,7 @@
 #ifndef CL_SCOPE_H
 #define CL_SCOPE_H
 
+#include "builtin_class_registry.h"
 #include "object.h"
 #include "str.h"
 #include "typed_value.h"
@@ -10,6 +11,8 @@
 
 namespace cl
 {
+    class VirtualMachine;
+
     class Scope : public Object
     {
     public:
@@ -170,6 +173,8 @@ namespace cl
                 decltype(slot_names)::embedded_value_count +
                 decltype(slot_current_entry_indices)::embedded_value_count);
     };
+
+    BuiltinClassDefinition make_scope_class(VirtualMachine *vm);
 
 };  // namespace cl
 

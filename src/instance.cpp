@@ -1,7 +1,9 @@
 #include "instance.h"
+#include "class_object.h"
 #include "refcount.h"
 #include "runtime_helpers.h"
 #include "shape_backed_object.h"
+#include "virtual_machine.h"
 
 namespace cl
 {
@@ -23,6 +25,15 @@ namespace cl
             get_shape()->resolve_present_property(dunder_class_name);
         assert(class_location.is_found());
         write_storage_location(class_location, _cls);
+    }
+
+    BuiltinClassDefinition make_instance_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId native_layout_ids[] = {
+            NativeLayoutId::Instance};
+        ClassObject *cls = ClassObject::make_builtin_class(
+            vm->get_or_create_interned_string_value(L"object"), 1, nullptr, 0);
+        return builtin_class_definition(cls, native_layout_ids);
     }
 
     DynamicLayoutSpec Instance::layout_spec_for(Value cls, Value shape)

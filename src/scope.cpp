@@ -1,5 +1,7 @@
 #include "scope.h"
+#include "class_object.h"
 #include "str.h"
+#include "virtual_machine.h"
 #include <stdexcept>
 
 namespace cl
@@ -9,6 +11,15 @@ namespace cl
         : Object(native_layout_id, compact_layout()),
           parent_scope(_parent_scope), name_table(16, hash_not_present)
     {
+    }
+
+    BuiltinClassDefinition make_scope_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId native_layout_ids[] = {
+            NativeLayoutId::Scope};
+        ClassObject *cls = ClassObject::make_builtin_class(
+            vm->get_or_create_interned_string_value(L"scope"), 1, nullptr, 0);
+        return builtin_class_definition(cls, native_layout_ids);
     }
 
     const int32_t *Scope::find_name_table_entry(TValue<String> key) const

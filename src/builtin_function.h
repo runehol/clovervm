@@ -1,6 +1,7 @@
 #ifndef CL_BUILTIN_FUNCTION_H
 #define CL_BUILTIN_FUNCTION_H
 
+#include "builtin_class_registry.h"
 #include "object.h"
 #include "value.h"
 #include <cstdint>
@@ -8,6 +9,7 @@
 namespace cl
 {
     class ThreadState;
+    class VirtualMachine;
 
     struct CallArguments
     {
@@ -54,6 +56,8 @@ namespace cl
 
         CL_DECLARE_STATIC_LAYOUT_NO_VALUES(BuiltinFunction);
     };
+
+    BuiltinClassDefinition make_builtin_function_class(VirtualMachine *vm);
 
 }  // namespace cl
 

@@ -1,6 +1,7 @@
 #ifndef CL_STRING_H
 #define CL_STRING_H
 
+#include "builtin_class_registry.h"
 #include "object.h"
 #include "owned_typed_value.h"
 #include "value.h"
@@ -13,6 +14,9 @@
 namespace cl
 {
     typedef wchar_t cl_wchar;
+
+    class ClassObject;
+    class VirtualMachine;
 
     struct String : public Object
     {
@@ -95,6 +99,7 @@ namespace cl
     bool string_eq_slow_path(TValue<String> a, TValue<String> b);
 
     const cl_wchar *string_as_wchar_t(TValue<String> s);
+    BuiltinClassDefinition make_str_class(VirtualMachine *vm);
 
     static inline bool string_eq(TValue<String> a, TValue<String> b)
     {

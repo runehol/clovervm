@@ -1,6 +1,7 @@
 #ifndef CL_CODE_OBJECT_H
 #define CL_CODE_OBJECT_H
 
+#include "builtin_class_registry.h"
 #include "bytecode.h"
 #include "owned.h"
 #include "owned_typed_value.h"
@@ -12,6 +13,7 @@ namespace cl
 {
     struct CompilationUnit;
     struct CodeObject;
+    class VirtualMachine;
 
     static constexpr int32_t FrameHeaderSizeAboveFp = 2;
     static constexpr int32_t FrameHeaderSizeBelowFp = 2;
@@ -294,6 +296,8 @@ namespace cl
         }
         unresolved_relocations.clear();
     }
+
+    BuiltinClassDefinition make_code_object_class(VirtualMachine *vm);
 
 }  // namespace cl
 

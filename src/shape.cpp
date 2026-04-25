@@ -2,6 +2,7 @@
 #include "class_object.h"
 #include "str.h"
 #include "thread_state.h"
+#include "virtual_machine.h"
 #include <stdexcept>
 
 namespace cl
@@ -39,6 +40,15 @@ namespace cl
             descriptor_names[idx] = Value::None();
             descriptor_infos()[idx] = DescriptorInfo::not_found();
         }
+    }
+
+    BuiltinClassDefinition make_shape_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId native_layout_ids[] = {
+            NativeLayoutId::Shape};
+        ClassObject *cls = ClassObject::make_builtin_class(
+            vm->get_or_create_interned_string_value(L"shape"), 1, nullptr, 0);
+        return builtin_class_definition(cls, native_layout_ids);
     }
 
     Shape *Shape::make_root_with_single_descriptor(Value owner_class,

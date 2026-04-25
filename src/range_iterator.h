@@ -1,12 +1,14 @@
 #ifndef CL_RANGE_ITERATOR_H
 #define CL_RANGE_ITERATOR_H
 
+#include "builtin_class_registry.h"
 #include "object.h"
 #include "owned_typed_value.h"
 #include "value.h"
 
 namespace cl
 {
+    class VirtualMachine;
 
     class RangeIterator : public Object
     {
@@ -29,6 +31,8 @@ namespace cl
     };
 
     static_assert(std::is_trivially_destructible_v<RangeIterator>);
+
+    BuiltinClassDefinition make_range_iterator_class(VirtualMachine *vm);
 
 }  // namespace cl
 

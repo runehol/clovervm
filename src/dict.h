@@ -1,6 +1,7 @@
 #ifndef CL_DICT_H
 #define CL_DICT_H
 
+#include "builtin_class_registry.h"
 #include "object.h"
 #include "typed_value.h"
 #include "vm_array.h"
@@ -73,6 +74,9 @@ namespace cl
             decltype(hash_table)::embedded_value_count +
                 decltype(entries)::embedded_value_count);
     };
+
+    class VirtualMachine;
+    BuiltinClassDefinition make_dict_class(VirtualMachine *vm);
 
 };  // namespace cl
 

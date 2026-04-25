@@ -934,6 +934,75 @@ TEST(Interpreter, builtin_scope_lookup)
     EXPECT_EQ(actual, module_scope->get_by_slot_index_fastpath_only(slot_idx));
 }
 
+TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    struct ExpectedBuiltinType
+    {
+        NativeLayoutId native_layout_id;
+        const wchar_t *name;
+    };
+
+    constexpr ExpectedBuiltinType expected_types[] = {
+        {NativeLayoutId::ClassObject, L"type"},
+        {NativeLayoutId::String, L"str"},
+        {NativeLayoutId::List, L"list"},
+        {NativeLayoutId::Dict, L"dict"},
+        {NativeLayoutId::Function, L"function"},
+        {NativeLayoutId::BuiltinFunction, L"builtin_function"},
+        {NativeLayoutId::RangeIterator, L"range_iterator"},
+        {NativeLayoutId::Scope, L"scope"},
+        {NativeLayoutId::CodeObject, L"code"},
+        {NativeLayoutId::Shape, L"shape"},
+        {NativeLayoutId::Instance, L"object"},
+    };
+
+    Scope *builtins = test_context.vm().get_builtin_scope().extract();
+    ClassObject *type_class = test_context.vm().type_class();
+    ASSERT_NE(nullptr, type_class);
+
+    for(const ExpectedBuiltinType &expected: expected_types)
+    {
+        ClassObject *cls = test_context.vm().class_for_native_layout(
+            expected.native_layout_id);
+        ASSERT_NE(nullptr, cls);
+        EXPECT_EQ(-1, cls->refcount);
+        EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsClassObject));
+        EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsImmutableType));
+        EXPECT_EQ(Value::from_oop(type_class),
+                  cls->get_own_property(
+                      test_context.vm().get_or_create_interned_string_value(
+                          L"__class__")));
+
+        TValue<String> name =
+            test_context.vm().get_or_create_interned_string_value(
+                expected.name);
+        EXPECT_EQ(name, cls->get_name());
+        EXPECT_EQ(Value::from_oop(cls), builtins->get_by_name(name));
+    }
+
+    EXPECT_EQ(Value::from_oop(type_class),
+              type_class->get_own_property(
+                  test_context.vm().get_or_create_interned_string_value(
+                      L"__class__")));
+
+    ClassObject *str_class = test_context.vm().str_class();
+    TValue<String> dunder_str_name =
+        test_context.vm().get_or_create_interned_string_value(L"__str__");
+    TValue<String> dunder_add_name =
+        test_context.vm().get_or_create_interned_string_value(L"__add__");
+    Value str_method = str_class->get_own_property(dunder_str_name);
+    Value add_method = str_class->get_own_property(dunder_add_name);
+    ASSERT_TRUE(can_convert_to<BuiltinFunction>(str_method));
+    ASSERT_TRUE(can_convert_to<BuiltinFunction>(add_method));
+    EXPECT_EQ(-1, str_method.get_ptr<Object>()->refcount);
+    EXPECT_EQ(-1, add_method.get_ptr<Object>()->refcount);
+    EXPECT_FALSE(
+        str_class->set_own_property(dunder_str_name, Value::from_smi(99)));
+}
+
 TEST(Interpreter, range_builtin_returns_range_iterator)
 {
     test::VmTestContext test_context;
