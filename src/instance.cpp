@@ -64,7 +64,7 @@ namespace cl
         decref(old_shape);
     }
 
-    Instance::OverflowSlots *Instance::get_overflow_slots() const
+    OverflowSlots *Instance::get_overflow_slots() const
     {
         if(overflow_storage == nullptr)
         {
@@ -139,8 +139,7 @@ namespace cl
         __builtin_unreachable();
     }
 
-    Instance::OverflowSlots *
-    Instance::ensure_overflow_slot(int32_t physical_idx)
+    OverflowSlots *Instance::ensure_overflow_slot(int32_t physical_idx)
     {
         assert(physical_idx >= 0);
         OverflowSlots *overflow_slots = get_overflow_slots();
@@ -175,24 +174,6 @@ namespace cl
         overflow_storage = incref(new_overflow_slots);
         decref(old_overflow_storage);
         return new_overflow_slots;
-    }
-
-    Instance::OverflowSlots::OverflowSlots(uint32_t _size, uint32_t _capacity)
-        : HeapObject(), size(_size), capacity(_capacity)
-    {
-        assert(size <= capacity);
-        for(uint32_t slot_idx = 0; slot_idx < capacity; ++slot_idx)
-        {
-            slots[slot_idx] = Value::not_present();
-        }
-    }
-
-    void Instance::OverflowSlots::set(uint32_t slot_idx, Value value)
-    {
-        assert(slot_idx < capacity);
-        Value old_value = slots[slot_idx];
-        slots[slot_idx] = incref(value);
-        decref(old_value);
     }
 
 }  // namespace cl

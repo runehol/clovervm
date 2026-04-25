@@ -11,6 +11,7 @@
 namespace cl
 {
     class ClassObject;
+    class OverflowSlots;
     class Shape;
     struct Value;
 
@@ -236,7 +237,7 @@ namespace cl
 
         NativeLayoutId native_layout;
         Shape *shape;
-        HeapObject *overflow_storage;
+        OverflowSlots *overflow_storage;
         ClassObject *cls;
     };
 
@@ -302,7 +303,6 @@ namespace cl
     static_assert(sizeof(Object) == 40);
     static_assert(std::is_trivially_destructible_v<HeapObject>);
     static_assert(std::is_trivially_destructible_v<Object>);
-
 }  // namespace cl
 
 #endif  // CL_OBJECT_H

@@ -444,7 +444,7 @@ TEST(Shape, InstanceSpillsIntoGeometricallyGrowingOverflowStorage)
     instance->set_own_property(e_name, Value::from_smi(5));
     instance->set_own_property(f_name, Value::from_smi(6));
 
-    Instance::OverflowSlots *overflow_slots = instance->get_overflow_slots();
+    OverflowSlots *overflow_slots = instance->get_overflow_slots();
     ASSERT_NE(nullptr, overflow_slots);
     EXPECT_EQ(6u, overflow_slots->get_size());
     EXPECT_EQ(8u, overflow_slots->get_capacity());

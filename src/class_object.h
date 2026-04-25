@@ -4,6 +4,7 @@
 #include "builtin_class_registry.h"
 #include "instance.h"
 #include "object.h"
+#include "overflow_slots.h"
 #include "owned.h"
 #include "owned_typed_value.h"
 #include "shape.h"
@@ -83,8 +84,8 @@ namespace cl
 
     private:
         Value read_inline_slot(uint32_t slot_idx) const;
-        Instance::OverflowSlots *get_overflow_slots() const;
-        Instance::OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
+        OverflowSlots *get_overflow_slots() const;
+        OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
         Value make_bases_list() const;
         Value make_mro_list() const;
 
@@ -92,7 +93,7 @@ namespace cl
         MemberValue base;
         MemberHeapPtr<Shape> initial_shape;
         MemberHeapPtr<Shape> shape;
-        MemberHeapPtr<Instance::OverflowSlots> overflow;
+        MemberHeapPtr<OverflowSlots> overflow;
         MemberValue class_slots[kClassInlineSlotCount];
         uint32_t factory_default_inline_slot_count;
 

@@ -221,8 +221,7 @@ namespace cl
                 return class_slots[location.physical_idx].as_value();
             case StorageKind::Overflow:
                 {
-                    Instance::OverflowSlots *overflow_slots =
-                        get_overflow_slots();
+                    OverflowSlots *overflow_slots = get_overflow_slots();
                     if(overflow_slots == nullptr)
                     {
                         return Value::not_present();
@@ -252,7 +251,7 @@ namespace cl
                 }
             case StorageKind::Overflow:
                 {
-                    Instance::OverflowSlots *overflow_slots =
+                    OverflowSlots *overflow_slots =
                         ensure_overflow_slot(location.physical_idx);
                     overflow_slots->set(location.physical_idx, value);
                     overflow_slots->set_size(
@@ -270,7 +269,7 @@ namespace cl
         return class_slots[slot_idx].as_value();
     }
 
-    Instance::OverflowSlots *ClassObject::get_overflow_slots() const
+    OverflowSlots *ClassObject::get_overflow_slots() const
     {
         if(overflow == nullptr)
         {
@@ -279,11 +278,10 @@ namespace cl
         return overflow.extract();
     }
 
-    Instance::OverflowSlots *
-    ClassObject::ensure_overflow_slot(int32_t physical_idx)
+    OverflowSlots *ClassObject::ensure_overflow_slot(int32_t physical_idx)
     {
         assert(physical_idx >= 0);
-        Instance::OverflowSlots *overflow_slots = get_overflow_slots();
+        OverflowSlots *overflow_slots = get_overflow_slots();
         if(overflow_slots != nullptr &&
            uint32_t(physical_idx) < overflow_slots->get_capacity())
         {
@@ -298,10 +296,9 @@ namespace cl
             new_capacity *= 2;
         }
 
-        Instance::OverflowSlots *new_overflow_slots =
-            make_internal_raw<Instance::OverflowSlots>(
-                overflow_slots == nullptr ? 0 : overflow_slots->get_size(),
-                new_capacity);
+        OverflowSlots *new_overflow_slots = make_internal_raw<OverflowSlots>(
+            overflow_slots == nullptr ? 0 : overflow_slots->get_size(),
+            new_capacity);
         if(overflow_slots != nullptr)
         {
             for(uint32_t slot_idx = 0;
