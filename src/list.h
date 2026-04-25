@@ -16,12 +16,12 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout_id = NativeLayoutId::List;
 
-        List() : Object(native_layout_id, compact_layout()) {}
+        List(BootstrapObjectTag) : Object(native_layout_id, compact_layout()) {}
         explicit List(ClassObject *cls)
             : Object(cls, native_layout_id, compact_layout())
         {
         }
-        explicit List(size_t size);
+        List(BootstrapObjectTag, size_t size);
         List(ClassObject *cls, size_t size);
 
         size_t size() const { return items.size(); }

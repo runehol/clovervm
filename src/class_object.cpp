@@ -319,7 +319,7 @@ namespace cl
     Value ClassObject::make_bases_list() const
     {
         List *bases = active_vm()->list_class() == nullptr
-                          ? make_refcounted_raw<List>()
+                          ? make_refcounted_raw<List>(BootstrapObjectTag{})
                           : make_refcounted_object_raw<List>();
         if(base != Value::None())
         {
@@ -331,7 +331,7 @@ namespace cl
     Value ClassObject::make_mro_list() const
     {
         List *mro = active_vm()->list_class() == nullptr
-                        ? make_refcounted_raw<List>()
+                        ? make_refcounted_raw<List>(BootstrapObjectTag{})
                         : make_refcounted_object_raw<List>();
         mro->append(Value::from_oop(const_cast<ClassObject *>(this)));
         ClassObject *base_ptr = get_base();
