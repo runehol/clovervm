@@ -32,13 +32,14 @@ namespace cl
         }
         GlobalHeap &get_interned_global_heap() { return interned_global_heap; }
 
-        TValue<String>
-        get_or_create_interned_string_value(const std::wstring &str)
+        template <typename Source>
+        TValue<String> get_or_create_interned_string_value(const Source &str)
         {
             return interned_strings.get_or_create_value(str);
         }
 
-        String *get_or_create_interned_string_raw(const std::wstring &str)
+        template <typename Source>
+        String *get_or_create_interned_string_raw(const Source &str)
         {
             return interned_strings.get_or_create_raw(str);
         }
