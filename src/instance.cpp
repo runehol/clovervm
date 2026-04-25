@@ -1,5 +1,6 @@
 #include "instance.h"
 #include "refcount.h"
+#include "shape_backed_object.h"
 #include "thread_state.h"
 
 namespace cl
@@ -32,6 +33,11 @@ namespace cl
         return shape.as_value().get_ptr<Shape>();
     }
 
+    void Instance::set_shape(Shape *new_shape)
+    {
+        shape = Value::from_oop(new_shape);
+    }
+
     Instance::OverflowSlots *Instance::get_overflow_slots() const
     {
         if(overflow == Value::None())
@@ -43,48 +49,17 @@ namespace cl
 
     Value Instance::get_own_property(TValue<String> name) const
     {
-        StorageLocation location = get_shape()->resolve_own_property(name);
-        if(!location.is_found())
-        {
-            return Value::not_present();
-        }
-
-        return read_storage_location(location);
+        return shape_backed_object::get_own_property(this, name);
     }
 
     void Instance::set_own_property(TValue<String> name, Value value)
     {
-        Shape *current_shape = get_shape();
-        StorageLocation location = current_shape->resolve_own_property(name);
-        if(location.is_found())
-        {
-            write_storage_location(location, value);
-            return;
-        }
-
-        Shape *next_shape =
-            current_shape->derive_transition(name, ShapeTransitionVerb::Add);
-        shape = Value::from_oop(next_shape);
-
-        StorageLocation new_location = next_shape->resolve_own_property(name);
-        assert(new_location.is_found());
-        write_storage_location(new_location, value);
+        shape_backed_object::set_own_property(this, name, value);
     }
 
     bool Instance::delete_own_property(TValue<String> name)
     {
-        Shape *current_shape = get_shape();
-        StorageLocation location = current_shape->resolve_own_property(name);
-        if(!location.is_found())
-        {
-            return false;
-        }
-
-        Shape *next_shape =
-            current_shape->derive_transition(name, ShapeTransitionVerb::Delete);
-        shape = Value::from_oop(next_shape);
-        write_storage_location(location, Value::not_present());
-        return true;
+        return shape_backed_object::delete_own_property(this, name);
     }
 
     Value Instance::read_storage_location(StorageLocation location) const

@@ -34,10 +34,10 @@ namespace cl
 
     Value ClassObject::get_member(TValue<String> name) const
     {
-        int32_t member_idx = lookup_member_index_local(name);
-        if(member_idx >= 0)
+        Value own_property = get_own_property(name);
+        if(!own_property.is_not_present())
         {
-            return members[member_idx].get_value();
+            return own_property;
         }
 
         if(ClassObject *base_ptr = get_base())
@@ -46,6 +46,17 @@ namespace cl
         }
 
         return Value::not_present();
+    }
+
+    Value ClassObject::get_own_property(TValue<String> name) const
+    {
+        int32_t member_idx = lookup_member_index_local(name);
+        if(member_idx < 0)
+        {
+            return Value::not_present();
+        }
+
+        return members[member_idx].get_value();
     }
 
     void ClassObject::set_member(TValue<String> name, Value value)
@@ -63,6 +74,11 @@ namespace cl
         members.emplace_back(name, value);
     }
 
+    void ClassObject::set_own_property(TValue<String> name, Value value)
+    {
+        set_member(name, value);
+    }
+
     bool ClassObject::delete_member(TValue<String> name)
     {
         int32_t member_idx = lookup_member_index_local(name);
@@ -75,6 +91,11 @@ namespace cl
         maybe_bump_method_version_for_write(old_value, Value::not_present());
         members.erase(members.begin() + member_idx);
         return true;
+    }
+
+    bool ClassObject::delete_own_property(TValue<String> name)
+    {
+        return delete_member(name);
     }
 
     bool ClassObject::is_method_value(Value value)

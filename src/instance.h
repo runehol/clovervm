@@ -75,15 +75,16 @@ namespace cl
 
         Value get_class() const { return cls.as_value(); }
         Shape *get_shape() const;
+        void set_shape(Shape *new_shape);
         OverflowSlots *get_overflow_slots() const;
 
         Value get_own_property(TValue<String> name) const;
         void set_own_property(TValue<String> name, Value value);
         bool delete_own_property(TValue<String> name);
-
-    private:
         Value read_storage_location(StorageLocation location) const;
         void write_storage_location(StorageLocation location, Value value);
+
+    private:
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
 
         MemberValue cls;

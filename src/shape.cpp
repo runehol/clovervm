@@ -47,15 +47,32 @@ namespace cl
         return -1;
     }
 
-    StorageLocation Shape::resolve_own_property(TValue<String> name) const
+    DescriptorLookup Shape::lookup_descriptor(TValue<String> name) const
     {
         int32_t property_index = lookup_property_index(name);
         if(property_index < 0)
         {
+            return DescriptorLookup::absent();
+        }
+
+        return DescriptorLookup{DescriptorPresence::Present, property_index,
+                                get_property_storage_location(property_index)};
+    }
+
+    StorageLocation Shape::resolve_present_property(TValue<String> name) const
+    {
+        DescriptorLookup lookup = lookup_descriptor(name);
+        if(!lookup.is_present())
+        {
             return StorageLocation::not_found();
         }
 
-        return get_property_storage_location(property_index);
+        return lookup.storage_location;
+    }
+
+    StorageLocation Shape::resolve_own_property(TValue<String> name) const
+    {
+        return resolve_present_property(name);
     }
 
     Shape *Shape::lookup_transition(TValue<String> name,

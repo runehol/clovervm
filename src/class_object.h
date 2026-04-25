@@ -61,6 +61,10 @@ namespace cl
         void set_member(TValue<String> name, Value value);
         bool delete_member(TValue<String> name);
 
+        Value get_own_property(TValue<String> name) const;
+        void set_own_property(TValue<String> name, Value value);
+        bool delete_own_property(TValue<String> name);
+
     private:
         static bool is_method_value(Value value);
         void maybe_bump_method_version_for_write(Value old_value,

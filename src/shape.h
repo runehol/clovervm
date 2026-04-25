@@ -39,6 +39,36 @@ namespace cl
         bool is_found() const { return physical_idx >= 0; }
     };
 
+    enum class DescriptorPresence : uint8_t
+    {
+        Absent,
+        Present,
+        Latent,
+    };
+
+    struct DescriptorLookup
+    {
+        DescriptorPresence presence;
+        int32_t descriptor_idx;
+        StorageLocation storage_location;
+
+        static DescriptorLookup absent()
+        {
+            return DescriptorLookup{DescriptorPresence::Absent, -1,
+                                    StorageLocation::not_found()};
+        }
+
+        bool is_present() const
+        {
+            return presence == DescriptorPresence::Present;
+        }
+
+        bool is_latent() const
+        {
+            return presence == DescriptorPresence::Latent;
+        }
+    };
+
     class Shape : public Object
     {
     public:
@@ -105,6 +135,8 @@ namespace cl
         uint32_t transition_count() const { return transitions.size(); }
 
         int32_t lookup_property_index(TValue<String> name) const;
+        DescriptorLookup lookup_descriptor(TValue<String> name) const;
+        StorageLocation resolve_present_property(TValue<String> name) const;
         StorageLocation resolve_own_property(TValue<String> name) const;
         Shape *lookup_transition(TValue<String> name,
                                  ShapeTransitionVerb verb) const;

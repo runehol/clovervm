@@ -100,6 +100,11 @@ Relevant code:
 
 ### 1. Introduce a shared shape-backed object API
 
+Status: done. Instances now route own-property load/store/delete through shared
+shape-backed helpers, Shape exposes an explicit present/latent/absent
+descriptor-query API, and `ClassObject` has matching local own-property methods
+backed by the existing member vector until class storage is migrated.
+
 Before changing semantics, factor out the common operations that both instances
 and classes will need:
 

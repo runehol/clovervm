@@ -79,6 +79,42 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
     EXPECT_EQ(2, shape_with_b->get_next_slot_index());
 }
 
+TEST(Shape, DescriptorLookupReportsPresentAndAbsentProperties)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> a_name(
+        context.vm().get_or_create_interned_string_value(L"a"));
+    TValue<String> b_name(
+        context.vm().get_or_create_interned_string_value(L"b"));
+    ClassObject *cls =
+        context.thread()->make_refcounted_raw<ClassObject>(cls_name, 2);
+
+    Shape *root_shape = cls->get_initial_shape();
+    Shape *shape_with_a =
+        root_shape->derive_transition(a_name, ShapeTransitionVerb::Add);
+
+    DescriptorLookup a_lookup = shape_with_a->lookup_descriptor(a_name);
+    EXPECT_EQ(DescriptorPresence::Present, a_lookup.presence);
+    EXPECT_TRUE(a_lookup.is_present());
+    EXPECT_FALSE(a_lookup.is_latent());
+    EXPECT_EQ(0, a_lookup.descriptor_idx);
+    EXPECT_TRUE(a_lookup.storage_location.is_found());
+
+    DescriptorLookup b_lookup = shape_with_a->lookup_descriptor(b_name);
+    EXPECT_EQ(DescriptorPresence::Absent, b_lookup.presence);
+    EXPECT_FALSE(b_lookup.is_present());
+    EXPECT_FALSE(b_lookup.is_latent());
+    EXPECT_EQ(-1, b_lookup.descriptor_idx);
+    EXPECT_FALSE(b_lookup.storage_location.is_found());
+
+    EXPECT_TRUE(shape_with_a->resolve_present_property(a_name).is_found());
+    EXPECT_FALSE(shape_with_a->resolve_present_property(b_name).is_found());
+}
+
 TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
 {
     test::VmTestContext context;
@@ -280,6 +316,37 @@ TEST(ClassObject, MembersPreserveInsertionOrderAndCompactOnDelete)
     ASSERT_EQ(2u, cls->member_count());
     EXPECT_STREQ(L"b", cls->get_member_name(0).extract()->data);
     EXPECT_STREQ(L"a", cls->get_member_name(1).extract()->data);
+}
+
+TEST(ClassObject, OwnPropertyApiDoesNotFallBackToBaseChain)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"attr"));
+    ClassObject *base =
+        context.thread()->make_refcounted_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_refcounted_raw<ClassObject>(
+        child_name, 2, Value::from_oop(base));
+
+    base->set_own_property(attr_name, Value::from_smi(7));
+
+    EXPECT_EQ(Value::from_smi(7), base->get_own_property(attr_name));
+    EXPECT_EQ(Value::not_present(), child->get_own_property(attr_name));
+    EXPECT_EQ(Value::from_smi(7), child->get_member(attr_name));
+
+    child->set_own_property(attr_name, Value::from_smi(8));
+    EXPECT_EQ(Value::from_smi(8), child->get_own_property(attr_name));
+    EXPECT_EQ(Value::from_smi(8), child->get_member(attr_name));
+
+    EXPECT_TRUE(child->delete_own_property(attr_name));
+    EXPECT_EQ(Value::not_present(), child->get_own_property(attr_name));
+    EXPECT_EQ(Value::from_smi(7), child->get_member(attr_name));
 }
 
 TEST(ClassObject, MemberLookupFallsBackToBaseChain)
