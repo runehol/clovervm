@@ -15,25 +15,25 @@ namespace cl
     {
     }
 
-    Shape::Shape(Value _owner_class, Shape *_previous_shape,
+    Shape::Shape(HeapLayout layout, Value _owner_class, Shape *_previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count)
-        : Shape(_owner_class, _previous_shape, _next_slot_index,
+        : Shape(layout, _owner_class, _previous_shape, _next_slot_index,
                 _property_count, shape_flag(ShapeFlag::None))
     {
     }
 
-    Shape::Shape(Value _owner_class, Shape *_previous_shape,
+    Shape::Shape(HeapLayout layout, Value _owner_class, Shape *_previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count,
                  ShapeFlags _shape_flags)
-        : Shape(_owner_class, _previous_shape, _next_slot_index,
+        : Shape(layout, _owner_class, _previous_shape, _next_slot_index,
                 _property_count, _shape_flags, _property_count)
     {
     }
 
-    Shape::Shape(Value _owner_class, Shape *_previous_shape,
+    Shape::Shape(HeapLayout layout, Value _owner_class, Shape *_previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count,
                  ShapeFlags _shape_flags, uint32_t _present_count)
-        : HeapObject(), previous_shape(_previous_shape),
+        : HeapObject(layout), previous_shape(_previous_shape),
           next_slot_index(_next_slot_index), property_count_(_property_count),
           present_count_(_present_count), shape_flags(_shape_flags),
           transitions(), owner_class(_owner_class)

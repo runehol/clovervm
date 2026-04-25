@@ -29,32 +29,18 @@ namespace cl
     struct Object : public HeapObject
     {
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id,
-               uint32_t _layout)
+               HeapLayout _layout)
             : HeapObject(_layout), native_layout(_native_layout_id),
               shape(nullptr), overflow_storage(nullptr), cls(nullptr)
-        {
-            install_class(_cls);
-            initialize_shape_for_class(_cls);
-        }
-
-        Object(ClassObject *_cls, NativeLayoutId _native_layout_id)
-            : HeapObject(), native_layout(_native_layout_id), shape(nullptr),
-              overflow_storage(nullptr), cls(nullptr)
         {
             install_class(_cls);
             initialize_shape_for_class(_cls);
         }
 
         Object(BootstrapObjectTag, NativeLayoutId _native_layout_id,
-               uint32_t _layout)
+               HeapLayout _layout)
             : HeapObject(_layout), native_layout(_native_layout_id),
               shape(nullptr), overflow_storage(nullptr), cls(nullptr)
-        {
-        }
-
-        Object(BootstrapObjectTag, NativeLayoutId _native_layout_id)
-            : HeapObject(), native_layout(_native_layout_id), shape(nullptr),
-              overflow_storage(nullptr), cls(nullptr)
         {
         }
 

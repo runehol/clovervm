@@ -42,12 +42,11 @@ namespace cl
         if(compact_layout_fits(spec.object_size_in_16byte_units,
                                value_offset_in_words, spec.value_count))
         {
-            T *result = new(allocate_fn(object_size_in_bytes))
-                T(std::forward<Args>(args)...);
-            result->layout = encode_compact_layout_unchecked(
+            HeapLayout layout = encode_compact_layout_unchecked(
                 spec.object_size_in_16byte_units, value_offset_in_words,
                 spec.value_count);
-            return result;
+            return new(allocate_fn(object_size_in_bytes))
+                T(layout, std::forward<Args>(args)...);
         }
 
         size_t allocation_size_in_bytes =
@@ -58,11 +57,10 @@ namespace cl
         header->object_size_in_16byte_units = spec.object_size_in_16byte_units;
         header->value_count = spec.value_count;
 
-        T *result = new(allocation + sizeof(ExpandedHeader))
-            T(std::forward<Args>(args)...);
-        result->layout =
+        HeapLayout layout =
             encode_expanded_layout_unchecked(value_offset_in_words);
-        return result;
+        return new(allocation + sizeof(ExpandedHeader))
+            T(layout, std::forward<Args>(args)...);
     }
 
     static constexpr size_t DefaultSlabSize = 65536;

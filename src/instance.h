@@ -16,7 +16,7 @@ namespace cl
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::Instance;
 
-        explicit Instance(ClassObject *cls);
+        Instance(HeapLayout layout, ClassObject *cls);
 
         static size_t size_for(uint32_t dynamic_inline_slot_count)
         {

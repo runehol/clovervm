@@ -24,8 +24,9 @@ namespace cl
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::String;
 
-        String(ClassObject *cls, const cl_wchar *_data, TValue<SMI> _count)
-            : Object(cls, native_layout_id)
+        String(HeapLayout layout, ClassObject *cls, const cl_wchar *_data,
+               TValue<SMI> _count)
+            : Object(cls, native_layout_id, layout)
         {
             size_t n_chars = _count.extract();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -33,8 +34,8 @@ namespace cl
             count = _count;
         }
 
-        String(const cl_wchar *_data, TValue<SMI> _count)
-            : Object(BootstrapObjectTag{}, native_layout_id)
+        String(HeapLayout layout, const cl_wchar *_data, TValue<SMI> _count)
+            : Object(BootstrapObjectTag{}, native_layout_id, layout)
         {
             size_t n_chars = _count.extract();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -42,8 +43,8 @@ namespace cl
             count = _count;
         }
 
-        String(ClassObject *cls, const cl_wchar *_data)
-            : Object(cls, native_layout_id)
+        String(HeapLayout layout, ClassObject *cls, const cl_wchar *_data)
+            : Object(cls, native_layout_id, layout)
         {
             size_t n_chars = wcslen(_data);
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -51,8 +52,8 @@ namespace cl
             count = TValue<SMI>(Value::from_smi(n_chars));
         }
 
-        String(const cl_wchar *_data)
-            : Object(BootstrapObjectTag{}, native_layout_id)
+        String(HeapLayout layout, const cl_wchar *_data)
+            : Object(BootstrapObjectTag{}, native_layout_id, layout)
         {
             size_t n_chars = wcslen(_data);
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -60,8 +61,8 @@ namespace cl
             count = TValue<SMI>(Value::from_smi(n_chars));
         }
 
-        String(ClassObject *cls, const std::wstring &str)
-            : Object(cls, native_layout_id)
+        String(HeapLayout layout, ClassObject *cls, const std::wstring &str)
+            : Object(cls, native_layout_id, layout)
         {
             size_t n_chars = str.size();
             memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
@@ -69,8 +70,8 @@ namespace cl
             count = TValue<SMI>(Value::from_smi(n_chars));
         }
 
-        String(const std::wstring &str)
-            : Object(BootstrapObjectTag{}, native_layout_id)
+        String(HeapLayout layout, const std::wstring &str)
+            : Object(BootstrapObjectTag{}, native_layout_id, layout)
         {
             size_t n_chars = str.size();
             memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));

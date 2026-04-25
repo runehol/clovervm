@@ -50,7 +50,10 @@ namespace cl
         public:
             using Storage = std::aligned_storage_t<sizeof(T), alignof(T)>;
 
-            explicit Backing(size_t capacity) : HeapObject() { (void)capacity; }
+            Backing(HeapLayout layout, size_t capacity) : HeapObject(layout)
+            {
+                (void)capacity;
+            }
 
             static size_t size_for(size_t capacity)
             {
@@ -280,7 +283,10 @@ namespace cl
         class Backing : public HeapObject
         {
         public:
-            explicit Backing(size_t capacity) : HeapObject() { (void)capacity; }
+            Backing(HeapLayout layout, size_t capacity) : HeapObject(layout)
+            {
+                (void)capacity;
+            }
 
             static size_t size_for(size_t capacity)
             {

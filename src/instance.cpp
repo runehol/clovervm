@@ -6,7 +6,10 @@
 namespace cl
 {
 
-    Instance::Instance(ClassObject *_cls) : Object(_cls, native_layout_id) {}
+    Instance::Instance(HeapLayout layout, ClassObject *_cls)
+        : Object(_cls, native_layout_id, layout)
+    {
+    }
 
     BuiltinClassDefinition make_instance_class(VirtualMachine *vm)
     {

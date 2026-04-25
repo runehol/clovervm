@@ -20,6 +20,8 @@ namespace cl
         uint64_t value_count;
     };
 
+    using HeapLayout = uint32_t;
+
     constexpr uint32_t object_layout_expanded_bit = 1u << 31;
     constexpr uint32_t object_layout_size_shift = 0;
     constexpr uint32_t object_layout_offset_shift = 28;
@@ -53,7 +55,7 @@ namespace cl
                value_count <= object_layout_count_mask;
     }
 
-    constexpr uint32_t
+    constexpr HeapLayout
     encode_compact_layout_unchecked(uint64_t object_size_in_16byte_units,
                                     uint32_t value_offset_in_words,
                                     uint64_t value_count)
@@ -68,23 +70,23 @@ namespace cl
         return value_offset_in_words <= ~object_layout_expanded_bit;
     }
 
-    constexpr uint32_t
+    constexpr HeapLayout
     encode_expanded_layout_unchecked(uint32_t value_offset_in_words)
     {
         return object_layout_expanded_bit | value_offset_in_words;
     }
 
-    constexpr bool layout_is_expanded(uint32_t layout)
+    constexpr bool layout_is_expanded(HeapLayout layout)
     {
         return (layout & object_layout_expanded_bit) != 0;
     }
 
-    constexpr uint32_t compact_layout_value_count(uint32_t layout)
+    constexpr uint32_t compact_layout_value_count(HeapLayout layout)
     {
         return (layout >> object_layout_count_shift) & object_layout_count_mask;
     }
 
-    constexpr uint32_t compact_layout_without_value_count(uint32_t layout)
+    constexpr HeapLayout compact_layout_without_value_count(HeapLayout layout)
     {
         return layout &
                ~(object_layout_count_mask << object_layout_count_shift);
@@ -108,7 +110,7 @@ namespace cl
     {                                                                          \
         return round_up_to_16byte_units(sizeof(type));                         \
     }                                                                          \
-    static constexpr uint32_t compact_layout()                                 \
+    static constexpr HeapLayout compact_layout()                               \
     {                                                                          \
         static_assert(compact_layout_fits(static_size_in_16byte_units(),       \
                                           static_value_offset_in_words(),      \
@@ -128,7 +130,7 @@ namespace cl
     {                                                                          \
         return round_up_to_16byte_units(sizeof(type));                         \
     }                                                                          \
-    static constexpr uint32_t compact_layout()                                 \
+    static constexpr HeapLayout compact_layout()                               \
     {                                                                          \
         static_assert(compact_layout_fits(static_size_in_16byte_units(),       \
                                           static_value_offset_in_words(),      \
@@ -161,12 +163,14 @@ namespace cl
     */
     struct HeapObject
     {
-        explicit HeapObject(uint32_t _layout) : refcount(0), layout(_layout) {}
+        explicit HeapObject(HeapLayout _layout) : refcount(0), layout(_layout)
+        {
+        }
 
         HeapObject() : refcount(0), layout(0) {}
 
         int32_t refcount;
-        uint32_t layout;
+        HeapLayout layout;
     };
 
     inline ExpandedHeader *expanded_header_for_object(HeapObject *obj)
