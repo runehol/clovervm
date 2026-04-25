@@ -168,6 +168,40 @@ namespace cl
         }
     }
 
+    static void
+    reject_set_name_notifications_until_supported(Value *fp,
+                                                  CodeObject *body_code)
+    {
+        TValue<String> set_name_name(
+            ThreadState::get_active()
+                ->get_machine()
+                ->get_or_create_interned_string_value(L"__set_name__"));
+
+        Scope *local_scope = body_code->get_local_scope_ptr();
+        for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
+        {
+            if(!local_scope->slot_is_named(slot_idx))
+            {
+                continue;
+            }
+
+            Value value = fp[body_code->encode_reg(slot_idx)];
+            if(value.is_not_present())
+            {
+                continue;
+            }
+
+            Value callable;
+            Value self;
+            if(load_method(value, set_name_name, callable, self))
+            {
+                throw std::runtime_error(
+                    "TypeError: __set_name__ notifications are not "
+                    "implemented yet");
+            }
+        }
+    }
+
     static Value build_class_from_frame(Value *fp, CodeObject *body_code,
                                         TValue<String> class_name)
     {
@@ -187,9 +221,14 @@ namespace cl
             {
                 continue;
             }
-            cls.extract()->store_own_property_direct(
-                local_scope->get_name_by_slot_index(slot_idx), value);
+            if(!cls.extract()->store_own_property_direct(
+                   local_scope->get_name_by_slot_index(slot_idx), value))
+            {
+                throw std::runtime_error(
+                    "TypeError: cannot set read-only class attribute");
+            }
         }
+        reject_set_name_notifications_until_supported(fp, body_code);
         return Value::from_oop(cls.extract());
     }
 

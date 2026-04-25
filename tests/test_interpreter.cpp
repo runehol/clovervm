@@ -9,6 +9,7 @@
 #include "parser.h"
 #include "range_iterator.h"
 #include "scope.h"
+#include "shape.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -277,8 +278,48 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
     Value cls_value = code_obj->module_scope.extract()->get_by_name(cls_name);
     ASSERT_TRUE(cls_value.is_ptr());
     ASSERT_EQ(&ClassObject::klass, cls_value.get_ptr<Object>()->klass);
-    EXPECT_EQ(Value::from_smi(7),
-              cls_value.get_ptr<ClassObject>()->get_member(value_name));
+    ClassObject *cls = cls_value.get_ptr<ClassObject>();
+    EXPECT_EQ(Value::from_smi(7), cls->get_member(value_name));
+
+    Shape *shape = cls->get_shape();
+    StorageLocation value_location =
+        shape->resolve_present_property(value_name);
+    ASSERT_TRUE(value_location.is_found());
+    EXPECT_EQ(StorageKind::Inline, value_location.kind);
+    EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotCount),
+              value_location.physical_idx);
+    EXPECT_EQ(Value::from_smi(7), cls->read_storage_location(value_location));
+    EXPECT_EQ(1u, cls->member_count());
+    EXPECT_STREQ(L"value", cls->get_member_name(0).extract()->data);
+}
+
+TEST(Interpreter, class_body_readonly_metadata_store_is_rejected)
+{
+    expect_runtime_error(L"class Cls:\n"
+                         L"    __name__ = 1\n",
+                         "TypeError: cannot set read-only class attribute");
+}
+
+TEST(Interpreter, set_name_notification_is_explicitly_unsupported)
+{
+    expect_runtime_error(L"class Descriptor:\n"
+                         L"    def __set_name__(self, owner, name):\n"
+                         L"        self.owner = owner\n"
+                         L"class Owner:\n"
+                         L"    field = Descriptor()\n",
+                         "TypeError: __set_name__ notifications are not "
+                         "implemented yet");
+}
+
+TEST(Interpreter, class_call_allocates_instance_with_initial_class_slot)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    pass\n"
+                                 L"obj = Cls()\n"
+                                 L"obj.__class__ is Cls\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::True(), actual);
 }
 
 TEST(Interpreter, class_body_can_read_earlier_class_binding)

@@ -479,6 +479,15 @@ Primary files:
 
 ### 9. Update interpreter paths that create and populate classes
 
+Status: done. `BuildClass` now allocates `ClassObject` with predefined
+metadata slots already in place, installs class-body properties through the
+direct class mutation helper, rejects attempted writes to read-only predefined
+class metadata, and class calls allocate instances from the class initial Shape
+with the `__class__` slot invariant already established. `__set_name__`
+notification sites are detected explicitly and currently raise the documented
+temporary unsupported error until the runtime has a generic internal call helper
+for descriptor callbacks.
+
 Change class-body result construction to populate class properties through the
 new object-property API instead of `set_member()`.
 
