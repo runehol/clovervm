@@ -115,7 +115,7 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
               instance->get_own_property(dunder_class_name));
     EXPECT_EQ(Value::from_oop(cls),
               load_attr(Value::from_oop(instance), dunder_class_name));
-    EXPECT_EQ(Value::None(),
+    EXPECT_EQ(Value::from_oop(context.vm().type_class()),
               load_attr(Value::from_oop(cls), dunder_class_name));
 }
 

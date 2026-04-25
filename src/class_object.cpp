@@ -1,5 +1,6 @@
 #include "class_object.h"
 #include "list.h"
+#include "refcount.h"
 #include "runtime_helpers.h"
 #include "shape_backed_object.h"
 #include "str.h"
@@ -13,7 +14,8 @@ namespace cl
                              uint32_t _factory_default_inline_slot_count,
                              Value _base, ShapeFlags class_shape_flags)
         : Object(BootstrapObjectTag{}, native_layout_id, compact_layout()),
-          name(_name), base(_base), initial_shape(nullptr),
+          name(_name), bases(Value::not_present()), mro(Value::not_present()),
+          initial_shape(nullptr),
           factory_default_inline_slot_count(_factory_default_inline_slot_count)
     {
         TValue<String> dunder_class_name = interned_string(L"__class__");
@@ -58,14 +60,13 @@ namespace cl
             Value::from_oop(this), descriptors, kClassPredefinedSlotCount,
             kClassPredefinedSlotCount, class_shape_flags));
 
-        for(uint32_t slot_idx = 0; slot_idx < kClassInlineSlotCount; ++slot_idx)
+        for(uint32_t slot_idx = 0; slot_idx < kClassDynamicInlineSlotCount;
+            ++slot_idx)
         {
-            class_slots[slot_idx] = Value::not_present();
+            class_dynamic_slots[slot_idx] = Value::not_present();
         }
-        class_slots[kClassSlotClass] = Value::None();
-        class_slots[kClassSlotName] = _name.as_value();
-        class_slots[kClassSlotBases] = make_bases_list();
-        class_slots[kClassSlotMro] = make_mro_list();
+        bases = make_bases_list(_base);
+        mro = make_mro_list();
     }
 
     ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
@@ -136,11 +137,20 @@ namespace cl
 
     ClassObject *ClassObject::get_base() const
     {
-        if(base == Value::None())
+        Value bases_value = read_inline_slot(kClassSlotBases);
+        if(!can_convert_to<List>(bases_value))
         {
             return nullptr;
         }
-        return base.as_value().get_ptr<ClassObject>();
+
+        List *bases_list = try_convert_to<List>(bases_value);
+        if(bases_list->size() == 0)
+        {
+            return nullptr;
+        }
+
+        Value base_value = bases_list->item_unchecked(0);
+        return try_convert_to<ClassObject>(base_value);
     }
 
     Value ClassObject::lookup_class_chain(TValue<String> name) const
@@ -213,7 +223,7 @@ namespace cl
         {
             case StorageKind::Inline:
                 assert(uint32_t(location.physical_idx) < kClassInlineSlotCount);
-                return class_slots[location.physical_idx].as_value();
+                return inline_slot_base()[location.physical_idx];
             case StorageKind::Overflow:
                 return Object::read_storage_location(location);
         }
@@ -229,7 +239,10 @@ namespace cl
                 {
                     assert(uint32_t(location.physical_idx) <
                            kClassInlineSlotCount);
-                    class_slots[location.physical_idx] = value;
+                    Value *slots = inline_slot_base();
+                    Value old_value = slots[location.physical_idx];
+                    slots[location.physical_idx] = incref(value);
+                    decref(old_value);
                     return;
                 }
             case StorageKind::Overflow:
@@ -242,17 +255,17 @@ namespace cl
     Value ClassObject::read_inline_slot(uint32_t slot_idx) const
     {
         assert(slot_idx < kClassInlineSlotCount);
-        return class_slots[slot_idx].as_value();
+        return inline_slot_base()[slot_idx];
     }
 
-    Value ClassObject::make_bases_list() const
+    Value ClassObject::make_bases_list(Value base) const
     {
         List *bases = active_vm()->list_class() == nullptr
                           ? make_internal_raw<List>(BootstrapObjectTag{})
                           : make_object_raw<List>();
         if(base != Value::None())
         {
-            bases->append(base.as_value());
+            bases->append(base);
         }
         return Value::from_oop(bases);
     }

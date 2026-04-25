@@ -80,19 +80,24 @@ namespace cl
         void write_storage_location(StorageLocation location, Value value);
 
     private:
+        static constexpr uint32_t kClassDynamicInlineSlotCount =
+            kClassInlineSlotCount - kClassPredefinedSlotCount;
+
         Value read_inline_slot(uint32_t slot_idx) const;
-        Value make_bases_list() const;
+        Value make_bases_list(Value base) const;
         Value make_mro_list() const;
 
         MemberTValue<String> name;
-        MemberValue base;
+        MemberValue bases;
+        MemberValue mro;
+        MemberValue class_dynamic_slots[kClassDynamicInlineSlotCount];
         MemberHeapPtr<Shape> initial_shape;
-        MemberValue class_slots[kClassInlineSlotCount];
         uint32_t factory_default_inline_slot_count;
 
     public:
         CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(ClassObject, name,
-                                             3 + kClassInlineSlotCount);
+                                             3 + kClassDynamicInlineSlotCount +
+                                                 1);
     };
 
     class VirtualMachine;

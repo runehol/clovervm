@@ -72,17 +72,19 @@ namespace cl
         OverflowSlots *overflow_storage;
         ClassObject *cls;
 
+    protected:
+        Value *inline_slot_base() { return reinterpret_cast<Value *>(&cls); }
+        const Value *inline_slot_base() const
+        {
+            return reinterpret_cast<const Value *>(&cls);
+        }
+
     private:
         void install_class(ClassObject *new_cls);
         void initialize_shape_for_class(ClassObject *class_object);
         void initialize_shape(Shape *initial_shape);
         OverflowSlots *get_overflow_slots() const { return overflow_storage; }
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
-        Value *inline_slot_base() { return reinterpret_cast<Value *>(&cls); }
-        const Value *inline_slot_base() const
-        {
-            return reinterpret_cast<const Value *>(&cls);
-        }
     };
 
     template <typename T, typename = void>

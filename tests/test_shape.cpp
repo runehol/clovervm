@@ -626,7 +626,8 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
             DescriptorFlag::StableSlot));
     }
 
-    EXPECT_EQ(Value::None(), cls->get_own_property(dunder_class_name));
+    EXPECT_EQ(Value::from_oop(context.vm().type_class()),
+              cls->get_own_property(dunder_class_name));
     EXPECT_EQ(cls_name.as_value(), cls->get_own_property(dunder_name_name));
 
     Value bases_value = cls->get_own_property(dunder_bases_name);
@@ -645,8 +646,8 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
 
     TValue<String> readonly_names[] = {dunder_class_name, dunder_name_name,
                                        dunder_bases_name, dunder_mro_name};
-    Value readonly_values[] = {Value::None(), cls_name.as_value(), bases_value,
-                               mro_value};
+    Value readonly_values[] = {Value::from_oop(context.vm().type_class()),
+                               cls_name.as_value(), bases_value, mro_value};
     for(uint32_t idx = 0; idx < ClassObject::kClassPredefinedSlotCount; ++idx)
     {
         Shape *before_shape = cls->get_shape();
