@@ -246,7 +246,7 @@ namespace cl
                                                       Value receiver) const
     {
         return lookup_class_chain_descriptor(
-            name, AttributeReadAccessPath::InstanceClassChain,
+            name, AttributeReadPlanPath::InstanceClassChain,
             AttributeBindingContext{receiver, this});
     }
 
@@ -254,7 +254,7 @@ namespace cl
     ClassObject::lookup_class_attribute_descriptor(TValue<String> name) const
     {
         return lookup_class_chain_descriptor(
-            name, AttributeReadAccessPath::ClassObjectChain,
+            name, AttributeReadPlanPath::ClassObjectChain,
             AttributeBindingContext{Value::None(), this});
     }
 
@@ -262,12 +262,12 @@ namespace cl
         TValue<String> name, ClassObject *receiver_class) const
     {
         return lookup_class_chain_descriptor(
-            name, AttributeReadAccessPath::MetaclassChain,
+            name, AttributeReadPlanPath::MetaclassChain,
             AttributeBindingContext{Value::from_oop(receiver_class), this});
     }
 
     AttributeReadDescriptor ClassObject::lookup_class_chain_descriptor(
-        TValue<String> name, AttributeReadAccessPath path,
+        TValue<String> name, AttributeReadPlanPath path,
         AttributeBindingContext binding) const
     {
         Value mro_value = inline_slot_base()[kClassMetadataSlotMro];
@@ -282,8 +282,8 @@ namespace cl
 
             Value own_value = read_storage_location(own_location);
             return AttributeReadDescriptor::found(
-                AttributeReadAccess::from_storage(
-                    path, attribute_read_access_kind_for_path(path, own_value),
+                AttributeReadPlan::from_storage(
+                    path, attribute_read_plan_kind_for_path(path, own_value),
                     this, own_location, own_value, binding),
                 attribute_cache_blockers_for_class_value(own_value));
         }
@@ -308,8 +308,8 @@ namespace cl
 
             Value value = cls->read_storage_location(lookup.storage_location());
             return AttributeReadDescriptor::found(
-                AttributeReadAccess::from_storage(
-                    path, attribute_read_access_kind_for_path(path, value), cls,
+                AttributeReadPlan::from_storage(
+                    path, attribute_read_plan_kind_for_path(path, value), cls,
                     lookup.storage_location(), value, binding, validity_cell),
                 attribute_cache_blockers_for_class_value(value));
         }
@@ -325,7 +325,7 @@ namespace cl
         {
             return Value::not_present();
         }
-        return descriptor.access.value;
+        return descriptor.plan.value;
     }
 
     Value ClassObject::make_bases_list(Value base) const

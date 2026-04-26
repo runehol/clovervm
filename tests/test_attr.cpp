@@ -77,9 +77,9 @@ TEST(Attr, DataDescriptorReadDescriptorTakesPrecedenceOverInstanceOwnProperty)
     AttributeReadDescriptor read_descriptor =
         resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
     ASSERT_TRUE(read_descriptor.is_found());
-    EXPECT_EQ(AttributeReadAccessKind::DataDescriptorGet,
-              read_descriptor.access.kind);
-    EXPECT_EQ(Value::from_oop(descriptor), read_descriptor.access.value);
+    EXPECT_EQ(AttributeReadPlanKind::DataDescriptorGet,
+              read_descriptor.plan.kind);
+    EXPECT_EQ(Value::from_oop(descriptor), read_descriptor.plan.value);
 }
 
 TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
@@ -114,17 +114,16 @@ TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
     AttributeReadDescriptor read_descriptor =
         resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
     ASSERT_TRUE(read_descriptor.is_found());
-    EXPECT_EQ(AttributeReadAccessKind::ReceiverSlot,
-              read_descriptor.access.kind);
-    EXPECT_EQ(Value::from_smi(7), load_attr_from_descriptor(read_descriptor));
+    EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, read_descriptor.plan.kind);
+    EXPECT_EQ(Value::from_smi(7), load_attr_from_plan(read_descriptor.plan));
 
     EXPECT_TRUE(instance->delete_own_property(attr_name));
     read_descriptor =
         resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
     ASSERT_TRUE(read_descriptor.is_found());
-    EXPECT_EQ(AttributeReadAccessKind::NonDataDescriptorGet,
-              read_descriptor.access.kind);
-    EXPECT_EQ(Value::from_oop(descriptor), read_descriptor.access.value);
+    EXPECT_EQ(AttributeReadPlanKind::NonDataDescriptorGet,
+              read_descriptor.plan.kind);
+    EXPECT_EQ(Value::from_oop(descriptor), read_descriptor.plan.value);
 }
 
 TEST(Attr, LoadAttrFallsBackToClassAndBaseMembers)
@@ -523,7 +522,7 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
 
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_TRUE(descriptor.is_cacheable());
-    ValidityCell *cell = descriptor.access.lookup_validity_cell;
+    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
     EXPECT_EQ(cell, child->current_lookup_validity_cell());

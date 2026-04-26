@@ -35,7 +35,7 @@ namespace cl
 
     static_assert(static_cast<uint8_t>(AttributeWriteStatus::Found) == 0);
 
-    enum class AttributeReadAccessPath : uint8_t
+    enum class AttributeReadPlanPath : uint8_t
     {
         ReceiverOwnProperty,
         InstanceClassChain,
@@ -43,7 +43,7 @@ namespace cl
         MetaclassChain,
     };
 
-    enum class AttributeReadAccessKind : uint8_t
+    enum class AttributeReadPlanKind : uint8_t
     {
         ReturnValue,
         ReceiverSlot,
@@ -88,23 +88,23 @@ namespace cl
         }
     };
 
-    struct AttributeReadAccess
+    struct AttributeReadPlan
     {
-        AttributeReadAccessPath path;
-        AttributeReadAccessKind kind;
+        AttributeReadPlanPath path;
+        AttributeReadPlanKind kind;
         const Object *storage_owner;
         StorageLocation storage_location;
         Value value;
         AttributeBindingContext binding;
         ValidityCell *lookup_validity_cell;
 
-        static AttributeReadAccess
-        from_storage(AttributeReadAccessPath path, AttributeReadAccessKind kind,
+        static AttributeReadPlan
+        from_storage(AttributeReadPlanPath path, AttributeReadPlanKind kind,
                      const Object *storage_owner, StorageLocation location,
                      Value value, AttributeBindingContext binding,
                      ValidityCell *lookup_validity_cell = nullptr)
         {
-            return AttributeReadAccess{
+            return AttributeReadPlan{
                 path,  kind,    storage_owner,       location,
                 value, binding, lookup_validity_cell};
         }
@@ -113,16 +113,16 @@ namespace cl
     struct AttributeReadDescriptor
     {
         AttributeReadStatus status;
-        AttributeReadAccess access;
+        AttributeReadPlan plan;
         AttributeCacheBlockers cache_blockers;
 
         static AttributeReadDescriptor not_found()
         {
             return AttributeReadDescriptor{
                 AttributeReadStatus::NotFound,
-                AttributeReadAccess::from_storage(
-                    AttributeReadAccessPath::ReceiverOwnProperty,
-                    AttributeReadAccessKind::ReturnValue, nullptr,
+                AttributeReadPlan::from_storage(
+                    AttributeReadPlanPath::ReceiverOwnProperty,
+                    AttributeReadPlanKind::ReturnValue, nullptr,
                     StorageLocation::not_found(), Value::not_present(),
                     AttributeBindingContext::none()),
                 attribute_cache_blocker(AttributeCacheBlocker::None)};
@@ -136,11 +136,11 @@ namespace cl
         }
 
         static AttributeReadDescriptor
-        found(AttributeReadAccess access,
+        found(AttributeReadPlan plan,
               AttributeCacheBlockers cache_blockers =
                   attribute_cache_blocker(AttributeCacheBlocker::None))
         {
-            return AttributeReadDescriptor{AttributeReadStatus::Found, access,
+            return AttributeReadDescriptor{AttributeReadStatus::Found, plan,
                                            cache_blockers};
         }
 
@@ -148,35 +148,35 @@ namespace cl
 
         bool is_cacheable() const
         {
-            return is_found() && access.lookup_validity_cell != nullptr;
+            return is_found() && plan.lookup_validity_cell != nullptr;
         }
     };
 
-    struct AttributeWriteAccess
+    struct AttributeWritePlan
     {
         Object *storage_owner;
         StorageLocation storage_location;
         ValidityCell *lookup_validity_cell;
 
-        static AttributeWriteAccess
+        static AttributeWritePlan
         store_existing(Object *storage_owner, StorageLocation location,
                        ValidityCell *lookup_validity_cell)
         {
-            return AttributeWriteAccess{storage_owner, location,
-                                        lookup_validity_cell};
+            return AttributeWritePlan{storage_owner, location,
+                                      lookup_validity_cell};
         }
     };
 
     struct AttributeWriteDescriptor
     {
         AttributeWriteStatus status;
-        AttributeWriteAccess access;
+        AttributeWritePlan plan;
 
         static AttributeWriteDescriptor not_found()
         {
             return AttributeWriteDescriptor{
                 AttributeWriteStatus::NotFound,
-                AttributeWriteAccess::store_existing(
+                AttributeWritePlan::store_existing(
                     nullptr, StorageLocation::not_found(), nullptr)};
         }
 
@@ -208,22 +208,20 @@ namespace cl
             return descriptor;
         }
 
-        static AttributeWriteDescriptor found(AttributeWriteAccess access)
+        static AttributeWriteDescriptor found(AttributeWritePlan plan)
         {
-            return AttributeWriteDescriptor{AttributeWriteStatus::Found,
-                                            access};
+            return AttributeWriteDescriptor{AttributeWriteStatus::Found, plan};
         }
 
         bool is_found() const { return status == AttributeWriteStatus::Found; }
         bool is_cacheable() const
         {
-            return is_found() && access.lookup_validity_cell != nullptr;
+            return is_found() && plan.lookup_validity_cell != nullptr;
         }
     };
 
-    AttributeReadAccessKind
-    attribute_read_access_kind_for_path(AttributeReadAccessPath path,
-                                        Value value);
+    AttributeReadPlanKind
+    attribute_read_plan_kind_for_path(AttributeReadPlanPath path, Value value);
     AttributeCacheBlockers
     attribute_cache_blockers_for_class_value(Value value);
 }  // namespace cl

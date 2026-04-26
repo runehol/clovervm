@@ -5,22 +5,21 @@
 
 namespace cl
 {
-    AttributeReadAccessKind
-    attribute_read_access_kind_for_path(AttributeReadAccessPath path,
-                                        Value value)
+    AttributeReadPlanKind
+    attribute_read_plan_kind_for_path(AttributeReadPlanPath path, Value value)
     {
-        if(path == AttributeReadAccessPath::ReceiverOwnProperty)
+        if(path == AttributeReadPlanPath::ReceiverOwnProperty)
         {
-            return AttributeReadAccessKind::ReceiverSlot;
+            return AttributeReadPlanKind::ReceiverSlot;
         }
 
-        if(path == AttributeReadAccessPath::InstanceClassChain &&
+        if(path == AttributeReadPlanPath::InstanceClassChain &&
            can_convert_to<Function>(value))
         {
-            return AttributeReadAccessKind::BindFunctionReceiver;
+            return AttributeReadPlanKind::BindFunctionReceiver;
         }
 
-        return AttributeReadAccessKind::ResolvedValue;
+        return AttributeReadPlanKind::ResolvedValue;
     }
 
     AttributeCacheBlockers attribute_cache_blockers_for_class_value(Value value)

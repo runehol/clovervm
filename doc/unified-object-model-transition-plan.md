@@ -108,11 +108,11 @@ Relevant code:
 ### Attribute lookup is moving onto descriptor results
 
 Attribute lookup now returns shared `AttributeReadDescriptor` /
-`AttributeReadAccess` records. `Object` emits receiver-slot descriptors,
+`AttributeReadPlan` records. `Object` emits receiver-slot descriptors,
 `ClassObject` emits instance-chain, class-chain, and metaclass-chain
 descriptors, and `attr.cpp` composes the top-level lookup order. This gives the
-interpreter and future inline caches a common representation for successful
-access, misses, cache blockers, and call-context binding.
+interpreter and future inline caches a common representation for executable
+plans, misses, cache blockers, and call-context binding.
 
 The current descriptor support is intentionally narrow but real: instance
 lookup recognizes `__get__`, `__set__`, and `__delete__` on the candidate
@@ -435,7 +435,7 @@ native layout check as Python-visible type semantics.
 
 Current progress:
 
-- `AttributeReadDescriptor` and `AttributeReadAccess` are shared runtime
+- `AttributeReadDescriptor` and `AttributeReadPlan` are shared runtime
   records.
 - `Object` emits receiver-local slot descriptors.
 - `ClassObject` emits instance-chain, class-chain, and metaclass-chain
@@ -581,7 +581,7 @@ is now in place:
 - successful class slot updates also invalidate lookup cells, even though they
   do not change the class object's Shape
 
-The next slice is to thread those cells into `AttributeReadAccess`. The cell
+The next slice is to thread those cells into `AttributeReadPlan`. The cell
 fields on `ClassObject` should be treated as logically mutable cache state:
 lookup can be a const semantic operation while still lazily creating or
 refreshing the validity cell. In C++, that likely means making the primary cell
@@ -650,7 +650,7 @@ Shape-transition invalidation.
 
 The safe order is:
 
-1. Thread lookup validity cells into `AttributeReadAccess` for class-chain hits.
+1. Thread lookup validity cells into `AttributeReadPlan` for class-chain hits.
 2. Add conservative cache eligibility checks around those descriptor results.
 3. Add inline-cache storage and the skipped cache-index operand to
    `CallMethodAttr`.

@@ -110,7 +110,7 @@ namespace cl
         void attach_lookup_validity_cell(ValidityCell *cell) const;
         AttributeReadDescriptor
         lookup_class_chain_descriptor(TValue<String> name,
-                                      AttributeReadAccessPath path,
+                                      AttributeReadPlanPath path,
                                       AttributeBindingContext binding) const;
 
         MemberTValue<String> name;

@@ -29,11 +29,12 @@ namespace cl
         }
     }
 
-    static AttributeReadDescriptor with_access_kind(
-        AttributeReadDescriptor descriptor, AttributeReadAccessKind kind,
-        AttributeCacheBlocker blocker = AttributeCacheBlocker::None)
+    static AttributeReadDescriptor
+    with_plan_kind(AttributeReadDescriptor descriptor,
+                   AttributeReadPlanKind kind,
+                   AttributeCacheBlocker blocker = AttributeCacheBlocker::None)
     {
-        descriptor.access.kind = kind;
+        descriptor.plan.kind = kind;
         if(blocker != AttributeCacheBlocker::None)
         {
             descriptor.cache_blockers =
@@ -58,34 +59,33 @@ namespace cl
         TValue<String> delete_name(interned_string(L"__delete__"));
 
         return DescriptorProtocol{
-            type->lookup_class_attribute_descriptor(get_name).access.value,
-            type->lookup_class_attribute_descriptor(set_name).access.value,
-            type->lookup_class_attribute_descriptor(delete_name).access.value};
+            type->lookup_class_attribute_descriptor(get_name).plan.value,
+            type->lookup_class_attribute_descriptor(set_name).plan.value,
+            type->lookup_class_attribute_descriptor(delete_name).plan.value};
     }
 
     static AttributeReadDescriptor
     classify_class_descriptor(AttributeReadDescriptor descriptor)
     {
         if(!descriptor.is_found() ||
-           descriptor.access.kind ==
-               AttributeReadAccessKind::BindFunctionReceiver)
+           descriptor.plan.kind == AttributeReadPlanKind::BindFunctionReceiver)
         {
             return descriptor;
         }
 
         DescriptorProtocol protocol =
-            lookup_descriptor_protocol(descriptor.access.value);
+            lookup_descriptor_protocol(descriptor.plan.value);
         if(!protocol.has_get())
         {
             return descriptor;
         }
 
-        AttributeReadAccessKind kind =
+        AttributeReadPlanKind kind =
             protocol.has_set_or_delete()
-                ? AttributeReadAccessKind::DataDescriptorGet
-                : AttributeReadAccessKind::NonDataDescriptorGet;
-        return with_access_kind(
-            descriptor, kind, AttributeCacheBlocker::UnsupportedDescriptorKind);
+                ? AttributeReadPlanKind::DataDescriptorGet
+                : AttributeReadPlanKind::NonDataDescriptorGet;
+        return with_plan_kind(descriptor, kind,
+                              AttributeCacheBlocker::UnsupportedDescriptorKind);
     }
 
     static AttributeReadDescriptor
@@ -128,8 +128,8 @@ namespace cl
         AttributeReadDescriptor class_descriptor = classify_class_descriptor(
             class_object->lookup_instance_attribute_descriptor(name, obj));
         if(class_descriptor.is_found() &&
-           class_descriptor.access.kind ==
-               AttributeReadAccessKind::DataDescriptorGet)
+           class_descriptor.plan.kind ==
+               AttributeReadPlanKind::DataDescriptorGet)
         {
             return class_descriptor;
         }
@@ -144,45 +144,32 @@ namespace cl
         return class_descriptor;
     }
 
-    Value load_attr_from_descriptor(const AttributeReadDescriptor &descriptor)
+    Value load_attr_from_plan(const AttributeReadPlan &plan)
     {
-        if(!descriptor.is_found())
+        if(plan.kind == AttributeReadPlanKind::ReceiverSlot)
         {
-            return Value::not_present();
-        }
-        const AttributeReadAccess &access = descriptor.access;
-        if(access.kind == AttributeReadAccessKind::ReceiverSlot)
-        {
-            assert(access.storage_owner != nullptr);
-            return access.storage_owner->read_storage_location(
-                access.storage_location);
+            assert(plan.storage_owner != nullptr);
+            return plan.storage_owner->read_storage_location(
+                plan.storage_location);
         }
 
-        if(access.kind == AttributeReadAccessKind::DataDescriptorGet ||
-           access.kind == AttributeReadAccessKind::NonDataDescriptorGet)
+        if(plan.kind == AttributeReadPlanKind::DataDescriptorGet ||
+           plan.kind == AttributeReadPlanKind::NonDataDescriptorGet)
         {
             throw std::runtime_error(
                 "TypeError: descriptor __get__ requires interpreter dispatch");
         }
 
-        return access.value;
+        return plan.value;
     }
 
-    bool load_method_from_descriptor(const AttributeReadDescriptor &descriptor,
-                                     Value &callable_out, Value &self_out)
+    bool load_method_from_plan(const AttributeReadPlan &plan,
+                               Value &callable_out, Value &self_out)
     {
-        if(!descriptor.is_found())
+        callable_out = load_attr_from_plan(plan);
+        if(plan.kind == AttributeReadPlanKind::BindFunctionReceiver)
         {
-            callable_out = Value::not_present();
-            self_out = Value::not_present();
-            return false;
-        }
-
-        const AttributeReadAccess &access = descriptor.access;
-        callable_out = load_attr_from_descriptor(descriptor);
-        if(access.kind == AttributeReadAccessKind::BindFunctionReceiver)
-        {
-            self_out = access.binding.self;
+            self_out = plan.binding.self;
         }
         else
         {
@@ -201,14 +188,26 @@ namespace cl
             return false;
         }
 
-        return load_method_from_descriptor(
-            resolve_attr_read_descriptor(obj, name), callable_out, self_out);
+        AttributeReadDescriptor descriptor =
+            resolve_attr_read_descriptor(obj, name);
+        if(!descriptor.is_found())
+        {
+            callable_out = Value::not_present();
+            self_out = Value::not_present();
+            return false;
+        }
+        return load_method_from_plan(descriptor.plan, callable_out, self_out);
     }
 
     Value load_attr(Value obj, TValue<String> name)
     {
-        return load_attr_from_descriptor(
-            resolve_attr_read_descriptor(obj, name));
+        AttributeReadDescriptor descriptor =
+            resolve_attr_read_descriptor(obj, name);
+        if(!descriptor.is_found())
+        {
+            return Value::not_present();
+        }
+        return load_attr_from_plan(descriptor.plan);
     }
 
     AttributeWriteDescriptor resolve_attr_write_descriptor(Value obj,
@@ -223,20 +222,13 @@ namespace cl
         return object->lookup_own_attribute_write_descriptor(name);
     }
 
-    bool store_attr_from_descriptor(const AttributeWriteDescriptor &descriptor,
-                                    Value value)
+    bool store_attr_from_plan(const AttributeWritePlan &plan, Value value)
     {
-        if(!descriptor.is_found())
-        {
-            return false;
-        }
+        assert(plan.storage_owner != nullptr);
 
-        const AttributeWriteAccess &access = descriptor.access;
-        assert(access.storage_owner != nullptr);
-
-        access.storage_owner->write_storage_location(access.storage_location,
-                                                     value);
-        invalidate_lookup_cells_for_class_target(access.storage_owner);
+        plan.storage_owner->write_storage_location(plan.storage_location,
+                                                   value);
+        invalidate_lookup_cells_for_class_target(plan.storage_owner);
         return true;
     }
 
@@ -246,7 +238,7 @@ namespace cl
             resolve_attr_write_descriptor(obj, name);
         if(descriptor.is_found())
         {
-            return store_attr_from_descriptor(descriptor, value);
+            return store_attr_from_plan(descriptor.plan, value);
         }
         if(descriptor.status == AttributeWriteStatus::NotFound && obj.is_ptr())
         {

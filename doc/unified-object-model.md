@@ -707,11 +707,11 @@ The slow lookup path returns a descriptor object with two distinct
 parts:
 
 - a status saying whether the operation can proceed
-- an access payload describing how to perform a successful operation
+- a plan payload describing how to perform a successful operation
 
-Only the access payload is suitable as inline-cache material. Misses,
+Only the plan payload is suitable as inline-cache material. Misses,
 fallbacks, non-object receivers, and errors are lookup statuses, not
-cacheable access plans. The shared runtime representation lives in
+cacheable plans. The shared runtime representation lives in
 `attribute_descriptor.h` so the interpreter, code objects, attribute
 helpers, and object implementations can all talk in the same terms.
 
@@ -723,14 +723,14 @@ enum class AttributeReadStatus : uint8_t {
     Error,
 };
 
-enum class AttributeReadAccessPath : uint8_t {
+enum class AttributeReadPlanPath : uint8_t {
     ReceiverOwnProperty,
     InstanceClassChain,
     ClassObjectChain,
     MetaclassChain,
 };
 
-enum class AttributeReadAccessKind : uint8_t {
+enum class AttributeReadPlanKind : uint8_t {
     ReturnValue,
     ReceiverSlot,
     ResolvedValue,
@@ -754,32 +754,33 @@ struct AttributeBindingContext {
     const ClassObject *owner;
 };
 
-struct AttributeReadAccess {
-    AttributeReadAccessPath path;
-    AttributeReadAccessKind kind;
+struct AttributeReadPlan {
+    AttributeReadPlanPath path;
+    AttributeReadPlanKind kind;
     const Object *storage_owner;
     StorageLocation storage_location;
     Value value;
     AttributeBindingContext binding;
-    AttributeCacheBlockers cache_blockers;
+    ValidityCell *lookup_validity_cell;
 };
 
 struct AttributeReadDescriptor {
     AttributeReadStatus status;
-    AttributeReadAccess access; // valid only when status == Found
+    AttributeReadPlan plan; // valid only when status == Found
+    AttributeCacheBlockers cache_blockers;
 };
 ```
 
-`status == Found` means the access can execute immediately.
-`cache_blockers` says whether that successful access is eligible to
+`status == Found` means the plan can execute immediately.
+`cache_blockers` says whether that successful plan is eligible to
 become an inline-cache entry. These fields do not overlap: cache
-blockers are meaningful only for successful accesses.
+blockers are meaningful only for successful plans.
 
 Object and class implementations should emit these descriptors directly:
 `Object` owns receiver-slot descriptors, while `ClassObject` owns
 instance-chain, class-chain, and metaclass-chain descriptors. The
 top-level attribute helper only composes the lookup order and executes
-the descriptor for the legacy load APIs.
+the plan for the legacy load APIs.
 
 For example, lookup may find a class-chain value that is not currently a
 data descriptor, but whose type is mutable. The runtime can use that
@@ -792,7 +793,7 @@ no data descriptor currently wins for the same name. Until lookup cells
 represent that dependency, those accesses carry a `MissingLookupCell`
 cache blocker even though the value can be loaded immediately.
 
-Each cache entry is derived from a cacheable `AttributeReadAccess` and
+Each cache entry is derived from a cacheable `AttributeReadPlan` and
 records:
 
 | Field | Meaning |
@@ -986,7 +987,7 @@ self.primary_lookup_validity_cell = nullptr
 Self lookup uses:
 
 - a lookup validity cell guarding the relevant class-chain assumptions
-- `access_kind = AttributeAccessKind::ReceiverSlot`
+- `plan.kind = AttributeReadPlanKind::ReceiverSlot`
 - Shape + receiver-relative storage location
 
 ---

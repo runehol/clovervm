@@ -971,7 +971,7 @@ TEST(ClassObject, ClassChainReadDescriptorCarriesLookupValidityCell)
         child->lookup_class_attribute_descriptor(attr_name);
 
     ASSERT_TRUE(descriptor.is_found());
-    ValidityCell *cell = descriptor.access.lookup_validity_cell;
+    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
     EXPECT_EQ(cell, child->current_lookup_validity_cell());

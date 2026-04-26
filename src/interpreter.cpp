@@ -335,28 +335,28 @@ namespace cl
             return MethodCallTargetStatus::Missing;
         }
 
-        const AttributeReadAccess &access = descriptor.access;
+        const AttributeReadPlan &plan = descriptor.plan;
         self_out = Value::not_present();
-        switch(access.kind)
+        switch(plan.kind)
         {
-            case AttributeReadAccessKind::ReceiverSlot:
-                assert(access.storage_owner != nullptr);
-                callable_out = access.storage_owner->read_storage_location(
-                    access.storage_location);
+            case AttributeReadPlanKind::ReceiverSlot:
+                assert(plan.storage_owner != nullptr);
+                callable_out = plan.storage_owner->read_storage_location(
+                    plan.storage_location);
                 return MethodCallTargetStatus::Ready;
 
-            case AttributeReadAccessKind::BindFunctionReceiver:
-                callable_out = access.value;
-                self_out = access.binding.self;
+            case AttributeReadPlanKind::BindFunctionReceiver:
+                callable_out = plan.value;
+                self_out = plan.binding.self;
                 return MethodCallTargetStatus::Ready;
 
-            case AttributeReadAccessKind::ReturnValue:
-            case AttributeReadAccessKind::ResolvedValue:
-                callable_out = access.value;
+            case AttributeReadPlanKind::ReturnValue:
+            case AttributeReadPlanKind::ResolvedValue:
+                callable_out = plan.value;
                 return MethodCallTargetStatus::Ready;
 
-            case AttributeReadAccessKind::DataDescriptorGet:
-            case AttributeReadAccessKind::NonDataDescriptorGet:
+            case AttributeReadPlanKind::DataDescriptorGet:
+            case AttributeReadPlanKind::NonDataDescriptorGet:
                 callable_out = Value::not_present();
                 return MethodCallTargetStatus::RequiresDescriptorDispatch;
         }
