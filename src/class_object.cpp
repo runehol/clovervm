@@ -1,7 +1,7 @@
 #include "class_object.h"
-#include "list.h"
 #include "runtime_helpers.h"
 #include "str.h"
+#include "tuple.h"
 #include "virtual_machine.h"
 
 namespace cl
@@ -64,8 +64,8 @@ namespace cl
         {
             class_extra_inline_attribute_slots[slot_idx] = Value::not_present();
         }
-        bases = make_bases_list(_base);
-        mro = make_mro_list();
+        bases = make_bases_tuple(_base);
+        mro = make_mro_tuple();
     }
 
     ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
@@ -177,25 +177,25 @@ namespace cl
     ClassObject *ClassObject::get_base() const
     {
         Value bases_value = inline_slot_base()[kClassMetadataSlotBases];
-        if(!can_convert_to<List>(bases_value))
+        if(!can_convert_to<Tuple>(bases_value))
         {
             return nullptr;
         }
 
-        List *bases_list = try_convert_to<List>(bases_value);
-        if(bases_list->size() == 0)
+        Tuple *bases_tuple = try_convert_to<Tuple>(bases_value);
+        if(bases_tuple->size() == 0)
         {
             return nullptr;
         }
 
-        Value base_value = bases_list->item_unchecked(0);
+        Value base_value = bases_tuple->item_unchecked(0);
         return try_convert_to<ClassObject>(base_value);
     }
 
     ValidityCell *ClassObject::create_lookup_validity_cell_slow() const
     {
         Value mro_value = inline_slot_base()[kClassMetadataSlotMro];
-        List *mro = assume_convert_to<List>(mro_value);
+        Tuple *mro = assume_convert_to<Tuple>(mro_value);
 
         ValidityCell *cell = make_internal_raw<ValidityCell>();
         primary_lookup_validity_cell = cell;
@@ -271,7 +271,7 @@ namespace cl
         AttributeBindingContext binding) const
     {
         Value mro_value = inline_slot_base()[kClassMetadataSlotMro];
-        if(!can_convert_to<List>(mro_value))
+        if(!can_convert_to<Tuple>(mro_value))
         {
             StorageLocation own_location =
                 get_shape()->resolve_present_property(name);
@@ -289,7 +289,7 @@ namespace cl
         }
 
         ValidityCell *validity_cell = lookup_validity_cell();
-        List *mro = try_convert_to<List>(mro_value);
+        Tuple *mro = try_convert_to<Tuple>(mro_value);
         for(uint32_t mro_idx = 0; mro_idx < mro->size(); ++mro_idx)
         {
             Value class_value = mro->item_unchecked(mro_idx);
@@ -328,28 +328,40 @@ namespace cl
         return descriptor.plan.value;
     }
 
-    Value ClassObject::make_bases_list(Value base) const
+    Value ClassObject::make_bases_tuple(Value base) const
     {
-        List *bases = active_vm()->list_class() == nullptr
-                          ? make_internal_raw<List>(BootstrapObjectTag{})
-                          : make_object_raw<List>();
+        size_t size = base == Value::None() ? 0 : 1;
+        Tuple *bases =
+            active_vm()->tuple_class() == nullptr
+                ? make_internal_raw<Tuple>(BootstrapObjectTag{}, size)
+                : make_object_raw<Tuple>(size);
         if(base != Value::None())
         {
-            bases->append(base);
+            bases->initialize_item_unchecked(0, base);
         }
         return Value::from_oop(bases);
     }
 
-    Value ClassObject::make_mro_list() const
+    Value ClassObject::make_mro_tuple() const
     {
-        List *mro = active_vm()->list_class() == nullptr
-                        ? make_internal_raw<List>(BootstrapObjectTag{})
-                        : make_object_raw<List>();
-        mro->append(Value::from_oop(const_cast<ClassObject *>(this)));
+        size_t size = 1;
         ClassObject *base_ptr = get_base();
         while(base_ptr != nullptr)
         {
-            mro->append(Value::from_oop(base_ptr));
+            ++size;
+            base_ptr = base_ptr->get_base();
+        }
+
+        Tuple *mro = active_vm()->tuple_class() == nullptr
+                         ? make_internal_raw<Tuple>(BootstrapObjectTag{}, size)
+                         : make_object_raw<Tuple>(size);
+        size_t idx = 0;
+        mro->initialize_item_unchecked(
+            idx++, Value::from_oop(const_cast<ClassObject *>(this)));
+        base_ptr = get_base();
+        while(base_ptr != nullptr)
+        {
+            mro->initialize_item_unchecked(idx++, Value::from_oop(base_ptr));
             base_ptr = base_ptr->get_base();
         }
         return Value::from_oop(mro);

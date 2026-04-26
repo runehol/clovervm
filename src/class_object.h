@@ -104,8 +104,8 @@ namespace cl
         static constexpr uint32_t kClassExtraInlineAttributeSlotCount =
             kClassInlineStorageSlotCount - kClassMetadataSlotCount;
 
-        Value make_bases_list(Value base) const;
-        Value make_mro_list() const;
+        Value make_bases_tuple(Value base) const;
+        Value make_mro_tuple() const;
         NOINLINE ValidityCell *create_lookup_validity_cell_slow() const;
         void attach_lookup_validity_cell(ValidityCell *cell) const;
         AttributeReadDescriptor

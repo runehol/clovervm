@@ -126,32 +126,32 @@ namespace cl
         });
     }
 
-    static void install_bootstrap_list_class_on_value(Value value,
-                                                      ClassObject *list_class)
+    static void install_bootstrap_tuple_class_on_value(Value value,
+                                                       ClassObject *tuple_class)
     {
-        assert(can_convert_to<List>(value));
+        assert(can_convert_to<Tuple>(value));
         Object *object = value.get_ptr<Object>();
         if(!object->is_class_bootstrapped())
         {
-            object->install_bootstrap_class(list_class);
+            object->install_bootstrap_class(tuple_class);
         }
     }
 
-    void VirtualMachine::install_bootstrap_list_class()
+    void VirtualMachine::install_bootstrap_tuple_class()
     {
-        ClassObject *list = list_class();
-        assert(list != nullptr);
+        ClassObject *tuple = tuple_class();
+        assert(tuple != nullptr);
 
         for(ClassObject *cls: builtin_classes)
         {
-            install_bootstrap_list_class_on_value(
+            install_bootstrap_tuple_class_on_value(
                 cls->read_storage_location(StorageLocation{
                     ClassObject::kClassMetadataSlotBases, StorageKind::Inline}),
-                list);
-            install_bootstrap_list_class_on_value(
+                tuple);
+            install_bootstrap_tuple_class_on_value(
                 cls->read_storage_location(StorageLocation{
                     ClassObject::kClassMetadataSlotMro, StorageKind::Inline}),
-                list);
+                tuple);
         }
     }
 
@@ -164,8 +164,8 @@ namespace cl
         register_builtin_class(make_str_class(this));
         install_bootstrap_string_class();
         register_builtin_class(make_tuple_class(this));
+        install_bootstrap_tuple_class();
         register_builtin_class(make_list_class(this));
-        install_bootstrap_list_class();
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_code_object_class(this));

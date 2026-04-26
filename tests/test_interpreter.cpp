@@ -1005,11 +1005,11 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
             test_context.vm().get_or_create_interned_string_value(L"__mro__");
         Value bases_value = cls->get_own_property(dunder_bases_name);
         Value mro_value = cls->get_own_property(dunder_mro_name);
-        ASSERT_TRUE(can_convert_to<List>(bases_value));
-        ASSERT_TRUE(can_convert_to<List>(mro_value));
-        EXPECT_EQ(test_context.vm().list_class(),
+        ASSERT_TRUE(can_convert_to<Tuple>(bases_value));
+        ASSERT_TRUE(can_convert_to<Tuple>(mro_value));
+        EXPECT_EQ(test_context.vm().tuple_class(),
                   bases_value.get_ptr<Object>()->get_class().extract());
-        EXPECT_EQ(test_context.vm().list_class(),
+        EXPECT_EQ(test_context.vm().tuple_class(),
                   mro_value.get_ptr<Object>()->get_class().extract());
 
         if(expected.native_layout_id == NativeLayoutId::CodeObject)

@@ -5,6 +5,7 @@
 #include "shape.h"
 #include "test_helpers.h"
 #include "thread_state.h"
+#include "tuple.h"
 #include <cassert>
 #include <gtest/gtest.h>
 #include <string>
@@ -645,17 +646,17 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
 
     Value bases_value = cls->get_own_property(dunder_bases_name);
     ASSERT_TRUE(bases_value.is_ptr());
-    ASSERT_EQ(NativeLayoutId::List,
+    ASSERT_EQ(NativeLayoutId::Tuple,
               bases_value.get_ptr<Object>()->native_layout_id());
-    EXPECT_EQ(0u, bases_value.get_ptr<List>()->size());
+    EXPECT_EQ(0u, bases_value.get_ptr<Tuple>()->size());
 
     Value mro_value = cls->get_own_property(dunder_mro_name);
     ASSERT_TRUE(mro_value.is_ptr());
-    ASSERT_EQ(NativeLayoutId::List,
+    ASSERT_EQ(NativeLayoutId::Tuple,
               mro_value.get_ptr<Object>()->native_layout_id());
-    ASSERT_EQ(1u, mro_value.get_ptr<List>()->size());
+    ASSERT_EQ(1u, mro_value.get_ptr<Tuple>()->size());
     EXPECT_EQ(Value::from_oop(cls),
-              mro_value.get_ptr<List>()->item_unchecked(0));
+              mro_value.get_ptr<Tuple>()->item_unchecked(0));
 
     TValue<String> readonly_names[] = {dunder_class_name, dunder_name_name,
                                        dunder_bases_name, dunder_mro_name};
@@ -767,21 +768,21 @@ TEST(ClassObject, PredefinedBasesAndMroReflectSingleBaseChain)
 
     Value bases_value = child->get_own_property(dunder_bases_name);
     ASSERT_TRUE(bases_value.is_ptr());
-    ASSERT_EQ(NativeLayoutId::List,
+    ASSERT_EQ(NativeLayoutId::Tuple,
               bases_value.get_ptr<Object>()->native_layout_id());
-    ASSERT_EQ(1u, bases_value.get_ptr<List>()->size());
+    ASSERT_EQ(1u, bases_value.get_ptr<Tuple>()->size());
     EXPECT_EQ(Value::from_oop(base),
-              bases_value.get_ptr<List>()->item_unchecked(0));
+              bases_value.get_ptr<Tuple>()->item_unchecked(0));
 
     Value mro_value = child->get_own_property(dunder_mro_name);
     ASSERT_TRUE(mro_value.is_ptr());
-    ASSERT_EQ(NativeLayoutId::List,
+    ASSERT_EQ(NativeLayoutId::Tuple,
               mro_value.get_ptr<Object>()->native_layout_id());
-    ASSERT_EQ(2u, mro_value.get_ptr<List>()->size());
+    ASSERT_EQ(2u, mro_value.get_ptr<Tuple>()->size());
     EXPECT_EQ(Value::from_oop(child),
-              mro_value.get_ptr<List>()->item_unchecked(0));
+              mro_value.get_ptr<Tuple>()->item_unchecked(0));
     EXPECT_EQ(Value::from_oop(base),
-              mro_value.get_ptr<List>()->item_unchecked(1));
+              mro_value.get_ptr<Tuple>()->item_unchecked(1));
 }
 
 TEST(ClassObject, OwnPropertyApiDoesNotFallBackToBaseChain)
