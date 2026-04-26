@@ -1194,6 +1194,26 @@ TEST(Interpreter, class_definition_stores_explicit_base_tuple)
                  string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
 }
 
+TEST(Interpreter, class_definition_stores_implicit_object_base)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    pass\n"
+                                 L"Cls.__bases__[0] is object\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::True(), actual);
+}
+
+TEST(Interpreter, class_definition_stores_explicit_object_base)
+{
+    test::FileRunner file_runner(L"class Cls(object):\n"
+                                 L"    pass\n"
+                                 L"Cls.__mro__[1] is object\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::True(), actual);
+}
+
 TEST(Interpreter, class_definition_stores_multiple_base_tuple)
 {
     test::FileRunner file_runner(L"class Left:\n"
@@ -1208,12 +1228,44 @@ TEST(Interpreter, class_definition_stores_multiple_base_tuple)
     EXPECT_EQ(Value::from_smi(2), actual);
 }
 
+TEST(Interpreter, class_definition_allows_object_after_derived_base)
+{
+    test::FileRunner file_runner(L"class Base:\n"
+                                 L"    pass\n"
+                                 L"class Derived(Base, object):\n"
+                                 L"    pass\n"
+                                 L"Derived.__mro__[1] is Base\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::True(), actual);
+}
+
+TEST(Interpreter, object_class_has_empty_bases_tuple)
+{
+    test::FileRunner file_runner(L"object.__bases__\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::Tuple,
+              actual.get_ptr<Object>()->native_layout_id());
+    EXPECT_TRUE(actual.get_ptr<Tuple>()->empty());
+}
+
 TEST(Interpreter, class_definition_rejects_non_class_base)
 {
     expect_runtime_error(L"Base = 1\n"
                          L"class Derived(Base):\n"
                          L"    pass\n",
                          "TypeError: class bases must be class objects");
+}
+
+TEST(Interpreter, class_definition_rejects_duplicate_base)
+{
+    expect_runtime_error(L"class Base:\n"
+                         L"    pass\n"
+                         L"class Derived(Base, Base):\n"
+                         L"    pass\n",
+                         "TypeError: duplicate base class");
 }
 
 TEST(Interpreter, class_definition_uses_multiple_base_mro_order)

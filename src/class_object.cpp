@@ -111,6 +111,29 @@ namespace cl
         return tuple_from_vector<ClassObject>(linearized);
     }
 
+    void ClassObject::validate_bases(TValue<Tuple> bases)
+    {
+        Tuple *bases_tuple = bases.extract();
+        std::vector<ClassObject *> seen_bases;
+        seen_bases.reserve(bases_tuple->size());
+        for(size_t idx = 0; idx < bases_tuple->size(); ++idx)
+        {
+            ClassObject *base =
+                try_convert_to<ClassObject>(bases_tuple->item_unchecked(idx));
+            if(base == nullptr)
+            {
+                throw std::runtime_error(
+                    "TypeError: class bases must be class objects");
+            }
+            if(std::find(seen_bases.begin(), seen_bases.end(), base) !=
+               seen_bases.end())
+            {
+                throw std::runtime_error("TypeError: duplicate base class");
+            }
+            seen_bases.push_back(base);
+        }
+    }
+
     ClassObject::ClassObject(BootstrapObjectTag, TValue<String> _name,
                              uint32_t _instance_default_inline_slot_count,
                              ClassObject *single_base,
@@ -203,6 +226,7 @@ namespace cl
                       class_shape_flags, instance_shape_flags)
     {
         install_bootstrap_class(metaclass);
+        validate_bases(_bases);
         bases = _bases;
         mro = compute_mro(this, _bases.extract());
     }
@@ -342,24 +366,6 @@ namespace cl
         bases = bases_tuple;
         mro = mro_tuple;
         invalidate_lookup_validity_cells();
-    }
-
-    ClassObject *ClassObject::get_base() const
-    {
-        Value bases_value = inline_slot_base()[kClassMetadataSlotBases];
-        if(!can_convert_to<Tuple>(bases_value))
-        {
-            return nullptr;
-        }
-
-        Tuple *bases_tuple = try_convert_to<Tuple>(bases_value);
-        if(bases_tuple->size() == 0)
-        {
-            return nullptr;
-        }
-
-        Value base_value = bases_tuple->item_unchecked(0);
-        return try_convert_to<ClassObject>(base_value);
     }
 
     ValidityCell *ClassObject::create_lookup_validity_cell_slow() const

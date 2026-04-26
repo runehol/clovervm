@@ -201,25 +201,11 @@ namespace cl
     static constexpr uint32_t ClassBodyBasesParameter = 1;
     static constexpr uint32_t ClassBodyParameterCount = 2;
 
-    NOINLINE static void validate_class_bases(TValue<Tuple> bases)
-    {
-        for(size_t idx = 0; idx < bases.extract()->size(); ++idx)
-        {
-            if(!can_convert_to<ClassObject>(
-                   bases.extract()->item_unchecked(idx)))
-            {
-                throw std::runtime_error(
-                    "TypeError: class bases must be class objects");
-            }
-        }
-    }
-
     static Value build_class_from_frame(Value *fp, CodeObject *body_code)
     {
         TValue<String> class_name(
             fp[body_code->encode_reg(ClassBodyNameParameter)]);
         TValue<Tuple> bases(fp[body_code->encode_reg(ClassBodyBasesParameter)]);
-        validate_class_bases(bases);
 
         TValue<ClassObject> cls = make_internal_value<ClassObject>(
             active_vm()->type_class(), class_name,

@@ -84,7 +84,6 @@ namespace cl
         static void validate_inline_slot_layout();
         void install_bootstrap_inheritance(Value bases_tuple, Value mro_tuple);
         Shape *get_instance_root_shape() const;
-        ClassObject *get_base() const;
         ValidityCell *current_lookup_validity_cell() const
         {
             return primary_lookup_validity_cell.extract();
@@ -118,6 +117,7 @@ namespace cl
             kClassInlineStorageSlotCount - kClassMetadataSlotCount;
 
         Value make_bases_tuple(ClassObject *single_base) const;
+        static void validate_bases(TValue<Tuple> bases);
         NOINLINE ValidityCell *create_lookup_validity_cell_slow() const;
         void attach_lookup_validity_cell(ValidityCell *cell) const;
         AttributeReadDescriptor
