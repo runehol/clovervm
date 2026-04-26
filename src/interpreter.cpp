@@ -324,18 +324,11 @@ namespace cl
         RequiresDescriptorDispatch,
     };
 
-    static ALWAYSINLINE MethodCallTargetStatus prepare_method_call_target(
-        Value receiver, const AttributeReadDescriptor &descriptor,
-        Value &callable_out, Value &self_out)
+    static ALWAYSINLINE MethodCallTargetStatus
+    prepare_method_call_target_from_plan(Value receiver,
+                                         const AttributeReadPlan &plan,
+                                         Value &callable_out, Value &self_out)
     {
-        if(!descriptor.is_found())
-        {
-            callable_out = Value::not_present();
-            self_out = Value::not_present();
-            return MethodCallTargetStatus::Missing;
-        }
-
-        const AttributeReadPlan &plan = descriptor.plan;
         const Object *storage_owner = plan.storage_owner;
         if(storage_owner == nullptr)
         {
@@ -367,6 +360,22 @@ namespace cl
         }
 
         __builtin_unreachable();
+    }
+
+    static ALWAYSINLINE MethodCallTargetStatus
+    prepare_method_call_target_from_descriptor(
+        Value receiver, const AttributeReadDescriptor &descriptor,
+        Value &callable_out, Value &self_out)
+    {
+        if(!descriptor.is_found())
+        {
+            callable_out = Value::not_present();
+            self_out = Value::not_present();
+            return MethodCallTargetStatus::Missing;
+        }
+
+        return prepare_method_call_target_from_plan(receiver, descriptor.plan,
+                                                    callable_out, self_out);
     }
 
     static Value op_lda_constant(PARAMS)
@@ -1064,8 +1073,9 @@ namespace cl
             resolve_attr_read_descriptor(fp[receiver_reg], attr_name);
         Value callable;
         Value self;
-        MethodCallTargetStatus target_status = prepare_method_call_target(
-            fp[receiver_reg], descriptor, callable, self);
+        MethodCallTargetStatus target_status =
+            prepare_method_call_target_from_descriptor(
+                fp[receiver_reg], descriptor, callable, self);
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
             MUSTTAIL return method_lookup_error(ARGS);
