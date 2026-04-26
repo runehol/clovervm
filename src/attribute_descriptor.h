@@ -8,6 +8,7 @@
 namespace cl
 {
     class ClassObject;
+    class Shape;
     class ValidityCell;
     struct Object;
 
@@ -20,6 +21,19 @@ namespace cl
     };
 
     static_assert(static_cast<uint8_t>(AttributeReadStatus::Found) == 0);
+
+    enum class AttributeWriteStatus : uint8_t
+    {
+        Found = 0,
+        NotFound,
+        AlreadyExists,
+        ReadOnly,
+        Disallowed,
+        NonObjectReceiver,
+        Error,
+    };
+
+    static_assert(static_cast<uint8_t>(AttributeWriteStatus::Found) == 0);
 
     enum class AttributeReadAccessPath : uint8_t
     {
@@ -132,6 +146,81 @@ namespace cl
 
         bool is_found() const { return status == AttributeReadStatus::Found; }
 
+        bool is_cacheable() const
+        {
+            return is_found() && access.lookup_validity_cell != nullptr;
+        }
+    };
+
+    struct AttributeWriteAccess
+    {
+        Object *storage_owner;
+        StorageLocation storage_location;
+        AttributeMutationKind mutation_kind;
+        AttributeWriteEffects effects;
+        ValidityCell *lookup_validity_cell;
+
+        static AttributeWriteAccess
+        store_existing(Object *storage_owner, StorageLocation location,
+                       AttributeWriteEffects effects,
+                       ValidityCell *lookup_validity_cell)
+        {
+            return AttributeWriteAccess{storage_owner, location,
+                                        AttributeMutationKind::UpdatedExisting,
+                                        effects, lookup_validity_cell};
+        }
+    };
+
+    struct AttributeWriteDescriptor
+    {
+        AttributeWriteStatus status;
+        AttributeWriteAccess access;
+
+        static AttributeWriteDescriptor not_found()
+        {
+            return AttributeWriteDescriptor{
+                AttributeWriteStatus::NotFound,
+                AttributeWriteAccess::store_existing(
+                    nullptr, StorageLocation::not_found(),
+                    attribute_write_effect(AttributeWriteEffect::None),
+                    nullptr)};
+        }
+
+        static AttributeWriteDescriptor already_exists()
+        {
+            AttributeWriteDescriptor descriptor = not_found();
+            descriptor.status = AttributeWriteStatus::AlreadyExists;
+            return descriptor;
+        }
+
+        static AttributeWriteDescriptor read_only()
+        {
+            AttributeWriteDescriptor descriptor = not_found();
+            descriptor.status = AttributeWriteStatus::ReadOnly;
+            return descriptor;
+        }
+
+        static AttributeWriteDescriptor disallowed()
+        {
+            AttributeWriteDescriptor descriptor = not_found();
+            descriptor.status = AttributeWriteStatus::Disallowed;
+            return descriptor;
+        }
+
+        static AttributeWriteDescriptor non_object_receiver()
+        {
+            AttributeWriteDescriptor descriptor = not_found();
+            descriptor.status = AttributeWriteStatus::NonObjectReceiver;
+            return descriptor;
+        }
+
+        static AttributeWriteDescriptor found(AttributeWriteAccess access)
+        {
+            return AttributeWriteDescriptor{AttributeWriteStatus::Found,
+                                            access};
+        }
+
+        bool is_found() const { return status == AttributeWriteStatus::Found; }
         bool is_cacheable() const
         {
             return is_found() && access.lookup_validity_cell != nullptr;

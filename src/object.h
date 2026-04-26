@@ -12,6 +12,7 @@
 namespace cl
 {
     struct AttributeReadDescriptor;
+    struct AttributeWriteDescriptor;
     struct BuiltinClassDefinition;
     class ClassObject;
     class OverflowSlots;
@@ -107,6 +108,9 @@ namespace cl
         Value get_own_property(TValue<String> name) const;
         AttributeReadDescriptor
         lookup_own_attribute_descriptor(TValue<String> name) const;
+        AttributeWriteDescriptor
+        lookup_own_attribute_write_descriptor(TValue<String> name);
+        AttributeWriteResult add_own_property(TValue<String> name, Value value);
         AttributeWriteResult
         define_own_property_with_result(TValue<String> name, Value value,
                                         DescriptorFlags descriptor_flags);

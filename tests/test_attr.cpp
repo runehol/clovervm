@@ -472,6 +472,72 @@ TEST(Attr, AttributeWritesExposeLookupInvalidationEffectForClassTargets)
         AttributeWriteEffect::InvalidateLookupCellsOnTarget));
 }
 
+TEST(Attr, AttributeWriteDescriptorMissDoesNotCreateLookupValidityCell)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
+    ClassObject *base =
+        context.thread()->make_internal_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, Value::from_oop(base));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(child);
+
+    AttributeWriteDescriptor descriptor =
+        resolve_attr_write_descriptor(Value::from_oop(instance), attr_name);
+
+    EXPECT_FALSE(descriptor.is_found());
+    EXPECT_EQ(AttributeWriteStatus::NotFound, descriptor.status);
+    EXPECT_FALSE(descriptor.is_cacheable());
+    EXPECT_EQ(nullptr, child->current_lookup_validity_cell());
+    EXPECT_EQ(0u, base->attached_lookup_validity_cell_count());
+}
+
+TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
+    TValue<String> descriptor_name(
+        context.vm().get_or_create_interned_string_value(L"descriptor"));
+    ClassObject *base =
+        context.thread()->make_internal_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, Value::from_oop(base));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(child);
+
+    EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_EQ(nullptr, child->current_lookup_validity_cell());
+    EXPECT_EQ(0u, base->attached_lookup_validity_cell_count());
+
+    AttributeWriteDescriptor descriptor =
+        resolve_attr_write_descriptor(Value::from_oop(instance), attr_name);
+
+    ASSERT_TRUE(descriptor.is_found());
+    EXPECT_TRUE(descriptor.is_cacheable());
+    ValidityCell *cell = descriptor.access.lookup_validity_cell;
+    ASSERT_NE(nullptr, cell);
+    EXPECT_TRUE(cell->is_valid());
+    EXPECT_EQ(cell, child->current_lookup_validity_cell());
+    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
+
+    EXPECT_TRUE(base->set_own_property(descriptor_name, Value::from_smi(1)));
+
+    EXPECT_FALSE(cell->is_valid());
+}
+
 TEST(Attr, ShapePolicyCanDisallowInstanceAttributeAddDelete)
 {
     test::VmTestContext context;

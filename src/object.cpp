@@ -1,4 +1,5 @@
 #include "object.h"
+#include "attr.h"
 #include "attribute_descriptor.h"
 #include "class_object.h"
 #include "overflow_slots.h"
@@ -14,36 +15,6 @@ namespace cl
 {
     namespace
     {
-        enum class StoreOwnPropertyResult : uint8_t
-        {
-            Stored,
-            ReadOnly,
-            NotFound,
-        };
-
-        StoreOwnPropertyResult
-        set_existing_own_property_impl(Object *object, TValue<String> name,
-                                       Value value)
-        {
-            Shape *current_shape = object->get_shape();
-            int32_t descriptor_idx =
-                current_shape->lookup_descriptor_index(name);
-            if(descriptor_idx < 0)
-            {
-                return StoreOwnPropertyResult::NotFound;
-            }
-
-            DescriptorInfo info =
-                current_shape->get_descriptor_info(descriptor_idx);
-            if(info.has_flag(DescriptorFlag::ReadOnly))
-            {
-                return StoreOwnPropertyResult::ReadOnly;
-            }
-
-            object->write_storage_location(info.storage_location(), value);
-            return StoreOwnPropertyResult::Stored;
-        }
-
         AttributeWriteEffects
         attribute_write_effects_for_target(const Object *object)
         {
@@ -63,6 +34,47 @@ namespace cl
             return AttributeWriteResult{
                 kind, attribute_write_effects_for_target(object)};
         }
+
+        ValidityCell *attribute_write_validity_cell_for_target(Object *object)
+        {
+            if(!object->is_class_bootstrapped())
+            {
+                return nullptr;
+            }
+            return object->get_class().extract()->lookup_validity_cell();
+        }
+
+        AttributeWriteDescriptor
+        lookup_existing_own_property_write_descriptor(Object *object,
+                                                      TValue<String> name)
+        {
+            Shape *current_shape = object->get_shape();
+            int32_t descriptor_idx =
+                current_shape->lookup_descriptor_index(name);
+            if(descriptor_idx < 0)
+            {
+                return AttributeWriteDescriptor::not_found();
+            }
+
+            if(!current_shape->allows_attribute_updates())
+            {
+                return AttributeWriteDescriptor::disallowed();
+            }
+
+            DescriptorInfo info =
+                current_shape->get_descriptor_info(descriptor_idx);
+            if(info.has_flag(DescriptorFlag::ReadOnly))
+            {
+                return AttributeWriteDescriptor::read_only();
+            }
+
+            return AttributeWriteDescriptor::found(
+                AttributeWriteAccess::store_existing(
+                    object, info.storage_location(),
+                    attribute_write_effects_for_target(object),
+                    attribute_write_validity_cell_for_target(object)));
+        }
+
     }  // namespace
 
     void Object::validate_inline_slot_layout()
@@ -160,6 +172,39 @@ namespace cl
             attribute_cache_blocker(AttributeCacheBlocker::MissingLookupCell));
     }
 
+    AttributeWriteDescriptor
+    Object::lookup_own_attribute_write_descriptor(TValue<String> name)
+    {
+        return lookup_existing_own_property_write_descriptor(this, name);
+    }
+
+    AttributeWriteResult Object::add_own_property(TValue<String> name,
+                                                  Value value)
+    {
+        Shape *current_shape = get_shape();
+        int32_t descriptor_idx = current_shape->lookup_descriptor_index(name);
+        if(descriptor_idx >= 0)
+        {
+            return AttributeWriteResult::not_stored();
+        }
+        if(!current_shape->allows_attribute_add_delete())
+        {
+            return AttributeWriteResult::not_stored();
+        }
+
+        Shape *next_shape = current_shape->derive_transition(
+            name, ShapeTransitionVerb::Add,
+            descriptor_flag(DescriptorFlag::None));
+        set_shape(next_shape);
+
+        StorageLocation new_location =
+            next_shape->resolve_present_property(name);
+        assert(new_location.is_found());
+        write_storage_location(new_location, value);
+        return AttributeWriteResult{AttributeMutationKind::Added,
+                                    attribute_write_effects_for_target(this)};
+    }
+
     AttributeWriteResult
     Object::define_own_property_with_result(TValue<String> name, Value value,
                                             DescriptorFlags descriptor_flags)
@@ -183,8 +228,8 @@ namespace cl
             next_shape->resolve_present_property(name);
         assert(new_location.is_found());
         write_storage_location(new_location, value);
-        return stored_attribute_write_result(this,
-                                             AttributeMutationKind::Added);
+        return AttributeWriteResult{AttributeMutationKind::Added,
+                                    attribute_write_effects_for_target(this)};
     }
 
     bool Object::define_own_property(TValue<String> name, Value value,
@@ -198,34 +243,9 @@ namespace cl
     Object::set_existing_own_property_with_result(TValue<String> name,
                                                   Value value)
     {
-        Shape *current_shape = get_shape();
-        if(!current_shape->allows_attribute_updates())
-        {
-            return AttributeWriteResult::not_stored();
-        }
-
-        StoreOwnPropertyResult result =
-            set_existing_own_property_impl(this, name, value);
-        if(result == StoreOwnPropertyResult::NotFound)
-        {
-            return AttributeWriteResult::not_stored();
-        }
-
-        if(result == StoreOwnPropertyResult::ReadOnly)
-        {
-            return AttributeWriteResult::not_stored();
-        }
-
-        AttributeWriteResult write_result = stored_attribute_write_result(
-            this, AttributeMutationKind::UpdatedExisting);
-        if(has_attribute_write_effect(
-               write_result.effects,
-               AttributeWriteEffect::InvalidateLookupCellsOnTarget))
-        {
-            assume_convert_to<ClassObject>(this)
-                ->invalidate_lookup_validity_cells();
-        }
-        return write_result;
+        AttributeWriteDescriptor descriptor =
+            lookup_existing_own_property_write_descriptor(this, name);
+        return store_attr_from_descriptor(descriptor, value);
     }
 
     bool Object::set_existing_own_property(TValue<String> name, Value value)
@@ -236,15 +256,17 @@ namespace cl
     AttributeWriteResult
     Object::set_own_property_with_result(TValue<String> name, Value value)
     {
-        AttributeWriteResult result =
-            set_existing_own_property_with_result(name, value);
-        if(result.is_stored())
+        AttributeWriteDescriptor descriptor =
+            lookup_own_attribute_write_descriptor(name);
+        if(descriptor.is_found())
         {
-            return result;
+            return store_attr_from_descriptor(descriptor, value);
         }
-
-        return define_own_property_with_result(
-            name, value, descriptor_flag(DescriptorFlag::None));
+        if(descriptor.status == AttributeWriteStatus::NotFound)
+        {
+            return add_own_property(name, value);
+        }
+        return AttributeWriteResult::not_stored();
     }
 
     bool Object::set_own_property(TValue<String> name, Value value)

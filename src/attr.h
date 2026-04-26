@@ -12,6 +12,11 @@ namespace cl
     Value load_attr_from_descriptor(const AttributeReadDescriptor &descriptor);
     bool load_method_from_descriptor(const AttributeReadDescriptor &descriptor,
                                      Value &callable_out, Value &self_out);
+    AttributeWriteDescriptor resolve_attr_write_descriptor(Value obj,
+                                                           TValue<String> name);
+    AttributeWriteResult
+    store_attr_from_descriptor(const AttributeWriteDescriptor &descriptor,
+                               Value value);
     Value load_attr(Value obj, TValue<String> name);
     bool store_attr(Value obj, TValue<String> name, Value value);
     bool load_method(Value obj, TValue<String> name, Value &callable_out,

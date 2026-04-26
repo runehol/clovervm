@@ -201,14 +201,57 @@ namespace cl
             resolve_attr_read_descriptor(obj, name));
     }
 
-    bool store_attr(Value obj, TValue<String> name, Value value)
+    AttributeWriteDescriptor resolve_attr_write_descriptor(Value obj,
+                                                           TValue<String> name)
     {
         if(!obj.is_ptr())
         {
-            return false;
+            return AttributeWriteDescriptor::non_object_receiver();
         }
 
         Object *object = obj.get_ptr<Object>();
-        return object->set_own_property(name, value);
+        return object->lookup_own_attribute_write_descriptor(name);
+    }
+
+    AttributeWriteResult
+    store_attr_from_descriptor(const AttributeWriteDescriptor &descriptor,
+                               Value value)
+    {
+        if(!descriptor.is_found())
+        {
+            return AttributeWriteResult::not_stored();
+        }
+
+        const AttributeWriteAccess &access = descriptor.access;
+        assert(access.storage_owner != nullptr);
+
+        access.storage_owner->write_storage_location(access.storage_location,
+                                                     value);
+        if(has_attribute_write_effect(
+               access.effects,
+               AttributeWriteEffect::InvalidateLookupCellsOnTarget))
+        {
+            assume_convert_to<ClassObject>(access.storage_owner)
+                ->invalidate_lookup_validity_cells();
+        }
+
+        return AttributeWriteResult{access.mutation_kind, access.effects};
+    }
+
+    bool store_attr(Value obj, TValue<String> name, Value value)
+    {
+        AttributeWriteDescriptor descriptor =
+            resolve_attr_write_descriptor(obj, name);
+        if(descriptor.is_found())
+        {
+            return store_attr_from_descriptor(descriptor, value).is_stored();
+        }
+        if(descriptor.status == AttributeWriteStatus::NotFound && obj.is_ptr())
+        {
+            return obj.get_ptr<Object>()
+                ->add_own_property(name, value)
+                .is_stored();
+        }
+        return false;
     }
 }  // namespace cl
