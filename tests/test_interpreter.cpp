@@ -1371,6 +1371,24 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
                   bases_value.get_ptr<Object>()->get_class().extract());
         EXPECT_EQ(test_context.vm().tuple_class(),
                   mro_value.get_ptr<Object>()->get_class().extract());
+        Tuple *bases = bases_value.get_ptr<Tuple>();
+        Tuple *mro = mro_value.get_ptr<Tuple>();
+        if(expected.native_layout_id == NativeLayoutId::Instance)
+        {
+            EXPECT_EQ(0u, bases->size());
+            ASSERT_EQ(1u, mro->size());
+            EXPECT_EQ(Value::from_oop(cls), mro->item_unchecked(0));
+        }
+        else
+        {
+            ASSERT_EQ(1u, bases->size());
+            EXPECT_EQ(Value::from_oop(test_context.vm().object_class()),
+                      bases->item_unchecked(0));
+            ASSERT_EQ(2u, mro->size());
+            EXPECT_EQ(Value::from_oop(cls), mro->item_unchecked(0));
+            EXPECT_EQ(Value::from_oop(test_context.vm().object_class()),
+                      mro->item_unchecked(1));
+        }
 
         if(expected.native_layout_id == NativeLayoutId::CodeObject)
         {

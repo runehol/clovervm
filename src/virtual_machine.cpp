@@ -10,10 +10,23 @@
 #include "thread_state.h"
 #include "tuple.h"
 #include <cassert>
+#include <initializer_list>
 #include <stdexcept>
 
 namespace cl
 {
+    static Value make_class_tuple(std::initializer_list<ClassObject *> classes)
+    {
+        Tuple *tuple = make_object_raw<Tuple>(classes.size());
+        size_t idx = 0;
+        for(ClassObject *cls: classes)
+        {
+            assert(cls != nullptr);
+            tuple->initialize_item_unchecked(idx++, Value::from_oop(cls));
+        }
+        return Value::from_oop(tuple);
+    }
+
     static TValue<CLInt> require_range_integer_arg(const CallArguments &args,
                                                    uint32_t index)
     {
@@ -160,20 +173,43 @@ namespace cl
         BuiltinClassDefinition type_definition = make_type_class(this);
         type_class_ = type_definition.cls;
         register_builtin_class(type_definition);
+
+        register_builtin_class(make_object_class(this));
         register_builtin_class(make_builtin_function_class(this));
         register_builtin_class(make_str_class(this));
         install_bootstrap_string_class();
         register_builtin_class(make_tuple_class(this));
+
+        ClassObject *type = type_class();
+        assert(type != nullptr);
+        ClassObject *object = object_class();
+        assert(object != nullptr);
+        ClassObject *builtin_function = builtin_function_class();
+        assert(builtin_function != nullptr);
+        ClassObject *str = str_class();
+        assert(str != nullptr);
+        ClassObject *tuple = tuple_class();
+        assert(tuple != nullptr);
+
+        object->install_bootstrap_inheritance(make_class_tuple({}),
+                                              make_class_tuple({object}));
+        type->install_bootstrap_inheritance(make_class_tuple({object}),
+                                            make_class_tuple({type, object}));
+        builtin_function->install_bootstrap_inheritance(
+            make_class_tuple({object}),
+            make_class_tuple({builtin_function, object}));
+        str->install_bootstrap_inheritance(make_class_tuple({object}),
+                                           make_class_tuple({str, object}));
+        tuple->install_bootstrap_inheritance(make_class_tuple({object}),
+                                             make_class_tuple({tuple, object}));
+
         install_bootstrap_tuple_class();
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));
-        register_builtin_class(make_object_class(this));
 
-        ClassObject *type = type_class();
-        assert(type != nullptr);
         for(ClassObject *cls: builtin_classes)
         {
             assert(cls != nullptr);

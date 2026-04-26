@@ -64,8 +64,16 @@ namespace cl
         {
             class_extra_inline_attribute_slots[slot_idx] = Value::not_present();
         }
-        bases = make_bases_tuple(_base);
-        mro = make_mro_tuple();
+        if(active_vm()->tuple_class() == nullptr)
+        {
+            bases = Value::None();
+            mro = Value::None();
+        }
+        else
+        {
+            bases = make_bases_tuple(_base);
+            mro = make_mro_tuple();
+        }
     }
 
     ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
@@ -172,6 +180,16 @@ namespace cl
     Shape *ClassObject::get_instance_root_shape() const
     {
         return instance_root_shape.extract();
+    }
+
+    void ClassObject::install_bootstrap_inheritance(Value bases_tuple,
+                                                    Value mro_tuple)
+    {
+        assert(can_convert_to<Tuple>(bases_tuple));
+        assert(can_convert_to<Tuple>(mro_tuple));
+        bases = bases_tuple;
+        mro = mro_tuple;
+        invalidate_lookup_validity_cells();
     }
 
     ClassObject *ClassObject::get_base() const

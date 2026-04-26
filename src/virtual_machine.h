@@ -108,7 +108,7 @@ namespace cl
         {
             return class_for_native_layout(NativeLayoutId::RangeIterator);
         }
-        ClassObject *instance_class() const
+        ClassObject *object_class() const
         {
             return class_for_native_layout(NativeLayoutId::Instance);
         }

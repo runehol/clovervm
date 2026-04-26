@@ -363,7 +363,7 @@ TEST(Attr, BuiltinTypeObjectsRejectUnsupportedAttributeWrites)
         context.vm().get_or_create_interned_string_value(L"custom"));
     Value builtin_types[] = {
         Value::from_oop(context.vm().type_class()),
-        Value::from_oop(context.vm().instance_class()),
+        Value::from_oop(context.vm().object_class()),
         Value::from_oop(context.vm().str_class()),
         Value::from_oop(context.vm().list_class()),
         Value::from_oop(context.vm().dict_class()),
