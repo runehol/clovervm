@@ -9,7 +9,9 @@
 #include "owned_typed_value.h"
 #include "shape.h"
 #include "typed_value.h"
+#include "validity_cell.h"
 #include "value.h"
+#include "vm_array.h"
 #include <cstdint>
 
 namespace cl
@@ -96,12 +98,16 @@ namespace cl
         MemberValue mro;
         MemberValue class_extra_inline_attribute_slots
             [kClassExtraInlineAttributeSlotCount];
+        MemberHeapPtr<ValidityCell> primary_lookup_validity_cell;
+        HeapPtrArray<ValidityCell> attached_lookup_validity_cells;
         MemberHeapPtr<Shape> instance_root_shape;
         uint32_t instance_default_inline_slot_count;
 
     public:
         CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(
-            ClassObject, Object, 3 + kClassExtraInlineAttributeSlotCount + 1);
+            ClassObject, Object,
+            3 + kClassExtraInlineAttributeSlotCount + 1 +
+                HeapPtrArray<ValidityCell>::embedded_value_count + 1);
     };
 
     class VirtualMachine;

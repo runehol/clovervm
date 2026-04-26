@@ -13,8 +13,9 @@ namespace cl
                              ShapeFlags instance_shape_flags)
         : Object(BootstrapObjectTag{}, native_layout_id, compact_layout()),
           name(_name), bases(Value::not_present()), mro(Value::not_present()),
-          instance_root_shape(nullptr), instance_default_inline_slot_count(
-                                            _instance_default_inline_slot_count)
+          primary_lookup_validity_cell(nullptr), instance_root_shape(nullptr),
+          instance_default_inline_slot_count(
+              _instance_default_inline_slot_count)
     {
         TValue<String> dunder_class_name = interned_string(L"__class__");
         DescriptorFlags instance_class_flags =
@@ -137,6 +138,18 @@ namespace cl
             CL_OFFSETOF(ClassObject, class_extra_inline_attribute_slots) ==
             CL_OFFSETOF(ClassObject, cls) +
                 kClassMetadataSlotCount * sizeof(Value));
+        static_assert(CL_OFFSETOF(ClassObject, primary_lookup_validity_cell) ==
+                      CL_OFFSETOF(ClassObject, cls) +
+                          kClassInlineStorageSlotCount * sizeof(Value));
+        static_assert(
+            CL_OFFSETOF(ClassObject, attached_lookup_validity_cells) ==
+            CL_OFFSETOF(ClassObject, cls) +
+                (kClassInlineStorageSlotCount + 1) * sizeof(Value));
+        static_assert(CL_OFFSETOF(ClassObject, instance_root_shape) ==
+                      CL_OFFSETOF(ClassObject, cls) +
+                          (kClassInlineStorageSlotCount + 1 +
+                           HeapPtrArray<ValidityCell>::embedded_value_count) *
+                              sizeof(Value));
     }
 
     BuiltinClassDefinition make_type_class(VirtualMachine *vm)
