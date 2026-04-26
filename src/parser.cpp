@@ -881,8 +881,26 @@ namespace cl
                         source_pos_and_advance(), Value::False());
                 case Token::LPAR:
                     {
-                        advance();
+                        uint32_t tuple_start_pos = source_pos_and_advance();
+                        if(match(Token::RPAR))
+                        {
+                            return ast.emplace_back(
+                                AstNodeKind::EXPRESSION_TUPLE, tuple_start_pos,
+                                AstChildren{});
+                        }
+
                         int32_t result = genexp();
+                        if(peek() == Token::COMMA)
+                        {
+                            AstChildren children = sequence_until_stop_token(
+                                result, &Parser::expression, Token::COMMA,
+                                Token::RPAR);
+                            consume(Token::RPAR);
+                            return ast.emplace_back(
+                                AstNodeKind::EXPRESSION_TUPLE, tuple_start_pos,
+                                children);
+                        }
+
                         consume(Token::RPAR);
                         return result;
                     }

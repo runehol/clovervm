@@ -513,6 +513,33 @@ TEST(Interpreter, tuple_literal_returns_tuple_object)
     EXPECT_EQ(Value::from_smi(4), tuple->item_unchecked(2));
 }
 
+TEST(Interpreter, parenthesized_tuple_literal_returns_tuple_object)
+{
+    test::FileRunner file_runner(L"(1, 2, 4)\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::Tuple,
+              actual.get_ptr<Object>()->native_layout_id());
+    Tuple *tuple = actual.get_ptr<Tuple>();
+    ASSERT_EQ(3u, tuple->size());
+    EXPECT_EQ(Value::from_smi(1), tuple->item_unchecked(0));
+    EXPECT_EQ(Value::from_smi(2), tuple->item_unchecked(1));
+    EXPECT_EQ(Value::from_smi(4), tuple->item_unchecked(2));
+}
+
+TEST(Interpreter, empty_tuple_literal_returns_empty_tuple_object)
+{
+    test::FileRunner file_runner(L"()\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::Tuple,
+              actual.get_ptr<Object>()->native_layout_id());
+    Tuple *tuple = actual.get_ptr<Tuple>();
+    EXPECT_EQ(0u, tuple->size());
+}
+
 TEST(Interpreter, tuple_literal_evaluates_elements_left_to_right)
 {
     g_next_counter = 0;

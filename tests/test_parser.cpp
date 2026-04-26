@@ -219,6 +219,22 @@ TEST(Parser, list_literals)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, tuple_literals)
+{
+    std::string expected = ("(())\n"
+                            "((1,))\n"
+                            "((1, 2, 3))\n"
+                            "((1, 2))\n"
+                            "(1 + 2) * 3\n");
+    std::string actual = parse(L"()\n"
+                               L"(1,)\n"
+                               L"(1, 2, 3)\n"
+                               L"(1, 2,)\n"
+                               L"(1 + 2) * 3\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, dict_literals)
 {
     std::string expected = ("{}\n"
