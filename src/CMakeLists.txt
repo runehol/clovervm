@@ -38,6 +38,8 @@ add_library(libclovervm STATIC
     token.h
     token_print.h
     tokenizer.h
+    tuple.cpp
+    tuple.h
     virtual_machine.cpp
     virtual_machine.h
     list.cpp

@@ -11,6 +11,7 @@ namespace cl
 
         String,
         List,
+        Tuple,
         Dict,
         Function,
         BuiltinFunction,
