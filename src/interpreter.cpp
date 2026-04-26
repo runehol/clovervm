@@ -10,6 +10,7 @@
 #include "instance.h"
 #include "list.h"
 #include "range_iterator.h"
+#include "refcount.h"
 #include "runtime_helpers.h"
 #include "subscript.h"
 #include "value.h"
@@ -324,10 +325,36 @@ namespace cl
         RequiresDescriptorDispatch,
     };
 
-    static ALWAYSINLINE MethodCallTargetStatus
-    prepare_method_call_target_from_plan(Value receiver,
-                                         const AttributeReadPlan &plan,
-                                         Value &callable_out, Value &self_out)
+    enum class MethodCallFastTargetStatus : uint8_t
+    {
+        Ready,
+        Slow,
+    };
+
+    enum class AttributeLoadPlanStatus : uint8_t
+    {
+        Ready,
+        Slow,
+        RequiresDescriptorDispatch,
+    };
+
+    static ALWAYSINLINE const Value *
+    object_inline_slot_base(const Object *object)
+    {
+        return reinterpret_cast<const Value *>(
+            reinterpret_cast<const uint64_t *>(object) +
+            Object::static_value_offset_in_words());
+    }
+
+    static ALWAYSINLINE Value *object_inline_slot_base(Object *object)
+    {
+        return reinterpret_cast<Value *>(
+            reinterpret_cast<uint64_t *>(object) +
+            Object::static_value_offset_in_words());
+    }
+
+    static ALWAYSINLINE const Object *
+    read_plan_storage_owner(Value receiver, const AttributeReadPlan &plan)
     {
         const Object *storage_owner = plan.storage_owner;
         if(storage_owner == nullptr)
@@ -335,12 +362,84 @@ namespace cl
             assert(receiver.is_ptr());
             storage_owner = receiver.get_ptr<Object>();
         }
+        return storage_owner;
+    }
+
+    static ALWAYSINLINE Object *
+    write_plan_storage_owner(Value receiver, const AttributeWritePlan &plan)
+    {
+        Object *storage_owner = plan.storage_owner;
+        if(storage_owner == nullptr)
+        {
+            assert(receiver.is_ptr());
+            storage_owner = receiver.get_ptr<Object>();
+        }
+        return storage_owner;
+    }
+
+    static ALWAYSINLINE AttributeLoadPlanStatus load_attr_from_plan_inline(
+        Value receiver, const AttributeReadPlan &plan, Value &value_out)
+    {
+        switch(plan.kind)
+        {
+            case AttributeReadPlanKind::ReceiverSlot:
+                if(plan.storage_location.kind != StorageKind::Inline)
+                {
+                    value_out = Value::not_present();
+                    return AttributeLoadPlanStatus::Slow;
+                }
+                value_out = object_inline_slot_base(read_plan_storage_owner(
+                    receiver, plan))[plan.storage_location.physical_idx];
+                return AttributeLoadPlanStatus::Ready;
+
+            case AttributeReadPlanKind::ReturnValue:
+            case AttributeReadPlanKind::ResolvedValue:
+            case AttributeReadPlanKind::BindFunctionReceiver:
+                value_out = plan.value;
+                return AttributeLoadPlanStatus::Ready;
+
+            case AttributeReadPlanKind::DataDescriptorGet:
+            case AttributeReadPlanKind::NonDataDescriptorGet:
+                value_out = Value::not_present();
+                return AttributeLoadPlanStatus::RequiresDescriptorDispatch;
+        }
+
+        __builtin_unreachable();
+    }
+
+    static ALWAYSINLINE bool store_attr_from_plan_inline_fast(
+        Value receiver, const AttributeWritePlan &plan, Value value)
+    {
+        Object *storage_owner = write_plan_storage_owner(receiver, plan);
+        if(plan.storage_location.kind != StorageKind::Inline)
+        {
+            return false;
+        }
+        Shape *shape = storage_owner->get_shape();
+        if(shape != nullptr && shape->has_flag(ShapeFlag::IsClassObject))
+        {
+            return false;
+        }
+
+        Value *slots = object_inline_slot_base(storage_owner);
+        Value old_value = slots[plan.storage_location.physical_idx];
+        slots[plan.storage_location.physical_idx] = incref(value);
+        decref(old_value);
+        return true;
+    }
+
+    static ALWAYSINLINE MethodCallTargetStatus
+    prepare_method_call_target_from_plan(Value receiver,
+                                         const AttributeReadPlan &plan,
+                                         Value &callable_out, Value &self_out)
+    {
         self_out = Value::not_present();
         switch(plan.kind)
         {
             case AttributeReadPlanKind::ReceiverSlot:
                 callable_out =
-                    storage_owner->read_storage_location(plan.storage_location);
+                    read_plan_storage_owner(receiver, plan)
+                        ->read_storage_location(plan.storage_location);
                 return MethodCallTargetStatus::Ready;
 
             case AttributeReadPlanKind::BindFunctionReceiver:
@@ -362,6 +461,35 @@ namespace cl
         __builtin_unreachable();
     }
 
+    static ALWAYSINLINE MethodCallFastTargetStatus
+    prepare_method_call_target_from_plan_fast(Value receiver,
+                                              const AttributeReadPlan &plan,
+                                              Value &callable_out,
+                                              Value &self_out)
+    {
+        self_out = Value::not_present();
+        switch(plan.kind)
+        {
+            case AttributeReadPlanKind::BindFunctionReceiver:
+                callable_out = plan.value;
+                self_out = receiver;
+                return MethodCallFastTargetStatus::Ready;
+
+            case AttributeReadPlanKind::ReturnValue:
+            case AttributeReadPlanKind::ResolvedValue:
+                callable_out = plan.value;
+                return MethodCallFastTargetStatus::Ready;
+
+            case AttributeReadPlanKind::ReceiverSlot:
+            case AttributeReadPlanKind::DataDescriptorGet:
+            case AttributeReadPlanKind::NonDataDescriptorGet:
+                callable_out = Value::not_present();
+                return MethodCallFastTargetStatus::Slow;
+        }
+
+        __builtin_unreachable();
+    }
+
     static ALWAYSINLINE MethodCallTargetStatus
     prepare_method_call_target_from_descriptor(
         Value receiver, const AttributeReadDescriptor &descriptor,
@@ -378,39 +506,56 @@ namespace cl
                                                     callable_out, self_out);
     }
 
-    NOINLINE static Value load_attr_cache_miss(Value receiver,
-                                               TValue<String> attr_name,
-                                               AttributeReadInlineCache &cache)
+    NOINLINE static Value op_load_attr_cache_miss(PARAMS)
     {
+        START(4);
+        int8_t reg = pc[1];
+        uint8_t const_offset = pc[2];
+        uint8_t cache_idx = pc[3];
+        Value receiver = fp[reg];
+        TValue<String> attr_name(
+            code_object->constant_table[const_offset].as_value());
+        AttributeReadInlineCache &cache =
+            code_object->attribute_read_caches[cache_idx];
         AttributeReadDescriptor descriptor =
             resolve_attr_read_descriptor(receiver, attr_name);
         if(!descriptor.is_found())
         {
-            return Value::not_present();
+            MUSTTAIL return attribute_error(ARGS);
         }
         if(descriptor.is_cacheable())
         {
             cache.populate(receiver, descriptor);
         }
-        return load_attr_from_plan(receiver, descriptor.plan);
-    }
-
-    static ALWAYSINLINE Value load_attr_cached(Value receiver,
-                                               TValue<String> attr_name,
-                                               AttributeReadInlineCache &cache)
-    {
-        if(likely(cache.matches(receiver)))
+        AttributeLoadPlanStatus plan_status =
+            load_attr_from_plan_inline(receiver, descriptor.plan, accumulator);
+        if(unlikely(plan_status == AttributeLoadPlanStatus::Slow))
         {
-            return load_attr_from_plan(receiver, cache.plan);
+            accumulator = load_attr_from_plan(receiver, descriptor.plan);
+            if(unlikely(accumulator.is_not_present()))
+            {
+                MUSTTAIL return attribute_error(ARGS);
+            }
         }
-        return load_attr_cache_miss(receiver, attr_name, cache);
+        if(unlikely(plan_status ==
+                    AttributeLoadPlanStatus::RequiresDescriptorDispatch))
+        {
+            MUSTTAIL return descriptor_dispatch_error(ARGS);
+        }
+        COMPLETE();
     }
 
-    NOINLINE static bool store_attr_cache_miss(Value receiver,
-                                               TValue<String> attr_name,
-                                               Value value,
-                                               AttributeWriteInlineCache &cache)
+    NOINLINE static Value op_store_attr_cache_miss(PARAMS)
     {
+        START(4);
+        int8_t reg = pc[1];
+        uint8_t const_offset = pc[2];
+        uint8_t cache_idx = pc[3];
+        Value receiver = fp[reg];
+        TValue<String> attr_name(
+            code_object->constant_table[const_offset].as_value());
+        AttributeWriteInlineCache &cache =
+            code_object->attribute_write_caches[cache_idx];
         AttributeWriteDescriptor descriptor =
             resolve_attr_write_descriptor(receiver, attr_name);
         if(descriptor.is_found())
@@ -419,57 +564,19 @@ namespace cl
             {
                 cache.populate(receiver, descriptor);
             }
-            return store_attr_from_plan(receiver, descriptor.plan, value);
+            store_attr_from_plan(receiver, descriptor.plan, accumulator);
+            COMPLETE();
         }
         if(descriptor.status == AttributeWriteStatus::NotFound &&
            receiver.is_ptr())
         {
-            return receiver.get_ptr<Object>()->add_own_property(attr_name,
-                                                                value);
+            if(likely(receiver.get_ptr<Object>()->add_own_property(
+                   attr_name, accumulator)))
+            {
+                COMPLETE();
+            }
         }
-        return false;
-    }
-
-    static ALWAYSINLINE bool store_attr_cached(Value receiver,
-                                               TValue<String> attr_name,
-                                               Value value,
-                                               AttributeWriteInlineCache &cache)
-    {
-        if(likely(cache.matches(receiver)))
-        {
-            return store_attr_from_plan(receiver, cache.plan, value);
-        }
-        return store_attr_cache_miss(receiver, attr_name, value, cache);
-    }
-
-    NOINLINE static MethodCallTargetStatus
-    method_attr_cache_miss(Value receiver, TValue<String> attr_name,
-                           AttributeReadInlineCache &cache, Value &callable_out,
-                           Value &self_out)
-    {
-        AttributeReadDescriptor descriptor =
-            resolve_attr_read_descriptor(receiver, attr_name);
-        MethodCallTargetStatus status =
-            prepare_method_call_target_from_descriptor(receiver, descriptor,
-                                                       callable_out, self_out);
-        if(status == MethodCallTargetStatus::Ready && descriptor.is_cacheable())
-        {
-            cache.populate(receiver, descriptor);
-        }
-        return status;
-    }
-
-    static ALWAYSINLINE MethodCallTargetStatus method_attr_cached(
-        Value receiver, TValue<String> attr_name,
-        AttributeReadInlineCache &cache, Value &callable_out, Value &self_out)
-    {
-        if(likely(cache.matches(receiver)))
-        {
-            return prepare_method_call_target_from_plan(receiver, cache.plan,
-                                                        callable_out, self_out);
-        }
-        return method_attr_cache_miss(receiver, attr_name, cache, callable_out,
-                                      self_out);
+        MUSTTAIL return attribute_assignment_error(ARGS);
     }
 
     static Value op_lda_constant(PARAMS)
@@ -601,15 +708,24 @@ namespace cl
     {
         START(4);
         int8_t reg = pc[1];
-        uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
-        TValue<String> attr_name(
-            code_object->constant_table[const_offset].as_value());
-        accumulator = load_attr_cached(
-            fp[reg], attr_name, code_object->attribute_read_caches[cache_idx]);
-        if(unlikely(accumulator.is_not_present()))
+        Value receiver = fp[reg];
+        AttributeReadInlineCache &cache =
+            code_object->attribute_read_caches[cache_idx];
+        if(unlikely(!cache.matches(receiver)))
         {
-            MUSTTAIL return attribute_error(ARGS);
+            MUSTTAIL return op_load_attr_cache_miss(ARGS);
+        }
+        AttributeLoadPlanStatus plan_status =
+            load_attr_from_plan_inline(receiver, cache.plan, accumulator);
+        if(unlikely(plan_status ==
+                    AttributeLoadPlanStatus::RequiresDescriptorDispatch))
+        {
+            MUSTTAIL return descriptor_dispatch_error(ARGS);
+        }
+        if(unlikely(plan_status == AttributeLoadPlanStatus::Slow))
+        {
+            MUSTTAIL return op_load_attr_cache_miss(ARGS);
         }
         COMPLETE();
     }
@@ -618,15 +734,18 @@ namespace cl
     {
         START(4);
         int8_t reg = pc[1];
-        uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
-        TValue<String> attr_name(
-            code_object->constant_table[const_offset].as_value());
-        if(unlikely(!store_attr_cached(
-               fp[reg], attr_name, accumulator,
-               code_object->attribute_write_caches[cache_idx])))
+        Value receiver = fp[reg];
+        AttributeWriteInlineCache &cache =
+            code_object->attribute_write_caches[cache_idx];
+        if(unlikely(!cache.matches(receiver)))
         {
-            MUSTTAIL return attribute_assignment_error(ARGS);
+            MUSTTAIL return op_store_attr_cache_miss(ARGS);
+        }
+        if(unlikely(!store_attr_from_plan_inline_fast(receiver, cache.plan,
+                                                      accumulator)))
+        {
+            MUSTTAIL return op_store_attr_cache_miss(ARGS);
         }
         COMPLETE();
     }
@@ -1159,21 +1278,39 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_call_method_attr(PARAMS)
+    NOINLINE static Value op_call_method_attr_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 5;
         int32_t receiver_reg = int8_t(pc[1]);
         uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
         uint32_t n_user_args = uint8_t(pc[4]);
+        Value receiver = fp[receiver_reg];
         TValue<String> attr_name(
             code_object->constant_table[const_offset].as_value());
 
+        AttributeReadInlineCache &cache =
+            code_object->attribute_read_caches[cache_idx];
         Value callable;
         Value self;
-        MethodCallTargetStatus target_status = method_attr_cached(
-            fp[receiver_reg], attr_name,
-            code_object->attribute_read_caches[cache_idx], callable, self);
+        MethodCallTargetStatus target_status;
+        if(cache.matches(receiver))
+        {
+            target_status = prepare_method_call_target_from_plan(
+                receiver, cache.plan, callable, self);
+        }
+        else
+        {
+            AttributeReadDescriptor descriptor =
+                resolve_attr_read_descriptor(receiver, attr_name);
+            target_status = prepare_method_call_target_from_descriptor(
+                receiver, descriptor, callable, self);
+            if(target_status == MethodCallTargetStatus::Ready &&
+               descriptor.is_cacheable())
+            {
+                cache.populate(receiver, descriptor);
+            }
+        }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
             MUSTTAIL return method_lookup_error(ARGS);
@@ -1219,6 +1356,59 @@ namespace cl
         if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
         {
             MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        enter_function_frame_from_first_arg(
+            fp, pc, code_object, TValue<Function>(callable), first_arg_reg,
+            n_args, call_instr_len);
+
+        {
+            START(0);
+            COMPLETE();
+        }
+    }
+
+    static Value op_call_method_attr(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 5;
+        int32_t receiver_reg = int8_t(pc[1]);
+        uint8_t cache_idx = pc[3];
+        uint32_t n_user_args = uint8_t(pc[4]);
+        Value receiver = fp[receiver_reg];
+        AttributeReadInlineCache &cache =
+            code_object->attribute_read_caches[cache_idx];
+        if(unlikely(!cache.matches(receiver)))
+        {
+            MUSTTAIL return op_call_method_attr_slow(ARGS);
+        }
+
+        Value callable;
+        Value self;
+        MethodCallFastTargetStatus target_status =
+            prepare_method_call_target_from_plan_fast(receiver, cache.plan,
+                                                      callable, self);
+        if(unlikely(target_status == MethodCallFastTargetStatus::Slow))
+        {
+            MUSTTAIL return op_call_method_attr_slow(ARGS);
+        }
+
+        bool has_self = !self.is_not_present();
+        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
+        int32_t first_arg_reg = has_self ? receiver_reg : receiver_reg - 1;
+        if(has_self)
+        {
+            fp[receiver_reg] = self;
+        }
+
+        if(unlikely(!callable.is_ptr()))
+        {
+            MUSTTAIL return op_call_method_attr_slow(ARGS);
+        }
+
+        Object *fun_object = callable.get_ptr();
+        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
+        {
+            MUSTTAIL return op_call_method_attr_slow(ARGS);
         }
 
         enter_function_frame_from_first_arg(

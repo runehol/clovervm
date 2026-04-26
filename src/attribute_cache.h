@@ -15,7 +15,7 @@ namespace cl
         Shape *receiver_shape = nullptr;
         AttributeReadPlan plan = AttributeReadDescriptor::not_found().plan;
 
-        bool matches(Value receiver) const
+        ALWAYSINLINE bool matches(Value receiver) const
         {
             return receiver.is_ptr() && receiver_shape != nullptr &&
                    receiver.get_ptr<Object>()->get_shape() == receiver_shape &&
@@ -43,7 +43,7 @@ namespace cl
         Shape *receiver_shape = nullptr;
         AttributeWritePlan plan = AttributeWriteDescriptor::not_found().plan;
 
-        bool matches(Value receiver) const
+        ALWAYSINLINE bool matches(Value receiver) const
         {
             return receiver.is_ptr() && receiver_shape != nullptr &&
                    receiver.get_ptr<Object>()->get_shape() == receiver_shape &&
