@@ -195,18 +195,15 @@ namespace cl
     ValidityCell *ClassObject::create_lookup_validity_cell_slow()
     {
         Value mro_value = inline_slot_base()[kClassMetadataSlotMro];
-        assert(can_convert_to<List>(mro_value));
+        List *mro = assume_convert_to<List>(mro_value);
 
         ValidityCell *cell = make_internal_raw<ValidityCell>();
         primary_lookup_validity_cell = cell;
 
-        List *mro = try_convert_to<List>(mro_value);
-        assert(mro != nullptr);
         for(uint32_t mro_idx = 1; mro_idx < mro->size(); ++mro_idx)
         {
             ClassObject *base =
-                try_convert_to<ClassObject>(mro->item_unchecked(mro_idx));
-            assert(base != nullptr);
+                assume_convert_to<ClassObject>(mro->item_unchecked(mro_idx));
             base->attach_lookup_validity_cell(cell);
         }
 

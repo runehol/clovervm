@@ -176,6 +176,18 @@ namespace cl
                                          : nullptr;
     }
 
+    template <typename T> T *assume_convert_to(Object *object)
+    {
+        assert(can_convert_to<T>(object));
+        return static_cast<T *>(object);
+    }
+
+    template <typename T> const T *assume_convert_to(const Object *object)
+    {
+        assert(can_convert_to<T>(object));
+        return static_cast<const T *>(object);
+    }
+
     static_assert(sizeof(Object) == 40);
     static_assert(std::is_trivially_destructible_v<Object>);
 

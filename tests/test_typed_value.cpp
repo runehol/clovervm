@@ -50,8 +50,10 @@ TEST(NativeLayout, ObjectAndValueConversionHelpersUseExactLayout)
     EXPECT_FALSE(can_convert_to<Dict>(object));
     EXPECT_EQ(string, try_convert_to<String>(object));
     EXPECT_EQ(nullptr, try_convert_to<Dict>(object));
+    EXPECT_EQ(string, assume_convert_to<String>(object));
     EXPECT_TRUE(can_convert_to<String>(string_value));
     EXPECT_EQ(string, try_convert_to<String>(string_value));
+    EXPECT_EQ(string, assume_convert_to<String>(string_value));
     EXPECT_EQ(nullptr, try_convert_to<String>(Value::None()));
 }
 

@@ -248,6 +248,12 @@ namespace cl
                               : nullptr;
     }
 
+    template <typename T> T *assume_convert_to(Value value)
+    {
+        assert(can_convert_to<T>(value));
+        return static_cast<T *>(value.get_ptr<Object>());
+    }
+
 }  // namespace cl
 
 #endif  // CL_VALUE_H
