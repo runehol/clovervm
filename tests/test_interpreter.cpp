@@ -507,6 +507,34 @@ TEST(Interpreter, subscript_load_reads_list_item)
     EXPECT_EQ(Value::from_smi(7), actual);
 }
 
+TEST(Interpreter, subscript_load_reads_tuple_item)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    pass\n"
+                                 L"Cls.__mro__[0]\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::ClassObject,
+              actual.get_ptr<Object>()->native_layout_id());
+    EXPECT_STREQ(L"Cls",
+                 string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
+}
+
+TEST(Interpreter, subscript_load_reads_tuple_item_with_negative_index)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    pass\n"
+                                 L"Cls.__mro__[-1]\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::ClassObject,
+              actual.get_ptr<Object>()->native_layout_id());
+    EXPECT_STREQ(L"Cls",
+                 string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
+}
+
 TEST(Interpreter, dict_literal_returns_dict_object)
 {
     test::VmTestContext test_context;
@@ -596,6 +624,15 @@ TEST(Interpreter, subscript_store_writes_list_item)
     EXPECT_EQ(Value::from_smi(11), actual);
 }
 
+TEST(Interpreter, subscript_store_rejects_tuple_item_assignment)
+{
+    expect_runtime_error(
+        L"class Cls:\n"
+        L"    pass\n"
+        L"Cls.__mro__[0] = 1\n",
+        "TypeError: 'tuple' object does not support item assignment");
+}
+
 TEST(Interpreter, subscript_augmented_assignment_updates_list_item)
 {
     test::FileRunner file_runner(L"xs = [4, 7, 9]\n"
@@ -636,6 +673,22 @@ TEST(Interpreter, subscript_load_rejects_non_integer_list_index)
     expect_runtime_error(L"xs = [1, 2, 3]\n"
                          L"xs[False]\n",
                          "TypeError: list indices must be integers");
+}
+
+TEST(Interpreter, subscript_load_rejects_non_integer_tuple_index)
+{
+    expect_runtime_error(L"class Cls:\n"
+                         L"    pass\n"
+                         L"Cls.__mro__[False]\n",
+                         "TypeError: tuple indices must be integers");
+}
+
+TEST(Interpreter, subscript_load_rejects_out_of_range_tuple_index)
+{
+    expect_runtime_error(L"class Cls:\n"
+                         L"    pass\n"
+                         L"Cls.__mro__[1]\n",
+                         "IndexError: tuple index out of range");
 }
 
 TEST(Interpreter, subscript_load_rejects_non_subscriptable_receiver)

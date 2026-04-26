@@ -2,6 +2,7 @@
 
 #include "dict.h"
 #include "list.h"
+#include "tuple.h"
 #include <stdexcept>
 
 namespace cl
@@ -12,6 +13,16 @@ namespace cl
         {
             throw std::runtime_error(
                 "TypeError: list indices must be integers");
+        }
+        return key.get_smi();
+    }
+
+    static int64_t tuple_index_from_value(Value key)
+    {
+        if(!key.is_integer())
+        {
+            throw std::runtime_error(
+                "TypeError: tuple indices must be integers");
         }
         return key.get_smi();
     }
@@ -28,6 +39,11 @@ namespace cl
         {
             return static_cast<List *>(object)->get_item(
                 list_index_from_value(key));
+        }
+        if(object->native_layout_id() == NativeLayoutId::Tuple)
+        {
+            return static_cast<Tuple *>(object)->get_item(
+                tuple_index_from_value(key));
         }
         if(object->native_layout_id() == NativeLayoutId::Dict)
         {
@@ -50,6 +66,11 @@ namespace cl
             static_cast<List *>(object)->set_item(list_index_from_value(key),
                                                   value);
             return true;
+        }
+        if(object->native_layout_id() == NativeLayoutId::Tuple)
+        {
+            throw std::runtime_error(
+                "TypeError: 'tuple' object does not support item assignment");
         }
         if(object->native_layout_id() == NativeLayoutId::Dict)
         {
