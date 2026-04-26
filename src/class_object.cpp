@@ -179,13 +179,51 @@ namespace cl
         return try_convert_to<ClassObject>(base_value);
     }
 
-    Value ClassObject::lookup_class_chain(TValue<String> name) const
+    AttributeReadDescriptor
+    ClassObject::lookup_instance_attribute_descriptor(TValue<String> name,
+                                                      Value receiver) const
     {
-        Value own_property = get_own_property(name);
+        return lookup_class_chain_descriptor(
+            name, AttributeReadAccessPath::InstanceClassChain,
+            AttributeBindingContext{receiver, this});
+    }
+
+    AttributeReadDescriptor
+    ClassObject::lookup_class_attribute_descriptor(TValue<String> name) const
+    {
+        return lookup_class_chain_descriptor(
+            name, AttributeReadAccessPath::ClassObjectChain,
+            AttributeBindingContext{Value::None(), this});
+    }
+
+    AttributeReadDescriptor ClassObject::lookup_metaclass_attribute_descriptor(
+        TValue<String> name, ClassObject *receiver_class) const
+    {
+        return lookup_class_chain_descriptor(
+            name, AttributeReadAccessPath::MetaclassChain,
+            AttributeBindingContext{Value::from_oop(receiver_class), this});
+    }
+
+    AttributeReadDescriptor ClassObject::lookup_class_chain_descriptor(
+        TValue<String> name, AttributeReadAccessPath path,
+        AttributeBindingContext binding) const
+    {
         Value mro_value = inline_slot_base()[kClassMetadataSlotMro];
         if(!can_convert_to<List>(mro_value))
         {
-            return own_property;
+            StorageLocation own_location =
+                get_shape()->resolve_present_property(name);
+            if(!own_location.is_found())
+            {
+                return AttributeReadDescriptor::not_found();
+            }
+
+            Value own_value = read_storage_location(own_location);
+            return AttributeReadDescriptor::found(
+                AttributeReadAccess::from_storage(
+                    path, attribute_read_access_kind_for_path(path, own_value),
+                    this, own_location, own_value, binding,
+                    attribute_cache_blockers_for_class_value(own_value)));
         }
 
         List *mro = try_convert_to<List>(mro_value);
@@ -205,10 +243,26 @@ namespace cl
                 continue;
             }
 
-            return cls->read_storage_location(lookup.storage_location());
+            Value value = cls->read_storage_location(lookup.storage_location());
+            return AttributeReadDescriptor::found(
+                AttributeReadAccess::from_storage(
+                    path, attribute_read_access_kind_for_path(path, value), cls,
+                    lookup.storage_location(), value, binding,
+                    attribute_cache_blockers_for_class_value(value)));
         }
 
-        return Value::not_present();
+        return AttributeReadDescriptor::not_found();
+    }
+
+    Value ClassObject::lookup_class_chain(TValue<String> name) const
+    {
+        AttributeReadDescriptor descriptor =
+            lookup_class_attribute_descriptor(name);
+        if(!descriptor.is_found())
+        {
+            return Value::not_present();
+        }
+        return descriptor.access.value;
     }
 
     Value ClassObject::make_bases_list(Value base) const

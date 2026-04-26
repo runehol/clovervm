@@ -3,6 +3,8 @@ find_package(Threads)
 add_library(libclovervm STATIC
     attr.cpp
     attr.h
+    attribute_descriptor.cpp
+    attribute_descriptor.h
     ast.h
     ast_print.h
     builtin_class_registry.h

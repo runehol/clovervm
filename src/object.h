@@ -11,6 +11,7 @@
 
 namespace cl
 {
+    struct AttributeReadDescriptor;
     struct BuiltinClassDefinition;
     class ClassObject;
     class OverflowSlots;
@@ -104,6 +105,8 @@ namespace cl
         Shape *get_shape() const { return shape; }
         void set_shape(Shape *new_shape);
         Value get_own_property(TValue<String> name) const;
+        AttributeReadDescriptor
+        lookup_own_attribute_descriptor(TValue<String> name) const;
         AttributeWriteResult
         define_own_property_with_result(TValue<String> name, Value value,
                                         DescriptorFlags descriptor_flags);

@@ -1,4 +1,5 @@
 #include "object.h"
+#include "attribute_descriptor.h"
 #include "class_object.h"
 #include "overflow_slots.h"
 #include "refcount.h"
@@ -131,6 +132,22 @@ namespace cl
         }
 
         return read_storage_location(location);
+    }
+
+    AttributeReadDescriptor
+    Object::lookup_own_attribute_descriptor(TValue<String> name) const
+    {
+        StorageLocation location = get_shape()->resolve_present_property(name);
+        if(!location.is_found())
+        {
+            return AttributeReadDescriptor::not_found();
+        }
+
+        return AttributeReadDescriptor::found(AttributeReadAccess::from_storage(
+            AttributeReadAccessPath::ReceiverOwnProperty,
+            AttributeReadAccessKind::ReceiverSlot, this, location,
+            read_storage_location(location), AttributeBindingContext::none(),
+            attribute_cache_blocker(AttributeCacheBlocker::MissingLookupCell)));
     }
 
     AttributeWriteResult

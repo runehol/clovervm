@@ -703,7 +703,97 @@ winning path determines how descriptors such as functions,
 
 Attribute access is accelerated using **inline caches (ICs)**.
 
-Each cache entry records:
+The slow lookup path returns a descriptor object with two distinct
+parts:
+
+- a status saying whether the operation can proceed
+- an access payload describing how to perform a successful operation
+
+Only the access payload is suitable as inline-cache material. Misses,
+fallbacks, non-object receivers, and errors are lookup statuses, not
+cacheable access plans. The shared runtime representation lives in
+`attribute_descriptor.h` so the interpreter, code objects, attribute
+helpers, and object implementations can all talk in the same terms.
+
+```cpp
+enum class AttributeReadStatus : uint8_t {
+    Found = 0,
+    NotFound,
+    NonObjectReceiver,
+    Error,
+};
+
+enum class AttributeReadAccessPath : uint8_t {
+    ReceiverOwnProperty,
+    InstanceClassChain,
+    ClassObjectChain,
+    MetaclassChain,
+};
+
+enum class AttributeReadAccessKind : uint8_t {
+    ReturnValue,
+    ReceiverSlot,
+    ResolvedValue,
+    BindFunctionReceiver,
+    DataDescriptorGet,
+    NonDataDescriptorGet,
+};
+
+enum class AttributeCacheBlocker : uint16_t {
+    None = 0,
+    MutableDescriptorType = 1 << 0,
+    CustomGetAttribute = 1 << 1,
+    MissingLookupCell = 1 << 2,
+    UnsupportedDescriptorKind = 1 << 3,
+};
+
+using AttributeCacheBlockers = uint16_t;
+
+struct AttributeBindingContext {
+    Value self;
+    const ClassObject *owner;
+};
+
+struct AttributeReadAccess {
+    AttributeReadAccessPath path;
+    AttributeReadAccessKind kind;
+    const Object *storage_owner;
+    StorageLocation storage_location;
+    Value value;
+    AttributeBindingContext binding;
+    AttributeCacheBlockers cache_blockers;
+};
+
+struct AttributeReadDescriptor {
+    AttributeReadStatus status;
+    AttributeReadAccess access; // valid only when status == Found
+};
+```
+
+`status == Found` means the access can execute immediately.
+`cache_blockers` says whether that successful access is eligible to
+become an inline-cache entry. These fields do not overlap: cache
+blockers are meaningful only for successful accesses.
+
+Object and class implementations should emit these descriptors directly:
+`Object` owns receiver-slot descriptors, while `ClassObject` owns
+instance-chain, class-chain, and metaclass-chain descriptors. The
+top-level attribute helper only composes the lookup order and executes
+the descriptor for the legacy load APIs.
+
+For example, lookup may find a class-chain value that is not currently a
+data descriptor, but whose type is mutable. The runtime can use that
+result immediately, but it should not cache the result as a stable
+non-data descriptor or receiver-slot assumption. That access has
+`status == Found` and a `MutableDescriptorType` cache blocker.
+
+Receiver-own-slot hits also need the class-chain dependency that proves
+no data descriptor currently wins for the same name. Until lookup cells
+represent that dependency, those accesses carry a `MissingLookupCell`
+cache blocker even though the value can be loaded immediately.
+
+Each cache entry is derived from a cacheable `AttributeReadAccess` and
+records:
 
 | Field | Meaning |
 |---|---|
@@ -723,33 +813,11 @@ The cached receiver Shape's `IsClassObject` flag must agree with the
 lookup mode. Custom attribute flags on the relevant type Shape control
 whether a default lookup specialization is legal at all.
 
-The access kind records the semantic action represented by the cache:
-
-```cpp
-enum class AttributeAccessKind : uint8_t {
-    ReceiverSlot,
-    ResolvedValue,
-    DataDescriptorGet,
-    NonDataDescriptorGet,
-    GetAttrFallback,
-    Missing,
-};
-```
-
 The access kind decides whether the cached value is returned directly,
-passed through descriptor `__get__`, or treated as a miss/fallback. It
-must not be inferred from the presence of a cached value.
-
-Descriptor access also needs to retain the receiver convention selected
-by the lookup mode and winning path:
-
-```cpp
-enum class DescriptorReceiverKind : uint8_t {
-    InstanceReceiver,    // __get__(obj, obj.__class__)
-    ClassReceiver,       // __get__(Class, Class.__class__)
-    ClassAttribute,      // __get__(Value::None(), Class)
-};
-```
+passed through descriptor `__get__`, or bound as a function receiver. It
+must not be inferred from the presence of a cached value. Descriptor and
+function access also retain the binding context selected by the lookup
+mode and winning path.
 
 The access kind determines where the value comes from:
 
@@ -773,11 +841,7 @@ On execution:
 ```text
 if obj.shape != cached_shape: miss
 if !lookup_cell.valid: miss
-if access_kind == Missing:
-    return missing
-else if access_kind == GetAttrFallback:
-    return fallback full lookup
-else if access_kind requires receiver storage:
+if access_kind requires receiver storage:
     value = read_slot(obj, receiver_storage_location)
 else:
     value = cached_value
@@ -910,7 +974,7 @@ Self lookup uses:
 | Receiver slot | `access_kind == ReceiverSlot` | no implicit self |
 | Resolved value | `access_kind == ResolvedValue` | no implicit self |
 | Descriptor get | `access_kind == DataDescriptorGet` or `NonDataDescriptorGet` | descriptor decides binding |
-| `__getattr__` fallback | `access_kind == GetAttrFallback` | fallback decides result |
+| Function receiver binding | `access_kind == BindFunctionReceiver` | binding context supplies `self` |
 
 ---
 

@@ -1,6 +1,7 @@
 #ifndef CL_CLASS_OBJECT_H
 #define CL_CLASS_OBJECT_H
 
+#include "attribute_descriptor.h"
 #include "builtin_class_registry.h"
 #include "instance.h"
 #include "object.h"
@@ -70,6 +71,13 @@ namespace cl
         Shape *get_instance_root_shape() const;
         ClassObject *get_base() const;
 
+        AttributeReadDescriptor
+        lookup_instance_attribute_descriptor(TValue<String> name,
+                                             Value receiver) const;
+        AttributeReadDescriptor
+        lookup_class_attribute_descriptor(TValue<String> name) const;
+        AttributeReadDescriptor lookup_metaclass_attribute_descriptor(
+            TValue<String> name, ClassObject *receiver_class) const;
         Value lookup_class_chain(TValue<String> name) const;
 
     private:
@@ -78,6 +86,10 @@ namespace cl
 
         Value make_bases_list(Value base) const;
         Value make_mro_list() const;
+        AttributeReadDescriptor
+        lookup_class_chain_descriptor(TValue<String> name,
+                                      AttributeReadAccessPath path,
+                                      AttributeBindingContext binding) const;
 
         MemberTValue<String> name;
         MemberValue bases;
