@@ -286,14 +286,15 @@ Primary files:
 - [src/instance.h](../src/instance.h)
 - [doc/object-metadata.md](./object-metadata.md)
 
-### 4. Give builtin instances Shapes
+### 4. Unify builtin instance attribute policy
 
 Status: partially complete.
 
-Builtin runtime objects now receive VM-specific builtin classes during normal
-Object construction. The remaining work is to finish generic attribute
-semantics for builtin instances and make `attr.cpp` stop branching on native
-layout except for genuinely native behavior.
+Builtin runtime objects receive VM-specific builtin classes during normal
+Object construction and now have Shapes through their class instance root
+Shapes. The remaining work is to finish generic attribute semantics for builtin
+instances and make `attr.cpp` stop branching on native layout except for
+genuinely native behavior.
 
 Not every builtin object needs dynamic user attributes in the first cut. The
 plan should distinguish:
@@ -309,11 +310,11 @@ supports arbitrary attribute writes.
 
 Implementation notes:
 
-- audit each builtin native layout for fixed slots versus dynamic attributes
+- audit each builtin native layout for fixed native fields versus dynamic
+  Python-visible attributes
 - reject ordinary attribute writes through the generic path when the builtin
   type does not yet support extra attributes
-- add interpreter tests for `().__class__`-style equivalents as each value kind
-  exists in the language
+- keep `__class__` lookup on object-backed builtin values covered by attr tests
 
 Primary files:
 

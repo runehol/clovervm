@@ -87,7 +87,7 @@ namespace cl
     {
         if(has_flag(ShapeFlag::IsClassObject))
         {
-            return get_owner_class()->get_class_object_inline_slot_count();
+            return get_owner_class()->get_class_inline_storage_slot_count();
         }
 
         return get_instance_default_inline_slot_count();

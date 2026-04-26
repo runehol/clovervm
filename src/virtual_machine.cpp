@@ -145,11 +145,11 @@ namespace cl
         {
             install_bootstrap_list_class_on_value(
                 cls->read_storage_location(StorageLocation{
-                    ClassObject::kClassSlotBases, StorageKind::Inline}),
+                    ClassObject::kClassMetadataSlotBases, StorageKind::Inline}),
                 list);
             install_bootstrap_list_class_on_value(
                 cls->read_storage_location(StorageLocation{
-                    ClassObject::kClassSlotMro, StorageKind::Inline}),
+                    ClassObject::kClassMetadataSlotMro, StorageKind::Inline}),
                 list);
         }
     }
@@ -176,7 +176,7 @@ namespace cl
         {
             assert(cls != nullptr);
             cls->write_storage_location(
-                StorageLocation{ClassObject::kClassSlotClass,
+                StorageLocation{ClassObject::kClassMetadataSlotClass,
                                 StorageKind::Inline},
                 Value::from_oop(type));
         }

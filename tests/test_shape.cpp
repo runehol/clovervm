@@ -13,20 +13,20 @@ using namespace cl;
 static uint32_t class_property_count(ClassObject *cls)
 {
     Shape *shape = cls->get_shape();
-    assert(shape->present_count() >= ClassObject::kClassPredefinedSlotCount);
-    return shape->present_count() - ClassObject::kClassPredefinedSlotCount;
+    assert(shape->present_count() >= ClassObject::kClassMetadataSlotCount);
+    return shape->present_count() - ClassObject::kClassMetadataSlotCount;
 }
 
 static TValue<String> class_property_name(ClassObject *cls, uint32_t idx)
 {
     return cls->get_shape()->get_property_name(
-        ClassObject::kClassPredefinedSlotCount + idx);
+        ClassObject::kClassMetadataSlotCount + idx);
 }
 
 static Value class_property_value(ClassObject *cls, uint32_t idx)
 {
     DescriptorInfo info = cls->get_shape()->get_descriptor_info(
-        ClassObject::kClassPredefinedSlotCount + idx);
+        ClassObject::kClassMetadataSlotCount + idx);
     return cls->read_storage_location(info.storage_location());
 }
 
@@ -610,9 +610,10 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
 
     const cl_wchar *expected_names[] = {L"__class__", L"__name__", L"__bases__",
                                         L"__mro__"};
-    const uint32_t expected_slots[] = {
-        ClassObject::kClassSlotClass, ClassObject::kClassSlotName,
-        ClassObject::kClassSlotBases, ClassObject::kClassSlotMro};
+    const uint32_t expected_slots[] = {ClassObject::kClassMetadataSlotClass,
+                                       ClassObject::kClassMetadataSlotName,
+                                       ClassObject::kClassMetadataSlotBases,
+                                       ClassObject::kClassMetadataSlotMro};
     for(uint32_t idx = 0; idx < shape->property_count(); ++idx)
     {
         EXPECT_STREQ(expected_names[idx],
@@ -649,7 +650,7 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
                                        dunder_bases_name, dunder_mro_name};
     Value readonly_values[] = {Value::from_oop(context.vm().type_class()),
                                cls_name.as_value(), bases_value, mro_value};
-    for(uint32_t idx = 0; idx < ClassObject::kClassPredefinedSlotCount; ++idx)
+    for(uint32_t idx = 0; idx < ClassObject::kClassMetadataSlotCount; ++idx)
     {
         Shape *before_shape = cls->get_shape();
         EXPECT_FALSE(
@@ -690,7 +691,7 @@ TEST(ClassObject, BuiltinClassRegistersReadonlyFixedMethods)
     EXPECT_EQ(Value::from_smi(11), class_property_value(cls, 0));
     EXPECT_EQ(Value::from_smi(23), class_property_value(cls, 1));
 
-    for(uint32_t idx = ClassObject::kClassPredefinedSlotCount;
+    for(uint32_t idx = ClassObject::kClassMetadataSlotCount;
         idx < shape->present_count(); ++idx)
     {
         DescriptorInfo info = shape->get_descriptor_info(idx);

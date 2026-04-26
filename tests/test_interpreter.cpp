@@ -290,16 +290,14 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
         shape->resolve_present_property(value_name);
     ASSERT_TRUE(value_location.is_found());
     EXPECT_EQ(StorageKind::Inline, value_location.kind);
-    EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotCount),
+    EXPECT_EQ(int32_t(ClassObject::kClassMetadataSlotCount),
               value_location.physical_idx);
     EXPECT_EQ(Value::from_smi(7), cls->read_storage_location(value_location));
-    ASSERT_EQ(ClassObject::kClassPredefinedSlotCount + 1,
-              shape->present_count());
-    EXPECT_STREQ(
-        L"value",
-        shape->get_property_name(ClassObject::kClassPredefinedSlotCount)
-            .extract()
-            ->data);
+    ASSERT_EQ(ClassObject::kClassMetadataSlotCount + 1, shape->present_count());
+    EXPECT_STREQ(L"value",
+                 shape->get_property_name(ClassObject::kClassMetadataSlotCount)
+                     .extract()
+                     ->data);
 }
 
 TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
@@ -333,13 +331,13 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
     {
         EXPECT_STREQ(string_as_wchar_t(names[idx]),
                      string_as_wchar_t(cls->get_shape()->get_property_name(
-                         ClassObject::kClassPredefinedSlotCount + idx)));
+                         ClassObject::kClassMetadataSlotCount + idx)));
 
         StorageLocation location =
             cls->get_shape()->resolve_present_property(names[idx]);
         ASSERT_TRUE(location.is_found());
         EXPECT_EQ(StorageKind::Inline, location.kind);
-        EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotCount + idx),
+        EXPECT_EQ(int32_t(ClassObject::kClassMetadataSlotCount + idx),
                   location.physical_idx);
         EXPECT_EQ(Value::from_smi(idx + 1),
                   cls->read_storage_location(location));

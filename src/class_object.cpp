@@ -31,36 +31,36 @@ namespace cl
         DescriptorFlags class_metadata_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot);
-        ShapeRootDescriptor descriptors[kClassPredefinedSlotCount] = {
+        ShapeRootDescriptor descriptors[kClassMetadataSlotCount] = {
             ShapeRootDescriptor{
                 dunder_class_name,
-                DescriptorInfo::make(
-                    StorageLocation{kClassSlotClass, StorageKind::Inline},
-                    class_metadata_flags)},
+                DescriptorInfo::make(StorageLocation{kClassMetadataSlotClass,
+                                                     StorageKind::Inline},
+                                     class_metadata_flags)},
             ShapeRootDescriptor{
                 dunder_name_name,
-                DescriptorInfo::make(
-                    StorageLocation{kClassSlotName, StorageKind::Inline},
-                    class_metadata_flags)},
+                DescriptorInfo::make(StorageLocation{kClassMetadataSlotName,
+                                                     StorageKind::Inline},
+                                     class_metadata_flags)},
             ShapeRootDescriptor{
                 dunder_bases_name,
-                DescriptorInfo::make(
-                    StorageLocation{kClassSlotBases, StorageKind::Inline},
-                    class_metadata_flags)},
+                DescriptorInfo::make(StorageLocation{kClassMetadataSlotBases,
+                                                     StorageKind::Inline},
+                                     class_metadata_flags)},
             ShapeRootDescriptor{
                 dunder_mro_name,
                 DescriptorInfo::make(
-                    StorageLocation{kClassSlotMro, StorageKind::Inline},
+                    StorageLocation{kClassMetadataSlotMro, StorageKind::Inline},
                     class_metadata_flags)},
         };
         set_shape(Shape::make_root_with_descriptors(
-            Value::from_oop(this), descriptors, kClassPredefinedSlotCount,
-            kClassPredefinedSlotCount, class_shape_flags));
+            Value::from_oop(this), descriptors, kClassMetadataSlotCount,
+            kClassMetadataSlotCount, class_shape_flags));
 
-        for(uint32_t slot_idx = 0; slot_idx < kClassDynamicInlineSlotCount;
-            ++slot_idx)
+        for(uint32_t slot_idx = 0;
+            slot_idx < kClassExtraInlineAttributeSlotCount; ++slot_idx)
         {
-            class_dynamic_slots[slot_idx] = Value::not_present();
+            class_extra_inline_attribute_slots[slot_idx] = Value::not_present();
         }
         bases = make_bases_list(_base);
         mro = make_mro_list();
@@ -121,7 +121,7 @@ namespace cl
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
             BootstrapObjectTag{},
             vm->get_or_create_interned_string_value(L"type"),
-            ClassObject::kClassObjectInlineSlotCount, Value::None(),
+            ClassObject::kClassInlineStorageSlotCount, Value::None(),
             class_shape_flags);
         cls->install_bootstrap_class(cls);
         return builtin_class_definition(cls, native_layout_ids);
@@ -134,7 +134,7 @@ namespace cl
 
     ClassObject *ClassObject::get_base() const
     {
-        Value bases_value = inline_slot_base()[kClassSlotBases];
+        Value bases_value = inline_slot_base()[kClassMetadataSlotBases];
         if(!can_convert_to<List>(bases_value))
         {
             return nullptr;
@@ -153,7 +153,7 @@ namespace cl
     Value ClassObject::lookup_class_chain(TValue<String> name) const
     {
         Value own_property = get_own_property(name);
-        Value mro_value = inline_slot_base()[kClassSlotMro];
+        Value mro_value = inline_slot_base()[kClassMetadataSlotMro];
         if(!can_convert_to<List>(mro_value))
         {
             return own_property;

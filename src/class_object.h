@@ -24,12 +24,12 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::ClassObject;
-        static constexpr uint32_t kClassSlotClass = 0;
-        static constexpr uint32_t kClassSlotName = 1;
-        static constexpr uint32_t kClassSlotBases = 2;
-        static constexpr uint32_t kClassSlotMro = 3;
-        static constexpr uint32_t kClassPredefinedSlotCount = 4;
-        static constexpr uint32_t kClassObjectInlineSlotCount = 8;
+        static constexpr uint32_t kClassMetadataSlotClass = 0;
+        static constexpr uint32_t kClassMetadataSlotName = 1;
+        static constexpr uint32_t kClassMetadataSlotBases = 2;
+        static constexpr uint32_t kClassMetadataSlotMro = 3;
+        static constexpr uint32_t kClassMetadataSlotCount = 4;
+        static constexpr uint32_t kClassInlineStorageSlotCount = 8;
 
         ClassObject(BootstrapObjectTag, TValue<String> name,
                     uint32_t instance_default_inline_slot_count,
@@ -60,9 +60,9 @@ namespace cl
         {
             return instance_default_inline_slot_count;
         }
-        uint32_t get_class_object_inline_slot_count() const
+        uint32_t get_class_inline_storage_slot_count() const
         {
-            return kClassObjectInlineSlotCount;
+            return kClassInlineStorageSlotCount;
         }
         Shape *get_instance_root_shape() const;
         ClassObject *get_base() const;
@@ -70,8 +70,8 @@ namespace cl
         Value lookup_class_chain(TValue<String> name) const;
 
     private:
-        static constexpr uint32_t kClassDynamicInlineSlotCount =
-            kClassObjectInlineSlotCount - kClassPredefinedSlotCount;
+        static constexpr uint32_t kClassExtraInlineAttributeSlotCount =
+            kClassInlineStorageSlotCount - kClassMetadataSlotCount;
 
         Value make_bases_list(Value base) const;
         Value make_mro_list() const;
@@ -79,13 +79,14 @@ namespace cl
         MemberTValue<String> name;
         MemberValue bases;
         MemberValue mro;
-        MemberValue class_dynamic_slots[kClassDynamicInlineSlotCount];
+        MemberValue class_extra_inline_attribute_slots
+            [kClassExtraInlineAttributeSlotCount];
         MemberHeapPtr<Shape> instance_root_shape;
         uint32_t instance_default_inline_slot_count;
 
     public:
         CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(
-            ClassObject, Object, 3 + kClassDynamicInlineSlotCount + 1);
+            ClassObject, Object, 3 + kClassExtraInlineAttributeSlotCount + 1);
     };
 
     class VirtualMachine;
