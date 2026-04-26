@@ -105,15 +105,30 @@ Relevant code:
 - [src/object.h](../src/object.h)
 - [src/typed_value.h](../src/typed_value.h)
 
-### Attribute lookup still has split-model remnants
+### Attribute lookup is moving onto descriptor results
 
-Attribute lookup now uses Shape presence and materialized `__mro__` for the
-class chain, but it still distinguishes native object kinds directly and still
-has separate paths for instance and class-object behavior.
+Attribute lookup now returns shared `AttributeReadDescriptor` /
+`AttributeReadAccess` records. `Object` emits receiver-slot descriptors,
+`ClassObject` emits instance-chain, class-chain, and metaclass-chain
+descriptors, and `attr.cpp` composes the top-level lookup order. This gives the
+interpreter and future inline caches a common representation for successful
+access, misses, cache blockers, and call-context binding.
+
+The current descriptor support is intentionally narrow but real: instance
+lookup recognizes `__get__`, `__set__`, and `__delete__` on the candidate
+value's type, data descriptors take precedence over receiver-local attributes,
+and non-data descriptors run after receiver-local attributes. Descriptor
+invocation is deliberately not performed inside `attr.cpp`; it must fall out to
+interpreter opcode handlers because invoking `__get__` may execute Python
+bytecode.
 
 Relevant code:
 
+- [src/attribute_descriptor.h](../src/attribute_descriptor.h)
+- [src/attribute_descriptor.cpp](../src/attribute_descriptor.cpp)
 - [src/attr.cpp](../src/attr.cpp)
+- [src/object.cpp](../src/object.cpp)
+- [src/class_object.cpp](../src/class_object.cpp)
 
 ### Class hierarchy state is MRO-shaped
 
@@ -396,7 +411,7 @@ Primary files:
 
 ### 7. Move generic attribute access onto the object protocol
 
-Status: not started.
+Status: partially complete.
 
 With every Python-visible object carrying a Shape, `attr.cpp` should stop being
 a dispatch table over `Instance` versus `ClassObject` versus builtin native
@@ -415,9 +430,33 @@ separate Python attribute semantics unless the language requires it.
 This is also the right time to delete any remaining special case that treats a
 native layout check as Python-visible type semantics.
 
+Current progress:
+
+- `AttributeReadDescriptor` and `AttributeReadAccess` are shared runtime
+  records.
+- `Object` emits receiver-local slot descriptors.
+- `ClassObject` emits instance-chain, class-chain, and metaclass-chain
+  descriptors.
+- `attr.cpp` composes the top-level lookup order and executes descriptors for
+  the legacy load APIs.
+- receiver-slot descriptors are executable plans, not captured-value snapshots.
+- receiver-slot descriptors carry `MissingLookupCell` until class-chain
+  descriptor-precedence dependencies are represented.
+
+Remaining work:
+
+- keep moving protocol-specific decisions out of `attr.cpp` where they belong
+  on object/class helpers
+- remove remaining native-layout checks from generic attribute semantics where
+  they are not low-level layout assertions
+- add delete and write descriptor paths alongside read descriptors
+
 Primary files:
 
+- [src/attribute_descriptor.h](../src/attribute_descriptor.h)
 - [src/attr.cpp](../src/attr.cpp)
+- [src/object.h](../src/object.h)
+- [src/object.cpp](../src/object.cpp)
 - [src/class_object.h](../src/class_object.h)
 - [src/class_object.cpp](../src/class_object.cpp)
 - [src/instance.h](../src/instance.h)
@@ -425,17 +464,29 @@ Primary files:
 
 ### 8. Complete descriptor and custom attribute semantics
 
-Status: not started.
+Status: partially complete.
 
-The current lookup code preserves existing method binding behavior, but the
-full unified model needs Python descriptor precedence before caches are worth
-building.
+The current lookup code preserves existing method binding behavior and now has
+the first descriptor-precedence slice:
+
+- descriptor protocol classification looks for `__get__`, `__set__`, and
+  `__delete__` on the candidate value's type
+- data descriptors win over receiver-local attributes
+- receiver-local attributes win over non-data descriptors
+- non-data descriptors run after receiver-local lookup misses
+- descriptor invocation is surfaced as `DataDescriptorGet` or
+  `NonDataDescriptorGet`
+- descriptor get accesses carry `UnsupportedDescriptorKind` until interpreter
+  opcode handlers can execute them
+
+The full unified model still needs the rest of Python descriptor behavior
+before caches are worth building broadly.
 
 Add or complete:
 
-- data descriptor precedence over receiver-local attributes
-- non-data descriptor binding after receiver-local lookup misses
-- `__get__`, `__set__`, and `__delete__` invocation
+- interpreter opcode execution for descriptor `__get__`
+- general user-function `__get__`, `__set__`, and `__delete__` invocation
+- descriptor-aware writes and deletes
 - `__set_name__` notification during class creation
 - `staticmethod`, `classmethod`, and `property`
 - `__getattribute__`, `__getattr__`, `__setattr__`, and `__delattr__`

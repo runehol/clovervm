@@ -55,6 +55,13 @@ namespace cl
         return static_cast<AttributeCacheBlockers>(blocker);
     }
 
+    constexpr AttributeCacheBlockers
+    attribute_cache_blockers(AttributeCacheBlockers left,
+                             AttributeCacheBlocker right)
+    {
+        return left | attribute_cache_blocker(right);
+    }
+
     struct AttributeBindingContext
     {
         Value self;

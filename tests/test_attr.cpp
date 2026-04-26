@@ -42,6 +42,91 @@ TEST(Attr, LoadAttrReturnsInstanceOwnPropertyBeforeClassMember)
               load_attr(Value::from_oop(instance), attr_name));
 }
 
+TEST(Attr, DataDescriptorReadDescriptorTakesPrecedenceOverInstanceOwnProperty)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> descriptor_cls_name(
+        context.vm().get_or_create_interned_string_value(L"Descriptor"));
+    TValue<String> owner_cls_name(
+        context.vm().get_or_create_interned_string_value(L"Owner"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"field"));
+    TValue<String> get_name(
+        context.vm().get_or_create_interned_string_value(L"__get__"));
+    TValue<String> set_name(
+        context.vm().get_or_create_interned_string_value(L"__set__"));
+
+    ClassObject *descriptor_cls =
+        context.thread()->make_internal_raw<ClassObject>(descriptor_cls_name,
+                                                         2);
+    descriptor_cls->set_own_property(get_name, Value::from_smi(1));
+    descriptor_cls->set_own_property(set_name, Value::from_smi(2));
+
+    Instance *descriptor =
+        context.thread()->make_internal_raw<Instance>(descriptor_cls);
+    ClassObject *owner_cls =
+        context.thread()->make_internal_raw<ClassObject>(owner_cls_name, 2);
+    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
+
+    Instance *instance =
+        context.thread()->make_internal_raw<Instance>(owner_cls);
+    instance->set_own_property(attr_name, Value::from_smi(7));
+
+    AttributeReadDescriptor read_descriptor =
+        resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
+    ASSERT_TRUE(read_descriptor.is_found());
+    EXPECT_EQ(AttributeReadAccessKind::DataDescriptorGet,
+              read_descriptor.access.kind);
+    EXPECT_EQ(Value::from_oop(descriptor), read_descriptor.access.value);
+}
+
+TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> descriptor_cls_name(
+        context.vm().get_or_create_interned_string_value(L"Descriptor"));
+    TValue<String> owner_cls_name(
+        context.vm().get_or_create_interned_string_value(L"Owner"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"field"));
+    TValue<String> get_name(
+        context.vm().get_or_create_interned_string_value(L"__get__"));
+
+    ClassObject *descriptor_cls =
+        context.thread()->make_internal_raw<ClassObject>(descriptor_cls_name,
+                                                         2);
+    descriptor_cls->set_own_property(get_name, Value::from_smi(1));
+
+    Instance *descriptor =
+        context.thread()->make_internal_raw<Instance>(descriptor_cls);
+    ClassObject *owner_cls =
+        context.thread()->make_internal_raw<ClassObject>(owner_cls_name, 2);
+    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
+
+    Instance *instance =
+        context.thread()->make_internal_raw<Instance>(owner_cls);
+    instance->set_own_property(attr_name, Value::from_smi(7));
+
+    AttributeReadDescriptor read_descriptor =
+        resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
+    ASSERT_TRUE(read_descriptor.is_found());
+    EXPECT_EQ(AttributeReadAccessKind::ReceiverSlot,
+              read_descriptor.access.kind);
+    EXPECT_EQ(Value::from_smi(7), load_attr_from_descriptor(read_descriptor));
+
+    EXPECT_TRUE(instance->delete_own_property(attr_name));
+    read_descriptor =
+        resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
+    ASSERT_TRUE(read_descriptor.is_found());
+    EXPECT_EQ(AttributeReadAccessKind::NonDataDescriptorGet,
+              read_descriptor.access.kind);
+    EXPECT_EQ(Value::from_oop(descriptor), read_descriptor.access.value);
+}
+
 TEST(Attr, LoadAttrFallsBackToClassAndBaseMembers)
 {
     test::VmTestContext context;
