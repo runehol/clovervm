@@ -97,6 +97,31 @@ static Value builtin_next_counter(ThreadState *, const CallArguments &args)
     return Value::from_smi(g_next_counter++);
 }
 
+static void bind_global(test::VmTestContext &test_context,
+                        CodeObject *code_object, const wchar_t *name,
+                        Value value)
+{
+    TValue<String> name_value(
+        test_context.vm().get_or_create_interned_string_value(name));
+    code_object->module_scope.extract()->set_by_name(name_value, value);
+}
+
+static Value make_test_function(test::VmTestContext &test_context,
+                                const wchar_t *name, const wchar_t *source)
+{
+    CodeObject *code_object = test_context.compile_file(source);
+    (void)test_context.thread()->run(code_object);
+
+    TValue<String> name_value(
+        test_context.vm().get_or_create_interned_string_value(name));
+    Value function_value =
+        code_object->module_scope.extract()->get_by_name(name_value);
+    assert(function_value.is_ptr());
+    assert(function_value.get_ptr<Object>()->native_layout_id() ==
+           NativeLayoutId::Function);
+    return function_value;
+}
+
 TEST(Interpreter, simple)
 {
     Value expected = Value::from_smi(15);
@@ -882,6 +907,209 @@ TEST(Interpreter, cached_class_attribute_read_observes_class_write)
     Value actual = file_runner.return_value;
 
     EXPECT_EQ(Value::from_smi(2), actual);
+}
+
+TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> base_name(
+        test_context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> mid_name(
+        test_context.vm().get_or_create_interned_string_value(L"Mid"));
+    TValue<String> leaf_name(
+        test_context.vm().get_or_create_interned_string_value(L"Leaf"));
+    TValue<String> value_name(
+        test_context.vm().get_or_create_interned_string_value(L"value"));
+
+    ClassObject *base =
+        test_context.thread()->make_internal_raw<ClassObject>(base_name, 4);
+    ClassObject *mid = test_context.thread()->make_internal_raw<ClassObject>(
+        mid_name, 4, Value::from_oop(base));
+    ClassObject *leaf = test_context.thread()->make_internal_raw<ClassObject>(
+        leaf_name, 4, Value::from_oop(mid));
+    Instance *obj = test_context.thread()->make_internal_raw<Instance>(leaf);
+
+    ASSERT_TRUE(base->set_own_property(value_name, Value::from_smi(1)));
+
+    CodeObject *read_code = test_context.compile_file(L"obj.value\n");
+    bind_global(test_context, read_code, L"obj", Value::from_oop(obj));
+
+    EXPECT_EQ(Value::from_smi(1), test_context.thread()->run(read_code));
+
+    EXPECT_TRUE(base->set_own_property(value_name, Value::from_smi(2)));
+    EXPECT_EQ(Value::from_smi(2), test_context.thread()->run(read_code));
+
+    EXPECT_TRUE(mid->set_own_property(value_name, Value::from_smi(3)));
+    EXPECT_EQ(Value::from_smi(3), test_context.thread()->run(read_code));
+
+    EXPECT_TRUE(leaf->set_own_property(value_name, Value::from_smi(4)));
+    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(read_code));
+
+    EXPECT_TRUE(obj->set_own_property(value_name, Value::from_smi(5)));
+    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(read_code));
+
+    EXPECT_TRUE(base->set_own_property(value_name, Value::from_smi(6)));
+    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(read_code));
+
+    EXPECT_TRUE(obj->delete_own_property(value_name));
+    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(read_code));
+
+    EXPECT_TRUE(leaf->delete_own_property(value_name));
+    EXPECT_EQ(Value::from_smi(3), test_context.thread()->run(read_code));
+
+    EXPECT_TRUE(mid->delete_own_property(value_name));
+    EXPECT_EQ(Value::from_smi(6), test_context.thread()->run(read_code));
+}
+
+TEST(Interpreter, cached_direct_method_call_observes_mro_mutations)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> base_name(
+        test_context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> mid_name(
+        test_context.vm().get_or_create_interned_string_value(L"Mid"));
+    TValue<String> leaf_name(
+        test_context.vm().get_or_create_interned_string_value(L"Leaf"));
+    TValue<String> method_name(
+        test_context.vm().get_or_create_interned_string_value(L"method"));
+
+    ClassObject *base =
+        test_context.thread()->make_internal_raw<ClassObject>(base_name, 4);
+    ClassObject *mid = test_context.thread()->make_internal_raw<ClassObject>(
+        mid_name, 4, Value::from_oop(base));
+    ClassObject *leaf = test_context.thread()->make_internal_raw<ClassObject>(
+        leaf_name, 4, Value::from_oop(mid));
+    Instance *obj = test_context.thread()->make_internal_raw<Instance>(leaf);
+
+    Value base_method_1 = make_test_function(test_context, L"base_method_1",
+                                             L"def base_method_1(self):\n"
+                                             L"    return 1\n");
+    Value base_method_2 = make_test_function(test_context, L"base_method_2",
+                                             L"def base_method_2(self):\n"
+                                             L"    return 2\n");
+    Value mid_method = make_test_function(test_context, L"mid_method",
+                                          L"def mid_method(self):\n"
+                                          L"    return 3\n");
+    Value leaf_method = make_test_function(test_context, L"leaf_method",
+                                           L"def leaf_method(self):\n"
+                                           L"    return 4\n");
+    Value own_method = make_test_function(test_context, L"own_method",
+                                          L"def own_method():\n"
+                                          L"    return 5\n");
+
+    ASSERT_TRUE(base->set_own_property(method_name, base_method_1));
+
+    CodeObject *call_code = test_context.compile_file(L"obj.method()\n");
+    bind_global(test_context, call_code, L"obj", Value::from_oop(obj));
+
+    EXPECT_EQ(Value::from_smi(1), test_context.thread()->run(call_code));
+
+    EXPECT_TRUE(base->set_own_property(method_name, base_method_2));
+    EXPECT_EQ(Value::from_smi(2), test_context.thread()->run(call_code));
+
+    EXPECT_TRUE(mid->set_own_property(method_name, mid_method));
+    EXPECT_EQ(Value::from_smi(3), test_context.thread()->run(call_code));
+
+    EXPECT_TRUE(leaf->set_own_property(method_name, leaf_method));
+    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(call_code));
+
+    EXPECT_TRUE(obj->set_own_property(method_name, own_method));
+    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(call_code));
+
+    EXPECT_TRUE(base->set_own_property(method_name, base_method_1));
+    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(call_code));
+
+    EXPECT_TRUE(obj->delete_own_property(method_name));
+    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(call_code));
+
+    EXPECT_TRUE(leaf->delete_own_property(method_name));
+    EXPECT_EQ(Value::from_smi(3), test_context.thread()->run(call_code));
+
+    EXPECT_TRUE(mid->delete_own_property(method_name));
+    EXPECT_EQ(Value::from_smi(1), test_context.thread()->run(call_code));
+}
+
+TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> base_name(
+        test_context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> mid_name(
+        test_context.vm().get_or_create_interned_string_value(L"Mid"));
+    TValue<String> leaf_name(
+        test_context.vm().get_or_create_interned_string_value(L"Leaf"));
+    TValue<String> value_name(
+        test_context.vm().get_or_create_interned_string_value(L"value"));
+
+    ClassObject *base =
+        test_context.thread()->make_internal_raw<ClassObject>(base_name, 4);
+    ClassObject *mid = test_context.thread()->make_internal_raw<ClassObject>(
+        mid_name, 4, Value::from_oop(base));
+    ClassObject *leaf = test_context.thread()->make_internal_raw<ClassObject>(
+        leaf_name, 4, Value::from_oop(mid));
+    Instance *obj = test_context.thread()->make_internal_raw<Instance>(leaf);
+
+    ASSERT_TRUE(base->set_own_property(value_name, Value::from_smi(1)));
+
+    CodeObject *read_code = test_context.compile_file(L"obj.value\n");
+    bind_global(test_context, read_code, L"obj", Value::from_oop(obj));
+    EXPECT_EQ(Value::from_smi(1), test_context.thread()->run(read_code));
+
+    CodeObject *base_store_code =
+        test_context.compile_file(L"Base.value = new_value\n"
+                                  L"obj.value\n");
+    bind_global(test_context, base_store_code, L"Base", Value::from_oop(base));
+    bind_global(test_context, base_store_code, L"obj", Value::from_oop(obj));
+
+    bind_global(test_context, base_store_code, L"new_value",
+                Value::from_smi(2));
+    EXPECT_EQ(Value::from_smi(2), test_context.thread()->run(base_store_code));
+    EXPECT_EQ(Value::from_smi(2), test_context.thread()->run(read_code));
+
+    CodeObject *mid_store_code =
+        test_context.compile_file(L"Mid.value = new_value\n"
+                                  L"obj.value\n");
+    bind_global(test_context, mid_store_code, L"Mid", Value::from_oop(mid));
+    bind_global(test_context, mid_store_code, L"obj", Value::from_oop(obj));
+
+    bind_global(test_context, mid_store_code, L"new_value", Value::from_smi(3));
+    EXPECT_EQ(Value::from_smi(3), test_context.thread()->run(mid_store_code));
+    EXPECT_EQ(Value::from_smi(3), test_context.thread()->run(read_code));
+
+    CodeObject *leaf_store_code =
+        test_context.compile_file(L"Leaf.value = new_value\n"
+                                  L"obj.value\n");
+    bind_global(test_context, leaf_store_code, L"Leaf", Value::from_oop(leaf));
+    bind_global(test_context, leaf_store_code, L"obj", Value::from_oop(obj));
+
+    bind_global(test_context, leaf_store_code, L"new_value",
+                Value::from_smi(4));
+    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(leaf_store_code));
+    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(read_code));
+
+    CodeObject *self_store_code =
+        test_context.compile_file(L"obj.value = new_value\n"
+                                  L"obj.value\n");
+    bind_global(test_context, self_store_code, L"obj", Value::from_oop(obj));
+
+    bind_global(test_context, self_store_code, L"new_value",
+                Value::from_smi(5));
+    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(self_store_code));
+    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(read_code));
+
+    bind_global(test_context, base_store_code, L"new_value",
+                Value::from_smi(6));
+    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(base_store_code));
+    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(read_code));
+
+    EXPECT_TRUE(obj->delete_own_property(value_name));
+    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(read_code));
 }
 
 TEST(Interpreter, direct_method_call_inserts_self_for_class_functions)
