@@ -43,6 +43,13 @@ namespace cl
         }
     }  // namespace
 
+    void Object::validate_inline_slot_layout()
+    {
+        static_assert(sizeof(cls) == sizeof(Value));
+        static_assert(CL_OFFSETOF(Object, cls) ==
+                      Object::static_value_offset_in_words() * sizeof(Value));
+    }
+
     void Object::install_class(ClassObject *new_cls)
     {
         assert(new_cls != nullptr);

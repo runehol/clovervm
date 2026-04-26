@@ -29,7 +29,7 @@ namespace cl
         static constexpr uint32_t kClassMetadataSlotBases = 2;
         static constexpr uint32_t kClassMetadataSlotMro = 3;
         static constexpr uint32_t kClassMetadataSlotCount = 4;
-        static constexpr uint32_t kClassInlineStorageSlotCount = 8;
+        static constexpr uint32_t kClassInlineStorageSlotCount = 48;
 
         ClassObject(BootstrapObjectTag, TValue<String> name,
                     uint32_t instance_default_inline_slot_count,
@@ -64,6 +64,7 @@ namespace cl
         {
             return kClassInlineStorageSlotCount;
         }
+        static void validate_inline_slot_layout();
         Shape *get_instance_root_shape() const;
         ClassObject *get_base() const;
 

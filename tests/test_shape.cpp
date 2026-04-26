@@ -7,6 +7,8 @@
 #include "thread_state.h"
 #include <cassert>
 #include <gtest/gtest.h>
+#include <string>
+#include <vector>
 
 using namespace cl;
 
@@ -542,28 +544,34 @@ TEST(ClassObject, ClassPropertiesUseShapeBackedInlineAndOverflowStorage)
 
     TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> names[] = {
-        TValue<String>(context.vm().get_or_create_interned_string_value(L"a")),
-        TValue<String>(context.vm().get_or_create_interned_string_value(L"b")),
-        TValue<String>(context.vm().get_or_create_interned_string_value(L"c")),
-        TValue<String>(context.vm().get_or_create_interned_string_value(L"d")),
-        TValue<String>(context.vm().get_or_create_interned_string_value(L"e")),
-    };
+    std::vector<TValue<String>> names;
+    constexpr uint32_t property_count =
+        ClassObject::kClassInlineStorageSlotCount -
+        ClassObject::kClassMetadataSlotCount + 1;
+    for(uint32_t idx = 0; idx < property_count; ++idx)
+    {
+        std::wstring name = L"p" + std::to_wstring(idx);
+        names.push_back(context.vm().get_or_create_interned_string_value(name));
+    }
     ClassObject *cls =
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
 
-    for(uint32_t idx = 0; idx < 5; ++idx)
+    for(uint32_t idx = 0; idx < property_count; ++idx)
     {
         cls->set_own_property(names[idx], Value::from_smi(idx + 1));
     }
 
     Shape *shape = cls->get_shape();
-    ASSERT_EQ(9u, shape->property_count());
-    EXPECT_EQ(9u, shape->present_count());
-    EXPECT_EQ(9, shape->get_next_slot_index());
-    EXPECT_EQ(5u, class_property_count(cls));
+    ASSERT_EQ(ClassObject::kClassInlineStorageSlotCount + 1,
+              shape->property_count());
+    EXPECT_EQ(ClassObject::kClassInlineStorageSlotCount + 1,
+              shape->present_count());
+    EXPECT_EQ(int32_t(ClassObject::kClassInlineStorageSlotCount + 1),
+              shape->get_next_slot_index());
+    EXPECT_EQ(property_count, class_property_count(cls));
     EXPECT_EQ(Value::from_smi(1), class_property_value(cls, 0));
-    EXPECT_EQ(Value::from_smi(5), class_property_value(cls, 4));
+    EXPECT_EQ(Value::from_smi(property_count),
+              class_property_value(cls, property_count - 1));
 
     StorageLocation first_location = shape->resolve_present_property(names[0]);
     ASSERT_TRUE(first_location.is_found());
@@ -571,11 +579,13 @@ TEST(ClassObject, ClassPropertiesUseShapeBackedInlineAndOverflowStorage)
     EXPECT_EQ(4, first_location.physical_idx);
     EXPECT_EQ(Value::from_smi(1), cls->read_storage_location(first_location));
 
-    StorageLocation last_location = shape->resolve_present_property(names[4]);
+    StorageLocation last_location =
+        shape->resolve_present_property(names[property_count - 1]);
     ASSERT_TRUE(last_location.is_found());
     EXPECT_EQ(StorageKind::Overflow, last_location.kind);
     EXPECT_EQ(0, last_location.physical_idx);
-    EXPECT_EQ(Value::from_smi(5), cls->read_storage_location(last_location));
+    EXPECT_EQ(Value::from_smi(property_count),
+              cls->read_storage_location(last_location));
 }
 
 TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
@@ -606,7 +616,8 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     EXPECT_EQ(4u, shape->present_count());
     EXPECT_EQ(0u, shape->latent_count());
     EXPECT_EQ(4, shape->get_next_slot_index());
-    EXPECT_EQ(8u, shape->get_inline_slot_count());
+    EXPECT_EQ(ClassObject::kClassInlineStorageSlotCount,
+              shape->get_inline_slot_count());
 
     const cl_wchar *expected_names[] = {L"__class__", L"__name__", L"__bases__",
                                         L"__mro__"};

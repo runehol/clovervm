@@ -63,6 +63,7 @@ namespace cl
         bool delete_own_property(TValue<String> name);
         Value read_storage_location(StorageLocation location) const;
         void write_storage_location(StorageLocation location, Value value);
+        static void validate_inline_slot_layout();
         NativeLayoutId native_layout;
         Shape *shape;
         OverflowSlots *overflow_storage;

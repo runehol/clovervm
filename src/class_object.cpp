@@ -112,12 +112,36 @@ namespace cl
         return cls;
     }
 
+    void ClassObject::validate_inline_slot_layout()
+    {
+        static_assert(sizeof(MemberTValue<String>) == sizeof(Value));
+        static_assert(sizeof(MemberValue) == sizeof(Value));
+        static_assert(CL_OFFSETOF(ClassObject, cls) ==
+                      ClassObject::static_value_offset_in_words() *
+                          sizeof(Value));
+        static_assert(CL_OFFSETOF(ClassObject, name) ==
+                      CL_OFFSETOF(ClassObject, cls) +
+                          kClassMetadataSlotName * sizeof(Value));
+        static_assert(CL_OFFSETOF(ClassObject, bases) ==
+                      CL_OFFSETOF(ClassObject, cls) +
+                          kClassMetadataSlotBases * sizeof(Value));
+        static_assert(CL_OFFSETOF(ClassObject, mro) ==
+                      CL_OFFSETOF(ClassObject, cls) +
+                          kClassMetadataSlotMro * sizeof(Value));
+        static_assert(
+            CL_OFFSETOF(ClassObject, class_extra_inline_attribute_slots) ==
+            CL_OFFSETOF(ClassObject, cls) +
+                kClassMetadataSlotCount * sizeof(Value));
+    }
+
     BuiltinClassDefinition make_type_class(VirtualMachine *vm)
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::ClassObject};
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
                                        shape_flag(ShapeFlag::IsImmutableType);
+        Object::validate_inline_slot_layout();
+        ClassObject::validate_inline_slot_layout();
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
             BootstrapObjectTag{},
             vm->get_or_create_interned_string_value(L"type"),
