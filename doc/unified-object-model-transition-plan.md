@@ -245,14 +245,18 @@ Primary files:
 
 ### 3. Clean up heap layout metadata
 
-Status: not started.
+Status: completed.
 
-The heap layout metadata still carries a variable `value_offset_in_words`,
-which was useful when value fields could begin at arbitrary offsets in each
-native layout. With `Object` now defining the Python-visible value region and
-subclasses layering fixed `Value` members after their base class, that
-flexibility is no longer buying us much. It also makes inherited value counts
-harder to express safely.
+The heap layout metadata still carries `value_offset_in_words`, and that should
+remain true for internal non-`Object` heap records such as Shape,
+OverflowSlots, Scope, and array backing stores. Those records have useful raw
+prefixes and should not be forced to carry the full Python-visible `Object`
+header just to describe their scanned `Value` fields.
+
+For Python-visible `Object` subclasses, the important cleanup is instead to
+make inherited fixed `Value` counts compose safely. `Object` defines the common
+Python-visible value region, and subclasses layer fixed `Value` members after
+their base class. The layout declaration macros now support that explicitly.
 
 Introduce layout declaration macros that understand static base layouts:
 
@@ -261,22 +265,17 @@ Introduce layout declaration macros that understand static base layouts:
 - it should reuse the base class value-region offset
 - it should add the base class `static_value_count()` to the derived class's
   own fixed `Value` field count
-- it should make layouts where `Value` fields begin outside the inherited
-  value region impossible
-
-Once that is in place, remove the ability for layouts to carry arbitrary
-`value_offset_in_words`. The compact and expanded heap layout encodings should
-only need object size and value count; the value-region start should come from
-the static C++ layout contract.
+- it should assert that the named base class is actually a C++ base class
 
 Implementation notes:
 
-- add inherited static-layout declaration macros in `heap_object.h`
-- migrate `Object` subclasses before internal dynamic heap records
-- keep dynamic layout support for variable tail counts, but not for variable
-  value-region offsets
-- update `heap.h` allocation to stop encoding per-type value offsets
-- update [doc/object-metadata.md](./object-metadata.md) after the code changes
+- inherited static and dynamic layout declaration macros now live in
+  `heap_object.h`
+- current `Object` subclasses use those inherited declarations
+- keep dynamic layout support for variable tail counts
+- keep per-layout value-region offsets for internal heap records
+- update [doc/object-metadata.md](./object-metadata.md) if the runtime layout
+  encoding changes in the future
 
 Primary files:
 

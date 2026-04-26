@@ -149,6 +149,8 @@ namespace cl
     static constexpr bool has_dynamic_layout = false;                          \
     static constexpr uint32_t static_value_offset_in_words()                   \
     {                                                                          \
+        static_assert(std::is_base_of_v<base_type, type>,                      \
+                      "Layout base must be a C++ base class");                 \
         return base_type::static_value_offset_in_words();                      \
     }                                                                          \
     static constexpr uint64_t static_value_count()                             \
@@ -192,6 +194,8 @@ namespace cl
     static constexpr bool has_dynamic_layout = true;                           \
     static constexpr uint32_t static_value_offset_in_words()                   \
     {                                                                          \
+        static_assert(std::is_base_of_v<base_type, type>,                      \
+                      "Layout base must be a C++ base class");                 \
         return base_type::static_value_offset_in_words();                      \
     }                                                                          \
     static constexpr uint64_t static_fixed_value_count()                       \
