@@ -574,6 +574,12 @@ and let `AttributeCacheBlockers` reject descriptor calls, custom attribute
 hooks, mutable descriptor protocol, and missing lookup-cell dependencies until
 those paths have precise invalidation.
 
+The first validity-cell implementation should establish the invariants before
+adding any inline-cache fast path: a class primary cell is created only by the
+cold get-or-create path, that creation path attaches the cell to every base
+class in the materialized MRO, and invalidation clears attached cells plus the
+class's own primary cell.
+
 Inline caches should store a cached resolved value for class-chain hits, not a
 raw pointer to the resolved slot. Because every successful class attribute write
 invalidates attached lookup validity cells, replacing a class attribute kills

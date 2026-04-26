@@ -918,8 +918,28 @@ A lookup validity cell represents:
 
 > Lookup through a given class and its base chain is still valid.
 
-Each class object may hold a **primary lookup cell**, reused across
-caches.
+Each class object may hold a **primary lookup validity cell**, reused
+across caches for lookups rooted at that class.
+
+If a class has a non-null primary lookup validity cell and that cell is
+valid, then the cell has already been attached to every base class in
+the class's materialized MRO after the class itself. The primary cell is
+not attached to the class that owns it; that class can invalidate its own
+primary cell directly without consulting an attachment list.
+
+Getting or creating a primary lookup validity cell is responsible for
+maintaining this invariant. Callers must not separately allocate a cell
+and then remember to attach it. The hot path is the inline check that
+returns the current primary cell when the pointer is non-null and the
+cell still says it is valid. The cold path creates a fresh cell, stores
+it as the primary cell, walks the already-materialized MRO, and attaches
+the cell to each base class.
+
+Any class-object Shape transition invalidates lookup validity, because
+class-chain membership facts may have changed. Stored class attribute
+updates also invalidate lookup validity even when the Shape does not
+change, because the replacement value may have different descriptor
+behavior or may simply be a different resolved value.
 
 ---
 
@@ -927,18 +947,20 @@ caches.
 
 | Field | Meaning |
 |---|---|
-| `primary_lookup_cell` | shared validity cell |
-| `attached_lookup_cells` | dependent cells |
+| `primary_lookup_validity_cell` | shared validity cell for lookups rooted at this class |
+| `attached_lookup_validity_cells` | dependent cells owned by derived/root lookups that consulted this class |
 
 ---
 
 ## Registration
 
-Lookup cells are registered in all classes consulted:
+Lookup cells are registered in base classes consulted by the lookup
+root:
 
 ```text
-for K in C.__mro__:
-    K.attached_lookup_cells.add(cell)
+cell = C.primary_lookup_validity_cell
+for K in C.__mro__[1:]:
+    K.attached_lookup_validity_cells.add(cell)
 ```
 
 ---
@@ -952,7 +974,9 @@ for cell in self.attached_lookup_cells:
     cell.valid = false
 self.attached_lookup_cells.clear()
 
-self.primary_lookup_cell = Value::not_present()
+if self.primary_lookup_validity_cell != nullptr:
+    self.primary_lookup_validity_cell.valid = false
+self.primary_lookup_validity_cell = nullptr
 ```
 
 ---
