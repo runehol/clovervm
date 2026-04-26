@@ -168,7 +168,7 @@ namespace cl
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));
-        register_builtin_class(make_instance_class(this));
+        register_builtin_class(make_object_class(this));
 
         ClassObject *type = type_class();
         assert(type != nullptr);

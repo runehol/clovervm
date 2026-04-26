@@ -6,6 +6,7 @@
 #include "thread_state.h"
 #include "typed_value.h"
 #include "value.h"
+#include "virtual_machine.h"
 #include <algorithm>
 
 namespace cl
@@ -48,6 +49,16 @@ namespace cl
         static_assert(sizeof(cls) == sizeof(Value));
         static_assert(CL_OFFSETOF(Object, cls) ==
                       Object::static_value_offset_in_words() * sizeof(Value));
+    }
+
+    BuiltinClassDefinition make_object_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId native_layout_ids[] = {
+            NativeLayoutId::Instance};
+        Object::validate_inline_slot_layout();
+        ClassObject *cls = ClassObject::make_builtin_class(
+            vm->get_or_create_interned_string_value(L"object"), 1, nullptr, 0);
+        return builtin_class_definition(cls, native_layout_ids);
     }
 
     void Object::install_class(ClassObject *new_cls)

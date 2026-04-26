@@ -140,7 +140,6 @@ namespace cl
             NativeLayoutId::ClassObject};
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
                                        shape_flag(ShapeFlag::IsImmutableType);
-        Object::validate_inline_slot_layout();
         ClassObject::validate_inline_slot_layout();
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
             BootstrapObjectTag{},

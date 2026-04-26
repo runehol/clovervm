@@ -11,9 +11,11 @@
 
 namespace cl
 {
+    struct BuiltinClassDefinition;
     class ClassObject;
     class OverflowSlots;
     class Shape;
+    class VirtualMachine;
     struct String;
     struct Value;
     template <typename T> class TValue;
@@ -118,6 +120,8 @@ namespace cl
 
     static_assert(sizeof(Object) == 40);
     static_assert(std::is_trivially_destructible_v<Object>);
+
+    BuiltinClassDefinition make_object_class(VirtualMachine *vm);
 }  // namespace cl
 
 #endif  // CL_OBJECT_H

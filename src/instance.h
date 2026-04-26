@@ -29,8 +29,6 @@ namespace cl
         CL_DECLARE_DYNAMIC_LAYOUT_EXTENDS_WITH_VALUES(Instance, Object, 0);
     };
 
-    BuiltinClassDefinition make_instance_class(VirtualMachine *vm);
-
 }  // namespace cl
 
 #endif  // CL_INSTANCE_H
