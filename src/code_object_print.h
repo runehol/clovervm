@@ -221,6 +221,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "CreateClass");
             case cl::Bytecode::CreateList:
                 return format_to(out, "CreateList");
+            case cl::Bytecode::CreateTuple:
+                return format_to(out, "CreateTuple");
             case cl::Bytecode::BuildClass:
                 return format_to(out, "BuildClass");
 
@@ -525,6 +527,7 @@ template <> struct fmt::formatter<cl::CodeObject>
 
             case cl::Bytecode::CreateDict:
             case cl::Bytecode::CreateList:
+            case cl::Bytecode::CreateTuple:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", {}", code_obj.code[pc++]);

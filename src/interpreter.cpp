@@ -13,6 +13,7 @@
 #include "refcount.h"
 #include "runtime_helpers.h"
 #include "subscript.h"
+#include "tuple.h"
 #include "value.h"
 #include <fmt/core.h>
 
@@ -1143,6 +1144,23 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_create_tuple(PARAMS)
+    {
+        START(3);
+        int8_t reg = pc[1];
+        uint8_t n_items = pc[2];
+
+        TValue<Tuple> tuple = make_object_value<Tuple>(n_items);
+        for(uint8_t idx = 0; idx < n_items; ++idx)
+        {
+            tuple.extract()->initialize_item_unchecked(idx,
+                                                       fp[reg - int8_t(idx)]);
+        }
+        accumulator = tuple;
+
+        COMPLETE();
+    }
+
     static Value op_create_dict(PARAMS)
     {
         START(3);
@@ -1769,6 +1787,7 @@ namespace cl
 
         SET_TABLE_ENTRY(Bytecode::CreateDict, op_create_dict);
         SET_TABLE_ENTRY(Bytecode::CreateList, op_create_list);
+        SET_TABLE_ENTRY(Bytecode::CreateTuple, op_create_tuple);
         SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);
         SET_TABLE_ENTRY(Bytecode::CreateClass, op_create_class);
         SET_TABLE_ENTRY(Bytecode::BuildClass, op_build_class);

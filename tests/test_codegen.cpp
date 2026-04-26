@@ -324,6 +324,24 @@ TEST(Codegen, list_literal_uses_createlist_with_contiguous_register_range)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, tuple_literal_uses_createtuple_with_contiguous_register_range)
+{
+    const wchar_t *test_case = L"1, 2, 4\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 LdaSmi 1\n"
+                           "    2 Star0\n"
+                           "    3 LdaSmi 2\n"
+                           "    5 Star1\n"
+                           "    6 LdaSmi 4\n"
+                           "    8 Star2\n"
+                           "    9 CreateTuple r0, 3\n"
+                           "   12 Halt\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, dict_literal_uses_createdict_with_contiguous_register_pairs)
 {
     const wchar_t *test_case = L"{1: 2, 4: 8}\n";

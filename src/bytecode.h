@@ -131,6 +131,7 @@ namespace cl
         // allocations
         CreateDict,
         CreateList,
+        CreateTuple,
         CreateFunction,
         CreateClass,
         BuildClass,

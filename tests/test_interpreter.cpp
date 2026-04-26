@@ -498,6 +498,47 @@ TEST(Interpreter, list_literal_evaluates_elements_left_to_right)
     EXPECT_EQ(Value::from_smi(2), list->item_unchecked(2));
 }
 
+TEST(Interpreter, tuple_literal_returns_tuple_object)
+{
+    test::FileRunner file_runner(L"1, 2, 4\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::Tuple,
+              actual.get_ptr<Object>()->native_layout_id());
+    Tuple *tuple = actual.get_ptr<Tuple>();
+    ASSERT_EQ(3u, tuple->size());
+    EXPECT_EQ(Value::from_smi(1), tuple->item_unchecked(0));
+    EXPECT_EQ(Value::from_smi(2), tuple->item_unchecked(1));
+    EXPECT_EQ(Value::from_smi(4), tuple->item_unchecked(2));
+}
+
+TEST(Interpreter, tuple_literal_evaluates_elements_left_to_right)
+{
+    g_next_counter = 0;
+
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj = test_context.compile_file(
+        L"next_counter(), next_counter(), next_counter()\n");
+
+    TValue<String> name =
+        test_context.vm().get_or_create_interned_string_value(L"next_counter");
+    Value builtin = test_context.thread()->make_object_value<BuiltinFunction>(
+        builtin_next_counter, 0, 0);
+    code_obj->module_scope.extract()->set_by_name(name, builtin);
+
+    Value actual = test_context.thread()->run(code_obj);
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::Tuple,
+              actual.get_ptr<Object>()->native_layout_id());
+    Tuple *tuple = actual.get_ptr<Tuple>();
+    ASSERT_EQ(3u, tuple->size());
+    EXPECT_EQ(Value::from_smi(0), tuple->item_unchecked(0));
+    EXPECT_EQ(Value::from_smi(1), tuple->item_unchecked(1));
+    EXPECT_EQ(Value::from_smi(2), tuple->item_unchecked(2));
+}
+
 TEST(Interpreter, subscript_load_reads_list_item)
 {
     test::FileRunner file_runner(L"xs = [4, 7, 9]\n"

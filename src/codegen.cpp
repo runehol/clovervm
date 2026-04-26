@@ -512,6 +512,22 @@ namespace cl
                                             regs, children.size());
         }
 
+        void codegen_tuple_literal(int32_t node_idx, Mode mode)
+        {
+            AstChildren children = av.children[node_idx];
+            uint32_t source_offset = av.source_offsets[node_idx];
+
+            TemporaryReg regs(this, std::max<size_t>(children.size(), 1));
+            for(size_t i = 0; i < children.size(); ++i)
+            {
+                codegen_node(children[i], mode);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          regs + i);
+            }
+            code_obj->emit_opcode_reg_range(
+                source_offset, Bytecode::CreateTuple, regs, children.size());
+        }
+
         void codegen_dict_literal(int32_t node_idx, Mode mode)
         {
             AstChildren children = av.children[node_idx];
@@ -1307,7 +1323,8 @@ namespace cl
                     break;
 
                 case AstNodeKind::EXPRESSION_TUPLE:
-                    throw std::runtime_error("tuple literals not implemented");
+                    codegen_tuple_literal(node_idx, mode);
+                    break;
 
                 case AstNodeKind::EXPRESSION_LIST:
                     codegen_list_literal(node_idx, mode);
