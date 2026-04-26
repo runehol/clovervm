@@ -459,23 +459,21 @@ namespace cl
                AstNodeKind::EXPRESSION_ATTRIBUTE)
             {
                 AstChildren method_children = av.children[children[0]];
-                TemporaryReg regs(this, 2 + args.size());
+                TemporaryReg regs(this, 1 + args.size());
                 uint8_t constant_idx =
                     code_obj->allocate_constant(av.constants[children[0]]);
-                ScopedRegister receiver_reg =
-                    codegen_node_to_register(method_children[0], mode);
-                code_obj->emit_opcode_reg_constant_idx_reg(
-                    source_offset, Bytecode::LoadMethod, receiver_reg.reg,
-                    constant_idx, regs);
+                codegen_node(method_children[0], mode);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star, regs);
 
                 for(size_t i = 0; i < args.size(); ++i)
                 {
                     codegen_node(args[i], mode);
                     code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              regs + 2 + i);
+                                              regs + 1 + i);
                 }
-                code_obj->emit_opcode_reg_range(
-                    source_offset, Bytecode::CallMethod, regs, args.size());
+                code_obj->emit_opcode_reg_constant_idx_argc(
+                    source_offset, Bytecode::CallMethodAttr, regs, constant_idx,
+                    args.size());
                 return;
             }
 

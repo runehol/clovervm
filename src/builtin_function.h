@@ -15,18 +15,34 @@ namespace cl
     struct CallArguments
     {
         CallArguments(Value *_callable_slot, uint32_t _n_args)
-            : callable_slot(_callable_slot), n_args(_n_args)
+            : first_arg_slot(_callable_slot - 1), n_args(_n_args)
         {
+        }
+
+        static CallArguments from_first_arg(Value *_first_arg_slot,
+                                            uint32_t _n_args)
+        {
+            return CallArguments(_first_arg_slot, _n_args, FirstArgSlotTag{});
         }
 
         Value operator[](uint32_t i) const
         {
             assert(i < n_args);
-            return callable_slot[-1 - int32_t(i)];
+            return first_arg_slot[-int32_t(i)];
         }
 
-        Value *callable_slot;
+        Value *first_arg_slot;
         uint32_t n_args;
+
+    private:
+        struct FirstArgSlotTag
+        {
+        };
+
+        CallArguments(Value *_first_arg_slot, uint32_t _n_args, FirstArgSlotTag)
+            : first_arg_slot(_first_arg_slot), n_args(_n_args)
+        {
+        }
     };
 
     using BuiltinCallback = Value (*)(ThreadState *, const CallArguments &args);

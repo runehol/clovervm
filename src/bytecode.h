@@ -68,8 +68,7 @@ namespace cl
         StoreAttr,
         LoadSubscript,
         StoreSubscript,
-        LoadMethod,
-        CallMethod,
+        CallMethodAttr,
 
         // binary on accumulator. reg op acc
         Add,

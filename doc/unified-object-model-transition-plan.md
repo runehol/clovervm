@@ -506,7 +506,7 @@ Primary files:
 
 ### 9. Combine method lookup and method call bytecodes
 
-Status: not started.
+Status: partially complete.
 
 Before adding lookup validity cells, replace the current `LOAD_METHOD` /
 `CALL_METHOD` split with one combined method-call opcode. The split opcode pair
@@ -522,6 +522,20 @@ The combined opcode should:
   kind
 - avoid materializing a transient callable/self pair as the bytecode contract
 - leave ordinary escaped method-value lookup to normal attribute load semantics
+
+The current fused opcode is `CallMethodAttr receiver_and_arg_span, name, argc`.
+It deliberately skips the future cache-index operand. Codegen lays out one
+contiguous register span:
+
+```text
+receiver, explicit_arg0, explicit_arg1, ...
+```
+
+The interpreter handler resolves the attribute in call context and then either
+uses the receiver slot as the implicit first argument or calls with the
+explicit-argument tail of the same span. It may use private handler state for
+the resolved callable, but no interpreter-visible `(callable, maybe_self)` pair
+is produced.
 
 This gives lookup caches a single call-context operation to specialize later.
 The cache can then record the semantic result of the call lookup rather than

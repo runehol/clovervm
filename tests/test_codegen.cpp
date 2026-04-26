@@ -281,7 +281,7 @@ TEST(Codegen, attribute_store_uses_register_receiver_and_accumulator_value)
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Codegen, direct_method_call_uses_loadmethod_and_callmethod)
+TEST(Codegen, direct_method_call_uses_callmethodattr)
 {
     const wchar_t *test_case = L"def invoke(obj, value):\n"
                                "    return obj.method(value)\n";
@@ -291,10 +291,11 @@ TEST(Codegen, direct_method_call_uses_loadmethod_and_callmethod)
                            "    2 StaGlobal [0]\n"
                            "    7 Halt\n"
                            "Constant 0: Code object:\n"
-                           "    0 LoadMethod a0, c[0], r0\n"
-                           "    4 Ldar a1\n"
-                           "    6 Star2\n"
-                           "    7 CallMethod r0, 1\n"
+                           "    0 Ldar a0\n"
+                           "    2 Star0\n"
+                           "    3 Ldar a1\n"
+                           "    5 Star1\n"
+                           "    6 CallMethodAttr r0, c[0], 1\n"
                            "   10 Return\n"
                            "   11 LdaNone\n"
                            "   12 Return\n"

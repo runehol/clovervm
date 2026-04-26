@@ -266,6 +266,15 @@ namespace cl
         return builtin->callback(active_thread(), args);
     }
 
+    static ALWAYSINLINE Value invoke_builtin_callback_from_first_arg(
+        Value *fp, BuiltinFunction *builtin, int32_t first_arg_reg,
+        uint32_t n_args)
+    {
+        CallArguments args =
+            CallArguments::from_first_arg(&fp[first_arg_reg], n_args);
+        return builtin->callback(active_thread(), args);
+    }
+
     static ALWAYSINLINE void
     enter_function_frame(Value *&fp, const uint8_t *&pc,
                          CodeObject *&code_object, TValue<Function> fun,
@@ -281,48 +290,6 @@ namespace cl
         fp = new_fp;
         code_object = fun.extract()->code_object.extract();
         pc = code_object->code.data();
-    }
-
-    NOINLINE static Value op_call_method_without_self(PARAMS)
-    {
-        int32_t reg = int8_t(pc[1]);
-        uint32_t n_user_args = uint8_t(pc[2]);
-        Value fun = fp[reg];
-
-        if(unlikely(!fun.is_ptr()))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        Object *fun_object = fun.get_ptr();
-        if(fun_object->native_layout_id() == NativeLayoutId::BuiltinFunction)
-        {
-            BuiltinFunction *builtin =
-                static_cast<BuiltinFunction *>(fun_object);
-            if(unlikely(!builtin->accepts_arity(n_user_args)))
-            {
-                MUSTTAIL return wrong_arity_error(ARGS);
-            }
-
-            accumulator =
-                invoke_builtin_callback(fp, builtin, reg - 1, n_user_args);
-
-            pc += 3;
-
-            START(0);
-            COMPLETE();
-        }
-
-        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        enter_function_frame(fp, pc, code_object, TValue<Function>(fun),
-                             reg - 1, n_user_args);
-
-        START(0);
-        COMPLETE();
     }
 
     static Value op_lda_constant(PARAMS)
@@ -501,25 +468,6 @@ namespace cl
         {
             MUSTTAIL return subscript_error(ARGS);
         }
-        COMPLETE();
-    }
-
-    static Value op_load_method(PARAMS)
-    {
-        START(4);
-        int8_t receiver_reg = pc[1];
-        uint8_t const_offset = pc[2];
-        int8_t call_base_reg = pc[3];
-        TValue<String> attr_name(
-            code_object->constant_table[const_offset].as_value());
-        Value callable = Value::not_present();
-        Value self = Value::not_present();
-        if(unlikely(!load_method(fp[receiver_reg], attr_name, callable, self)))
-        {
-            MUSTTAIL return method_lookup_error(ARGS);
-        }
-        fp[call_base_reg] = callable;
-        fp[call_base_reg - 1] = self;
         COMPLETE();
     }
 
@@ -1024,36 +972,68 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_call_method(PARAMS)
+    static ALWAYSINLINE void enter_function_frame_from_first_arg(
+        Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
+        TValue<Function> fun, int32_t first_arg_reg, uint32_t n_args,
+        uint32_t instr_len)
     {
-        int32_t reg = int8_t(pc[1]);
-        if(unlikely(fp[reg - 1].is_not_present()))
+        pc += instr_len;
+
+        int32_t last_arg_reg =
+            n_args == 0 ? first_arg_reg : first_arg_reg - int32_t(n_args) + 1;
+        Value *new_fp = fp + last_arg_reg - FrameHeaderSizeAboveFp;
+
+        initialize_frame_header(new_fp, fp, code_object, pc);
+
+        fp = new_fp;
+        code_object = fun.extract()->code_object.extract();
+        pc = code_object->code.data();
+    }
+
+    static Value op_call_method_attr(PARAMS)
+    {
+        START(4);
+        (void)dispatch_fun;
+        int32_t receiver_reg = int8_t(pc[1]);
+        uint8_t const_offset = pc[2];
+        uint32_t n_user_args = uint8_t(pc[3]);
+        TValue<String> attr_name(
+            code_object->constant_table[const_offset].as_value());
+
+        Value callable = Value::not_present();
+        Value self = Value::not_present();
+        if(unlikely(!load_method(fp[receiver_reg], attr_name, callable, self)))
         {
-            return op_call_method_without_self(ARGS);
+            MUSTTAIL return method_lookup_error(ARGS);
         }
 
-        uint32_t n_user_args = uint8_t(pc[2]);
-        Value fun = fp[reg];
+        bool has_self = !self.is_not_present();
+        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
+        int32_t first_arg_reg = has_self ? receiver_reg : receiver_reg - 1;
+        if(has_self)
+        {
+            fp[receiver_reg] = self;
+        }
 
-        if(unlikely(!fun.is_ptr()))
+        if(unlikely(!callable.is_ptr()))
         {
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        Object *fun_object = fun.get_ptr();
+        Object *fun_object = callable.get_ptr();
         if(fun_object->native_layout_id() == NativeLayoutId::BuiltinFunction)
         {
             BuiltinFunction *builtin =
                 static_cast<BuiltinFunction *>(fun_object);
-            uint32_t n_args = n_user_args + 1;
             if(unlikely(!builtin->accepts_arity(n_args)))
             {
                 MUSTTAIL return wrong_arity_error(ARGS);
             }
 
-            accumulator = invoke_builtin_callback(fp, builtin, reg, n_args);
+            accumulator = invoke_builtin_callback_from_first_arg(
+                fp, builtin, first_arg_reg, n_args);
 
-            pc += 3;
+            pc += instr_len;
 
             START(0);
             COMPLETE();
@@ -1064,11 +1044,14 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        enter_function_frame(fp, pc, code_object, TValue<Function>(fun), reg,
-                             n_user_args + 1);
+        enter_function_frame_from_first_arg(fp, pc, code_object,
+                                            TValue<Function>(callable),
+                                            first_arg_reg, n_args, instr_len);
 
-        START(0);
-        COMPLETE();
+        {
+            START(0);
+            COMPLETE();
+        }
     }
 
     static Value op_get_iter(PARAMS)
@@ -1367,7 +1350,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::StoreAttr, op_store_attr);
         SET_TABLE_ENTRY(Bytecode::LoadSubscript, op_load_subscript);
         SET_TABLE_ENTRY(Bytecode::StoreSubscript, op_store_subscript);
-        SET_TABLE_ENTRY(Bytecode::LoadMethod, op_load_method);
+        SET_TABLE_ENTRY(Bytecode::CallMethodAttr, op_call_method_attr);
 
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
@@ -1379,7 +1362,6 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::BuildClass, op_build_class);
 
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
-        SET_TABLE_ENTRY(Bytecode::CallMethod, op_call_method);
         SET_TABLE_ENTRY(Bytecode::GetIter, op_get_iter);
         SET_TABLE_ENTRY(Bytecode::ForIter, op_for_iter);
         SET_TABLE_ENTRY(Bytecode::ForPrepRange1, op_for_prep_range1);
