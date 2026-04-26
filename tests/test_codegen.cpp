@@ -210,20 +210,28 @@ TEST(Codegen, function_implicit_return_none)
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Codegen, class_definition_uses_code_object_name_in_create_class)
+TEST(Codegen, class_definition_passes_hidden_name_and_bases_to_create_class)
 {
     const wchar_t *test_case = L"class Cls:\n"
                                "    pass\n"
                                "Cls\n";
 
     std::string expected = "Code object:\n"
-                           "    0 CreateClass c[0]\n"
-                           "    2 StaGlobal [0]\n"
-                           "    7 LdaGlobal [0]\n"
-                           "   12 Halt\n"
+                           "    0 LdaConstant c[1]\n"
+                           "    2 Star0\n"
+                           "    3 LdaConstant c[2]\n"
+                           "    5 Star2\n"
+                           "    6 CreateTuple r2, 1\n"
+                           "    9 Star1\n"
+                           "   10 CreateClass c[0], r0\n"
+                           "   13 StaGlobal [0]\n"
+                           "   18 LdaGlobal [0]\n"
+                           "   23 Halt\n"
                            "Constant 0: Code object:\n"
                            "    0 BuildClass\n"
-                           "\n";
+                           "\n"
+                           "Constant 1: \n"
+                           "Constant 2: \n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);

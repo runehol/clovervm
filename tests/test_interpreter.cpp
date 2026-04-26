@@ -1147,11 +1147,52 @@ TEST(Interpreter, direct_method_call_on_class_does_not_insert_self)
     EXPECT_EQ(Value::from_smi(7), actual);
 }
 
-TEST(Interpreter, class_base_lists_are_rejected_in_codegen)
+TEST(Interpreter, class_definition_uses_explicit_base)
 {
-    expect_runtime_error(L"class Derived(Base):\n"
+    test::FileRunner file_runner(L"class Base:\n"
+                                 L"    value = 7\n"
+                                 L"class Derived(Base):\n"
+                                 L"    pass\n"
+                                 L"Derived.value\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(7), actual);
+}
+
+TEST(Interpreter, class_definition_stores_explicit_base_tuple)
+{
+    test::FileRunner file_runner(L"class Base:\n"
+                                 L"    pass\n"
+                                 L"class Derived(Base):\n"
+                                 L"    pass\n"
+                                 L"Derived.__bases__[0]\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::ClassObject,
+              actual.get_ptr<Object>()->native_layout_id());
+    EXPECT_STREQ(L"Base",
+                 string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
+}
+
+TEST(Interpreter, class_definition_rejects_non_class_base)
+{
+    expect_runtime_error(L"Base = 1\n"
+                         L"class Derived(Base):\n"
                          L"    pass\n",
-                         "Class base lists are not supported yet");
+                         "TypeError: class bases must be class objects");
+}
+
+TEST(Interpreter, class_definition_rejects_multiple_bases_until_c3_mro)
+{
+    expect_runtime_error(
+        L"class Left:\n"
+        L"    pass\n"
+        L"class Right:\n"
+        L"    pass\n"
+        L"class Derived(Left, Right):\n"
+        L"    pass\n",
+        "TypeError: multiple class bases are not supported yet");
 }
 
 TEST(Interpreter, class_call_rejects_arguments)

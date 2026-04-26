@@ -410,12 +410,6 @@ namespace cl
             int32_t bases_idx = children[0];
             int32_t body_idx = children[1];
 
-            if(!av.children[bases_idx].empty())
-            {
-                throw std::runtime_error(
-                    "Class base lists are not supported yet");
-            }
-
             uint32_t slot_idx = prepare_variable_assignment(
                 TValue<String>(av.constants[node_idx]), mode);
 
@@ -425,7 +419,8 @@ namespace cl
             uint32_t outer_max_temporary_reg = _max_temporary_reg;
             {
                 code_obj = class_obj;
-                code_obj->name = av.constants[node_idx];
+                code_obj->n_parameters = 2;
+                code_obj->get_local_scope_ptr()->reserve_empty_slots(2);
                 code_obj->get_local_scope_ptr()->reserve_empty_slots(
                     FrameHeaderSize);
                 collect_class_local_bindings(body_idx);
@@ -443,8 +438,44 @@ namespace cl
 
             uint32_t body_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(class_obj));
+            AstChildren bases = av.children[bases_idx];
+            TemporaryReg class_args(this, 2);
+
+            uint32_t name_constant_idx =
+                code_obj->allocate_constant(av.constants[node_idx]);
             code_obj->emit_opcode_constant_idx(
-                source_offset, Bytecode::CreateClass, body_constant_idx);
+                source_offset, Bytecode::LdaConstant, name_constant_idx);
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                      class_args);
+
+            TemporaryReg base_regs(this, std::max<size_t>(bases.size(), 1));
+            if(bases.empty())
+            {
+                uint32_t object_constant_idx = code_obj->allocate_constant(
+                    Value::from_oop(active_vm()->object_class()));
+                code_obj->emit_opcode_constant_idx(
+                    source_offset, Bytecode::LdaConstant, object_constant_idx);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          base_regs);
+            }
+            else
+            {
+                for(size_t i = 0; i < bases.size(); ++i)
+                {
+                    codegen_node(bases[i], mode);
+                    code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                              base_regs + i);
+                }
+            }
+            code_obj->emit_opcode_reg_range(source_offset,
+                                            Bytecode::CreateTuple, base_regs,
+                                            std::max<size_t>(bases.size(), 1));
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                      class_args + 1);
+
+            code_obj->emit_opcode_constant_idx_reg(
+                source_offset, Bytecode::CreateClass, body_constant_idx,
+                class_args);
 
             perform_variable_assignment(source_offset, slot_idx, mode);
         }

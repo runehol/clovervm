@@ -152,15 +152,6 @@ namespace cl
         fp = (Value *)fp[0].as.ptr;
     }
 
-    static Value *make_nested_frame(Value *fp, CodeObject *caller_code_object,
-                                    const uint8_t *return_pc)
-    {
-        Value *new_fp =
-            fp + caller_code_object->get_lowest_occupied_frame_offset() - 1;
-        initialize_frame_header(new_fp, fp, caller_code_object, return_pc);
-        return new_fp;
-    }
-
     static void initialize_class_body_frame(Value *fp, CodeObject *body_code)
     {
         Scope *local_scope = body_code->get_local_scope_ptr();
@@ -206,12 +197,39 @@ namespace cl
         }
     }
 
-    static Value build_class_from_frame(Value *fp, CodeObject *body_code,
-                                        TValue<String> class_name)
+    static constexpr uint32_t ClassBodyNameParameter = 0;
+    static constexpr uint32_t ClassBodyBasesParameter = 1;
+    static constexpr uint32_t ClassBodyParameterCount = 2;
+
+    NOINLINE static void validate_class_bases(TValue<Tuple> bases)
     {
+        if(bases.extract()->size() > 1)
+        {
+            throw std::runtime_error(
+                "TypeError: multiple class bases are not supported yet");
+        }
+
+        for(size_t idx = 0; idx < bases.extract()->size(); ++idx)
+        {
+            if(!can_convert_to<ClassObject>(
+                   bases.extract()->item_unchecked(idx)))
+            {
+                throw std::runtime_error(
+                    "TypeError: class bases must be class objects");
+            }
+        }
+    }
+
+    static Value build_class_from_frame(Value *fp, CodeObject *body_code)
+    {
+        TValue<String> class_name(
+            fp[body_code->encode_reg(ClassBodyNameParameter)]);
+        TValue<Tuple> bases(fp[body_code->encode_reg(ClassBodyBasesParameter)]);
+        validate_class_bases(bases);
+
         TValue<ClassObject> cls = make_internal_value<ClassObject>(
-            class_name, kDefaultFactoryInlineSlotCount,
-            active_vm()->object_class());
+            active_vm()->type_class(), class_name,
+            kDefaultFactoryInlineSlotCount, bases);
         Scope *local_scope = body_code->get_local_scope_ptr();
         for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
         {
@@ -1182,12 +1200,17 @@ namespace cl
 
     static Value op_create_class(PARAMS)
     {
+        static constexpr uint32_t create_class_instr_len = 3;
         uint8_t body_const_offset = pc[1];
+        int8_t first_arg_reg = pc[2];
         TValue<CodeObject> body_code(
             code_object->constant_table[body_const_offset].as_value());
 
-        const uint8_t *return_pc = pc + 2;
-        Value *new_fp = make_nested_frame(fp, code_object, return_pc);
+        int8_t last_arg_reg =
+            first_arg_reg - int8_t(ClassBodyParameterCount) + 1;
+        const uint8_t *return_pc = pc + create_class_instr_len;
+        Value *new_fp = fp + last_arg_reg - FrameHeaderSizeAboveFp;
+        initialize_frame_header(new_fp, fp, code_object, return_pc);
         initialize_class_body_frame(new_fp, body_code.extract());
 
         fp = new_fp;
@@ -1200,8 +1223,7 @@ namespace cl
 
     static Value op_build_class(PARAMS)
     {
-        accumulator = build_class_from_frame(fp, code_object,
-                                             TValue<String>(code_object->name));
+        accumulator = build_class_from_frame(fp, code_object);
 
         restore_frame_header(fp, pc, code_object);
 
