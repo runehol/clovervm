@@ -50,7 +50,7 @@ namespace cl
 
             return AttributeWriteDescriptor::found(
                 AttributeWritePlan::store_existing(
-                    object, info.storage_location(),
+                    nullptr, info.storage_location(),
                     attribute_write_validity_cell_for_target(object)));
         }
 
@@ -145,7 +145,7 @@ namespace cl
         return AttributeReadDescriptor::found(
             AttributeReadPlan::from_storage(
                 AttributeReadPlanPath::ReceiverOwnProperty,
-                AttributeReadPlanKind::ReceiverSlot, this, location,
+                AttributeReadPlanKind::ReceiverSlot, nullptr, location,
                 read_storage_location(location),
                 AttributeBindingContext::none()),
             attribute_cache_blocker(AttributeCacheBlocker::MissingLookupCell));
@@ -215,7 +215,8 @@ namespace cl
         {
             return false;
         }
-        return store_attr_from_plan(descriptor.plan, value);
+        return store_attr_from_plan(Value::from_oop(this), descriptor.plan,
+                                    value);
     }
 
     bool Object::set_own_property(TValue<String> name, Value value)
@@ -224,7 +225,8 @@ namespace cl
             lookup_own_attribute_write_descriptor(name);
         if(descriptor.is_found())
         {
-            return store_attr_from_plan(descriptor.plan, value);
+            return store_attr_from_plan(Value::from_oop(this), descriptor.plan,
+                                        value);
         }
         if(descriptor.status == AttributeWriteStatus::NotFound)
         {

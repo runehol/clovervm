@@ -757,7 +757,7 @@ struct AttributeBindingContext {
 struct AttributeReadPlan {
     AttributeReadPlanPath path;
     AttributeReadPlanKind kind;
-    const Object *storage_owner;
+    const Object *storage_owner; // nullptr means receiver-relative storage
     StorageLocation storage_location;
     Value value;
     AttributeBindingContext binding;
@@ -826,6 +826,11 @@ The access kind determines where the value comes from:
 - `ResolvedValue` returns the cached resolved value directly
 - descriptor access kinds call descriptor protocol on the cached resolved
   value
+
+For storage-backed plans, `storage_owner == nullptr` means the storage location
+is relative to the current receiver passed to plan execution. A concrete
+`storage_owner` is used for class-chain hits where the winning slot lives on a
+class or base class object.
 
 The lookup validity cell is independent of the value location. Even a
 receiver-local slot hit may depend on class-chain lookup remaining

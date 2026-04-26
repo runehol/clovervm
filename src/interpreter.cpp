@@ -324,9 +324,9 @@ namespace cl
         RequiresDescriptorDispatch,
     };
 
-    static ALWAYSINLINE MethodCallTargetStatus
-    prepare_method_call_target(const AttributeReadDescriptor &descriptor,
-                               Value &callable_out, Value &self_out)
+    static ALWAYSINLINE MethodCallTargetStatus prepare_method_call_target(
+        Value receiver, const AttributeReadDescriptor &descriptor,
+        Value &callable_out, Value &self_out)
     {
         if(!descriptor.is_found())
         {
@@ -336,18 +336,23 @@ namespace cl
         }
 
         const AttributeReadPlan &plan = descriptor.plan;
+        const Object *storage_owner = plan.storage_owner;
+        if(storage_owner == nullptr)
+        {
+            assert(receiver.is_ptr());
+            storage_owner = receiver.get_ptr<Object>();
+        }
         self_out = Value::not_present();
         switch(plan.kind)
         {
             case AttributeReadPlanKind::ReceiverSlot:
-                assert(plan.storage_owner != nullptr);
-                callable_out = plan.storage_owner->read_storage_location(
-                    plan.storage_location);
+                callable_out =
+                    storage_owner->read_storage_location(plan.storage_location);
                 return MethodCallTargetStatus::Ready;
 
             case AttributeReadPlanKind::BindFunctionReceiver:
                 callable_out = plan.value;
-                self_out = plan.binding.self;
+                self_out = receiver;
                 return MethodCallTargetStatus::Ready;
 
             case AttributeReadPlanKind::ReturnValue:
@@ -1059,8 +1064,8 @@ namespace cl
             resolve_attr_read_descriptor(fp[receiver_reg], attr_name);
         Value callable;
         Value self;
-        MethodCallTargetStatus target_status =
-            prepare_method_call_target(descriptor, callable, self);
+        MethodCallTargetStatus target_status = prepare_method_call_target(
+            fp[receiver_reg], descriptor, callable, self);
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
             MUSTTAIL return method_lookup_error(ARGS);

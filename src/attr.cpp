@@ -144,13 +144,17 @@ namespace cl
         return class_descriptor;
     }
 
-    Value load_attr_from_plan(const AttributeReadPlan &plan)
+    Value load_attr_from_plan(Value receiver, const AttributeReadPlan &plan)
     {
+        const Object *storage_owner = plan.storage_owner;
+        if(storage_owner == nullptr)
+        {
+            assert(receiver.is_ptr());
+            storage_owner = receiver.get_ptr<Object>();
+        }
         if(plan.kind == AttributeReadPlanKind::ReceiverSlot)
         {
-            assert(plan.storage_owner != nullptr);
-            return plan.storage_owner->read_storage_location(
-                plan.storage_location);
+            return storage_owner->read_storage_location(plan.storage_location);
         }
 
         if(plan.kind == AttributeReadPlanKind::DataDescriptorGet ||
@@ -163,13 +167,13 @@ namespace cl
         return plan.value;
     }
 
-    bool load_method_from_plan(const AttributeReadPlan &plan,
+    bool load_method_from_plan(Value receiver, const AttributeReadPlan &plan,
                                Value &callable_out, Value &self_out)
     {
-        callable_out = load_attr_from_plan(plan);
+        callable_out = load_attr_from_plan(receiver, plan);
         if(plan.kind == AttributeReadPlanKind::BindFunctionReceiver)
         {
-            self_out = plan.binding.self;
+            self_out = receiver;
         }
         else
         {
@@ -196,7 +200,8 @@ namespace cl
             self_out = Value::not_present();
             return false;
         }
-        return load_method_from_plan(descriptor.plan, callable_out, self_out);
+        return load_method_from_plan(obj, descriptor.plan, callable_out,
+                                     self_out);
     }
 
     Value load_attr(Value obj, TValue<String> name)
@@ -207,7 +212,7 @@ namespace cl
         {
             return Value::not_present();
         }
-        return load_attr_from_plan(descriptor.plan);
+        return load_attr_from_plan(obj, descriptor.plan);
     }
 
     AttributeWriteDescriptor resolve_attr_write_descriptor(Value obj,
@@ -222,13 +227,18 @@ namespace cl
         return object->lookup_own_attribute_write_descriptor(name);
     }
 
-    bool store_attr_from_plan(const AttributeWritePlan &plan, Value value)
+    bool store_attr_from_plan(Value receiver, const AttributeWritePlan &plan,
+                              Value value)
     {
-        assert(plan.storage_owner != nullptr);
+        Object *storage_owner = plan.storage_owner;
+        if(storage_owner == nullptr)
+        {
+            assert(receiver.is_ptr());
+            storage_owner = receiver.get_ptr<Object>();
+        }
 
-        plan.storage_owner->write_storage_location(plan.storage_location,
-                                                   value);
-        invalidate_lookup_cells_for_class_target(plan.storage_owner);
+        storage_owner->write_storage_location(plan.storage_location, value);
+        invalidate_lookup_cells_for_class_target(storage_owner);
         return true;
     }
 
@@ -238,7 +248,7 @@ namespace cl
             resolve_attr_write_descriptor(obj, name);
         if(descriptor.is_found())
         {
-            return store_attr_from_plan(descriptor.plan, value);
+            return store_attr_from_plan(obj, descriptor.plan, value);
         }
         if(descriptor.status == AttributeWriteStatus::NotFound && obj.is_ptr())
         {

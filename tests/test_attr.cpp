@@ -115,7 +115,9 @@ TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
         resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
     ASSERT_TRUE(read_descriptor.is_found());
     EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, read_descriptor.plan.kind);
-    EXPECT_EQ(Value::from_smi(7), load_attr_from_plan(read_descriptor.plan));
+    EXPECT_EQ(nullptr, read_descriptor.plan.storage_owner);
+    EXPECT_EQ(Value::from_smi(7), load_attr_from_plan(Value::from_oop(instance),
+                                                      read_descriptor.plan));
 
     EXPECT_TRUE(instance->delete_own_property(attr_name));
     read_descriptor =
@@ -412,6 +414,44 @@ TEST(Attr, StoreAttrWritesInstanceOwnProperty)
               load_attr(Value::from_oop(instance), attr_name));
 }
 
+TEST(Attr, ReceiverSlotPlansExecuteAgainstCurrentReceiver)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
+    ClassObject *cls =
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
+    Instance *first = context.thread()->make_internal_raw<Instance>(cls);
+    Instance *second = context.thread()->make_internal_raw<Instance>(cls);
+
+    EXPECT_TRUE(first->set_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_TRUE(second->set_own_property(attr_name, Value::from_smi(2)));
+    ASSERT_EQ(first->get_shape(), second->get_shape());
+
+    AttributeReadDescriptor read_descriptor =
+        resolve_attr_read_descriptor(Value::from_oop(first), attr_name);
+    ASSERT_TRUE(read_descriptor.is_found());
+    ASSERT_EQ(AttributeReadPlanKind::ReceiverSlot, read_descriptor.plan.kind);
+    ASSERT_EQ(nullptr, read_descriptor.plan.storage_owner);
+    EXPECT_EQ(Value::from_smi(2), load_attr_from_plan(Value::from_oop(second),
+                                                      read_descriptor.plan));
+
+    AttributeWriteDescriptor write_descriptor =
+        resolve_attr_write_descriptor(Value::from_oop(first), attr_name);
+    ASSERT_TRUE(write_descriptor.is_found());
+    ASSERT_EQ(nullptr, write_descriptor.plan.storage_owner);
+    EXPECT_TRUE(store_attr_from_plan(
+        Value::from_oop(second), write_descriptor.plan, Value::from_smi(3)));
+
+    EXPECT_EQ(Value::from_smi(1), load_attr(Value::from_oop(first), attr_name));
+    EXPECT_EQ(Value::from_smi(3),
+              load_attr(Value::from_oop(second), attr_name));
+}
+
 TEST(Attr, StoreAttrWritesClassMember)
 {
     test::VmTestContext context;
@@ -521,6 +561,7 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
         resolve_attr_write_descriptor(Value::from_oop(instance), attr_name);
 
     ASSERT_TRUE(descriptor.is_found());
+    EXPECT_EQ(nullptr, descriptor.plan.storage_owner);
     EXPECT_TRUE(descriptor.is_cacheable());
     ValidityCell *cell = descriptor.plan.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
