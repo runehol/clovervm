@@ -120,7 +120,9 @@ value's type, data descriptors take precedence over receiver-local attributes,
 and non-data descriptors run after receiver-local attributes. Descriptor
 invocation is deliberately not performed inside `attr.cpp`; it must fall out to
 interpreter opcode handlers because invoking `__get__` may execute Python
-bytecode.
+bytecode. Direct method-call bytecode now consumes `AttributeReadDescriptor`
+results directly, so future inline caches can be attached to the semantic read
+result instead of to the legacy `(callable, maybe_self)` adapter.
 
 Relevant code:
 
@@ -476,11 +478,16 @@ the first descriptor-precedence slice:
 - non-data descriptors run after receiver-local lookup misses
 - descriptor invocation is surfaced as `DataDescriptorGet` or
   `NonDataDescriptorGet`
-- descriptor get accesses carry `UnsupportedDescriptorKind` until interpreter
-  opcode handlers can execute them
+- descriptor get accesses carry `UnsupportedDescriptorKind`; direct method
+  calls route those cases through a cold interpreter error path until opcode
+  handlers can execute descriptor calls
 
-The full unified model still needs the rest of Python descriptor behavior
-before caches are worth building broadly.
+The full unified model still needs the rest of Python descriptor behavior before
+caches are worth building broadly. Lookup validity cells and narrow inline
+caches can still begin before all descriptors are implemented, as long as cache
+eligibility stays conservative: unsupported descriptor access kinds, mutable
+descriptor protocol, and custom attribute hooks must block caching rather than
+being approximated.
 
 Add or complete:
 
@@ -506,7 +513,7 @@ Primary files:
 
 ### 9. Combine method lookup and method call bytecodes
 
-Status: partially complete.
+Status: complete for the current no-cache-index bytecode shape.
 
 Before adding lookup validity cells, replace the current `LOAD_METHOD` /
 `CALL_METHOD` split with one combined method-call opcode. The split opcode pair
@@ -524,18 +531,21 @@ The combined opcode should:
 - leave ordinary escaped method-value lookup to normal attribute load semantics
 
 The current fused opcode is `CallMethodAttr receiver_and_arg_span, name, argc`.
-It deliberately skips the future cache-index operand. Codegen lays out one
-contiguous register span:
+It deliberately skips the future cache-index operand; adding that operand is
+part of inline-cache integration rather than the semantic opcode transition.
+Codegen lays out one contiguous register span:
 
 ```text
 receiver, explicit_arg0, explicit_arg1, ...
 ```
 
-The interpreter handler resolves the attribute in call context and then either
-uses the receiver slot as the implicit first argument or calls with the
-explicit-argument tail of the same span. It may use private handler state for
-the resolved callable, but no interpreter-visible `(callable, maybe_self)` pair
-is produced.
+The interpreter handler resolves an `AttributeReadDescriptor` in call context
+and then either uses the receiver slot as the implicit first argument or calls
+with the explicit-argument tail of the same span. It may use private handler
+state for the resolved callable, but no interpreter-visible `(callable,
+maybe_self)` pair is produced. Descriptor `__get__` access kinds are surfaced
+explicitly and rejected through a cold opcode path until descriptor invocation
+is implemented in interpreter-controlled call machinery.
 
 This gives lookup caches a single call-context operation to specialize later.
 The cache can then record the semantic result of the call lookup rather than
@@ -556,6 +566,13 @@ The unified-object-model doc describes lookup validity cells as the long-term
 replacement for ad hoc invalidation. That work should come after classes and
 instances, builtin objects, and builtin type objects all use the same
 shape-based lookup model.
+
+This does not require every descriptor feature to be complete first. It does
+require cache entries to represent descriptor-related uncertainty honestly:
+cache only successful access kinds that the interpreter can execute directly,
+and let `AttributeCacheBlockers` reject descriptor calls, custom attribute
+hooks, mutable descriptor protocol, and missing lookup-cell dependencies until
+those paths have precise invalidation.
 
 Inline caches should store a cached resolved value for class-chain hits, not a
 raw pointer to the resolved slot. Because every successful class attribute write
