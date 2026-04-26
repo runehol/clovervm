@@ -23,8 +23,20 @@ namespace benchmark_cpp
     int64_t class_instantiation_run(int64_t n);
     int64_t class_instantiation_items(int64_t n);
 
+    int64_t instance_attribute_add_member_run(int64_t n);
+    int64_t instance_attribute_add_member_items(int64_t n);
+
+    int64_t instance_attribute_read_run(int64_t n);
+    int64_t instance_attribute_read_items(int64_t n);
+
+    int64_t class_attribute_read_run(int64_t n);
+    int64_t class_attribute_read_items(int64_t n);
+
     int64_t instance_attribute_write_run(int64_t n);
     int64_t instance_attribute_write_items(int64_t n);
+
+    int64_t class_attribute_write_run(int64_t n);
+    int64_t class_attribute_write_items(int64_t n);
 
     int64_t method_call_run(int64_t n);
     int64_t method_call_items(int64_t n);

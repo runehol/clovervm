@@ -50,9 +50,21 @@ namespace
             {"benchmark/class_instantiation.py",
              {benchmark_cpp::class_instantiation_run,
               benchmark_cpp::class_instantiation_items}},
+            {"benchmark/instance_attribute_add_member.py",
+             {benchmark_cpp::instance_attribute_add_member_run,
+              benchmark_cpp::instance_attribute_add_member_items}},
+            {"benchmark/instance_attribute_read.py",
+             {benchmark_cpp::instance_attribute_read_run,
+              benchmark_cpp::instance_attribute_read_items}},
+            {"benchmark/class_attribute_read.py",
+             {benchmark_cpp::class_attribute_read_run,
+              benchmark_cpp::class_attribute_read_items}},
             {"benchmark/instance_attribute_write.py",
              {benchmark_cpp::instance_attribute_write_run,
               benchmark_cpp::instance_attribute_write_items}},
+            {"benchmark/class_attribute_write.py",
+             {benchmark_cpp::class_attribute_write_run,
+              benchmark_cpp::class_attribute_write_items}},
             {"benchmark/method_call.py",
              {benchmark_cpp::method_call_run,
               benchmark_cpp::method_call_items}},
@@ -454,7 +466,6 @@ static void BM_RecursiveFibonacci(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_RecursiveFibonacci, CloverProgram)
     ->Name("BM_RecursiveFibonacci")
-    ->Arg(20)
     ->Arg(25);
 
 template <typename Program> static void BM_WhileLoop(benchmark::State &state)
@@ -464,19 +475,13 @@ template <typename Program> static void BM_WhileLoop(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_WhileLoop, CloverProgram)
     ->Name("BM_WhileLoop")
-    ->Arg(1000)
-    ->Arg(10000)
     ->Arg(100000);
 
 template <typename Program> static void BM_ForLoop(benchmark::State &state)
 {
     run_benchmark_case<Program>(state, "benchmark/for_loop.py", state.range(0));
 }
-BENCHMARK_TEMPLATE(BM_ForLoop, CloverProgram)
-    ->Name("BM_ForLoop")
-    ->Arg(1000)
-    ->Arg(10000)
-    ->Arg(100000);
+BENCHMARK_TEMPLATE(BM_ForLoop, CloverProgram)->Name("BM_ForLoop")->Arg(100000);
 
 template <typename Program>
 static void BM_ForLoopSlowPath(benchmark::State &state)
@@ -486,8 +491,6 @@ static void BM_ForLoopSlowPath(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_ForLoopSlowPath, CloverProgram)
     ->Name("BM_ForLoopSlowPath")
-    ->Arg(1000)
-    ->Arg(10000)
     ->Arg(100000);
 
 template <typename Program>
@@ -498,8 +501,6 @@ static void BM_NestedForLoop(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_NestedForLoop, CloverProgram)
     ->Name("BM_NestedForLoop")
-    ->Arg(1000)
-    ->Arg(10000)
     ->Arg(100000);
 
 template <typename Program>
@@ -510,8 +511,36 @@ static void BM_ClassInstantiation(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_ClassInstantiation, CloverProgram)
     ->Name("BM_ClassInstantiation")
-    ->Arg(1000)
-    ->Arg(10000)
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_InstanceAttributeAddMember(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/instance_attribute_add_member.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_InstanceAttributeAddMember, CloverProgram)
+    ->Name("BM_InstanceAttributeAddMember")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_InstanceAttributeRead(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/instance_attribute_read.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_InstanceAttributeRead, CloverProgram)
+    ->Name("BM_InstanceAttributeRead")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ClassAttributeRead(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/class_attribute_read.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ClassAttributeRead, CloverProgram)
+    ->Name("BM_ClassAttributeRead")
     ->Arg(100000);
 
 template <typename Program>
@@ -522,8 +551,16 @@ static void BM_InstanceAttributeWrite(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_InstanceAttributeWrite, CloverProgram)
     ->Name("BM_InstanceAttributeWrite")
-    ->Arg(1000)
-    ->Arg(10000)
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ClassAttributeWrite(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/class_attribute_write.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ClassAttributeWrite, CloverProgram)
+    ->Name("BM_ClassAttributeWrite")
     ->Arg(100000);
 
 template <typename Program> static void BM_MethodCall(benchmark::State &state)
@@ -533,8 +570,6 @@ template <typename Program> static void BM_MethodCall(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_MethodCall, CloverProgram)
     ->Name("BM_MethodCall")
-    ->Arg(1000)
-    ->Arg(10000)
     ->Arg(100000);
 
 template <typename Program> static void BM_PystoneLite(benchmark::State &state)

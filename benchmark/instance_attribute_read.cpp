@@ -4,23 +4,23 @@ namespace benchmark_cpp
 {
     namespace
     {
-        struct Counter
+        struct Pair
         {
-            int64_t value = 0;
+            int64_t left = 1;
+            int64_t right = 2;
         };
     }  // namespace
 
-    int64_t instance_attribute_write_run(int64_t n)
+    int64_t instance_attribute_read_run(int64_t n)
     {
-        Counter obj;
+        Pair obj;
         int64_t acc = 0;
         for(int64_t i = 0; i < n; ++i)
         {
-            obj.value = i;
-            acc += obj.value;
+            acc += obj.left + obj.right;
         }
         return acc;
     }
 
-    int64_t instance_attribute_write_items(int64_t n) { return n; }
+    int64_t instance_attribute_read_items(int64_t n) { return n; }
 }  // namespace benchmark_cpp

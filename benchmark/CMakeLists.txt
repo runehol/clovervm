@@ -1,8 +1,12 @@
 add_executable(bench_clovervm
     bench_interpreter.cpp
+    class_attribute_read.cpp
+    class_attribute_write.cpp
     class_instantiation.cpp
     for_loop.cpp
     for_loop_slow_path.cpp
+    instance_attribute_add_member.cpp
+    instance_attribute_read.cpp
     instance_attribute_write.cpp
     method_call.cpp
     nested_for_loop.cpp
