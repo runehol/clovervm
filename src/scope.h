@@ -94,6 +94,20 @@ namespace cl
             slot_values.set(slot_idx, val);
         }
 
+        ALWAYSINLINE bool set_by_slot_index_needs_slow_path(int32_t slot_idx,
+                                                            Value val) const
+        {
+            assert(slot_idx >= 0);
+            return !slot_is_live(slot_idx) && !val.is_not_present() &&
+                   slot_names[slot_idx] != Value::None();
+        }
+
+        ALWAYSINLINE HeapObject *swap_by_slot_index(int32_t slot_idx, Value val)
+        {
+            assert(!set_by_slot_index_needs_slow_path(slot_idx, val));
+            return slot_values.swap_slot(slot_idx, val);
+        }
+
         void reserve_empty_slots(size_t n_slots);
 
         uint32_t size() const { return slot_values.size(); }

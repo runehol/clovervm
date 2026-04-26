@@ -695,12 +695,31 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_sta_global(PARAMS)
+    NOINLINE static Value op_sta_global_slow(PARAMS)
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
         code_object->module_scope.extract()->set_by_slot_index(slot_idx,
                                                                accumulator);
+        COMPLETE();
+    }
+
+    static Value op_sta_global(PARAMS)
+    {
+        START(5);
+        int32_t slot_idx = read_uint32_le(&pc[1]);
+        Scope *module_scope = code_object->module_scope.extract();
+        if(unlikely(module_scope->set_by_slot_index_needs_slow_path(
+               slot_idx, accumulator)))
+        {
+            MUSTTAIL return op_sta_global_slow(ARGS);
+        }
+        HeapObject *zct_object =
+            module_scope->swap_by_slot_index(slot_idx, accumulator);
+        if(unlikely(zct_object != nullptr))
+        {
+            add_to_active_zero_count_table(zct_object);
+        }
         COMPLETE();
     }
 
@@ -1219,7 +1238,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_call_simple(PARAMS)
+    NOINLINE static Value op_call_simple_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 3;
         int8_t reg = pc[1];
@@ -1268,6 +1287,32 @@ namespace cl
         if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
         {
             MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        enter_function_frame_from_callable_slot(fp, pc, code_object,
+                                                TValue<Function>(fun), reg,
+                                                n_args, call_instr_len);
+
+        START(0);
+        COMPLETE();
+    }
+
+    static Value op_call_simple(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 3;
+        int8_t reg = pc[1];
+        uint8_t n_args = pc[2];
+        Value fun = fp[reg];
+
+        if(unlikely(!fun.is_ptr()))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        Object *fun_object = fun.get_ptr();
+        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
+        {
+            MUSTTAIL return op_call_simple_slow(ARGS);
         }
 
         enter_function_frame_from_callable_slot(fp, pc, code_object,

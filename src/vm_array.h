@@ -454,6 +454,32 @@ namespace cl
             incref_element(slot);
         }
 
+        HeapObject *swap_slot(size_t idx, Value value)
+        {
+            static_assert(std::is_same_v<T, Value>);
+            assert(idx < size());
+            Value *slot = mutable_data() + idx;
+            Value old = *slot;
+            if(old == value)
+            {
+                return nullptr;
+            }
+
+            if(value.is_refcounted_ptr())
+            {
+                ++value.as.ptr->refcount;
+            }
+            *slot = value;
+            if(old.is_refcounted_ptr())
+            {
+                if(--old.as.ptr->refcount == 0)
+                {
+                    return old.as.ptr;
+                }
+            }
+            return nullptr;
+        }
+
         template <typename... Args> const T emplace_back(Args &&...args)
         {
             size_t current_size = size();
