@@ -29,6 +29,17 @@ TEST(Tuple, SizedConstructorInitializesEntriesToNotPresent)
     EXPECT_TRUE(tuple->item_unchecked(2).is_not_present());
 }
 
+TEST(Tuple, ObjectAllocationUsesTupleClass)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Tuple *tuple = context.thread()->make_object_raw<Tuple>(2);
+
+    ASSERT_NE(nullptr, context.vm().tuple_class());
+    EXPECT_EQ(context.vm().tuple_class(), tuple->Object::get_class().extract());
+    EXPECT_EQ(2u, tuple->size());
+}
+
 TEST(Tuple, EmptyTupleHasNoItems)
 {
     test::VmTestContext context;

@@ -8,6 +8,7 @@
 #include "range_iterator.h"
 #include "scope.h"
 #include "thread_state.h"
+#include "tuple.h"
 #include <cassert>
 #include <stdexcept>
 
@@ -162,6 +163,7 @@ namespace cl
         register_builtin_class(make_builtin_function_class(this));
         register_builtin_class(make_str_class(this));
         install_bootstrap_string_class();
+        register_builtin_class(make_tuple_class(this));
         register_builtin_class(make_list_class(this));
         install_bootstrap_list_class();
         register_builtin_class(make_dict_class(this));

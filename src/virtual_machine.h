@@ -84,6 +84,10 @@ namespace cl
         {
             return class_for_native_layout(NativeLayoutId::List);
         }
+        ClassObject *tuple_class() const
+        {
+            return class_for_native_layout(NativeLayoutId::Tuple);
+        }
         ClassObject *dict_class() const
         {
             return class_for_native_layout(NativeLayoutId::Dict);

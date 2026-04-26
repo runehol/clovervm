@@ -1,6 +1,7 @@
 #include "tuple.h"
 #include "class_object.h"
 #include "refcount.h"
+#include "virtual_machine.h"
 #include <stdexcept>
 
 namespace cl
@@ -17,6 +18,15 @@ namespace cl
           size_value(Value::from_smi(static_cast<int64_t>(size)))
     {
         initialize_items(size);
+    }
+
+    BuiltinClassDefinition make_tuple_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId native_layout_ids[] = {
+            NativeLayoutId::Tuple};
+        ClassObject *cls = ClassObject::make_builtin_class(
+            vm->get_or_create_interned_string_value(L"tuple"), 1, nullptr, 0);
+        return builtin_class_definition(cls, native_layout_ids);
     }
 
     void Tuple::initialize_item_unchecked(size_t idx, Value value)

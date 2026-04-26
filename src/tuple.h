@@ -1,6 +1,7 @@
 #ifndef CL_TUPLE_H
 #define CL_TUPLE_H
 
+#include "builtin_class_registry.h"
 #include "object.h"
 #include "owned_typed_value.h"
 #include "value.h"
@@ -71,6 +72,9 @@ namespace cl
         MemberTValue<SMI> size_value;
         Value elements[1];
     };
+
+    class VirtualMachine;
+    BuiltinClassDefinition make_tuple_class(VirtualMachine *vm);
 
 }  // namespace cl
 

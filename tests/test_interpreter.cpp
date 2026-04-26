@@ -15,6 +15,7 @@
 #include "thread_state.h"
 #include "token_print.h"
 #include "tokenizer.h"
+#include "tuple.h"
 #include "virtual_machine.h"
 #include <fmt/xchar.h>
 #include <gtest/gtest.h>
@@ -959,6 +960,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         {NativeLayoutId::ClassObject, L"type"},
         {NativeLayoutId::String, L"str"},
         {NativeLayoutId::List, L"list"},
+        {NativeLayoutId::Tuple, L"tuple"},
         {NativeLayoutId::Dict, L"dict"},
         {NativeLayoutId::Function, L"function"},
         {NativeLayoutId::BuiltinFunction, L"builtin_function"},
