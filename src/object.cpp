@@ -99,6 +99,14 @@ namespace cl
         Shape *old_shape = shape;
         shape = incref(new_shape);
         decref(old_shape);
+
+        if(old_shape != nullptr && old_shape != new_shape &&
+           new_shape != nullptr &&
+           new_shape->has_flag(ShapeFlag::IsClassObject))
+        {
+            assume_convert_to<ClassObject>(this)
+                ->invalidate_lookup_validity_cells();
+        }
     }
 
     void Object::initialize_shape_for_class(ClassObject *class_object)
@@ -206,8 +214,16 @@ namespace cl
             return AttributeWriteResult::not_stored();
         }
 
-        return stored_attribute_write_result(
+        AttributeWriteResult write_result = stored_attribute_write_result(
             this, AttributeMutationKind::UpdatedExisting);
+        if(has_attribute_write_effect(
+               write_result.effects,
+               AttributeWriteEffect::InvalidateLookupCellsOnTarget))
+        {
+            assume_convert_to<ClassObject>(this)
+                ->invalidate_lookup_validity_cells();
+        }
+        return write_result;
     }
 
     bool Object::set_existing_own_property(TValue<String> name, Value value)
