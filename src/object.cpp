@@ -151,11 +151,13 @@ namespace cl
             return AttributeReadDescriptor::not_found();
         }
 
-        return AttributeReadDescriptor::found(AttributeReadAccess::from_storage(
-            AttributeReadAccessPath::ReceiverOwnProperty,
-            AttributeReadAccessKind::ReceiverSlot, this, location,
-            read_storage_location(location), AttributeBindingContext::none(),
-            attribute_cache_blocker(AttributeCacheBlocker::MissingLookupCell)));
+        return AttributeReadDescriptor::found(
+            AttributeReadAccess::from_storage(
+                AttributeReadAccessPath::ReceiverOwnProperty,
+                AttributeReadAccessKind::ReceiverSlot, this, location,
+                read_storage_location(location),
+                AttributeBindingContext::none()),
+            attribute_cache_blocker(AttributeCacheBlocker::MissingLookupCell));
     }
 
     AttributeWriteResult

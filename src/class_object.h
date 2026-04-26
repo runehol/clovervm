@@ -80,7 +80,7 @@ namespace cl
         {
             return attached_lookup_validity_cells.size();
         }
-        ALWAYSINLINE ValidityCell *lookup_validity_cell()
+        ALWAYSINLINE ValidityCell *lookup_validity_cell() const
         {
             ValidityCell *cell = primary_lookup_validity_cell.extract();
             if(likely(cell != nullptr && cell->is_valid()))
@@ -106,8 +106,8 @@ namespace cl
 
         Value make_bases_list(Value base) const;
         Value make_mro_list() const;
-        NOINLINE ValidityCell *create_lookup_validity_cell_slow();
-        void attach_lookup_validity_cell(ValidityCell *cell);
+        NOINLINE ValidityCell *create_lookup_validity_cell_slow() const;
+        void attach_lookup_validity_cell(ValidityCell *cell) const;
         AttributeReadDescriptor
         lookup_class_chain_descriptor(TValue<String> name,
                                       AttributeReadAccessPath path,
@@ -118,8 +118,8 @@ namespace cl
         MemberValue mro;
         MemberValue class_extra_inline_attribute_slots
             [kClassExtraInlineAttributeSlotCount];
-        MemberHeapPtr<ValidityCell> primary_lookup_validity_cell;
-        HeapPtrArray<ValidityCell> attached_lookup_validity_cells;
+        mutable MemberHeapPtr<ValidityCell> primary_lookup_validity_cell;
+        mutable HeapPtrArray<ValidityCell> attached_lookup_validity_cells;
         MemberHeapPtr<Shape> instance_root_shape;
         uint32_t instance_default_inline_slot_count;
 

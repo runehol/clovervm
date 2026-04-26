@@ -8,6 +8,7 @@
 namespace cl
 {
     class ClassObject;
+    class ValidityCell;
     struct Object;
 
     enum class AttributeReadStatus : uint8_t
@@ -81,17 +82,17 @@ namespace cl
         StorageLocation storage_location;
         Value value;
         AttributeBindingContext binding;
-        AttributeCacheBlockers cache_blockers;
+        ValidityCell *lookup_validity_cell;
 
         static AttributeReadAccess
         from_storage(AttributeReadAccessPath path, AttributeReadAccessKind kind,
                      const Object *storage_owner, StorageLocation location,
                      Value value, AttributeBindingContext binding,
-                     AttributeCacheBlockers cache_blockers =
-                         attribute_cache_blocker(AttributeCacheBlocker::None))
+                     ValidityCell *lookup_validity_cell = nullptr)
         {
-            return AttributeReadAccess{path,  kind,    storage_owner, location,
-                                       value, binding, cache_blockers};
+            return AttributeReadAccess{
+                path,  kind,    storage_owner,       location,
+                value, binding, lookup_validity_cell};
         }
     };
 
@@ -99,6 +100,7 @@ namespace cl
     {
         AttributeReadStatus status;
         AttributeReadAccess access;
+        AttributeCacheBlockers cache_blockers;
 
         static AttributeReadDescriptor not_found()
         {
@@ -108,7 +110,8 @@ namespace cl
                     AttributeReadAccessPath::ReceiverOwnProperty,
                     AttributeReadAccessKind::ReturnValue, nullptr,
                     StorageLocation::not_found(), Value::not_present(),
-                    AttributeBindingContext::none())};
+                    AttributeBindingContext::none()),
+                attribute_cache_blocker(AttributeCacheBlocker::None)};
         }
 
         static AttributeReadDescriptor non_object_receiver()
@@ -118,18 +121,20 @@ namespace cl
             return descriptor;
         }
 
-        static AttributeReadDescriptor found(AttributeReadAccess access)
+        static AttributeReadDescriptor
+        found(AttributeReadAccess access,
+              AttributeCacheBlockers cache_blockers =
+                  attribute_cache_blocker(AttributeCacheBlocker::None))
         {
-            return AttributeReadDescriptor{AttributeReadStatus::Found, access};
+            return AttributeReadDescriptor{AttributeReadStatus::Found, access,
+                                           cache_blockers};
         }
 
         bool is_found() const { return status == AttributeReadStatus::Found; }
 
         bool is_cacheable() const
         {
-            return is_found() &&
-                   access.cache_blockers ==
-                       attribute_cache_blocker(AttributeCacheBlocker::None);
+            return is_found() && access.lookup_validity_cell != nullptr;
         }
     };
 

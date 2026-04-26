@@ -948,6 +948,42 @@ TEST(ClassObject, DuplicateLookupValidityCellRequestsReuseBaseAttachment)
     EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
 }
 
+TEST(ClassObject, ClassChainReadDescriptorCarriesLookupValidityCell)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"attr"));
+    ClassObject *base =
+        context.thread()->make_internal_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, Value::from_oop(base));
+
+    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(7)));
+    EXPECT_EQ(nullptr, child->current_lookup_validity_cell());
+
+    AttributeReadDescriptor descriptor =
+        child->lookup_class_attribute_descriptor(attr_name);
+
+    ASSERT_TRUE(descriptor.is_found());
+    ValidityCell *cell = descriptor.access.lookup_validity_cell;
+    ASSERT_NE(nullptr, cell);
+    EXPECT_TRUE(cell->is_valid());
+    EXPECT_EQ(cell, child->current_lookup_validity_cell());
+    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
+    EXPECT_TRUE(descriptor.is_cacheable());
+
+    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(8)));
+
+    EXPECT_FALSE(cell->is_valid());
+    EXPECT_TRUE(descriptor.is_cacheable());
+}
+
 TEST(ClassObject, ClassLookupWalksMaterializedMro)
 {
     test::VmTestContext context;

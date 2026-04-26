@@ -192,7 +192,7 @@ namespace cl
         return try_convert_to<ClassObject>(base_value);
     }
 
-    ValidityCell *ClassObject::create_lookup_validity_cell_slow()
+    ValidityCell *ClassObject::create_lookup_validity_cell_slow() const
     {
         Value mro_value = inline_slot_base()[kClassMetadataSlotMro];
         List *mro = assume_convert_to<List>(mro_value);
@@ -210,7 +210,7 @@ namespace cl
         return cell;
     }
 
-    void ClassObject::attach_lookup_validity_cell(ValidityCell *cell)
+    void ClassObject::attach_lookup_validity_cell(ValidityCell *cell) const
     {
         assert(cell != nullptr);
         assert(cell->is_valid());
@@ -284,10 +284,11 @@ namespace cl
             return AttributeReadDescriptor::found(
                 AttributeReadAccess::from_storage(
                     path, attribute_read_access_kind_for_path(path, own_value),
-                    this, own_location, own_value, binding,
-                    attribute_cache_blockers_for_class_value(own_value)));
+                    this, own_location, own_value, binding),
+                attribute_cache_blockers_for_class_value(own_value));
         }
 
+        ValidityCell *validity_cell = lookup_validity_cell();
         List *mro = try_convert_to<List>(mro_value);
         for(uint32_t mro_idx = 0; mro_idx < mro->size(); ++mro_idx)
         {
@@ -309,8 +310,8 @@ namespace cl
             return AttributeReadDescriptor::found(
                 AttributeReadAccess::from_storage(
                     path, attribute_read_access_kind_for_path(path, value), cls,
-                    lookup.storage_location(), value, binding,
-                    attribute_cache_blockers_for_class_value(value)));
+                    lookup.storage_location(), value, binding, validity_cell),
+                attribute_cache_blockers_for_class_value(value));
         }
 
         return AttributeReadDescriptor::not_found();

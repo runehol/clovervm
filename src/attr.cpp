@@ -19,17 +19,17 @@ namespace cl
         }
     };
 
-    static AttributeReadAccess with_access_kind(
-        AttributeReadAccess access, AttributeReadAccessKind kind,
+    static AttributeReadDescriptor with_access_kind(
+        AttributeReadDescriptor descriptor, AttributeReadAccessKind kind,
         AttributeCacheBlocker blocker = AttributeCacheBlocker::None)
     {
-        access.kind = kind;
+        descriptor.access.kind = kind;
         if(blocker != AttributeCacheBlocker::None)
         {
-            access.cache_blockers =
-                attribute_cache_blockers(access.cache_blockers, blocker);
+            descriptor.cache_blockers =
+                attribute_cache_blockers(descriptor.cache_blockers, blocker);
         }
-        return access;
+        return descriptor;
     }
 
     static DescriptorProtocol lookup_descriptor_protocol(Value value)
@@ -74,9 +74,8 @@ namespace cl
             protocol.has_set_or_delete()
                 ? AttributeReadAccessKind::DataDescriptorGet
                 : AttributeReadAccessKind::NonDataDescriptorGet;
-        return AttributeReadDescriptor::found(
-            with_access_kind(descriptor.access, kind,
-                             AttributeCacheBlocker::UnsupportedDescriptorKind));
+        return with_access_kind(
+            descriptor, kind, AttributeCacheBlocker::UnsupportedDescriptorKind);
     }
 
     static AttributeReadDescriptor
