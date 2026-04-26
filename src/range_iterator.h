@@ -28,7 +28,7 @@ namespace cl
         MemberTValue<CLInt> stop;
         MemberTValue<CLInt> step;
 
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(RangeIterator, current, 3);
+        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(RangeIterator, Object, 3);
     };
 
     static_assert(std::is_trivially_destructible_v<RangeIterator>);

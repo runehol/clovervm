@@ -63,17 +63,12 @@ namespace cl
         bool delete_own_property(TValue<String> name);
         Value read_storage_location(StorageLocation location) const;
         void write_storage_location(StorageLocation location, Value value);
-        static constexpr uint32_t static_value_offset_in_words()
-        {
-            static_assert(CL_OFFSETOF(Object, cls) % sizeof(uint64_t) == 0,
-                          "Value region must start on a 64-bit word boundary");
-            return CL_OFFSETOF(Object, cls) / sizeof(uint64_t);
-        }
-
         NativeLayoutId native_layout;
         Shape *shape;
         OverflowSlots *overflow_storage;
         ClassObject *cls;
+
+        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Object, cls, 1);
 
     protected:
         Value *inline_slot_base() { return reinterpret_cast<Value *>(&cls); }

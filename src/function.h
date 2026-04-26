@@ -28,7 +28,7 @@ namespace cl
 
         MemberTValue<CodeObject> code_object;
 
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Function, code_object, 1);
+        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(Function, Object, 1);
     };
 
     static_assert(std::is_trivially_destructible_v<Function>);

@@ -70,8 +70,8 @@ namespace cl
         size_t n_valid_entries;
 
     public:
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(
-            Dict, hash_table,
+        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(
+            Dict, Object,
             decltype(hash_table)::embedded_value_count +
                 decltype(entries)::embedded_value_count);
     };

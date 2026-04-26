@@ -272,7 +272,7 @@ namespace cl
             code[pos + 1] = (v >> 8) & 0xff;
         }
 
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(CodeObject, module_scope, 3);
+        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(CodeObject, Object, 3);
     };
 
     inline void JumpTarget::resolve_relocation(uint32_t pos)

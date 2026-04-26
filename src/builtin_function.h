@@ -55,7 +55,8 @@ namespace cl
         uint32_t min_arity;
         uint32_t max_arity;
 
-        CL_DECLARE_STATIC_LAYOUT_NO_VALUES(BuiltinFunction);
+        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(BuiltinFunction, Object,
+                                                     0);
     };
 
     BuiltinClassDefinition make_builtin_function_class(VirtualMachine *vm);

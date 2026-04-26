@@ -100,7 +100,8 @@ namespace cl
         static DynamicLayoutSpec layout_spec_for(TValue<SMI> count)
         {
             return DynamicLayoutSpec{
-                round_up_to_16byte_units(size_for(size_t(count.extract()))), 1};
+                round_up_to_16byte_units(size_for(size_t(count.extract()))),
+                static_fixed_value_count()};
         }
 
         static DynamicLayoutSpec layout_spec_for(ClassObject *,
@@ -112,7 +113,7 @@ namespace cl
         static DynamicLayoutSpec layout_spec_for(const cl_wchar *str)
         {
             return DynamicLayoutSpec{round_up_to_16byte_units(size_for(str)),
-                                     1};
+                                     static_fixed_value_count()};
         }
 
         static DynamicLayoutSpec layout_spec_for(ClassObject *,
@@ -124,7 +125,7 @@ namespace cl
         static DynamicLayoutSpec layout_spec_for(const std::wstring &str)
         {
             return DynamicLayoutSpec{round_up_to_16byte_units(size_for(str)),
-                                     1};
+                                     static_fixed_value_count()};
         }
 
         static DynamicLayoutSpec layout_spec_for(ClassObject *,
@@ -133,7 +134,7 @@ namespace cl
             return layout_spec_for(str);
         }
 
-        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(String, count);
+        CL_DECLARE_DYNAMIC_LAYOUT_EXTENDS_WITH_VALUES(String, Object, 1);
     };
 
     static inline bool operator==(const String &a, const std::wstring &b)

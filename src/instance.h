@@ -26,11 +26,7 @@ namespace cl
         static DynamicLayoutSpec layout_spec_for(ClassObject *cls);
 
     public:
-        static constexpr bool has_dynamic_layout = true;
-        static constexpr uint32_t static_value_offset_in_words()
-        {
-            return Object::static_value_offset_in_words();
-        }
+        CL_DECLARE_DYNAMIC_LAYOUT_EXTENDS_WITH_VALUES(Instance, Object, 0);
     };
 
     BuiltinClassDefinition make_instance_class(VirtualMachine *vm);

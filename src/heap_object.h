@@ -142,6 +142,35 @@ namespace cl
                                                static_value_count());          \
     }
 
+#define CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(type, base_type,          \
+                                                     own_value_count_expr)     \
+    static_assert(!base_type::has_dynamic_layout,                              \
+                  "Static inherited layouts require a static base layout");    \
+    static constexpr bool has_dynamic_layout = false;                          \
+    static constexpr uint32_t static_value_offset_in_words()                   \
+    {                                                                          \
+        return base_type::static_value_offset_in_words();                      \
+    }                                                                          \
+    static constexpr uint64_t static_value_count()                             \
+    {                                                                          \
+        return base_type::static_value_count() + own_value_count_expr;         \
+    }                                                                          \
+    static constexpr uint64_t static_size_in_16byte_units()                    \
+    {                                                                          \
+        return round_up_to_16byte_units(sizeof(type));                         \
+    }                                                                          \
+    static constexpr HeapLayout compact_layout()                               \
+    {                                                                          \
+        static_assert(compact_layout_fits(static_size_in_16byte_units(),       \
+                                          static_value_offset_in_words(),      \
+                                          static_value_count()),               \
+                      "Compact object layout does not fit in the compact "     \
+                      "header");                                               \
+        return encode_compact_layout_unchecked(static_size_in_16byte_units(),  \
+                                               static_value_offset_in_words(), \
+                                               static_value_count());          \
+    }
+
 #define CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(type, first_value_member)        \
     static constexpr bool has_dynamic_layout = true;                           \
     static constexpr uint32_t static_value_offset_in_words()                   \
@@ -155,6 +184,20 @@ namespace cl
 #define CL_DECLARE_DYNAMIC_LAYOUT_NO_VALUES(type)                              \
     static constexpr bool has_dynamic_layout = true;                           \
     static constexpr uint32_t static_value_offset_in_words() { return 0; }
+
+#define CL_DECLARE_DYNAMIC_LAYOUT_EXTENDS_WITH_VALUES(                         \
+    type, base_type, fixed_own_value_count_expr)                               \
+    static_assert(!base_type::has_dynamic_layout,                              \
+                  "Dynamic inherited layouts require a static base layout");   \
+    static constexpr bool has_dynamic_layout = true;                           \
+    static constexpr uint32_t static_value_offset_in_words()                   \
+    {                                                                          \
+        return base_type::static_value_offset_in_words();                      \
+    }                                                                          \
+    static constexpr uint64_t static_fixed_value_count()                       \
+    {                                                                          \
+        return base_type::static_value_count() + fixed_own_value_count_expr;   \
+    }
 
     /*
       Base class for all VM heap records. HeapObjects have the common header

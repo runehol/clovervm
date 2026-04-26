@@ -84,9 +84,8 @@ namespace cl
         uint32_t instance_default_inline_slot_count;
 
     public:
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(ClassObject, name,
-                                             3 + kClassDynamicInlineSlotCount +
-                                                 1);
+        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(
+            ClassObject, Object, 3 + kClassDynamicInlineSlotCount + 1);
     };
 
     class VirtualMachine;

@@ -56,8 +56,8 @@ namespace cl
         ValueArray<Value> items;
 
     public:
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(
-            List, items, ValueArray<Value>::embedded_value_count);
+        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(
+            List, Object, ValueArray<Value>::embedded_value_count);
     };
 
     class VirtualMachine;
