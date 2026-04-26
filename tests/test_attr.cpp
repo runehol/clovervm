@@ -1,8 +1,11 @@
 #include "attr.h"
 #include "builtin_function.h"
 #include "class_object.h"
+#include "dict.h"
 #include "function.h"
 #include "instance.h"
+#include "list.h"
+#include "range_iterator.h"
 #include "shape.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -163,6 +166,106 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
         context.vm().get_or_create_interned_string_value(L"hello"));
     EXPECT_EQ(Value::from_oop(context.vm().str_class()),
               load_attr(string_value.as_value(), dunder_class_name));
+}
+
+TEST(Attr, BuiltinInstancesExposeDunderClassThroughAttributeLookup)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> dunder_class_name(
+        context.vm().get_or_create_interned_string_value(L"__class__"));
+
+    TValue<String> string_value(
+        context.vm().get_or_create_interned_string_value(L"hello"));
+    List *list = context.thread()->make_object_raw<List>();
+    Dict *dict = context.thread()->make_object_raw<Dict>();
+    TValue<BuiltinFunction> builtin_function =
+        context.thread()->make_object_value<BuiltinFunction>(builtin_identity,
+                                                             1, 1);
+    CodeObject *code = context.thread()->compile(L"def f():\n"
+                                                 L"    return 1\n",
+                                                 StartRule::File);
+    Function *function = context.thread()->make_object_raw<Function>(
+        TValue<CodeObject>(Value::from_oop(code)));
+    RangeIterator *range_iterator =
+        context.thread()->make_object_raw<RangeIterator>(
+            TValue<CLInt>(Value::from_smi(0)),
+            TValue<CLInt>(Value::from_smi(3)),
+            TValue<CLInt>(Value::from_smi(1)));
+
+    struct BuiltinInstance
+    {
+        Value value;
+        ClassObject *expected_class;
+    };
+
+    BuiltinInstance instances[] = {
+        {string_value.as_value(), context.vm().str_class()},
+        {Value::from_oop(list), context.vm().list_class()},
+        {Value::from_oop(dict), context.vm().dict_class()},
+        {Value(builtin_function), context.vm().builtin_function_class()},
+        {Value::from_oop(code), context.vm().code_class()},
+        {Value::from_oop(function), context.vm().function_class()},
+        {Value::from_oop(range_iterator), context.vm().range_iterator_class()},
+    };
+
+    for(const BuiltinInstance &instance: instances)
+    {
+        Object *object = instance.value.get_ptr<Object>();
+        EXPECT_EQ(Value::from_oop(instance.expected_class),
+                  object->get_own_property(dunder_class_name));
+        EXPECT_EQ(Value::from_oop(instance.expected_class),
+                  load_attr(instance.value, dunder_class_name));
+    }
+}
+
+TEST(Attr, BuiltinInstancesRejectUnsupportedAttributeWrites)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"custom"));
+    TValue<String> dunder_class_name(
+        context.vm().get_or_create_interned_string_value(L"__class__"));
+
+    TValue<String> string_value(
+        context.vm().get_or_create_interned_string_value(L"hello"));
+    List *list = context.thread()->make_object_raw<List>();
+    Dict *dict = context.thread()->make_object_raw<Dict>();
+    TValue<BuiltinFunction> builtin_function =
+        context.thread()->make_object_value<BuiltinFunction>(builtin_identity,
+                                                             1, 1);
+    CodeObject *code = context.thread()->compile(L"def f():\n"
+                                                 L"    return 1\n",
+                                                 StartRule::File);
+    Function *function = context.thread()->make_object_raw<Function>(
+        TValue<CodeObject>(Value::from_oop(code)));
+    RangeIterator *range_iterator =
+        context.thread()->make_object_raw<RangeIterator>(
+            TValue<CLInt>(Value::from_smi(0)),
+            TValue<CLInt>(Value::from_smi(3)),
+            TValue<CLInt>(Value::from_smi(1)));
+
+    Value instances[] = {
+        string_value.as_value(),         Value::from_oop(list),
+        Value::from_oop(dict),           Value(builtin_function),
+        Value::from_oop(code),           Value::from_oop(function),
+        Value::from_oop(range_iterator),
+    };
+
+    for(Value instance: instances)
+    {
+        Value original_class = load_attr(instance, dunder_class_name);
+        ASSERT_FALSE(original_class.is_not_present());
+
+        EXPECT_FALSE(store_attr(instance, attr_name, Value::from_smi(99)));
+        EXPECT_EQ(Value::not_present(), load_attr(instance, attr_name));
+
+        EXPECT_FALSE(store_attr(instance, dunder_class_name, Value::None()));
+        EXPECT_EQ(original_class, load_attr(instance, dunder_class_name));
+    }
 }
 
 TEST(Attr, LoadAttrMissesOnUnsupportedInlineValues)
