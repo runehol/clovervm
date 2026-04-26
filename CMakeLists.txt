@@ -40,6 +40,9 @@ include(cmake/StaticAnalyzers.cmake)
 
 # Main targets built by this project
 
+option(CLOVERVM_BUILD_BENCHMARK
+       "Build the benchmark binary as part of the default target" ON)
+
 add_subdirectory(src)
 
 # Things typically only needed if we are the top level project
@@ -48,7 +51,13 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 	# Externally provided content
 	add_subdirectory(dependencies)
     add_subdirectory(tests)
-    if(CLOVERVM_BUILD_BENCHMARK_DEPS)
+    if(CLOVERVM_BUILD_BENCHMARK)
+        if(NOT TARGET benchmark::benchmark)
+            message(FATAL_ERROR
+                    "CLOVERVM_BUILD_BENCHMARK requires benchmark::benchmark. "
+                    "Enable CLOVERVM_BUILD_BENCHMARK_DEPS or provide the target "
+                    "before adding benchmark/.")
+        endif()
         add_subdirectory(benchmark)
     endif()
 
