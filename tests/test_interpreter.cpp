@@ -747,6 +747,21 @@ TEST(Interpreter, attribute_load_and_store_syntax)
               obj_value.get_ptr<Instance>()->get_own_property(attr_name));
 }
 
+TEST(Interpreter, cached_class_attribute_read_observes_class_write)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    value = 1\n"
+                                 L"def get(obj):\n"
+                                 L"    return obj.value\n"
+                                 L"obj = Cls()\n"
+                                 L"first = get(obj)\n"
+                                 L"Cls.value = 2\n"
+                                 L"get(obj)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(2), actual);
+}
+
 TEST(Interpreter, direct_method_call_inserts_self_for_class_functions)
 {
     test::FileRunner file_runner(L"class Cls:\n"

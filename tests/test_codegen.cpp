@@ -249,10 +249,10 @@ TEST(Codegen, attribute_load_uses_register_receiver)
                            "    2 StaGlobal [0]\n"
                            "    7 Halt\n"
                            "Constant 0: Code object:\n"
-                           "    0 LoadAttr a0, c[0]\n"
-                           "    3 Return\n"
-                           "    4 LdaNone\n"
-                           "    5 Return\n"
+                           "    0 LoadAttr a0, c[0], read_ic[0]\n"
+                           "    4 Return\n"
+                           "    5 LdaNone\n"
+                           "    6 Return\n"
                            "Constant 0: \n"
                            "\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -271,9 +271,9 @@ TEST(Codegen, attribute_store_uses_register_receiver_and_accumulator_value)
                            "    7 Halt\n"
                            "Constant 0: Code object:\n"
                            "    0 Ldar a1\n"
-                           "    2 StoreAttr a0, c[0]\n"
-                           "    5 LdaNone\n"
-                           "    6 Return\n"
+                           "    2 StoreAttr a0, c[0], write_ic[0]\n"
+                           "    6 LdaNone\n"
+                           "    7 Return\n"
                            "Constant 0: \n"
                            "\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -295,10 +295,10 @@ TEST(Codegen, direct_method_call_uses_callmethodattr)
                            "    2 Star0\n"
                            "    3 Ldar a1\n"
                            "    5 Star1\n"
-                           "    6 CallMethodAttr r0, c[0], 1\n"
-                           "   10 Return\n"
-                           "   11 LdaNone\n"
-                           "   12 Return\n"
+                           "    6 CallMethodAttr r0, c[0], read_ic[0], 1\n"
+                           "   11 Return\n"
+                           "   12 LdaNone\n"
+                           "   13 Return\n"
                            "Constant 0: \n"
                            "\n";
     std::string actual = bytecode_str_from_file(test_case);

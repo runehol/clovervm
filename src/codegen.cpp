@@ -471,9 +471,10 @@ namespace cl
                     code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
                                               regs + 1 + i);
                 }
-                code_obj->emit_opcode_reg_constant_idx_argc(
+                uint8_t cache_idx = code_obj->allocate_attribute_read_cache();
+                code_obj->emit_opcode_reg_constant_idx_cache_idx_argc(
                     source_offset, Bytecode::CallMethodAttr, regs, constant_idx,
-                    args.size());
+                    cache_idx, args.size());
                 return;
             }
 
@@ -592,9 +593,10 @@ namespace cl
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
                 codegen_node(children[1], mode);
-                code_obj->emit_opcode_reg_constant_idx(
+                uint8_t cache_idx = code_obj->allocate_attribute_write_cache();
+                code_obj->emit_opcode_reg_constant_idx_cache_idx(
                     source_offset, Bytecode::StoreAttr, receiver_reg.reg,
-                    constant_idx);
+                    constant_idx, cache_idx);
                 return;
             }
 
@@ -602,9 +604,10 @@ namespace cl
             std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
                 kind.operator_kind, entry, children[1]);
 
-            code_obj->emit_opcode_reg_constant_idx(
+            uint8_t load_cache_idx = code_obj->allocate_attribute_read_cache();
+            code_obj->emit_opcode_reg_constant_idx_cache_idx(
                 source_offset, Bytecode::LoadAttr, receiver_reg.reg,
-                constant_idx);
+                constant_idx, load_cache_idx);
 
             if(immediate.has_value())
             {
@@ -621,9 +624,11 @@ namespace cl
                                           lhs_value_reg);
             }
 
-            code_obj->emit_opcode_reg_constant_idx(
+            uint8_t store_cache_idx =
+                code_obj->allocate_attribute_write_cache();
+            code_obj->emit_opcode_reg_constant_idx_cache_idx(
                 source_offset, Bytecode::StoreAttr, receiver_reg.reg,
-                constant_idx);
+                constant_idx, store_cache_idx);
         }
 
         std::optional<uint8_t> direct_range_call_arity(int32_t node_idx) const
@@ -1124,9 +1129,11 @@ namespace cl
                             codegen_node_to_register(children[0], mode);
                         uint8_t constant_idx =
                             code_obj->allocate_constant(av.constants[node_idx]);
-                        code_obj->emit_opcode_reg_constant_idx(
+                        uint8_t cache_idx =
+                            code_obj->allocate_attribute_read_cache();
+                        code_obj->emit_opcode_reg_constant_idx_cache_idx(
                             source_offset, Bytecode::LoadAttr, receiver_reg.reg,
-                            constant_idx);
+                            constant_idx, cache_idx);
                         break;
                     }
 

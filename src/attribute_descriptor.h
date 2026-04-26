@@ -148,7 +148,9 @@ namespace cl
 
         bool is_cacheable() const
         {
-            return is_found() && plan.lookup_validity_cell != nullptr;
+            return is_found() && plan.lookup_validity_cell != nullptr &&
+                   plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
+                   plan.kind != AttributeReadPlanKind::NonDataDescriptorGet;
         }
     };
 

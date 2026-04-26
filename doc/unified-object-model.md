@@ -771,10 +771,12 @@ struct AttributeReadDescriptor {
 };
 ```
 
-`status == Found` means the plan can execute immediately.
-`cache_blockers` says whether that successful plan is eligible to
-become an inline-cache entry. These fields do not overlap: cache
-blockers are meaningful only for successful plans.
+`status == Found` means the plan can execute immediately. The descriptor's
+`is_cacheable()` predicate is the authoritative cacheability test: today a
+read plan must have a lookup validity cell and must not require descriptor
+dispatch. `cache_blockers` records why otherwise-successful lookups were not
+cache-friendly, but the interpreter does not separately consult it on the
+inline-cache path.
 
 Object and class implementations should emit these descriptors directly:
 `Object` owns receiver-slot descriptors, while `ClassObject` owns
@@ -793,19 +795,23 @@ no data descriptor currently wins for the same name. Until lookup cells
 represent that dependency, those accesses carry a `MissingLookupCell`
 cache blocker even though the value can be loaded immediately.
 
-Each cache entry is derived from a cacheable `AttributeReadPlan` and
-records:
+`CodeObject` owns attribute inline caches in side arrays, parallel in spirit to
+the constant table:
+
+```cpp
+std::vector<AttributeReadInlineCache> attribute_read_caches;
+std::vector<AttributeWriteInlineCache> attribute_write_caches;
+```
+
+Load and method-call bytecodes use the read cache array. Store bytecodes use the
+write cache array. Each cache entry is derived from a cacheable plan and records:
 
 | Field | Meaning |
 |---|---|
 | `receiver_shape` | guards receiver layout |
-| `lookup_mode` | attribute algorithm being specialized |
-| `lookup_cell` | validity for class-chain lookup assumptions |
-| `access_kind` | semantic action for the resolved attribute |
-| `cached_value` | resolved class-chain value for `ResolvedValue` and descriptor cache kinds; otherwise unused |
-| `receiver_storage_location` | storage kind plus slot index relative to the receiver for `ReceiverSlot` |
+| `plan` | the successful read or write plan to execute on a cache hit |
 
-The lookup mode says which attribute algorithm was specialized. This is
+For read caches, the plan's path says which attribute algorithm was specialized. This is
 important because `InstanceAttribute` and `ClassAttribute` search
 different chains and invoke descriptors with different receiver
 arguments.
@@ -1032,6 +1038,13 @@ attribute-call operation:
 
 ```text
 CallMethodAttr name, cache_index, receiver, argc, args...
+```
+
+The current bytecode encoding keeps the receiver and explicit arguments in one
+register span and uses the code object's read-cache side array:
+
+```text
+CallMethodAttr receiver, name, read_cache_index, argc
 ```
 
 The opcode performs attribute lookup in call context and then calls the

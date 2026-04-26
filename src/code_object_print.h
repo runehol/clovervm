@@ -277,6 +277,20 @@ template <> struct fmt::formatter<cl::CodeObject>
     }
 
     template <typename Out>
+    void disassemble_read_cache(const cl::CodeObject &code_obj, Out &out,
+                                uint32_t pc) const
+    {
+        format_to(out, "read_ic[{}]", code_obj.code[pc]);
+    }
+
+    template <typename Out>
+    void disassemble_write_cache(const cl::CodeObject &code_obj, Out &out,
+                                 uint32_t pc) const
+    {
+        format_to(out, "write_ic[{}]", code_obj.code[pc]);
+    }
+
+    template <typename Out>
     void disassemble_smi8(const cl::CodeObject &code_obj, Out &out,
                           uint32_t pc) const
     {
@@ -386,11 +400,21 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::LoadAttr:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_constant(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_read_cache(code_obj, out, pc++);
+                break;
+
             case cl::Bytecode::StoreAttr:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");
                 disassemble_constant(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_write_cache(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::LoadSubscript:
@@ -410,6 +434,8 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");
                 disassemble_constant(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_read_cache(code_obj, out, pc++);
                 format_to(out, ", ");
                 format_to(out, "{}", code_obj.code[pc++]);
                 break;

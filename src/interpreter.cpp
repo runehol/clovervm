@@ -378,6 +378,100 @@ namespace cl
                                                     callable_out, self_out);
     }
 
+    NOINLINE static Value load_attr_cache_miss(Value receiver,
+                                               TValue<String> attr_name,
+                                               AttributeReadInlineCache &cache)
+    {
+        AttributeReadDescriptor descriptor =
+            resolve_attr_read_descriptor(receiver, attr_name);
+        if(!descriptor.is_found())
+        {
+            return Value::not_present();
+        }
+        if(descriptor.is_cacheable())
+        {
+            cache.populate(receiver, descriptor);
+        }
+        return load_attr_from_plan(receiver, descriptor.plan);
+    }
+
+    static ALWAYSINLINE Value load_attr_cached(Value receiver,
+                                               TValue<String> attr_name,
+                                               AttributeReadInlineCache &cache)
+    {
+        if(likely(cache.matches(receiver)))
+        {
+            return load_attr_from_plan(receiver, cache.plan);
+        }
+        return load_attr_cache_miss(receiver, attr_name, cache);
+    }
+
+    NOINLINE static bool store_attr_cache_miss(Value receiver,
+                                               TValue<String> attr_name,
+                                               Value value,
+                                               AttributeWriteInlineCache &cache)
+    {
+        AttributeWriteDescriptor descriptor =
+            resolve_attr_write_descriptor(receiver, attr_name);
+        if(descriptor.is_found())
+        {
+            if(descriptor.is_cacheable())
+            {
+                cache.populate(receiver, descriptor);
+            }
+            return store_attr_from_plan(receiver, descriptor.plan, value);
+        }
+        if(descriptor.status == AttributeWriteStatus::NotFound &&
+           receiver.is_ptr())
+        {
+            return receiver.get_ptr<Object>()->add_own_property(attr_name,
+                                                                value);
+        }
+        return false;
+    }
+
+    static ALWAYSINLINE bool store_attr_cached(Value receiver,
+                                               TValue<String> attr_name,
+                                               Value value,
+                                               AttributeWriteInlineCache &cache)
+    {
+        if(likely(cache.matches(receiver)))
+        {
+            return store_attr_from_plan(receiver, cache.plan, value);
+        }
+        return store_attr_cache_miss(receiver, attr_name, value, cache);
+    }
+
+    NOINLINE static MethodCallTargetStatus
+    method_attr_cache_miss(Value receiver, TValue<String> attr_name,
+                           AttributeReadInlineCache &cache, Value &callable_out,
+                           Value &self_out)
+    {
+        AttributeReadDescriptor descriptor =
+            resolve_attr_read_descriptor(receiver, attr_name);
+        MethodCallTargetStatus status =
+            prepare_method_call_target_from_descriptor(receiver, descriptor,
+                                                       callable_out, self_out);
+        if(status == MethodCallTargetStatus::Ready && descriptor.is_cacheable())
+        {
+            cache.populate(receiver, descriptor);
+        }
+        return status;
+    }
+
+    static ALWAYSINLINE MethodCallTargetStatus method_attr_cached(
+        Value receiver, TValue<String> attr_name,
+        AttributeReadInlineCache &cache, Value &callable_out, Value &self_out)
+    {
+        if(likely(cache.matches(receiver)))
+        {
+            return prepare_method_call_target_from_plan(receiver, cache.plan,
+                                                        callable_out, self_out);
+        }
+        return method_attr_cache_miss(receiver, attr_name, cache, callable_out,
+                                      self_out);
+    }
+
     static Value op_lda_constant(PARAMS)
     {
         START(2);
@@ -505,12 +599,14 @@ namespace cl
 
     static Value op_load_attr(PARAMS)
     {
-        START(3);
+        START(4);
         int8_t reg = pc[1];
         uint8_t const_offset = pc[2];
+        uint8_t cache_idx = pc[3];
         TValue<String> attr_name(
             code_object->constant_table[const_offset].as_value());
-        accumulator = load_attr(fp[reg], attr_name);
+        accumulator = load_attr_cached(
+            fp[reg], attr_name, code_object->attribute_read_caches[cache_idx]);
         if(unlikely(accumulator.is_not_present()))
         {
             MUSTTAIL return attribute_error(ARGS);
@@ -520,12 +616,15 @@ namespace cl
 
     static Value op_store_attr(PARAMS)
     {
-        START(3);
+        START(4);
         int8_t reg = pc[1];
         uint8_t const_offset = pc[2];
+        uint8_t cache_idx = pc[3];
         TValue<String> attr_name(
             code_object->constant_table[const_offset].as_value());
-        if(unlikely(!store_attr(fp[reg], attr_name, accumulator)))
+        if(unlikely(!store_attr_cached(
+               fp[reg], attr_name, accumulator,
+               code_object->attribute_write_caches[cache_idx])))
         {
             MUSTTAIL return attribute_assignment_error(ARGS);
         }
@@ -1062,20 +1161,19 @@ namespace cl
 
     static Value op_call_method_attr(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 4;
+        static constexpr uint32_t call_instr_len = 5;
         int32_t receiver_reg = int8_t(pc[1]);
         uint8_t const_offset = pc[2];
-        uint32_t n_user_args = uint8_t(pc[3]);
+        uint8_t cache_idx = pc[3];
+        uint32_t n_user_args = uint8_t(pc[4]);
         TValue<String> attr_name(
             code_object->constant_table[const_offset].as_value());
 
-        AttributeReadDescriptor descriptor =
-            resolve_attr_read_descriptor(fp[receiver_reg], attr_name);
         Value callable;
         Value self;
-        MethodCallTargetStatus target_status =
-            prepare_method_call_target_from_descriptor(
-                fp[receiver_reg], descriptor, callable, self);
+        MethodCallTargetStatus target_status = method_attr_cached(
+            fp[receiver_reg], attr_name,
+            code_object->attribute_read_caches[cache_idx], callable, self);
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
             MUSTTAIL return method_lookup_error(ARGS);

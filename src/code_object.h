@@ -1,6 +1,7 @@
 #ifndef CL_CODE_OBJECT_H
 #define CL_CODE_OBJECT_H
 
+#include "attribute_cache.h"
 #include "builtin_class_registry.h"
 #include "bytecode.h"
 #include "owned.h"
@@ -76,6 +77,8 @@ namespace cl
 
         std::vector<uint32_t> source_offsets;
         std::vector<OwnedValue> constant_table;
+        std::vector<AttributeReadInlineCache> attribute_read_caches;
+        std::vector<AttributeWriteInlineCache> attribute_write_caches;
 
         uint32_t get_n_registers() const
         {
@@ -194,6 +197,20 @@ namespace cl
             return result;
         }
 
+        uint32_t emit_opcode_reg_constant_idx_cache_idx(uint32_t source_offset,
+                                                        Bytecode c,
+                                                        uint32_t reg,
+                                                        uint8_t constant_idx,
+                                                        uint8_t cache_idx)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            emplace_back(source_offset, encode_reg(reg));
+            emplace_back(source_offset, constant_idx);
+            emplace_back(source_offset, cache_idx);
+            return result;
+        }
+
         uint32_t emit_opcode_reg_constant_idx_argc(uint32_t source_offset,
                                                    Bytecode c, uint32_t reg,
                                                    uint8_t constant_idx,
@@ -203,6 +220,19 @@ namespace cl
             uint32_t result = emplace_back(source_offset, uint8_t(c));
             emplace_back(source_offset, encode_reg(reg));
             emplace_back(source_offset, constant_idx);
+            emplace_back(source_offset, argc);
+            return result;
+        }
+
+        uint32_t emit_opcode_reg_constant_idx_cache_idx_argc(
+            uint32_t source_offset, Bytecode c, uint32_t reg,
+            uint8_t constant_idx, uint8_t cache_idx, uint8_t argc)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            emplace_back(source_offset, encode_reg(reg));
+            emplace_back(source_offset, constant_idx);
+            emplace_back(source_offset, cache_idx);
             emplace_back(source_offset, argc);
             return result;
         }
@@ -275,6 +305,22 @@ namespace cl
         {
             uint32_t idx = constant_table.size();
             constant_table.emplace_back(val);
+            assert(idx < 256);
+            return idx;
+        }
+
+        uint32_t allocate_attribute_read_cache()
+        {
+            uint32_t idx = attribute_read_caches.size();
+            attribute_read_caches.emplace_back();
+            assert(idx < 256);
+            return idx;
+        }
+
+        uint32_t allocate_attribute_write_cache()
+        {
+            uint32_t idx = attribute_write_caches.size();
+            attribute_write_caches.emplace_back();
             assert(idx < 256);
             return idx;
         }
