@@ -38,6 +38,7 @@ namespace cl
           present_count_(_present_count), shape_flags(_shape_flags),
           transitions(), owner_class(_owner_class)
     {
+        assert(valid_shape_flags(shape_flags));
         assert(present_count_ <= property_count_);
         for(uint32_t idx = 0; idx < property_count_; ++idx)
         {
@@ -305,6 +306,23 @@ namespace cl
         }
         assert(next_property_idx == next_property_count);
         return next_shape;
+    }
+
+    Shape *Shape::clone_with_flags(ShapeFlags new_shape_flags) const
+    {
+        assert(valid_shape_flags(new_shape_flags));
+        Shape *cloned_shape = make_internal_raw<Shape>(
+            owner_class.as_value(), previous_shape, next_slot_index,
+            property_count_, new_shape_flags, present_count_);
+        for(uint32_t property_idx = 0; property_idx < property_count_;
+            ++property_idx)
+        {
+            cloned_shape->descriptor_names[property_idx] =
+                incref(get_property_name(property_idx).as_value());
+            cloned_shape->descriptor_infos()[property_idx] =
+                get_descriptor_info(property_idx);
+        }
+        return cloned_shape;
     }
 
 }  // namespace cl

@@ -24,6 +24,52 @@ namespace cl
     {
     };
 
+    enum class AttributeMutationKind : uint8_t
+    {
+        NotStored,
+        UpdatedExisting,
+        Added,
+        Deleted,
+    };
+
+    enum class AttributeWriteEffect : uint8_t
+    {
+        None = 0,
+        InvalidateLookupCellsOnTarget = 1 << 0,
+    };
+
+    using AttributeWriteEffects = uint8_t;
+
+    constexpr AttributeWriteEffects
+    attribute_write_effect(AttributeWriteEffect effect)
+    {
+        return static_cast<AttributeWriteEffects>(effect);
+    }
+
+    constexpr bool has_attribute_write_effect(AttributeWriteEffects effects,
+                                              AttributeWriteEffect effect)
+    {
+        return (effects & attribute_write_effect(effect)) != 0;
+    }
+
+    struct AttributeWriteResult
+    {
+        AttributeMutationKind kind;
+        AttributeWriteEffects effects;
+
+        static AttributeWriteResult not_stored()
+        {
+            return AttributeWriteResult{
+                AttributeMutationKind::NotStored,
+                attribute_write_effect(AttributeWriteEffect::None)};
+        }
+
+        bool is_stored() const
+        {
+            return kind != AttributeMutationKind::NotStored;
+        }
+    };
+
     /*
       Base class for Python-visible objects. These are heap records that also
       have Python class identity and concrete native layout identity.
@@ -58,10 +104,19 @@ namespace cl
         Shape *get_shape() const { return shape; }
         void set_shape(Shape *new_shape);
         Value get_own_property(TValue<String> name) const;
+        AttributeWriteResult
+        define_own_property_with_result(TValue<String> name, Value value,
+                                        DescriptorFlags descriptor_flags);
         bool define_own_property(TValue<String> name, Value value,
                                  DescriptorFlags descriptor_flags);
+        AttributeWriteResult
+        set_existing_own_property_with_result(TValue<String> name, Value value);
         bool set_existing_own_property(TValue<String> name, Value value);
+        AttributeWriteResult set_own_property_with_result(TValue<String> name,
+                                                          Value value);
         bool set_own_property(TValue<String> name, Value value);
+        AttributeWriteResult
+        delete_own_property_with_result(TValue<String> name);
         bool delete_own_property(TValue<String> name);
         Value read_storage_location(StorageLocation location) const;
         void write_storage_location(StorageLocation location, Value value);

@@ -9,7 +9,8 @@ namespace cl
 
     ClassObject::ClassObject(BootstrapObjectTag, TValue<String> _name,
                              uint32_t _instance_default_inline_slot_count,
-                             Value _base, ShapeFlags class_shape_flags)
+                             Value _base, ShapeFlags class_shape_flags,
+                             ShapeFlags instance_shape_flags)
         : Object(BootstrapObjectTag{}, native_layout_id, compact_layout()),
           name(_name), bases(Value::not_present()), mro(Value::not_present()),
           instance_root_shape(nullptr), instance_default_inline_slot_count(
@@ -23,7 +24,7 @@ namespace cl
             Value::from_oop(this), dunder_class_name,
             DescriptorInfo::make(StorageLocation{0, StorageKind::Inline},
                                  instance_class_flags),
-            1);
+            1, instance_shape_flags);
 
         TValue<String> dunder_name_name = interned_string(L"__name__");
         TValue<String> dunder_bases_name = interned_string(L"__bases__");
@@ -68,20 +69,22 @@ namespace cl
 
     ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
                              uint32_t _instance_default_inline_slot_count,
-                             Value _base, ShapeFlags class_shape_flags)
+                             Value _base, ShapeFlags class_shape_flags,
+                             ShapeFlags instance_shape_flags)
         : ClassObject(BootstrapObjectTag{}, _name,
                       _instance_default_inline_slot_count, _base,
-                      class_shape_flags)
+                      class_shape_flags, instance_shape_flags)
     {
         install_bootstrap_class(metaclass);
     }
 
     ClassObject::ClassObject(TValue<String> _name,
                              uint32_t _instance_default_inline_slot_count,
-                             Value _base, ShapeFlags class_shape_flags)
+                             Value _base, ShapeFlags class_shape_flags,
+                             ShapeFlags instance_shape_flags)
         : ClassObject(active_vm()->type_class(), _name,
                       _instance_default_inline_slot_count, _base,
-                      class_shape_flags)
+                      class_shape_flags, instance_shape_flags)
     {
     }
 
@@ -95,7 +98,7 @@ namespace cl
         assert(type != nullptr);
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
             type, name, instance_default_inline_slot_count, base,
-            class_shape_flags);
+            class_shape_flags, fixed_attribute_shape_flags());
 
         DescriptorFlags method_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
@@ -109,6 +112,8 @@ namespace cl
             (void)stored;
         }
 
+        cls->set_shape(cls->get_shape()->clone_with_flags(
+            class_shape_flags | fixed_attribute_shape_flags()));
         return cls;
     }
 
@@ -139,13 +144,14 @@ namespace cl
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::ClassObject};
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
-                                       shape_flag(ShapeFlag::IsImmutableType);
+                                       shape_flag(ShapeFlag::IsImmutableType) |
+                                       fixed_attribute_shape_flags();
         ClassObject::validate_inline_slot_layout();
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
             BootstrapObjectTag{},
             vm->get_or_create_interned_string_value(L"type"),
             ClassObject::kClassInlineStorageSlotCount, Value::None(),
-            class_shape_flags);
+            class_shape_flags, fixed_attribute_shape_flags());
         cls->install_bootstrap_class(cls);
         return builtin_class_definition(cls, native_layout_ids);
     }

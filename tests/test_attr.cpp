@@ -268,6 +268,32 @@ TEST(Attr, BuiltinInstancesRejectUnsupportedAttributeWrites)
     }
 }
 
+TEST(Attr, BuiltinTypeObjectsRejectUnsupportedAttributeWrites)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"custom"));
+    Value builtin_types[] = {
+        Value::from_oop(context.vm().type_class()),
+        Value::from_oop(context.vm().instance_class()),
+        Value::from_oop(context.vm().str_class()),
+        Value::from_oop(context.vm().list_class()),
+        Value::from_oop(context.vm().dict_class()),
+        Value::from_oop(context.vm().function_class()),
+        Value::from_oop(context.vm().builtin_function_class()),
+        Value::from_oop(context.vm().code_class()),
+        Value::from_oop(context.vm().range_iterator_class()),
+    };
+
+    for(Value type: builtin_types)
+    {
+        EXPECT_FALSE(store_attr(type, attr_name, Value::from_smi(99)));
+        EXPECT_EQ(Value::not_present(), load_attr(type, attr_name));
+    }
+}
+
 TEST(Attr, LoadAttrMissesOnUnsupportedInlineValues)
 {
     test::VmTestContext context;
@@ -317,6 +343,72 @@ TEST(Attr, StoreAttrWritesClassMember)
     EXPECT_TRUE(
         store_attr(Value::from_oop(cls), attr_name, Value::from_smi(5)));
     EXPECT_EQ(Value::from_smi(5), load_attr(Value::from_oop(cls), attr_name));
+}
+
+TEST(Attr, AttributeWritesExposeLookupInvalidationEffectForClassTargets)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
+    ClassObject *cls =
+        context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
+
+    AttributeWriteResult class_result =
+        cls->set_own_property_with_result(attr_name, Value::from_smi(5));
+    EXPECT_EQ(AttributeMutationKind::Added, class_result.kind);
+    EXPECT_TRUE(has_attribute_write_effect(
+        class_result.effects,
+        AttributeWriteEffect::InvalidateLookupCellsOnTarget));
+
+    AttributeWriteResult class_update_result =
+        cls->set_own_property_with_result(attr_name, Value::from_smi(6));
+    EXPECT_EQ(AttributeMutationKind::UpdatedExisting, class_update_result.kind);
+    EXPECT_TRUE(has_attribute_write_effect(
+        class_update_result.effects,
+        AttributeWriteEffect::InvalidateLookupCellsOnTarget));
+
+    AttributeWriteResult class_delete_result =
+        cls->delete_own_property_with_result(attr_name);
+    EXPECT_EQ(AttributeMutationKind::Deleted, class_delete_result.kind);
+    EXPECT_TRUE(has_attribute_write_effect(
+        class_delete_result.effects,
+        AttributeWriteEffect::InvalidateLookupCellsOnTarget));
+
+    AttributeWriteResult instance_result =
+        instance->set_own_property_with_result(attr_name, Value::from_smi(7));
+    EXPECT_EQ(AttributeMutationKind::Added, instance_result.kind);
+    EXPECT_FALSE(has_attribute_write_effect(
+        instance_result.effects,
+        AttributeWriteEffect::InvalidateLookupCellsOnTarget));
+}
+
+TEST(Attr, ShapePolicyCanDisallowInstanceAttributeAddDelete)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
+    ShapeFlags instance_shape_flags =
+        shape_flag(ShapeFlag::DisallowAttributeAddDelete);
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        cls_name, 2, Value::None(), shape_flag(ShapeFlag::IsClassObject),
+        instance_shape_flags);
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
+
+    AttributeWriteResult result =
+        instance->set_own_property_with_result(attr_name, Value::from_smi(7));
+    EXPECT_FALSE(result.is_stored());
+    EXPECT_EQ(AttributeMutationKind::NotStored, result.kind);
+    EXPECT_EQ(attribute_write_effect(AttributeWriteEffect::None),
+              result.effects);
 }
 
 TEST(Attr, ClassMetadataAttributesAreReadonly)

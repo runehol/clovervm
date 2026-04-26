@@ -31,23 +31,25 @@ namespace cl
         static constexpr uint32_t kClassMetadataSlotCount = 4;
         static constexpr uint32_t kClassInlineStorageSlotCount = 48;
 
-        ClassObject(BootstrapObjectTag, TValue<String> name,
-                    uint32_t instance_default_inline_slot_count,
-                    Value base = Value::None(),
-                    ShapeFlags class_shape_flags =
-                        shape_flag(ShapeFlag::IsClassObject));
+        ClassObject(
+            BootstrapObjectTag, TValue<String> name,
+            uint32_t instance_default_inline_slot_count,
+            Value base = Value::None(),
+            ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
+            ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
-        ClassObject(ClassObject *metaclass, TValue<String> name,
-                    uint32_t instance_default_inline_slot_count,
-                    Value base = Value::None(),
-                    ShapeFlags class_shape_flags =
-                        shape_flag(ShapeFlag::IsClassObject));
+        ClassObject(
+            ClassObject *metaclass, TValue<String> name,
+            uint32_t instance_default_inline_slot_count,
+            Value base = Value::None(),
+            ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
+            ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
-        ClassObject(TValue<String> name,
-                    uint32_t instance_default_inline_slot_count,
-                    Value base = Value::None(),
-                    ShapeFlags class_shape_flags =
-                        shape_flag(ShapeFlag::IsClassObject));
+        ClassObject(
+            TValue<String> name, uint32_t instance_default_inline_slot_count,
+            Value base = Value::None(),
+            ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
+            ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         static ClassObject *
         make_builtin_class(TValue<String> name,

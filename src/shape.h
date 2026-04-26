@@ -29,6 +29,8 @@ namespace cl
         HasCustomGetAttrFallback = 1 << 3,
         HasCustomSetAttribute = 1 << 4,
         HasCustomDelAttribute = 1 << 5,
+        DisallowAttributeUpdates = 1 << 6,
+        DisallowAttributeAddDelete = 1 << 7,
     };
 
     using ShapeFlags = uint16_t;
@@ -41,6 +43,23 @@ namespace cl
     constexpr bool has_shape_flag(ShapeFlags flags, ShapeFlag flag)
     {
         return (flags & shape_flag(flag)) != 0;
+    }
+
+    constexpr ShapeFlags mutable_attribute_shape_flags()
+    {
+        return shape_flag(ShapeFlag::None);
+    }
+
+    constexpr ShapeFlags fixed_attribute_shape_flags()
+    {
+        return shape_flag(ShapeFlag::DisallowAttributeUpdates) |
+               shape_flag(ShapeFlag::DisallowAttributeAddDelete);
+    }
+
+    constexpr bool valid_shape_flags(ShapeFlags flags)
+    {
+        return !has_shape_flag(flags, ShapeFlag::DisallowAttributeUpdates) ||
+               has_shape_flag(flags, ShapeFlag::DisallowAttributeAddDelete);
     }
 
     struct ShapeRootDescriptor
@@ -146,6 +165,14 @@ namespace cl
         {
             return has_shape_flag(shape_flags, flag);
         }
+        bool allows_attribute_updates() const
+        {
+            return !has_flag(ShapeFlag::DisallowAttributeUpdates);
+        }
+        bool allows_attribute_add_delete() const
+        {
+            return !has_flag(ShapeFlag::DisallowAttributeAddDelete);
+        }
         TValue<String> get_property_name(uint32_t property_idx) const
         {
             assert(property_idx < property_count_);
@@ -178,6 +205,7 @@ namespace cl
         Shape *derive_transition(TValue<String> name, ShapeTransitionVerb verb,
                                  DescriptorFlags descriptor_flags =
                                      descriptor_flag(DescriptorFlag::None));
+        Shape *clone_with_flags(ShapeFlags new_shape_flags) const;
 
     private:
         Shape *derive_add_transition(TValue<String> name,

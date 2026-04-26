@@ -99,14 +99,6 @@ namespace cl
         }
 
         Object *object = obj.get_ptr<Object>();
-        if(object->native_layout_id() == NativeLayoutId::Instance ||
-           object->native_layout_id() == NativeLayoutId::ClassObject)
-        {
-            return object->set_own_property(name, value);
-        }
-
-        // Builtin instance attribute writes stay conservative until each
-        // native layout has explicit attribute semantics.
-        return false;
+        return object->set_own_property(name, value);
     }
 }  // namespace cl
