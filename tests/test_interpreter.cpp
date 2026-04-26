@@ -974,6 +974,25 @@ TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)
     EXPECT_EQ(Value::from_smi(6), test_context.thread()->run(read_code));
 }
 
+TEST(Interpreter, cached_class_chain_attribute_read_observes_secondary_base)
+{
+    test::FileRunner file_runner(L"class Left:\n"
+                                 L"    pass\n"
+                                 L"class Right:\n"
+                                 L"    value = 1\n"
+                                 L"class Derived(Left, Right):\n"
+                                 L"    pass\n"
+                                 L"def get(obj):\n"
+                                 L"    return obj.value\n"
+                                 L"obj = Derived()\n"
+                                 L"first = get(obj)\n"
+                                 L"Right.value = 2\n"
+                                 L"get(obj)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(2), actual);
+}
+
 TEST(Interpreter, cached_direct_method_call_observes_mro_mutations)
 {
     test::VmTestContext test_context;
@@ -1175,6 +1194,20 @@ TEST(Interpreter, class_definition_stores_explicit_base_tuple)
                  string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
 }
 
+TEST(Interpreter, class_definition_stores_multiple_base_tuple)
+{
+    test::FileRunner file_runner(L"class Left:\n"
+                                 L"    marker = 1\n"
+                                 L"class Right:\n"
+                                 L"    marker = 2\n"
+                                 L"class Derived(Left, Right):\n"
+                                 L"    pass\n"
+                                 L"Derived.__bases__[1].marker\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(2), actual);
+}
+
 TEST(Interpreter, class_definition_rejects_non_class_base)
 {
     expect_runtime_error(L"Base = 1\n"
@@ -1183,16 +1216,68 @@ TEST(Interpreter, class_definition_rejects_non_class_base)
                          "TypeError: class bases must be class objects");
 }
 
-TEST(Interpreter, class_definition_rejects_multiple_bases_until_c3_mro)
+TEST(Interpreter, class_definition_uses_multiple_base_mro_order)
 {
-    expect_runtime_error(
-        L"class Left:\n"
-        L"    pass\n"
-        L"class Right:\n"
-        L"    pass\n"
-        L"class Derived(Left, Right):\n"
-        L"    pass\n",
-        "TypeError: multiple class bases are not supported yet");
+    test::FileRunner file_runner(L"class Left:\n"
+                                 L"    value = 7\n"
+                                 L"class Right:\n"
+                                 L"    value = 8\n"
+                                 L"class Derived(Left, Right):\n"
+                                 L"    pass\n"
+                                 L"Derived.value\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(7), actual);
+}
+
+TEST(Interpreter, class_definition_uses_c3_diamond_mro)
+{
+    test::FileRunner file_runner(L"class Top:\n"
+                                 L"    value = 1\n"
+                                 L"class Left(Top):\n"
+                                 L"    pass\n"
+                                 L"class Right(Top):\n"
+                                 L"    value = 2\n"
+                                 L"class Bottom(Left, Right):\n"
+                                 L"    pass\n"
+                                 L"Bottom.value\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(2), actual);
+}
+
+TEST(Interpreter, class_definition_exposes_c3_mro_tuple)
+{
+    test::FileRunner file_runner(L"class Top:\n"
+                                 L"    marker = 1\n"
+                                 L"class Left(Top):\n"
+                                 L"    marker = 2\n"
+                                 L"class Right(Top):\n"
+                                 L"    marker = 3\n"
+                                 L"class Bottom(Left, Right):\n"
+                                 L"    pass\n"
+                                 L"Bottom.__mro__[1].marker * 100 + "
+                                 L"Bottom.__mro__[2].marker * 10 + "
+                                 L"Bottom.__mro__[3].marker\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(231), actual);
+}
+
+TEST(Interpreter, class_definition_rejects_inconsistent_c3_mro)
+{
+    expect_runtime_error(L"class X:\n"
+                         L"    pass\n"
+                         L"class Y:\n"
+                         L"    pass\n"
+                         L"class A(X, Y):\n"
+                         L"    pass\n"
+                         L"class B(Y, X):\n"
+                         L"    pass\n"
+                         L"class C(A, B):\n"
+                         L"    pass\n",
+                         "TypeError: cannot create a consistent method "
+                         "resolution order");
 }
 
 TEST(Interpreter, class_call_rejects_arguments)

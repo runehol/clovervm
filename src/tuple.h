@@ -4,9 +4,11 @@
 #include "builtin_class_registry.h"
 #include "object.h"
 #include "owned_typed_value.h"
+#include "runtime_helpers.h"
 #include "value.h"
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace cl
 {
@@ -74,6 +76,32 @@ namespace cl
     };
 
     class VirtualMachine;
+
+    template <typename T> std::vector<T *> vector_from_tuple(const Tuple *tuple)
+    {
+        std::vector<T *> result;
+        result.reserve(tuple->size());
+        for(size_t idx = 0; idx < tuple->size(); ++idx)
+        {
+            result.push_back(assume_convert_to<T>(tuple->item_unchecked(idx)));
+        }
+        return result;
+    }
+
+    template <typename T>
+    Value tuple_from_vector(const std::vector<T *> &values)
+    {
+        Tuple *tuple =
+            active_vm()->tuple_class() == nullptr
+                ? make_internal_raw<Tuple>(BootstrapObjectTag{}, values.size())
+                : make_object_raw<Tuple>(values.size());
+        for(size_t idx = 0; idx < values.size(); ++idx)
+        {
+            tuple->initialize_item_unchecked(idx, Value::from_oop(values[idx]));
+        }
+        return Value::from_oop(tuple);
+    }
+
     BuiltinClassDefinition make_tuple_class(VirtualMachine *vm);
 
 }  // namespace cl

@@ -203,12 +203,6 @@ namespace cl
 
     NOINLINE static void validate_class_bases(TValue<Tuple> bases)
     {
-        if(bases.extract()->size() > 1)
-        {
-            throw std::runtime_error(
-                "TypeError: multiple class bases are not supported yet");
-        }
-
         for(size_t idx = 0; idx < bases.extract()->size(); ++idx)
         {
             if(!can_convert_to<ClassObject>(

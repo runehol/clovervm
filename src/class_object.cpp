@@ -3,9 +3,113 @@
 #include "str.h"
 #include "tuple.h"
 #include "virtual_machine.h"
+#include <algorithm>
+#include <deque>
+#include <vector>
 
 namespace cl
 {
+    static std::deque<ClassObject *> class_deque_from_tuple(const Tuple *tuple)
+    {
+        std::vector<ClassObject *> vector =
+            vector_from_tuple<ClassObject>(tuple);
+        return std::deque<ClassObject *>(vector.begin(), vector.end());
+    }
+
+    static bool
+    appears_in_any_tail(ClassObject *candidate,
+                        const std::vector<std::deque<ClassObject *>> &sequences)
+    {
+        for(const std::deque<ClassObject *> &sequence: sequences)
+        {
+            if(sequence.size() <= 1)
+            {
+                continue;
+            }
+            if(std::find(sequence.begin() + 1, sequence.end(), candidate) !=
+               sequence.end())
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static ClassObject *find_c3_merge_candidate(
+        const std::vector<std::deque<ClassObject *>> &sequences,
+        bool &has_remaining)
+    {
+        has_remaining = false;
+        for(const std::deque<ClassObject *> &sequence: sequences)
+        {
+            if(sequence.empty())
+            {
+                continue;
+            }
+            has_remaining = true;
+
+            ClassObject *candidate = sequence.front();
+            if(!appears_in_any_tail(candidate, sequences))
+            {
+                return candidate;
+            }
+        }
+        return nullptr;
+    }
+
+    static void
+    remove_c3_merge_candidate(ClassObject *candidate,
+                              std::vector<std::deque<ClassObject *>> &sequences)
+    {
+        for(std::deque<ClassObject *> &sequence: sequences)
+        {
+            while(!sequence.empty() && sequence.front() == candidate)
+            {
+                sequence.pop_front();
+            }
+        }
+    }
+
+    static Value compute_mro(ClassObject *cls, const Tuple *bases)
+    {
+        TValue<String> dunder_mro_name = interned_string(L"__mro__");
+        std::vector<std::deque<ClassObject *>> sequences;
+        sequences.reserve(bases->size() + 1);
+        for(size_t base_idx = 0; base_idx < bases->size(); ++base_idx)
+        {
+            ClassObject *base =
+                assume_convert_to<ClassObject>(bases->item_unchecked(base_idx));
+            Value base_mro_value = base->get_own_property(dunder_mro_name);
+            sequences.push_back(class_deque_from_tuple(
+                assume_convert_to<Tuple>(base_mro_value)));
+        }
+        sequences.push_back(class_deque_from_tuple(bases));
+
+        std::vector<ClassObject *> linearized;
+        linearized.push_back(cls);
+
+        while(true)
+        {
+            bool has_remaining = false;
+            ClassObject *candidate =
+                find_c3_merge_candidate(sequences, has_remaining);
+            if(!has_remaining)
+            {
+                break;
+            }
+            if(candidate == nullptr)
+            {
+                throw std::runtime_error(
+                    "TypeError: cannot create a consistent method resolution "
+                    "order");
+            }
+
+            linearized.push_back(candidate);
+            remove_c3_merge_candidate(candidate, sequences);
+        }
+
+        return tuple_from_vector<ClassObject>(linearized);
+    }
 
     ClassObject::ClassObject(BootstrapObjectTag, TValue<String> _name,
                              uint32_t _instance_default_inline_slot_count,
@@ -72,8 +176,9 @@ namespace cl
         }
         else
         {
-            bases = make_bases_tuple(single_base);
-            mro = make_mro_tuple();
+            Value bases_tuple = make_bases_tuple(single_base);
+            bases = bases_tuple;
+            mro = compute_mro(this, assume_convert_to<Tuple>(bases_tuple));
         }
     }
 
@@ -99,7 +204,7 @@ namespace cl
     {
         install_bootstrap_class(metaclass);
         bases = _bases;
-        mro = make_mro_tuple();
+        mro = compute_mro(this, _bases.extract());
     }
 
     ClassObject::ClassObject(TValue<String> _name,
@@ -399,31 +504,6 @@ namespace cl
         Tuple *bases = make_object_raw<Tuple>(1);
         bases->initialize_item_unchecked(0, Value::from_oop(single_base));
         return Value::from_oop(bases);
-    }
-
-    Value ClassObject::make_mro_tuple() const
-    {
-        size_t size = 1;
-        ClassObject *base_ptr = get_base();
-        while(base_ptr != nullptr)
-        {
-            ++size;
-            base_ptr = base_ptr->get_base();
-        }
-
-        Tuple *mro = active_vm()->tuple_class() == nullptr
-                         ? make_internal_raw<Tuple>(BootstrapObjectTag{}, size)
-                         : make_object_raw<Tuple>(size);
-        size_t idx = 0;
-        mro->initialize_item_unchecked(
-            idx++, Value::from_oop(const_cast<ClassObject *>(this)));
-        base_ptr = get_base();
-        while(base_ptr != nullptr)
-        {
-            mro->initialize_item_unchecked(idx++, Value::from_oop(base_ptr));
-            base_ptr = base_ptr->get_base();
-        }
-        return Value::from_oop(mro);
     }
 
 }  // namespace cl
