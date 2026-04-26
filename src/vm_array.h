@@ -4,6 +4,7 @@
 #include "object.h"
 #include "owned.h"
 #include "owned_typed_value.h"
+#include "refcount.h"
 #include "thread_state.h"
 #include "typed_value.h"
 #include "value.h"
@@ -517,6 +518,218 @@ namespace cl
             for(size_t idx = start_idx; idx < end_idx; ++idx)
             {
                 clear_element(mutable_data() + idx);
+            }
+        }
+
+        void set_size(size_t new_size)
+        {
+            size_value = Value::from_smi(static_cast<int64_t>(new_size));
+        }
+
+        void set_capacity(size_t new_capacity)
+        {
+            capacity_value =
+                Value::from_smi(static_cast<int64_t>(new_capacity));
+        }
+
+        Backing *backing_ptr() { return backing.extract(); }
+        const Backing *backing_ptr() const { return backing.extract(); }
+
+        MemberTValue<SMI> size_value;
+        MemberTValue<SMI> capacity_value;
+        MemberHeapPtr<Backing> backing;
+    };
+
+    template <typename T> class HeapPtrArray
+    {
+    private:
+        static_assert(std::is_base_of_v<HeapObject, T>);
+
+        class Backing : public HeapObject
+        {
+        public:
+            Backing(HeapLayout layout, size_t capacity) : HeapObject(layout)
+            {
+                (void)capacity;
+            }
+
+            static size_t size_for(size_t capacity)
+            {
+                assert(capacity >= 1);
+                return sizeof(Backing) + sizeof(HeapObject *) * capacity -
+                       sizeof(HeapObject *);
+            }
+
+            static DynamicLayoutSpec layout_spec_for(size_t capacity)
+            {
+                return DynamicLayoutSpec{
+                    round_up_to_16byte_units(size_for(capacity)),
+                    uint64_t(capacity)};
+            }
+
+            T *elements[1];
+
+            CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(Backing, elements);
+        };
+
+        static_assert(std::is_trivially_destructible_v<Backing>);
+
+    public:
+        static constexpr uint64_t embedded_value_count = 3;
+
+        using value_type = T *;
+        using size_type = size_t;
+        using const_iterator = T *const *;
+
+        HeapPtrArray()
+            : size_value(Value::from_smi(0)),
+              capacity_value(Value::from_smi(0)), backing(nullptr)
+        {
+        }
+
+        explicit HeapPtrArray(size_t count) : HeapPtrArray() { resize(count); }
+
+        HeapPtrArray(const HeapPtrArray &) = delete;
+        HeapPtrArray &operator=(const HeapPtrArray &) = delete;
+        HeapPtrArray(HeapPtrArray &&) = delete;
+        HeapPtrArray &operator=(HeapPtrArray &&) = delete;
+
+        size_t size() const { return static_cast<size_t>(len().extract()); }
+
+        TValue<SMI> len() const
+        {
+            return TValue<SMI>::unsafe_unchecked(size_value.as_value());
+        }
+
+        size_t capacity() const
+        {
+            return static_cast<size_t>(capacity_value.extract());
+        }
+
+        bool empty() const { return size() == 0; }
+
+        T *const *data() const
+        {
+            return backing == nullptr ? nullptr : backing_ptr()->elements;
+        }
+
+        const_iterator begin() const { return data(); }
+        const_iterator end() const { return data() + size(); }
+
+        T *get(size_t idx) const { return (*this)[idx]; }
+
+        T *operator[](size_t idx) const
+        {
+            assert(idx < size());
+            return data()[idx];
+        }
+
+        T *front() const
+        {
+            assert(!empty());
+            return (*this)[0];
+        }
+
+        T *back() const
+        {
+            assert(!empty());
+            return (*this)[size() - 1];
+        }
+
+        void clear()
+        {
+            clear_elements(0, size());
+            set_size(0);
+        }
+
+        void reserve(size_t new_capacity)
+        {
+            size_t requested_capacity =
+                detail::checked_array_size(new_capacity);
+            if(requested_capacity <= capacity())
+            {
+                return;
+            }
+
+            Backing *new_backing =
+                make_internal_raw<Backing>(requested_capacity);
+            std::memset(new_backing->elements, 0,
+                        sizeof(HeapObject *) * requested_capacity);
+
+            T **new_data = new_backing->elements;
+            size_t current_size = size();
+            for(size_t idx = 0; idx < current_size; ++idx)
+            {
+                new_data[idx] = data()[idx];
+            }
+
+            if(backing != nullptr)
+            {
+                object_clear_value_ownership(backing.extract());
+            }
+            backing = new_backing;
+            set_capacity(requested_capacity);
+        }
+
+        void resize(size_t new_size)
+        {
+            size_t requested_size = detail::checked_array_size(new_size);
+            size_t current_size = size();
+            if(requested_size < current_size)
+            {
+                clear_elements(requested_size, current_size);
+                set_size(requested_size);
+                return;
+            }
+
+            reserve(requested_size);
+            while(current_size < requested_size)
+            {
+                mutable_data()[current_size] = nullptr;
+                ++current_size;
+            }
+            set_size(current_size);
+        }
+
+        void set(size_t idx, T *value)
+        {
+            assert(idx < size());
+            T **slot = mutable_data() + idx;
+            decref_heap_ptr(*slot);
+            *slot = static_cast<T *>(incref_heap_ptr(value));
+        }
+
+        void push_back(T *value)
+        {
+            size_t current_size = size();
+            if(current_size == capacity())
+            {
+                reserve(detail::grown_capacity(capacity(), current_size + 1));
+            }
+
+            mutable_data()[current_size] =
+                static_cast<T *>(incref_heap_ptr(value));
+            set_size(current_size + 1);
+        }
+
+    private:
+        T **mutable_data()
+        {
+            return backing == nullptr ? nullptr : backing_ptr()->elements;
+        }
+
+        void clear_elements(size_t start_idx, size_t end_idx)
+        {
+            if(backing == nullptr)
+            {
+                return;
+            }
+
+            T **items = mutable_data();
+            for(size_t idx = start_idx; idx < end_idx; ++idx)
+            {
+                decref_heap_ptr(items[idx]);
+                items[idx] = nullptr;
             }
         }
 

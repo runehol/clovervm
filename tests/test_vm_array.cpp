@@ -13,6 +13,13 @@ namespace
         TValue<SMI> second;
     };
 
+    struct HeapPtrArrayItem : public HeapObject
+    {
+        HeapPtrArrayItem() : HeapObject(compact_layout()) {}
+
+        CL_DECLARE_STATIC_LAYOUT_NO_VALUES(HeapPtrArrayItem);
+    };
+
     static_assert(std::is_standard_layout_v<ValuePair>);
     static_assert(std::is_trivially_destructible_v<ValuePair>);
     static_assert(sizeof(ValuePair) == sizeof(Value) * 2);
@@ -24,12 +31,14 @@ namespace
         RawArray<int32_t> raw_values;
         ValueArray<TValue<String>> typed_values;
         ValueArray<ValuePair> pair_values;
+        HeapPtrArray<HeapPtrArrayItem> heap_ptrs;
 
         CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(
             ArrayOwner, raw_values,
             RawArray<int32_t>::embedded_value_count +
                 ValueArray<TValue<String>>::embedded_value_count +
-                ValueArray<ValuePair>::embedded_value_count);
+                ValueArray<ValuePair>::embedded_value_count +
+                HeapPtrArray<HeapPtrArrayItem>::embedded_value_count);
     };
 }  // namespace
 
@@ -89,4 +98,33 @@ TEST(ValueArray, SupportsFlatValueStructElements)
     ASSERT_EQ(1u, values.size());
     EXPECT_EQ(Value::from_smi(11), values[0].first);
     EXPECT_EQ(23, values[0].second.extract());
+}
+
+TEST(HeapPtrArray, SupportsTypedHeapPointersAcrossGrowth)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    ArrayOwner *owner = context.thread()->make_internal_raw<ArrayOwner>();
+
+    HeapPtrArrayItem *first =
+        context.thread()->make_internal_raw<HeapPtrArrayItem>();
+    HeapPtrArrayItem *second =
+        context.thread()->make_internal_raw<HeapPtrArrayItem>();
+
+    HeapPtrArray<HeapPtrArrayItem> &values = owner->heap_ptrs;
+    values.push_back(first);
+    values.reserve(8);
+    values.push_back(second);
+
+    ASSERT_EQ(2u, values.size());
+    EXPECT_GE(values.capacity(), 8u);
+    EXPECT_EQ(first, values[0]);
+    EXPECT_EQ(second, values[1]);
+    EXPECT_EQ(1, first->refcount);
+    EXPECT_EQ(1, second->refcount);
+
+    values.clear();
+    EXPECT_TRUE(values.empty());
+    EXPECT_EQ(0, first->refcount);
+    EXPECT_EQ(0, second->refcount);
 }
