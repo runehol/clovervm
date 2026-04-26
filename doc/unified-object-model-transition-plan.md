@@ -176,8 +176,9 @@ Relevant code:
 
 User instances and user classes now share Shape-backed property storage closely
 enough to exercise the descriptor machinery. The remaining work is to make all
-Python-visible objects have Shapes and real Python-visible type objects. Lookup
-validity cells are deliberately moved behind that work.
+Python-visible objects use the shared object protocol uniformly, and to thread
+the lookup validity cells that now exist into descriptor results and inline
+caches.
 
 ### 1. Move Shape ownership into the common object header
 
@@ -560,25 +561,39 @@ Primary files:
 - [tests/test_codegen.cpp](../tests/test_codegen.cpp)
 - [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
 
-### 10. Add lookup invalidation only after the object model is unified
+### 10. Add lookup validity cells and inline-cache integration
+
+Status: validity-cell invariants implemented; descriptor threading and inline
+caches remain.
 
 The unified-object-model doc describes lookup validity cells as the long-term
-replacement for ad hoc invalidation. That work should come after classes and
-instances, builtin objects, and builtin type objects all use the same
-shape-based lookup model.
+replacement for ad hoc invalidation. The first class-level validity-cell slice
+is now in place:
 
-This does not require every descriptor feature to be complete first. It does
-require cache entries to represent descriptor-related uncertainty honestly:
-cache only successful access kinds that the interpreter can execute directly,
-and let `AttributeCacheBlockers` reject descriptor calls, custom attribute
-hooks, mutable descriptor protocol, and missing lookup-cell dependencies until
-those paths have precise invalidation.
+- `ValidityCell` is a non-Python-visible `HeapObject`
+- `ClassObject` stores a primary lookup validity cell and attached child lookup
+  cells
+- primary cells start null and are created lazily by the cold get-or-create path
+- creation attaches the primary cell to every base class in the materialized MRO
+- invalidation clears attached cells, invalidates the class's primary cell, and
+  nulls the primary pointer
+- class shape transitions invalidate lookup cells
+- successful class slot updates also invalidate lookup cells, even though they
+  do not change the class object's Shape
 
-The first validity-cell implementation should establish the invariants before
-adding any inline-cache fast path: a class primary cell is created only by the
-cold get-or-create path, that creation path attaches the cell to every base
-class in the materialized MRO, and invalidation clears attached cells plus the
-class's own primary cell.
+The next slice is to thread those cells into `AttributeReadAccess`. The cell
+fields on `ClassObject` should be treated as logically mutable cache state:
+lookup can be a const semantic operation while still lazily creating or
+refreshing the validity cell. In C++, that likely means making the primary cell
+and attached-cell array `mutable`, with the allocation path remaining cold and
+non-inlined.
+
+Inline-cache integration does not require every descriptor feature to be
+complete first. It does require cache entries to represent descriptor-related
+uncertainty honestly: cache only successful access kinds that the interpreter
+can execute directly, and let `AttributeCacheBlockers` reject descriptor calls,
+custom attribute hooks, mutable descriptor protocol, and missing lookup-cell
+dependencies until those paths have precise invalidation.
 
 Inline caches should store a cached resolved value for class-chain hits, not a
 raw pointer to the resolved slot. Because every successful class attribute write
@@ -635,25 +650,25 @@ Shape-transition invalidation.
 
 The safe order is:
 
-1. Finish builtin instance attribute semantics on top of the shared `Object`
-   protocol.
-2. Clean up heap layout metadata so inherited fixed `Value` fields compose
-   safely.
-3. Tighten the remaining ClassObject fixed-slot layout cleanup.
-4. Move generic attribute access onto the shared object protocol.
-5. Complete descriptor and custom attribute semantics.
-6. Combine method lookup and method call into one opcode.
-7. Add lookup validity cells and inline-cache integration.
+1. Thread lookup validity cells into `AttributeReadAccess` for class-chain hits.
+2. Add conservative cache eligibility checks around those descriptor results.
+3. Add inline-cache storage and the skipped cache-index operand to
+   `CallMethodAttr`.
+4. Cache class-chain method-call hits first.
+5. Add receiver-slot caches only after descriptor-precedence protection for
+   class-chain misses is represented.
+6. Continue moving builtin instance attribute semantics and generic attribute
+   access onto the shared `Object` protocol.
 
 ## Main Risk To Avoid
 
-The biggest trap now is adding lookup validity cells before attribute semantics
-are actually unified. A cache built around special-cased builtin objects would
-immediately need a second design once builtin instance lookup moves fully onto
-the shared object protocol.
+The biggest trap now is caching special-cased attribute semantics as if they
+were the final object protocol. Validity cells are in place, but cache entries
+must still be built from shared descriptor results rather than from ad hoc
+native-layout branches.
 
 So the critical sequencing rule for the next phase is:
 
-- builtin instance attribute semantics first
-- generic object-protocol lookup second
-- lookup caches last
+- descriptor results carry validity and blockers first
+- cache only access kinds the interpreter can execute directly
+- keep builtin/native special cases out of cache keys
