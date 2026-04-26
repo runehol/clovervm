@@ -72,6 +72,16 @@ namespace cl
         static void validate_inline_slot_layout();
         Shape *get_instance_root_shape() const;
         ClassObject *get_base() const;
+        ALWAYSINLINE ValidityCell *lookup_validity_cell()
+        {
+            ValidityCell *cell = primary_lookup_validity_cell.extract();
+            if(likely(cell != nullptr && cell->is_valid()))
+            {
+                return cell;
+            }
+            return create_lookup_validity_cell_slow();
+        }
+        void invalidate_lookup_validity_cells();
 
         AttributeReadDescriptor
         lookup_instance_attribute_descriptor(TValue<String> name,
@@ -88,6 +98,8 @@ namespace cl
 
         Value make_bases_list(Value base) const;
         Value make_mro_list() const;
+        NOINLINE ValidityCell *create_lookup_validity_cell_slow();
+        void attach_lookup_validity_cell(ValidityCell *cell);
         AttributeReadDescriptor
         lookup_class_chain_descriptor(TValue<String> name,
                                       AttributeReadAccessPath path,

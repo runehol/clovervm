@@ -192,6 +192,58 @@ namespace cl
         return try_convert_to<ClassObject>(base_value);
     }
 
+    ValidityCell *ClassObject::create_lookup_validity_cell_slow()
+    {
+        Value mro_value = inline_slot_base()[kClassMetadataSlotMro];
+        assert(can_convert_to<List>(mro_value));
+
+        ValidityCell *cell = make_internal_raw<ValidityCell>();
+        primary_lookup_validity_cell = cell;
+
+        List *mro = try_convert_to<List>(mro_value);
+        assert(mro != nullptr);
+        for(uint32_t mro_idx = 1; mro_idx < mro->size(); ++mro_idx)
+        {
+            ClassObject *base =
+                try_convert_to<ClassObject>(mro->item_unchecked(mro_idx));
+            assert(base != nullptr);
+            base->attach_lookup_validity_cell(cell);
+        }
+
+        return cell;
+    }
+
+    void ClassObject::attach_lookup_validity_cell(ValidityCell *cell)
+    {
+        assert(cell != nullptr);
+        assert(cell->is_valid());
+
+        for(ValidityCell *attached_cell: attached_lookup_validity_cells)
+        {
+            if(attached_cell == cell)
+            {
+                return;
+            }
+        }
+
+        attached_lookup_validity_cells.push_back(cell);
+    }
+
+    void ClassObject::invalidate_lookup_validity_cells()
+    {
+        for(ValidityCell *cell: attached_lookup_validity_cells)
+        {
+            cell->invalidate();
+        }
+        attached_lookup_validity_cells.clear();
+
+        if(primary_lookup_validity_cell != nullptr)
+        {
+            primary_lookup_validity_cell->invalidate();
+            primary_lookup_validity_cell = nullptr;
+        }
+    }
+
     AttributeReadDescriptor
     ClassObject::lookup_instance_attribute_descriptor(TValue<String> name,
                                                       Value receiver) const
