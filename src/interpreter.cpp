@@ -116,6 +116,12 @@ namespace cl
         throw std::runtime_error("AttributeError");
     }
 
+    NOINLINE Value descriptor_dispatch_error(PARAMS)
+    {
+        throw std::runtime_error(
+            "TypeError: descriptor __get__ requires interpreter dispatch");
+    }
+
     NOINLINE Value wrong_arity_error(PARAMS)
     {
         throw std::runtime_error("TypeError: wrong number of arguments");
@@ -309,6 +315,53 @@ namespace cl
         Value *new_fp = fp + last_arg_reg - FrameHeaderSizeAboveFp;
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                        instr_len);
+    }
+
+    enum class MethodCallTargetStatus : uint8_t
+    {
+        Ready,
+        Missing,
+        RequiresDescriptorDispatch,
+    };
+
+    static ALWAYSINLINE MethodCallTargetStatus
+    prepare_method_call_target(const AttributeReadDescriptor &descriptor,
+                               Value &callable_out, Value &self_out)
+    {
+        if(!descriptor.is_found())
+        {
+            callable_out = Value::not_present();
+            self_out = Value::not_present();
+            return MethodCallTargetStatus::Missing;
+        }
+
+        const AttributeReadAccess &access = descriptor.access;
+        self_out = Value::not_present();
+        switch(access.kind)
+        {
+            case AttributeReadAccessKind::ReceiverSlot:
+                assert(access.storage_owner != nullptr);
+                callable_out = access.storage_owner->read_storage_location(
+                    access.storage_location);
+                return MethodCallTargetStatus::Ready;
+
+            case AttributeReadAccessKind::BindFunctionReceiver:
+                callable_out = access.value;
+                self_out = access.binding.self;
+                return MethodCallTargetStatus::Ready;
+
+            case AttributeReadAccessKind::ReturnValue:
+            case AttributeReadAccessKind::ResolvedValue:
+                callable_out = access.value;
+                return MethodCallTargetStatus::Ready;
+
+            case AttributeReadAccessKind::DataDescriptorGet:
+            case AttributeReadAccessKind::NonDataDescriptorGet:
+                callable_out = Value::not_present();
+                return MethodCallTargetStatus::RequiresDescriptorDispatch;
+        }
+
+        __builtin_unreachable();
     }
 
     static Value op_lda_constant(PARAMS)
@@ -1002,11 +1055,20 @@ namespace cl
         TValue<String> attr_name(
             code_object->constant_table[const_offset].as_value());
 
-        Value callable = Value::not_present();
-        Value self = Value::not_present();
-        if(unlikely(!load_method(fp[receiver_reg], attr_name, callable, self)))
+        AttributeReadDescriptor descriptor =
+            resolve_attr_read_descriptor(fp[receiver_reg], attr_name);
+        Value callable;
+        Value self;
+        MethodCallTargetStatus target_status =
+            prepare_method_call_target(descriptor, callable, self);
+        if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
             MUSTTAIL return method_lookup_error(ARGS);
+        }
+        if(unlikely(target_status ==
+                    MethodCallTargetStatus::RequiresDescriptorDispatch))
+        {
+            MUSTTAIL return descriptor_dispatch_error(ARGS);
         }
 
         bool has_self = !self.is_not_present();
