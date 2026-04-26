@@ -108,11 +108,12 @@ Relevant code:
 ### Attribute lookup is moving onto descriptor results
 
 Attribute lookup now returns shared `AttributeReadDescriptor` /
-`AttributeReadPlan` records. `Object` emits receiver-slot descriptors,
-`ClassObject` emits instance-chain, class-chain, and metaclass-chain
-descriptors, and `attr.cpp` composes the top-level lookup order. This gives the
-interpreter and future inline caches a common representation for executable
-plans, misses, cache blockers, and call-context binding.
+`AttributeReadPlan` and `AttributeWriteDescriptor` / `AttributeWritePlan`
+records. `Object` emits receiver-slot descriptors, `ClassObject` emits
+instance-chain, class-chain, and metaclass-chain descriptors, and `attr.cpp`
+composes the top-level lookup order. This gives the interpreter and future
+inline caches a common representation for executable plans, misses, cache
+blockers, lookup validity cells, and call-context binding.
 
 The current descriptor support is intentionally narrow but real: instance
 lookup recognizes `__get__`, `__set__`, and `__delete__` on the candidate
@@ -123,6 +124,12 @@ interpreter opcode handlers because invoking `__get__` may execute Python
 bytecode. Direct method-call bytecode now consumes `AttributeReadDescriptor`
 results directly, so future inline caches can be attached to the semantic read
 result instead of to the legacy `(callable, maybe_self)` adapter.
+
+Plans are the executable portion of a successful lookup. They are not captured
+snapshots of the original receiver: plan execution receives the current
+receiver explicitly, and receiver-local storage plans use receiver-relative
+storage locations. Class-chain plans may still carry a concrete storage owner
+for values stored on a class or base class object.
 
 Relevant code:
 
@@ -437,14 +444,23 @@ Current progress:
 
 - `AttributeReadDescriptor` and `AttributeReadPlan` are shared runtime
   records.
+- `AttributeWriteDescriptor` and `AttributeWritePlan` are shared runtime
+  records for existing-slot writes.
 - `Object` emits receiver-local slot descriptors.
 - `ClassObject` emits instance-chain, class-chain, and metaclass-chain
   descriptors.
-- `attr.cpp` composes the top-level lookup order and executes descriptors for
-  the legacy load APIs.
+- `attr.cpp` composes the top-level lookup order and executes plans for the
+  legacy load and store APIs.
 - receiver-slot descriptors are executable plans, not captured-value snapshots.
+- plan execution takes the current receiver explicitly, so receiver-local plans
+  are reusable across same-shape receivers.
 - receiver-slot descriptors carry `MissingLookupCell` until class-chain
   descriptor-precedence dependencies are represented.
+- class-chain read plans carry lookup validity cells when a materialized MRO is
+  available.
+- write plans carry lookup validity cells for cacheable existing-slot writes;
+  missing writes that add a new own property deliberately do not create lookup
+  cells because the operation immediately changes shape.
 
 Remaining work:
 
@@ -452,7 +468,8 @@ Remaining work:
   on object/class helpers
 - remove remaining native-layout checks from generic attribute semantics where
   they are not low-level layout assertions
-- add delete and write descriptor paths alongside read descriptors
+- add descriptor-aware delete result paths once delete needs to surface
+  descriptor protocol calls to the interpreter
 
 Primary files:
 
@@ -563,8 +580,8 @@ Primary files:
 
 ### 10. Add lookup validity cells and inline-cache integration
 
-Status: validity-cell invariants implemented; descriptor threading and inline
-caches remain.
+Status: validity-cell invariants implemented and threaded through descriptor
+plans; inline caches remain.
 
 The unified-object-model doc describes lookup validity cells as the long-term
 replacement for ad hoc invalidation. The first class-level validity-cell slice
@@ -580,13 +597,17 @@ is now in place:
 - class shape transitions invalidate lookup cells
 - successful class slot updates also invalidate lookup cells, even though they
   do not change the class object's Shape
+- read descriptors carry lookup validity cells for class-chain hits
+- existing-slot write descriptors carry lookup validity cells when cacheable
+- class add, update, and delete invalidation behavior is covered by focused
+  regression tests
+- instance add and delete are covered as receiver-local shape transitions that
+  do not invalidate the class lookup cell
 
-The next slice is to thread those cells into `AttributeReadPlan`. The cell
-fields on `ClassObject` should be treated as logically mutable cache state:
+The lookup-validity fields on `ClassObject` are logically mutable cache state:
 lookup can be a const semantic operation while still lazily creating or
-refreshing the validity cell. In C++, that likely means making the primary cell
-and attached-cell array `mutable`, with the allocation path remaining cold and
-non-inlined.
+refreshing the validity cell. The primary cell and attached-cell array are
+mutable in C++, with the allocation path cold and non-inlined.
 
 Inline-cache integration does not require every descriptor feature to be
 complete first. It does require cache entries to represent descriptor-related
@@ -650,14 +671,14 @@ Shape-transition invalidation.
 
 The safe order is:
 
-1. Thread lookup validity cells into `AttributeReadPlan` for class-chain hits.
-2. Add conservative cache eligibility checks around those descriptor results.
-3. Add inline-cache storage and the skipped cache-index operand to
-   `CallMethodAttr`.
-4. Cache class-chain method-call hits first.
-5. Add receiver-slot caches only after descriptor-precedence protection for
+1. Add conservative cache eligibility checks around descriptor results.
+2. Add inline-cache storage and the skipped cache-index operand to one opcode
+   first, preferably `LoadAttr` or `CallMethodAttr`.
+3. Cache class-chain hits whose plans have a lookup validity cell and whose
+   access kind the interpreter can execute without descriptor dispatch.
+4. Add receiver-slot caches only after descriptor-precedence protection for
    class-chain misses is represented.
-6. Continue moving builtin instance attribute semantics and generic attribute
+5. Continue moving builtin instance attribute semantics and generic attribute
    access onto the shared `Object` protocol.
 
 ## Main Risk To Avoid
