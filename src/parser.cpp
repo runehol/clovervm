@@ -820,6 +820,8 @@ namespace cl
                 ch.push_back(expression());
                 if(!match(Token::COMMA))
                     break;
+                if(peek() == Token::RPAR)
+                    break;
             }
             return ast.emplace_back(AstNodeKind::PARAMETER_SEQUENCE, source_pos,
                                     ch);
@@ -1231,6 +1233,8 @@ namespace cl
                     ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
                                      source_pos_for_previous_token(), v));
                 if(!match(Token::COMMA))
+                    break;
+                if(peek() == Token::RPAR)
                     break;
             }
             return ast.emplace_back(AstNodeKind::PARAMETER_SEQUENCE, source_pos,

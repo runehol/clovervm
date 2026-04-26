@@ -197,6 +197,32 @@ TEST(Parser, rec_call)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, calls_accept_trailing_comma)
+{
+    std::string expected = (""
+                            "f(1)\n"
+                            "f(1, 2)\n");
+    std::string actual = parse(L"f(1,)\n"
+                               L"f(1, 2,)\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, parameters_accept_trailing_comma)
+{
+    std::string expected = (""
+                            "def f(a):\n"
+                            "    return a\n"
+                            "def g(a, b):\n"
+                            "    return a + b\n");
+    std::string actual = parse(L"def f(a,):\n"
+                               L"    return a\n"
+                               L"def g(a, b,):\n"
+                               L"    return a + b\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, attribute_expression_and_assignment)
 {
     std::string expected = ("obj.value\n"

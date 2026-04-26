@@ -261,6 +261,17 @@ TEST(Interpreter, function_multiple_parameters)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Interpreter, calls_and_parameters_accept_trailing_comma)
+{
+    Value expected = Value::from_smi(6);
+    test::FileRunner file_runner(L"def add3(a, b, c,):\n"
+                                 "    return a + b + c\n"
+                                 "add3(1, 2, 3,)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Interpreter, function_implicit_return_none)
 {
     Value expected = Value::None();
