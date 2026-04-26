@@ -14,6 +14,19 @@ This repository contains clovervm, a Python VM.
 - Prefer interpreter tests for semantics and end-to-end behavior. Keep codegen tests focused on high-value structural guarantees such as specific lowering patterns, call conventions, or optimizations that interpreter tests would not pin down well.
 - This is a greenfield project. Backwards compatibility layers or fallbacks are generally not needed when all uses inside the git repository can be updated.
 
+# Interpreter code
+
+`src/interpreter.cpp` is unusually sensitive: it is hot code, and the dispatch loop depends on Clang's `musttail` support. Treat changes there as performance- and control-flow-sensitive.
+
+- Preserve the opcode-handler shape. Handlers should continue to use the existing `PARAMS` / `ARGS`, `START`, `COMPLETE`, and `MUSTTAIL return ...` conventions unless the dispatch design itself is being changed.
+- Functions that are targets of `MUSTTAIL return ...` must have exactly the `PARAMS` signature. Do not add extra parameters, omit parameters, reorder parameters, or wrap the signature in a variant form; Clang's `musttail` requires the caller and callee signatures to match exactly. Pass any extra context through existing interpreter state, frame/register state, or a non-tail-called helper before the `MUSTTAIL` edge.
+- Keep exceptional and slow paths out of inlineable hot helpers. Raising C++ exceptions, formatting messages, and other cold behavior should live in separate `NOINLINE` functions that opcode handlers tail-call.
+- Use `ALWAYSINLINE` only for small, mechanical helpers that avoid duplication in hot paths, such as frame setup, register-span interpretation, or simple descriptor classification. Do not hide large semantic operations behind inline helpers.
+- Avoid adding broad generic dispatch layers in front of common opcodes unless there is a measured reason or the change is part of an explicit interpreter/JIT design step. Prefer explicit branches in the opcode handler when that keeps the hot path obvious.
+- Be careful with helper calls from opcode handlers: anything that may run Python bytecode, allocate observably, invoke descriptors, or raise should happen through an explicit opcode slow path or a clearly cold helper, not from lookup/classification code that is meant to be inlineable.
+- Keep instruction length handling explicit when an opcode has custom control flow. If a handler cannot use `START(len)` directly, use a clearly named local such as `call_instr_len`; avoid names that collide with `START`'s internal declarations.
+- After touching `src/interpreter.cpp`, build with Clang through `build-debug/` and run `ninja -C build-debug all check`. For performance-sensitive refactors, also consider `cmake --build build-release --target run_benchmark`.
+
 # Code style
 - This is a C++17 code base.
 - Prefer include guards over `#pragma once` in headers.
