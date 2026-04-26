@@ -894,6 +894,16 @@ TEST(ClassObject, BaseMutationInvalidatesChildLookupValidityCell)
 
     EXPECT_FALSE(child_cell->is_valid());
     EXPECT_EQ(0u, base->attached_lookup_validity_cell_count());
+
+    ValidityCell *delete_cell = child->lookup_validity_cell();
+    ASSERT_NE(nullptr, delete_cell);
+    ASSERT_TRUE(delete_cell->is_valid());
+    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
+
+    EXPECT_TRUE(base->delete_own_property(attr_name));
+
+    EXPECT_FALSE(delete_cell->is_valid());
+    EXPECT_EQ(0u, base->attached_lookup_validity_cell_count());
 }
 
 TEST(ClassObject, ReceiverMutationInvalidatesOwnPrimaryLookupValidityCell)

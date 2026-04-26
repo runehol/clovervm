@@ -500,11 +500,15 @@ TEST(Attr, AttributeWritesInvalidateLookupCellsForClassTargets)
     EXPECT_FALSE(delete_cell->is_valid());
     EXPECT_EQ(nullptr, cls->current_lookup_validity_cell());
 
-    ValidityCell *instance_write_cell = cls->lookup_validity_cell();
-    ASSERT_NE(nullptr, instance_write_cell);
+    ValidityCell *instance_add_delete_cell = cls->lookup_validity_cell();
+    ASSERT_NE(nullptr, instance_add_delete_cell);
     EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(7)));
-    EXPECT_TRUE(instance_write_cell->is_valid());
-    EXPECT_EQ(instance_write_cell, cls->current_lookup_validity_cell());
+    EXPECT_TRUE(instance_add_delete_cell->is_valid());
+    EXPECT_EQ(instance_add_delete_cell, cls->current_lookup_validity_cell());
+
+    EXPECT_TRUE(instance->delete_own_property(attr_name));
+    EXPECT_TRUE(instance_add_delete_cell->is_valid());
+    EXPECT_EQ(instance_add_delete_cell, cls->current_lookup_validity_cell());
 }
 
 TEST(Attr, AttributeWriteDescriptorMissDoesNotCreateLookupValidityCell)
