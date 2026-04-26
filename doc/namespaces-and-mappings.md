@@ -343,7 +343,9 @@ Current delete/reinsert policy for shapes is:
 - deleting a property removes its descriptor from the successor shape
 - deleting a property does not decrement `next_slot_index`
 - reinserting the same property name appends a fresh descriptor at the end
-- reinserting the same property name gets a fresh storage location
+- reinserting may reuse an existing storage location when that location is part
+  of a fixed latent descriptor; otherwise the runtime can choose a fresh
+  storage location
 
 This means shape order remains dictionary-like even though physical storage is
 specialized.
@@ -460,8 +462,8 @@ where that makes implementation easier. The main layout rule applies most
 strongly to the trailing variable-sized payload.
 
 The relevant payload metadata belongs in the object or allocation layout, not
-in `Klass`. Different instances of the same high-level kind may have different
-trailing storage sizes.
+in Python-visible type identity. Different instances of the same high-level
+kind may have different trailing storage sizes.
 
 ## Current `IndirectDict`
 
@@ -518,8 +520,8 @@ What remains for scope-related work is mostly cleanup and follow-on layering:
 
 ## Shape Progress
 
-The current implementation has completed the first storage slice for shapes and
-instances:
+The current implementation has moved beyond the first raw storage slice and now
+uses Shapes as the ordinary object-attribute substrate:
 
 - `Shape` exists as its own runtime type
 - shape identity is pointer identity
@@ -528,23 +530,28 @@ instances:
 - shape descriptors are stored inline in the `Shape` allocation
 - descriptor lookup is insertion-ordered linear scan
 - descriptor metadata resolves directly to a storage location
-- instances store their class and current shape separately
-- instance storage is split into inline slots and an overflow slot array
-- overflow storage is a dedicated nested runtime object owned by `Instance`
-- own-property get/set/delete helpers are implemented for string keys only
+- Python-visible `Object` subclasses store their current Shape and fixed
+  `__class__` slot through the shared `Object` layout
+- ordinary object storage is split into inline slots and overflow slots
+- class objects and user instances both use Shape-backed own-property storage
+- own-property get/set/add/delete helpers are implemented for string keys
 - deleting a property clears its old slot to `not_present`
 - shape back-pointers are non-owning to avoid refcount cycles
+- attribute lookup returns shared descriptor/plan records
+- `LoadAttr`, `StoreAttr`, and `CallMethodAttr` have side-array inline caches
+  guarded by receiver Shape and lookup validity cells
 
-What remains for shape-related work is now above the raw storage layer:
+What remains for shape-related work is now mostly semantic layering:
 
-- class member tables and ancestor lookup
-- generic attribute helpers layered over own-property storage
+- full descriptor protocol execution
+- custom attribute hooks such as `__getattribute__`, `__getattr__`,
+  `__setattr__`, and `__delattr__`
 - `obj.__dict__` and other mapping views
-- later optimization work such as inline caches and JIT guards
+- later optimization work such as selective cache invalidation and JIT guards
 
 ## Near-Term Implementation Plan
 
-1. Preserve the current `name -> slot` probe-table shape for scope lookup.
+1. Keep the current `name -> slot` probe-table shape for scope lookup.
 2. Keep explicit ordered scope entries distinct from slot storage so logical
    insertion order remains decoupled from stable slot identity.
 3. Keep slot metadata rich enough to support slot-addressed revival and parent
@@ -558,7 +565,10 @@ What remains for shape-related work is now above the raw storage layer:
 6. Preserve logical property order separately from physical storage choices so
    a future `obj.__dict__` view can present dict-like behavior without forcing
    unnecessary object-storage churn.
-9. Implement Python `dict` separately, with full Python key, hash, equality,
+7. Keep attribute-cache dependencies expressed through receiver Shape guards
+   and lookup validity cells rather than baking class-chain facts directly into
+   mapping views.
+8. Implement Python `dict` separately, with full Python key, hash, equality,
    mutation, and insertion-order behavior. This should follow relatively soon
    after the object model work, even if `globals()` and `obj.__dict__` mapping
    views arrive later.

@@ -159,38 +159,34 @@ lower addresses
 
 ### Method calls
 
-For `obj.method(x)`, codegen reserves one extra slot:
+For direct method-call syntax such as `obj.method(x)`, codegen emits the fused
+`CallMethodAttr` opcode. The receiver and explicit arguments occupy one
+contiguous register span:
 
-- slot for the callable
-- slot for `self`
-- slots for user arguments
+- receiver
+- user argument 0
+- user argument 1
+- ...
 
 in [src/codegen.cpp](../src/codegen.cpp):
 
 ```cpp
-TemporaryReg regs(this, 2 + args.size());
+TemporaryReg regs(this, 1 + args.size());
 ...
-code_obj->emit_opcode_reg_constant_idx_reg(
-    source_offset, Bytecode::LoadMethod, receiver_reg.reg,
-    constant_idx, regs);
+code_obj->emit_opcode_reg(source_offset, Bytecode::Star, regs);
 ...
-code_obj->emit_opcode_reg_range(
-    source_offset, Bytecode::CallMethod, regs, args.size());
+code_obj->emit_opcode_reg_constant_idx_cache_idx_argc(
+    source_offset, Bytecode::CallMethodAttr, regs, constant_idx,
+    cache_idx, args.size());
 ```
 
-At runtime `LoadMethod` writes:
+At runtime, `CallMethodAttr` resolves the attribute in call context. If the
+cached or resolved plan binds the receiver as `self`, the handler writes `self`
+into the receiver register and uses that register as the first argument. If no
+implicit receiver is needed, the first explicit argument is already adjacent to
+the receiver and becomes the first argument register.
 
-- callable at `fp[call_base_reg]`
-- `self` at `fp[call_base_reg - 1]`
-
-from [src/interpreter.cpp](../src/interpreter.cpp):
-
-```cpp
-fp[call_base_reg] = callable;
-fp[call_base_reg - 1] = self;
-```
-
-If the resolved method is not a normal function needing implicit `self`, `self` remains `not_present`. `CallMethod` then treats `reg - 1` as the effective call base, so the existing user arguments can stay where they already are. If `self` is present, `CallMethod` keeps `reg` as the call base and increases the effective arity by one so the callee sees:
+When `self` is inserted, the callee sees:
 
 - `a0 = self`
 - `a1 = first user arg`
@@ -198,7 +194,8 @@ If the resolved method is not a normal function needing implicit `self`, `self` 
 
 ## Function Entry
 
-The core transition for function calls is in `op_call_simple` and `op_call_method` in [src/interpreter.cpp](../src/interpreter.cpp):
+The core transition for function calls is shared by `op_call_simple` and
+`op_call_method_attr` in [src/interpreter.cpp](../src/interpreter.cpp):
 
 ```cpp
 Value *new_fp = fp + reg - n_args - FrameHeaderSizeAboveFp;

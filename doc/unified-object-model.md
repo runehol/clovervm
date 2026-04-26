@@ -4,29 +4,38 @@
 
 ### Shape
 
-A **Shape** is an immutable descriptor of an object's structural state:
+A **Shape** is an immutable descriptor of a Python-visible object's structural
+state:
 
 - property layout
 - storage strategy
 - property lookup behavior
 - type identity
 
-Every object has an associated Shape.
+Every Python-visible `Object` has an associated Shape. Internal heap records
+such as scope tables, validity cells, backing arrays, and allocator support
+objects may be `HeapObject`s without being ordinary Python objects.
 
 ---
 
 ### Type on Shape
 
-The **type** of an object is stored on its Shape:
+The **type** of a Python-visible object is represented by the class object that
+owns its current Shape and by the object's fixed `__class__` slot:
 
 ```text
-object.shape.__class__
+object.shape.owner_class
+object.__class__
 ```
 
 This applies uniformly to:
 
 - instances
-- classes (which are themselves objects)
+- classes, which are themselves objects
+
+The Shape and fixed slot must agree. Ordinary attribute assignment cannot write
+`__class__`; any future supported reassignment must go through a checked
+transition path that updates both pieces of state.
 
 ---
 
@@ -62,7 +71,7 @@ reference it.
 
 ## Objects
 
-All runtime entities are objects:
+Python-visible runtime entities are objects:
 
 - instances
 - classes
@@ -73,9 +82,9 @@ Each object has:
 - a Shape
 - property storage consistent with that Shape
 
-Builtin objects such as `String` and `List` also carry Shapes and
-participate in the same object protocol as user-visible instances and
-classes.
+Builtin objects such as `String` and `List` also carry Shapes and participate
+in the same object protocol as user-visible instances and classes when they are
+Python-visible. Internal support records may remain lower-level `HeapObject`s.
 
 ---
 
@@ -99,9 +108,9 @@ to have identical native C++ layouts.
 At the C++ level we may use distinct runtime types such as:
 
 - `Object`
-- `InstanceObject`
+- `Instance`
 - `ClassObject`
-- builtin object types such as `StringObject` and `ListObject`
+- builtin object types such as `String` and `List`
 
 This lets the runtime give different object kinds different fixed native
 fields while still making them behave as ordinary objects at the Python
@@ -274,16 +283,19 @@ specialization. Once a Shape is created its flags do not change, but an
 object may transition to a new Shape with different flags when lookup
 behavior changes.
 
-One plausible initial set is:
+The current flag set is:
 
 ```cpp
 enum class ShapeFlag : uint16_t {
+    None = 0,
     IsClassObject = 1 << 0,
     IsImmutableType = 1 << 1,
     HasCustomGetAttribute = 1 << 2,
     HasCustomGetAttrFallback = 1 << 3,
     HasCustomSetAttribute = 1 << 4,
     HasCustomDelAttribute = 1 << 5,
+    DisallowAttributeUpdates = 1 << 6,
+    DisallowAttributeAddDelete = 1 << 7,
 };
 ```
 
@@ -315,6 +327,16 @@ an already-present slot does not change the Shape. These flags exclude
 hard custom getter/setter cases from the default fast paths; the runtime
 does not inspect a custom getter or setter and try to accelerate its
 specific implementation.
+
+The disallow flags describe ordinary namespace mutability:
+
+- `DisallowAttributeUpdates`: existing attributes cannot be overwritten through
+  the default attribute store path
+- `DisallowAttributeAddDelete`: attributes cannot be added or removed through
+  the default add/delete path
+
+`DisallowAttributeUpdates` implies `DisallowAttributeAddDelete`. A fixed
+attribute namespace cannot allow add/delete while forbidding updates.
 
 ---
 
@@ -784,16 +806,18 @@ instance-chain, class-chain, and metaclass-chain descriptors. The
 top-level attribute helper only composes the lookup order and executes
 the plan for the legacy load APIs.
 
-For example, lookup may find a class-chain value that is not currently a
-data descriptor, but whose type is mutable. The runtime can use that
-result immediately, but it should not cache the result as a stable
-non-data descriptor or receiver-slot assumption. That access has
-`status == Found` and a `MutableDescriptorType` cache blocker.
+For example, lookup may find a class-chain value that is not currently a data
+descriptor, but whose type is mutable. The runtime can use that result
+immediately. The descriptor may record a `MutableDescriptorType` cache blocker
+as diagnostic information for future tightening, but the current cacheability
+predicate is intentionally simpler: successful direct plans are cacheable when
+they carry a lookup validity cell and do not require descriptor dispatch.
 
-Receiver-own-slot hits also need the class-chain dependency that proves
-no data descriptor currently wins for the same name. Until lookup cells
-represent that dependency, those accesses carry a `MissingLookupCell`
-cache blocker even though the value can be loaded immediately.
+Receiver-own-slot hits also need the class-chain dependency that proves no data
+descriptor currently wins for the same name. The current runtime represents
+that dependency with the receiver class's lookup validity cell, so existing
+instance-slot reads can be cached while still being invalidated by class or base
+mutations.
 
 `CodeObject` owns attribute inline caches in side arrays, parallel in spirit to
 the constant table:
@@ -845,8 +869,9 @@ class or a base class would take precedence over the receiver slot.
 
 Descriptor data-ness is itself lookup-sensitive. A descriptor becomes a
 data descriptor when its own type defines `__set__` or `__delete__`, so
-receiver-slot caches have extra eligibility and invalidation rules. Those
-rules are described below in Descriptor-Precedence Invalidation.
+receiver-slot caches must be invalidated when the receiver class chain changes
+in a way that could introduce a winning data descriptor. Those rules are
+described below in Descriptor-Precedence Invalidation.
 
 On execution:
 
@@ -899,18 +924,13 @@ cases with three complementary rules:
    storage, including bytecode stores, class construction helpers,
    internal runtime setters, and default metaclass attribute assignment.
 
-3. **Receiver-slot caches require stable descriptor classification.**
+3. **Receiver-slot caches carry the receiver class lookup cell.**
 
-   A receiver-local slot cache is legal only when the class-chain lookup
-   for the same name either misses or resolves to a value whose type
-   Shape has `IsImmutableType`. The object itself may be mutable; the
-   requirement is that its class cannot later gain `__set__` or
-   `__delete__` and thereby turn the existing value into a data
-   descriptor.
-
-   Objects whose current type is immutable also do not support
-   `__class__` reassignment, so the cached descriptor classification
-   cannot be invalidated by changing the value's type identity.
+   A receiver-local slot cache is legal only when the lookup result includes a
+   validity cell for the receiver class-chain assumptions. A miss in the class
+   chain is still an assumption: installing a data descriptor for the same name
+   on the receiver class or a base class must invalidate the receiver-slot fast
+   path.
 
 Together these rules cover the descriptor-precedence hazards:
 
@@ -918,9 +938,8 @@ Together these rules cover the descriptor-precedence hazards:
   transition
 - replacing an existing class attribute with a value of different
   descriptor-ness is caught by class-write invalidation
-- mutating a descriptor value's type to add `__set__` or `__delete__` is
-  avoided by refusing receiver-slot caches unless the value's type is
-  immutable
+- receiver-local reads are invalidated when the class-chain assumptions that
+  made them safe change
 
 ---
 
@@ -1037,14 +1056,14 @@ The preferred opcode shape for this direct-call form is a fused
 attribute-call operation:
 
 ```text
-CallMethodAttr name, cache_index, receiver, argc, args...
+CallMethodAttr receiver_and_arg_span, name, cache_index, argc
 ```
 
 The current bytecode encoding keeps the receiver and explicit arguments in one
 register span and uses the code object's read-cache side array:
 
 ```text
-CallMethodAttr receiver, name, read_cache_index, argc
+receiver, explicit_arg0, explicit_arg1, ...
 ```
 
 The opcode performs attribute lookup in call context and then calls the

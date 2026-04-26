@@ -2,34 +2,29 @@
 
 ## Purpose
 
-This document describes how builtin/runtime objects should fit into the unified
-object model.
+This document describes how builtin/runtime objects fit into the unified object
+model.
 
-The target model is:
+The current direction is:
 
-- every Python-visible object has a `Shape`
-- Python-visible type identity comes from that Shape
-- builtin type objects such as `type`, `object`, `str`, `list`, and `dict` are
-  VM-owned runtime objects
-- native C++ layout identity is separate from Python-visible type identity
-- builtin objects use the same slot protocol as user instances and classes
+- every Python-visible object is an `Object`
+- every Python-visible object has a Shape
+- Python-visible type identity comes from VM-owned `ClassObject` instances and
+  Shape-backed `__class__` slots
+- native C++ layout identity is represented separately by `NativeLayoutId`
+- builtin objects use the same slot protocol as user instances and classes when
+  they expose Python-visible attributes
 
-This replaces the older pattern where builtin/runtime objects identify their
-Python-visible type with static or global C++ `Klass` objects such as:
-
-```cpp
-Klass cl_string_klass(L"string", string_str);
-```
-
-`Klass`-style metadata may survive temporarily as native implementation
-metadata, but it should stop being observable as `obj.__class__`.
+Internal runtime support records, such as scopes, backing arrays, validity
+cells, and other non-Python-visible structures, may remain lower-level
+`HeapObject`s.
 
 ## VM-Specific Builtin Type Objects
 
-Builtin type objects should be allocated while bootstrapping a particular
-`VirtualMachine`. They are not process-global identities.
+Builtin type objects are allocated while bootstrapping a particular
+`VirtualMachine`. They are not process-global type identities.
 
-For example, each VM owns its own:
+Each VM currently owns builtin class objects for native layouts such as:
 
 - `type`
 - `object`
@@ -38,18 +33,13 @@ For example, each VM owns its own:
 - `dict`
 - `function`
 - `builtin_function`
-- iterator and runtime-support types that are Python-visible
+- `code`
+- `range_iterator`
 
-These type objects should be inserted into the builtin scope for that VM. Python
-code observes them through ordinary builtin lookup, not through C++ globals.
+These type objects are inserted into the VM's builtin scope. Python code
+observes them through ordinary builtin lookup.
 
-This means identities such as `str` and `type` are VM-specific:
-
-```text
-vm_a.builtins["str"] != vm_b.builtins["str"]
-```
-
-At the Python level, each VM still satisfies the usual bootstrap relationships:
+At the Python level, the bootstrap relationships are:
 
 ```text
 type.__class__ == type
@@ -59,31 +49,29 @@ str.__class__ == type
 
 ## Shape Versus Native Layout
 
-The unified model needs two distinct concepts:
+The runtime deliberately separates:
 
 - Python-visible type identity
 - native C++ layout identity
 
-Python-visible type identity belongs to `Shape` and builtin type objects.
-Native layout identity is an implementation detail used for casts, fast
-dispatch, allocation, and value scanning.
+Python-visible identity is represented by `ClassObject` and Shape-backed
+`__class__` metadata. Native layout identity is an implementation detail used
+for casts, allocation, fast dispatch, and value scanning.
 
-The current `Object::klass` field mixes these two ideas. The planned direction
-is to replace it with:
+`Object` therefore stores both:
 
-```cpp
-Shape *shape;
-```
+- `Shape *shape`
+- `NativeLayoutId native_layout`
 
-Native C++ layout identity should then move to a compact native layout id,
-probably packed into the object header.
+Code that needs Python semantics should ask for the object's class/Shape. Code
+that needs native layout should use `native_layout_id()` or typed conversion
+helpers.
 
 ## Native Layout Id
 
-The runtime is not expected to need many native builtin layouts. An 8-bit
-native layout id should be enough for the foreseeable future.
+`NativeLayoutId` replaces the old static `Klass`-style runtime type metadata.
 
-Examples of native layouts:
+Examples of native layouts include:
 
 - `Instance`
 - `ClassObject`
@@ -98,167 +86,89 @@ Examples of native layouts:
 - `CodeObject`
 - VM array backing objects
 
-The native layout id should replace uses of C++ `Klass` for native RTTI:
+Native layout ids are appropriate for:
 
 - `TValue<T>` checked construction
 - interpreter dispatch for callable/runtime object kinds
-- `attr.cpp` receiver-kind dispatch while generic lookup is still migrating
-- `subscript.cpp` list/dict dispatch
+- low-level subscript dispatch
 - debug and assertion-only layout checks
+- allocation and finalization support
 
-The native layout id should not be returned by `obj.__class__`.
+Native layout ids are not returned by `obj.__class__`.
 
-## Object Header Direction
+## Builtin Attribute Policy
 
-The current object header is 16 bytes:
+Builtin objects can be Shape-backed before they support arbitrary user
+attributes. The policy should be explicit per builtin type:
 
-```cpp
-const Klass *klass;
-int32_t refcount;
-uint32_t layout;
-```
+- fixed-shape builtin values that reject arbitrary writes
+- builtin values with fixed native fields plus optional overflow attributes
+- ordinary user instances with dynamic attribute add/delete
 
-The `layout` word currently packs:
+The policy belongs in Shape flags and shared object helpers, not in ad hoc
+attribute lookup branches. For example, a fixed builtin instance Shape can use
+`DisallowAttributeUpdates` and `DisallowAttributeAddDelete` to reject unsupported
+ordinary writes through the generic attribute path.
 
-- one expanded-layout bit
+Current builtin instance semantics are intentionally conservative: `__class__`
+loads should go through the shared path, while arbitrary writes are rejected
+until the builtin type explicitly supports them.
+
+## Class Object Layout
+
+`ClassObject` is Python-visible and therefore derives from `Object`.
+
+It has fixed Shape-backed metadata slots:
+
+- `__class__`
+- `__name__`
+- `__bases__`
+- `__mro__`
+
+It also has a fixed inline class-attribute area. The current size is deliberately
+larger than the early prototype because class objects are few but often carry a
+substantial namespace. Instance root Shape, lookup validity-cell state, and the
+default instance inline slot count are C++ fields associated with class-object
+behavior, not Python-visible attributes directly.
+
+## Runtime Layout Metadata
+
+The heap layout header still records:
+
+- object size
 - value-region offset
 - value count
-- compact object size
 
-Once `Object::klass` becomes `Shape *shape`, the pointer-sized field stores
-Python-visible shape/type identity. The native layout id can be packed into the
-remaining 32-bit layout word.
+That offset remains useful. Some internal non-`Object` records have raw native
+prefixes and should not be forced to carry the full Python-visible `Object`
+header merely to describe their scanned `Value` fields.
 
-A plausible compact layout split is:
-
-```text
-bit 31      expanded marker
-bits 23-30  native layout id
-bits 11-22  managed Value slot count
-bits 0-10   object size in 16-byte units
-```
-
-The exact bit allocation is still tunable. The important design point is that
-the old value-offset bits can disappear once builtin objects follow the uniform
-layout convention below.
-
-Avoid stealing bits from `refcount`. Refcounting is hot and already subtle
-enough; native layout identity belongs with layout metadata.
-
-## Uniform Builtin Object Layout
-
-Builtin objects should use this physical layout:
-
-```text
-Object header
-managed Value slots
-optional native tail
-```
-
-The managed Value region is the portion scanned for ownership. The native tail
-contains non-Value data such as counters, callback pointers, bytecode vectors,
-or character data.
-
-This convention lets the compact header omit a value-region offset. The Value
-region always starts immediately after the `Object` header.
-
-Slot metadata in `Shape` remains the semantic authority for logical attributes.
-The native layout only decides where builtin-specific fields live physically.
-
-## Current Layout Fit
-
-Several runtime objects are already close to the desired layout.
-
-Already good or nearly good:
-
-- `List`: stores a `ValueArray<Value>` member, and `ValueArray` embeds only
-  managed Value fields.
-- `Scope`: stores `MemberValue`, `RawArray`, and `ValueArray` fields first;
-  those wrappers expose managed references through Value-sized fields.
-- `Function`: has a single managed `CodeObject` field.
-- `RangeIterator`: stores its integer state in managed `Value`-sized fields.
-- `String`: stores managed `count` first, followed by character data.
-- `ClassObject`: stores managed metadata/shape/slot fields first, followed by
-  native configuration.
-- `CodeObject`: stores managed scope/name fields before native vectors.
-- `Dict`: stores managed array fields first, followed by `n_valid_entries` in
-  the native tail.
-
-Expected to disappear or become generic:
-
-- `Instance::OverflowSlots` should move into the unified object header/slot
-  storage protocol instead of remaining a bespoke side object with native
-  fields before a Value payload.
-
-## Arrays Are Not The Blocker
-
-`RawArray<T>` and `ValueArray<T>` were already designed for this direction.
-Their embedded members are all managed Value-sized fields:
-
-```cpp
-MemberTValue<SMI> size_value;
-MemberTValue<SMI> capacity_value;
-MemberValue backing;
-```
-
-The backing objects then hold either:
-
-- no managed Values, for `RawArray<T>`
-- a dynamic managed Value payload, for `ValueArray<T>`
-
-This makes `List`, `Dict`, and `Scope` much easier to migrate than they first
-appear. The main requirement is member ordering in the owning object.
+For Python-visible `Object` subclasses, inherited static layout macros compose
+the fixed scanned value region from the base class. Variable-sized records use
+dynamic layout specs.
 
 ## Bootstrap Outline
 
-Builtin type bootstrap should be centralized in VM initialization.
-
-The rough order is:
+Builtin type bootstrap is centralized in VM initialization:
 
 1. Allocate placeholder root type objects for `type` and `object`.
-2. Create Shapes for those root type objects.
-3. Install the `type.__class__ == type` cycle.
-4. Populate readonly metadata slots such as `__name__`, `__bases__`, and
+2. Install the `type.__class__ == type` cycle.
+3. Populate readonly metadata slots such as `__name__`, `__bases__`, and
    `__mro__`.
-5. Allocate the remaining builtin type objects.
-6. Create root Shapes for builtin instance layouts such as `String`, `List`,
-   and `Dict`.
+4. Allocate the remaining builtin type objects.
+5. Create root Shapes for builtin instance layouts such as `str`, `list`, and
+   `dict`.
+6. Register builtin classes by `NativeLayoutId`.
 7. Insert builtin type objects and builtin functions into the VM's builtin
    scope.
-8. Seal invariants before user code can observe the builtin module.
+8. Finish bootstrap before any Python bytecode can observe partially
+   initialized objects.
 
-The bootstrap path should be small and explicit. Avoid spreading partially
-initialized builtin type objects through ordinary constructors.
+## Remaining Questions
 
-## Migration Notes
-
-The safest migration keeps native layout identity available while Python type
-identity moves to Shapes.
-
-Suggested sequence:
-
-1. Introduce a native layout id enum while keeping `Object::klass` temporarily.
-2. Add helpers for native layout checks and update new code to use them.
-3. Bootstrap VM-owned builtin type objects.
-4. Add `Shape *shape` to `Object` or replace `Object::klass` with it.
-5. Route `obj.__class__` through Shape/type objects for every Python-visible
-   object.
-6. Convert builtin object layouts to the uniform managed-Value-prefix form.
-7. Remove static/global builtin `Klass` objects such as `cl_string_klass`.
-8. Pack native layout id into the object header and delete remaining native
-   `Klass` dependencies.
-
-During the transition, exact native checks remain useful. They should be named
-as native layout checks so they do not imply Python-level type identity.
-
-## Open Questions
-
-- Should every builtin object support arbitrary user attributes immediately, or
-  should some builtin Shapes reject extra attributes until their Python
-  semantics are implemented?
-- Should native layout ids be compile-time enum values only, or should the VM
-  also maintain a layout table for debug names and layout metadata?
-- Which objects are Python-visible builtin objects, and which are purely
-  internal runtime support objects that only need native layout ids?
-- Should builtin type object Shapes with immutable descriptor protocol behavior
-  be marked `ShapeFlag::IsImmutableType` during bootstrap?
+- Which builtin types should support arbitrary user attributes, and when?
+- Which Python-visible builtin objects need fixed native fields exposed through
+  ordinary descriptors rather than direct C++ helpers?
+- How much of descriptor protocol for immutable builtin types should be marked
+  through `ShapeFlag::IsImmutableType` during bootstrap?
+- Which internal runtime records should stay non-Object `HeapObject`s forever?
