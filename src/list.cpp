@@ -6,12 +6,6 @@
 
 namespace cl
 {
-    List::List(BootstrapObjectTag, size_t size)
-        : Object(BootstrapObjectTag{}, native_layout_id, compact_layout())
-    {
-        items.resize(size, Value::not_present());
-    }
-
     List::List(ClassObject *cls, size_t size)
         : Object(cls, native_layout_id, compact_layout())
     {
