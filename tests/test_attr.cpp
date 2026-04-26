@@ -430,7 +430,7 @@ TEST(Attr, StoreAttrWritesClassMember)
     EXPECT_EQ(Value::from_smi(5), load_attr(Value::from_oop(cls), attr_name));
 }
 
-TEST(Attr, AttributeWritesExposeLookupInvalidationEffectForClassTargets)
+TEST(Attr, AttributeWritesInvalidateLookupCellsForClassTargets)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -443,33 +443,29 @@ TEST(Attr, AttributeWritesExposeLookupInvalidationEffectForClassTargets)
         context.thread()->make_internal_raw<ClassObject>(cls_name, 2);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
-    AttributeWriteResult class_result =
-        cls->set_own_property_with_result(attr_name, Value::from_smi(5));
-    EXPECT_EQ(AttributeMutationKind::Added, class_result.kind);
-    EXPECT_TRUE(has_attribute_write_effect(
-        class_result.effects,
-        AttributeWriteEffect::InvalidateLookupCellsOnTarget));
+    ValidityCell *add_cell = cls->lookup_validity_cell();
+    ASSERT_NE(nullptr, add_cell);
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(5)));
+    EXPECT_FALSE(add_cell->is_valid());
+    EXPECT_EQ(nullptr, cls->current_lookup_validity_cell());
 
-    AttributeWriteResult class_update_result =
-        cls->set_own_property_with_result(attr_name, Value::from_smi(6));
-    EXPECT_EQ(AttributeMutationKind::UpdatedExisting, class_update_result.kind);
-    EXPECT_TRUE(has_attribute_write_effect(
-        class_update_result.effects,
-        AttributeWriteEffect::InvalidateLookupCellsOnTarget));
+    ValidityCell *update_cell = cls->lookup_validity_cell();
+    ASSERT_NE(nullptr, update_cell);
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(6)));
+    EXPECT_FALSE(update_cell->is_valid());
+    EXPECT_EQ(nullptr, cls->current_lookup_validity_cell());
 
-    AttributeWriteResult class_delete_result =
-        cls->delete_own_property_with_result(attr_name);
-    EXPECT_EQ(AttributeMutationKind::Deleted, class_delete_result.kind);
-    EXPECT_TRUE(has_attribute_write_effect(
-        class_delete_result.effects,
-        AttributeWriteEffect::InvalidateLookupCellsOnTarget));
+    ValidityCell *delete_cell = cls->lookup_validity_cell();
+    ASSERT_NE(nullptr, delete_cell);
+    EXPECT_TRUE(cls->delete_own_property(attr_name));
+    EXPECT_FALSE(delete_cell->is_valid());
+    EXPECT_EQ(nullptr, cls->current_lookup_validity_cell());
 
-    AttributeWriteResult instance_result =
-        instance->set_own_property_with_result(attr_name, Value::from_smi(7));
-    EXPECT_EQ(AttributeMutationKind::Added, instance_result.kind);
-    EXPECT_FALSE(has_attribute_write_effect(
-        instance_result.effects,
-        AttributeWriteEffect::InvalidateLookupCellsOnTarget));
+    ValidityCell *instance_write_cell = cls->lookup_validity_cell();
+    ASSERT_NE(nullptr, instance_write_cell);
+    EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(7)));
+    EXPECT_TRUE(instance_write_cell->is_valid());
+    EXPECT_EQ(instance_write_cell, cls->current_lookup_validity_cell());
 }
 
 TEST(Attr, AttributeWriteDescriptorMissDoesNotCreateLookupValidityCell)
@@ -554,12 +550,7 @@ TEST(Attr, ShapePolicyCanDisallowInstanceAttributeAddDelete)
         instance_shape_flags);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
-    AttributeWriteResult result =
-        instance->set_own_property_with_result(attr_name, Value::from_smi(7));
-    EXPECT_FALSE(result.is_stored());
-    EXPECT_EQ(AttributeMutationKind::NotStored, result.kind);
-    EXPECT_EQ(attribute_write_effect(AttributeWriteEffect::None),
-              result.effects);
+    EXPECT_FALSE(instance->set_own_property(attr_name, Value::from_smi(7)));
 }
 
 TEST(Attr, ClassMetadataAttributesAreReadonly)

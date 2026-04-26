@@ -15,26 +15,6 @@ namespace cl
 {
     namespace
     {
-        AttributeWriteEffects
-        attribute_write_effects_for_target(const Object *object)
-        {
-            Shape *shape = object->get_shape();
-            if(shape != nullptr && shape->has_flag(ShapeFlag::IsClassObject))
-            {
-                return attribute_write_effect(
-                    AttributeWriteEffect::InvalidateLookupCellsOnTarget);
-            }
-            return attribute_write_effect(AttributeWriteEffect::None);
-        }
-
-        AttributeWriteResult
-        stored_attribute_write_result(const Object *object,
-                                      AttributeMutationKind kind)
-        {
-            return AttributeWriteResult{
-                kind, attribute_write_effects_for_target(object)};
-        }
-
         ValidityCell *attribute_write_validity_cell_for_target(Object *object)
         {
             if(!object->is_class_bootstrapped())
@@ -71,7 +51,6 @@ namespace cl
             return AttributeWriteDescriptor::found(
                 AttributeWriteAccess::store_existing(
                     object, info.storage_location(),
-                    attribute_write_effects_for_target(object),
                     attribute_write_validity_cell_for_target(object)));
         }
 
@@ -178,18 +157,17 @@ namespace cl
         return lookup_existing_own_property_write_descriptor(this, name);
     }
 
-    AttributeWriteResult Object::add_own_property(TValue<String> name,
-                                                  Value value)
+    bool Object::add_own_property(TValue<String> name, Value value)
     {
         Shape *current_shape = get_shape();
         int32_t descriptor_idx = current_shape->lookup_descriptor_index(name);
         if(descriptor_idx >= 0)
         {
-            return AttributeWriteResult::not_stored();
+            return false;
         }
         if(!current_shape->allows_attribute_add_delete())
         {
-            return AttributeWriteResult::not_stored();
+            return false;
         }
 
         Shape *next_shape = current_shape->derive_transition(
@@ -201,23 +179,21 @@ namespace cl
             next_shape->resolve_present_property(name);
         assert(new_location.is_found());
         write_storage_location(new_location, value);
-        return AttributeWriteResult{AttributeMutationKind::Added,
-                                    attribute_write_effects_for_target(this)};
+        return true;
     }
 
-    AttributeWriteResult
-    Object::define_own_property_with_result(TValue<String> name, Value value,
-                                            DescriptorFlags descriptor_flags)
+    bool Object::define_own_property(TValue<String> name, Value value,
+                                     DescriptorFlags descriptor_flags)
     {
         Shape *current_shape = get_shape();
         int32_t descriptor_idx = current_shape->lookup_descriptor_index(name);
         if(descriptor_idx >= 0)
         {
-            return AttributeWriteResult::not_stored();
+            return false;
         }
         if(!current_shape->allows_attribute_add_delete())
         {
-            return AttributeWriteResult::not_stored();
+            return false;
         }
 
         Shape *next_shape = current_shape->derive_transition(
@@ -228,33 +204,17 @@ namespace cl
             next_shape->resolve_present_property(name);
         assert(new_location.is_found());
         write_storage_location(new_location, value);
-        return AttributeWriteResult{AttributeMutationKind::Added,
-                                    attribute_write_effects_for_target(this)};
+        return true;
     }
 
-    bool Object::define_own_property(TValue<String> name, Value value,
-                                     DescriptorFlags descriptor_flags)
-    {
-        return define_own_property_with_result(name, value, descriptor_flags)
-            .is_stored();
-    }
-
-    AttributeWriteResult
-    Object::set_existing_own_property_with_result(TValue<String> name,
-                                                  Value value)
+    bool Object::set_existing_own_property(TValue<String> name, Value value)
     {
         AttributeWriteDescriptor descriptor =
             lookup_existing_own_property_write_descriptor(this, name);
         return store_attr_from_descriptor(descriptor, value);
     }
 
-    bool Object::set_existing_own_property(TValue<String> name, Value value)
-    {
-        return set_existing_own_property_with_result(name, value).is_stored();
-    }
-
-    AttributeWriteResult
-    Object::set_own_property_with_result(TValue<String> name, Value value)
+    bool Object::set_own_property(TValue<String> name, Value value)
     {
         AttributeWriteDescriptor descriptor =
             lookup_own_attribute_write_descriptor(name);
@@ -266,47 +226,35 @@ namespace cl
         {
             return add_own_property(name, value);
         }
-        return AttributeWriteResult::not_stored();
+        return false;
     }
 
-    bool Object::set_own_property(TValue<String> name, Value value)
-    {
-        return set_own_property_with_result(name, value).is_stored();
-    }
-
-    AttributeWriteResult
-    Object::delete_own_property_with_result(TValue<String> name)
+    bool Object::delete_own_property(TValue<String> name)
     {
         Shape *current_shape = get_shape();
         if(!current_shape->allows_attribute_add_delete())
         {
-            return AttributeWriteResult::not_stored();
+            return false;
         }
 
         int32_t descriptor_idx = current_shape->lookup_descriptor_index(name);
         if(descriptor_idx < 0)
         {
-            return AttributeWriteResult::not_stored();
+            return false;
         }
 
         DescriptorInfo info =
             current_shape->get_descriptor_info(descriptor_idx);
         if(info.has_flag(DescriptorFlag::ReadOnly))
         {
-            return AttributeWriteResult::not_stored();
+            return false;
         }
 
         Shape *next_shape =
             current_shape->derive_transition(name, ShapeTransitionVerb::Delete);
         set_shape(next_shape);
         write_storage_location(info.storage_location(), Value::not_present());
-        return stored_attribute_write_result(this,
-                                             AttributeMutationKind::Deleted);
-    }
-
-    bool Object::delete_own_property(TValue<String> name)
-    {
-        return delete_own_property_with_result(name).is_stored();
+        return true;
     }
 
     Value Object::read_storage_location(StorageLocation location) const

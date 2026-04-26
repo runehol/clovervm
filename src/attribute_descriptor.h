@@ -156,18 +156,14 @@ namespace cl
     {
         Object *storage_owner;
         StorageLocation storage_location;
-        AttributeMutationKind mutation_kind;
-        AttributeWriteEffects effects;
         ValidityCell *lookup_validity_cell;
 
         static AttributeWriteAccess
         store_existing(Object *storage_owner, StorageLocation location,
-                       AttributeWriteEffects effects,
                        ValidityCell *lookup_validity_cell)
         {
             return AttributeWriteAccess{storage_owner, location,
-                                        AttributeMutationKind::UpdatedExisting,
-                                        effects, lookup_validity_cell};
+                                        lookup_validity_cell};
         }
     };
 
@@ -181,9 +177,7 @@ namespace cl
             return AttributeWriteDescriptor{
                 AttributeWriteStatus::NotFound,
                 AttributeWriteAccess::store_existing(
-                    nullptr, StorageLocation::not_found(),
-                    attribute_write_effect(AttributeWriteEffect::None),
-                    nullptr)};
+                    nullptr, StorageLocation::not_found(), nullptr)};
         }
 
         static AttributeWriteDescriptor already_exists()

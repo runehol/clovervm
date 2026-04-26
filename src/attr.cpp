@@ -19,6 +19,16 @@ namespace cl
         }
     };
 
+    static void invalidate_lookup_cells_for_class_target(Object *object)
+    {
+        Shape *shape = object->get_shape();
+        if(shape != nullptr && shape->has_flag(ShapeFlag::IsClassObject))
+        {
+            assume_convert_to<ClassObject>(object)
+                ->invalidate_lookup_validity_cells();
+        }
+    }
+
     static AttributeReadDescriptor with_access_kind(
         AttributeReadDescriptor descriptor, AttributeReadAccessKind kind,
         AttributeCacheBlocker blocker = AttributeCacheBlocker::None)
@@ -213,13 +223,12 @@ namespace cl
         return object->lookup_own_attribute_write_descriptor(name);
     }
 
-    AttributeWriteResult
-    store_attr_from_descriptor(const AttributeWriteDescriptor &descriptor,
-                               Value value)
+    bool store_attr_from_descriptor(const AttributeWriteDescriptor &descriptor,
+                                    Value value)
     {
         if(!descriptor.is_found())
         {
-            return AttributeWriteResult::not_stored();
+            return false;
         }
 
         const AttributeWriteAccess &access = descriptor.access;
@@ -227,15 +236,8 @@ namespace cl
 
         access.storage_owner->write_storage_location(access.storage_location,
                                                      value);
-        if(has_attribute_write_effect(
-               access.effects,
-               AttributeWriteEffect::InvalidateLookupCellsOnTarget))
-        {
-            assume_convert_to<ClassObject>(access.storage_owner)
-                ->invalidate_lookup_validity_cells();
-        }
-
-        return AttributeWriteResult{access.mutation_kind, access.effects};
+        invalidate_lookup_cells_for_class_target(access.storage_owner);
+        return true;
     }
 
     bool store_attr(Value obj, TValue<String> name, Value value)
@@ -244,13 +246,11 @@ namespace cl
             resolve_attr_write_descriptor(obj, name);
         if(descriptor.is_found())
         {
-            return store_attr_from_descriptor(descriptor, value).is_stored();
+            return store_attr_from_descriptor(descriptor, value);
         }
         if(descriptor.status == AttributeWriteStatus::NotFound && obj.is_ptr())
         {
-            return obj.get_ptr<Object>()
-                ->add_own_property(name, value)
-                .is_stored();
+            return obj.get_ptr<Object>()->add_own_property(name, value);
         }
         return false;
     }
