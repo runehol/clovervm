@@ -578,6 +578,44 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
     EXPECT_FALSE(cell->is_valid());
 }
 
+TEST(Attr, InstanceOwnReadDescriptorCarriesLookupValidityCell)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
+    TValue<String> descriptor_name(
+        context.vm().get_or_create_interned_string_value(L"descriptor"));
+    ClassObject *base =
+        context.thread()->make_internal_raw<ClassObject>(base_name, 2);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, Value::from_oop(base));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(child);
+    EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));
+
+    AttributeReadDescriptor descriptor =
+        resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
+
+    ASSERT_TRUE(descriptor.is_found());
+    EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, descriptor.plan.kind);
+    EXPECT_EQ(nullptr, descriptor.plan.storage_owner);
+    EXPECT_TRUE(descriptor.is_cacheable());
+    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ASSERT_NE(nullptr, cell);
+    EXPECT_TRUE(cell->is_valid());
+    EXPECT_EQ(cell, child->current_lookup_validity_cell());
+    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
+
+    EXPECT_TRUE(base->set_own_property(descriptor_name, Value::from_smi(1)));
+
+    EXPECT_FALSE(cell->is_valid());
+}
+
 TEST(Attr, ShapePolicyCanDisallowInstanceAttributeAddDelete)
 {
     test::VmTestContext context;

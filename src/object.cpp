@@ -24,6 +24,13 @@ namespace cl
             return object->get_class().extract()->lookup_validity_cell();
         }
 
+        ValidityCell *
+        attribute_read_validity_cell_for_receiver(const Object *object)
+        {
+            assert(object->is_class_bootstrapped());
+            return object->get_class().extract()->lookup_validity_cell();
+        }
+
         AttributeWriteDescriptor
         lookup_existing_own_property_write_descriptor(Object *object,
                                                       TValue<String> name)
@@ -142,13 +149,11 @@ namespace cl
             return AttributeReadDescriptor::not_found();
         }
 
-        return AttributeReadDescriptor::found(
-            AttributeReadPlan::from_storage(
-                AttributeReadPlanPath::ReceiverOwnProperty,
-                AttributeReadPlanKind::ReceiverSlot, nullptr, location,
-                read_storage_location(location),
-                AttributeBindingContext::none()),
-            attribute_cache_blocker(AttributeCacheBlocker::MissingLookupCell));
+        return AttributeReadDescriptor::found(AttributeReadPlan::from_storage(
+            AttributeReadPlanPath::ReceiverOwnProperty,
+            AttributeReadPlanKind::ReceiverSlot, nullptr, location,
+            read_storage_location(location), AttributeBindingContext::none(),
+            attribute_read_validity_cell_for_receiver(this)));
     }
 
     AttributeWriteDescriptor
