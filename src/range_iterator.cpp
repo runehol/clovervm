@@ -10,7 +10,7 @@ namespace cl
             NativeLayoutId::RangeIterator};
         ClassObject *cls = ClassObject::make_builtin_class(
             vm->get_or_create_interned_string_value(L"range_iterator"), 1,
-            nullptr, 0, Value::from_oop(vm->object_class()));
+            nullptr, 0, vm->object_class());
         return builtin_class_definition(cls, native_layout_ids);
     }
 }  // namespace cl

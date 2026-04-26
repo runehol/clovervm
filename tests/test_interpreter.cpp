@@ -635,7 +635,7 @@ TEST(Interpreter, subscript_load_reads_tuple_item_with_negative_index)
     ASSERT_TRUE(actual.is_ptr());
     ASSERT_EQ(NativeLayoutId::ClassObject,
               actual.get_ptr<Object>()->native_layout_id());
-    EXPECT_STREQ(L"Cls",
+    EXPECT_STREQ(L"object",
                  string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
 }
 
@@ -791,7 +791,7 @@ TEST(Interpreter, subscript_load_rejects_out_of_range_tuple_index)
 {
     expect_runtime_error(L"class Cls:\n"
                          L"    pass\n"
-                         L"Cls.__mro__[1]\n",
+                         L"Cls.__mro__[2]\n",
                          "IndexError: tuple index out of range");
 }
 
@@ -934,12 +934,12 @@ TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)
     TValue<String> value_name(
         test_context.vm().get_or_create_interned_string_value(L"value"));
 
-    ClassObject *base =
-        test_context.thread()->make_internal_raw<ClassObject>(base_name, 4);
+    ClassObject *base = test_context.thread()->make_internal_raw<ClassObject>(
+        base_name, 4, test_context.vm().object_class());
     ClassObject *mid = test_context.thread()->make_internal_raw<ClassObject>(
-        mid_name, 4, Value::from_oop(base));
+        mid_name, 4, base);
     ClassObject *leaf = test_context.thread()->make_internal_raw<ClassObject>(
-        leaf_name, 4, Value::from_oop(mid));
+        leaf_name, 4, mid);
     Instance *obj = test_context.thread()->make_internal_raw<Instance>(leaf);
 
     ASSERT_TRUE(base->set_own_property(value_name, Value::from_smi(1)));
@@ -988,12 +988,12 @@ TEST(Interpreter, cached_direct_method_call_observes_mro_mutations)
     TValue<String> method_name(
         test_context.vm().get_or_create_interned_string_value(L"method"));
 
-    ClassObject *base =
-        test_context.thread()->make_internal_raw<ClassObject>(base_name, 4);
+    ClassObject *base = test_context.thread()->make_internal_raw<ClassObject>(
+        base_name, 4, test_context.vm().object_class());
     ClassObject *mid = test_context.thread()->make_internal_raw<ClassObject>(
-        mid_name, 4, Value::from_oop(base));
+        mid_name, 4, base);
     ClassObject *leaf = test_context.thread()->make_internal_raw<ClassObject>(
-        leaf_name, 4, Value::from_oop(mid));
+        leaf_name, 4, mid);
     Instance *obj = test_context.thread()->make_internal_raw<Instance>(leaf);
 
     Value base_method_1 = make_test_function(test_context, L"base_method_1",
@@ -1058,12 +1058,12 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
     TValue<String> value_name(
         test_context.vm().get_or_create_interned_string_value(L"value"));
 
-    ClassObject *base =
-        test_context.thread()->make_internal_raw<ClassObject>(base_name, 4);
+    ClassObject *base = test_context.thread()->make_internal_raw<ClassObject>(
+        base_name, 4, test_context.vm().object_class());
     ClassObject *mid = test_context.thread()->make_internal_raw<ClassObject>(
-        mid_name, 4, Value::from_oop(base));
+        mid_name, 4, base);
     ClassObject *leaf = test_context.thread()->make_internal_raw<ClassObject>(
-        leaf_name, 4, Value::from_oop(mid));
+        leaf_name, 4, mid);
     Instance *obj = test_context.thread()->make_internal_raw<Instance>(leaf);
 
     ASSERT_TRUE(base->set_own_property(value_name, Value::from_smi(1)));

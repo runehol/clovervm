@@ -18,7 +18,7 @@ namespace cl
             NativeLayoutId::List};
         ClassObject *cls = ClassObject::make_builtin_class(
             vm->get_or_create_interned_string_value(L"list"), 1, nullptr, 0,
-            Value::from_oop(vm->object_class()));
+            vm->object_class());
         return builtin_class_definition(cls, native_layout_ids);
     }
 

@@ -210,7 +210,8 @@ namespace cl
                                         TValue<String> class_name)
     {
         TValue<ClassObject> cls = make_internal_value<ClassObject>(
-            class_name, kDefaultFactoryInlineSlotCount);
+            class_name, kDefaultFactoryInlineSlotCount,
+            active_vm()->object_class());
         Scope *local_scope = body_code->get_local_scope_ptr();
         for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
         {

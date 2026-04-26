@@ -9,7 +9,8 @@ namespace cl
 
     ClassObject::ClassObject(BootstrapObjectTag, TValue<String> _name,
                              uint32_t _instance_default_inline_slot_count,
-                             Value _base, ShapeFlags class_shape_flags,
+                             ClassObject *single_base,
+                             ShapeFlags class_shape_flags,
                              ShapeFlags instance_shape_flags)
         : Object(BootstrapObjectTag{}, native_layout_id, compact_layout()),
           name(_name), bases(Value::not_present()), mro(Value::not_present()),
@@ -64,49 +65,95 @@ namespace cl
         {
             class_extra_inline_attribute_slots[slot_idx] = Value::not_present();
         }
-        if(active_vm()->tuple_class() == nullptr)
+        if(single_base == nullptr)
         {
             bases = Value::None();
             mro = Value::None();
         }
         else
         {
-            bases = make_bases_tuple(_base);
+            bases = make_bases_tuple(single_base);
             mro = make_mro_tuple();
         }
     }
 
     ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
                              uint32_t _instance_default_inline_slot_count,
-                             Value _base, ShapeFlags class_shape_flags,
+                             ClassObject *single_base,
+                             ShapeFlags class_shape_flags,
                              ShapeFlags instance_shape_flags)
         : ClassObject(BootstrapObjectTag{}, _name,
-                      _instance_default_inline_slot_count, _base,
+                      _instance_default_inline_slot_count, single_base,
                       class_shape_flags, instance_shape_flags)
     {
         install_bootstrap_class(metaclass);
     }
 
+    ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
+                             uint32_t _instance_default_inline_slot_count,
+                             TValue<Tuple> _bases, ShapeFlags class_shape_flags,
+                             ShapeFlags instance_shape_flags)
+        : ClassObject(BootstrapObjectTag{}, _name,
+                      _instance_default_inline_slot_count, nullptr,
+                      class_shape_flags, instance_shape_flags)
+    {
+        install_bootstrap_class(metaclass);
+        bases = _bases;
+        mro = make_mro_tuple();
+    }
+
     ClassObject::ClassObject(TValue<String> _name,
                              uint32_t _instance_default_inline_slot_count,
-                             Value _base, ShapeFlags class_shape_flags,
+                             ClassObject *single_base,
+                             ShapeFlags class_shape_flags,
                              ShapeFlags instance_shape_flags)
         : ClassObject(active_vm()->type_class(), _name,
-                      _instance_default_inline_slot_count, _base,
+                      _instance_default_inline_slot_count, single_base,
                       class_shape_flags, instance_shape_flags)
     {
     }
 
-    ClassObject *ClassObject::make_builtin_class(
+    ClassObject *ClassObject::make_bootstrap_builtin_class(
         TValue<String> name, uint32_t instance_default_inline_slot_count,
-        const BuiltinClassMethod *methods, uint32_t method_count, Value base)
+        const BuiltinClassMethod *methods, uint32_t method_count)
     {
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
                                        shape_flag(ShapeFlag::IsImmutableType);
         ClassObject *type = active_vm()->type_class();
         assert(type != nullptr);
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
-            type, name, instance_default_inline_slot_count, base,
+            BootstrapObjectTag{}, name, instance_default_inline_slot_count,
+            nullptr, class_shape_flags, fixed_attribute_shape_flags());
+        cls->install_bootstrap_class(type);
+
+        DescriptorFlags method_flags =
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+            descriptor_flag(DescriptorFlag::StableSlot);
+        for(uint32_t method_idx = 0; method_idx < method_count; ++method_idx)
+        {
+            bool stored = cls->define_own_property(methods[method_idx].name,
+                                                   methods[method_idx].value,
+                                                   method_flags);
+            assert(stored);
+            (void)stored;
+        }
+
+        cls->set_shape(cls->get_shape()->clone_with_flags(
+            class_shape_flags | fixed_attribute_shape_flags()));
+        return cls;
+    }
+
+    ClassObject *ClassObject::make_builtin_class(
+        TValue<String> name, uint32_t instance_default_inline_slot_count,
+        const BuiltinClassMethod *methods, uint32_t method_count,
+        ClassObject *single_base)
+    {
+        ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
+                                       shape_flag(ShapeFlag::IsImmutableType);
+        ClassObject *type = active_vm()->type_class();
+        assert(type != nullptr);
+        ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
+            type, name, instance_default_inline_slot_count, single_base,
             class_shape_flags, fixed_attribute_shape_flags());
 
         DescriptorFlags method_flags =
@@ -171,7 +218,7 @@ namespace cl
         ClassObject *cls = active_vm()->make_immortal_internal_raw<ClassObject>(
             BootstrapObjectTag{},
             vm->get_or_create_interned_string_value(L"type"),
-            ClassObject::kClassInlineStorageSlotCount, Value::None(),
+            ClassObject::kClassInlineStorageSlotCount, nullptr,
             class_shape_flags, fixed_attribute_shape_flags());
         cls->install_bootstrap_class(cls);
         return builtin_class_definition(cls, native_layout_ids);
@@ -346,17 +393,11 @@ namespace cl
         return descriptor.plan.value;
     }
 
-    Value ClassObject::make_bases_tuple(Value base) const
+    Value ClassObject::make_bases_tuple(ClassObject *single_base) const
     {
-        size_t size = base == Value::None() ? 0 : 1;
-        Tuple *bases =
-            active_vm()->tuple_class() == nullptr
-                ? make_internal_raw<Tuple>(BootstrapObjectTag{}, size)
-                : make_object_raw<Tuple>(size);
-        if(base != Value::None())
-        {
-            bases->initialize_item_unchecked(0, base);
-        }
+        assert(single_base != nullptr);
+        Tuple *bases = make_object_raw<Tuple>(1);
+        bases->initialize_item_unchecked(0, Value::from_oop(single_base));
         return Value::from_oop(bases);
     }
 

@@ -16,6 +16,8 @@
 
 namespace cl
 {
+    class Tuple;
+
     struct BuiltinClassMethod
     {
         TValue<String> name;
@@ -37,28 +39,38 @@ namespace cl
         ClassObject(
             BootstrapObjectTag, TValue<String> name,
             uint32_t instance_default_inline_slot_count,
-            Value base = Value::None(),
+            ClassObject *single_base,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
             ClassObject *metaclass, TValue<String> name,
             uint32_t instance_default_inline_slot_count,
-            Value base = Value::None(),
+            ClassObject *single_base,
+            ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
+            ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
+
+        ClassObject(
+            ClassObject *metaclass, TValue<String> name,
+            uint32_t instance_default_inline_slot_count, TValue<Tuple> bases,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
             TValue<String> name, uint32_t instance_default_inline_slot_count,
-            Value base = Value::None(),
+            ClassObject *single_base,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
+
+        static ClassObject *make_bootstrap_builtin_class(
+            TValue<String> name, uint32_t instance_default_inline_slot_count,
+            const BuiltinClassMethod *methods, uint32_t method_count);
 
         static ClassObject *
         make_builtin_class(TValue<String> name,
                            uint32_t instance_default_inline_slot_count,
                            const BuiltinClassMethod *methods,
-                           uint32_t method_count, Value base = Value::None());
+                           uint32_t method_count, ClassObject *single_base);
 
         TValue<String> get_name() const { return name; }
         uint32_t get_instance_default_inline_slot_count() const
@@ -105,7 +117,7 @@ namespace cl
         static constexpr uint32_t kClassExtraInlineAttributeSlotCount =
             kClassInlineStorageSlotCount - kClassMetadataSlotCount;
 
-        Value make_bases_tuple(Value base) const;
+        Value make_bases_tuple(ClassObject *single_base) const;
         Value make_mro_tuple() const;
         NOINLINE ValidityCell *create_lookup_validity_cell_slow() const;
         void attach_lookup_validity_cell(ValidityCell *cell) const;

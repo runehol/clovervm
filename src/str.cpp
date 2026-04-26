@@ -62,7 +62,7 @@ namespace cl
                                                                 2, 2)},
         };
 
-        ClassObject *cls = ClassObject::make_builtin_class(
+        ClassObject *cls = ClassObject::make_bootstrap_builtin_class(
             vm->get_or_create_interned_string_value(L"str"), 1, methods,
             std::size(methods));
         return builtin_class_definition(cls, native_layout_ids);
