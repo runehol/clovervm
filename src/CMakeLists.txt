@@ -63,6 +63,7 @@ add_library(libclovervm STATIC
     thread_state.h
     typed_value.h
     tokenizer.cpp
+    validity_cell.h
     value.h
     vm_array.h
 )
