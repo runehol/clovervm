@@ -275,21 +275,40 @@ namespace cl
         return builtin->callback(active_thread(), args);
     }
 
-    static ALWAYSINLINE void
-    enter_function_frame(Value *&fp, const uint8_t *&pc,
-                         CodeObject *&code_object, TValue<Function> fun,
-                         int32_t call_base_reg, uint32_t n_args)
+    static ALWAYSINLINE void enter_function_frame_at_new_fp(
+        Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
+        TValue<Function> fun, Value *new_fp, uint32_t instr_len)
     {
-        pc += 3;
-
-        Value *new_fp =
-            fp + call_base_reg - int32_t(n_args) - FrameHeaderSizeAboveFp;
+        pc += instr_len;
 
         initialize_frame_header(new_fp, fp, code_object, pc);
 
         fp = new_fp;
         code_object = fun.extract()->code_object.extract();
         pc = code_object->code.data();
+    }
+
+    static ALWAYSINLINE void enter_function_frame_from_callable_slot(
+        Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
+        TValue<Function> fun, int32_t call_base_reg, uint32_t n_args,
+        uint32_t instr_len)
+    {
+        Value *new_fp =
+            fp + call_base_reg - int32_t(n_args) - FrameHeaderSizeAboveFp;
+        enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
+                                       instr_len);
+    }
+
+    static ALWAYSINLINE void enter_function_frame_from_first_arg(
+        Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
+        TValue<Function> fun, int32_t first_arg_reg, uint32_t n_args,
+        uint32_t instr_len)
+    {
+        int32_t last_arg_reg =
+            n_args == 0 ? first_arg_reg : first_arg_reg - int32_t(n_args) + 1;
+        Value *new_fp = fp + last_arg_reg - FrameHeaderSizeAboveFp;
+        enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
+                                       instr_len);
     }
 
     static Value op_lda_constant(PARAMS)
@@ -917,6 +936,7 @@ namespace cl
 
     static Value op_call_simple(PARAMS)
     {
+        static constexpr uint32_t call_instr_len = 3;
         int8_t reg = pc[1];
         uint8_t n_args = pc[2];
         Value fun = fp[reg];
@@ -937,7 +957,7 @@ namespace cl
             ClassObject *cls = static_cast<ClassObject *>(fun_object);
             accumulator = Value::from_oop(make_internal_raw<Instance>(cls));
 
-            pc += 3;
+            pc += call_instr_len;
 
             START(0);
             COMPLETE();
@@ -954,7 +974,7 @@ namespace cl
 
             accumulator = invoke_builtin_callback(fp, builtin, reg, n_args);
 
-            pc += 3;
+            pc += call_instr_len;
 
             START(0);
             COMPLETE();
@@ -965,35 +985,17 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        enter_function_frame(fp, pc, code_object, TValue<Function>(fun), reg,
-                             n_args);
+        enter_function_frame_from_callable_slot(fp, pc, code_object,
+                                                TValue<Function>(fun), reg,
+                                                n_args, call_instr_len);
 
         START(0);
         COMPLETE();
     }
 
-    static ALWAYSINLINE void enter_function_frame_from_first_arg(
-        Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
-        TValue<Function> fun, int32_t first_arg_reg, uint32_t n_args,
-        uint32_t instr_len)
-    {
-        pc += instr_len;
-
-        int32_t last_arg_reg =
-            n_args == 0 ? first_arg_reg : first_arg_reg - int32_t(n_args) + 1;
-        Value *new_fp = fp + last_arg_reg - FrameHeaderSizeAboveFp;
-
-        initialize_frame_header(new_fp, fp, code_object, pc);
-
-        fp = new_fp;
-        code_object = fun.extract()->code_object.extract();
-        pc = code_object->code.data();
-    }
-
     static Value op_call_method_attr(PARAMS)
     {
-        START(4);
-        (void)dispatch_fun;
+        static constexpr uint32_t call_instr_len = 4;
         int32_t receiver_reg = int8_t(pc[1]);
         uint8_t const_offset = pc[2];
         uint32_t n_user_args = uint8_t(pc[3]);
@@ -1033,7 +1035,7 @@ namespace cl
             accumulator = invoke_builtin_callback_from_first_arg(
                 fp, builtin, first_arg_reg, n_args);
 
-            pc += instr_len;
+            pc += call_instr_len;
 
             START(0);
             COMPLETE();
@@ -1044,9 +1046,9 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        enter_function_frame_from_first_arg(fp, pc, code_object,
-                                            TValue<Function>(callable),
-                                            first_arg_reg, n_args, instr_len);
+        enter_function_frame_from_first_arg(
+            fp, pc, code_object, TValue<Function>(callable), first_arg_reg,
+            n_args, call_instr_len);
 
         {
             START(0);
