@@ -45,9 +45,7 @@ namespace cl
 
     enum class AttributeReadPlanKind : uint8_t
     {
-        ReturnValue,
         ReceiverSlot,
-        ResolvedValue,
         BindFunctionReceiver,
         DataDescriptorGet,
         NonDataDescriptorGet,
@@ -128,7 +126,7 @@ namespace cl
                 AttributeReadStatus::NotFound,
                 AttributeReadPlan::from_storage(
                     AttributeReadPlanPath::ReceiverOwnProperty,
-                    AttributeReadPlanKind::ReturnValue, nullptr,
+                    AttributeReadPlanKind::ReceiverSlot, nullptr,
                     StorageLocation::not_found(), Value::not_present(),
                     AttributeBindingContext::none()),
                 attribute_cache_blocker(AttributeCacheBlocker::None)};

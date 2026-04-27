@@ -43,17 +43,11 @@ namespace cl
             return AttributeReadPlanKind::BindFunctionReceiver;
         }
 
-        if(path == AttributeReadPlanPath::ReceiverOwnProperty ||
-           path == AttributeReadPlanPath::InstanceClassChain ||
-           path == AttributeReadPlanPath::ClassObjectChain)
-        {
-            // Class-chain hits are cached as storage loads. This lets
-            // contents writes update the observed value without invalidating
-            // shape-only lookup assumptions.
-            return AttributeReadPlanKind::ReceiverSlot;
-        }
-
-        return AttributeReadPlanKind::ResolvedValue;
+        // Ordinary lookup hits are cached as storage loads. This lets
+        // contents writes update the observed value without invalidating
+        // shape-only lookup assumptions, and keeps even rare metaclass-chain
+        // hits on the same simple IC representation.
+        return AttributeReadPlanKind::ReceiverSlot;
     }
 
     static AttributeCacheBlockers
@@ -387,7 +381,7 @@ namespace cl
                 "TypeError: descriptor __get__ requires interpreter dispatch");
         }
 
-        return plan.value;
+        __builtin_unreachable();
     }
 
     bool load_method_from_plan(Value receiver, const AttributeReadPlan &plan,

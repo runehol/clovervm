@@ -392,11 +392,6 @@ namespace cl
                     receiver, plan))[plan.storage_location.physical_idx];
                 return AttributeLoadPlanStatus::Ready;
 
-            case AttributeReadPlanKind::ReturnValue:
-            case AttributeReadPlanKind::ResolvedValue:
-                value_out = plan.value;
-                return AttributeLoadPlanStatus::Ready;
-
             case AttributeReadPlanKind::BindFunctionReceiver:
                 if(plan.storage_location.kind != StorageKind::Inline)
                 {
@@ -467,11 +462,6 @@ namespace cl
                 }
                 return MethodCallTargetStatus::Ready;
 
-            case AttributeReadPlanKind::ReturnValue:
-            case AttributeReadPlanKind::ResolvedValue:
-                callable_out = plan.value;
-                return MethodCallTargetStatus::Ready;
-
             case AttributeReadPlanKind::DataDescriptorGet:
             case AttributeReadPlanKind::NonDataDescriptorGet:
                 callable_out = Value::not_present();
@@ -503,11 +493,6 @@ namespace cl
                 {
                     self_out = receiver;
                 }
-                return MethodCallFastTargetStatus::Ready;
-
-            case AttributeReadPlanKind::ReturnValue:
-            case AttributeReadPlanKind::ResolvedValue:
-                callable_out = plan.value;
                 return MethodCallFastTargetStatus::Ready;
 
             case AttributeReadPlanKind::ReceiverSlot:
