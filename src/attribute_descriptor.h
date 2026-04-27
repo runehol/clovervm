@@ -173,13 +173,15 @@ namespace cl
     {
         AttributeWriteStatus status;
         AttributeWritePlan plan;
+        AttributeCacheBlockers cache_blockers;
 
         static AttributeWriteDescriptor not_found()
         {
             return AttributeWriteDescriptor{
                 AttributeWriteStatus::NotFound,
                 AttributeWritePlan::store_existing(
-                    nullptr, StorageLocation::not_found(), nullptr)};
+                    nullptr, StorageLocation::not_found(), nullptr),
+                attribute_cache_blocker(AttributeCacheBlocker::None)};
         }
 
         static AttributeWriteDescriptor already_exists()
@@ -212,7 +214,9 @@ namespace cl
 
         static AttributeWriteDescriptor found(AttributeWritePlan plan)
         {
-            return AttributeWriteDescriptor{AttributeWriteStatus::Found, plan};
+            return AttributeWriteDescriptor{
+                AttributeWriteStatus::Found, plan,
+                attribute_cache_blocker(AttributeCacheBlocker::None)};
         }
 
         bool is_found() const { return status == AttributeWriteStatus::Found; }

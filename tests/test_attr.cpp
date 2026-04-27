@@ -443,6 +443,8 @@ TEST(Attr, ReceiverSlotPlansExecuteAgainstCurrentReceiver)
     AttributeWriteDescriptor write_descriptor =
         resolve_attr_write_descriptor(Value::from_oop(first), attr_name);
     ASSERT_TRUE(write_descriptor.is_found());
+    EXPECT_EQ(attribute_cache_blocker(AttributeCacheBlocker::None),
+              write_descriptor.cache_blockers);
     ASSERT_EQ(nullptr, write_descriptor.plan.storage_owner);
     EXPECT_TRUE(store_attr_from_plan(
         Value::from_oop(second), write_descriptor.plan, Value::from_smi(3)));
@@ -534,6 +536,8 @@ TEST(Attr, AttributeWriteDescriptorMissDoesNotCreateLookupValidityCell)
 
     EXPECT_FALSE(descriptor.is_found());
     EXPECT_EQ(AttributeWriteStatus::NotFound, descriptor.status);
+    EXPECT_EQ(attribute_cache_blocker(AttributeCacheBlocker::None),
+              descriptor.cache_blockers);
     EXPECT_FALSE(descriptor.is_cacheable());
     EXPECT_EQ(nullptr, child->current_mro_validity_cell());
     EXPECT_EQ(0u, base->attached_lookup_validity_cell_count());
@@ -566,6 +570,8 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
         resolve_attr_write_descriptor(Value::from_oop(instance), attr_name);
 
     ASSERT_TRUE(descriptor.is_found());
+    EXPECT_EQ(attribute_cache_blocker(AttributeCacheBlocker::None),
+              descriptor.cache_blockers);
     EXPECT_EQ(nullptr, descriptor.plan.storage_owner);
     EXPECT_TRUE(descriptor.is_cacheable());
     ValidityCell *cell = descriptor.plan.lookup_validity_cell;
