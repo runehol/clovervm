@@ -86,7 +86,7 @@ namespace cl
            new_shape->has_flag(ShapeFlag::IsClassObject))
         {
             assume_convert_to<ClassObject>(this)
-                ->invalidate_lookup_validity_cells();
+                ->invalidate_lookup_validity_cells_for_shape_change();
         }
     }
 

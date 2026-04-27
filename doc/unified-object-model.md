@@ -815,20 +815,20 @@ they carry a lookup validity cell and do not require descriptor dispatch.
 
 Receiver-own-slot hits also need the class-chain dependency that proves no data
 descriptor currently wins for the same name. The current runtime represents
-that dependency with the receiver class's MRO validity cell, so existing
-instance-slot reads can be cached while still being invalidated by class or base
-mutations.
+that dependency with the receiver class's MRO shape-and-contents validity cell,
+so existing instance-slot reads can be cached while still being invalidated by
+class or base mutations.
 
 Class-object attribute reads have two dependency axes: the class path
 `Class.__mro__` and the metaclass path `Class.__class__.__mro__`. They use the
-receiver class's combined MRO-and-metaclass-MRO validity cell so changes in
-either axis invalidate the cached plan.
+receiver class's MRO-shape-and-metaclass-MRO-shape-and-contents validity cell
+so relevant changes in either axis invalidate the cached plan.
 
 Class-object attribute writes are different. Default assignment first consults
 the metaclass path for descriptor assignment behavior, but the written class's
 own MRO does not decide whether the write is legal. Cacheable class writes
-therefore use the metaclass's MRO validity cell rather than the written class's
-combined read cell.
+therefore use the metaclass's MRO shape-and-contents validity cell rather than
+the written class's combined read cell.
 
 `CodeObject` owns attribute inline caches in side arrays, parallel in spirit to
 the constant table:
@@ -898,16 +898,9 @@ apply access_kind to value
 
 The receiver Shape protects receiver-local structure.
 
-Because every successful class attribute write invalidates attached
-lookup validity cells, class-chain cache entries do not need to reread
-the defining class slot. If a class attribute is replaced, the lookup
-cell becomes invalid before the cached value can be used again.
-
-If CloverVM later makes class-write invalidation more selective, for
-example by preserving lookup cells for ordinary value-to-ordinary-value
-writes, then class-chain cache entries would need to store a resolved
-object plus storage location instead of a cached value so they can reread
-the current slot contents while the lookup cell remains valid.
+Class-chain cache entries store both the defining object and storage location.
+This lets class attribute read caches remain valid across ordinary class-path
+contents writes while still rereading the current slot contents.
 
 ---
 
@@ -923,19 +916,20 @@ cases with three complementary rules:
    The transition invalidates attached lookup validity cells for lookups
    that depended on the previous class-chain membership facts.
 
-2. **All class attribute writes invalidate lookup cells.**
+2. **Class attribute writes invalidate contents-sensitive lookup cells.**
 
    Assigning a new value into an already-present class attribute may keep
    the same Shape if membership is unchanged. The new value may have
-   different descriptor behavior from the old value, so every successful
-   class attribute write invalidates the class object's attached lookup
-   validity cells regardless of the value being written.
+   different descriptor behavior from the old value, so successful class
+   attribute writes invalidate the class object's contents-sensitive lookup
+   validity cells.
 
    This applies to every path that mutates class-object attribute
    storage, including bytecode stores, class construction helpers,
    internal runtime setters, and default metaclass attribute assignment.
 
-3. **Receiver-slot caches carry the receiver class MRO validity cell.**
+3. **Receiver-slot caches carry the receiver class MRO shape-and-contents
+   validity cell.**
 
    A receiver-local slot cache is legal only when the lookup result includes a
    validity cell for the receiver class-chain assumptions. A miss in the class
@@ -948,7 +942,7 @@ Together these rules cover the descriptor-precedence hazards:
 - adding or deleting a descriptor or ordinary class attribute is a Shape
   transition
 - replacing an existing class attribute with a value of different
-  descriptor-ness is caught by class-write invalidation
+  descriptor-ness is caught by contents-sensitive class-write invalidation
 - receiver-local reads are invalidated when the class-chain assumptions that
   made them safe change
 
@@ -959,21 +953,27 @@ Together these rules cover the descriptor-precedence hazards:
 A lookup validity cell represents one or more lookup dependency paths that are
 still valid. Each class object may own two current cells:
 
-- `mro_validity_cell`: protects lookup through this class's own materialized
-  MRO.
-- `mro_and_metaclass_mro_validity_cell`: protects lookup through this class's
-  own materialized MRO and through its metaclass's materialized MRO.
+- `mro_shape_and_contents_validity_cell`: protects lookup through this class's
+  own materialized MRO, including class-member contents that can change
+  descriptor precedence.
+- `mro_shape_and_metaclass_mro_shape_and_contents_validity_cell`: protects class
+  attribute reads through this class's own materialized MRO shape and through
+  its metaclass's materialized MRO shape and contents.
 
-The MRO cell is reused across caches whose assumptions are rooted only in the
-class's MRO. Instance attribute reads and instance write descriptors use this
-cell for the receiver class. Class attribute writes use the written class's
-metaclass MRO cell, because only the metaclass MRO can affect default
+The MRO-shape-and-contents cell is reused across caches whose assumptions are
+rooted in class MRO membership and class-member descriptor behavior. Instance
+attribute reads and instance write descriptors use this cell for the receiver
+class. Class attribute writes use the written class's metaclass
+MRO-shape-and-contents cell, because only the metaclass MRO can affect default
 assignment behavior.
 
-The combined MRO-and-metaclass-MRO cell is reused across class attribute read
-caches rooted at that class. A cached class read can be invalidated either by
-changes to `Class.__mro__` or by changes to `Class.__class__.__mro__`, because
-metaclass data descriptors take precedence over class-path results.
+The combined MRO/metaclass cell is reused across class attribute read caches
+rooted at that class. A cached class read can be invalidated by changes to
+`Class.__mro__`, by changes to `Class.__class__.__mro__`, or by contents writes
+along the metaclass path because metaclass data descriptors take precedence
+over class-path results. Ordinary contents writes along the class path do not
+invalidate this cell; cached class-path reads reload from the cached storage
+location.
 
 Getting or creating either owned cell is responsible for maintaining the
 attachment invariant. Callers must not separately allocate a cell and then
@@ -982,11 +982,12 @@ current cell when the pointer is non-null and the cell still says it is valid.
 The cold path creates a fresh cell, stores it in the appropriate owned field,
 and installs it along the relevant MRO path or paths.
 
-Any class-object Shape transition invalidates lookup validity, because lookup
-membership facts may have changed. Stored class attribute updates also
-invalidate lookup validity even when the Shape does not change, because the
-replacement value may have different descriptor behavior or may simply be a
-different resolved value.
+Any class-object Shape transition invalidates all lookup validity attached to
+that class, because lookup membership facts may have changed. Stored class
+attribute updates invalidate only contents-sensitive lookup validity. This keeps
+class attribute read caches alive for ordinary class-path value changes while
+still invalidating instance lookup and metaclass-path assumptions that depend on
+descriptor behavior.
 
 ---
 
@@ -994,9 +995,10 @@ different resolved value.
 
 | Field | Meaning |
 |---|---|
-| `mro_validity_cell` | shared validity cell for lookups rooted in this class's MRO |
-| `mro_and_metaclass_mro_validity_cell` | shared validity cell for class-attribute reads rooted in this class's MRO and metaclass MRO |
-| `attached_lookup_validity_cells` | dependent cells owned by derived/root lookups that consulted this class |
+| `mro_shape_and_contents_validity_cell` | shared validity cell for lookups rooted in this class's MRO |
+| `mro_shape_and_metaclass_mro_shape_and_contents_validity_cell` | shared validity cell for class-attribute reads rooted in this class's MRO and metaclass MRO |
+| `attached_mro_shape_validity_cells` | dependent cells invalidated by Shape/MRO changes in this class |
+| `attached_mro_shape_and_contents_validity_cells` | dependent cells invalidated by Shape/MRO changes or class-member contents writes in this class |
 
 ---
 
@@ -1012,26 +1014,28 @@ protected dependency. MRO installation uses an explicit mode:
   into a different root's MRO, where the root class should invalidate the
   attached dependent cell on mutation.
 
-The ordinary MRO cell is attached along the owner's MRO, skipping itself:
+The MRO-shape-and-contents cell is attached along the owner's MRO, skipping
+itself, as contents-sensitive:
 
 ```text
-cell = C.mro_validity_cell
+cell = C.mro_shape_and_contents_validity_cell
 for K in C.__mro__[1:]:
-    K.attached_lookup_validity_cells.add(cell)
+    K.attached_mro_shape_and_contents_validity_cells.add(cell)
 ```
 
-The combined MRO-and-metaclass-MRO cell is attached along the owner's MRO,
-skipping itself, and along the metaclass MRO, including the metaclass:
+The combined MRO/metaclass cell is attached along the owner's MRO, skipping
+itself, as shape-only. It is attached along the metaclass MRO, including the
+metaclass, as shape-and-contents:
 
 ```text
-cell = C.mro_and_metaclass_mro_validity_cell
+cell = C.mro_shape_and_metaclass_mro_shape_and_contents_validity_cell
 for K in C.__mro__[1:]:
-    K.attached_lookup_validity_cells.add(cell)
+    K.attached_mro_shape_validity_cells.add(cell)
 
 M = C.__class__
 if M != C:
     for K in M.__mro__[0:]:
-        K.attached_lookup_validity_cells.add(cell)
+        K.attached_mro_shape_and_contents_validity_cells.add(cell)
 ```
 
 The `M != C` guard handles the `type.__class__ is type` loop. The owned cell is
@@ -1042,20 +1046,36 @@ own metaclass path would be redundant.
 
 ## Invalidation
 
-On lookup-relevant mutation:
+On Shape/MRO mutation:
 
 ```text
-for cell in self.attached_lookup_cells:
+for cell in self.attached_mro_shape_validity_cells:
     cell.valid = false
-self.attached_lookup_cells.clear()
+self.attached_mro_shape_validity_cells.clear()
 
-if self.mro_validity_cell != nullptr:
-    self.mro_validity_cell.valid = false
-self.mro_validity_cell = nullptr
+for cell in self.attached_mro_shape_and_contents_validity_cells:
+    cell.valid = false
+self.attached_mro_shape_and_contents_validity_cells.clear()
 
-if self.mro_and_metaclass_mro_validity_cell != nullptr:
-    self.mro_and_metaclass_mro_validity_cell.valid = false
-self.mro_and_metaclass_mro_validity_cell = nullptr
+if self.mro_shape_and_contents_validity_cell != nullptr:
+    self.mro_shape_and_contents_validity_cell.valid = false
+self.mro_shape_and_contents_validity_cell = nullptr
+
+if self.mro_shape_and_metaclass_mro_shape_and_contents_validity_cell != nullptr:
+    self.mro_shape_and_metaclass_mro_shape_and_contents_validity_cell.valid = false
+self.mro_shape_and_metaclass_mro_shape_and_contents_validity_cell = nullptr
+```
+
+On class-member contents mutation without a Shape change:
+
+```text
+for cell in self.attached_mro_shape_and_contents_validity_cells:
+    cell.valid = false
+self.attached_mro_shape_and_contents_validity_cells.clear()
+
+if self.mro_shape_and_contents_validity_cell != nullptr:
+    self.mro_shape_and_contents_validity_cell.valid = false
+self.mro_shape_and_contents_validity_cell = nullptr
 ```
 
 ---
@@ -1064,7 +1084,8 @@ self.mro_and_metaclass_mro_validity_cell = nullptr
 
 Self lookup uses:
 
-- an MRO validity cell guarding the relevant class-chain assumptions
+- an MRO shape-and-contents validity cell guarding the relevant class-chain
+  assumptions
 - `plan.kind = AttributeReadPlanKind::ReceiverSlot`
 - Shape + receiver-relative storage location
 

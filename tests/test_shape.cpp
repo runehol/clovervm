@@ -858,7 +858,7 @@ TEST(ClassObject, MutationDistinguishesSlotUpdateAddAndDelete)
     EXPECT_EQ(Value::not_present(), cls->get_own_property(attr_name));
 }
 
-TEST(ClassObject, MroValidityCellStartsNullAndIsCreatedLazily)
+TEST(ClassObject, MroShapeAndContentsValidityCellStartsNullAndIsCreatedLazily)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -868,16 +868,18 @@ TEST(ClassObject, MroValidityCellStartsNullAndIsCreatedLazily)
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
 
-    EXPECT_EQ(nullptr, cls->current_mro_validity_cell());
+    EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
 
-    ValidityCell *cell = cls->get_or_create_mro_validity_cell();
+    ValidityCell *cell =
+        cls->get_or_create_mro_shape_and_contents_validity_cell();
 
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
-    EXPECT_EQ(cell, cls->current_mro_validity_cell());
+    EXPECT_EQ(cell, cls->current_mro_shape_and_contents_validity_cell());
 }
 
-TEST(ClassObject, BaseMutationInvalidatesChildMroValidityCell)
+TEST(ClassObject,
+     BaseContentsMutationInvalidatesChildMroShapeAndContentsValidityCell)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -893,28 +895,31 @@ TEST(ClassObject, BaseMutationInvalidatesChildMroValidityCell)
     ClassObject *child =
         context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
 
-    ValidityCell *child_cell = child->get_or_create_mro_validity_cell();
+    ValidityCell *child_cell =
+        child->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, child_cell);
     ASSERT_TRUE(child_cell->is_valid());
-    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
+    EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
 
     EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(1)));
 
     EXPECT_FALSE(child_cell->is_valid());
-    EXPECT_EQ(0u, base->attached_lookup_validity_cell_count());
+    EXPECT_EQ(0u, base->attached_mro_shape_and_contents_validity_cell_count());
 
-    ValidityCell *delete_cell = child->get_or_create_mro_validity_cell();
+    ValidityCell *delete_cell =
+        child->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, delete_cell);
     ASSERT_TRUE(delete_cell->is_valid());
-    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
+    EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
 
     EXPECT_TRUE(base->delete_own_property(attr_name));
 
     EXPECT_FALSE(delete_cell->is_valid());
-    EXPECT_EQ(0u, base->attached_lookup_validity_cell_count());
+    EXPECT_EQ(0u, base->attached_mro_shape_and_contents_validity_cell_count());
 }
 
-TEST(ClassObject, ReceiverMutationInvalidatesOwnMroValidityCell)
+TEST(ClassObject,
+     ReceiverContentsMutationInvalidatesOwnMroShapeAndContentsValidityCell)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -926,26 +931,29 @@ TEST(ClassObject, ReceiverMutationInvalidatesOwnMroValidityCell)
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
 
-    ValidityCell *cell = cls->get_or_create_mro_validity_cell();
+    ValidityCell *cell =
+        cls->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, cell);
     ASSERT_TRUE(cell->is_valid());
 
     EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(1)));
 
     EXPECT_FALSE(cell->is_valid());
-    EXPECT_EQ(nullptr, cls->current_mro_validity_cell());
+    EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
 
-    ValidityCell *updated_cell = cls->get_or_create_mro_validity_cell();
+    ValidityCell *updated_cell =
+        cls->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, updated_cell);
     ASSERT_TRUE(updated_cell->is_valid());
 
     EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(2)));
 
     EXPECT_FALSE(updated_cell->is_valid());
-    EXPECT_EQ(nullptr, cls->current_mro_validity_cell());
+    EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
 }
 
-TEST(ClassObject, NewMroValidityCellReusesInvalidBaseAttachmentSlot)
+TEST(ClassObject,
+     NewMroShapeAndContentsValidityCellReusesInvalidBaseContentsAttachmentSlot)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -961,23 +969,26 @@ TEST(ClassObject, NewMroValidityCellReusesInvalidBaseAttachmentSlot)
     ClassObject *child =
         context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
 
-    ValidityCell *first_cell = child->get_or_create_mro_validity_cell();
+    ValidityCell *first_cell =
+        child->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, first_cell);
     ASSERT_TRUE(first_cell->is_valid());
-    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
+    EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
 
     EXPECT_TRUE(child->set_own_property(attr_name, Value::from_smi(1)));
     EXPECT_FALSE(first_cell->is_valid());
-    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
+    EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
 
-    ValidityCell *second_cell = child->get_or_create_mro_validity_cell();
+    ValidityCell *second_cell =
+        child->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, second_cell);
     EXPECT_NE(first_cell, second_cell);
     EXPECT_TRUE(second_cell->is_valid());
-    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
+    EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
 }
 
-TEST(ClassObject, MroAndMetaclassMroValidityCellAttachesToMetaclassMro)
+TEST(ClassObject,
+     MroShapeAndMetaclassMroShapeAndContentsValidityCellAttachesToMetaclassMro)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -993,21 +1004,25 @@ TEST(ClassObject, MroAndMetaclassMroValidityCellAttachesToMetaclassMro)
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         meta, cls_name, 2, context.vm().object_class());
 
-    EXPECT_EQ(nullptr, cls->current_mro_and_metaclass_mro_validity_cell());
-    EXPECT_EQ(0u, meta->attached_lookup_validity_cell_count());
+    EXPECT_EQ(
+        nullptr,
+        cls->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(0u, meta->attached_mro_shape_and_contents_validity_cell_count());
 
     ValidityCell *cell =
-        cls->get_or_create_mro_and_metaclass_mro_validity_cell();
+        cls->get_or_create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell();
 
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
-    EXPECT_EQ(cell, cls->current_mro_and_metaclass_mro_validity_cell());
-    EXPECT_EQ(1u, meta->attached_lookup_validity_cell_count());
+    EXPECT_EQ(
+        cell,
+        cls->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(1u, meta->attached_mro_shape_and_contents_validity_cell_count());
 
     EXPECT_TRUE(meta->set_own_property(attr_name, Value::from_smi(1)));
 
     EXPECT_FALSE(cell->is_valid());
-    EXPECT_EQ(0u, meta->attached_lookup_validity_cell_count());
+    EXPECT_EQ(0u, meta->attached_mro_shape_and_contents_validity_cell_count());
 }
 
 TEST(ClassObject, TypeCombinedValidityCellSkipsMetaclassSelfLoop)
@@ -1017,16 +1032,20 @@ TEST(ClassObject, TypeCombinedValidityCellSkipsMetaclassSelfLoop)
 
     ClassObject *type = context.vm().type_class();
 
-    EXPECT_EQ(nullptr, type->current_mro_and_metaclass_mro_validity_cell());
-    EXPECT_EQ(0u, type->attached_lookup_validity_cell_count());
+    EXPECT_EQ(
+        nullptr,
+        type->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(0u, type->attached_mro_shape_and_contents_validity_cell_count());
 
     ValidityCell *cell =
-        type->get_or_create_mro_and_metaclass_mro_validity_cell();
+        type->get_or_create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell();
 
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
-    EXPECT_EQ(cell, type->current_mro_and_metaclass_mro_validity_cell());
-    EXPECT_EQ(0u, type->attached_lookup_validity_cell_count());
+    EXPECT_EQ(
+        cell,
+        type->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(0u, type->attached_mro_shape_and_contents_validity_cell_count());
 }
 
 TEST(ClassObject, ClassLookupWalksMaterializedMro)

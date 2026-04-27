@@ -141,8 +141,10 @@ namespace cl
                              ShapeFlags instance_shape_flags)
         : Object(BootstrapObjectTag{}, native_layout_id, compact_layout()),
           name(_name), bases(Value::not_present()), mro(Value::not_present()),
-          mro_validity_cell(nullptr),
-          mro_and_metaclass_mro_validity_cell(nullptr),
+          mro_shape_and_contents_validity_cell(nullptr),
+          mro_shape_and_metaclass_mro_shape_and_contents_validity_cell(nullptr),
+          attached_mro_shape_validity_cells(),
+          attached_mro_shape_and_contents_validity_cells(),
           instance_root_shape(nullptr), instance_default_inline_slot_count(
                                             _instance_default_inline_slot_count)
     {
@@ -323,22 +325,33 @@ namespace cl
             CL_OFFSETOF(ClassObject, class_extra_inline_attribute_slots) ==
             CL_OFFSETOF(ClassObject, cls) +
                 kClassMetadataSlotCount * sizeof(Value));
-        static_assert(CL_OFFSETOF(ClassObject, mro_validity_cell) ==
-                      CL_OFFSETOF(ClassObject, cls) +
-                          kClassInlineStorageSlotCount * sizeof(Value));
         static_assert(
-            CL_OFFSETOF(ClassObject, mro_and_metaclass_mro_validity_cell) ==
+            CL_OFFSETOF(ClassObject, mro_shape_and_contents_validity_cell) ==
+            CL_OFFSETOF(ClassObject, cls) +
+                kClassInlineStorageSlotCount * sizeof(Value));
+        static_assert(
+            CL_OFFSETOF(
+                ClassObject,
+                mro_shape_and_metaclass_mro_shape_and_contents_validity_cell) ==
             CL_OFFSETOF(ClassObject, cls) +
                 (kClassInlineStorageSlotCount + 1) * sizeof(Value));
         static_assert(
-            CL_OFFSETOF(ClassObject, attached_lookup_validity_cells) ==
+            CL_OFFSETOF(ClassObject, attached_mro_shape_validity_cells) ==
             CL_OFFSETOF(ClassObject, cls) +
                 (kClassInlineStorageSlotCount + 2) * sizeof(Value));
-        static_assert(CL_OFFSETOF(ClassObject, instance_root_shape) ==
-                      CL_OFFSETOF(ClassObject, cls) +
-                          (kClassInlineStorageSlotCount + 2 +
-                           HeapPtrArray<ValidityCell>::embedded_value_count) *
-                              sizeof(Value));
+        static_assert(
+            CL_OFFSETOF(ClassObject,
+                        attached_mro_shape_and_contents_validity_cells) ==
+            CL_OFFSETOF(ClassObject, cls) +
+                (kClassInlineStorageSlotCount + 2 +
+                 HeapPtrArray<ValidityCell>::embedded_value_count) *
+                    sizeof(Value));
+        static_assert(
+            CL_OFFSETOF(ClassObject, instance_root_shape) ==
+            CL_OFFSETOF(ClassObject, cls) +
+                (kClassInlineStorageSlotCount + 2 +
+                 2 * HeapPtrArray<ValidityCell>::embedded_value_count) *
+                    sizeof(Value));
     }
 
     BuiltinClassDefinition make_type_class(VirtualMachine *vm)
@@ -370,39 +383,45 @@ namespace cl
         assert(can_convert_to<Tuple>(mro_tuple));
         bases = bases_tuple;
         mro = mro_tuple;
-        invalidate_lookup_validity_cells();
+        invalidate_lookup_validity_cells_for_shape_change();
     }
 
-    ValidityCell *ClassObject::create_mro_validity_cell_slow() const
+    ValidityCell *
+    ClassObject::create_mro_shape_and_contents_validity_cell_slow() const
     {
         ValidityCell *cell = make_internal_raw<ValidityCell>();
-        mro_validity_cell = cell;
-        install_validity_cell_along_mro(cell,
-                                        MroValidityCellInstallMode::SkipSelf);
+        mro_shape_and_contents_validity_cell = cell;
+        install_validity_cell_along_mro(
+            cell, MroValidityCellInstallMode::SkipSelf,
+            MroValidityCellDependency::ShapeAndContents);
 
         return cell;
     }
 
-    ValidityCell *
-    ClassObject::create_mro_and_metaclass_mro_validity_cell_slow() const
+    ValidityCell *ClassObject::
+        create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_slow()
+            const
     {
         ValidityCell *cell = make_internal_raw<ValidityCell>();
-        mro_and_metaclass_mro_validity_cell = cell;
+        mro_shape_and_metaclass_mro_shape_and_contents_validity_cell = cell;
         install_validity_cell_along_mro(cell,
-                                        MroValidityCellInstallMode::SkipSelf);
+                                        MroValidityCellInstallMode::SkipSelf,
+                                        MroValidityCellDependency::ShapeOnly);
 
         ClassObject *metaclass = get_class().extract();
         if(metaclass != this)
         {
             metaclass->install_validity_cell_along_mro(
-                cell, MroValidityCellInstallMode::IncludeSelf);
+                cell, MroValidityCellInstallMode::IncludeSelf,
+                MroValidityCellDependency::ShapeAndContents);
         }
 
         return cell;
     }
 
     void ClassObject::install_validity_cell_along_mro(
-        ValidityCell *cell, MroValidityCellInstallMode mode) const
+        ValidityCell *cell, MroValidityCellInstallMode mode,
+        MroValidityCellDependency dependency) const
     {
         assert(cell != nullptr);
         assert(cell->is_valid());
@@ -415,46 +434,66 @@ namespace cl
         {
             ClassObject *base =
                 assume_convert_to<ClassObject>(mro->item_unchecked(mro_idx));
-            base->attach_lookup_validity_cell(cell);
+            base->attach_mro_validity_cell(cell, dependency);
         }
     }
 
-    void ClassObject::attach_lookup_validity_cell(ValidityCell *cell) const
+    void ClassObject::attach_mro_validity_cell(
+        ValidityCell *cell, MroValidityCellDependency dependency) const
     {
         assert(cell != nullptr);
         assert(cell->is_valid());
 
-        for(size_t idx = 0; idx < attached_lookup_validity_cells.size(); ++idx)
+        HeapPtrArray<ValidityCell> &attached_cells =
+            dependency == MroValidityCellDependency::ShapeOnly
+                ? attached_mro_shape_validity_cells
+                : attached_mro_shape_and_contents_validity_cells;
+
+        for(size_t idx = 0; idx < attached_cells.size(); ++idx)
         {
-            ValidityCell *attached_cell = attached_lookup_validity_cells[idx];
+            ValidityCell *attached_cell = attached_cells[idx];
             if(!attached_cell->is_valid())
             {
-                attached_lookup_validity_cells.set(idx, cell);
+                attached_cells.set(idx, cell);
                 return;
             }
         }
 
-        attached_lookup_validity_cells.push_back(cell);
+        attached_cells.push_back(cell);
     }
 
-    void ClassObject::invalidate_lookup_validity_cells()
+    static void invalidate_attached_cells(HeapPtrArray<ValidityCell> &cells)
     {
-        for(ValidityCell *cell: attached_lookup_validity_cells)
+        for(ValidityCell *cell: cells)
         {
             cell->invalidate();
         }
-        attached_lookup_validity_cells.clear();
+        cells.clear();
+    }
 
-        if(mro_validity_cell != nullptr)
+    void ClassObject::invalidate_lookup_validity_cells_for_contents_change()
+    {
+        invalidate_attached_cells(
+            attached_mro_shape_and_contents_validity_cells);
+        if(mro_shape_and_contents_validity_cell != nullptr)
         {
-            mro_validity_cell->invalidate();
-            mro_validity_cell = nullptr;
+            mro_shape_and_contents_validity_cell->invalidate();
+            mro_shape_and_contents_validity_cell = nullptr;
         }
+    }
 
-        if(mro_and_metaclass_mro_validity_cell != nullptr)
+    void ClassObject::invalidate_lookup_validity_cells_for_shape_change()
+    {
+        invalidate_attached_cells(attached_mro_shape_validity_cells);
+        invalidate_lookup_validity_cells_for_contents_change();
+
+        if(mro_shape_and_metaclass_mro_shape_and_contents_validity_cell !=
+           nullptr)
         {
-            mro_and_metaclass_mro_validity_cell->invalidate();
-            mro_and_metaclass_mro_validity_cell = nullptr;
+            mro_shape_and_metaclass_mro_shape_and_contents_validity_cell
+                ->invalidate();
+            mro_shape_and_metaclass_mro_shape_and_contents_validity_cell =
+                nullptr;
         }
     }
 

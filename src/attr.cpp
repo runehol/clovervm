@@ -27,14 +27,15 @@ namespace cl
         if(shape != nullptr && shape->has_flag(ShapeFlag::IsClassObject))
         {
             assume_convert_to<ClassObject>(object)
-                ->invalidate_lookup_validity_cells();
+                ->invalidate_lookup_validity_cells_for_contents_change();
         }
     }
 
     static AttributeReadPlanKind
     attribute_read_plan_kind_for_path(AttributeReadPlanPath path, Value value)
     {
-        if(path == AttributeReadPlanPath::ReceiverOwnProperty)
+        if(path == AttributeReadPlanPath::ReceiverOwnProperty ||
+           path == AttributeReadPlanPath::ClassObjectChain)
         {
             return AttributeReadPlanKind::ReceiverSlot;
         }
@@ -103,23 +104,7 @@ namespace cl
     }
 
     static AttributeReadDescriptor
-    with_mro_validity_cell_if_unblocked(AttributeReadDescriptor descriptor,
-                                        ClassObject *cls)
-    {
-        descriptor.plan.lookup_validity_cell = nullptr;
-        if(descriptor.is_found() &&
-           attribute_cache_blockers_are_none(descriptor.cache_blockers) &&
-           descriptor.plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
-           descriptor.plan.kind != AttributeReadPlanKind::NonDataDescriptorGet)
-        {
-            descriptor.plan.lookup_validity_cell =
-                cls->get_or_create_mro_validity_cell();
-        }
-        return descriptor;
-    }
-
-    static AttributeReadDescriptor
-    with_mro_and_metaclass_mro_validity_cell_if_unblocked(
+    with_mro_shape_and_contents_validity_cell_if_unblocked(
         AttributeReadDescriptor descriptor, ClassObject *cls)
     {
         descriptor.plan.lookup_validity_cell = nullptr;
@@ -129,21 +114,37 @@ namespace cl
            descriptor.plan.kind != AttributeReadPlanKind::NonDataDescriptorGet)
         {
             descriptor.plan.lookup_validity_cell =
-                cls->get_or_create_mro_and_metaclass_mro_validity_cell();
+                cls->get_or_create_mro_shape_and_contents_validity_cell();
+        }
+        return descriptor;
+    }
+
+    static AttributeReadDescriptor
+    with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
+        AttributeReadDescriptor descriptor, ClassObject *cls)
+    {
+        descriptor.plan.lookup_validity_cell = nullptr;
+        if(descriptor.is_found() &&
+           attribute_cache_blockers_are_none(descriptor.cache_blockers) &&
+           descriptor.plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
+           descriptor.plan.kind != AttributeReadPlanKind::NonDataDescriptorGet)
+        {
+            descriptor.plan.lookup_validity_cell =
+                cls->get_or_create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell();
         }
         return descriptor;
     }
 
     static AttributeWriteDescriptor
-    with_mro_validity_cell_if_unblocked(AttributeWriteDescriptor descriptor,
-                                        ClassObject *cls)
+    with_mro_shape_and_contents_validity_cell_if_unblocked(
+        AttributeWriteDescriptor descriptor, ClassObject *cls)
     {
         descriptor.plan.lookup_validity_cell = nullptr;
         if(descriptor.is_found() &&
            attribute_cache_blockers_are_none(descriptor.cache_blockers))
         {
             descriptor.plan.lookup_validity_cell =
-                cls->get_or_create_mro_validity_cell();
+                cls->get_or_create_mro_shape_and_contents_validity_cell();
         }
         return descriptor;
     }
@@ -291,7 +292,7 @@ namespace cl
                 lookup_class_attribute_read_descriptor(cls, name));
         if(class_descriptor.is_found())
         {
-            return with_mro_and_metaclass_mro_validity_cell_if_unblocked(
+            return with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
                 class_descriptor, cls);
         }
 
@@ -305,7 +306,7 @@ namespace cl
             classify_class_read_descriptor(
                 lookup_metaclass_attribute_read_descriptor(metaclass, name,
                                                            cls));
-        return with_mro_and_metaclass_mro_validity_cell_if_unblocked(
+        return with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
             metaclass_descriptor, cls);
     }
 
@@ -334,15 +335,15 @@ namespace cl
            class_descriptor.plan.kind ==
                AttributeReadPlanKind::DataDescriptorGet)
         {
-            return with_mro_validity_cell_if_unblocked(class_descriptor,
-                                                       class_object);
+            return with_mro_shape_and_contents_validity_cell_if_unblocked(
+                class_descriptor, class_object);
         }
 
         AttributeReadDescriptor own_descriptor =
             object->lookup_own_attribute_descriptor(name);
         if(own_descriptor.is_found())
         {
-            return with_mro_validity_cell_if_unblocked(
+            return with_mro_shape_and_contents_validity_cell_if_unblocked(
                 with_cache_blockers(
                     own_descriptor,
                     superseded_class_read_descriptor_cache_blockers(
@@ -350,8 +351,8 @@ namespace cl
                 class_object);
         }
 
-        return with_mro_validity_cell_if_unblocked(class_descriptor,
-                                                   class_object);
+        return with_mro_shape_and_contents_validity_cell_if_unblocked(
+            class_descriptor, class_object);
     }
 
     Value load_attr_from_plan(Value receiver, const AttributeReadPlan &plan)
@@ -451,8 +452,8 @@ namespace cl
 
         own_descriptor.cache_blockers |=
             superseded_class_read_descriptor_cache_blockers(class_descriptor);
-        return with_mro_validity_cell_if_unblocked(own_descriptor,
-                                                   lookup_class);
+        return with_mro_shape_and_contents_validity_cell_if_unblocked(
+            own_descriptor, lookup_class);
     }
 
     bool store_attr_from_plan(Value receiver, const AttributeWritePlan &plan,

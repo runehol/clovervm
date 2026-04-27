@@ -163,7 +163,8 @@ TEST(Attr, InstanceOwnReadDescriptorKeepsClassCacheBlockers)
         read_descriptor.cache_blockers);
     EXPECT_EQ(nullptr, read_descriptor.plan.lookup_validity_cell);
     EXPECT_FALSE(read_descriptor.is_cacheable());
-    EXPECT_EQ(nullptr, owner_cls->current_mro_validity_cell());
+    EXPECT_EQ(nullptr,
+              owner_cls->current_mro_shape_and_contents_validity_cell());
 }
 
 TEST(Attr, ClassReadDescriptorDoesNotBlockOnWinningMutableValue)
@@ -198,11 +199,12 @@ TEST(Attr, ClassReadDescriptorDoesNotBlockOnWinningMutableValue)
     EXPECT_EQ(attribute_cache_blocker(AttributeCacheBlocker::None),
               read_descriptor.cache_blockers);
     EXPECT_TRUE(read_descriptor.is_cacheable());
-    EXPECT_EQ(owner_cls->current_mro_validity_cell(),
+    EXPECT_EQ(owner_cls->current_mro_shape_and_contents_validity_cell(),
               read_descriptor.plan.lookup_validity_cell);
 }
 
-TEST(Attr, ClassReadDescriptorUsesMroAndMetaclassMroValidityCell)
+TEST(Attr,
+     ClassReadDescriptorUsesMroShapeAndMetaclassMroShapeAndContentsValidityCell)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -223,18 +225,162 @@ TEST(Attr, ClassReadDescriptorUsesMroAndMetaclassMroValidityCell)
         resolve_attr_read_descriptor(Value::from_oop(cls), attr_name);
 
     ASSERT_TRUE(descriptor.is_found());
+    EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, descriptor.plan.kind);
     EXPECT_TRUE(descriptor.is_cacheable());
     ValidityCell *cell = descriptor.plan.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
-    EXPECT_EQ(cell, cls->current_mro_and_metaclass_mro_validity_cell());
-    EXPECT_EQ(nullptr, cls->current_mro_validity_cell());
-    EXPECT_EQ(1u, meta->attached_lookup_validity_cell_count());
+    EXPECT_EQ(
+        cell,
+        cls->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(1u, meta->attached_mro_shape_and_contents_validity_cell_count());
 
     EXPECT_TRUE(meta->set_own_property(
         context.vm().get_or_create_interned_string_value(L"other"),
         Value::from_smi(8)));
 
     EXPECT_FALSE(cell->is_valid());
+}
+
+TEST(Attr, ClassReadDescriptorSurvivesClassContentsWriteAndReloadsSlot)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        cls_name, 2, context.vm().object_class());
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)));
+
+    AttributeReadDescriptor descriptor =
+        resolve_attr_read_descriptor(Value::from_oop(cls), attr_name);
+
+    ASSERT_TRUE(descriptor.is_found());
+    EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, descriptor.plan.kind);
+    EXPECT_TRUE(descriptor.is_cacheable());
+    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ASSERT_NE(nullptr, cell);
+    ASSERT_EQ(Value::from_smi(7),
+              load_attr_from_plan(Value::from_oop(cls), descriptor.plan));
+
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(8)));
+
+    EXPECT_TRUE(cell->is_valid());
+    EXPECT_EQ(
+        cell,
+        cls->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(Value::from_smi(8),
+              load_attr_from_plan(Value::from_oop(cls), descriptor.plan));
+}
+
+TEST(Attr, ClassReadDescriptorSurvivesBaseContentsWriteAndReloadsSlot)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
+    ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
+        base_name, 2, context.vm().object_class());
+    ClassObject *child =
+        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(7)));
+
+    AttributeReadDescriptor descriptor =
+        resolve_attr_read_descriptor(Value::from_oop(child), attr_name);
+
+    ASSERT_TRUE(descriptor.is_found());
+    EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, descriptor.plan.kind);
+    EXPECT_TRUE(descriptor.is_cacheable());
+    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ASSERT_NE(nullptr, cell);
+    EXPECT_EQ(1u, base->attached_mro_shape_validity_cell_count());
+    EXPECT_EQ(0u, base->attached_mro_shape_and_contents_validity_cell_count());
+    ASSERT_EQ(Value::from_smi(7),
+              load_attr_from_plan(Value::from_oop(child), descriptor.plan));
+
+    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(8)));
+
+    EXPECT_TRUE(cell->is_valid());
+    EXPECT_EQ(1u, base->attached_mro_shape_validity_cell_count());
+    EXPECT_EQ(Value::from_smi(8),
+              load_attr_from_plan(Value::from_oop(child), descriptor.plan));
+}
+
+TEST(Attr, ClassReadDescriptorInvalidatesOnBaseShapeChange)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
+    TValue<String> other_name(
+        context.vm().get_or_create_interned_string_value(L"other"));
+    ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
+        base_name, 2, context.vm().object_class());
+    ClassObject *child =
+        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(7)));
+
+    AttributeReadDescriptor descriptor =
+        resolve_attr_read_descriptor(Value::from_oop(child), attr_name);
+
+    ASSERT_TRUE(descriptor.is_found());
+    ASSERT_TRUE(descriptor.is_cacheable());
+    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ASSERT_NE(nullptr, cell);
+    EXPECT_EQ(1u, base->attached_mro_shape_validity_cell_count());
+
+    EXPECT_TRUE(base->set_own_property(other_name, Value::from_smi(8)));
+
+    EXPECT_FALSE(cell->is_valid());
+    EXPECT_EQ(0u, base->attached_mro_shape_validity_cell_count());
+}
+
+TEST(Attr, ClassReadDescriptorInvalidatesOnMetaclassContentsWrite)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> meta_name(
+        context.vm().get_or_create_interned_string_value(L"Meta"));
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
+    TValue<String> meta_attr_name(
+        context.vm().get_or_create_interned_string_value(L"meta_attr"));
+    ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
+        context.vm().type_class(), meta_name, 2, context.vm().object_class());
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        meta, cls_name, 2, context.vm().object_class());
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)));
+    EXPECT_TRUE(meta->set_own_property(meta_attr_name, Value::from_smi(1)));
+
+    AttributeReadDescriptor descriptor =
+        resolve_attr_read_descriptor(Value::from_oop(cls), attr_name);
+
+    ASSERT_TRUE(descriptor.is_found());
+    ASSERT_TRUE(descriptor.is_cacheable());
+    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ASSERT_NE(nullptr, cell);
+    EXPECT_EQ(1u, meta->attached_mro_shape_and_contents_validity_cell_count());
+
+    EXPECT_TRUE(meta->set_own_property(meta_attr_name, Value::from_smi(2)));
+
+    EXPECT_FALSE(cell->is_valid());
+    EXPECT_EQ(0u, meta->attached_mro_shape_and_contents_validity_cell_count());
 }
 
 TEST(Attr, LoadAttrFallsBackToClassAndBaseMembers)
@@ -580,7 +726,7 @@ TEST(Attr, StoreAttrWritesClassMember)
     EXPECT_EQ(Value::from_smi(5), load_attr(Value::from_oop(cls), attr_name));
 }
 
-TEST(Attr, ClassWriteDescriptorUsesMetaclassMroValidityCell)
+TEST(Attr, ClassWriteDescriptorUsesMetaclassMroShapeAndContentsValidityCell)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -607,8 +753,8 @@ TEST(Attr, ClassWriteDescriptorUsesMetaclassMroValidityCell)
     EXPECT_TRUE(descriptor.is_cacheable());
     ValidityCell *cell = descriptor.plan.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
-    EXPECT_EQ(cell, meta->current_mro_validity_cell());
-    EXPECT_EQ(nullptr, cls->current_mro_validity_cell());
+    EXPECT_EQ(cell, meta->current_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
 
     EXPECT_TRUE(meta->set_own_property(descriptor_name, Value::from_smi(1)));
 
@@ -649,7 +795,8 @@ TEST(Attr, AttributeWriteDescriptorCarriesSupersededClassCacheBlockers)
         write_descriptor.cache_blockers);
     EXPECT_EQ(nullptr, write_descriptor.plan.lookup_validity_cell);
     EXPECT_FALSE(write_descriptor.is_cacheable());
-    EXPECT_EQ(nullptr, owner_cls->current_mro_validity_cell());
+    EXPECT_EQ(nullptr,
+              owner_cls->current_mro_shape_and_contents_validity_cell());
 }
 
 TEST(Attr, AttributeWriteDescriptorRejectsClassDataDescriptor)
@@ -703,34 +850,39 @@ TEST(Attr, AttributeWritesInvalidateLookupCellsForClassTargets)
         cls_name, 2, context.vm().object_class());
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
-    ValidityCell *add_cell = cls->get_or_create_mro_validity_cell();
+    ValidityCell *add_cell =
+        cls->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, add_cell);
     EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(5)));
     EXPECT_FALSE(add_cell->is_valid());
-    EXPECT_EQ(nullptr, cls->current_mro_validity_cell());
+    EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
 
-    ValidityCell *update_cell = cls->get_or_create_mro_validity_cell();
+    ValidityCell *update_cell =
+        cls->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, update_cell);
     EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(6)));
     EXPECT_FALSE(update_cell->is_valid());
-    EXPECT_EQ(nullptr, cls->current_mro_validity_cell());
+    EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
 
-    ValidityCell *delete_cell = cls->get_or_create_mro_validity_cell();
+    ValidityCell *delete_cell =
+        cls->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, delete_cell);
     EXPECT_TRUE(cls->delete_own_property(attr_name));
     EXPECT_FALSE(delete_cell->is_valid());
-    EXPECT_EQ(nullptr, cls->current_mro_validity_cell());
+    EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
 
     ValidityCell *instance_add_delete_cell =
-        cls->get_or_create_mro_validity_cell();
+        cls->get_or_create_mro_shape_and_contents_validity_cell();
     ASSERT_NE(nullptr, instance_add_delete_cell);
     EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(7)));
     EXPECT_TRUE(instance_add_delete_cell->is_valid());
-    EXPECT_EQ(instance_add_delete_cell, cls->current_mro_validity_cell());
+    EXPECT_EQ(instance_add_delete_cell,
+              cls->current_mro_shape_and_contents_validity_cell());
 
     EXPECT_TRUE(instance->delete_own_property(attr_name));
     EXPECT_TRUE(instance_add_delete_cell->is_valid());
-    EXPECT_EQ(instance_add_delete_cell, cls->current_mro_validity_cell());
+    EXPECT_EQ(instance_add_delete_cell,
+              cls->current_mro_shape_and_contents_validity_cell());
 }
 
 TEST(Attr, AttributeWriteDescriptorMissDoesNotCreateLookupValidityCell)
@@ -758,8 +910,8 @@ TEST(Attr, AttributeWriteDescriptorMissDoesNotCreateLookupValidityCell)
     EXPECT_EQ(attribute_cache_blocker(AttributeCacheBlocker::None),
               descriptor.cache_blockers);
     EXPECT_FALSE(descriptor.is_cacheable());
-    EXPECT_EQ(nullptr, child->current_mro_validity_cell());
-    EXPECT_EQ(0u, base->attached_lookup_validity_cell_count());
+    EXPECT_EQ(nullptr, child->current_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(0u, base->attached_mro_shape_and_contents_validity_cell_count());
 }
 
 TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
@@ -782,8 +934,8 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
     Instance *instance = context.thread()->make_internal_raw<Instance>(child);
 
     EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));
-    EXPECT_EQ(nullptr, child->current_mro_validity_cell());
-    EXPECT_EQ(0u, base->attached_lookup_validity_cell_count());
+    EXPECT_EQ(nullptr, child->current_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(0u, base->attached_mro_shape_and_contents_validity_cell_count());
 
     AttributeWriteDescriptor descriptor =
         resolve_attr_write_descriptor(Value::from_oop(instance), attr_name);
@@ -796,8 +948,8 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
     ValidityCell *cell = descriptor.plan.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
-    EXPECT_EQ(cell, child->current_mro_validity_cell());
-    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
+    EXPECT_EQ(cell, child->current_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
 
     EXPECT_TRUE(base->set_own_property(descriptor_name, Value::from_smi(1)));
 
@@ -834,8 +986,8 @@ TEST(Attr, InstanceOwnReadDescriptorCarriesLookupValidityCell)
     ValidityCell *cell = descriptor.plan.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
-    EXPECT_EQ(cell, child->current_mro_validity_cell());
-    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
+    EXPECT_EQ(cell, child->current_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
 
     EXPECT_TRUE(base->set_own_property(descriptor_name, Value::from_smi(1)));
 
