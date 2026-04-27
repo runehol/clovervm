@@ -68,6 +68,9 @@ namespace
             {"benchmark/method_call.py",
              {benchmark_cpp::method_call_run,
               benchmark_cpp::method_call_items}},
+            {"benchmark/method_call_class_attribute_write.py",
+             {benchmark_cpp::method_call_class_attribute_write_run,
+              benchmark_cpp::method_call_class_attribute_write_items}},
             {"benchmark/pystone_lite.py",
              {benchmark_cpp::pystone_lite_run,
               benchmark_cpp::pystone_lite_items}},
@@ -570,6 +573,17 @@ template <typename Program> static void BM_MethodCall(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_MethodCall, CloverProgram)
     ->Name("BM_MethodCall")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_MethodCallClassAttributeWrite(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/method_call_class_attribute_write.py",
+        state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_MethodCallClassAttributeWrite, CloverProgram)
+    ->Name("BM_MethodCallClassAttributeWrite")
     ->Arg(100000);
 
 template <typename Program> static void BM_PystoneLite(benchmark::State &state)
