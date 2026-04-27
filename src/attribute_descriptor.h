@@ -230,10 +230,6 @@ namespace cl
         }
     };
 
-    AttributeReadPlanKind
-    attribute_read_plan_kind_for_path(AttributeReadPlanPath path, Value value);
-    AttributeCacheBlockers
-    attribute_cache_blockers_for_class_value(Value value);
 }  // namespace cl
 
 #endif  // CL_ATTRIBUTE_DESCRIPTOR_H

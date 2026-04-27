@@ -4,7 +4,6 @@ add_library(libclovervm STATIC
     attr.cpp
     attr.h
     attribute_cache.h
-    attribute_descriptor.cpp
     attribute_descriptor.h
     ast.h
     ast_print.h
