@@ -154,10 +154,7 @@ namespace cl
 
         bool is_cacheable() const
         {
-            return is_found() && plan.lookup_validity_cell != nullptr &&
-                   attribute_cache_blockers_are_none(cache_blockers) &&
-                   plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
-                   plan.kind != AttributeReadPlanKind::NonDataDescriptorGet;
+            return plan.lookup_validity_cell != nullptr;
         }
     };
 
@@ -229,8 +226,7 @@ namespace cl
         bool is_found() const { return status == AttributeWriteStatus::Found; }
         bool is_cacheable() const
         {
-            return is_found() && plan.lookup_validity_cell != nullptr &&
-                   attribute_cache_blockers_are_none(cache_blockers);
+            return plan.lookup_validity_cell != nullptr;
         }
     };
 

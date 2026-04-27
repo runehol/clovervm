@@ -70,7 +70,9 @@ namespace cl
     {
         descriptor.plan.lookup_validity_cell = nullptr;
         if(descriptor.is_found() &&
-           attribute_cache_blockers_are_none(descriptor.cache_blockers))
+           attribute_cache_blockers_are_none(descriptor.cache_blockers) &&
+           descriptor.plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
+           descriptor.plan.kind != AttributeReadPlanKind::NonDataDescriptorGet)
         {
             descriptor.plan.lookup_validity_cell =
                 cls->get_or_create_mro_validity_cell();
