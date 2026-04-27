@@ -423,7 +423,7 @@ namespace cl
         Object *object = obj.get_ptr<Object>();
         AttributeWriteDescriptor descriptor =
             object->lookup_own_attribute_write_descriptor(name);
-        if(!descriptor.is_found() || !object->is_class_bootstrapped())
+        if(!descriptor.is_found())
         {
             return descriptor;
         }
