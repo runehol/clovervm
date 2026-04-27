@@ -945,7 +945,7 @@ TEST(ClassObject, ReceiverMutationInvalidatesOwnPrimaryLookupValidityCell)
     EXPECT_EQ(nullptr, cls->current_lookup_validity_cell());
 }
 
-TEST(ClassObject, DuplicateLookupValidityCellRequestsReuseBaseAttachment)
+TEST(ClassObject, NewLookupValidityCellReusesInvalidBaseAttachmentSlot)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -954,15 +954,26 @@ TEST(ClassObject, DuplicateLookupValidityCellRequestsReuseBaseAttachment)
         context.vm().get_or_create_interned_string_value(L"Base"));
     TValue<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
     ClassObject *child =
         context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
 
     ValidityCell *first_cell = child->lookup_validity_cell();
-    ValidityCell *second_cell = child->lookup_validity_cell();
+    ASSERT_NE(nullptr, first_cell);
+    ASSERT_TRUE(first_cell->is_valid());
+    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
 
-    EXPECT_EQ(first_cell, second_cell);
+    EXPECT_TRUE(child->set_own_property(attr_name, Value::from_smi(1)));
+    EXPECT_FALSE(first_cell->is_valid());
+    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
+
+    ValidityCell *second_cell = child->lookup_validity_cell();
+    ASSERT_NE(nullptr, second_cell);
+    EXPECT_NE(first_cell, second_cell);
+    EXPECT_TRUE(second_cell->is_valid());
     EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
 }
 

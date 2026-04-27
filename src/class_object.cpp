@@ -391,10 +391,12 @@ namespace cl
         assert(cell != nullptr);
         assert(cell->is_valid());
 
-        for(ValidityCell *attached_cell: attached_lookup_validity_cells)
+        for(size_t idx = 0; idx < attached_lookup_validity_cells.size(); ++idx)
         {
-            if(attached_cell == cell)
+            ValidityCell *attached_cell = attached_lookup_validity_cells[idx];
+            if(!attached_cell->is_valid())
             {
+                attached_lookup_validity_cells.set(idx, cell);
                 return;
             }
         }
