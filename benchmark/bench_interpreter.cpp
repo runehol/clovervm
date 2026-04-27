@@ -416,10 +416,6 @@ namespace
             clover_items_per_second /
             measure_python_items_per_second(relative_path, n, expected,
                                             items_per_iteration);
-        state.counters["vs_cpp"] =
-            clover_items_per_second /
-            measure_items_per_second<CppProgram>(relative_path, n, expected,
-                                                 items_per_iteration);
     }
 
     template <typename Program>
