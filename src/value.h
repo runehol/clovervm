@@ -256,4 +256,30 @@ namespace cl
 
 }  // namespace cl
 
+#ifndef CL_OVERFLOW_SLOTS_H
+#include "overflow_slots.h"
+
+namespace cl
+{
+    inline __attribute__((always_inline)) Value
+    Object::read_storage_location(StorageLocation location) const
+    {
+        switch(location.kind)
+        {
+            case StorageKind::Inline:
+                return inline_slot_base()[location.physical_idx];
+            case StorageKind::Overflow:
+                {
+                    OverflowSlots *overflow_slots = get_overflow_slots();
+                    assert(overflow_slots != nullptr);
+                    assert(uint32_t(location.physical_idx) <
+                           overflow_slots->get_size());
+                    return overflow_slots->get(location.physical_idx);
+                }
+        }
+        __builtin_unreachable();
+    }
+}  // namespace cl
+#endif  // CL_OVERFLOW_SLOTS_H
+
 #endif  // CL_VALUE_H

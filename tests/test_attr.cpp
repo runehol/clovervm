@@ -167,7 +167,7 @@ TEST(Attr, InstanceOwnReadDescriptorKeepsClassCacheBlockers)
               owner_cls->current_mro_shape_and_contents_validity_cell());
 }
 
-TEST(Attr, ClassReadDescriptorDoesNotBlockOnWinningMutableValue)
+TEST(Attr, InstanceClassReadDescriptorDoesNotBlockOnWinningMutableValue)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -195,12 +195,49 @@ TEST(Attr, ClassReadDescriptorDoesNotBlockOnWinningMutableValue)
         resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
 
     ASSERT_TRUE(read_descriptor.is_found());
-    EXPECT_EQ(AttributeReadPlanKind::ResolvedValue, read_descriptor.plan.kind);
+    EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, read_descriptor.plan.kind);
     EXPECT_EQ(attribute_cache_blocker(AttributeCacheBlocker::None),
               read_descriptor.cache_blockers);
     EXPECT_TRUE(read_descriptor.is_cacheable());
-    EXPECT_EQ(owner_cls->current_mro_shape_and_contents_validity_cell(),
-              read_descriptor.plan.lookup_validity_cell);
+    EXPECT_EQ(
+        owner_cls
+            ->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell(),
+        read_descriptor.plan.lookup_validity_cell);
+}
+
+TEST(Attr, InstanceClassReadDescriptorSurvivesClassContentsWriteAndReloadsSlot)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        cls_name, 2, context.vm().object_class());
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
+
+    AttributeReadDescriptor descriptor =
+        resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
+
+    ASSERT_TRUE(descriptor.is_found());
+    EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, descriptor.plan.kind);
+    EXPECT_TRUE(descriptor.is_cacheable());
+    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ASSERT_NE(nullptr, cell);
+    EXPECT_EQ(
+        cell,
+        cls->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell());
+    ASSERT_EQ(Value::from_smi(7),
+              load_attr_from_plan(Value::from_oop(instance), descriptor.plan));
+
+    EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(8)));
+
+    EXPECT_TRUE(cell->is_valid());
+    EXPECT_EQ(Value::from_smi(8),
+              load_attr_from_plan(Value::from_oop(instance), descriptor.plan));
 }
 
 TEST(Attr,
@@ -1111,4 +1148,60 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
         load_method(Value::from_oop(instance), own_name, callable, self));
     EXPECT_EQ(Value(builtin), callable);
     EXPECT_TRUE(self.is_not_present());
+}
+
+TEST(Attr, ClassFunctionMethodPlanSurvivesClassContentsWriteAndReloadsSlot)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> first_method_name(
+        context.vm().get_or_create_interned_string_value(L"first"));
+    TValue<String> second_method_name(
+        context.vm().get_or_create_interned_string_value(L"second"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"method"));
+
+    CodeObject *method_code = context.thread()->compile(L"def first(self):\n"
+                                                        L"    return self\n"
+                                                        L"def second(self):\n"
+                                                        L"    return self\n",
+                                                        StartRule::File);
+    (void)context.thread()->run(method_code);
+    Value first_method =
+        method_code->module_scope.extract()->get_by_name(first_method_name);
+    Value second_method =
+        method_code->module_scope.extract()->get_by_name(second_method_name);
+
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        cls_name, 2, context.vm().object_class());
+    EXPECT_TRUE(cls->set_own_property(attr_name, first_method));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
+
+    AttributeReadDescriptor descriptor =
+        resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
+
+    ASSERT_TRUE(descriptor.is_found());
+    EXPECT_EQ(AttributeReadPlanKind::BindFunctionReceiver,
+              descriptor.plan.kind);
+    EXPECT_TRUE(descriptor.is_cacheable());
+    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ASSERT_NE(nullptr, cell);
+
+    Value callable = Value::not_present();
+    Value self = Value::not_present();
+    ASSERT_TRUE(load_method_from_plan(Value::from_oop(instance),
+                                      descriptor.plan, callable, self));
+    EXPECT_EQ(first_method, callable);
+    EXPECT_EQ(Value::from_oop(instance), self);
+
+    EXPECT_TRUE(cls->set_own_property(attr_name, second_method));
+
+    EXPECT_TRUE(cell->is_valid());
+    ASSERT_TRUE(load_method_from_plan(Value::from_oop(instance),
+                                      descriptor.plan, callable, self));
+    EXPECT_EQ(second_method, callable);
+    EXPECT_EQ(Value::from_oop(instance), self);
 }

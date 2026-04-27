@@ -251,30 +251,6 @@ namespace cl
         return true;
     }
 
-    Value Object::read_storage_location(StorageLocation location) const
-    {
-        switch(location.kind)
-        {
-            case StorageKind::Inline:
-                return inline_slot_base()[location.physical_idx];
-            case StorageKind::Overflow:
-                {
-                    OverflowSlots *overflow_slots = get_overflow_slots();
-                    if(overflow_slots == nullptr)
-                    {
-                        return Value::not_present();
-                    }
-                    if(uint32_t(location.physical_idx) >=
-                       overflow_slots->get_size())
-                    {
-                        return Value::not_present();
-                    }
-                    return overflow_slots->get(location.physical_idx);
-                }
-        }
-        __builtin_unreachable();
-    }
-
     void Object::write_storage_location(StorageLocation location, Value value)
     {
         switch(location.kind)

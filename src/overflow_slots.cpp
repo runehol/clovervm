@@ -1,4 +1,5 @@
 #include "overflow_slots.h"
+#include "refcount.h"
 
 namespace cl
 {
@@ -11,6 +12,14 @@ namespace cl
         {
             slots[slot_idx] = Value::not_present();
         }
+    }
+
+    void OverflowSlots::set(uint32_t slot_idx, Value value)
+    {
+        assert(slot_idx < capacity);
+        Value old_value = slots[slot_idx];
+        slots[slot_idx] = incref(value);
+        decref(old_value);
     }
 
 }  // namespace cl

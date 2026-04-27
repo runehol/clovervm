@@ -394,8 +394,17 @@ namespace cl
 
             case AttributeReadPlanKind::ReturnValue:
             case AttributeReadPlanKind::ResolvedValue:
-            case AttributeReadPlanKind::BindFunctionReceiver:
                 value_out = plan.value;
+                return AttributeLoadPlanStatus::Ready;
+
+            case AttributeReadPlanKind::BindFunctionReceiver:
+                if(plan.storage_location.kind != StorageKind::Inline)
+                {
+                    value_out = Value::not_present();
+                    return AttributeLoadPlanStatus::Slow;
+                }
+                value_out = object_inline_slot_base(read_plan_storage_owner(
+                    receiver, plan))[plan.storage_location.physical_idx];
                 return AttributeLoadPlanStatus::Ready;
 
             case AttributeReadPlanKind::DataDescriptorGet:
@@ -443,8 +452,19 @@ namespace cl
                 return MethodCallTargetStatus::Ready;
 
             case AttributeReadPlanKind::BindFunctionReceiver:
-                callable_out = plan.value;
-                self_out = receiver;
+                callable_out =
+                    read_plan_storage_owner(receiver, plan)
+                        ->read_storage_location(plan.storage_location);
+                // The plan records that a function won when it was created,
+                // but the slot may have changed without invalidating this
+                // shape-only cache. Bind only if the reloaded value is still a
+                // function.
+                if(callable_out.is_ptr() &&
+                   callable_out.get_ptr()->native_layout_id() ==
+                       NativeLayoutId::Function)
+                {
+                    self_out = receiver;
+                }
                 return MethodCallTargetStatus::Ready;
 
             case AttributeReadPlanKind::ReturnValue:
@@ -471,8 +491,18 @@ namespace cl
         switch(plan.kind)
         {
             case AttributeReadPlanKind::BindFunctionReceiver:
-                callable_out = plan.value;
-                self_out = receiver;
+                callable_out =
+                    read_plan_storage_owner(receiver, plan)
+                        ->read_storage_location(plan.storage_location);
+                // The plan survives ordinary class contents writes, so the
+                // current slot value decides whether this is still a bound
+                // method call target.
+                if(callable_out.is_ptr() &&
+                   callable_out.get_ptr()->native_layout_id() ==
+                       NativeLayoutId::Function)
+                {
+                    self_out = receiver;
+                }
                 return MethodCallFastTargetStatus::Ready;
 
             case AttributeReadPlanKind::ReturnValue:

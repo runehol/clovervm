@@ -819,6 +819,16 @@ that dependency with the receiver class's MRO shape-and-contents validity cell,
 so existing instance-slot reads can be cached while still being invalidated by
 class or base mutations.
 
+Instance reads that resolve directly in the class MRO use the receiver class's
+MRO-shape-and-metaclass-MRO-shape-and-contents validity cell. This is an
+engineering tradeoff: the precise dependency would be a third owned
+MRO-shape-only cell, but reusing the combined class-read cell avoids another
+cell and another installation path. Along the receiver class MRO this cell is
+attached as shape-only, so ordinary class-member contents writes do not
+invalidate method lookup or other class-chain hits. The extra metaclass
+dependency is conservative and should be cold relative to class contents writes.
+These cached plans reload the defining class slot.
+
 Class-object attribute reads have two dependency axes: the class path
 `Class.__mro__` and the metaclass path `Class.__class__.__mro__`. They use the
 receiver class's MRO-shape-and-metaclass-MRO-shape-and-contents validity cell
@@ -961,19 +971,21 @@ still valid. Each class object may own two current cells:
   its metaclass's materialized MRO shape and contents.
 
 The MRO-shape-and-contents cell is reused across caches whose assumptions are
-rooted in class MRO membership and class-member descriptor behavior. Instance
-attribute reads and instance write descriptors use this cell for the receiver
-class. Class attribute writes use the written class's metaclass
+rooted in class MRO membership and class-member descriptor behavior.
+Receiver-own-slot reads and instance write descriptors use this cell for the
+receiver class. Class attribute writes use the written class's metaclass
 MRO-shape-and-contents cell, because only the metaclass MRO can affect default
 assignment behavior.
 
 The combined MRO/metaclass cell is reused across class attribute read caches
-rooted at that class. A cached class read can be invalidated by changes to
-`Class.__mro__`, by changes to `Class.__class__.__mro__`, or by contents writes
-along the metaclass path because metaclass data descriptors take precedence
-over class-path results. Ordinary contents writes along the class path do not
-invalidate this cell; cached class-path reads reload from the cached storage
-location.
+and direct instance class-chain read caches rooted at that class. For direct
+instance class-chain reads, this deliberately trades a little extra metaclass
+invalidating for avoiding a separate MRO-shape-only cell. A cached class read
+can be invalidated by changes to `Class.__mro__`, by changes to
+`Class.__class__.__mro__`, or by contents writes along the metaclass path
+because metaclass data descriptors take precedence over class-path results.
+Ordinary contents writes along the class path do not invalidate this cell;
+cached class-path reads reload from the cached storage location.
 
 Getting or creating either owned cell is responsible for maintaining the
 attachment invariant. Callers must not separately allocate a cell and then

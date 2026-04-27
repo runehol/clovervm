@@ -34,16 +34,23 @@ namespace cl
     static AttributeReadPlanKind
     attribute_read_plan_kind_for_path(AttributeReadPlanPath path, Value value)
     {
-        if(path == AttributeReadPlanPath::ReceiverOwnProperty ||
-           path == AttributeReadPlanPath::ClassObjectChain)
-        {
-            return AttributeReadPlanKind::ReceiverSlot;
-        }
-
         if(path == AttributeReadPlanPath::InstanceClassChain &&
            can_convert_to<Function>(value))
         {
+            // Class-chain method plans reload the defining class slot before
+            // binding, so ordinary class contents writes do not invalidate the
+            // method IC.
             return AttributeReadPlanKind::BindFunctionReceiver;
+        }
+
+        if(path == AttributeReadPlanPath::ReceiverOwnProperty ||
+           path == AttributeReadPlanPath::InstanceClassChain ||
+           path == AttributeReadPlanPath::ClassObjectChain)
+        {
+            // Class-chain hits are cached as storage loads. This lets
+            // contents writes update the observed value without invalidating
+            // shape-only lookup assumptions.
+            return AttributeReadPlanKind::ReceiverSlot;
         }
 
         return AttributeReadPlanKind::ResolvedValue;
@@ -351,7 +358,11 @@ namespace cl
                 class_object);
         }
 
-        return with_mro_shape_and_contents_validity_cell_if_unblocked(
+        // A class-chain hit only needs the receiver class MRO shape. Reuse the
+        // combined class-read cell instead of adding a third owned cell: it is
+        // shape-only along this MRO and merely over-invalidates on metaclass
+        // changes, which are much colder than class contents writes.
+        return with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
             class_descriptor, class_object);
     }
 
@@ -363,7 +374,8 @@ namespace cl
             assert(receiver.is_ptr());
             storage_owner = receiver.get_ptr<Object>();
         }
-        if(plan.kind == AttributeReadPlanKind::ReceiverSlot)
+        if(plan.kind == AttributeReadPlanKind::ReceiverSlot ||
+           plan.kind == AttributeReadPlanKind::BindFunctionReceiver)
         {
             return storage_owner->read_storage_location(plan.storage_location);
         }
@@ -382,7 +394,8 @@ namespace cl
                                Value &callable_out, Value &self_out)
     {
         callable_out = load_attr_from_plan(receiver, plan);
-        if(plan.kind == AttributeReadPlanKind::BindFunctionReceiver)
+        if(plan.kind == AttributeReadPlanKind::BindFunctionReceiver &&
+           can_convert_to<Function>(callable_out))
         {
             self_out = receiver;
         }

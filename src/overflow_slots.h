@@ -1,7 +1,6 @@
 #ifndef CL_OVERFLOW_SLOTS_H
 #define CL_OVERFLOW_SLOTS_H
 
-#include "refcount.h"
 #include "value.h"
 #include <algorithm>
 #include <cstdint>
@@ -41,13 +40,7 @@ namespace cl
             return slots[slot_idx];
         }
 
-        void set(uint32_t slot_idx, Value value)
-        {
-            assert(slot_idx < capacity);
-            Value old_value = slots[slot_idx];
-            slots[slot_idx] = incref(value);
-            decref(old_value);
-        }
+        void set(uint32_t slot_idx, Value value);
 
     private:
         uint32_t size;
