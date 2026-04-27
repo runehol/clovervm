@@ -89,7 +89,8 @@ namespace cl
         return descriptor;
     }
 
-    static AttributeCacheBlockers superseded_class_descriptor_cache_blockers(
+    static AttributeCacheBlockers
+    superseded_class_read_descriptor_cache_blockers(
         const AttributeReadDescriptor &descriptor)
     {
         if(!descriptor.is_found())
@@ -131,7 +132,7 @@ namespace cl
         return descriptor;
     }
 
-    static AttributeReadDescriptor lookup_class_chain_descriptor(
+    static AttributeReadDescriptor lookup_class_chain_read_descriptor(
         const ClassObject *class_object, TValue<String> name,
         AttributeReadPlanPath path, AttributeBindingContext binding)
     {
@@ -179,30 +180,29 @@ namespace cl
         return AttributeReadDescriptor::not_found();
     }
 
-    static AttributeReadDescriptor
-    lookup_instance_attribute_descriptor(const ClassObject *class_object,
-                                         TValue<String> name, Value receiver)
+    static AttributeReadDescriptor lookup_instance_attribute_read_descriptor(
+        const ClassObject *class_object, TValue<String> name, Value receiver)
     {
-        return lookup_class_chain_descriptor(
+        return lookup_class_chain_read_descriptor(
             class_object, name, AttributeReadPlanPath::InstanceClassChain,
             AttributeBindingContext{receiver, class_object});
     }
 
     static AttributeReadDescriptor
-    lookup_class_attribute_descriptor(const ClassObject *class_object,
-                                      TValue<String> name)
+    lookup_class_attribute_read_descriptor(const ClassObject *class_object,
+                                           TValue<String> name)
     {
-        return lookup_class_chain_descriptor(
+        return lookup_class_chain_read_descriptor(
             class_object, name, AttributeReadPlanPath::ClassObjectChain,
             AttributeBindingContext{Value::None(), class_object});
     }
 
     static AttributeReadDescriptor
-    lookup_metaclass_attribute_descriptor(const ClassObject *metaclass,
-                                          TValue<String> name,
-                                          ClassObject *receiver_class)
+    lookup_metaclass_attribute_read_descriptor(const ClassObject *metaclass,
+                                               TValue<String> name,
+                                               ClassObject *receiver_class)
     {
-        return lookup_class_chain_descriptor(
+        return lookup_class_chain_read_descriptor(
             metaclass, name, AttributeReadPlanPath::MetaclassChain,
             AttributeBindingContext{Value::from_oop(receiver_class),
                                     metaclass});
@@ -224,13 +224,14 @@ namespace cl
         TValue<String> delete_name(interned_string(L"__delete__"));
 
         return DescriptorProtocol{
-            lookup_class_attribute_descriptor(type, get_name).plan.value,
-            lookup_class_attribute_descriptor(type, set_name).plan.value,
-            lookup_class_attribute_descriptor(type, delete_name).plan.value};
+            lookup_class_attribute_read_descriptor(type, get_name).plan.value,
+            lookup_class_attribute_read_descriptor(type, set_name).plan.value,
+            lookup_class_attribute_read_descriptor(type, delete_name)
+                .plan.value};
     }
 
     static AttributeReadDescriptor
-    classify_class_descriptor(AttributeReadDescriptor descriptor)
+    classify_class_read_descriptor(AttributeReadDescriptor descriptor)
     {
         if(!descriptor.is_found() ||
            descriptor.plan.kind == AttributeReadPlanKind::BindFunctionReceiver)
@@ -254,10 +255,11 @@ namespace cl
     }
 
     static AttributeReadDescriptor
-    resolve_class_attr_descriptor(ClassObject *cls, TValue<String> name)
+    resolve_class_attr_read_descriptor(ClassObject *cls, TValue<String> name)
     {
-        AttributeReadDescriptor class_descriptor = classify_class_descriptor(
-            lookup_class_attribute_descriptor(cls, name));
+        AttributeReadDescriptor class_descriptor =
+            classify_class_read_descriptor(
+                lookup_class_attribute_read_descriptor(cls, name));
         if(class_descriptor.is_found())
         {
             return with_mro_validity_cell_if_unblocked(class_descriptor, cls);
@@ -270,8 +272,9 @@ namespace cl
         }
 
         AttributeReadDescriptor metaclass_descriptor =
-            classify_class_descriptor(
-                lookup_metaclass_attribute_descriptor(metaclass, name, cls));
+            classify_class_read_descriptor(
+                lookup_metaclass_attribute_read_descriptor(metaclass, name,
+                                                           cls));
         return with_mro_validity_cell_if_unblocked(metaclass_descriptor,
                                                    metaclass);
     }
@@ -288,13 +291,15 @@ namespace cl
         if(object->get_shape()->has_flag(ShapeFlag::IsClassObject))
         {
             assert(object->native_layout_id() == NativeLayoutId::ClassObject);
-            return resolve_class_attr_descriptor(
+            return resolve_class_attr_read_descriptor(
                 static_cast<ClassObject *>(object), name);
         }
 
         ClassObject *class_object = object->get_class().extract();
-        AttributeReadDescriptor class_descriptor = classify_class_descriptor(
-            lookup_instance_attribute_descriptor(class_object, name, obj));
+        AttributeReadDescriptor class_descriptor =
+            classify_class_read_descriptor(
+                lookup_instance_attribute_read_descriptor(class_object, name,
+                                                          obj));
         if(class_descriptor.is_found() &&
            class_descriptor.plan.kind ==
                AttributeReadPlanKind::DataDescriptorGet)
@@ -308,9 +313,10 @@ namespace cl
         if(own_descriptor.is_found())
         {
             return with_mro_validity_cell_if_unblocked(
-                with_cache_blockers(own_descriptor,
-                                    superseded_class_descriptor_cache_blockers(
-                                        class_descriptor)),
+                with_cache_blockers(
+                    own_descriptor,
+                    superseded_class_read_descriptor_cache_blockers(
+                        class_descriptor)),
                 class_object);
         }
 
