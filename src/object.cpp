@@ -132,11 +132,12 @@ namespace cl
             return AttributeReadDescriptor::not_found();
         }
 
-        return AttributeReadDescriptor::found(AttributeReadPlan::from_storage(
-            AttributeReadPlanPath::ReceiverOwnProperty,
-            AttributeReadPlanKind::ReceiverSlot, nullptr, location,
-            read_storage_location(location), AttributeBindingContext::none(),
-            nullptr));
+        return AttributeReadDescriptor::found(
+            AttributeReadPlan::from_storage(
+                AttributeReadPlanPath::ReceiverOwnProperty,
+                AttributeReadPlanKind::ReceiverSlot, nullptr, location,
+                AttributeBindingContext::none(), nullptr),
+            read_storage_location(location));
     }
 
     AttributeWriteDescriptor

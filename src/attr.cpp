@@ -101,7 +101,8 @@ namespace cl
         }
 
         return descriptor.cache_blockers |
-               attribute_cache_blockers_for_class_value(descriptor.plan.value);
+               attribute_cache_blockers_for_class_value(
+                   descriptor.lookup_value);
     }
 
     static AttributeReadDescriptor
@@ -168,7 +169,8 @@ namespace cl
             return AttributeReadDescriptor::found(
                 AttributeReadPlan::from_storage(
                     path, attribute_read_plan_kind_for_path(path, own_value),
-                    class_object, own_location, own_value, binding));
+                    class_object, own_location, binding),
+                own_value);
         }
 
         Tuple *mro = try_convert_to<Tuple>(mro_value);
@@ -192,7 +194,8 @@ namespace cl
             return AttributeReadDescriptor::found(
                 AttributeReadPlan::from_storage(
                     path, attribute_read_plan_kind_for_path(path, value), cls,
-                    lookup.storage_location(), value, binding));
+                    lookup.storage_location(), binding),
+                value);
         }
 
         return AttributeReadDescriptor::not_found();
@@ -242,10 +245,10 @@ namespace cl
         TValue<String> delete_name(interned_string(L"__delete__"));
 
         return DescriptorProtocol{
-            lookup_class_attribute_read_descriptor(type, get_name).plan.value,
-            lookup_class_attribute_read_descriptor(type, set_name).plan.value,
+            lookup_class_attribute_read_descriptor(type, get_name).lookup_value,
+            lookup_class_attribute_read_descriptor(type, set_name).lookup_value,
             lookup_class_attribute_read_descriptor(type, delete_name)
-                .plan.value};
+                .lookup_value};
     }
 
     static AttributeReadDescriptor
@@ -258,7 +261,7 @@ namespace cl
         }
 
         DescriptorProtocol protocol =
-            lookup_descriptor_protocol(descriptor.plan.value);
+            lookup_descriptor_protocol(descriptor.lookup_value);
         if(!protocol.has_get())
         {
             return descriptor;
@@ -281,7 +284,7 @@ namespace cl
         }
 
         DescriptorProtocol protocol =
-            lookup_descriptor_protocol(descriptor.plan.value);
+            lookup_descriptor_protocol(descriptor.lookup_value);
         return protocol.has_set_or_delete();
     }
 

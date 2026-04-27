@@ -79,7 +79,7 @@ TEST(Attr, DataDescriptorReadDescriptorTakesPrecedenceOverInstanceOwnProperty)
     ASSERT_TRUE(read_descriptor.is_found());
     EXPECT_EQ(AttributeReadPlanKind::DataDescriptorGet,
               read_descriptor.plan.kind);
-    EXPECT_EQ(Value::from_oop(descriptor), read_descriptor.plan.value);
+    EXPECT_EQ(Value::from_oop(descriptor), read_descriptor.lookup_value);
 }
 
 TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
@@ -125,7 +125,7 @@ TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
     ASSERT_TRUE(read_descriptor.is_found());
     EXPECT_EQ(AttributeReadPlanKind::NonDataDescriptorGet,
               read_descriptor.plan.kind);
-    EXPECT_EQ(Value::from_oop(descriptor), read_descriptor.plan.value);
+    EXPECT_EQ(Value::from_oop(descriptor), read_descriptor.lookup_value);
 }
 
 TEST(Attr, InstanceOwnReadDescriptorKeepsClassCacheBlockers)

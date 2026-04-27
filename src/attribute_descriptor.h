@@ -98,19 +98,17 @@ namespace cl
         AttributeReadPlanKind kind;
         const Object *storage_owner;
         StorageLocation storage_location;
-        Value value;
         AttributeBindingContext binding;
         ValidityCell *lookup_validity_cell;
 
         static AttributeReadPlan
         from_storage(AttributeReadPlanPath path, AttributeReadPlanKind kind,
                      const Object *storage_owner, StorageLocation location,
-                     Value value, AttributeBindingContext binding,
+                     AttributeBindingContext binding,
                      ValidityCell *lookup_validity_cell = nullptr)
         {
-            return AttributeReadPlan{
-                path,  kind,    storage_owner,       location,
-                value, binding, lookup_validity_cell};
+            return AttributeReadPlan{path,     kind,    storage_owner,
+                                     location, binding, lookup_validity_cell};
         }
     };
 
@@ -118,6 +116,7 @@ namespace cl
     {
         AttributeReadStatus status;
         AttributeReadPlan plan;
+        Value lookup_value;
         AttributeCacheBlockers cache_blockers;
 
         static AttributeReadDescriptor not_found()
@@ -127,8 +126,9 @@ namespace cl
                 AttributeReadPlan::from_storage(
                     AttributeReadPlanPath::ReceiverOwnProperty,
                     AttributeReadPlanKind::ReceiverSlot, nullptr,
-                    StorageLocation::not_found(), Value::not_present(),
+                    StorageLocation::not_found(),
                     AttributeBindingContext::none()),
+                Value::not_present(),
                 attribute_cache_blocker(AttributeCacheBlocker::None)};
         }
 
@@ -140,12 +140,12 @@ namespace cl
         }
 
         static AttributeReadDescriptor
-        found(AttributeReadPlan plan,
+        found(AttributeReadPlan plan, Value lookup_value,
               AttributeCacheBlockers cache_blockers =
                   attribute_cache_blocker(AttributeCacheBlocker::None))
         {
             return AttributeReadDescriptor{AttributeReadStatus::Found, plan,
-                                           cache_blockers};
+                                           lookup_value, cache_blockers};
         }
 
         bool is_found() const { return status == AttributeReadStatus::Found; }
