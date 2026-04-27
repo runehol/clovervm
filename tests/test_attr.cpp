@@ -482,33 +482,34 @@ TEST(Attr, AttributeWritesInvalidateLookupCellsForClassTargets)
         cls_name, 2, context.vm().object_class());
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
-    ValidityCell *add_cell = cls->lookup_validity_cell();
+    ValidityCell *add_cell = cls->get_or_create_mro_validity_cell();
     ASSERT_NE(nullptr, add_cell);
     EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(5)));
     EXPECT_FALSE(add_cell->is_valid());
-    EXPECT_EQ(nullptr, cls->current_lookup_validity_cell());
+    EXPECT_EQ(nullptr, cls->current_mro_validity_cell());
 
-    ValidityCell *update_cell = cls->lookup_validity_cell();
+    ValidityCell *update_cell = cls->get_or_create_mro_validity_cell();
     ASSERT_NE(nullptr, update_cell);
     EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(6)));
     EXPECT_FALSE(update_cell->is_valid());
-    EXPECT_EQ(nullptr, cls->current_lookup_validity_cell());
+    EXPECT_EQ(nullptr, cls->current_mro_validity_cell());
 
-    ValidityCell *delete_cell = cls->lookup_validity_cell();
+    ValidityCell *delete_cell = cls->get_or_create_mro_validity_cell();
     ASSERT_NE(nullptr, delete_cell);
     EXPECT_TRUE(cls->delete_own_property(attr_name));
     EXPECT_FALSE(delete_cell->is_valid());
-    EXPECT_EQ(nullptr, cls->current_lookup_validity_cell());
+    EXPECT_EQ(nullptr, cls->current_mro_validity_cell());
 
-    ValidityCell *instance_add_delete_cell = cls->lookup_validity_cell();
+    ValidityCell *instance_add_delete_cell =
+        cls->get_or_create_mro_validity_cell();
     ASSERT_NE(nullptr, instance_add_delete_cell);
     EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(7)));
     EXPECT_TRUE(instance_add_delete_cell->is_valid());
-    EXPECT_EQ(instance_add_delete_cell, cls->current_lookup_validity_cell());
+    EXPECT_EQ(instance_add_delete_cell, cls->current_mro_validity_cell());
 
     EXPECT_TRUE(instance->delete_own_property(attr_name));
     EXPECT_TRUE(instance_add_delete_cell->is_valid());
-    EXPECT_EQ(instance_add_delete_cell, cls->current_lookup_validity_cell());
+    EXPECT_EQ(instance_add_delete_cell, cls->current_mro_validity_cell());
 }
 
 TEST(Attr, AttributeWriteDescriptorMissDoesNotCreateLookupValidityCell)
@@ -534,7 +535,7 @@ TEST(Attr, AttributeWriteDescriptorMissDoesNotCreateLookupValidityCell)
     EXPECT_FALSE(descriptor.is_found());
     EXPECT_EQ(AttributeWriteStatus::NotFound, descriptor.status);
     EXPECT_FALSE(descriptor.is_cacheable());
-    EXPECT_EQ(nullptr, child->current_lookup_validity_cell());
+    EXPECT_EQ(nullptr, child->current_mro_validity_cell());
     EXPECT_EQ(0u, base->attached_lookup_validity_cell_count());
 }
 
@@ -558,7 +559,7 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
     Instance *instance = context.thread()->make_internal_raw<Instance>(child);
 
     EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));
-    EXPECT_EQ(nullptr, child->current_lookup_validity_cell());
+    EXPECT_EQ(nullptr, child->current_mro_validity_cell());
     EXPECT_EQ(0u, base->attached_lookup_validity_cell_count());
 
     AttributeWriteDescriptor descriptor =
@@ -570,7 +571,7 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
     ValidityCell *cell = descriptor.plan.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
-    EXPECT_EQ(cell, child->current_lookup_validity_cell());
+    EXPECT_EQ(cell, child->current_mro_validity_cell());
     EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
 
     EXPECT_TRUE(base->set_own_property(descriptor_name, Value::from_smi(1)));
@@ -608,7 +609,7 @@ TEST(Attr, InstanceOwnReadDescriptorCarriesLookupValidityCell)
     ValidityCell *cell = descriptor.plan.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
-    EXPECT_EQ(cell, child->current_lookup_validity_cell());
+    EXPECT_EQ(cell, child->current_mro_validity_cell());
     EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
 
     EXPECT_TRUE(base->set_own_property(descriptor_name, Value::from_smi(1)));

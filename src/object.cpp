@@ -21,14 +21,18 @@ namespace cl
             {
                 return nullptr;
             }
-            return object->get_class().extract()->lookup_validity_cell();
+            return object->get_class()
+                .extract()
+                ->get_or_create_mro_validity_cell();
         }
 
         ValidityCell *
         attribute_read_validity_cell_for_receiver(const Object *object)
         {
             assert(object->is_class_bootstrapped());
-            return object->get_class().extract()->lookup_validity_cell();
+            return object->get_class()
+                .extract()
+                ->get_or_create_mro_validity_cell();
         }
 
         AttributeWriteDescriptor

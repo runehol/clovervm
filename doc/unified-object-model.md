@@ -815,9 +815,20 @@ they carry a lookup validity cell and do not require descriptor dispatch.
 
 Receiver-own-slot hits also need the class-chain dependency that proves no data
 descriptor currently wins for the same name. The current runtime represents
-that dependency with the receiver class's lookup validity cell, so existing
+that dependency with the receiver class's MRO validity cell, so existing
 instance-slot reads can be cached while still being invalidated by class or base
 mutations.
+
+Class-object attribute reads have two dependency axes: the class path
+`Class.__mro__` and the metaclass path `Class.__class__.__mro__`. They use the
+receiver class's combined MRO-and-metaclass-MRO validity cell so changes in
+either axis invalidate the cached plan.
+
+Class-object attribute writes are different. Default assignment first consults
+the metaclass path for descriptor assignment behavior, but the written class's
+own MRO does not decide whether the write is legal. Cacheable class writes
+therefore use the metaclass's MRO validity cell rather than the written class's
+combined read cell.
 
 `CodeObject` owns attribute inline caches in side arrays, parallel in spirit to
 the constant table:
@@ -924,7 +935,7 @@ cases with three complementary rules:
    storage, including bytecode stores, class construction helpers,
    internal runtime setters, and default metaclass attribute assignment.
 
-3. **Receiver-slot caches carry the receiver class lookup cell.**
+3. **Receiver-slot caches carry the receiver class MRO validity cell.**
 
    A receiver-local slot cache is legal only when the lookup result includes a
    validity cell for the receiver class-chain assumptions. A miss in the class
@@ -945,32 +956,37 @@ Together these rules cover the descriptor-precedence hazards:
 
 ## Lookup Validity Cells
 
-A lookup validity cell represents:
+A lookup validity cell represents one or more lookup dependency paths that are
+still valid. Each class object may own two current cells:
 
-> Lookup through a given class and its base chain is still valid.
+- `mro_validity_cell`: protects lookup through this class's own materialized
+  MRO.
+- `mro_and_metaclass_mro_validity_cell`: protects lookup through this class's
+  own materialized MRO and through its metaclass's materialized MRO.
 
-Each class object may hold a **primary lookup validity cell**, reused
-across caches for lookups rooted at that class.
+The MRO cell is reused across caches whose assumptions are rooted only in the
+class's MRO. Instance attribute reads and instance write descriptors use this
+cell for the receiver class. Class attribute writes use the written class's
+metaclass MRO cell, because only the metaclass MRO can affect default
+assignment behavior.
 
-If a class has a non-null primary lookup validity cell and that cell is
-valid, then the cell has already been attached to every base class in
-the class's materialized MRO after the class itself. The primary cell is
-not attached to the class that owns it; that class can invalidate its own
-primary cell directly without consulting an attachment list.
+The combined MRO-and-metaclass-MRO cell is reused across class attribute read
+caches rooted at that class. A cached class read can be invalidated either by
+changes to `Class.__mro__` or by changes to `Class.__class__.__mro__`, because
+metaclass data descriptors take precedence over class-path results.
 
-Getting or creating a primary lookup validity cell is responsible for
-maintaining this invariant. Callers must not separately allocate a cell
-and then remember to attach it. The hot path is the inline check that
-returns the current primary cell when the pointer is non-null and the
-cell still says it is valid. The cold path creates a fresh cell, stores
-it as the primary cell, walks the already-materialized MRO, and attaches
-the cell to each base class.
+Getting or creating either owned cell is responsible for maintaining the
+attachment invariant. Callers must not separately allocate a cell and then
+remember to attach it. The hot path is the inline check that returns the
+current cell when the pointer is non-null and the cell still says it is valid.
+The cold path creates a fresh cell, stores it in the appropriate owned field,
+and installs it along the relevant MRO path or paths.
 
-Any class-object Shape transition invalidates lookup validity, because
-class-chain membership facts may have changed. Stored class attribute
-updates also invalidate lookup validity even when the Shape does not
-change, because the replacement value may have different descriptor
-behavior or may simply be a different resolved value.
+Any class-object Shape transition invalidates lookup validity, because lookup
+membership facts may have changed. Stored class attribute updates also
+invalidate lookup validity even when the Shape does not change, because the
+replacement value may have different descriptor behavior or may simply be a
+different resolved value.
 
 ---
 
@@ -978,21 +994,49 @@ behavior or may simply be a different resolved value.
 
 | Field | Meaning |
 |---|---|
-| `primary_lookup_validity_cell` | shared validity cell for lookups rooted at this class |
+| `mro_validity_cell` | shared validity cell for lookups rooted in this class's MRO |
+| `mro_and_metaclass_mro_validity_cell` | shared validity cell for class-attribute reads rooted in this class's MRO and metaclass MRO |
 | `attached_lookup_validity_cells` | dependent cells owned by derived/root lookups that consulted this class |
 
 ---
 
 ## Registration
 
-Lookup cells are registered in base classes consulted by the lookup
-root:
+Lookup cells are registered in classes whose mutation can invalidate the
+protected dependency. MRO installation uses an explicit mode:
+
+- `SkipSelf`: start at `__mro__[1]`. The class that owns the cell invalidates
+  that owned cell directly, so it does not need to attach the same cell to
+  itself.
+- `IncludeSelf`: start at `__mro__[0]`. This is used when installing a cell
+  into a different root's MRO, where the root class should invalidate the
+  attached dependent cell on mutation.
+
+The ordinary MRO cell is attached along the owner's MRO, skipping itself:
 
 ```text
-cell = C.primary_lookup_validity_cell
+cell = C.mro_validity_cell
 for K in C.__mro__[1:]:
     K.attached_lookup_validity_cells.add(cell)
 ```
+
+The combined MRO-and-metaclass-MRO cell is attached along the owner's MRO,
+skipping itself, and along the metaclass MRO, including the metaclass:
+
+```text
+cell = C.mro_and_metaclass_mro_validity_cell
+for K in C.__mro__[1:]:
+    K.attached_lookup_validity_cells.add(cell)
+
+M = C.__class__
+if M != C:
+    for K in M.__mro__[0:]:
+        K.attached_lookup_validity_cells.add(cell)
+```
+
+The `M != C` guard handles the `type.__class__ is type` loop. The owned cell is
+still invalidated directly by `type`; attaching it back to `type` through its
+own metaclass path would be redundant.
 
 ---
 
@@ -1005,9 +1049,13 @@ for cell in self.attached_lookup_cells:
     cell.valid = false
 self.attached_lookup_cells.clear()
 
-if self.primary_lookup_validity_cell != nullptr:
-    self.primary_lookup_validity_cell.valid = false
-self.primary_lookup_validity_cell = nullptr
+if self.mro_validity_cell != nullptr:
+    self.mro_validity_cell.valid = false
+self.mro_validity_cell = nullptr
+
+if self.mro_and_metaclass_mro_validity_cell != nullptr:
+    self.mro_and_metaclass_mro_validity_cell.valid = false
+self.mro_and_metaclass_mro_validity_cell = nullptr
 ```
 
 ---
@@ -1016,7 +1064,7 @@ self.primary_lookup_validity_cell = nullptr
 
 Self lookup uses:
 
-- a lookup validity cell guarding the relevant class-chain assumptions
+- an MRO validity cell guarding the relevant class-chain assumptions
 - `plan.kind = AttributeReadPlanKind::ReceiverSlot`
 - Shape + receiver-relative storage location
 

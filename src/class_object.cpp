@@ -141,9 +141,10 @@ namespace cl
                              ShapeFlags instance_shape_flags)
         : Object(BootstrapObjectTag{}, native_layout_id, compact_layout()),
           name(_name), bases(Value::not_present()), mro(Value::not_present()),
-          primary_lookup_validity_cell(nullptr), instance_root_shape(nullptr),
-          instance_default_inline_slot_count(
-              _instance_default_inline_slot_count)
+          mro_validity_cell(nullptr),
+          mro_and_metaclass_mro_validity_cell(nullptr),
+          instance_root_shape(nullptr), instance_default_inline_slot_count(
+                                            _instance_default_inline_slot_count)
     {
         TValue<String> dunder_class_name = interned_string(L"__class__");
         DescriptorFlags instance_class_flags =
@@ -322,16 +323,20 @@ namespace cl
             CL_OFFSETOF(ClassObject, class_extra_inline_attribute_slots) ==
             CL_OFFSETOF(ClassObject, cls) +
                 kClassMetadataSlotCount * sizeof(Value));
-        static_assert(CL_OFFSETOF(ClassObject, primary_lookup_validity_cell) ==
+        static_assert(CL_OFFSETOF(ClassObject, mro_validity_cell) ==
                       CL_OFFSETOF(ClassObject, cls) +
                           kClassInlineStorageSlotCount * sizeof(Value));
         static_assert(
-            CL_OFFSETOF(ClassObject, attached_lookup_validity_cells) ==
+            CL_OFFSETOF(ClassObject, mro_and_metaclass_mro_validity_cell) ==
             CL_OFFSETOF(ClassObject, cls) +
                 (kClassInlineStorageSlotCount + 1) * sizeof(Value));
+        static_assert(
+            CL_OFFSETOF(ClassObject, attached_lookup_validity_cells) ==
+            CL_OFFSETOF(ClassObject, cls) +
+                (kClassInlineStorageSlotCount + 2) * sizeof(Value));
         static_assert(CL_OFFSETOF(ClassObject, instance_root_shape) ==
                       CL_OFFSETOF(ClassObject, cls) +
-                          (kClassInlineStorageSlotCount + 1 +
+                          (kClassInlineStorageSlotCount + 2 +
                            HeapPtrArray<ValidityCell>::embedded_value_count) *
                               sizeof(Value));
     }
@@ -368,22 +373,50 @@ namespace cl
         invalidate_lookup_validity_cells();
     }
 
-    ValidityCell *ClassObject::create_lookup_validity_cell_slow() const
+    ValidityCell *ClassObject::create_mro_validity_cell_slow() const
     {
+        ValidityCell *cell = make_internal_raw<ValidityCell>();
+        mro_validity_cell = cell;
+        install_validity_cell_along_mro(cell,
+                                        MroValidityCellInstallMode::SkipSelf);
+
+        return cell;
+    }
+
+    ValidityCell *
+    ClassObject::create_mro_and_metaclass_mro_validity_cell_slow() const
+    {
+        ValidityCell *cell = make_internal_raw<ValidityCell>();
+        mro_and_metaclass_mro_validity_cell = cell;
+        install_validity_cell_along_mro(cell,
+                                        MroValidityCellInstallMode::SkipSelf);
+
+        ClassObject *metaclass = get_class().extract();
+        if(metaclass != this)
+        {
+            metaclass->install_validity_cell_along_mro(
+                cell, MroValidityCellInstallMode::IncludeSelf);
+        }
+
+        return cell;
+    }
+
+    void ClassObject::install_validity_cell_along_mro(
+        ValidityCell *cell, MroValidityCellInstallMode mode) const
+    {
+        assert(cell != nullptr);
+        assert(cell->is_valid());
+
         Value mro_value = inline_slot_base()[kClassMetadataSlotMro];
         Tuple *mro = assume_convert_to<Tuple>(mro_value);
-
-        ValidityCell *cell = make_internal_raw<ValidityCell>();
-        primary_lookup_validity_cell = cell;
-
-        for(uint32_t mro_idx = 1; mro_idx < mro->size(); ++mro_idx)
+        uint32_t start_idx =
+            mode == MroValidityCellInstallMode::IncludeSelf ? 0 : 1;
+        for(uint32_t mro_idx = start_idx; mro_idx < mro->size(); ++mro_idx)
         {
             ClassObject *base =
                 assume_convert_to<ClassObject>(mro->item_unchecked(mro_idx));
             base->attach_lookup_validity_cell(cell);
         }
-
-        return cell;
     }
 
     void ClassObject::attach_lookup_validity_cell(ValidityCell *cell) const
@@ -412,10 +445,16 @@ namespace cl
         }
         attached_lookup_validity_cells.clear();
 
-        if(primary_lookup_validity_cell != nullptr)
+        if(mro_validity_cell != nullptr)
         {
-            primary_lookup_validity_cell->invalidate();
-            primary_lookup_validity_cell = nullptr;
+            mro_validity_cell->invalidate();
+            mro_validity_cell = nullptr;
+        }
+
+        if(mro_and_metaclass_mro_validity_cell != nullptr)
+        {
+            mro_and_metaclass_mro_validity_cell->invalidate();
+            mro_and_metaclass_mro_validity_cell = nullptr;
         }
     }
 
@@ -466,7 +505,7 @@ namespace cl
                 attribute_cache_blockers_for_class_value(own_value));
         }
 
-        ValidityCell *validity_cell = lookup_validity_cell();
+        ValidityCell *validity_cell = get_or_create_mro_validity_cell();
         Tuple *mro = try_convert_to<Tuple>(mro_value);
         for(uint32_t mro_idx = 0; mro_idx < mro->size(); ++mro_idx)
         {
