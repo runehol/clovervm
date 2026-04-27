@@ -118,6 +118,22 @@ namespace cl
         return descriptor;
     }
 
+    static AttributeReadDescriptor
+    with_mro_and_metaclass_mro_validity_cell_if_unblocked(
+        AttributeReadDescriptor descriptor, ClassObject *cls)
+    {
+        descriptor.plan.lookup_validity_cell = nullptr;
+        if(descriptor.is_found() &&
+           attribute_cache_blockers_are_none(descriptor.cache_blockers) &&
+           descriptor.plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
+           descriptor.plan.kind != AttributeReadPlanKind::NonDataDescriptorGet)
+        {
+            descriptor.plan.lookup_validity_cell =
+                cls->get_or_create_mro_and_metaclass_mro_validity_cell();
+        }
+        return descriptor;
+    }
+
     static AttributeWriteDescriptor
     with_mro_validity_cell_if_unblocked(AttributeWriteDescriptor descriptor,
                                         ClassObject *cls)
@@ -262,7 +278,8 @@ namespace cl
                 lookup_class_attribute_read_descriptor(cls, name));
         if(class_descriptor.is_found())
         {
-            return with_mro_validity_cell_if_unblocked(class_descriptor, cls);
+            return with_mro_and_metaclass_mro_validity_cell_if_unblocked(
+                class_descriptor, cls);
         }
 
         ClassObject *metaclass = cls->get_class().extract();
@@ -275,8 +292,8 @@ namespace cl
             classify_class_read_descriptor(
                 lookup_metaclass_attribute_read_descriptor(metaclass, name,
                                                            cls));
-        return with_mro_validity_cell_if_unblocked(metaclass_descriptor,
-                                                   metaclass);
+        return with_mro_and_metaclass_mro_validity_cell_if_unblocked(
+            metaclass_descriptor, cls);
     }
 
     AttributeReadDescriptor resolve_attr_read_descriptor(Value obj,
@@ -409,6 +426,13 @@ namespace cl
         if(!descriptor.is_found() || !object->is_class_bootstrapped())
         {
             return descriptor;
+        }
+        if(object->get_shape()->has_flag(ShapeFlag::IsClassObject))
+        {
+            assert(object->native_layout_id() == NativeLayoutId::ClassObject);
+            return with_mro_validity_cell_if_unblocked(
+                descriptor,
+                static_cast<ClassObject *>(object)->get_class().extract());
         }
         return with_mro_validity_cell_if_unblocked(
             descriptor, object->get_class().extract());
