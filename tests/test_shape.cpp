@@ -1029,7 +1029,7 @@ TEST(ClassObject, TypeCombinedValidityCellSkipsMetaclassSelfLoop)
     EXPECT_EQ(0u, type->attached_lookup_validity_cell_count());
 }
 
-TEST(ClassObject, ClassChainReadDescriptorCarriesMroValidityCell)
+TEST(ClassObject, ClassChainReadDescriptorDoesNotAttachMroValidityCell)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -1052,17 +1052,12 @@ TEST(ClassObject, ClassChainReadDescriptorCarriesMroValidityCell)
         child->lookup_class_attribute_descriptor(attr_name);
 
     ASSERT_TRUE(descriptor.is_found());
-    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
-    ASSERT_NE(nullptr, cell);
-    EXPECT_TRUE(cell->is_valid());
-    EXPECT_EQ(cell, child->current_mro_validity_cell());
-    EXPECT_EQ(1u, base->attached_lookup_validity_cell_count());
-    EXPECT_TRUE(descriptor.is_cacheable());
+    EXPECT_EQ(nullptr, descriptor.plan.lookup_validity_cell);
+    EXPECT_EQ(nullptr, child->current_mro_validity_cell());
+    EXPECT_EQ(0u, base->attached_lookup_validity_cell_count());
+    EXPECT_FALSE(descriptor.is_cacheable());
 
     EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(8)));
-
-    EXPECT_FALSE(cell->is_valid());
-    EXPECT_TRUE(descriptor.is_cacheable());
 }
 
 TEST(ClassObject, ClassLookupWalksMaterializedMro)

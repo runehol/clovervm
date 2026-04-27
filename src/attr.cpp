@@ -43,6 +43,54 @@ namespace cl
         return descriptor;
     }
 
+    static AttributeReadDescriptor
+    with_cache_blockers(AttributeReadDescriptor descriptor,
+                        AttributeCacheBlockers blockers)
+    {
+        descriptor.cache_blockers |= blockers;
+        return descriptor;
+    }
+
+    static AttributeCacheBlockers superseded_class_descriptor_cache_blockers(
+        const AttributeReadDescriptor &descriptor)
+    {
+        if(!descriptor.is_found())
+        {
+            return attribute_cache_blocker(AttributeCacheBlocker::None);
+        }
+
+        return descriptor.cache_blockers |
+               attribute_cache_blockers_for_class_value(descriptor.plan.value);
+    }
+
+    static AttributeReadDescriptor
+    with_mro_validity_cell_if_unblocked(AttributeReadDescriptor descriptor,
+                                        ClassObject *cls)
+    {
+        descriptor.plan.lookup_validity_cell = nullptr;
+        if(descriptor.is_found() &&
+           attribute_cache_blockers_are_none(descriptor.cache_blockers))
+        {
+            descriptor.plan.lookup_validity_cell =
+                cls->get_or_create_mro_validity_cell();
+        }
+        return descriptor;
+    }
+
+    static AttributeWriteDescriptor
+    with_mro_validity_cell_if_unblocked(AttributeWriteDescriptor descriptor,
+                                        ClassObject *cls)
+    {
+        descriptor.plan.lookup_validity_cell = nullptr;
+        if(descriptor.is_found() &&
+           attribute_cache_blockers_are_none(descriptor.cache_blockers))
+        {
+            descriptor.plan.lookup_validity_cell =
+                cls->get_or_create_mro_validity_cell();
+        }
+        return descriptor;
+    }
+
     static DescriptorProtocol lookup_descriptor_protocol(Value value)
     {
         if(!value.is_ptr())
@@ -95,7 +143,7 @@ namespace cl
             cls->lookup_class_attribute_descriptor(name));
         if(class_descriptor.is_found())
         {
-            return class_descriptor;
+            return with_mro_validity_cell_if_unblocked(class_descriptor, cls);
         }
 
         ClassObject *metaclass = cls->get_class().extract();
@@ -104,8 +152,11 @@ namespace cl
             return AttributeReadDescriptor::not_found();
         }
 
-        return classify_class_descriptor(
-            metaclass->lookup_metaclass_attribute_descriptor(name, cls));
+        AttributeReadDescriptor metaclass_descriptor =
+            classify_class_descriptor(
+                metaclass->lookup_metaclass_attribute_descriptor(name, cls));
+        return with_mro_validity_cell_if_unblocked(metaclass_descriptor,
+                                                   metaclass);
     }
 
     AttributeReadDescriptor resolve_attr_read_descriptor(Value obj,
@@ -131,17 +182,23 @@ namespace cl
            class_descriptor.plan.kind ==
                AttributeReadPlanKind::DataDescriptorGet)
         {
-            return class_descriptor;
+            return with_mro_validity_cell_if_unblocked(class_descriptor,
+                                                       class_object);
         }
 
         AttributeReadDescriptor own_descriptor =
             object->lookup_own_attribute_descriptor(name);
         if(own_descriptor.is_found())
         {
-            return own_descriptor;
+            return with_mro_validity_cell_if_unblocked(
+                with_cache_blockers(own_descriptor,
+                                    superseded_class_descriptor_cache_blockers(
+                                        class_descriptor)),
+                class_object);
         }
 
-        return class_descriptor;
+        return with_mro_validity_cell_if_unblocked(class_descriptor,
+                                                   class_object);
     }
 
     Value load_attr_from_plan(Value receiver, const AttributeReadPlan &plan)
@@ -224,7 +281,14 @@ namespace cl
         }
 
         Object *object = obj.get_ptr<Object>();
-        return object->lookup_own_attribute_write_descriptor(name);
+        AttributeWriteDescriptor descriptor =
+            object->lookup_own_attribute_write_descriptor(name);
+        if(!descriptor.is_found() || !object->is_class_bootstrapped())
+        {
+            return descriptor;
+        }
+        return with_mro_validity_cell_if_unblocked(
+            descriptor, object->get_class().extract());
     }
 
     bool store_attr_from_plan(Value receiver, const AttributeWritePlan &plan,

@@ -77,6 +77,12 @@ namespace cl
         return left | attribute_cache_blocker(right);
     }
 
+    constexpr bool
+    attribute_cache_blockers_are_none(AttributeCacheBlockers blockers)
+    {
+        return blockers == attribute_cache_blocker(AttributeCacheBlocker::None);
+    }
+
     struct AttributeBindingContext
     {
         Value self;
@@ -149,6 +155,7 @@ namespace cl
         bool is_cacheable() const
         {
             return is_found() && plan.lookup_validity_cell != nullptr &&
+                   attribute_cache_blockers_are_none(cache_blockers) &&
                    plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
                    plan.kind != AttributeReadPlanKind::NonDataDescriptorGet;
         }
@@ -222,7 +229,8 @@ namespace cl
         bool is_found() const { return status == AttributeWriteStatus::Found; }
         bool is_cacheable() const
         {
-            return is_found() && plan.lookup_validity_cell != nullptr;
+            return is_found() && plan.lookup_validity_cell != nullptr &&
+                   attribute_cache_blockers_are_none(cache_blockers);
         }
     };
 

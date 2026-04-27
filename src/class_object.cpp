@@ -501,11 +501,9 @@ namespace cl
             return AttributeReadDescriptor::found(
                 AttributeReadPlan::from_storage(
                     path, attribute_read_plan_kind_for_path(path, own_value),
-                    this, own_location, own_value, binding),
-                attribute_cache_blockers_for_class_value(own_value));
+                    this, own_location, own_value, binding));
         }
 
-        ValidityCell *validity_cell = get_or_create_mro_validity_cell();
         Tuple *mro = try_convert_to<Tuple>(mro_value);
         for(uint32_t mro_idx = 0; mro_idx < mro->size(); ++mro_idx)
         {
@@ -527,8 +525,7 @@ namespace cl
             return AttributeReadDescriptor::found(
                 AttributeReadPlan::from_storage(
                     path, attribute_read_plan_kind_for_path(path, value), cls,
-                    lookup.storage_location(), value, binding, validity_cell),
-                attribute_cache_blockers_for_class_value(value));
+                    lookup.storage_location(), value, binding));
         }
 
         return AttributeReadDescriptor::not_found();

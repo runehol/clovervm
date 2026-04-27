@@ -15,26 +15,6 @@ namespace cl
 {
     namespace
     {
-        ValidityCell *attribute_write_validity_cell_for_target(Object *object)
-        {
-            if(!object->is_class_bootstrapped())
-            {
-                return nullptr;
-            }
-            return object->get_class()
-                .extract()
-                ->get_or_create_mro_validity_cell();
-        }
-
-        ValidityCell *
-        attribute_read_validity_cell_for_receiver(const Object *object)
-        {
-            assert(object->is_class_bootstrapped());
-            return object->get_class()
-                .extract()
-                ->get_or_create_mro_validity_cell();
-        }
-
         AttributeWriteDescriptor
         lookup_existing_own_property_write_descriptor(Object *object,
                                                       TValue<String> name)
@@ -61,8 +41,7 @@ namespace cl
 
             return AttributeWriteDescriptor::found(
                 AttributeWritePlan::store_existing(
-                    nullptr, info.storage_location(),
-                    attribute_write_validity_cell_for_target(object)));
+                    nullptr, info.storage_location(), nullptr));
         }
 
     }  // namespace
@@ -157,7 +136,7 @@ namespace cl
             AttributeReadPlanPath::ReceiverOwnProperty,
             AttributeReadPlanKind::ReceiverSlot, nullptr, location,
             read_storage_location(location), AttributeBindingContext::none(),
-            attribute_read_validity_cell_for_receiver(this)));
+            nullptr));
     }
 
     AttributeWriteDescriptor

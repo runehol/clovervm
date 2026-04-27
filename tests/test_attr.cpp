@@ -128,6 +128,80 @@ TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
     EXPECT_EQ(Value::from_oop(descriptor), read_descriptor.plan.value);
 }
 
+TEST(Attr, InstanceOwnReadDescriptorKeepsClassCacheBlockers)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> descriptor_cls_name(
+        context.vm().get_or_create_interned_string_value(L"Descriptor"));
+    TValue<String> owner_cls_name(
+        context.vm().get_or_create_interned_string_value(L"Owner"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"field"));
+
+    ClassObject *descriptor_cls =
+        context.thread()->make_internal_raw<ClassObject>(
+            descriptor_cls_name, 2, context.vm().object_class());
+    Instance *descriptor =
+        context.thread()->make_internal_raw<Instance>(descriptor_cls);
+    ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
+        owner_cls_name, 2, context.vm().object_class());
+    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
+
+    Instance *instance =
+        context.thread()->make_internal_raw<Instance>(owner_cls);
+    instance->set_own_property(attr_name, Value::from_smi(7));
+
+    AttributeReadDescriptor read_descriptor =
+        resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
+
+    ASSERT_TRUE(read_descriptor.is_found());
+    EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, read_descriptor.plan.kind);
+    EXPECT_EQ(
+        attribute_cache_blocker(AttributeCacheBlocker::MutableDescriptorType),
+        read_descriptor.cache_blockers);
+    EXPECT_EQ(nullptr, read_descriptor.plan.lookup_validity_cell);
+    EXPECT_FALSE(read_descriptor.is_cacheable());
+    EXPECT_EQ(nullptr, owner_cls->current_mro_validity_cell());
+}
+
+TEST(Attr, ClassReadDescriptorDoesNotBlockOnWinningMutableValue)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> descriptor_cls_name(
+        context.vm().get_or_create_interned_string_value(L"Descriptor"));
+    TValue<String> owner_cls_name(
+        context.vm().get_or_create_interned_string_value(L"Owner"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"field"));
+
+    ClassObject *descriptor_cls =
+        context.thread()->make_internal_raw<ClassObject>(
+            descriptor_cls_name, 2, context.vm().object_class());
+    Instance *descriptor =
+        context.thread()->make_internal_raw<Instance>(descriptor_cls);
+    ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
+        owner_cls_name, 2, context.vm().object_class());
+    owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
+
+    Instance *instance =
+        context.thread()->make_internal_raw<Instance>(owner_cls);
+
+    AttributeReadDescriptor read_descriptor =
+        resolve_attr_read_descriptor(Value::from_oop(instance), attr_name);
+
+    ASSERT_TRUE(read_descriptor.is_found());
+    EXPECT_EQ(AttributeReadPlanKind::ResolvedValue, read_descriptor.plan.kind);
+    EXPECT_EQ(attribute_cache_blocker(AttributeCacheBlocker::None),
+              read_descriptor.cache_blockers);
+    EXPECT_TRUE(read_descriptor.is_cacheable());
+    EXPECT_EQ(owner_cls->current_mro_validity_cell(),
+              read_descriptor.plan.lookup_validity_cell);
+}
+
 TEST(Attr, LoadAttrFallsBackToClassAndBaseMembers)
 {
     test::VmTestContext context;
