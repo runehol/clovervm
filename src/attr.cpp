@@ -270,6 +270,19 @@ namespace cl
                               AttributeCacheBlocker::UnsupportedDescriptorKind);
     }
 
+    static bool class_read_descriptor_is_write_descriptor(
+        const AttributeReadDescriptor &descriptor)
+    {
+        if(!descriptor.is_found())
+        {
+            return false;
+        }
+
+        DescriptorProtocol protocol =
+            lookup_descriptor_protocol(descriptor.plan.value);
+        return protocol.has_set_or_delete();
+    }
+
     static AttributeReadDescriptor
     resolve_class_attr_read_descriptor(ClassObject *cls, TValue<String> name)
     {
@@ -421,21 +434,25 @@ namespace cl
         }
 
         Object *object = obj.get_ptr<Object>();
-        AttributeWriteDescriptor descriptor =
+        ClassObject *lookup_class = object->get_class().extract();
+        AttributeReadDescriptor class_descriptor =
+            lookup_class_attribute_read_descriptor(lookup_class, name);
+        if(class_read_descriptor_is_write_descriptor(class_descriptor))
+        {
+            return AttributeWriteDescriptor::disallowed();
+        }
+
+        AttributeWriteDescriptor own_descriptor =
             object->lookup_own_attribute_write_descriptor(name);
-        if(!descriptor.is_found())
+        if(!own_descriptor.is_found())
         {
-            return descriptor;
+            return own_descriptor;
         }
-        if(object->get_shape()->has_flag(ShapeFlag::IsClassObject))
-        {
-            assert(object->native_layout_id() == NativeLayoutId::ClassObject);
-            return with_mro_validity_cell_if_unblocked(
-                descriptor,
-                static_cast<ClassObject *>(object)->get_class().extract());
-        }
-        return with_mro_validity_cell_if_unblocked(
-            descriptor, object->get_class().extract());
+
+        own_descriptor.cache_blockers |=
+            superseded_class_read_descriptor_cache_blockers(class_descriptor);
+        return with_mro_validity_cell_if_unblocked(own_descriptor,
+                                                   lookup_class);
     }
 
     bool store_attr_from_plan(Value receiver, const AttributeWritePlan &plan,
