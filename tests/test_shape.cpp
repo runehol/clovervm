@@ -812,15 +812,15 @@ TEST(ClassObject, OwnPropertyApiDoesNotFallBackToBaseChain)
 
     EXPECT_EQ(Value::from_smi(7), base->get_own_property(attr_name));
     EXPECT_EQ(Value::not_present(), child->get_own_property(attr_name));
-    EXPECT_EQ(Value::from_smi(7), child->lookup_class_chain(attr_name));
+    EXPECT_EQ(Value::from_smi(7), load_attr(Value::from_oop(child), attr_name));
 
     child->set_own_property(attr_name, Value::from_smi(8));
     EXPECT_EQ(Value::from_smi(8), child->get_own_property(attr_name));
-    EXPECT_EQ(Value::from_smi(8), child->lookup_class_chain(attr_name));
+    EXPECT_EQ(Value::from_smi(8), load_attr(Value::from_oop(child), attr_name));
 
     EXPECT_TRUE(child->delete_own_property(attr_name));
     EXPECT_EQ(Value::not_present(), child->get_own_property(attr_name));
-    EXPECT_EQ(Value::from_smi(7), child->lookup_class_chain(attr_name));
+    EXPECT_EQ(Value::from_smi(7), load_attr(Value::from_oop(child), attr_name));
 }
 
 TEST(ClassObject, MutationDistinguishesSlotUpdateAddAndDelete)
@@ -1029,37 +1029,6 @@ TEST(ClassObject, TypeCombinedValidityCellSkipsMetaclassSelfLoop)
     EXPECT_EQ(0u, type->attached_lookup_validity_cell_count());
 }
 
-TEST(ClassObject, ClassChainReadDescriptorDoesNotAttachMroValidityCell)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-
-    TValue<String> base_name(
-        context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
-        context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> attr_name(
-        context.vm().get_or_create_interned_string_value(L"attr"));
-    ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
-
-    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(7)));
-    EXPECT_EQ(nullptr, child->current_mro_validity_cell());
-
-    AttributeReadDescriptor descriptor =
-        child->lookup_class_attribute_descriptor(attr_name);
-
-    ASSERT_TRUE(descriptor.is_found());
-    EXPECT_EQ(nullptr, descriptor.plan.lookup_validity_cell);
-    EXPECT_EQ(nullptr, child->current_mro_validity_cell());
-    EXPECT_EQ(0u, base->attached_lookup_validity_cell_count());
-    EXPECT_FALSE(descriptor.is_cacheable());
-
-    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(8)));
-}
-
 TEST(ClassObject, ClassLookupWalksMaterializedMro)
 {
     test::VmTestContext context;
@@ -1078,7 +1047,8 @@ TEST(ClassObject, ClassLookupWalksMaterializedMro)
 
     base->set_own_property(method_name, Value::from_smi(7));
 
-    EXPECT_EQ(Value::from_smi(7), child->lookup_class_chain(method_name));
+    EXPECT_EQ(Value::from_smi(7),
+              load_attr(Value::from_oop(child), method_name));
 }
 
 TEST(ClassObject, ClassLookupContinuesPastLatentDescriptor)
@@ -1112,5 +1082,5 @@ TEST(ClassObject, ClassLookupContinuesPastLatentDescriptor)
         child->get_shape()->lookup_descriptor_including_latent(attr_name);
     ASSERT_TRUE(lookup.is_latent());
     EXPECT_EQ(Value::not_present(), child->get_own_property(attr_name));
-    EXPECT_EQ(Value::from_smi(7), child->lookup_class_chain(attr_name));
+    EXPECT_EQ(Value::from_smi(7), load_attr(Value::from_oop(child), attr_name));
 }

@@ -79,6 +79,7 @@ namespace cl
                            uint32_t method_count, ClassObject *single_base);
 
         TValue<String> get_name() const { return name; }
+        Value get_mro_value() const { return mro; }
         uint32_t get_instance_default_inline_slot_count() const
         {
             return instance_default_inline_slot_count;
@@ -123,15 +124,6 @@ namespace cl
         }
         void invalidate_lookup_validity_cells();
 
-        AttributeReadDescriptor
-        lookup_instance_attribute_descriptor(TValue<String> name,
-                                             Value receiver) const;
-        AttributeReadDescriptor
-        lookup_class_attribute_descriptor(TValue<String> name) const;
-        AttributeReadDescriptor lookup_metaclass_attribute_descriptor(
-            TValue<String> name, ClassObject *receiver_class) const;
-        Value lookup_class_chain(TValue<String> name) const;
-
     private:
         static constexpr uint32_t kClassExtraInlineAttributeSlotCount =
             kClassInlineStorageSlotCount - kClassMetadataSlotCount;
@@ -145,10 +137,6 @@ namespace cl
         install_validity_cell_along_mro(ValidityCell *cell,
                                         MroValidityCellInstallMode mode) const;
         void attach_lookup_validity_cell(ValidityCell *cell) const;
-        AttributeReadDescriptor
-        lookup_class_chain_descriptor(TValue<String> name,
-                                      AttributeReadPlanPath path,
-                                      AttributeBindingContext binding) const;
 
         MemberTValue<String> name;
         MemberValue bases;

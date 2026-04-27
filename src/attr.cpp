@@ -3,6 +3,7 @@
 #include "attribute_descriptor.h"
 #include "class_object.h"
 #include "runtime_helpers.h"
+#include "tuple.h"
 
 namespace cl
 {
@@ -91,6 +92,83 @@ namespace cl
         return descriptor;
     }
 
+    static AttributeReadDescriptor lookup_class_chain_descriptor(
+        const ClassObject *class_object, TValue<String> name,
+        AttributeReadPlanPath path, AttributeBindingContext binding)
+    {
+        Value mro_value = class_object->get_mro_value();
+        if(!can_convert_to<Tuple>(mro_value))
+        {
+            StorageLocation own_location =
+                class_object->get_shape()->resolve_present_property(name);
+            if(!own_location.is_found())
+            {
+                return AttributeReadDescriptor::not_found();
+            }
+
+            Value own_value = class_object->read_storage_location(own_location);
+            return AttributeReadDescriptor::found(
+                AttributeReadPlan::from_storage(
+                    path, attribute_read_plan_kind_for_path(path, own_value),
+                    class_object, own_location, own_value, binding));
+        }
+
+        Tuple *mro = try_convert_to<Tuple>(mro_value);
+        for(uint32_t mro_idx = 0; mro_idx < mro->size(); ++mro_idx)
+        {
+            Value class_value = mro->item_unchecked(mro_idx);
+            ClassObject *cls = try_convert_to<ClassObject>(class_value);
+            if(cls == nullptr)
+            {
+                continue;
+            }
+
+            DescriptorLookup lookup =
+                cls->get_shape()->lookup_descriptor_including_latent(name);
+            if(!lookup.is_present())
+            {
+                continue;
+            }
+
+            Value value = cls->read_storage_location(lookup.storage_location());
+            return AttributeReadDescriptor::found(
+                AttributeReadPlan::from_storage(
+                    path, attribute_read_plan_kind_for_path(path, value), cls,
+                    lookup.storage_location(), value, binding));
+        }
+
+        return AttributeReadDescriptor::not_found();
+    }
+
+    static AttributeReadDescriptor
+    lookup_instance_attribute_descriptor(const ClassObject *class_object,
+                                         TValue<String> name, Value receiver)
+    {
+        return lookup_class_chain_descriptor(
+            class_object, name, AttributeReadPlanPath::InstanceClassChain,
+            AttributeBindingContext{receiver, class_object});
+    }
+
+    static AttributeReadDescriptor
+    lookup_class_attribute_descriptor(const ClassObject *class_object,
+                                      TValue<String> name)
+    {
+        return lookup_class_chain_descriptor(
+            class_object, name, AttributeReadPlanPath::ClassObjectChain,
+            AttributeBindingContext{Value::None(), class_object});
+    }
+
+    static AttributeReadDescriptor
+    lookup_metaclass_attribute_descriptor(const ClassObject *metaclass,
+                                          TValue<String> name,
+                                          ClassObject *receiver_class)
+    {
+        return lookup_class_chain_descriptor(
+            metaclass, name, AttributeReadPlanPath::MetaclassChain,
+            AttributeBindingContext{Value::from_oop(receiver_class),
+                                    metaclass});
+    }
+
     static DescriptorProtocol lookup_descriptor_protocol(Value value)
     {
         if(!value.is_ptr())
@@ -107,9 +185,9 @@ namespace cl
         TValue<String> delete_name(interned_string(L"__delete__"));
 
         return DescriptorProtocol{
-            type->lookup_class_attribute_descriptor(get_name).plan.value,
-            type->lookup_class_attribute_descriptor(set_name).plan.value,
-            type->lookup_class_attribute_descriptor(delete_name).plan.value};
+            lookup_class_attribute_descriptor(type, get_name).plan.value,
+            lookup_class_attribute_descriptor(type, set_name).plan.value,
+            lookup_class_attribute_descriptor(type, delete_name).plan.value};
     }
 
     static AttributeReadDescriptor
@@ -140,7 +218,7 @@ namespace cl
     resolve_class_attr_descriptor(ClassObject *cls, TValue<String> name)
     {
         AttributeReadDescriptor class_descriptor = classify_class_descriptor(
-            cls->lookup_class_attribute_descriptor(name));
+            lookup_class_attribute_descriptor(cls, name));
         if(class_descriptor.is_found())
         {
             return with_mro_validity_cell_if_unblocked(class_descriptor, cls);
@@ -154,7 +232,7 @@ namespace cl
 
         AttributeReadDescriptor metaclass_descriptor =
             classify_class_descriptor(
-                metaclass->lookup_metaclass_attribute_descriptor(name, cls));
+                lookup_metaclass_attribute_descriptor(metaclass, name, cls));
         return with_mro_validity_cell_if_unblocked(metaclass_descriptor,
                                                    metaclass);
     }
@@ -177,7 +255,7 @@ namespace cl
 
         ClassObject *class_object = object->get_class().extract();
         AttributeReadDescriptor class_descriptor = classify_class_descriptor(
-            class_object->lookup_instance_attribute_descriptor(name, obj));
+            lookup_instance_attribute_descriptor(class_object, name, obj));
         if(class_descriptor.is_found() &&
            class_descriptor.plan.kind ==
                AttributeReadPlanKind::DataDescriptorGet)

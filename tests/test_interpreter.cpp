@@ -1,3 +1,4 @@
+#include "attr.h"
 #include "builtin_function.h"
 #include "class_object.h"
 #include "codegen.h"
@@ -319,7 +320,7 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
     ASSERT_EQ(NativeLayoutId::ClassObject,
               cls_value.get_ptr<Object>()->native_layout_id());
     ClassObject *cls = cls_value.get_ptr<ClassObject>();
-    EXPECT_EQ(Value::from_smi(7), cls->lookup_class_chain(value_name));
+    EXPECT_EQ(Value::from_smi(7), load_attr(Value::from_oop(cls), value_name));
 
     Shape *shape = cls->get_shape();
     EXPECT_TRUE(shape->has_flag(ShapeFlag::IsClassObject));
