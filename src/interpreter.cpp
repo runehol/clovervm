@@ -21,9 +21,9 @@ namespace cl
 {
 
 #define PARAMS                                                                 \
-    Value *fp, const uint8_t *pc, Value accumulator, void *dispatch,           \
+    Value accumulator, Value *fp, const uint8_t *pc, void *dispatch,           \
         CodeObject *code_object
-#define ARGS fp, pc, accumulator, dispatch, code_object
+#define ARGS accumulator, fp, pc, dispatch, code_object
 
     using DispatchTableEntry = Value (*)(PARAMS);
 
