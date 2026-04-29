@@ -223,6 +223,48 @@ TEST(Parser, parameters_accept_trailing_comma)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, function_and_method_parameter_annotations_parse)
+{
+    std::string expected = (""
+                            "def f(a, b):\n"
+                            "    return a + b\n"
+                            "class C:\n"
+                            "    def method(self, x):\n"
+                            "        return x\n");
+    std::string actual = parse(L"def f(a: int, b: list[int]) -> str:\n"
+                               L"    return a + b\n"
+                               L"class C:\n"
+                               L"    def method(self, x: list[int]):\n"
+                               L"        return x\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, variable_annotations_parse_and_are_ignored)
+{
+    std::string expected = (""
+                            "x\n"
+                            "y = 1\n"
+                            "class C:\n"
+                            "    value\n"
+                            "    other = 2\n"
+                            "def g():\n"
+                            "    local\n"
+                            "    typed = 3\n"
+                            "    return typed\n");
+    std::string actual = parse(L"x: int\n"
+                               L"y: list[int] = 1\n"
+                               L"class C:\n"
+                               L"    value: list[int]\n"
+                               L"    other: float = 2\n"
+                               L"def g():\n"
+                               L"    local: tuple[int]\n"
+                               L"    typed: int = 3\n"
+                               L"    return typed\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, attribute_expression_and_assignment)
 {
     std::string expected = ("obj.value\n"
