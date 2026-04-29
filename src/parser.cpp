@@ -1002,6 +1002,23 @@ namespace cl
         {
             int32_t source_pos = source_pos_for_token();
             int32_t lhs = star_expressions();
+
+            if(match(Token::COLON))
+            {
+                expression();
+                if(match(Token::EQUAL))
+                {
+                    validate_assignment_target(lhs);
+                    int32_t rhs = annotated_rhs();
+                    return ast.emplace_back(
+                        AstKind(AstNodeKind::STATEMENT_ASSIGN,
+                                AstOperatorKind::NOP),
+                        source_pos_for_previous_token(), lhs, rhs);
+                }
+                return ast.emplace_back(AstNodeKind::STATEMENT_EXPRESSION,
+                                        source_pos, lhs);
+            }
+
             AstOperatorKind op_kind = AstOperatorKind::FALSE;
             switch(peek())
             {
@@ -1232,6 +1249,10 @@ namespace cl
                 ch.push_back(
                     ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
                                      source_pos_for_previous_token(), v));
+                if(match(Token::COLON))
+                {
+                    expression();
+                }
                 if(!match(Token::COMMA))
                     break;
                 if(peek() == Token::RPAR)
