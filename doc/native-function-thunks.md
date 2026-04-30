@@ -171,8 +171,10 @@ method cases.
 6. Add native exception normalization through thunk return adapters.
 7. Add specialized interpreter or JIT fast paths for trivial native thunk code
    objects when measurements justify it.
-8. Later, experiment with calling native targets directly from the interpreter
-   stack, including inline assembly where that becomes useful.
+8. Move function and native-function entry to the Clover/Python stack on
+   AArch64, using assembly transition stubs to save interpreter state, switch
+   the machine stack pointer, enter the target, and return through an
+   interpreter-resume thunk.
 
 ## Invariants
 
@@ -186,3 +188,230 @@ method cases.
   through TLS.
 - `BuiltinFunction` is transitional and should only remain for conventions that
   have not yet moved to native thunks.
+
+## AArch64 Python-Stack Entry Plan
+
+The current native thunk path is semantically shaped like a normal Python
+function call, but it still executes native targets from inside an interpreter
+opcode handler. The handler frame, caller-save registers, and C++ return path
+therefore live on the interpreter's native stack, not on Clover's Python stack.
+
+For JIT-compatible execution, function entry should instead make the Clover
+frame the active machine frame. Interpreted calls, native thunk calls, and later
+JIT-to-JIT calls can then share one frame model. The interpreter only needs a
+transition at the interpreted/native boundary.
+
+The proposed split is:
+
+- `ThreadState` owns durable transition state:
+  - saved interpreter machine stack pointer
+  - saved interpreter frame pointer
+  - any machine stack spill area the transition stubs need
+- AArch64 entry stubs enter Python code:
+  - save the interpreter machine `sp`/`x29` in `ThreadState`
+  - perform any required stack/register saves for the transition itself
+  - partially enter the callee's Clover frame by computing the same `new_fp`
+    that the interpreted call path would use
+  - move the machine `sp` to the callee's Clover frame-record location, the
+    address that will be the interpreted `fp`, preserving 16-byte ABI alignment
+  - enter with `x29` still carrying the previous Clover frame pointer
+  - place arguments in the ABI argument registers from `p0`, `p1`, ...
+  - put an interpreter-resume thunk in `x30`/LR
+  - branch to the target's native entry point
+- AArch64 return thunks resume interpreted mode:
+  - receive the native return value in the normal ABI return register
+  - use that return value as the interpreter accumulator
+  - restore the interpreter machine `sp`/`fp`
+  - reload the Python `fp`, bytecode `pc`, and `code_object` from the frame
+    header
+  - reload `dispatch` from the global dispatch table
+  - tail-enter the interpreter dispatch loop at the saved return PC
+
+The frame header already reserves `fp[1]` as a compiled return PC and
+`fp[0]` as the previous Python frame pointer. Today interpreted returns use
+`fp[-1]` and `fp[-2]` to restore the bytecode `code_object` and `pc`. JIT/native
+entry should preserve that dual use:
+
+- compiled/native returns use `fp[1]` as the LR-compatible continuation
+- interpreter returns use `fp[-1]` and `fp[-2]` as the resume metadata
+- mixed-mode calls write both when crossing from interpreted code into
+  native/JIT code, so either return path has enough state
+
+For a call from interpreted code into a native function, the caller-side
+transition partially enters the frame instead of completing it. It computes
+`new_fp`, writes the interpreter-only resume metadata, then enters native code
+with `sp == new_fp`, `x29 == previous Clover fp`, and `x30 == thunk-back
+converter`.
+
+The native prologue can then finish the AArch64-shaped frame record in the same
+slots Clover already reserves:
+
+- `new_fp[1]`: native/compiled return PC, populated from LR, which holds the
+  thunk-back converter
+- `new_fp[0]`: previous Clover frame pointer, populated from incoming `x29`
+- `new_fp[-1]`: interpreter return code object, written by the caller-side
+  transition
+- `new_fp[-2]`: interpreter return PC, written by the caller-side transition
+
+The native target can then follow the same frame convention as JIT code. Its LR
+points at the thunk-back converter, and the converter can restore interpreted
+mode from the ordinary frame metadata instead of from a separate logical
+register save area.
+
+For today's fixed native thunk bytecode shape, the back-transition should not
+tail-enter the interpreter dispatch loop. A thunk body is still:
+
+```text
+CallNativeN target
+Return
+```
+
+So the C++ native call must have zero net machine-stack effect: enter the
+AArch64 bridge, run the C++ target, restore the interpreter machine stack, and
+return to the `CallNativeN` opcode handler with the returned `Value`. The
+ordinary bytecode `Return` that follows then unwinds the Clover/Python frame.
+Jumping directly to dispatch from the native return path would conflate "return
+from the C++ target" with "return from the Python callable" and skip the
+bytecode thunk protocol. Direct dispatch resume only belongs to a later
+compiled/JIT return path that is deliberately replacing the bytecode `Return`.
+
+That means the transition does not need to copy the interpreter's logical
+register state into `ThreadState`. On return, the accumulator is the native ABI
+return value, `dispatch` is process-global state, and the caller's Python
+`fp`/`pc`/`code_object` are already in the Clover frame header.
+
+This suggests a staged implementation:
+
+0. Finish Python/VM exception normalization for native calls. C++ exceptions
+   must not unwind across a handwritten stack-switch bridge; native failures
+   should return through the VM's pending-exception/sentinel convention before
+   this path becomes generally usable.
+1. Add explicit `ThreadState` fields for the saved interpreter machine
+   `sp`/`x29` and any transition spill slots. Keep `run_interpreter()`
+   source-compatible at first by initializing those fields in
+   `ThreadState::run()`.
+2. Add a small platform layer, for example `native_entry_aarch64.S`, with one
+   bridge for each fixed native calling convention:
+   - `cl_enter_native0_aarch64`
+   - `cl_enter_native1_aarch64`
+   - `cl_enter_native2_aarch64`
+   - `cl_enter_native3_aarch64`
+
+   Each bridge can load exactly the ABI argument registers it needs from the
+   Clover parameter slots and then call the fixed-arity native target. A
+   portable C++ fallback should preserve the existing behavior on non-AArch64.
+3. Give `CodeObject` or `Function` an optional native entry pointer. Native
+   thunk `CodeObject`s can initially point at generated fixed-arity entry stubs
+   that load the target from `native_function_targets` and use the ABI call.
+4. Teach `op_call_simple` and `op_call_method_attr` to enter through the native
+   entry pointer when present, after they have already performed the existing
+   arity/default/varargs frame adaptation.
+5. Keep `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` as the portable
+   interpreter fallback until the AArch64 path is stable, then decide whether
+   native-only thunk code objects still need bytecode bodies.
+
+### Frame Layout Follow-Up
+
+Before implementing the AArch64 bridge, consider refactoring the interpreted
+frame layout to match an AArch64/V8-style frame more closely. The current
+layout stores interpreter resume metadata below `fp`, which collides with the
+normal AArch64 prologue pattern:
+
+```asm
+stp x29, x30, [sp, #-16]!
+mov x29, sp
+```
+
+because a native callee claims the first 16 bytes below incoming `sp` for the
+new frame record.
+
+A more future-proof Clover layout would put the whole fixed header above or at
+`fp`:
+
+```text
+higher addresses
+
+    fp[padded_n_parameters + header_size - 1]   p0
+    ...
+    fp[4]                                      last param / padding
+    fp[3]                                      interpreter return PC
+    fp[2]                                      interpreter return code object
+    fp[1]                                      compiled/native return PC
+fp->fp[0]                                      previous frame pointer
+    fp[-1]                                     r0
+    fp[-2]                                     r1
+    ...
+    fp[-n]                                     outgoing/scratch area
+
+lower addresses
+```
+
+Interpreted calls can still eagerly initialize the full header for now:
+
+```cpp
+new_fp[0] = old_fp;
+new_fp[1] = native_or_compiled_return_pc;
+new_fp[2] = return_code_object;
+new_fp[3] = return_pc;
+```
+
+The important change is the order, not immediately moving prologue
+responsibility to callees. Once the layout is shifted, native/JIT entry can use
+ordinary AArch64 incoming state:
+
+```text
+entry sp = new_fp + 16
+x29      = old_fp
+lr       = native/interpreter continuation
+```
+
+and a standard prologue naturally creates:
+
+```text
+new_fp[0] = old_fp
+new_fp[1] = continuation
+x29       = new_fp
+sp        = new_fp or lower
+```
+
+This also prepares the runtime to track a real frame `sp` separately from
+`fp`. `fp` is the stable metadata/register anchor, while `sp` gives the lower
+bound for frame-local storage. That lower bound will matter for precise stack
+root scanning once JIT/native frames can allocate spills, scratch space, and
+outgoing call areas dynamically.
+
+### ThreadState Access From Assembly
+
+The current active thread pointer is a private C++ `thread_local`:
+
+```cpp
+thread_local ThreadState *ThreadState::current_thread = nullptr;
+```
+
+Raw AArch64 assembly should not reach into that compiler-managed TLS symbol
+directly.
+
+On the call side, the bridge signatures can receive `ThreadState *` from the
+C++ caller, which can obtain it through `active_thread()` before crossing into
+assembly.
+
+On the return side, the interpreter-back-transition thunk has no caller help:
+it is reached through LR from native code. The first implementation should call
+an exported C ABI helper such as:
+
+```cpp
+extern "C" ThreadState *cl_active_thread_for_asm();
+```
+
+implemented in C++ as a thin wrapper around `ThreadState::get_active()`. The
+return thunk can call this helper before restoring the interpreter machine
+`sp`/`x29`. This adds one ordinary helper call on mixed-mode return, but keeps
+compiler/platform TLS details out of handwritten assembly.
+
+If bridge overhead later matters, expose a stable assembly-facing TLS cell or
+fast accessor as a separate step. Good options are:
+
+- add an exported `extern "C" thread_local ThreadState *cl_current_thread` with
+  a documented ABI and use platform-specific TLS access sequences in `.S`
+- reserve a platform register only if the target platform ABI permits it; do
+  not use `x18` casually because AAPCS64 leaves it platform-specific
