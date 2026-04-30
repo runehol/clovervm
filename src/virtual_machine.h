@@ -7,7 +7,6 @@
 #include <utility>
 #include <vector>
 
-#include "builtin_function.h"
 #include "class_object.h"
 #include "heap.h"
 #include "intern_store.h"
@@ -92,10 +91,6 @@ namespace cl
         ClassObject *function_class() const
         {
             return class_for_native_layout(NativeLayoutId::Function);
-        }
-        ClassObject *builtin_function_class() const
-        {
-            return class_for_native_layout(NativeLayoutId::BuiltinFunction);
         }
         ClassObject *code_class() const
         {

@@ -1,5 +1,4 @@
 #include "attr.h"
-#include "builtin_function.h"
 #include "class_object.h"
 #include "codegen.h"
 #include "compilation_unit.h"
@@ -27,39 +26,6 @@
 using namespace cl;
 
 static constexpr int64_t kMinSmi = -288230376151711744LL;
-
-static Value builtin_add(const CallArguments &args)
-{
-    if(args.n_args != 2 || !args[0].is_smi() || !args[1].is_smi())
-    {
-        throw std::runtime_error("builtin_add received unexpected arguments");
-    }
-    return Value::from_smi(args[0].get_smi() + args[1].get_smi());
-}
-
-static Value builtin_sum(const CallArguments &args)
-{
-    int64_t total = 0;
-    for(uint32_t i = 0; i < args.n_args; ++i)
-    {
-        if(!args[i].is_smi())
-        {
-            throw std::runtime_error(
-                "builtin_sum received unexpected arguments");
-        }
-        total += args[i].get_smi();
-    }
-    return Value::from_smi(total);
-}
-
-static Value builtin_identity(const CallArguments &args)
-{
-    if(args.n_args != 1)
-    {
-        throw std::runtime_error("builtin_identity expected exactly one arg");
-    }
-    return args[0];
-}
 
 static void expect_runtime_error(const wchar_t *source,
                                  const char *expected_message)
@@ -91,14 +57,7 @@ static void expect_range_iterator(Value actual, int64_t expected_current,
 
 static int64_t g_next_counter = 0;
 
-static Value builtin_next_counter(const CallArguments &args)
-{
-    if(args.n_args != 0)
-    {
-        throw std::runtime_error("builtin_next_counter expected no arguments");
-    }
-    return Value::from_smi(g_next_counter++);
-}
+static Value native_next_counter() { return Value::from_smi(g_next_counter++); }
 
 static Value native_zero() { return Value::from_smi(17); }
 
@@ -682,9 +641,9 @@ TEST(Interpreter, list_literal_evaluates_elements_left_to_right)
 
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
-    Value builtin = test_context.thread()->make_object_value<BuiltinFunction>(
-        builtin_next_counter, 0, 0);
-    code_obj->module_scope.extract()->set_by_name(name, builtin);
+    Value next_counter =
+        make_native_function(&test_context.vm(), native_next_counter);
+    code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run(code_obj);
     ASSERT_TRUE(actual.is_ptr());
@@ -750,9 +709,9 @@ TEST(Interpreter, tuple_literal_evaluates_elements_left_to_right)
 
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
-    Value builtin = test_context.thread()->make_object_value<BuiltinFunction>(
-        builtin_next_counter, 0, 0);
-    code_obj->module_scope.extract()->set_by_name(name, builtin);
+    Value next_counter =
+        make_native_function(&test_context.vm(), native_next_counter);
+    code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run(code_obj);
     ASSERT_TRUE(actual.is_ptr());
@@ -872,9 +831,9 @@ TEST(Interpreter,
 
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
-    Value builtin = test_context.thread()->make_object_value<BuiltinFunction>(
-        builtin_next_counter, 0, 0);
-    code_obj->module_scope.extract()->set_by_name(name, builtin);
+    Value next_counter =
+        make_native_function(&test_context.vm(), native_next_counter);
+    code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
@@ -926,9 +885,9 @@ TEST(Interpreter,
 
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
-    Value builtin = test_context.thread()->make_object_value<BuiltinFunction>(
-        builtin_next_counter, 0, 0);
-    code_obj->module_scope.extract()->set_by_name(name, builtin);
+    Value next_counter =
+        make_native_function(&test_context.vm(), native_next_counter);
+    code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
@@ -1566,108 +1525,6 @@ TEST(Interpreter, return_in_module_body_is_rejected)
     expect_runtime_error(L"return\n", "SyntaxError: 'return' outside function");
 }
 
-TEST(Interpreter,
-     direct_method_call_does_not_insert_self_for_non_function_callables)
-{
-    test::VmTestContext test_context;
-    ThreadState::ActivationScope activation_scope(test_context.thread());
-
-    TValue<String> cls_name(
-        test_context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> method_name(
-        test_context.vm().get_or_create_interned_string_value(L"method"));
-
-    TValue<BuiltinFunction> identity =
-        test_context.thread()->make_object_value<BuiltinFunction>(
-            builtin_identity, 1, 1);
-
-    CodeObject *setup_code = test_context.compile_file(L"class Cls:\n"
-                                                       L"    pass\n"
-                                                       L"obj = Cls()\n");
-    (void)test_context.thread()->run(setup_code);
-    Scope *module_scope = setup_code->module_scope.extract();
-    Value cls_value = module_scope->get_by_name(cls_name);
-    ASSERT_TRUE(cls_value.is_ptr());
-    ASSERT_EQ(NativeLayoutId::ClassObject,
-              cls_value.get_ptr<Object>()->native_layout_id());
-    cls_value.get_ptr<ClassObject>()->set_own_property(method_name, identity);
-
-    CodeObject *code_obj = test_context.compile_file(L"obj.method(4)\n");
-    code_obj->module_scope = module_scope;
-
-    Value actual = test_context.thread()->run(code_obj);
-    EXPECT_EQ(Value::from_smi(4), actual);
-}
-
-TEST(Interpreter,
-     direct_zero_arg_method_call_to_builtin_preserves_argument_layout)
-{
-    test::VmTestContext test_context;
-    ThreadState::ActivationScope activation_scope(test_context.thread());
-
-    TValue<String> cls_name(
-        test_context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> method_name(
-        test_context.vm().get_or_create_interned_string_value(L"method"));
-
-    TValue<BuiltinFunction> next_counter =
-        test_context.thread()->make_object_value<BuiltinFunction>(
-            builtin_next_counter, 0, 0);
-
-    CodeObject *setup_code = test_context.compile_file(L"class Cls:\n"
-                                                       L"    pass\n"
-                                                       L"obj = Cls()\n");
-    (void)test_context.thread()->run(setup_code);
-    Scope *module_scope = setup_code->module_scope.extract();
-    Value cls_value = module_scope->get_by_name(cls_name);
-    ASSERT_TRUE(cls_value.is_ptr());
-    ASSERT_EQ(NativeLayoutId::ClassObject,
-              cls_value.get_ptr<Object>()->native_layout_id());
-    cls_value.get_ptr<ClassObject>()->set_own_property(method_name,
-                                                       next_counter);
-
-    g_next_counter = 7;
-    CodeObject *code_obj =
-        test_context.compile_file(L"obj.method() + obj.method()\n");
-    code_obj->module_scope = module_scope;
-
-    Value actual = test_context.thread()->run(code_obj);
-    EXPECT_EQ(Value::from_smi(15), actual);
-}
-
-TEST(Interpreter,
-     direct_method_call_passes_all_explicit_args_to_non_function_callables)
-{
-    test::VmTestContext test_context;
-    ThreadState::ActivationScope activation_scope(test_context.thread());
-
-    TValue<String> cls_name(
-        test_context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> method_name(
-        test_context.vm().get_or_create_interned_string_value(L"method"));
-
-    TValue<BuiltinFunction> sum =
-        test_context.thread()->make_object_value<BuiltinFunction>(
-            builtin_sum, 0, BuiltinFunction::VarArgs);
-
-    CodeObject *setup_code = test_context.compile_file(L"class Cls:\n"
-                                                       L"    pass\n"
-                                                       L"obj = Cls()\n");
-    (void)test_context.thread()->run(setup_code);
-    Scope *module_scope = setup_code->module_scope.extract();
-    Value cls_value = module_scope->get_by_name(cls_name);
-    ASSERT_TRUE(cls_value.is_ptr());
-    ASSERT_EQ(NativeLayoutId::ClassObject,
-              cls_value.get_ptr<Object>()->native_layout_id());
-    cls_value.get_ptr<ClassObject>()->set_own_property(method_name, sum);
-
-    CodeObject *code_obj = test_context.compile_file(L"obj.method(4, 5, 6)\n");
-    code_obj->module_scope = module_scope;
-
-    Value actual = test_context.thread()->run(code_obj);
-    EXPECT_EQ(Value::from_smi(15), actual);
-}
-
 TEST(Interpreter, function_local_shadows_global)
 {
     Value expected = Value::from_smi(11);
@@ -1730,23 +1587,6 @@ TEST(Interpreter, name_error)
 TEST(Interpreter, call_non_callable)
 {
     expect_runtime_error(L"1()\n", "TypeError: object is not callable");
-}
-
-TEST(Interpreter, call_builtin_function)
-{
-    test::VmTestContext test_context;
-    ThreadState::ActivationScope activation_scope(test_context.thread());
-    CodeObject *code_obj = test_context.compile_file(L"native_add(4, 7)\n");
-
-    Scope *module_scope = code_obj->module_scope.extract();
-    TValue<String> name =
-        test_context.vm().get_or_create_interned_string_value(L"native_add");
-    Value builtin = test_context.thread()->make_object_value<BuiltinFunction>(
-        builtin_add, 2, 2);
-    module_scope->set_by_name(name, builtin);
-
-    Value actual = test_context.thread()->run(code_obj);
-    EXPECT_EQ(Value::from_smi(11), actual);
 }
 
 TEST(Interpreter, call_native_zero_arg_function)
@@ -1823,7 +1663,6 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         {NativeLayoutId::Tuple, L"tuple"},
         {NativeLayoutId::Dict, L"dict"},
         {NativeLayoutId::Function, L"function"},
-        {NativeLayoutId::BuiltinFunction, L"builtin_function"},
         {NativeLayoutId::CodeObject, L"code"},
         {NativeLayoutId::RangeIterator, L"range_iterator"},
         {NativeLayoutId::Instance, L"object"},
@@ -2105,31 +1944,6 @@ TEST(Interpreter, module_scope_can_shadow_builtin_scope)
     EXPECT_EQ(Value::from_smi(42), actual);
 }
 
-TEST(Interpreter, builtin_wrong_arity)
-{
-    test::VmTestContext test_context;
-    ThreadState::ActivationScope activation_scope(test_context.thread());
-    CodeObject *code_obj = test_context.compile_file(L"native_add(4)\n");
-
-    Scope *module_scope = code_obj->module_scope.extract();
-    TValue<String> name =
-        test_context.vm().get_or_create_interned_string_value(L"native_add");
-    Value builtin = test_context.thread()->make_object_value<BuiltinFunction>(
-        builtin_add, 2, 2);
-    module_scope->set_by_name(name, builtin);
-
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected std::runtime_error with message: "
-               << "TypeError: wrong number of arguments";
-    }
-    catch(const std::runtime_error &err)
-    {
-        EXPECT_STREQ("TypeError: wrong number of arguments", err.what());
-    }
-}
-
 TEST(Interpreter, range_builtin_requires_integer_argument)
 {
     expect_runtime_error(L"range(False)\n",
@@ -2151,47 +1965,6 @@ TEST(Interpreter, for_loop_rejects_non_iterable)
     expect_runtime_error(L"for x in 1:\n"
                          L"    x\n",
                          "TypeError: object is not iterable");
-}
-
-TEST(Interpreter, builtin_multiple_arities)
-{
-    test::VmTestContext test_context;
-    ThreadState::ActivationScope activation_scope(test_context.thread());
-    Scope *module_scope = nullptr;
-    TValue<String> name =
-        test_context.vm().get_or_create_interned_string_value(L"native_sum");
-    Value builtin = test_context.thread()->make_object_value<BuiltinFunction>(
-        builtin_sum, 1, 3);
-
-    CodeObject *one_arg = test_context.compile_file(L"native_sum(4)\n");
-    module_scope = one_arg->module_scope.extract();
-    module_scope->set_by_name(name, builtin);
-    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(one_arg));
-
-    CodeObject *three_args =
-        test_context.compile_file(L"native_sum(4, 5, 6)\n");
-    module_scope = three_args->module_scope.extract();
-    module_scope->set_by_name(name, builtin);
-    EXPECT_EQ(Value::from_smi(15), test_context.thread()->run(three_args));
-}
-
-TEST(Interpreter, builtin_varargs)
-{
-    test::VmTestContext test_context;
-    ThreadState::ActivationScope activation_scope(test_context.thread());
-    TValue<String> name =
-        test_context.vm().get_or_create_interned_string_value(L"native_sum");
-    Value builtin = test_context.thread()->make_object_value<BuiltinFunction>(
-        builtin_sum, 0, BuiltinFunction::VarArgs);
-
-    CodeObject *zero_args = test_context.compile_file(L"native_sum()\n");
-    zero_args->module_scope.extract()->set_by_name(name, builtin);
-    EXPECT_EQ(Value::from_smi(0), test_context.thread()->run(zero_args));
-
-    CodeObject *four_args =
-        test_context.compile_file(L"native_sum(1, 2, 3, 4)\n");
-    four_args->module_scope.extract()->set_by_name(name, builtin);
-    EXPECT_EQ(Value::from_smi(10), test_context.thread()->run(four_args));
 }
 
 TEST(Interpreter, negate_expression)

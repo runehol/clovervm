@@ -1,5 +1,4 @@
 #include "str.h"
-#include "builtin_function.h"
 #include "class_object.h"
 #include "native_function.h"
 #include "thread_state.h"

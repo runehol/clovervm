@@ -1,5 +1,4 @@
 #include "attr.h"
-#include "builtin_function.h"
 #include "class_object.h"
 #include "dict.h"
 #include "function.h"
@@ -12,15 +11,6 @@
 #include <gtest/gtest.h>
 
 using namespace cl;
-
-static Value builtin_identity(const CallArguments &args)
-{
-    if(args.n_args != 1)
-    {
-        throw std::runtime_error("builtin_identity expected exactly one arg");
-    }
-    return args[0];
-}
 
 TEST(Attr, LoadAttrReturnsInstanceOwnPropertyBeforeClassMember)
 {
@@ -585,9 +575,6 @@ TEST(Attr, BuiltinInstancesExposeDunderClassThroughAttributeLookup)
         context.vm().get_or_create_interned_string_value(L"hello"));
     List *list = context.thread()->make_object_raw<List>();
     Dict *dict = context.thread()->make_object_raw<Dict>();
-    TValue<BuiltinFunction> builtin_function =
-        context.thread()->make_object_value<BuiltinFunction>(builtin_identity,
-                                                             1, 1);
     CodeObject *code = context.thread()->compile(L"def f():\n"
                                                  L"    return 1\n",
                                                  StartRule::File);
@@ -609,7 +596,6 @@ TEST(Attr, BuiltinInstancesExposeDunderClassThroughAttributeLookup)
         {string_value.as_value(), context.vm().str_class()},
         {Value::from_oop(list), context.vm().list_class()},
         {Value::from_oop(dict), context.vm().dict_class()},
-        {Value(builtin_function), context.vm().builtin_function_class()},
         {Value::from_oop(code), context.vm().code_class()},
         {Value::from_oop(function), context.vm().function_class()},
         {Value::from_oop(range_iterator), context.vm().range_iterator_class()},
@@ -639,9 +625,6 @@ TEST(Attr, BuiltinInstancesRejectUnsupportedAttributeWrites)
         context.vm().get_or_create_interned_string_value(L"hello"));
     List *list = context.thread()->make_object_raw<List>();
     Dict *dict = context.thread()->make_object_raw<Dict>();
-    TValue<BuiltinFunction> builtin_function =
-        context.thread()->make_object_value<BuiltinFunction>(builtin_identity,
-                                                             1, 1);
     CodeObject *code = context.thread()->compile(L"def f():\n"
                                                  L"    return 1\n",
                                                  StartRule::File);
@@ -654,10 +637,9 @@ TEST(Attr, BuiltinInstancesRejectUnsupportedAttributeWrites)
             TValue<CLInt>(Value::from_smi(1)));
 
     Value instances[] = {
-        string_value.as_value(),         Value::from_oop(list),
-        Value::from_oop(dict),           Value(builtin_function),
-        Value::from_oop(code),           Value::from_oop(function),
-        Value::from_oop(range_iterator),
+        string_value.as_value(),   Value::from_oop(list),
+        Value::from_oop(dict),     Value::from_oop(code),
+        Value::from_oop(function), Value::from_oop(range_iterator),
     };
 
     for(Value instance: instances)
@@ -687,7 +669,6 @@ TEST(Attr, BuiltinTypeObjectsRejectUnsupportedAttributeWrites)
         Value::from_oop(context.vm().list_class()),
         Value::from_oop(context.vm().dict_class()),
         Value::from_oop(context.vm().function_class()),
-        Value::from_oop(context.vm().builtin_function_class()),
         Value::from_oop(context.vm().code_class()),
         Value::from_oop(context.vm().range_iterator_class()),
     };
@@ -1135,8 +1116,8 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
         context.vm().get_or_create_interned_string_value(L"Cls"));
     TValue<String> method_name(
         context.vm().get_or_create_interned_string_value(L"method"));
-    TValue<String> builtin_name(
-        context.vm().get_or_create_interned_string_value(L"builtin"));
+    TValue<String> value_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
     TValue<String> own_name(
         context.vm().get_or_create_interned_string_value(L"own"));
 
@@ -1150,13 +1131,10 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
     cls->set_own_property(method_name, method_value);
-    TValue<BuiltinFunction> builtin =
-        context.thread()->make_object_value<BuiltinFunction>(builtin_identity,
-                                                             1, 1);
-    cls->set_own_property(builtin_name, builtin);
+    cls->set_own_property(value_name, Value::from_smi(42));
 
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
-    instance->set_own_property(own_name, builtin);
+    instance->set_own_property(own_name, Value::from_smi(43));
 
     Value callable = Value::not_present();
     Value self = Value::not_present();
@@ -1167,13 +1145,13 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
     EXPECT_EQ(Value::from_oop(instance), self);
 
     ASSERT_TRUE(
-        load_method(Value::from_oop(instance), builtin_name, callable, self));
-    EXPECT_EQ(Value(builtin), callable);
+        load_method(Value::from_oop(instance), value_name, callable, self));
+    EXPECT_EQ(Value::from_smi(42), callable);
     EXPECT_TRUE(self.is_not_present());
 
     ASSERT_TRUE(
         load_method(Value::from_oop(instance), own_name, callable, self));
-    EXPECT_EQ(Value(builtin), callable);
+    EXPECT_EQ(Value::from_smi(43), callable);
     EXPECT_TRUE(self.is_not_present());
 }
 

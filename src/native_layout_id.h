@@ -14,7 +14,6 @@ namespace cl
         Tuple,
         Dict,
         Function,
-        BuiltinFunction,
         RangeIterator,
         CodeObject,
         ClassObject,

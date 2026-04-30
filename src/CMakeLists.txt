@@ -9,7 +9,6 @@ add_library(libclovervm STATIC
     ast_print.h
     builtin_class_registry.h
     bytecode.h
-    builtin_function.cpp
     code_object.cpp
     code_object.h
     class_object.cpp

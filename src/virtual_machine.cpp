@@ -1,5 +1,4 @@
 #include "virtual_machine.h"
-#include "builtin_function.h"
 #include "code_object.h"
 #include "dict.h"
 #include "function.h"
@@ -175,7 +174,6 @@ namespace cl
         register_builtin_class(type_definition);
 
         register_builtin_class(make_object_class(this));
-        register_builtin_class(make_builtin_function_class(this));
         register_builtin_class(make_str_class(this));
         install_bootstrap_string_class();
         register_builtin_class(make_tuple_class(this));
@@ -184,8 +182,6 @@ namespace cl
         assert(type != nullptr);
         ClassObject *object = object_class();
         assert(object != nullptr);
-        ClassObject *builtin_function = builtin_function_class();
-        assert(builtin_function != nullptr);
         ClassObject *str = str_class();
         assert(str != nullptr);
         ClassObject *tuple = tuple_class();
@@ -195,9 +191,6 @@ namespace cl
                                               make_class_tuple({object}));
         type->install_bootstrap_inheritance(make_class_tuple({object}),
                                             make_class_tuple({type, object}));
-        builtin_function->install_bootstrap_inheritance(
-            make_class_tuple({object}),
-            make_class_tuple({builtin_function, object}));
         str->install_bootstrap_inheritance(make_class_tuple({object}),
                                            make_class_tuple({str, object}));
         tuple->install_bootstrap_inheritance(make_class_tuple({object}),

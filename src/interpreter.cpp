@@ -1,7 +1,6 @@
 #include "interpreter.h"
 
 #include "attr.h"
-#include "builtin_function.h"
 #include "class_object.h"
 #include "code_object.h"
 #include "code_object_print.h"
@@ -271,15 +270,6 @@ namespace cl
     NOINLINE static Value overflow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
-    }
-
-    static ALWAYSINLINE Value invoke_builtin_callback_from_first_arg(
-        Value *fp, BuiltinFunction *builtin, int32_t first_arg_reg,
-        uint32_t n_args)
-    {
-        CallArguments args =
-            CallArguments::from_first_arg(&fp[first_arg_reg], n_args);
-        return builtin->callback(args);
     }
 
     static ALWAYSINLINE void enter_function_frame_at_new_fp(
@@ -1433,24 +1423,6 @@ namespace cl
             COMPLETE();
         }
 
-        if(fun_object->native_layout_id() == NativeLayoutId::BuiltinFunction)
-        {
-            BuiltinFunction *builtin =
-                static_cast<BuiltinFunction *>(fun_object);
-            if(unlikely(!builtin->accepts_arity(n_args)))
-            {
-                MUSTTAIL return wrong_arity_error(ARGS);
-            }
-
-            accumulator = invoke_builtin_callback_from_first_arg(
-                fp, builtin, first_arg_reg, n_args);
-
-            pc += call_instr_len;
-
-            START(0);
-            COMPLETE();
-        }
-
         if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
         {
             MUSTTAIL return not_callable_error(ARGS);
@@ -1574,26 +1546,6 @@ namespace cl
         }
 
         Object *fun_object = callable.get_ptr();
-        if(fun_object->native_layout_id() == NativeLayoutId::BuiltinFunction)
-        {
-            BuiltinFunction *builtin =
-                static_cast<BuiltinFunction *>(fun_object);
-            if(unlikely(!builtin->accepts_arity(n_args)))
-            {
-                MUSTTAIL return wrong_arity_error(ARGS);
-            }
-
-            int32_t first_arg_reg = prepare_method_call_argument_slots(
-                fp, receiver_reg, n_user_args, self);
-            accumulator = invoke_builtin_callback_from_first_arg(
-                fp, builtin, first_arg_reg, n_args);
-
-            pc += call_instr_len;
-
-            START(0);
-            COMPLETE();
-        }
-
         if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
         {
             MUSTTAIL return not_callable_error(ARGS);
