@@ -80,6 +80,7 @@ namespace cl
         uint32_t n_parameters = 0;
         uint32_t n_locals = 0;
         uint32_t n_temporaries = 0;
+        uint32_t n_outgoing_call_slots = 0;
 
         Scope *get_local_scope_ptr() const { return local_scope.extract(); }
 
@@ -92,7 +93,8 @@ namespace cl
 
         uint32_t get_n_registers() const
         {
-            return n_parameters + n_temporaries + n_locals;
+            return n_parameters + n_temporaries + n_locals +
+                   n_outgoing_call_slots;
         }
 
         uint32_t get_padded_n_parameters() const
@@ -100,9 +102,9 @@ namespace cl
             return round_up_to_abi_alignment(n_parameters);
         }
 
-        int32_t get_lowest_occupied_frame_offset() const
+        uint32_t get_padded_n_ordinary_below_frame_slots() const
         {
-            return -int32_t(FrameHeaderSizeBelowFp + n_locals + n_temporaries);
+            return round_up_to_abi_alignment(n_locals + n_temporaries);
         }
 
         int32_t get_highest_occupied_frame_offset() const

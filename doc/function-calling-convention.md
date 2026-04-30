@@ -58,6 +58,7 @@ Each `CodeObject` tracks:
 - `n_parameters`
 - `n_locals`
 - `n_temporaries`
+- `n_outgoing_call_slots`
 
 Parameter slots are physically padded to the ABI alignment. Since `Value` is 8
 bytes and the ABI alignment is 16 bytes, this currently means rounding slot
@@ -73,6 +74,11 @@ uint32_t get_padded_n_parameters() const
 {
     return round_up_to_abi_alignment(n_parameters);
 }
+
+uint32_t get_padded_n_ordinary_below_frame_slots() const
+{
+    return round_up_to_abi_alignment(n_locals + n_temporaries);
+}
 ```
 
 and reports total register storage as:
@@ -80,7 +86,7 @@ and reports total register storage as:
 ```cpp
 uint32_t get_n_registers() const
 {
-    return n_parameters + n_temporaries + n_locals;
+    return n_parameters + n_temporaries + n_locals + n_outgoing_call_slots;
 }
 ```
 
@@ -96,6 +102,7 @@ The bytecode printer exposes the register naming convention in [src/code_object_
 
 - `p0`, `p1`, ... are parameter registers
 - `r0`, `r1`, ... are local/temporary registers
+- `a0`, `a1`, ... are outgoing call-area registers
 
 The encoding rule is in [src/code_object.h](../src/code_object.h):
 
@@ -124,6 +131,9 @@ fp->fp[0]                  previous frame pointer
     fp[-4]                 r1
     fp[-5]                 r2
     ...
+    fp[-3 - padded_n_ordinary_below_frame_slots] a0
+    fp[-4 - padded_n_ordinary_below_frame_slots] a1
+    ...
 
 lower addresses
 ```
@@ -132,6 +142,8 @@ So:
 
 - parameters are above `fp`
 - locals/temporaries are below `fp`
+- ordinary below-frame slots are padded before the outgoing area when needed
+- the outgoing call area is below all ordinary locals and temporaries
 - larger logical register numbers move downward in memory
 
 ## How Codegen Lays Out a Call

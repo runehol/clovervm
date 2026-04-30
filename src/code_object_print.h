@@ -259,8 +259,18 @@ template <> struct fmt::formatter<cl::CodeObject>
         }
         else if(encoded_reg < 0)
         {
-            uint32_t reg = -encoded_reg - cl::FrameHeaderSizeBelowFp - 1;
-            format_to(out, "r{}", reg);
+            uint32_t frame_slot = -encoded_reg - cl::FrameHeaderSizeBelowFp - 1;
+            uint32_t n_ordinary_slots =
+                code_obj.get_padded_n_ordinary_below_frame_slots();
+            if(frame_slot >= n_ordinary_slots &&
+               frame_slot < n_ordinary_slots + code_obj.n_outgoing_call_slots)
+            {
+                format_to(out, "a{}", frame_slot - n_ordinary_slots);
+            }
+            else
+            {
+                format_to(out, "r{}", frame_slot);
+            }
         }
     }
 

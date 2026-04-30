@@ -287,8 +287,6 @@ working storage, or outbound call slots.
   encoding or decoding parameter slots.
 - Function and class-body codegen must reserve any parameter padding needed by
   the new convention.
-- `get_lowest_occupied_frame_offset()` should include ordinary locals,
-  ordinary temporaries, and the outgoing argument area.
 - Debug assertions should check frame alignment at interpreter entry and after
   every function or class-body frame transition.
 - The outgoing area can be a single reusable area per frame. Multiple outgoing
@@ -328,12 +326,12 @@ The migration should be staged so each patch establishes one visible invariant.
    `doc/function-calling-convention.md` to describe padded parameter slots and
    the padding between odd parameter lists and the frame header.
 
-5. Introduce `n_outgoing_call_slots` and disassemble `aN`.
+5. Done: introduce `n_outgoing_call_slots` and disassemble `aN`.
 
-   Add a `CodeObject` field for the outgoing call area size. Include it in
-   frame bounds calculations. Teach disassembly to classify negative offsets
-   below ordinary locals and temporaries as `aN`. Initially this area can be
-   zero-sized until call relocations start using it. Update
+   Add a `CodeObject` field for the outgoing call area size. Teach disassembly
+   to classify negative offsets below ordinary locals and temporaries as `aN`.
+   Initially this area can be zero-sized until call relocations start using it.
+   Update
    `doc/function-calling-convention.md` with the `pN` / `rN` / `aN` frame
    regions.
 
