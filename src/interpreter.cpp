@@ -1447,6 +1447,23 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static Value op_call_simple_cached_adapt(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 5;
+        int8_t first_arg_reg = pc[2];
+        uint8_t n_args = pc[3];
+        uint8_t cache_idx = pc[4];
+        FunctionCallInlineCache &cache =
+            code_object->function_call_caches[cache_idx];
+        TValue<Function> function = TValue<Function>::from_oop(cache.function);
+        enter_function_frame_from_positional_args(
+            fp, pc, code_object, function, first_arg_reg, n_args,
+            call_instr_len, cache.adaptation);
+
+        START(0);
+        COMPLETE();
+    }
+
     static Value op_call_simple(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 5;
@@ -1458,40 +1475,29 @@ namespace cl
         FunctionCallInlineCache &cache =
             code_object->function_call_caches[cache_idx];
 
-        if(likely(function_call_cache_matches(cache, fun, n_args)))
-        {
-            TValue<Function> function =
-                TValue<Function>::from_oop(cache.function);
-            enter_function_frame_from_positional_args(
-                fp, pc, code_object, function, first_arg_reg, n_args,
-                call_instr_len, cache.adaptation);
-
-            START(0);
-            COMPLETE();
-        }
-
-        if(unlikely(!fun.is_ptr()))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        Object *fun_object = fun.get_ptr();
-        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
+        if(unlikely(!function_call_cache_matches(cache, fun, n_args)))
         {
             MUSTTAIL return op_call_simple_slow(ARGS);
         }
 
-        TValue<Function> function(fun);
-        if(unlikely(!function.extract()->accepts_arity(n_args)))
+        if(unlikely(cache.adaptation != FunctionCallAdaptation::FixedArity))
         {
-            MUSTTAIL return wrong_arity_error(ARGS);
+            MUSTTAIL return op_call_simple_cached_adapt(ARGS);
         }
-        FunctionCallAdaptation adaptation =
-            classify_function_call_adaptation(function);
-        populate_function_call_cache(cache, function, n_args, adaptation);
-        enter_function_frame_from_positional_args(fp, pc, code_object, function,
-                                                  first_arg_reg, n_args,
-                                                  call_instr_len, adaptation);
+
+        CodeObject *target_code_object = cache.code_object;
+        int32_t new_fp_reg =
+            first_arg_reg -
+            int32_t(target_code_object->get_padded_n_parameters()) + 1 -
+            FrameHeaderSizeAboveFp;
+        Value *new_fp = fp + new_fp_reg;
+        pc += call_instr_len;
+
+        initialize_frame_header(new_fp, fp, code_object, pc);
+
+        fp = new_fp;
+        code_object = target_code_object;
+        pc = target_code_object->code.data();
 
         START(0);
         COMPLETE();
