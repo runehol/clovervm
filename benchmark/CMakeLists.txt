@@ -5,6 +5,7 @@ add_executable(bench_clovervm
     class_instantiation.cpp
     for_loop.cpp
     for_loop_slow_path.cpp
+    function_default_parameter.cpp
     instance_attribute_add_member.cpp
     instance_attribute_read.cpp
     instance_attribute_write.cpp
