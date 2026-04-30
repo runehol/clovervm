@@ -296,9 +296,16 @@ namespace cl
         pc = code_object->code.data();
     }
 
-    static ALWAYSINLINE void initialize_default_arguments(Value *new_fp,
-                                                          TValue<Function> fun,
-                                                          uint32_t n_args)
+    static ALWAYSINLINE bool is_fixed_arity_function(TValue<Function> fun)
+    {
+        return !fun.extract()->has_varargs() &&
+               fun.extract()->min_positional_arity ==
+                   fun.extract()->max_positional_arity;
+    }
+
+    static ALWAYSINLINE void
+    initialize_missing_default_arguments(Value *new_fp, TValue<Function> fun,
+                                         uint32_t n_args)
     {
         uint32_t n_supplied_positional_args =
             n_args < fun.extract()->n_positional_parameters
@@ -327,11 +334,6 @@ namespace cl
                                                          TValue<Function> fun,
                                                          uint32_t n_args)
     {
-        if(likely(!fun.extract()->has_varargs()))
-        {
-            return;
-        }
-
         uint32_t n_positional_parameters =
             fun.extract()->n_positional_parameters;
         uint32_t n_extra_args = n_args > n_positional_parameters
@@ -345,18 +347,40 @@ namespace cl
             varargs_tuple;
     }
 
-    static ALWAYSINLINE void enter_function_frame_from_first_arg(
-        Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
-        TValue<Function> fun, int32_t first_arg_reg, uint32_t n_args,
-        uint32_t instr_len)
+    static ALWAYSINLINE Value *
+    new_frame_pointer_from_first_arg(Value *fp, TValue<Function> fun,
+                                     int32_t first_arg_reg)
     {
         int32_t new_fp_reg = first_arg_reg -
                              int32_t(fun.extract()
                                          ->code_object.extract()
                                          ->get_padded_n_parameters()) +
                              1 - FrameHeaderSizeAboveFp;
-        Value *new_fp = fp + new_fp_reg;
-        initialize_default_arguments(new_fp, fun, n_args);
+        return fp + new_fp_reg;
+    }
+
+    static ALWAYSINLINE void enter_function_frame_from_positional_args(
+        Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
+        TValue<Function> fun, int32_t first_arg_reg, uint32_t n_args,
+        uint32_t instr_len)
+    {
+        Value *new_fp =
+            new_frame_pointer_from_first_arg(fp, fun, first_arg_reg);
+        if(likely(is_fixed_arity_function(fun)))
+        {
+            enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
+                                           instr_len);
+            return;
+        }
+        if(!fun.extract()->has_varargs())
+        {
+            initialize_missing_default_arguments(new_fp, fun, n_args);
+            enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
+                                           instr_len);
+            return;
+        }
+
+        initialize_missing_default_arguments(new_fp, fun, n_args);
         initialize_varargs_argument(new_fp, fun, n_args);
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                        instr_len);
@@ -1403,9 +1427,9 @@ namespace cl
         {
             MUSTTAIL return wrong_arity_error(ARGS);
         }
-        enter_function_frame_from_first_arg(fp, pc, code_object, function,
-                                            first_arg_reg, n_args,
-                                            call_instr_len);
+        enter_function_frame_from_positional_args(fp, pc, code_object, function,
+                                                  first_arg_reg, n_args,
+                                                  call_instr_len);
 
         START(0);
         COMPLETE();
@@ -1435,9 +1459,9 @@ namespace cl
         {
             MUSTTAIL return wrong_arity_error(ARGS);
         }
-        enter_function_frame_from_first_arg(fp, pc, code_object, function,
-                                            first_arg_reg, n_args,
-                                            call_instr_len);
+        enter_function_frame_from_positional_args(fp, pc, code_object, function,
+                                                  first_arg_reg, n_args,
+                                                  call_instr_len);
 
         START(0);
         COMPLETE();
@@ -1527,9 +1551,9 @@ namespace cl
         }
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
-        enter_function_frame_from_first_arg(fp, pc, code_object, function,
-                                            first_arg_reg, n_args,
-                                            call_instr_len);
+        enter_function_frame_from_positional_args(fp, pc, code_object, function,
+                                                  first_arg_reg, n_args,
+                                                  call_instr_len);
 
         {
             START(0);
@@ -1582,9 +1606,9 @@ namespace cl
         }
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
-        enter_function_frame_from_first_arg(fp, pc, code_object, function,
-                                            first_arg_reg, n_args,
-                                            call_instr_len);
+        enter_function_frame_from_positional_args(fp, pc, code_object, function,
+                                                  first_arg_reg, n_args,
+                                                  call_instr_len);
 
         {
             START(0);

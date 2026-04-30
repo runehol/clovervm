@@ -94,11 +94,9 @@ namespace cl
 
         static void assert_parameter_layout(TValue<CodeObject> code_object)
         {
-            uint32_t expected_n_parameters =
-                code_object.extract()->n_positional_parameters +
-                (code_object.extract()->has_varargs() ? 1 : 0);
             assert(code_object.extract()->n_parameters ==
-                   expected_n_parameters);
+                   code_object.extract()->n_positional_parameters +
+                       (code_object.extract()->has_varargs() ? 1 : 0));
         }
     };
 
