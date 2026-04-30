@@ -30,7 +30,7 @@ namespace cl
 
     static constexpr uintptr_t StackFrameAlignmentBytes = 16;
 
-    static ALWAYSINLINE bool is_stack_frame_aligned(Value *fp)
+    [[maybe_unused]] static ALWAYSINLINE bool is_stack_frame_aligned(Value *fp)
     {
         return (reinterpret_cast<uintptr_t>(fp) % StackFrameAlignmentBytes) ==
                0;
