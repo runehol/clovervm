@@ -59,6 +59,22 @@ Each `CodeObject` tracks:
 - `n_locals`
 - `n_temporaries`
 
+Parameter slots are physically padded to the ABI alignment. Since `Value` is 8
+bytes and the ABI alignment is 16 bytes, this currently means rounding slot
+counts up to an even number:
+
+```cpp
+constexpr uint32_t round_up_to_abi_alignment(uint32_t value)
+{
+    return (value + 1u) & ~1u;
+}
+
+uint32_t get_padded_n_parameters() const
+{
+    return round_up_to_abi_alignment(n_parameters);
+}
+```
+
 and reports total register storage as:
 
 ```cpp
@@ -68,7 +84,8 @@ uint32_t get_n_registers() const
 }
 ```
 
-Codegen reserves the header slots in function and class scopes before collecting locals:
+Codegen reserves any parameter padding and the header slots in function and
+class scopes before collecting locals:
 
 - function bodies: [src/codegen.cpp](../src/codegen.cpp)
 - class bodies: [src/codegen.cpp](../src/codegen.cpp)
@@ -85,7 +102,7 @@ The encoding rule is in [src/code_object.h](../src/code_object.h):
 ```cpp
 int8_t encode_reg(uint32_t reg)
 {
-    return n_parameters - 1 + FrameHeaderSizeAboveFp - reg;
+    return get_padded_n_parameters() - 1 + FrameHeaderSizeAboveFp - reg;
 }
 ```
 
@@ -94,11 +111,11 @@ Combined with interpreter access through `fp[reg]`, this gives the physical layo
 ```text
 higher addresses
 
-    fp[n_parameters + 1]   p0
-    fp[n_parameters + 0]   p1
+    fp[padded_n_parameters + 1]   p0
+    fp[padded_n_parameters + 0]   p1
     ...
-    fp[3]                  p(n-2)
-    fp[2]                  p(n-1)
+    fp[3]                         p(n-1) if n is even, padding if n is odd
+    fp[2]                         p(n-1) if n is odd, otherwise last param
     fp[1]                  compiled return PC (when JITed)
 fp->fp[0]                  previous frame pointer
     fp[-1]                 interpreter return code object
@@ -206,7 +223,8 @@ The core transition for function calls is shared by `op_call_simple` and
 `op_call_method_attr` in [src/interpreter.cpp](../src/interpreter.cpp):
 
 ```cpp
-Value *new_fp = fp + reg - n_args - FrameHeaderSizeAboveFp;
+uint32_t padded_n_args = round_up_to_abi_alignment(n_args);
+Value *new_fp = fp + reg - padded_n_args - FrameHeaderSizeAboveFp;
 
 new_fp[0].as.ptr = (Object *)fp;
 new_fp[-1] = Value::from_oop(code_object);
@@ -231,18 +249,19 @@ So:
 ```text
 callable slot        = fp[reg]
 last argument slot   = fp[reg - n_args]
-new fp               = fp[reg - n_args - 2]
+new fp               = fp[reg - round_up_to_abi_alignment(n_args) - 2]
 ```
 
 The extra `2` is `FrameHeaderSizeAboveFp`, which places the new `fp` so that:
 
-- the last parameter lands at `fp[2]`
-- the first parameter lands at `fp[n_args + 1]`
+- the last parameter lands above any odd-argument padding
+- the first parameter lands at `fp[round_up_to_abi_alignment(n_args) + 1]`
 - header words occupy `fp[1]`, `fp[0]`, `fp[-1]`, `fp[-2]`
 
-## Frame Diagram
+## Frame Diagrams
 
-The following shows a normal function frame for a function with three parameters and two local/temporary registers:
+The following shows a normal function frame for a function with two parameters
+and two local/temporary registers. Even parameter counts need no padding:
 
 ```text
 stack grows downward
@@ -251,9 +270,33 @@ stack grows downward
         |
         v
 
-    fp[4]   p0   first parameter
-    fp[3]   p1
-    fp[2]   p2   last parameter
+    fp[3]   p0   first parameter
+    fp[2]   p1   last parameter
+    fp[1]        compiled return PC (when jitted)
+fp  fp[0]        previous frame pointer
+    fp[-1]       interpreter return code object
+    fp[-2]       interpreter return PC
+    fp[-3]  r0   first local/temporary
+    fp[-4]  r1
+
+    lower addresses
+```
+
+The following shows a normal function frame for a function with three
+parameters and two local/temporary registers. Odd parameter counts are padded to
+the next even physical slot count:
+
+```text
+stack grows downward
+
+    higher addresses
+        |
+        v
+
+    fp[5]   p0   first parameter
+    fp[4]   p1
+    fp[3]   p2   last parameter
+    fp[2]        parameter padding
     fp[1]        compiled return PC (when jitted)
 fp  fp[0]        previous frame pointer
     fp[-1]       interpreter return code object
@@ -275,7 +318,7 @@ Before call in caller frame:
     [arg1 = y]
     ...
 
-After `new_fp = fp + reg - n_args - 2`:
+After `new_fp = fp + reg - round_up_to_abi_alignment(n_args) - 2`:
 
     new_fp[3]  p0 = x
     new_fp[2]  p1 = y
@@ -322,7 +365,7 @@ Top-level module code is not expected to execute `Return`; the parser/codegen re
 If you are reasoning about CloverVM calls, the safest mental model is:
 
 1. Codegen lays out `callable, arg0, arg1, ...` in a contiguous downward-growing register window.
-2. The interpreter moves `fp` so those argument cells become `p0`, `p1`, ...
+2. The interpreter moves `fp` below the argument window padded up to the ABI alignment, so those argument cells become `p0`, `p1`, ...
 3. `fp[0]`, `fp[-1]`, and `fp[-2]` hold the caller state needed by `Return`.
 4. Locals/temporaries for the callee start at `r0 = fp[-3]`.
 5. The accumulator carries the return value across the `Return` instruction.

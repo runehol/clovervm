@@ -60,7 +60,7 @@ Parameters are still addressed relative to `fp`, but their physical positions
 are based on a padded parameter count:
 
 ```cpp
-padded_parameter_count = round_up_to_even(n_parameters);
+padded_parameter_count = round_up_to_abi_alignment(n_parameters);
 ```
 
 For example, a function with three parameters has four physical parameter
@@ -162,7 +162,7 @@ Function entry uses the final argument count after call adaptation:
 The final count is rounded up to an even physical count:
 
 ```cpp
-padded_arg_count = round_up_to_even(n_args);
+padded_arg_count = round_up_to_abi_alignment(n_args);
 ```
 
 The caller lays out arguments so the first argument slot is 16-byte aligned.
@@ -319,7 +319,7 @@ The migration should be staged so each patch establishes one visible invariant.
    contiguous argument/header relationship. Update
    `doc/function-calling-convention.md` with the method-call adaptation rules.
 
-4. Use padded parameter layout.
+4. Done: use padded parameter layout and padded frame entry.
 
    Parameter encoding and decoding should use
    `round_up_to_abi_alignment(n_parameters)`. Function and class-body codegen
@@ -351,13 +351,11 @@ The migration should be staged so each patch establishes one visible invariant.
    `doc/function-calling-convention.md` so explicit calls are documented as
    using the outgoing area rather than the current temporary frontier.
 
-8. Make frame entry use padded argument counts.
+8. Folded into step 4: make frame entry use padded argument counts.
 
-   Update function and class-body frame-entry helpers so callee frames are
-   placed below `round_up_to_abi_alignment(n_args)`. Add tests for
-   odd-argument calls and nested calls. Update
-   `doc/function-calling-convention.md` with the final argument-padding and
-   frame-header placement rules.
+   Updating parameter encoding without updating frame entry would break
+   odd-argument calls, so the frame-entry helper changes are part of the padded
+   parameter layout step.
 
 9. Use the outgoing area for internal Python calls.
 

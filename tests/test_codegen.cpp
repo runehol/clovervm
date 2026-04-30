@@ -144,6 +144,36 @@ TEST(Codegen, function_multiple_parameters)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, parameter_frame_offsets_are_padded_to_abi_alignment)
+{
+    test::VmTestContext test_context;
+    CodeObject *one_param = test_context.compile_file(L"def f(a):\n"
+                                                      L"    return a\n");
+    CodeObject *two_params = test_context.compile_file(L"def f(a, b):\n"
+                                                       L"    return a\n");
+    CodeObject *three_params = test_context.compile_file(L"def f(a, b, c):\n"
+                                                         L"    return a\n");
+    CodeObject *four_params = test_context.compile_file(L"def f(a, b, c, d):\n"
+                                                        L"    return a\n");
+
+    EXPECT_EQ(3, one_param->constant_table[0]
+                     .as_value()
+                     .get_ptr<CodeObject>()
+                     ->get_highest_occupied_frame_offset());
+    EXPECT_EQ(3, two_params->constant_table[0]
+                     .as_value()
+                     .get_ptr<CodeObject>()
+                     ->get_highest_occupied_frame_offset());
+    EXPECT_EQ(5, three_params->constant_table[0]
+                     .as_value()
+                     .get_ptr<CodeObject>()
+                     ->get_highest_occupied_frame_offset());
+    EXPECT_EQ(5, four_params->constant_table[0]
+                     .as_value()
+                     .get_ptr<CodeObject>()
+                     ->get_highest_occupied_frame_offset());
+}
+
 TEST(Codegen, binary_expression_reuses_local_register_operand)
 {
     const wchar_t *test_case = L"def add(a, b):\n"

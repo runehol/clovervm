@@ -300,8 +300,9 @@ namespace cl
         TValue<Function> fun, int32_t call_base_reg, uint32_t n_args,
         uint32_t instr_len)
     {
-        Value *new_fp =
-            fp + call_base_reg - int32_t(n_args) - FrameHeaderSizeAboveFp;
+        uint32_t padded_n_args = round_up_to_abi_alignment(n_args);
+        Value *new_fp = fp + call_base_reg - int32_t(padded_n_args) -
+                        FrameHeaderSizeAboveFp;
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                        instr_len);
     }
@@ -311,9 +312,12 @@ namespace cl
         TValue<Function> fun, int32_t first_arg_reg, uint32_t n_args,
         uint32_t instr_len)
     {
-        int32_t last_arg_reg =
-            n_args == 0 ? first_arg_reg : first_arg_reg - int32_t(n_args) + 1;
-        Value *new_fp = fp + last_arg_reg - FrameHeaderSizeAboveFp;
+        int32_t new_fp_reg =
+            n_args == 0
+                ? first_arg_reg - FrameHeaderSizeAboveFp
+                : first_arg_reg - int32_t(round_up_to_abi_alignment(n_args)) +
+                      1 - FrameHeaderSizeAboveFp;
+        Value *new_fp = fp + new_fp_reg;
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                        instr_len);
     }
@@ -1218,10 +1222,11 @@ namespace cl
         TValue<CodeObject> body_code(
             code_object->constant_table[body_const_offset].as_value());
 
-        int8_t last_arg_reg =
-            first_arg_reg - int8_t(ClassBodyParameterCount) + 1;
         const uint8_t *return_pc = pc + create_class_instr_len;
-        Value *new_fp = fp + last_arg_reg - FrameHeaderSizeAboveFp;
+        Value *new_fp =
+            fp + first_arg_reg -
+            int32_t(round_up_to_abi_alignment(ClassBodyParameterCount)) + 1 -
+            FrameHeaderSizeAboveFp;
         initialize_frame_header(new_fp, fp, code_object, return_pc);
         initialize_class_body_frame(new_fp, body_code.extract());
 

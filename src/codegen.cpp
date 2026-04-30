@@ -256,11 +256,21 @@ namespace cl
             }
 
             uint32_t named_local_and_header_slots =
-                local_scope_size - target->n_parameters;
+                local_scope_size - target->get_padded_n_parameters();
             assert(named_local_and_header_slots >= FrameHeaderSize);
             target->n_locals = named_local_and_header_slots - FrameHeaderSize;
             assert(_max_temporary_reg >= local_scope_size);
             target->n_temporaries = _max_temporary_reg - local_scope_size;
+        }
+
+        void reserve_parameter_padding_and_frame_header()
+        {
+            uint32_t n_parameter_padding =
+                code_obj->get_padded_n_parameters() - code_obj->n_parameters;
+            code_obj->get_local_scope_ptr()->reserve_empty_slots(
+                n_parameter_padding);
+            code_obj->get_local_scope_ptr()->reserve_empty_slots(
+                FrameHeaderSize);
         }
 
         ScopedRegister codegen_node_to_register(int32_t node_idx, Mode mode)
@@ -371,9 +381,7 @@ namespace cl
                         ->register_slot_index_for_write(
                             TValue<String>(av.constants[ch]));
                 }
-                // reserve space for the frame header
-                code_obj->get_local_scope_ptr()->reserve_empty_slots(
-                    FrameHeaderSize);
+                reserve_parameter_padding_and_frame_header();
 
                 collect_function_local_bindings(children[1]);
 
@@ -421,8 +429,7 @@ namespace cl
                 code_obj = class_obj;
                 code_obj->n_parameters = 2;
                 code_obj->get_local_scope_ptr()->reserve_empty_slots(2);
-                code_obj->get_local_scope_ptr()->reserve_empty_slots(
-                    FrameHeaderSize);
+                reserve_parameter_padding_and_frame_header();
                 collect_class_local_bindings(body_idx);
 
                 _temporary_reg = code_obj->get_local_scope_ptr()->size();

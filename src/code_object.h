@@ -95,6 +95,11 @@ namespace cl
             return n_parameters + n_temporaries + n_locals;
         }
 
+        uint32_t get_padded_n_parameters() const
+        {
+            return round_up_to_abi_alignment(n_parameters);
+        }
+
         int32_t get_lowest_occupied_frame_offset() const
         {
             return -int32_t(FrameHeaderSizeBelowFp + n_locals + n_temporaries);
@@ -106,7 +111,8 @@ namespace cl
             {
                 return 0;
             }
-            return int32_t(FrameHeaderSizeAboveFp + n_parameters - 1);
+            return int32_t(FrameHeaderSizeAboveFp + get_padded_n_parameters() -
+                           1);
         }
 
         size_t size() const
@@ -170,7 +176,7 @@ namespace cl
 
         int8_t encode_reg(uint32_t reg)
         {
-            return n_parameters - 1 + FrameHeaderSizeAboveFp - reg;
+            return get_padded_n_parameters() - 1 + FrameHeaderSizeAboveFp - reg;
         }
 
         uint32_t emit_opcode_reg(uint32_t source_offset, Bytecode c,
