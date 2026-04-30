@@ -223,6 +223,17 @@ TEST(Parser, parameters_accept_trailing_comma)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, parameters_accept_defaults)
+{
+    std::string expected = (""
+                            "def f(a=1, b=2):\n"
+                            "    return a + b\n");
+    std::string actual = parse(L"def f(a=1, b=2):\n"
+                               L"    return a + b\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, function_and_method_parameter_annotations_parse)
 {
     std::string expected = (""

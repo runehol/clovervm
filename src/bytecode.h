@@ -136,6 +136,7 @@ namespace cl
         CreateList,
         CreateTuple,
         CreateFunction,
+        CreateFunctionWithDefaults,
         CreateClass,
         BuildClass,
 

@@ -1237,22 +1237,34 @@ namespace cl
         int32_t parameters()
         {
             int32_t source_pos = source_pos_for_token();
-            /* TODO this is very incomplete. but just enough to get default-less
-             * parameters going */
             AstChildren ch;
+            bool seen_default = false;
             while(peek() != Token::RPAR)
             {
                 consume(Token::NAME);
+                uint32_t name_source_pos = source_pos_for_previous_token();
                 std::wstring name = std::wstring(string_for_name_token(
-                    *ast.compilation_unit, source_pos_for_previous_token()));
+                    *ast.compilation_unit, name_source_pos));
                 Value v = vm.get_or_create_interned_string_value(name);
-                ch.push_back(
-                    ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
-                                     source_pos_for_previous_token(), v));
+                AstChildren parameter_children;
                 if(match(Token::COLON))
                 {
                     expression();
                 }
+                if(match(Token::EQUAL))
+                {
+                    seen_default = true;
+                    parameter_children.push_back(expression());
+                }
+                else if(seen_default)
+                {
+                    throw std::runtime_error(
+                        "SyntaxError: non-default argument follows default "
+                        "argument");
+                }
+                ch.push_back(ast.emplace_back(AstNodeKind::PARAMETER,
+                                              name_source_pos,
+                                              parameter_children, v));
                 if(!match(Token::COMMA))
                     break;
                 if(peek() == Token::RPAR)

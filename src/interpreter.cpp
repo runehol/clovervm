@@ -296,15 +296,40 @@ namespace cl
         pc = code_object->code.data();
     }
 
+    static ALWAYSINLINE void initialize_default_arguments(Value *new_fp,
+                                                          TValue<Function> fun,
+                                                          uint32_t n_args)
+    {
+        uint32_t n_missing_args = fun.extract()->max_positional_arity - n_args;
+        if(likely(n_missing_args == 0))
+        {
+            return;
+        }
+
+        TValue<Tuple> defaults(fun.extract()->default_parameters.as_value());
+        uint32_t first_default_idx =
+            uint32_t(defaults.extract()->size()) - n_missing_args;
+        CodeObject *target_code_object = fun.extract()->code_object.extract();
+        for(uint32_t idx = 0; idx < n_missing_args; ++idx)
+        {
+            uint32_t param_idx = n_args + idx;
+            new_fp[target_code_object->encode_reg(param_idx)] =
+                defaults.extract()->item_unchecked(first_default_idx + idx);
+        }
+    }
+
     static ALWAYSINLINE void enter_function_frame_from_first_arg(
         Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
         TValue<Function> fun, int32_t first_arg_reg, uint32_t n_args,
         uint32_t instr_len)
     {
         int32_t new_fp_reg = first_arg_reg -
-                             int32_t(round_up_to_abi_alignment(n_args)) + 1 -
-                             FrameHeaderSizeAboveFp;
+                             int32_t(fun.extract()
+                                         ->code_object.extract()
+                                         ->get_padded_n_parameters()) +
+                             1 - FrameHeaderSizeAboveFp;
         Value *new_fp = fp + new_fp_reg;
+        initialize_default_arguments(new_fp, fun, n_args);
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                        instr_len);
     }
@@ -1150,6 +1175,23 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_create_function_with_defaults(PARAMS)
+    {
+        START(3);
+        uint8_t const_offset = pc[1];
+        int8_t defaults_reg = pc[2];
+        TValue<CodeObject> code_obj(
+            code_object->constant_table[const_offset].as_value());
+        TValue<Tuple> defaults(fp[defaults_reg]);
+        uint32_t max_arity = code_obj.extract()->n_parameters;
+        uint32_t min_arity = max_arity - uint32_t(defaults.extract()->size());
+
+        accumulator = make_object_value<Function>(code_obj, defaults, min_arity,
+                                                  max_arity);
+
+        COMPLETE();
+    }
+
     static Value op_create_list(PARAMS)
     {
         START(3);
@@ -1337,9 +1379,14 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        enter_function_frame_from_first_arg(
-            fp, pc, code_object, TValue<Function>(fun), first_arg_reg, n_args,
-            call_instr_len);
+        TValue<Function> function(fun);
+        if(unlikely(!function.extract()->accepts_arity(n_args)))
+        {
+            MUSTTAIL return wrong_arity_error(ARGS);
+        }
+        enter_function_frame_from_first_arg(fp, pc, code_object, function,
+                                            first_arg_reg, n_args,
+                                            call_instr_len);
 
         START(0);
         COMPLETE();
@@ -1364,9 +1411,14 @@ namespace cl
             MUSTTAIL return op_call_simple_slow(ARGS);
         }
 
-        enter_function_frame_from_first_arg(
-            fp, pc, code_object, TValue<Function>(fun), first_arg_reg, n_args,
-            call_instr_len);
+        TValue<Function> function(fun);
+        if(unlikely(!function.extract()->accepts_arity(n_args)))
+        {
+            MUSTTAIL return wrong_arity_error(ARGS);
+        }
+        enter_function_frame_from_first_arg(fp, pc, code_object, function,
+                                            first_arg_reg, n_args,
+                                            call_instr_len);
 
         START(0);
         COMPLETE();
@@ -1449,11 +1501,16 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
+        TValue<Function> function(callable);
+        if(unlikely(!function.extract()->accepts_arity(n_args)))
+        {
+            MUSTTAIL return wrong_arity_error(ARGS);
+        }
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
-        enter_function_frame_from_first_arg(
-            fp, pc, code_object, TValue<Function>(callable), first_arg_reg,
-            n_args, call_instr_len);
+        enter_function_frame_from_first_arg(fp, pc, code_object, function,
+                                            first_arg_reg, n_args,
+                                            call_instr_len);
 
         {
             START(0);
@@ -1499,11 +1556,16 @@ namespace cl
             MUSTTAIL return op_call_method_attr_slow(ARGS);
         }
 
+        TValue<Function> function(callable);
+        if(unlikely(!function.extract()->accepts_arity(n_args)))
+        {
+            MUSTTAIL return wrong_arity_error(ARGS);
+        }
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
-        enter_function_frame_from_first_arg(
-            fp, pc, code_object, TValue<Function>(callable), first_arg_reg,
-            n_args, call_instr_len);
+        enter_function_frame_from_first_arg(fp, pc, code_object, function,
+                                            first_arg_reg, n_args,
+                                            call_instr_len);
 
         {
             START(0);
@@ -1851,6 +1913,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CreateList, op_create_list);
         SET_TABLE_ENTRY(Bytecode::CreateTuple, op_create_tuple);
         SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);
+        SET_TABLE_ENTRY(Bytecode::CreateFunctionWithDefaults,
+                        op_create_function_with_defaults);
         SET_TABLE_ENTRY(Bytecode::CreateClass, op_create_class);
         SET_TABLE_ENTRY(Bytecode::BuildClass, op_build_class);
 

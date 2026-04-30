@@ -295,6 +295,55 @@ TEST(Interpreter, function_even_argument_call_preserves_frame_alignment)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Interpreter, function_default_parameters)
+{
+    Value expected = Value::from_smi(220);
+    test::FileRunner file_runner(L"def add(a, b=10, c=100):\n"
+                                 "    return a + b + c\n"
+                                 "add(1) + add(1, 2) + add(1, 2, 3)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, function_defaults_evaluate_at_definition_time)
+{
+    Value expected = Value::from_smi(11);
+    test::FileRunner file_runner(L"x = 10\n"
+                                 "def f(a=x + 1):\n"
+                                 "    return a\n"
+                                 "x = 20\n"
+                                 "f()\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, method_defaults_evaluate_in_class_scope)
+{
+    Value expected = Value::from_smi(11);
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 "    x = 10\n"
+                                 "    def method(self, a=x + 1):\n"
+                                 "        return a\n"
+                                 "Cls().method()\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, function_wrong_arity)
+{
+    expect_runtime_error(L"def f(a):\n"
+                         "    return a\n"
+                         "f()\n",
+                         "TypeError: wrong number of arguments");
+    expect_runtime_error(L"def f(a):\n"
+                         "    return a\n"
+                         "f(1, 2)\n",
+                         "TypeError: wrong number of arguments");
+}
+
 TEST(Interpreter, calls_and_parameters_accept_trailing_comma)
 {
     Value expected = Value::from_smi(6);

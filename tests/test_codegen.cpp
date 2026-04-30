@@ -144,6 +144,37 @@ TEST(Codegen, function_multiple_parameters)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, function_defaults_use_create_function_with_defaults)
+{
+    const wchar_t *test_case = L"def f(a, b=2):\n"
+                               "    return a + b\n"
+                               "f(1)\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 LdaSmi 2\n"
+                           "    2 Star0\n"
+                           "    3 CreateTuple r0, 1\n"
+                           "    6 Star1\n"
+                           "    7 CreateFunctionWithDefaults c[0], r1\n"
+                           "   10 StaGlobal [0]\n"
+                           "   15 LdaGlobal [0]\n"
+                           "   20 Star0\n"
+                           "   21 LdaSmi 1\n"
+                           "   23 Star a0\n"
+                           "   25 CallSimple r0, a0\n"
+                           "   29 Halt\n"
+                           "Constant 0: Code object:\n"
+                           "    0 Ldar p1\n"
+                           "    2 Add p0\n"
+                           "    4 Return\n"
+                           "    5 LdaNone\n"
+                           "    6 Return\n"
+                           "\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, parameter_frame_offsets_are_padded_to_abi_alignment)
 {
     test::VmTestContext test_context;

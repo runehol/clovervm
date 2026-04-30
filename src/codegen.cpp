@@ -352,16 +352,17 @@ namespace cl
             CodeObject *fun_obj = make_code_obj(Mode::Function);
             uint32_t outer_temporary_reg = _temporary_reg;
             uint32_t outer_max_temporary_reg = _max_temporary_reg;
+            AstChildren param_children = av.children[children[0]];
             {
                 code_obj = fun_obj;
                 code_obj->name = av.constants[node_idx];
                 /*
                   Now we're generating code for the function
                 */
-                AstChildren param_children = av.children[children[0]];
                 code_obj->n_parameters = param_children.size();
                 for(int32_t ch: param_children)
                 {
+                    assert(av.kinds[ch].node_kind == AstNodeKind::PARAMETER);
                     code_obj->get_local_scope_ptr()
                         ->register_slot_index_for_write(
                             TValue<String>(av.constants[ch]));
@@ -390,10 +391,51 @@ namespace cl
             // the
             uint32_t constant_idx =
                 code_obj->allocate_constant(Value::from_oop(fun_obj));
-            code_obj->emit_opcode_constant_idx(
-                source_offset, Bytecode::CreateFunction, constant_idx);
+            uint32_t n_defaults = count_default_parameters(param_children);
+            if(n_defaults == 0)
+            {
+                code_obj->emit_opcode_constant_idx(
+                    source_offset, Bytecode::CreateFunction, constant_idx);
+            }
+            else
+            {
+                TemporaryReg default_values(this, n_defaults);
+                size_t first_default_idx = param_children.size() - n_defaults;
+                for(size_t i = 0; i < n_defaults; ++i)
+                {
+                    int32_t param_idx = param_children[first_default_idx + i];
+                    AstChildren default_children = av.children[param_idx];
+                    assert(default_children.size() == 1);
+                    codegen_node(default_children[0], mode);
+                    code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                              default_values + i);
+                }
+                code_obj->emit_opcode_reg_range(source_offset,
+                                                Bytecode::CreateTuple,
+                                                default_values, n_defaults);
+
+                TemporaryReg default_tuple(this);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          default_tuple);
+                code_obj->emit_opcode_constant_idx_reg(
+                    source_offset, Bytecode::CreateFunctionWithDefaults,
+                    constant_idx, default_tuple);
+            }
 
             perform_variable_assignment(source_offset, slot_idx, mode);
+        }
+
+        uint32_t count_default_parameters(AstChildren param_children) const
+        {
+            uint32_t n_defaults = 0;
+            for(int32_t param_idx: param_children)
+            {
+                if(!av.children[param_idx].empty())
+                {
+                    ++n_defaults;
+                }
+            }
+            return n_defaults;
         }
 
         void codegen_class_definition(int32_t node_idx, Mode mode)
@@ -1366,6 +1408,7 @@ namespace cl
                         "EXPRESSION_COMPARISON");
 
                 case AstNodeKind::PARAMETER_SEQUENCE:
+                case AstNodeKind::PARAMETER:
                     throw std::runtime_error("should not end here - this is "
                                              "handled by function definitions");
             }

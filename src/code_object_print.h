@@ -223,6 +223,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "CreateDict");
             case cl::Bytecode::CreateFunction:
                 return format_to(out, "CreateFunction");
+            case cl::Bytecode::CreateFunctionWithDefaults:
+                return format_to(out, "CreateFunctionWithDefaults");
             case cl::Bytecode::CreateClass:
                 return format_to(out, "CreateClass");
             case cl::Bytecode::CreateList:
@@ -560,6 +562,13 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::CreateFunction:
                 format_to(out, " ");
                 disassemble_constant(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::CreateFunctionWithDefaults:
+                format_to(out, " ");
+                disassemble_constant(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::CreateClass:
