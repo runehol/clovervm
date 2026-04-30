@@ -319,10 +319,11 @@ namespace cl
     }
 
     static ALWAYSINLINE bool
-    function_call_cache_matches(const FunctionCallInlineCache &cache,
-                                TValue<Function> fun, uint32_t n_args)
+    function_call_cache_matches(const FunctionCallInlineCache &cache, Value fun,
+                                uint32_t n_args)
     {
-        return cache.function == fun.extract() && cache.n_args == n_args;
+        return fun.is_ptr() && cache.function == fun.get_ptr<Function>() &&
+               cache.n_args == n_args;
     }
 
     static ALWAYSINLINE void
@@ -1454,6 +1455,20 @@ namespace cl
         uint8_t n_args = pc[3];
         uint8_t cache_idx = pc[4];
         Value fun = fp[callable_reg];
+        FunctionCallInlineCache &cache =
+            code_object->function_call_caches[cache_idx];
+
+        if(likely(function_call_cache_matches(cache, fun, n_args)))
+        {
+            TValue<Function> function =
+                TValue<Function>::from_oop(cache.function);
+            enter_function_frame_from_positional_args(
+                fp, pc, code_object, function, first_arg_reg, n_args,
+                call_instr_len, cache.adaptation);
+
+            START(0);
+            COMPLETE();
+        }
 
         if(unlikely(!fun.is_ptr()))
         {
@@ -1467,17 +1482,6 @@ namespace cl
         }
 
         TValue<Function> function(fun);
-        FunctionCallInlineCache &cache =
-            code_object->function_call_caches[cache_idx];
-        if(likely(function_call_cache_matches(cache, function, n_args)))
-        {
-            enter_function_frame_from_positional_args(
-                fp, pc, code_object, function, first_arg_reg, n_args,
-                call_instr_len, cache.adaptation);
-
-            START(0);
-            COMPLETE();
-        }
         if(unlikely(!function.extract()->accepts_arity(n_args)))
         {
             MUSTTAIL return wrong_arity_error(ARGS);
@@ -1554,12 +1558,14 @@ namespace cl
         TValue<Function> function(callable);
         FunctionCallInlineCache &call_cache =
             code_object->function_call_caches[call_cache_idx];
-        if(function_call_cache_matches(call_cache, function, n_args))
+        if(function_call_cache_matches(call_cache, callable, n_args))
         {
             int32_t first_arg_reg = prepare_method_call_argument_slots(
                 fp, receiver_reg, n_user_args, self);
+            TValue<Function> cached_function =
+                TValue<Function>::from_oop(call_cache.function);
             enter_function_frame_from_positional_args(
-                fp, pc, code_object, function, first_arg_reg, n_args,
+                fp, pc, code_object, cached_function, first_arg_reg, n_args,
                 call_instr_len, call_cache.adaptation);
 
             START(0);
@@ -1611,6 +1617,22 @@ namespace cl
 
         bool has_self = !self.is_not_present();
         uint32_t n_args = n_user_args + (has_self ? 1 : 0);
+        FunctionCallInlineCache &call_cache =
+            code_object->function_call_caches[call_cache_idx];
+
+        if(likely(function_call_cache_matches(call_cache, callable, n_args)))
+        {
+            int32_t first_arg_reg = prepare_method_call_argument_slots(
+                fp, receiver_reg, n_user_args, self);
+            TValue<Function> function =
+                TValue<Function>::from_oop(call_cache.function);
+            enter_function_frame_from_positional_args(
+                fp, pc, code_object, function, first_arg_reg, n_args,
+                call_instr_len, call_cache.adaptation);
+
+            START(0);
+            COMPLETE();
+        }
 
         if(unlikely(!callable.is_ptr()))
         {
@@ -1624,19 +1646,6 @@ namespace cl
         }
 
         TValue<Function> function(callable);
-        FunctionCallInlineCache &call_cache =
-            code_object->function_call_caches[call_cache_idx];
-        if(likely(function_call_cache_matches(call_cache, function, n_args)))
-        {
-            int32_t first_arg_reg = prepare_method_call_argument_slots(
-                fp, receiver_reg, n_user_args, self);
-            enter_function_frame_from_positional_args(
-                fp, pc, code_object, function, first_arg_reg, n_args,
-                call_instr_len, call_cache.adaptation);
-
-            START(0);
-            COMPLETE();
-        }
         if(unlikely(!function.extract()->accepts_arity(n_args)))
         {
             MUSTTAIL return wrong_arity_error(ARGS);
