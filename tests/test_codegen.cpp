@@ -175,6 +175,21 @@ TEST(Codegen, function_defaults_use_create_function_with_defaults)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, function_varargs_parameter_layout)
+{
+    test::VmTestContext test_context;
+    CodeObject *module_code =
+        test_context.compile_file(L"def f(a, b=1, *args):\n"
+                                  L"    return args\n");
+    CodeObject *function_code =
+        module_code->constant_table[0].as_value().get_ptr<CodeObject>();
+
+    EXPECT_EQ(3, function_code->n_parameters);
+    EXPECT_EQ(2, function_code->n_positional_parameters);
+    EXPECT_TRUE(function_code->has_varargs());
+    EXPECT_EQ(5, function_code->get_highest_occupied_frame_offset());
+}
+
 TEST(Codegen, parameter_frame_offsets_are_padded_to_abi_alignment)
 {
     test::VmTestContext test_context;
