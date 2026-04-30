@@ -152,6 +152,7 @@ namespace cl
 
     const cl_wchar *string_as_wchar_t(TValue<String> s);
     BuiltinClassDefinition make_str_class(VirtualMachine *vm);
+    void install_str_class_methods(VirtualMachine *vm);
 
     static inline bool string_eq(TValue<String> a, TValue<String> b)
     {

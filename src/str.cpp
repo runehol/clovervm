@@ -1,6 +1,7 @@
 #include "str.h"
 #include "builtin_function.h"
 #include "class_object.h"
+#include "native_function.h"
 #include "thread_state.h"
 #include "virtual_machine.h"
 #include <iterator>
@@ -21,27 +22,26 @@ namespace cl
         }
     }
 
-    static Value builtin_str_str(const CallArguments &args)
+    static Value native_str_str(Value self)
     {
-        if(args.n_args != 1 || !can_convert_to<String>(args[0]))
+        if(!can_convert_to<String>(self))
         {
             throw std::runtime_error(
                 "TypeError: str.__str__ expects a str receiver");
         }
-        return args[0];
+        return self;
     }
 
-    static Value builtin_str_add(const CallArguments &args)
+    static Value native_str_add(Value left_value, Value right_value)
     {
-        if(args.n_args != 2 || !can_convert_to<String>(args[0]) ||
-           !can_convert_to<String>(args[1]))
+        if(!can_convert_to<String>(left_value) ||
+           !can_convert_to<String>(right_value))
         {
-            throw std::runtime_error(
-                "TypeError: str.__add__ expects two str arguments");
+            throw std::runtime_error("UnimplementedError");
         }
 
-        String *left = args[0].get_ptr<String>();
-        String *right = args[1].get_ptr<String>();
+        String *left = left_value.get_ptr<String>();
+        String *right = right_value.get_ptr<String>();
         std::wstring result(left->data, size_t(left->count.extract()));
         result.append(right->data, size_t(right->count.extract()));
         return active_thread()->make_object_value<String>(result);
@@ -51,21 +51,30 @@ namespace cl
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::String};
-        BuiltinClassMethod methods[] = {
-            BuiltinClassMethod{
-                vm->get_or_create_interned_string_value(L"__str__"),
-                vm->make_immortal_object_value<BuiltinFunction>(builtin_str_str,
-                                                                1, 1)},
-            BuiltinClassMethod{
-                vm->get_or_create_interned_string_value(L"__add__"),
-                vm->make_immortal_object_value<BuiltinFunction>(builtin_str_add,
-                                                                2, 2)},
-        };
-
         ClassObject *cls = ClassObject::make_bootstrap_builtin_class(
-            vm->get_or_create_interned_string_value(L"str"), 1, methods,
-            std::size(methods));
+            vm->get_or_create_interned_string_value(L"str"), 1, nullptr, 0);
         return builtin_class_definition(cls, native_layout_ids);
+    }
+
+    void install_str_class_methods(VirtualMachine *vm)
+    {
+        DescriptorFlags method_flags =
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+            descriptor_flag(DescriptorFlag::StableSlot);
+        ClassObject *cls = vm->str_class();
+        ShapeFlags class_shape_flags = cls->get_shape()->flags();
+        cls->set_shape(cls->get_shape()->clone_with_flags(
+            class_shape_flags & ~fixed_attribute_shape_flags()));
+        bool stored = cls->define_own_property(
+            vm->get_or_create_interned_string_value(L"__str__"),
+            make_native_function(vm, native_str_str), method_flags);
+        assert(stored);
+        stored = cls->define_own_property(
+            vm->get_or_create_interned_string_value(L"__add__"),
+            make_native_function(vm, native_str_add), method_flags);
+        assert(stored);
+        (void)stored;
+        cls->set_shape(cls->get_shape()->clone_with_flags(class_shape_flags));
     }
 
     uint64_t string_hash(TValue<String> s)

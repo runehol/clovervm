@@ -4,9 +4,11 @@
 #include "codegen.h"
 #include "compilation_unit.h"
 #include "dict.h"
+#include "function.h"
 #include "instance.h"
 #include "interpreter.h"
 #include "list.h"
+#include "native_function.h"
 #include "parser.h"
 #include "range_iterator.h"
 #include "scope.h"
@@ -96,6 +98,26 @@ static Value builtin_next_counter(const CallArguments &args)
         throw std::runtime_error("builtin_next_counter expected no arguments");
     }
     return Value::from_smi(g_next_counter++);
+}
+
+static Value native_zero() { return Value::from_smi(17); }
+
+static Value native_increment(Value value)
+{
+    if(!value.is_smi())
+    {
+        throw std::runtime_error("native_increment expected a smi");
+    }
+    return Value::from_smi(value.get_smi() + 1);
+}
+
+static Value native_add(Value left, Value right)
+{
+    if(!left.is_smi() || !right.is_smi())
+    {
+        throw std::runtime_error("native_add expected smi arguments");
+    }
+    return Value::from_smi(left.get_smi() + right.get_smi());
 }
 
 static void bind_global(test::VmTestContext &test_context,
@@ -490,6 +512,20 @@ TEST(Interpreter, string_literal_value)
     Value actual = test_context.run_file(L"\"abc\"\n");
 
     EXPECT_STREQ(L"abc", string_as_wchar_t(TValue<String>(actual)));
+}
+
+TEST(Interpreter, string_dunder_add_calls_native_function)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"\"ab\".__add__(\"cd\")\n");
+
+    ASSERT_TRUE(can_convert_to<String>(actual));
+    EXPECT_STREQ(L"abcd", string_as_wchar_t(TValue<String>(actual)));
+}
+
+TEST(Interpreter, string_dunder_add_wrong_type_reports_unimplemented)
+{
+    expect_runtime_error(L"\"ab\".__add__(3)\n", "UnimplementedError");
 }
 
 TEST(Interpreter, list_literal_returns_list_object)
@@ -1598,6 +1634,45 @@ TEST(Interpreter, call_builtin_function)
     EXPECT_EQ(Value::from_smi(11), actual);
 }
 
+TEST(Interpreter, call_native_zero_arg_function)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj = test_context.compile_file(L"native_zero()\n");
+
+    bind_global(test_context, code_obj, L"native_zero",
+                make_native_function(&test_context.vm(), native_zero));
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(17), actual);
+}
+
+TEST(Interpreter, call_native_one_arg_function)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj = test_context.compile_file(L"native_increment(41)\n");
+
+    bind_global(test_context, code_obj, L"native_increment",
+                make_native_function(&test_context.vm(), native_increment));
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(42), actual);
+}
+
+TEST(Interpreter, call_native_two_arg_function)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj = test_context.compile_file(L"native_add(20, 22)\n");
+
+    bind_global(test_context, code_obj, L"native_add",
+                make_native_function(&test_context.vm(), native_add));
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(42), actual);
+}
+
 TEST(Interpreter, builtin_scope_lookup)
 {
     test::VmTestContext test_context;
@@ -1733,8 +1808,8 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         test_context.vm().get_or_create_interned_string_value(L"__add__");
     Value str_method = str_class->get_own_property(dunder_str_name);
     Value add_method = str_class->get_own_property(dunder_add_name);
-    ASSERT_TRUE(can_convert_to<BuiltinFunction>(str_method));
-    ASSERT_TRUE(can_convert_to<BuiltinFunction>(add_method));
+    ASSERT_TRUE(can_convert_to<Function>(str_method));
+    ASSERT_TRUE(can_convert_to<Function>(add_method));
     EXPECT_EQ(-1, str_method.get_ptr<Object>()->refcount);
     EXPECT_EQ(-1, add_method.get_ptr<Object>()->refcount);
     EXPECT_FALSE(

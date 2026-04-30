@@ -118,6 +118,9 @@ namespace cl
 
         // function calls
         CallSimple,
+        CallNative0,
+        CallNative1,
+        CallNative2,
 
         // iteration
         GetIter,

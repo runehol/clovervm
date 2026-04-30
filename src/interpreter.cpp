@@ -1511,6 +1511,41 @@ namespace cl
         }
     }
 
+    static ALWAYSINLINE Value get_native_arg(Value *fp, CodeObject *code_object,
+                                             uint32_t arg_idx)
+    {
+        int32_t reg = int32_t(code_object->get_padded_n_parameters()) - 1 +
+                      FrameHeaderSizeAboveFp - int32_t(arg_idx);
+        return fp[reg];
+    }
+
+    static Value op_call_native0(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        accumulator = code_object->native_function_targets[target_idx].fixed0();
+        COMPLETE();
+    }
+
+    static Value op_call_native1(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        accumulator = code_object->native_function_targets[target_idx].fixed1(
+            get_native_arg(fp, code_object, 0));
+        COMPLETE();
+    }
+
+    static Value op_call_native2(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        accumulator = code_object->native_function_targets[target_idx].fixed2(
+            get_native_arg(fp, code_object, 0),
+            get_native_arg(fp, code_object, 1));
+        COMPLETE();
+    }
+
     static Value op_get_iter(PARAMS)
     {
         START(1);
@@ -1820,6 +1855,9 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::BuildClass, op_build_class);
 
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
+        SET_TABLE_ENTRY(Bytecode::CallNative0, op_call_native0);
+        SET_TABLE_ENTRY(Bytecode::CallNative1, op_call_native1);
+        SET_TABLE_ENTRY(Bytecode::CallNative2, op_call_native2);
         SET_TABLE_ENTRY(Bytecode::GetIter, op_get_iter);
         SET_TABLE_ENTRY(Bytecode::ForIter, op_for_iter);
         SET_TABLE_ENTRY(Bytecode::ForPrepRange1, op_for_prep_range1);

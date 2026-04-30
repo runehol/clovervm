@@ -13,6 +13,17 @@
 
 namespace cl
 {
+    using NativeFunction0 = Value (*)();
+    using NativeFunction1 = Value (*)(Value);
+    using NativeFunction2 = Value (*)(Value, Value);
+
+    union NativeFunctionTarget
+    {
+        NativeFunction0 fixed0;
+        NativeFunction1 fixed1;
+        NativeFunction2 fixed2;
+    };
+
     struct CompilationUnit;
     struct CodeObject;
     class ClassObject;
@@ -101,6 +112,7 @@ namespace cl
         std::vector<OwnedValue> constant_table;
         std::vector<AttributeReadInlineCache> attribute_read_caches;
         std::vector<AttributeWriteInlineCache> attribute_write_caches;
+        std::vector<NativeFunctionTarget> native_function_targets;
 
         struct OutgoingArgRelocation
         {
@@ -288,6 +300,23 @@ namespace cl
                                         first_arg_reg.slot_offset);
             emplace_back(source_offset, argc);
             return result;
+        }
+
+        uint32_t emit_opcode_native_target_idx(uint32_t source_offset,
+                                               Bytecode c, uint8_t target_idx)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            emplace_back(source_offset, target_idx);
+            return result;
+        }
+
+        uint32_t add_native_function_target(NativeFunctionTarget target)
+        {
+            uint32_t idx = native_function_targets.size();
+            native_function_targets.push_back(target);
+            assert(idx < 256);
+            return idx;
         }
 
         uint32_t emit_opcode_reg_constant_idx(uint32_t source_offset,
