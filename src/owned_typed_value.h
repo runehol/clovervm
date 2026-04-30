@@ -37,7 +37,7 @@ namespace cl
             {
                 if(value.as_value() != Value::None())
                 {
-                    incref_refcounted_ptr(value.as_value());
+                    incref_heap_ptr(value.as_value().as.ptr);
                 }
             }
             else
@@ -57,7 +57,7 @@ namespace cl
             {
                 if(value.as_value() != Value::None())
                 {
-                    decref_refcounted_ptr(value.as_value());
+                    decref_heap_ptr(value.as_value().as.ptr);
                 }
             }
             else
