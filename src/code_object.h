@@ -8,6 +8,7 @@
 #include "owned_typed_value.h"
 #include "scope.h"
 #include "value.h"
+#include <algorithm>
 #include <vector>
 
 namespace cl
@@ -16,6 +17,16 @@ namespace cl
     struct CodeObject;
     class ClassObject;
     class VirtualMachine;
+
+    struct OutgoingArgReg
+    {
+        explicit OutgoingArgReg(uint32_t _slot_offset)
+            : slot_offset(_slot_offset)
+        {
+        }
+
+        uint32_t slot_offset;
+    };
 
     static constexpr int32_t FrameHeaderSizeAboveFp = 2;
     static constexpr int32_t FrameHeaderSizeBelowFp = 2;
@@ -91,6 +102,13 @@ namespace cl
         std::vector<AttributeReadInlineCache> attribute_read_caches;
         std::vector<AttributeWriteInlineCache> attribute_write_caches;
 
+        struct OutgoingArgRelocation
+        {
+            uint32_t operand_offset;
+        };
+
+        std::vector<OutgoingArgRelocation> outgoing_arg_relocations;
+
         uint32_t get_n_registers() const
         {
             return n_parameters + n_temporaries + n_locals +
@@ -105,6 +123,13 @@ namespace cl
         uint32_t get_padded_n_ordinary_below_frame_slots() const
         {
             return round_up_to_abi_alignment(n_locals + n_temporaries);
+        }
+
+        uint32_t get_outgoing_arg_reg(uint32_t outgoing_slot_offset) const
+        {
+            return get_padded_n_parameters() + FrameHeaderSize +
+                   get_padded_n_ordinary_below_frame_slots() +
+                   outgoing_slot_offset;
         }
 
         int32_t get_highest_occupied_frame_offset() const
@@ -205,12 +230,35 @@ namespace cl
             return result;
         }
 
+        uint32_t emit_opcode_reg(uint32_t source_offset, Bytecode c,
+                                 OutgoingArgReg reg)
+        {
+            assert(c != Bytecode::Invalid);
+            emplace_back(source_offset, uint8_t(c));
+            uint32_t operand_offset = code.size();
+            emplace_back(source_offset, reg.slot_offset);
+            add_outgoing_arg_relocation(operand_offset, reg.slot_offset);
+            return operand_offset - 1;
+        }
+
         uint32_t emit_opcode_reg_range(uint32_t source_offset, Bytecode c,
                                        uint32_t reg, uint8_t n_regs)
         {
             assert(c != Bytecode::Invalid);
             uint32_t result = emplace_back(source_offset, uint8_t(c));
             emplace_back(source_offset, encode_reg(reg));
+            emplace_back(source_offset, n_regs);
+            return result;
+        }
+
+        uint32_t emit_opcode_reg_range(uint32_t source_offset, Bytecode c,
+                                       OutgoingArgReg reg, uint8_t n_regs)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            uint32_t operand_offset = code.size();
+            emplace_back(source_offset, reg.slot_offset);
+            add_outgoing_arg_relocation(operand_offset, reg.slot_offset);
             emplace_back(source_offset, n_regs);
             return result;
         }
@@ -260,6 +308,21 @@ namespace cl
             assert(c != Bytecode::Invalid);
             uint32_t result = emplace_back(source_offset, uint8_t(c));
             emplace_back(source_offset, encode_reg(reg));
+            emplace_back(source_offset, constant_idx);
+            emplace_back(source_offset, cache_idx);
+            emplace_back(source_offset, argc);
+            return result;
+        }
+
+        uint32_t emit_opcode_reg_constant_idx_cache_idx_argc(
+            uint32_t source_offset, Bytecode c, OutgoingArgReg reg,
+            uint8_t constant_idx, uint8_t cache_idx, uint8_t argc)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            uint32_t operand_offset = code.size();
+            emplace_back(source_offset, reg.slot_offset);
+            add_outgoing_arg_relocation(operand_offset, reg.slot_offset);
             emplace_back(source_offset, constant_idx);
             emplace_back(source_offset, cache_idx);
             emplace_back(source_offset, argc);
@@ -360,6 +423,49 @@ namespace cl
             code[pos + 1] = (v >> 8) & 0xff;
         }
 
+        void set_encoded_reg(uint32_t pos, uint32_t reg)
+        {
+            code[pos] = encode_reg(reg);
+        }
+
+        void finalize(uint32_t max_temporary_reg)
+        {
+            uint32_t local_scope_size = FrameHeaderSize;
+            if(local_scope != nullptr)
+            {
+                local_scope_size = get_local_scope_ptr()->size();
+                uint32_t named_local_and_header_slots =
+                    local_scope_size - get_padded_n_parameters();
+                assert(named_local_and_header_slots >= FrameHeaderSize);
+                n_locals = named_local_and_header_slots - FrameHeaderSize;
+            }
+            assert(max_temporary_reg >= local_scope_size);
+            n_temporaries = max_temporary_reg - local_scope_size;
+            patch_outgoing_arg_relocations();
+        }
+
+    private:
+        void patch_outgoing_arg_relocations()
+        {
+            for(const OutgoingArgRelocation &reloc: outgoing_arg_relocations)
+            {
+                set_encoded_reg(
+                    reloc.operand_offset,
+                    get_outgoing_arg_reg(code[reloc.operand_offset]));
+            }
+        }
+
+        void add_outgoing_arg_relocation(uint32_t operand_offset,
+                                         uint32_t outgoing_slot_offset)
+        {
+            assert(outgoing_slot_offset < 256);
+            outgoing_arg_relocations.push_back({operand_offset});
+            n_outgoing_call_slots =
+                std::max(n_outgoing_call_slots,
+                         round_up_to_abi_alignment(outgoing_slot_offset + 1));
+        }
+
+    public:
         CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(CodeObject, Object, 3);
     };
 

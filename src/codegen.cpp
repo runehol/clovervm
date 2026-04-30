@@ -103,6 +103,7 @@ namespace cl
             code_obj = make_code_obj(Mode::Module);
             codegen_node(av.root_node, Mode::Module);
             code_obj->emit_opcode(0, Bytecode::Halt);
+            code_obj->finalize(_max_temporary_reg);
             return incref(code_obj);
         }
 
@@ -247,22 +248,6 @@ namespace cl
         static constexpr AstKind NumericalConstant =
             AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER);
 
-        void finalize_code_object_register_counts(CodeObject *target) const
-        {
-            uint32_t local_scope_size = 0;
-            if(target->local_scope != nullptr)
-            {
-                local_scope_size = target->get_local_scope_ptr()->size();
-            }
-
-            uint32_t named_local_and_header_slots =
-                local_scope_size - target->get_padded_n_parameters();
-            assert(named_local_and_header_slots >= FrameHeaderSize);
-            target->n_locals = named_local_and_header_slots - FrameHeaderSize;
-            assert(_max_temporary_reg >= local_scope_size);
-            target->n_temporaries = _max_temporary_reg - local_scope_size;
-        }
-
         void reserve_parameter_padding_and_frame_header()
         {
             uint32_t n_parameter_padding =
@@ -395,7 +380,7 @@ namespace cl
                 // have a return statement
                 code_obj->emit_opcode(source_offset, Bytecode::LdaNone);
                 code_obj->emit_opcode(source_offset, Bytecode::Return);
-                finalize_code_object_register_counts(code_obj);
+                code_obj->finalize(_max_temporary_reg);
             }
             code_obj = outer_obj;
             _temporary_reg = outer_temporary_reg;
@@ -437,7 +422,7 @@ namespace cl
 
                 codegen_node(body_idx, Mode::Class);
                 code_obj->emit_opcode(source_offset, Bytecode::BuildClass);
-                finalize_code_object_register_counts(code_obj);
+                code_obj->finalize(_max_temporary_reg);
             }
             code_obj = outer_obj;
             _temporary_reg = outer_temporary_reg;
@@ -497,41 +482,38 @@ namespace cl
                AstNodeKind::EXPRESSION_ATTRIBUTE)
             {
                 AstChildren method_children = av.children[children[0]];
-                TemporaryReg regs(this, 1 + args.size());
                 uint8_t constant_idx =
                     code_obj->allocate_constant(av.constants[children[0]]);
                 codegen_node(method_children[0], mode);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star, regs);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          OutgoingArgReg(0));
 
                 for(size_t i = 0; i < args.size(); ++i)
                 {
                     codegen_node(args[i], mode);
                     code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              regs + 1 + i);
+                                              OutgoingArgReg(1 + i));
                 }
                 uint8_t cache_idx = code_obj->allocate_attribute_read_cache();
                 code_obj->emit_opcode_reg_constant_idx_cache_idx_argc(
-                    source_offset, Bytecode::CallMethodAttr, regs, constant_idx,
-                    cache_idx, args.size());
+                    source_offset, Bytecode::CallMethodAttr, OutgoingArgReg(0),
+                    constant_idx, cache_idx, args.size());
                 return;
             }
 
-            TemporaryReg regs(this,
-                              1 + args.size());  // a register for the function
-                                                 // itself and all arguments
-
             // function itself
             codegen_node(children[0], mode);
-            code_obj->emit_opcode_reg(source_offset, Bytecode::Star, regs + 0);
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                      OutgoingArgReg(0));
 
             for(size_t i = 0; i < args.size(); ++i)
             {
                 codegen_node(args[i], mode);
                 code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          regs + 1 + i);
+                                          OutgoingArgReg(1 + i));
             }
             code_obj->emit_opcode_reg_range(source_offset, Bytecode::CallSimple,
-                                            regs, args.size());
+                                            OutgoingArgReg(0), args.size());
         }
 
         void codegen_list_literal(int32_t node_idx, Mode mode)

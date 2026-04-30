@@ -146,76 +146,33 @@ So:
 - the outgoing call area is below all ordinary locals and temporaries
 - larger logical register numbers move downward in memory
 
-## How Codegen Lays Out a Call
+## Call Argument Layout
 
 ### Simple calls
 
-For a direct call like `f(x, y)`, codegen emits:
+For a direct call like `f(x, y)`, the caller prepares one contiguous outgoing
+span:
 
-1. the callable into a temporary base register
-2. each argument into the next registers in sequence
-3. `CallSimple base, n_args`
-
-The lowering is in `codegen_function_call` in [src/codegen.cpp](../src/codegen.cpp):
-
-```cpp
-TemporaryReg regs(this, 1 + args.size());
-
-codegen_node(children[0], mode);
-code_obj->emit_opcode_reg(source_offset, Bytecode::Star, regs + 0);
-
-for(size_t i = 0; i < args.size(); ++i)
-{
-    codegen_node(args[i], mode);
-    code_obj->emit_opcode_reg(source_offset, Bytecode::Star, regs + 1 + i);
-}
-code_obj->emit_opcode_reg_range(source_offset, Bytecode::CallSimple,
-                                regs, args.size());
-```
-
-This means the caller's register window is:
-
-```text
-higher addresses
-
-    callable
-    arg0
-    arg1
-    ...
-
-lower addresses
-```
+- `a0` is the callable
+- `a1` is the first user argument
+- `a2` is the second user argument
+- and so on
 
 ### Method calls
 
-For direct method-call syntax such as `obj.method(x)`, codegen emits the fused
-`CallMethodAttr` opcode. The receiver and explicit arguments occupy one
-contiguous register span:
+For direct method-call syntax such as `obj.method(x)`, the receiver and
+explicit arguments occupy one contiguous outgoing span:
 
 - receiver
 - user argument 0
 - user argument 1
 - ...
 
-in [src/codegen.cpp](../src/codegen.cpp):
-
-```cpp
-TemporaryReg regs(this, 1 + args.size());
-...
-code_obj->emit_opcode_reg(source_offset, Bytecode::Star, regs);
-...
-code_obj->emit_opcode_reg_constant_idx_cache_idx_argc(
-    source_offset, Bytecode::CallMethodAttr, regs, constant_idx,
-    cache_idx, args.size());
-```
-
 At runtime, `CallMethodAttr` resolves the attribute in call context. If the
 cached or resolved plan binds the receiver as `self`, the handler writes `self`
 into the receiver register and uses that register as the first argument. If no
 implicit receiver is needed, the handler copies the explicit arguments up by
-one slot so the first explicit argument occupies the receiver register. This
-keeps method-call argument preparation in a canonical shape before the stack
-ABI grows a distinct outgoing argument area.
+one slot so the first explicit argument occupies the receiver register.
 
 When `self` is inserted, the callee sees:
 

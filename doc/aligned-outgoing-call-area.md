@@ -335,7 +335,7 @@ The migration should be staged so each patch establishes one visible invariant.
    `doc/function-calling-convention.md` with the `pN` / `rN` / `aN` frame
    regions.
 
-6. Add codegen relocations for explicit calls.
+6. Done: add codegen relocations for explicit calls.
 
    Record patch locations for register operands used in call argument buildup.
    After final ordinary temporary layout is known, patch those operands into the
