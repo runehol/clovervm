@@ -22,6 +22,16 @@ namespace cl
     static constexpr int32_t FrameHeaderSize =
         FrameHeaderSizeAboveFp + FrameHeaderSizeBelowFp;
 
+    constexpr uint32_t round_up_to_abi_alignment(uint32_t value)
+    {
+        return (value + 1u) & ~1u;
+    }
+
+    static_assert(round_up_to_abi_alignment(0) == 0);
+    static_assert(round_up_to_abi_alignment(1) == 2);
+    static_assert(round_up_to_abi_alignment(2) == 2);
+    static_assert(round_up_to_abi_alignment(3) == 4);
+
     class JumpTarget
     {
     public:
