@@ -303,6 +303,31 @@ namespace cl
                    fun.extract()->max_positional_arity;
     }
 
+    static ALWAYSINLINE FunctionCallAdaptation
+    classify_function_call_adaptation(TValue<Function> fun)
+    {
+        if(fun.extract()->has_varargs())
+        {
+            return FunctionCallAdaptation::Varargs;
+        }
+        if(is_fixed_arity_function(fun))
+        {
+            return FunctionCallAdaptation::FixedArity;
+        }
+        return FunctionCallAdaptation::Defaults;
+    }
+
+    static ALWAYSINLINE void
+    populate_function_call_cache(FunctionCallInlineCache &cache,
+                                 TValue<Function> fun, uint8_t n_args,
+                                 FunctionCallAdaptation adaptation)
+    {
+        cache.function = fun.extract();
+        cache.code_object = fun.extract()->code_object.extract();
+        cache.n_args = n_args;
+        cache.adaptation = adaptation;
+    }
+
     static ALWAYSINLINE void
     initialize_missing_default_arguments(Value *new_fp, TValue<Function> fun,
                                          uint32_t n_args)
@@ -362,17 +387,17 @@ namespace cl
     static ALWAYSINLINE void enter_function_frame_from_positional_args(
         Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
         TValue<Function> fun, int32_t first_arg_reg, uint32_t n_args,
-        uint32_t instr_len)
+        uint32_t instr_len, FunctionCallAdaptation adaptation)
     {
         Value *new_fp =
             new_frame_pointer_from_first_arg(fp, fun, first_arg_reg);
-        if(likely(is_fixed_arity_function(fun)))
+        if(likely(adaptation == FunctionCallAdaptation::FixedArity))
         {
             enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                            instr_len);
             return;
         }
-        if(!fun.extract()->has_varargs())
+        if(adaptation == FunctionCallAdaptation::Defaults)
         {
             initialize_missing_default_arguments(new_fp, fun, n_args);
             enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
@@ -380,6 +405,7 @@ namespace cl
             return;
         }
 
+        assert(adaptation == FunctionCallAdaptation::Varargs);
         initialize_missing_default_arguments(new_fp, fun, n_args);
         initialize_varargs_argument(new_fp, fun, n_args);
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
@@ -1371,10 +1397,11 @@ namespace cl
 
     NOINLINE static Value op_call_simple_slow(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 4;
+        static constexpr uint32_t call_instr_len = 5;
         int8_t callable_reg = pc[1];
         int8_t first_arg_reg = pc[2];
         uint8_t n_args = pc[3];
+        uint8_t cache_idx = pc[4];
         Value fun = fp[callable_reg];
 
         if(unlikely(!fun.is_ptr()))
@@ -1427,9 +1454,14 @@ namespace cl
         {
             MUSTTAIL return wrong_arity_error(ARGS);
         }
+        FunctionCallAdaptation adaptation =
+            classify_function_call_adaptation(function);
+        populate_function_call_cache(
+            code_object->function_call_caches[cache_idx], function, n_args,
+            adaptation);
         enter_function_frame_from_positional_args(fp, pc, code_object, function,
                                                   first_arg_reg, n_args,
-                                                  call_instr_len);
+                                                  call_instr_len, adaptation);
 
         START(0);
         COMPLETE();
@@ -1437,10 +1469,11 @@ namespace cl
 
     static Value op_call_simple(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 4;
+        static constexpr uint32_t call_instr_len = 5;
         int8_t callable_reg = pc[1];
         int8_t first_arg_reg = pc[2];
         uint8_t n_args = pc[3];
+        uint8_t cache_idx = pc[4];
         Value fun = fp[callable_reg];
 
         if(unlikely(!fun.is_ptr()))
@@ -1455,13 +1488,28 @@ namespace cl
         }
 
         TValue<Function> function(fun);
+        FunctionCallInlineCache &cache =
+            code_object->function_call_caches[cache_idx];
+        if(likely(cache.function == function.extract() &&
+                  cache.n_args == n_args))
+        {
+            enter_function_frame_from_positional_args(
+                fp, pc, code_object, function, first_arg_reg, n_args,
+                call_instr_len, cache.adaptation);
+
+            START(0);
+            COMPLETE();
+        }
         if(unlikely(!function.extract()->accepts_arity(n_args)))
         {
             MUSTTAIL return wrong_arity_error(ARGS);
         }
+        FunctionCallAdaptation adaptation =
+            classify_function_call_adaptation(function);
+        populate_function_call_cache(cache, function, n_args, adaptation);
         enter_function_frame_from_positional_args(fp, pc, code_object, function,
                                                   first_arg_reg, n_args,
-                                                  call_instr_len);
+                                                  call_instr_len, adaptation);
 
         START(0);
         COMPLETE();
@@ -1551,9 +1599,11 @@ namespace cl
         }
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
+        FunctionCallAdaptation adaptation =
+            classify_function_call_adaptation(function);
         enter_function_frame_from_positional_args(fp, pc, code_object, function,
                                                   first_arg_reg, n_args,
-                                                  call_instr_len);
+                                                  call_instr_len, adaptation);
 
         {
             START(0);
@@ -1606,9 +1656,11 @@ namespace cl
         }
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
+        FunctionCallAdaptation adaptation =
+            classify_function_call_adaptation(function);
         enter_function_frame_from_positional_args(fp, pc, code_object, function,
                                                   first_arg_reg, n_args,
-                                                  call_instr_len);
+                                                  call_instr_len, adaptation);
 
         {
             START(0);

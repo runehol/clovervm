@@ -52,8 +52,24 @@ namespace cl
 
     struct CompilationUnit;
     struct CodeObject;
+    class Function;
     class ClassObject;
     class VirtualMachine;
+
+    enum class FunctionCallAdaptation : uint8_t
+    {
+        FixedArity,
+        Defaults,
+        Varargs,
+    };
+
+    struct FunctionCallInlineCache
+    {
+        Function *function = nullptr;
+        CodeObject *code_object = nullptr;
+        uint8_t n_args = 0;
+        FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
+    };
 
     struct OutgoingArgReg
     {
@@ -146,6 +162,7 @@ namespace cl
         std::vector<OwnedValue> constant_table;
         std::vector<AttributeReadInlineCache> attribute_read_caches;
         std::vector<AttributeWriteInlineCache> attribute_write_caches;
+        std::vector<FunctionCallInlineCache> function_call_caches;
         std::vector<NativeFunctionTarget> native_function_targets;
 
         struct OutgoingArgRelocation
@@ -327,12 +344,14 @@ namespace cl
         {
             uint32_t result =
                 emplace_back(source_offset, uint8_t(Bytecode::CallSimple));
+            uint8_t cache_idx = allocate_function_call_cache();
             emplace_back(source_offset, encode_reg(callable_reg));
             uint32_t first_arg_operand_offset = code.size();
             emplace_back(source_offset, first_arg_reg.slot_offset);
             add_outgoing_arg_relocation(first_arg_operand_offset,
                                         first_arg_reg.slot_offset);
             emplace_back(source_offset, argc);
+            emplace_back(source_offset, cache_idx);
             return result;
         }
 
@@ -503,6 +522,14 @@ namespace cl
         {
             uint32_t idx = attribute_write_caches.size();
             attribute_write_caches.emplace_back();
+            assert(idx < 256);
+            return idx;
+        }
+
+        uint32_t allocate_function_call_cache()
+        {
+            uint32_t idx = function_call_caches.size();
+            function_call_caches.emplace_back();
             assert(idx < 256);
             return idx;
         }

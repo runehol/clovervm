@@ -311,6 +311,13 @@ template <> struct fmt::formatter<cl::CodeObject>
     }
 
     template <typename Out>
+    void disassemble_function_call_cache(const cl::CodeObject &code_obj,
+                                         Out &out, uint32_t pc) const
+    {
+        format_to(out, "call_ic[{}]", code_obj.code[pc]);
+    }
+
+    template <typename Out>
     void disassemble_smi8(const cl::CodeObject &code_obj, Out &out,
                           uint32_t pc) const
     {
@@ -515,6 +522,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                     int8_t callable_reg = code_obj.code[pc++];
                     int8_t first_arg_reg = code_obj.code[pc++];
                     uint8_t n_args = code_obj.code[pc++];
+                    uint32_t cache_idx_offset = pc++;
                     print_reg(out, code_obj, callable_reg);
                     format_to(out, ", ");
                     print_reg(out, code_obj, first_arg_reg);
@@ -526,6 +534,9 @@ template <> struct fmt::formatter<cl::CodeObject>
                     {
                         print_reg(out, code_obj, first_arg_reg - n_args + 1);
                     }
+                    format_to(out, ", ");
+                    disassemble_function_call_cache(code_obj, out,
+                                                    cache_idx_offset);
                 }
                 break;
 
