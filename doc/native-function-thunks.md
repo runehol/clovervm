@@ -70,7 +70,7 @@ calling conventions.
 On entry, the thunk sees a normal CloverVM frame:
 
 ```text
-a0, a1, ...       arguments
+p0, p1, ...       parameters
 fp[0]             caller fp
 fp[-1]            tagged caller return target
 fp[-2]            caller return pc
@@ -80,7 +80,7 @@ accumulator       scratch/result channel
 The `NativeCall` opcode adapts those frame arguments to the target native
 signature. Depending on the thunk kind, that may include:
 
-- reading fixed positional arguments directly from `a0`, `a1`, ...
+- reading fixed positional arguments directly from `p0`, `p1`, ...
 - building a temporary vectorcall argument array
 - packing positional arguments into a tuple for legacy APIs
 - building or passing keyword metadata

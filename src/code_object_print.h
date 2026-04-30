@@ -255,7 +255,7 @@ template <> struct fmt::formatter<cl::CodeObject>
         {
             uint32_t reg = code_obj.n_parameters - 1 +
                            cl::FrameHeaderSizeAboveFp - encoded_reg;
-            format_to(out, "a{}", reg);
+            format_to(out, "p{}", reg);
         }
         else if(encoded_reg < 0)
         {

@@ -77,7 +77,7 @@ Codegen reserves the header slots in function and class scopes before collecting
 
 The bytecode printer exposes the register naming convention in [src/code_object_print.h](../src/code_object_print.h):
 
-- `a0`, `a1`, ... are argument/parameter registers
+- `p0`, `p1`, ... are parameter registers
 - `r0`, `r1`, ... are local/temporary registers
 
 The encoding rule is in [src/code_object.h](../src/code_object.h):
@@ -94,11 +94,11 @@ Combined with interpreter access through `fp[reg]`, this gives the physical layo
 ```text
 higher addresses
 
-    fp[n_parameters + 1]   a0
-    fp[n_parameters + 0]   a1
+    fp[n_parameters + 1]   p0
+    fp[n_parameters + 0]   p1
     ...
-    fp[3]                  a(n-2)
-    fp[2]                  a(n-1)
+    fp[3]                  p(n-2)
+    fp[2]                  p(n-1)
     fp[1]                  compiled return PC (when JITed)
 fp->fp[0]                  previous frame pointer
     fp[-1]                 interpreter return code object
@@ -113,7 +113,7 @@ lower addresses
 
 So:
 
-- arguments/parameters are above `fp`
+- parameters are above `fp`
 - locals/temporaries are below `fp`
 - larger logical register numbers move downward in memory
 
@@ -188,8 +188,8 @@ the receiver and becomes the first argument register.
 
 When `self` is inserted, the callee sees:
 
-- `a0 = self`
-- `a1 = first user arg`
+- `p0 = self`
+- `p1 = first user arg`
 - ...
 
 ## Function Entry
@@ -243,9 +243,9 @@ stack grows downward
         |
         v
 
-    fp[4]   a0   first parameter
-    fp[3]   a1
-    fp[2]   a2   last parameter
+    fp[4]   p0   first parameter
+    fp[3]   p1
+    fp[2]   p2   last parameter
     fp[1]        compiled return PC (when jitted)
 fp  fp[0]        previous frame pointer
     fp[-1]       interpreter return code object
@@ -269,8 +269,8 @@ Before call in caller frame:
 
 After `new_fp = fp + reg - n_args - 2`:
 
-    new_fp[3]  a0 = x
-    new_fp[2]  a1 = y
+    new_fp[3]  p0 = x
+    new_fp[2]  p1 = y
     new_fp[1]      compiled return PC
     new_fp[0]      previous fp
     new_fp[-1]     interpreter return code object
@@ -314,7 +314,7 @@ Top-level module code is not expected to execute `Return`; the parser/codegen re
 If you are reasoning about CloverVM calls, the safest mental model is:
 
 1. Codegen lays out `callable, arg0, arg1, ...` in a contiguous downward-growing register window.
-2. The interpreter moves `fp` so those argument cells become `a0`, `a1`, ...
+2. The interpreter moves `fp` so those argument cells become `p0`, `p1`, ...
 3. `fp[0]`, `fp[-1]`, and `fp[-2]` hold the caller state needed by `Return`.
 4. Locals/temporaries for the callee start at `r0 = fp[-3]`.
 5. The accumulator carries the return value across the `Return` instruction.
