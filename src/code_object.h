@@ -42,12 +42,14 @@ namespace cl
     using NativeFunction0 = Value (*)();
     using NativeFunction1 = Value (*)(Value);
     using NativeFunction2 = Value (*)(Value, Value);
+    using NativeFunction3 = Value (*)(Value, Value, Value);
 
     union NativeFunctionTarget
     {
         NativeFunction0 fixed0;
         NativeFunction1 fixed1;
         NativeFunction2 fixed2;
+        NativeFunction3 fixed3;
     };
 
     struct CompilationUnit;

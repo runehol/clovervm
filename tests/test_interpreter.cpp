@@ -1800,7 +1800,7 @@ TEST(Interpreter, builtin_scope_lookup)
     ASSERT_GE(slot_idx, 0);
 
     Value actual = test_context.thread()->run(code_obj);
-    EXPECT_EQ(NativeLayoutId::BuiltinFunction,
+    EXPECT_EQ(NativeLayoutId::Function,
               actual.get_ptr<Object>()->native_layout_id());
     EXPECT_EQ(actual, module_scope->get_by_slot_index_fastpath_only(slot_idx));
 }

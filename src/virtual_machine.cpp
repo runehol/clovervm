@@ -5,6 +5,7 @@
 #include "function.h"
 #include "instance.h"
 #include "list.h"
+#include "native_function.h"
 #include "range_iterator.h"
 #include "scope.h"
 #include "thread_state.h"
@@ -27,48 +28,47 @@ namespace cl
         return Value::from_oop(tuple);
     }
 
-    static TValue<CLInt> require_range_integer_arg(const CallArguments &args,
-                                                   uint32_t index)
+    static TValue<CLInt> require_range_integer_arg(Value arg)
     {
-        if(!args[index].is_integer())
+        if(!arg.is_integer())
         {
             throw std::runtime_error(
                 "TypeError: range() arguments must be integers");
         }
-        return TValue<CLInt>(args[index]);
+        return TValue<CLInt>(arg);
     }
 
-    static Value builtin_range(const CallArguments &args)
+    static Value builtin_range(Value start_arg, Value end_arg, Value step_arg)
     {
-        Value start = Value::from_smi(0);
-        Value stop = Value::None();
-        Value step = Value::from_smi(1);
-
-        switch(args.n_args)
+        Value start;
+        Value stop;
+        Value step;
+        if(end_arg == Value::None())
         {
-            case 1:
-                stop = require_range_integer_arg(args, 0);
-                break;
+            start = Value::from_smi(0);
+            stop = start_arg;
+        }
+        else
+        {
+            start = start_arg;
+            stop = end_arg;
+        }
+        if(step_arg == Value::None())
+        {
+            step = Value::from_smi(1);
+        }
+        else
+        {
+            step = step_arg;
+        }
 
-            case 2:
-                start = require_range_integer_arg(args, 0);
-                stop = require_range_integer_arg(args, 1);
-                break;
-
-            case 3:
-                start = require_range_integer_arg(args, 0);
-                stop = require_range_integer_arg(args, 1);
-                step = require_range_integer_arg(args, 2);
-                if(step.get_smi() == 0)
-                {
-                    throw std::runtime_error(
-                        "ValueError: range() arg 3 must not be zero");
-                }
-                break;
-
-            default:
-                throw std::runtime_error(
-                    "TypeError: wrong number of arguments");
+        start = require_range_integer_arg(start);
+        stop = require_range_integer_arg(stop);
+        step = require_range_integer_arg(step);
+        if(step.get_smi() == 0)
+        {
+            throw std::runtime_error(
+                "ValueError: range() arg 3 must not be zero");
         }
 
         return make_object_value<RangeIterator>(
@@ -240,9 +240,11 @@ namespace cl
 
         TValue<String> range_name =
             get_or_create_interned_string_value(L"range");
+        TValue<Tuple> range_defaults = make_object_value<Tuple>(2);
+        range_defaults.extract()->initialize_item_unchecked(0, Value::None());
+        range_defaults.extract()->initialize_item_unchecked(1, Value::None());
         range_builtin =
-            refcounted_global_heap.make_global_internal_value<BuiltinFunction>(
-                builtin_function_class(), builtin_range, 1, 3);
+            make_native_function(this, builtin_range, range_defaults);
         builtin_scope.extract()->set_by_name(range_name, range_builtin);
     }
 

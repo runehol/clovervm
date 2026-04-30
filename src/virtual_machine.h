@@ -62,10 +62,7 @@ namespace cl
         }
 
         HeapPtr<Scope> get_builtin_scope() const { return builtin_scope; }
-        TValue<BuiltinFunction> get_range_builtin() const
-        {
-            return range_builtin;
-        }
+        Value get_range_builtin() const { return range_builtin; }
 
         ClassObject *class_for_native_layout(NativeLayoutId id) const
         {
@@ -170,7 +167,7 @@ namespace cl
             {};
         std::vector<ClassObject *> builtin_classes;
         OwnedHeapPtr<Scope> builtin_scope;
-        OwnedTValue<BuiltinFunction> range_builtin;
+        OwnedValue range_builtin;
     };
 
 }  // namespace cl

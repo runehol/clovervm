@@ -1739,6 +1739,17 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_call_native3(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        accumulator = code_object->native_function_targets[target_idx].fixed3(
+            get_native_arg(fp, code_object, 0),
+            get_native_arg(fp, code_object, 1),
+            get_native_arg(fp, code_object, 2));
+        COMPLETE();
+    }
+
     static Value op_get_iter(PARAMS)
     {
         START(1);
@@ -2053,6 +2064,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CallNative0, op_call_native0);
         SET_TABLE_ENTRY(Bytecode::CallNative1, op_call_native1);
         SET_TABLE_ENTRY(Bytecode::CallNative2, op_call_native2);
+        SET_TABLE_ENTRY(Bytecode::CallNative3, op_call_native3);
         SET_TABLE_ENTRY(Bytecode::GetIter, op_get_iter);
         SET_TABLE_ENTRY(Bytecode::ForIter, op_for_iter);
         SET_TABLE_ENTRY(Bytecode::ForPrepRange1, op_for_prep_range1);

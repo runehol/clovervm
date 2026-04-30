@@ -204,6 +204,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "CallNative1");
             case cl::Bytecode::CallNative2:
                 return format_to(out, "CallNative2");
+            case cl::Bytecode::CallNative3:
+                return format_to(out, "CallNative3");
             case cl::Bytecode::GetIter:
                 return format_to(out, "GetIter");
             case cl::Bytecode::ForIter:
@@ -545,6 +547,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::CallNative0:
             case cl::Bytecode::CallNative1:
             case cl::Bytecode::CallNative2:
+            case cl::Bytecode::CallNative3:
                 format_to(out, " {}", code_obj.code[pc++]);
                 break;
 

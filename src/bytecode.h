@@ -121,6 +121,7 @@ namespace cl
         CallNative0,
         CallNative1,
         CallNative2,
+        CallNative3,
 
         // iteration
         GetIter,
