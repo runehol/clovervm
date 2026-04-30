@@ -379,10 +379,11 @@ TEST(Codegen, direct_method_call_uses_callmethodattr)
                            "    2 Star a0\n"
                            "    4 Ldar p1\n"
                            "    6 Star a1\n"
-                           "    8 CallMethodAttr a0, c[0], read_ic[0], 1\n"
-                           "   13 Return\n"
-                           "   14 LdaNone\n"
-                           "   15 Return\n"
+                           "    8 CallMethodAttr a0, c[0], read_ic[0], "
+                           "call_ic[0], 1\n"
+                           "   14 Return\n"
+                           "   15 LdaNone\n"
+                           "   16 Return\n"
                            "Constant 0: \n"
                            "\n";
     std::string actual = bytecode_str_from_file(test_case);

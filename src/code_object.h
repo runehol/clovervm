@@ -67,7 +67,7 @@ namespace cl
     {
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
-        uint8_t n_args = 0;
+        uint32_t n_args = 0;
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
     };
 
@@ -412,20 +412,23 @@ namespace cl
 
         uint32_t emit_opcode_reg_constant_idx_cache_idx_argc(
             uint32_t source_offset, Bytecode c, uint32_t reg,
-            uint8_t constant_idx, uint8_t cache_idx, uint8_t argc)
+            uint8_t constant_idx, uint8_t read_cache_idx,
+            uint8_t call_cache_idx, uint8_t argc)
         {
             assert(c != Bytecode::Invalid);
             uint32_t result = emplace_back(source_offset, uint8_t(c));
             emplace_back(source_offset, encode_reg(reg));
             emplace_back(source_offset, constant_idx);
-            emplace_back(source_offset, cache_idx);
+            emplace_back(source_offset, read_cache_idx);
+            emplace_back(source_offset, call_cache_idx);
             emplace_back(source_offset, argc);
             return result;
         }
 
         uint32_t emit_opcode_reg_constant_idx_cache_idx_argc(
             uint32_t source_offset, Bytecode c, OutgoingArgReg reg,
-            uint8_t constant_idx, uint8_t cache_idx, uint8_t argc)
+            uint8_t constant_idx, uint8_t read_cache_idx,
+            uint8_t call_cache_idx, uint8_t argc)
         {
             assert(c != Bytecode::Invalid);
             uint32_t result = emplace_back(source_offset, uint8_t(c));
@@ -433,7 +436,8 @@ namespace cl
             emplace_back(source_offset, reg.slot_offset);
             add_outgoing_arg_relocation(operand_offset, reg.slot_offset);
             emplace_back(source_offset, constant_idx);
-            emplace_back(source_offset, cache_idx);
+            emplace_back(source_offset, read_cache_idx);
+            emplace_back(source_offset, call_cache_idx);
             emplace_back(source_offset, argc);
             return result;
         }

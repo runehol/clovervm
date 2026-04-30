@@ -319,13 +319,20 @@ namespace cl
 
     static ALWAYSINLINE void
     populate_function_call_cache(FunctionCallInlineCache &cache,
-                                 TValue<Function> fun, uint8_t n_args,
+                                 TValue<Function> fun, uint32_t n_args,
                                  FunctionCallAdaptation adaptation)
     {
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
         cache.n_args = n_args;
         cache.adaptation = adaptation;
+    }
+
+    static ALWAYSINLINE bool
+    function_call_cache_matches(const FunctionCallInlineCache &cache,
+                                TValue<Function> fun, uint32_t n_args)
+    {
+        return cache.function == fun.extract() && cache.n_args == n_args;
     }
 
     static ALWAYSINLINE void
@@ -1490,8 +1497,7 @@ namespace cl
         TValue<Function> function(fun);
         FunctionCallInlineCache &cache =
             code_object->function_call_caches[cache_idx];
-        if(likely(cache.function == function.extract() &&
-                  cache.n_args == n_args))
+        if(likely(function_call_cache_matches(cache, function, n_args)))
         {
             enter_function_frame_from_positional_args(
                 fp, pc, code_object, function, first_arg_reg, n_args,
@@ -1517,17 +1523,18 @@ namespace cl
 
     NOINLINE static Value op_call_method_attr_slow(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 5;
+        static constexpr uint32_t call_instr_len = 6;
         int32_t receiver_reg = int8_t(pc[1]);
         uint8_t const_offset = pc[2];
-        uint8_t cache_idx = pc[3];
-        uint32_t n_user_args = uint8_t(pc[4]);
+        uint8_t read_cache_idx = pc[3];
+        uint8_t call_cache_idx = pc[4];
+        uint32_t n_user_args = uint8_t(pc[5]);
         Value receiver = fp[receiver_reg];
         TValue<String> attr_name(
             code_object->constant_table[const_offset].as_value());
 
         AttributeReadInlineCache &cache =
-            code_object->attribute_read_caches[cache_idx];
+            code_object->attribute_read_caches[read_cache_idx];
         Value callable;
         Value self;
         MethodCallTargetStatus target_status;
@@ -1593,6 +1600,19 @@ namespace cl
         }
 
         TValue<Function> function(callable);
+        FunctionCallInlineCache &call_cache =
+            code_object->function_call_caches[call_cache_idx];
+        if(function_call_cache_matches(call_cache, function, n_args))
+        {
+            int32_t first_arg_reg = prepare_method_call_argument_slots(
+                fp, receiver_reg, n_user_args, self);
+            enter_function_frame_from_positional_args(
+                fp, pc, code_object, function, first_arg_reg, n_args,
+                call_instr_len, call_cache.adaptation);
+
+            START(0);
+            COMPLETE();
+        }
         if(unlikely(!function.extract()->accepts_arity(n_args)))
         {
             MUSTTAIL return wrong_arity_error(ARGS);
@@ -1601,6 +1621,7 @@ namespace cl
             fp, receiver_reg, n_user_args, self);
         FunctionCallAdaptation adaptation =
             classify_function_call_adaptation(function);
+        populate_function_call_cache(call_cache, function, n_args, adaptation);
         enter_function_frame_from_positional_args(fp, pc, code_object, function,
                                                   first_arg_reg, n_args,
                                                   call_instr_len, adaptation);
@@ -1613,13 +1634,14 @@ namespace cl
 
     static Value op_call_method_attr(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 5;
+        static constexpr uint32_t call_instr_len = 6;
         int32_t receiver_reg = int8_t(pc[1]);
-        uint8_t cache_idx = pc[3];
-        uint32_t n_user_args = uint8_t(pc[4]);
+        uint8_t read_cache_idx = pc[3];
+        uint8_t call_cache_idx = pc[4];
+        uint32_t n_user_args = uint8_t(pc[5]);
         Value receiver = fp[receiver_reg];
         AttributeReadInlineCache &cache =
-            code_object->attribute_read_caches[cache_idx];
+            code_object->attribute_read_caches[read_cache_idx];
         if(unlikely(!cache.matches(receiver)))
         {
             MUSTTAIL return op_call_method_attr_slow(ARGS);
@@ -1650,6 +1672,19 @@ namespace cl
         }
 
         TValue<Function> function(callable);
+        FunctionCallInlineCache &call_cache =
+            code_object->function_call_caches[call_cache_idx];
+        if(likely(function_call_cache_matches(call_cache, function, n_args)))
+        {
+            int32_t first_arg_reg = prepare_method_call_argument_slots(
+                fp, receiver_reg, n_user_args, self);
+            enter_function_frame_from_positional_args(
+                fp, pc, code_object, function, first_arg_reg, n_args,
+                call_instr_len, call_cache.adaptation);
+
+            START(0);
+            COMPLETE();
+        }
         if(unlikely(!function.extract()->accepts_arity(n_args)))
         {
             MUSTTAIL return wrong_arity_error(ARGS);
@@ -1658,6 +1693,7 @@ namespace cl
             fp, receiver_reg, n_user_args, self);
         FunctionCallAdaptation adaptation =
             classify_function_call_adaptation(function);
+        populate_function_call_cache(call_cache, function, n_args, adaptation);
         enter_function_frame_from_positional_args(fp, pc, code_object, function,
                                                   first_arg_reg, n_args,
                                                   call_instr_len, adaptation);

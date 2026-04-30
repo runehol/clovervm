@@ -576,10 +576,13 @@ namespace cl
                     code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
                                               OutgoingArgReg(1 + i));
                 }
-                uint8_t cache_idx = code_obj->allocate_attribute_read_cache();
+                uint8_t read_cache_idx =
+                    code_obj->allocate_attribute_read_cache();
+                uint8_t call_cache_idx =
+                    code_obj->allocate_function_call_cache();
                 code_obj->emit_opcode_reg_constant_idx_cache_idx_argc(
                     source_offset, Bytecode::CallMethodAttr, OutgoingArgReg(0),
-                    constant_idx, cache_idx, args.size());
+                    constant_idx, read_cache_idx, call_cache_idx, args.size());
                 return;
             }
 
