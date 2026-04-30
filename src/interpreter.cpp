@@ -279,7 +279,7 @@ namespace cl
     {
         CallArguments args =
             CallArguments::from_first_arg(&fp[first_arg_reg], n_args);
-        return builtin->callback(active_thread(), args);
+        return builtin->callback(args);
     }
 
     static ALWAYSINLINE void enter_function_frame_at_new_fp(

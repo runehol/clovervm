@@ -21,7 +21,7 @@ namespace cl
         }
     }
 
-    static Value builtin_str_str(ThreadState *, const CallArguments &args)
+    static Value builtin_str_str(const CallArguments &args)
     {
         if(args.n_args != 1 || !can_convert_to<String>(args[0]))
         {
@@ -31,7 +31,7 @@ namespace cl
         return args[0];
     }
 
-    static Value builtin_str_add(ThreadState *thread, const CallArguments &args)
+    static Value builtin_str_add(const CallArguments &args)
     {
         if(args.n_args != 2 || !can_convert_to<String>(args[0]) ||
            !can_convert_to<String>(args[1]))
@@ -44,7 +44,7 @@ namespace cl
         String *right = args[1].get_ptr<String>();
         std::wstring result(left->data, size_t(left->count.extract()));
         result.append(right->data, size_t(right->count.extract()));
-        return thread->make_object_value<String>(result);
+        return active_thread()->make_object_value<String>(result);
     }
 
     BuiltinClassDefinition make_str_class(VirtualMachine *vm)

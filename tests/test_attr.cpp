@@ -13,7 +13,7 @@
 
 using namespace cl;
 
-static Value builtin_identity(ThreadState *, const CallArguments &args)
+static Value builtin_identity(const CallArguments &args)
 {
     if(args.n_args != 1)
     {

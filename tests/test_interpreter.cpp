@@ -26,7 +26,7 @@ using namespace cl;
 
 static constexpr int64_t kMinSmi = -288230376151711744LL;
 
-static Value builtin_add(ThreadState *, const CallArguments &args)
+static Value builtin_add(const CallArguments &args)
 {
     if(args.n_args != 2 || !args[0].is_smi() || !args[1].is_smi())
     {
@@ -35,7 +35,7 @@ static Value builtin_add(ThreadState *, const CallArguments &args)
     return Value::from_smi(args[0].get_smi() + args[1].get_smi());
 }
 
-static Value builtin_sum(ThreadState *, const CallArguments &args)
+static Value builtin_sum(const CallArguments &args)
 {
     int64_t total = 0;
     for(uint32_t i = 0; i < args.n_args; ++i)
@@ -50,7 +50,7 @@ static Value builtin_sum(ThreadState *, const CallArguments &args)
     return Value::from_smi(total);
 }
 
-static Value builtin_identity(ThreadState *, const CallArguments &args)
+static Value builtin_identity(const CallArguments &args)
 {
     if(args.n_args != 1)
     {
@@ -89,7 +89,7 @@ static void expect_range_iterator(Value actual, int64_t expected_current,
 
 static int64_t g_next_counter = 0;
 
-static Value builtin_next_counter(ThreadState *, const CallArguments &args)
+static Value builtin_next_counter(const CallArguments &args)
 {
     if(args.n_args != 0)
     {

@@ -45,7 +45,7 @@ namespace cl
         }
     };
 
-    using BuiltinCallback = Value (*)(ThreadState *, const CallArguments &args);
+    using BuiltinCallback = Value (*)(const CallArguments &args);
 
     class BuiltinFunction : public Object
     {

@@ -38,7 +38,7 @@ namespace cl
         return TValue<CLInt>(args[index]);
     }
 
-    static Value builtin_range(ThreadState *thread, const CallArguments &args)
+    static Value builtin_range(const CallArguments &args)
     {
         Value start = Value::from_smi(0);
         Value stop = Value::None();
@@ -71,7 +71,7 @@ namespace cl
                     "TypeError: wrong number of arguments");
         }
 
-        return thread->make_object_value<RangeIterator>(
+        return make_object_value<RangeIterator>(
             TValue<CLInt>(start), TValue<CLInt>(stop), TValue<CLInt>(step));
     }
 
