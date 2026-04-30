@@ -318,6 +318,23 @@ namespace cl
                                        instr_len);
     }
 
+    static ALWAYSINLINE int32_t prepare_method_call_argument_slots(
+        Value *fp, int32_t receiver_reg, uint32_t n_user_args, Value self)
+    {
+        if(!self.is_not_present())
+        {
+            fp[receiver_reg] = self;
+            return receiver_reg;
+        }
+
+        for(uint32_t arg_idx = 0; arg_idx < n_user_args; ++arg_idx)
+        {
+            int32_t target_reg = receiver_reg - int32_t(arg_idx);
+            fp[target_reg] = fp[target_reg - 1];
+        }
+        return receiver_reg;
+    }
+
     enum class MethodCallTargetStatus : uint8_t
     {
         Ready,
@@ -1404,11 +1421,6 @@ namespace cl
 
         bool has_self = !self.is_not_present();
         uint32_t n_args = n_user_args + (has_self ? 1 : 0);
-        int32_t first_arg_reg = has_self ? receiver_reg : receiver_reg - 1;
-        if(has_self)
-        {
-            fp[receiver_reg] = self;
-        }
 
         if(unlikely(!callable.is_ptr()))
         {
@@ -1425,6 +1437,8 @@ namespace cl
                 MUSTTAIL return wrong_arity_error(ARGS);
             }
 
+            int32_t first_arg_reg = prepare_method_call_argument_slots(
+                fp, receiver_reg, n_user_args, self);
             accumulator = invoke_builtin_callback_from_first_arg(
                 fp, builtin, first_arg_reg, n_args);
 
@@ -1439,6 +1453,8 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
+        int32_t first_arg_reg = prepare_method_call_argument_slots(
+            fp, receiver_reg, n_user_args, self);
         enter_function_frame_from_first_arg(
             fp, pc, code_object, TValue<Function>(callable), first_arg_reg,
             n_args, call_instr_len);
@@ -1475,11 +1491,6 @@ namespace cl
 
         bool has_self = !self.is_not_present();
         uint32_t n_args = n_user_args + (has_self ? 1 : 0);
-        int32_t first_arg_reg = has_self ? receiver_reg : receiver_reg - 1;
-        if(has_self)
-        {
-            fp[receiver_reg] = self;
-        }
 
         if(unlikely(!callable.is_ptr()))
         {
@@ -1492,6 +1503,8 @@ namespace cl
             MUSTTAIL return op_call_method_attr_slow(ARGS);
         }
 
+        int32_t first_arg_reg = prepare_method_call_argument_slots(
+            fp, receiver_reg, n_user_args, self);
         enter_function_frame_from_first_arg(
             fp, pc, code_object, TValue<Function>(callable), first_arg_reg,
             n_args, call_instr_len);

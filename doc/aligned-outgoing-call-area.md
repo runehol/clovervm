@@ -298,19 +298,19 @@ working storage, or outbound call slots.
 
 The migration should be staged so each patch establishes one visible invariant.
 
-1. Rename disassembled parameters from `aN` to `pN`.
+1. Done: rename disassembled parameters from `aN` to `pN`.
 
    This is only a naming change. It should not alter bytecode layout or runtime
    behavior. Update tests and docs that assert disassembly text. This clears the
    vocabulary before `aN` starts meaning outgoing argument area. Update
    `doc/function-calling-convention.md` so it uses `pN` for parameters.
 
-2. Add even-count helpers.
+2. Done: add ABI alignment helper.
 
-   Add a small helper such as `round_up_to_even`. This should be a mechanical
-   utility step with little or no behavior change.
+   Add a small helper such as `round_up_to_abi_alignment`. This should be a
+   mechanical utility step with little or no behavior change.
 
-3. Fix method no-`self` adaptation.
+3. Done: fix method no-`self` adaptation.
 
    Method calls that do not bind `self` must copy explicit arguments into the
    canonical outgoing argument slots starting at `a0`. They must not merely
@@ -321,9 +321,10 @@ The migration should be staged so each patch establishes one visible invariant.
 
 4. Use padded parameter layout.
 
-   Parameter encoding and decoding should use `round_up_to_even(n_parameters)`.
-   Function and class-body codegen must reserve parameter padding when needed.
-   Add tests covering odd and even parameter counts. Update
+   Parameter encoding and decoding should use
+   `round_up_to_abi_alignment(n_parameters)`. Function and class-body codegen
+   must reserve parameter padding when needed. Add tests covering odd and even
+   parameter counts. Update
    `doc/function-calling-convention.md` to describe padded parameter slots and
    the padding between odd parameter lists and the frame header.
 
@@ -353,9 +354,10 @@ The migration should be staged so each patch establishes one visible invariant.
 8. Make frame entry use padded argument counts.
 
    Update function and class-body frame-entry helpers so callee frames are
-   placed below `round_up_to_even(n_args)`. Add tests for odd-argument calls and
-   nested calls. Update `doc/function-calling-convention.md` with the final
-   argument-padding and frame-header placement rules.
+   placed below `round_up_to_abi_alignment(n_args)`. Add tests for
+   odd-argument calls and nested calls. Update
+   `doc/function-calling-convention.md` with the final argument-padding and
+   frame-header placement rules.
 
 9. Use the outgoing area for internal Python calls.
 

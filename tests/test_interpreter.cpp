@@ -1386,6 +1386,39 @@ TEST(Interpreter,
     EXPECT_EQ(Value::from_smi(4), actual);
 }
 
+TEST(Interpreter,
+     direct_method_call_passes_all_explicit_args_to_non_function_callables)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> cls_name(
+        test_context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> method_name(
+        test_context.vm().get_or_create_interned_string_value(L"method"));
+
+    TValue<BuiltinFunction> sum =
+        test_context.thread()->make_object_value<BuiltinFunction>(
+            builtin_sum, 0, BuiltinFunction::VarArgs);
+
+    CodeObject *setup_code = test_context.compile_file(L"class Cls:\n"
+                                                       L"    pass\n"
+                                                       L"obj = Cls()\n");
+    (void)test_context.thread()->run(setup_code);
+    Scope *module_scope = setup_code->module_scope.extract();
+    Value cls_value = module_scope->get_by_name(cls_name);
+    ASSERT_TRUE(cls_value.is_ptr());
+    ASSERT_EQ(NativeLayoutId::ClassObject,
+              cls_value.get_ptr<Object>()->native_layout_id());
+    cls_value.get_ptr<ClassObject>()->set_own_property(method_name, sum);
+
+    CodeObject *code_obj = test_context.compile_file(L"obj.method(4, 5, 6)\n");
+    code_obj->module_scope = module_scope;
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(15), actual);
+}
+
 TEST(Interpreter, function_local_shadows_global)
 {
     Value expected = Value::from_smi(11);

@@ -183,13 +183,21 @@ code_obj->emit_opcode_reg_constant_idx_cache_idx_argc(
 At runtime, `CallMethodAttr` resolves the attribute in call context. If the
 cached or resolved plan binds the receiver as `self`, the handler writes `self`
 into the receiver register and uses that register as the first argument. If no
-implicit receiver is needed, the first explicit argument is already adjacent to
-the receiver and becomes the first argument register.
+implicit receiver is needed, the handler copies the explicit arguments up by
+one slot so the first explicit argument occupies the receiver register. This
+keeps method-call argument preparation in a canonical shape before the stack
+ABI grows a distinct outgoing argument area.
 
 When `self` is inserted, the callee sees:
 
 - `p0 = self`
 - `p1 = first user arg`
+- ...
+
+When no `self` is inserted, the callee sees:
+
+- `p0 = first user arg`
+- `p1 = second user arg`
 - ...
 
 ## Function Entry
