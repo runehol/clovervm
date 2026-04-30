@@ -8,6 +8,7 @@ This note documents the calling convention currently implemented by CloverVM's b
 - The interpreter also carries key VM state in native function arguments/registers: `fp`, `pc`, `accumulator`, `dispatch`, and `code_object`.
 - Call arguments are laid out in a contiguous register window in the caller.
 - Entering a function does not copy arguments into a separate argument array. Instead, the interpreter moves `fp` so the existing call window becomes the callee's frame.
+- Fixed-arity native functions use the same frame path: a native thunk `CodeObject` reads `p0`, `p1`, ... directly and calls a C++ target.
 - The stack grows toward lower addresses.
 - Parameters live at positive offsets from `fp`.
 - Locals and temporaries live at negative offsets from `fp`.
@@ -18,6 +19,13 @@ This note documents the calling convention currently implemented by CloverVM's b
   - interpreter return program counter at `fp[-2]`
 
 This matches the Native AArch64 calling convention for compiled code, while still having enough metadata to jump back to the interpreter when needed.
+
+Native function thunks build on the same layout. A `CallNative0`,
+`CallNative1`, or `CallNative2` opcode runs inside an ordinary function frame,
+reads fixed positional parameters from the `p` registers, calls the native C++
+target, and returns through the normal bytecode `Return` path. See
+[native-function-thunks.md](native-function-thunks.md) for the native thunk
+staging plan.
 
 ## Native Interpreter State
 

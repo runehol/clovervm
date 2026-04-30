@@ -14,18 +14,23 @@ total
 ```
 
 The design should also set us up to add builtins such as `print` later through
-the same callable mechanism.
+the runtime callable mechanisms.
+
+Status note: this plan records the first `for`/`range` implementation. Since
+then, fixed-arity native callables have started moving to native thunk
+`Function` objects; `BuiltinFunction` remains only as the transitional
+variable-arity path for callables such as `range`.
 
 ## Guiding Approach
 
-Use a builtin-function path plus iterator-oriented bytecode.
+Use the original builtin-function path plus iterator-oriented bytecode.
 
 Instead of modeling the first version as a real Python generator whose `next()`
 raises `StopIteration`, keep exhaustion as an internal iterator result handled
 directly by the interpreter. This avoids blocking on method calls, `raise`,
 `try`, and user-visible exception objects.
 
-## Why Builtin Functions
+## Why Builtin Functions Were Used First
 
 Adding a `BuiltinFunction` runtime object is the cleanest way to support
 `range`, and later `print`, without special-casing individual names all over

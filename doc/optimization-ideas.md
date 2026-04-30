@@ -26,7 +26,7 @@ enum class CallSimplePlanKind : uint8_t
 {
     Empty,
     PythonFunctionExactFrame,
-    BuiltinFunctionDirect,
+    NativeThunkExactFrame,
     ClassObjectZeroArg,
 };
 
@@ -36,14 +36,15 @@ struct CallSimpleInlineCache
     CallSimplePlanKind kind = CallSimplePlanKind::Empty;
 
     CodeObject *code_object = nullptr;
-    BuiltinCallback builtin_callback = nullptr;
 };
 ```
 
 For `PythonFunctionExactFrame`, the hot path can check callable identity and
-enter the cached function frame directly. Builtin functions and classes can be
-cached too, but they should only be moved into the main handler if benchmarks
-show that the extra inline code pays for itself.
+enter the cached function frame directly. Fixed-arity native thunks can share
+that plan at first because they are ordinary `Function` objects. A later
+`NativeThunkExactFrame` plan could recognize tiny `CallNativeN; Return` code
+objects and jump to a slimmer adapter when benchmarks show that the extra inline
+code pays for itself.
 
 Future Python call features such as default arguments, keyword arguments,
 `*args`, and `**kwargs` should extend the plan model instead of turning

@@ -42,17 +42,19 @@ model and first attribute inline-cache slices.
   slow paths should raise specific exceptions rather than collapsing to generic
   runtime failures.
 
-- [ ] Clean up builtin function calls.
+- [ ] Finish the native-thunk transition.
 
-  Builtin calls still use special dispatch. A small function trampoline or
-  purpose-built opcode would let builtin functions share more of the normal
-  function call path while still supporting slim VM-native calling conventions.
+  Fixed-arity native callables can now be ordinary `Function` objects whose
+  code object runs a tiny `CallNative0`/`CallNative1`/`CallNative2` thunk.
+  Remaining work: move arity checks to the `Function` call boundary, design the
+  packed variable-arity convention, migrate `range` and other variable-arity
+  callables, and then retire the residual `BuiltinFunction` dispatch path.
 
-- [ ] Add another builtin on top of the builtin-function path.
+- [ ] Add another callable on top of the native function path.
 
-  `range` proved out the first mechanism. A small second builtin such as
-  `print` would validate builtin lookup, arity checks, and reusable call
-  dispatch.
+  `str.__str__` and `str.__add__` proved out fixed-arity native thunks. A small
+  builtin namespace callable such as `print` would validate builtin lookup,
+  arity checks, and the next native calling convention.
 
 - [ ] Finish the iterator protocol.
 
