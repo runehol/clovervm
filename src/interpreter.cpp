@@ -337,14 +337,10 @@ namespace cl
         uint32_t n_extra_args = n_args > n_positional_parameters
                                     ? n_args - n_positional_parameters
                                     : 0;
-        TValue<Tuple> varargs_tuple = make_object_value<Tuple>(n_extra_args);
         CodeObject *target_code_object = fun.extract()->code_object.extract();
-        for(uint32_t idx = 0; idx < n_extra_args; ++idx)
-        {
-            uint32_t arg_idx = n_positional_parameters + idx;
-            varargs_tuple.extract()->initialize_item_unchecked(
-                idx, new_fp[target_code_object->encode_reg(arg_idx)]);
-        }
+        TValue<Tuple> varargs_tuple = Tuple::from_frame_arguments(
+            new_fp, target_code_object->encode_reg(n_positional_parameters),
+            n_extra_args);
         new_fp[target_code_object->encode_reg(n_positional_parameters)] =
             varargs_tuple;
     }
@@ -1243,13 +1239,7 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue<Tuple> tuple = make_object_value<Tuple>(n_items);
-        for(uint8_t idx = 0; idx < n_items; ++idx)
-        {
-            tuple.extract()->initialize_item_unchecked(idx,
-                                                       fp[reg - int8_t(idx)]);
-        }
-        accumulator = tuple;
+        accumulator = Tuple::from_frame_arguments(fp, reg, n_items);
 
         COMPLETE();
     }

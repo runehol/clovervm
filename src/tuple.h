@@ -5,6 +5,7 @@
 #include "object.h"
 #include "owned_typed_value.h"
 #include "runtime_helpers.h"
+#include "thread_state.h"
 #include "value.h"
 #include <cstddef>
 #include <cstdint>
@@ -36,6 +37,18 @@ namespace cl
         }
         void initialize_item_unchecked(size_t idx, Value value);
         Value get_item(int64_t py_idx) const;
+
+        static ALWAYSINLINE TValue<Tuple>
+        from_frame_arguments(Value *fp, int8_t first_arg_reg, uint32_t n_args)
+        {
+            TValue<Tuple> tuple = make_object_value<Tuple>(n_args);
+            for(uint32_t idx = 0; idx < n_args; ++idx)
+            {
+                tuple.extract()->initialize_item_unchecked(
+                    idx, fp[int32_t(first_arg_reg) - int32_t(idx)]);
+            }
+            return tuple;
+        }
 
         static size_t size_for(size_t size)
         {
