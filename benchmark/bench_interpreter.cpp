@@ -71,6 +71,15 @@ namespace
             {"benchmark/function_default_parameter.py",
              {benchmark_cpp::function_default_parameter_run,
               benchmark_cpp::function_default_parameter_items}},
+            {"benchmark/function_varargs.py",
+             {benchmark_cpp::function_varargs_run,
+              benchmark_cpp::function_varargs_items}},
+            {"benchmark/function_varargs_with_positional.py",
+             {benchmark_cpp::function_varargs_with_positional_run,
+              benchmark_cpp::function_varargs_with_positional_items}},
+            {"benchmark/function_default_varargs.py",
+             {benchmark_cpp::function_default_varargs_run,
+              benchmark_cpp::function_default_varargs_items}},
             {"benchmark/method_call_class_attribute_write.py",
              {benchmark_cpp::method_call_class_attribute_write_run,
               benchmark_cpp::method_call_class_attribute_write_items}},
@@ -582,6 +591,36 @@ static void BM_FunctionDefaultParameter(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_FunctionDefaultParameter, CloverProgram)
     ->Name("BM_FunctionDefaultParameter")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_FunctionVarargs(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/function_varargs.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_FunctionVarargs, CloverProgram)
+    ->Name("BM_FunctionVarargs")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_FunctionVarargsWithPositional(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/function_varargs_with_positional.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_FunctionVarargsWithPositional, CloverProgram)
+    ->Name("BM_FunctionVarargsWithPositional")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_FunctionDefaultVarargs(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/function_default_varargs.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_FunctionDefaultVarargs, CloverProgram)
+    ->Name("BM_FunctionDefaultVarargs")
     ->Arg(100000);
 
 template <typename Program>
