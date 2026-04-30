@@ -344,6 +344,72 @@ TEST(Interpreter, function_wrong_arity)
                          "TypeError: wrong number of arguments");
 }
 
+TEST(Interpreter, function_varargs_collect_extra_arguments)
+{
+    Value expected = Value::from_smi(10);
+    test::FileRunner file_runner(L"def f(a, *args):\n"
+                                 "    return a + args[0] + args[1]\n"
+                                 "f(1, 4, 5)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, function_varargs_collect_empty_tuple)
+{
+    test::FileRunner file_runner(L"def f(*args):\n"
+                                 "    return args\n"
+                                 "f()\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::Tuple,
+              actual.get_ptr<Object>()->native_layout_id());
+    EXPECT_TRUE(TValue<Tuple>(actual).extract()->empty());
+}
+
+TEST(Interpreter, function_defaults_and_varargs)
+{
+    Value expected = Value::from_smi(65);
+    test::FileRunner file_runner(L"def f(a, b=10, *args):\n"
+                                 "    return a + b + args[0] + args[1]\n"
+                                 "f(1, 20, 21, 23)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, function_defaults_and_empty_varargs)
+{
+    Value expected = Value::from_smi(11);
+    test::FileRunner file_runner(L"def f(a, b=10, *args):\n"
+                                 "    return a + b\n"
+                                 "f(1)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, method_varargs_collect_extra_arguments)
+{
+    Value expected = Value::from_smi(9);
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 "    def method(self, *args):\n"
+                                 "        return args[0] + args[1]\n"
+                                 "Cls().method(4, 5)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, function_varargs_still_requires_positional_arguments)
+{
+    expect_runtime_error(L"def f(a, *args):\n"
+                         "    return a\n"
+                         "f()\n",
+                         "TypeError: wrong number of arguments");
+}
+
 TEST(Interpreter, calls_and_parameters_accept_trailing_comma)
 {
     Value expected = Value::from_smi(6);

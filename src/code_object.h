@@ -9,10 +9,36 @@
 #include "scope.h"
 #include "value.h"
 #include <algorithm>
+#include <cstdint>
 #include <vector>
 
 namespace cl
 {
+    enum class FunctionParameterFlags : uint32_t
+    {
+        None = 0,
+        HasVarArgs = 1U << 0,
+    };
+
+    inline FunctionParameterFlags operator|(FunctionParameterFlags lhs,
+                                            FunctionParameterFlags rhs)
+    {
+        return FunctionParameterFlags(uint32_t(lhs) | uint32_t(rhs));
+    }
+
+    inline FunctionParameterFlags &operator|=(FunctionParameterFlags &lhs,
+                                              FunctionParameterFlags rhs)
+    {
+        lhs = lhs | rhs;
+        return lhs;
+    }
+
+    inline bool has_function_parameter_flag(FunctionParameterFlags flags,
+                                            FunctionParameterFlags flag)
+    {
+        return (uint32_t(flags) & uint32_t(flag)) != 0;
+    }
+
     using NativeFunction0 = Value (*)();
     using NativeFunction1 = Value (*)(Value);
     using NativeFunction2 = Value (*)(Value, Value);
@@ -100,11 +126,19 @@ namespace cl
         const CompilationUnit *compilation_unit;
 
         uint32_t n_parameters = 0;
+        uint32_t n_positional_parameters = 0;
+        FunctionParameterFlags parameter_flags = FunctionParameterFlags::None;
         uint32_t n_locals = 0;
         uint32_t n_temporaries = 0;
         uint32_t n_outgoing_call_slots = 0;
 
         Scope *get_local_scope_ptr() const { return local_scope.extract(); }
+
+        bool has_varargs() const
+        {
+            return has_function_parameter_flag(
+                parameter_flags, FunctionParameterFlags::HasVarArgs);
+        }
 
         std::vector<uint8_t> code;
 

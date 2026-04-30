@@ -360,9 +360,18 @@ namespace cl
                   Now we're generating code for the function
                 */
                 code_obj->n_parameters = param_children.size();
+                code_obj->n_positional_parameters =
+                    count_positional_parameters(param_children);
+                if(has_varargs_parameter(param_children))
+                {
+                    code_obj->parameter_flags |=
+                        FunctionParameterFlags::HasVarArgs;
+                }
                 for(int32_t ch: param_children)
                 {
-                    assert(av.kinds[ch].node_kind == AstNodeKind::PARAMETER);
+                    assert(av.kinds[ch].node_kind == AstNodeKind::PARAMETER ||
+                           av.kinds[ch].node_kind ==
+                               AstNodeKind::PARAMETER_VARARGS);
                     code_obj->get_local_scope_ptr()
                         ->register_slot_index_for_write(
                             TValue<String>(av.constants[ch]));
@@ -400,7 +409,8 @@ namespace cl
             else
             {
                 TemporaryReg default_values(this, n_defaults);
-                size_t first_default_idx = param_children.size() - n_defaults;
+                size_t first_default_idx =
+                    fun_obj->n_positional_parameters - n_defaults;
                 for(size_t i = 0; i < n_defaults; ++i)
                 {
                     int32_t param_idx = param_children[first_default_idx + i];
@@ -430,12 +440,44 @@ namespace cl
             uint32_t n_defaults = 0;
             for(int32_t param_idx: param_children)
             {
+                if(av.kinds[param_idx].node_kind != AstNodeKind::PARAMETER)
+                {
+                    continue;
+                }
                 if(!av.children[param_idx].empty())
                 {
                     ++n_defaults;
                 }
             }
             return n_defaults;
+        }
+
+        uint32_t count_positional_parameters(AstChildren param_children) const
+        {
+            uint32_t n_positional_parameters = 0;
+            for(int32_t param_idx: param_children)
+            {
+                if(av.kinds[param_idx].node_kind ==
+                   AstNodeKind::PARAMETER_VARARGS)
+                {
+                    break;
+                }
+                ++n_positional_parameters;
+            }
+            return n_positional_parameters;
+        }
+
+        bool has_varargs_parameter(AstChildren param_children) const
+        {
+            for(int32_t param_idx: param_children)
+            {
+                if(av.kinds[param_idx].node_kind ==
+                   AstNodeKind::PARAMETER_VARARGS)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         void codegen_class_definition(int32_t node_idx, Mode mode)
@@ -1409,6 +1451,7 @@ namespace cl
 
                 case AstNodeKind::PARAMETER_SEQUENCE:
                 case AstNodeKind::PARAMETER:
+                case AstNodeKind::PARAMETER_VARARGS:
                     throw std::runtime_error("should not end here - this is "
                                              "handled by function definitions");
             }

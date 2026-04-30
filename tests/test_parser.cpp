@@ -234,6 +234,32 @@ TEST(Parser, parameters_accept_defaults)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, parameters_accept_varargs)
+{
+    std::string expected = (""
+                            "def f(a, b=1, *args):\n"
+                            "    return args\n");
+    std::string actual = parse(L"def f(a, b=1, *args):\n"
+                               L"    return args\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, keyword_only_parameters_are_not_implemented)
+{
+    expect_parse_error(
+        L"def f(*args, keyword_only):\n"
+        L"    return args\n",
+        "SyntaxError: keyword-only parameters are not implemented yet");
+}
+
+TEST(Parser, multiple_varargs_parameters_are_not_implemented)
+{
+    expect_parse_error(L"def f(*args, *rest):\n"
+                       L"    return args\n",
+                       "SyntaxError: * argument may appear only once");
+}
+
 TEST(Parser, function_and_method_parameter_annotations_parse)
 {
     std::string expected = (""

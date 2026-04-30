@@ -293,6 +293,12 @@ template <> struct fmt::formatter<cl::AstVector>
                 }
                 break;
 
+            case cl::AstNodeKind::PARAMETER_VARARGS:
+                format_to(out, "*{}",
+                          narrow_wstring_view_ast(string_as_wchar_t(
+                              cl::TValue<cl::String>(av.constants[node_idx]))));
+                break;
+
             case cl::AstNodeKind::STATEMENT_FUNCTION_DEF:
                 emit_indent(out, indent);
                 format_to(out, "def {}",

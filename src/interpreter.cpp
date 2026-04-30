@@ -300,7 +300,12 @@ namespace cl
                                                           TValue<Function> fun,
                                                           uint32_t n_args)
     {
-        uint32_t n_missing_args = fun.extract()->max_positional_arity - n_args;
+        uint32_t n_supplied_positional_args =
+            n_args < fun.extract()->n_positional_parameters
+                ? n_args
+                : fun.extract()->n_positional_parameters;
+        uint32_t n_missing_args =
+            fun.extract()->n_positional_parameters - n_supplied_positional_args;
         if(likely(n_missing_args == 0))
         {
             return;
@@ -318,6 +323,32 @@ namespace cl
         }
     }
 
+    static ALWAYSINLINE void initialize_varargs_argument(Value *new_fp,
+                                                         TValue<Function> fun,
+                                                         uint32_t n_args)
+    {
+        if(likely(!fun.extract()->has_varargs()))
+        {
+            return;
+        }
+
+        uint32_t n_positional_parameters =
+            fun.extract()->n_positional_parameters;
+        uint32_t n_extra_args = n_args > n_positional_parameters
+                                    ? n_args - n_positional_parameters
+                                    : 0;
+        TValue<Tuple> varargs_tuple = make_object_value<Tuple>(n_extra_args);
+        CodeObject *target_code_object = fun.extract()->code_object.extract();
+        for(uint32_t idx = 0; idx < n_extra_args; ++idx)
+        {
+            uint32_t arg_idx = n_positional_parameters + idx;
+            varargs_tuple.extract()->initialize_item_unchecked(
+                idx, new_fp[target_code_object->encode_reg(arg_idx)]);
+        }
+        new_fp[target_code_object->encode_reg(n_positional_parameters)] =
+            varargs_tuple;
+    }
+
     static ALWAYSINLINE void enter_function_frame_from_first_arg(
         Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
         TValue<Function> fun, int32_t first_arg_reg, uint32_t n_args,
@@ -330,6 +361,7 @@ namespace cl
                              1 - FrameHeaderSizeAboveFp;
         Value *new_fp = fp + new_fp_reg;
         initialize_default_arguments(new_fp, fun, n_args);
+        initialize_varargs_argument(new_fp, fun, n_args);
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                        instr_len);
     }
@@ -1183,11 +1215,8 @@ namespace cl
         TValue<CodeObject> code_obj(
             code_object->constant_table[const_offset].as_value());
         TValue<Tuple> defaults(fp[defaults_reg]);
-        uint32_t max_arity = code_obj.extract()->n_parameters;
-        uint32_t min_arity = max_arity - uint32_t(defaults.extract()->size());
 
-        accumulator = make_object_value<Function>(code_obj, defaults, min_arity,
-                                                  max_arity);
+        accumulator = make_object_value<Function>(code_obj, defaults);
 
         COMPLETE();
     }

@@ -39,6 +39,7 @@ namespace cl
         STATEMENT_EXPRESSION,
         PARAMETER_SEQUENCE,
         PARAMETER,
+        PARAMETER_VARARGS,
         EXPRESSION_TUPLE,
         EXPRESSION_LIST,
         EXPRESSION_DICT,
@@ -76,6 +77,7 @@ namespace cl
             case AstNodeKind::STATEMENT_EXPRESSION:
             case AstNodeKind::PARAMETER_SEQUENCE:
             case AstNodeKind::PARAMETER:
+            case AstNodeKind::PARAMETER_VARARGS:
                 return false;
             case AstNodeKind::EXPRESSION_TUPLE:
             case AstNodeKind::EXPRESSION_LIST:

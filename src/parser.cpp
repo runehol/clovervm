@@ -1241,6 +1241,7 @@ namespace cl
             bool seen_default = false;
             while(peek() != Token::RPAR)
             {
+                bool is_varargs = match(Token::STAR);
                 consume(Token::NAME);
                 uint32_t name_source_pos = source_pos_for_previous_token();
                 std::wstring name = std::wstring(string_for_name_token(
@@ -1250,6 +1251,30 @@ namespace cl
                 if(match(Token::COLON))
                 {
                     expression();
+                }
+                if(is_varargs)
+                {
+                    if(match(Token::EQUAL))
+                    {
+                        throw std::runtime_error(
+                            "SyntaxError: varargs parameter cannot have a "
+                            "default");
+                    }
+                    ch.push_back(ast.emplace_back(
+                        AstNodeKind::PARAMETER_VARARGS, name_source_pos,
+                        parameter_children, v));
+                    if(match(Token::COMMA) && peek() != Token::RPAR)
+                    {
+                        if(peek() == Token::STAR)
+                        {
+                            throw std::runtime_error(
+                                "SyntaxError: * argument may appear only once");
+                        }
+                        throw std::runtime_error(
+                            "SyntaxError: keyword-only parameters are not "
+                            "implemented yet");
+                    }
+                    break;
                 }
                 if(match(Token::EQUAL))
                 {

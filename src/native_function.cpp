@@ -14,6 +14,7 @@ namespace cl
         TValue<CodeObject> code = vm->make_immortal_object_value<CodeObject>(
             nullptr, nullptr, nullptr, name);
         code.extract()->n_parameters = n_parameters;
+        code.extract()->n_positional_parameters = n_parameters;
         uint32_t target_idx =
             code.extract()->add_native_function_target(target);
         code.extract()->emit_opcode_native_target_idx(0, call_opcode,
