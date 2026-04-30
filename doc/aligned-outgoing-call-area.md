@@ -138,10 +138,9 @@ For a direct call such as `f(x, y)`, codegen can still evaluate directly into
 the eventual outgoing call slots:
 
 ```text
-Star provisional_call_slot_0   ; callable or call target staging
-Star provisional_call_slot_1   ; arg0
-Star provisional_call_slot_2   ; arg1
-CallSimple provisional_call_slot_0, 2
+Star provisional_call_slot_0   ; arg0
+Star provisional_call_slot_1   ; arg1
+CallSimple callable_reg, provisional_call_slot_0, 2
 ```
 
 Finalization patches these provisional operands to `aN` offsets below the
@@ -274,8 +273,7 @@ This makes patched call setup readable:
 ```text
 Star a0
 Star a1
-Star a2
-CallSimple a0, 2
+CallSimple r0, a0a1
 ```
 
 and makes it clear when bytecode is operating on inbound parameters, local

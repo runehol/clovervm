@@ -264,15 +264,6 @@ namespace cl
         MUSTTAIL return raise_generic_exception(ARGS);
     }
 
-    static ALWAYSINLINE Value invoke_builtin_callback(Value *fp,
-                                                      BuiltinFunction *builtin,
-                                                      int32_t call_base_reg,
-                                                      uint32_t n_args)
-    {
-        CallArguments args(&fp[call_base_reg], n_args);
-        return builtin->callback(active_thread(), args);
-    }
-
     static ALWAYSINLINE Value invoke_builtin_callback_from_first_arg(
         Value *fp, BuiltinFunction *builtin, int32_t first_arg_reg,
         uint32_t n_args)
@@ -293,18 +284,6 @@ namespace cl
         fp = new_fp;
         code_object = fun.extract()->code_object.extract();
         pc = code_object->code.data();
-    }
-
-    static ALWAYSINLINE void enter_function_frame_from_callable_slot(
-        Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
-        TValue<Function> fun, int32_t call_base_reg, uint32_t n_args,
-        uint32_t instr_len)
-    {
-        uint32_t padded_n_args = round_up_to_abi_alignment(n_args);
-        Value *new_fp = fp + call_base_reg - int32_t(padded_n_args) -
-                        FrameHeaderSizeAboveFp;
-        enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
-                                       instr_len);
     }
 
     static ALWAYSINLINE void enter_function_frame_from_first_arg(
@@ -1298,10 +1277,11 @@ namespace cl
 
     NOINLINE static Value op_call_simple_slow(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 3;
-        int8_t reg = pc[1];
-        uint8_t n_args = pc[2];
-        Value fun = fp[reg];
+        static constexpr uint32_t call_instr_len = 4;
+        int8_t callable_reg = pc[1];
+        int8_t first_arg_reg = pc[2];
+        uint8_t n_args = pc[3];
+        Value fun = fp[callable_reg];
 
         if(unlikely(!fun.is_ptr()))
         {
@@ -1334,7 +1314,8 @@ namespace cl
                 MUSTTAIL return wrong_arity_error(ARGS);
             }
 
-            accumulator = invoke_builtin_callback(fp, builtin, reg, n_args);
+            accumulator = invoke_builtin_callback_from_first_arg(
+                fp, builtin, first_arg_reg, n_args);
 
             pc += call_instr_len;
 
@@ -1347,9 +1328,9 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        enter_function_frame_from_callable_slot(fp, pc, code_object,
-                                                TValue<Function>(fun), reg,
-                                                n_args, call_instr_len);
+        enter_function_frame_from_first_arg(
+            fp, pc, code_object, TValue<Function>(fun), first_arg_reg, n_args,
+            call_instr_len);
 
         START(0);
         COMPLETE();
@@ -1357,10 +1338,11 @@ namespace cl
 
     static Value op_call_simple(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 3;
-        int8_t reg = pc[1];
-        uint8_t n_args = pc[2];
-        Value fun = fp[reg];
+        static constexpr uint32_t call_instr_len = 4;
+        int8_t callable_reg = pc[1];
+        int8_t first_arg_reg = pc[2];
+        uint8_t n_args = pc[3];
+        Value fun = fp[callable_reg];
 
         if(unlikely(!fun.is_ptr()))
         {
@@ -1373,9 +1355,9 @@ namespace cl
             MUSTTAIL return op_call_simple_slow(ARGS);
         }
 
-        enter_function_frame_from_callable_slot(fp, pc, code_object,
-                                                TValue<Function>(fun), reg,
-                                                n_args, call_instr_len);
+        enter_function_frame_from_first_arg(
+            fp, pc, code_object, TValue<Function>(fun), first_arg_reg, n_args,
+            call_instr_len);
 
         START(0);
         COMPLETE();

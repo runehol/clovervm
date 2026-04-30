@@ -504,17 +504,19 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::CallSimple:
                 {
                     format_to(out, " ");
-                    int8_t reg = code_obj.code[pc++];
+                    int8_t callable_reg = code_obj.code[pc++];
+                    int8_t first_arg_reg = code_obj.code[pc++];
                     uint8_t n_args = code_obj.code[pc++];
-                    print_reg(out, code_obj, reg);
-                    if(n_args > 0)
+                    print_reg(out, code_obj, callable_reg);
+                    format_to(out, ", ");
+                    print_reg(out, code_obj, first_arg_reg);
+                    if(n_args == 0)
                     {
-                        format_to(out, ", ");
-                        print_reg(out, code_obj, reg - 1);
-                        if(n_args > 1)
-                        {
-                            print_reg(out, code_obj, reg - n_args);
-                        }
+                        format_to(out, ", 0");
+                    }
+                    else if(n_args > 1)
+                    {
+                        print_reg(out, code_obj, first_arg_reg - n_args + 1);
                     }
                 }
                 break;

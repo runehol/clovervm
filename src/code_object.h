@@ -263,6 +263,20 @@ namespace cl
             return result;
         }
 
+        uint32_t emit_call_simple(uint32_t source_offset, uint32_t callable_reg,
+                                  OutgoingArgReg first_arg_reg, uint8_t argc)
+        {
+            uint32_t result =
+                emplace_back(source_offset, uint8_t(Bytecode::CallSimple));
+            emplace_back(source_offset, encode_reg(callable_reg));
+            uint32_t first_arg_operand_offset = code.size();
+            emplace_back(source_offset, first_arg_reg.slot_offset);
+            add_outgoing_arg_relocation(first_arg_operand_offset,
+                                        first_arg_reg.slot_offset);
+            emplace_back(source_offset, argc);
+            return result;
+        }
+
         uint32_t emit_opcode_reg_constant_idx(uint32_t source_offset,
                                               Bytecode c, uint32_t reg,
                                               uint8_t constant_idx)

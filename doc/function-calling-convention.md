@@ -153,10 +153,14 @@ So:
 For a direct call like `f(x, y)`, the caller prepares one contiguous outgoing
 span:
 
-- `a0` is the callable
-- `a1` is the first user argument
-- `a2` is the second user argument
+- the callable itself lives outside the outgoing argument span
+- `a0` is the first user argument
+- `a1` is the second user argument
 - and so on
+
+For a zero-argument call, the call instruction still carries an `a0` argument
+anchor. That gives the callee a well-defined place to append default arguments
+before entering the frame.
 
 ### Method calls
 
@@ -192,8 +196,12 @@ The core transition for function calls is shared by `op_call_simple` and
 `op_call_method_attr` in [src/interpreter.cpp](../src/interpreter.cpp):
 
 ```cpp
-uint32_t padded_n_args = round_up_to_abi_alignment(n_args);
-Value *new_fp = fp + reg - padded_n_args - FrameHeaderSizeAboveFp;
+int32_t new_fp_reg =
+    n_args == 0
+        ? first_arg_reg - FrameHeaderSizeAboveFp
+        : first_arg_reg - round_up_to_abi_alignment(n_args) + 1 -
+              FrameHeaderSizeAboveFp;
+Value *new_fp = fp + new_fp_reg;
 
 new_fp[0].as.ptr = (Object *)fp;
 new_fp[-1] = Value::from_oop(code_object);
@@ -210,15 +218,17 @@ This is the key idea: the interpreter does not allocate/copy a fresh argument bl
 
 At the call site:
 
-- `reg` points at the callable slot
-- the `n_args` argument values sit immediately below that slot
+- `first_arg_reg` points at the first argument slot, or at the reserved
+  zero-argument anchor
+- the `n_args` argument values sit at that slot and the slots immediately below
+  it
 
 So:
 
 ```text
-callable slot        = fp[reg]
-last argument slot   = fp[reg - n_args]
-new fp               = fp[reg - round_up_to_abi_alignment(n_args) - 2]
+first argument slot  = fp[first_arg_reg]
+last argument slot   = fp[first_arg_reg - n_args + 1]
+new fp               = fp[first_arg_reg - round_up_to_abi_alignment(n_args) + 1 - 2]
 ```
 
 The extra `2` is `FrameHeaderSizeAboveFp`, which places the new `fp` so that:
@@ -287,7 +297,7 @@ Before call in caller frame:
     [arg1 = y]
     ...
 
-After `new_fp = fp + reg - round_up_to_abi_alignment(n_args) - 2`:
+After `new_fp = fp + first_arg_reg - round_up_to_abi_alignment(n_args) + 1 - 2`:
 
     new_fp[3]  p0 = x
     new_fp[2]  p1 = y
@@ -333,11 +343,12 @@ Top-level module code is not expected to execute `Return`; the parser/codegen re
 
 If you are reasoning about CloverVM calls, the safest mental model is:
 
-1. Codegen lays out `callable, arg0, arg1, ...` in a contiguous downward-growing register window.
-2. The interpreter moves `fp` below the argument window padded up to the ABI alignment, so those argument cells become `p0`, `p1`, ...
-3. `fp[0]`, `fp[-1]`, and `fp[-2]` hold the caller state needed by `Return`.
-4. Locals/temporaries for the callee start at `r0 = fp[-3]`.
-5. The accumulator carries the return value across the `Return` instruction.
+1. The callable lives separately from the outgoing argument span.
+2. The outgoing argument span starts at `a0` and grows downward as `a1`, `a2`, ...
+3. The interpreter moves `fp` below the argument window padded up to the ABI alignment, so those argument cells become `p0`, `p1`, ...
+4. `fp[0]`, `fp[-1]`, and `fp[-2]` hold the caller state needed by `Return`.
+5. Locals/temporaries for the callee start at `r0 = fp[-3]`.
+6. The accumulator carries the return value across the `Return` instruction.
 
 ## Source Pointers
 

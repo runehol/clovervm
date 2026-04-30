@@ -502,18 +502,19 @@ namespace cl
             }
 
             // function itself
+            TemporaryReg callable_reg(this);
             codegen_node(children[0], mode);
             code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                      OutgoingArgReg(0));
+                                      callable_reg);
 
             for(size_t i = 0; i < args.size(); ++i)
             {
                 codegen_node(args[i], mode);
                 code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          OutgoingArgReg(1 + i));
+                                          OutgoingArgReg(i));
             }
-            code_obj->emit_opcode_reg_range(source_offset, Bytecode::CallSimple,
-                                            OutgoingArgReg(0), args.size());
+            code_obj->emit_call_simple(source_offset, callable_reg,
+                                       OutgoingArgReg(0), args.size());
         }
 
         void codegen_list_literal(int32_t node_idx, Mode mode)
@@ -792,8 +793,15 @@ namespace cl
                                 fast_loop_start_target);
 
             generic_fallback_target.resolve();
-            code_obj->emit_opcode_reg_range(source_offset, Bytecode::CallSimple,
-                                            range_regs, n_args);
+            for(size_t i = 0; i < args.size(); ++i)
+            {
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Ldar,
+                                          range_regs + 1 + i);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          OutgoingArgReg(i));
+            }
+            code_obj->emit_call_simple(source_offset, range_regs,
+                                       OutgoingArgReg(0), n_args);
             code_obj->emit_opcode(source_offset, Bytecode::GetIter);
             code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
                                       iterator_reg);
