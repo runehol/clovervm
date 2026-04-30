@@ -328,12 +328,7 @@ The migration should be staged so each patch establishes one visible invariant.
    `doc/function-calling-convention.md` to describe padded parameter slots and
    the padding between odd parameter lists and the frame header.
 
-5. Add frame-alignment assertions.
-
-   Ensure the initial interpreter frame is 16-byte aligned and assert alignment
-   after function and class-body frame transitions.
-
-6. Introduce `n_outgoing_call_slots` and disassemble `aN`.
+5. Introduce `n_outgoing_call_slots` and disassemble `aN`.
 
    Add a `CodeObject` field for the outgoing call area size. Include it in
    frame bounds calculations. Teach disassembly to classify negative offsets
@@ -342,7 +337,7 @@ The migration should be staged so each patch establishes one visible invariant.
    `doc/function-calling-convention.md` with the `pN` / `rN` / `aN` frame
    regions.
 
-7. Add codegen relocations for explicit calls.
+6. Add codegen relocations for explicit calls.
 
    Record patch locations for register operands used in call argument buildup.
    After final ordinary temporary layout is known, patch those operands into the
@@ -351,16 +346,24 @@ The migration should be staged so each patch establishes one visible invariant.
    `doc/function-calling-convention.md` so explicit calls are documented as
    using the outgoing area rather than the current temporary frontier.
 
-8. Folded into step 4: make frame entry use padded argument counts.
+7. Folded into step 4: make frame entry use padded argument counts.
 
    Updating parameter encoding without updating frame entry would break
    odd-argument calls, so the frame-entry helper changes are part of the padded
    parameter layout step.
 
-9. Use the outgoing area for internal Python calls.
+8. Use the outgoing area for internal Python calls.
 
    Interpreter slow paths that may call Python code, such as future protocol
    dispatch for `op_add`, should build their calls in the same outgoing argument
    area recorded on the current `CodeObject`. Update
    `doc/function-calling-convention.md` when the first internal Python-call
    slow path lands.
+
+9. Add frame-alignment assertions.
+
+   Ensure the initial interpreter frame is 16-byte aligned and assert alignment
+   after function and class-body frame transitions. This must happen after all
+   explicit and internal Python-call paths use the outgoing argument area;
+   otherwise direct call-window temporaries may still place callee frames on
+   odd `Value` slots.
