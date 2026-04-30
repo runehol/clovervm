@@ -196,11 +196,8 @@ The core transition for function calls is shared by `op_call_simple` and
 `op_call_method_attr` in [src/interpreter.cpp](../src/interpreter.cpp):
 
 ```cpp
-int32_t new_fp_reg =
-    n_args == 0
-        ? first_arg_reg - FrameHeaderSizeAboveFp
-        : first_arg_reg - round_up_to_abi_alignment(n_args) + 1 -
-              FrameHeaderSizeAboveFp;
+int32_t new_fp_reg = first_arg_reg - round_up_to_abi_alignment(n_args) + 1 -
+                     FrameHeaderSizeAboveFp;
 Value *new_fp = fp + new_fp_reg;
 
 new_fp[0].as.ptr = (Object *)fp;

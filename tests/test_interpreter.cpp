@@ -262,6 +262,17 @@ TEST(Interpreter, function_multiple_parameters)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Interpreter, function_even_argument_call_preserves_frame_alignment)
+{
+    Value expected = Value::from_smi(10);
+    test::FileRunner file_runner(L"def add4(a, b, c, d):\n"
+                                 L"    return a + b + c + d\n"
+                                 L"add4(1, 2, 3, 4)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Interpreter, calls_and_parameters_accept_trailing_comma)
 {
     Value expected = Value::from_smi(6);
@@ -1156,6 +1167,34 @@ TEST(Interpreter, direct_method_call_inserts_self_for_class_functions)
     EXPECT_EQ(Value::from_smi(7), actual);
 }
 
+TEST(Interpreter,
+     direct_zero_arg_method_call_inserts_self_and_preserves_frame_alignment)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    def method(self):\n"
+                                 L"        return self.value\n"
+                                 L"obj = Cls()\n"
+                                 L"obj.value = 7\n"
+                                 L"obj.method()\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(7), actual);
+}
+
+TEST(Interpreter,
+     direct_method_call_with_odd_effective_args_preserves_frame_alignment)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    def method(self, x, y):\n"
+                                 L"        return self.value + x + y\n"
+                                 L"obj = Cls()\n"
+                                 L"obj.value = 3\n"
+                                 L"obj.method(4, 5)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(12), actual);
+}
+
 TEST(Interpreter, direct_method_call_on_class_does_not_insert_self)
 {
     test::FileRunner file_runner(L"class Cls:\n"
@@ -1165,6 +1204,29 @@ TEST(Interpreter, direct_method_call_on_class_does_not_insert_self)
     Value actual = file_runner.return_value;
 
     EXPECT_EQ(Value::from_smi(7), actual);
+}
+
+TEST(Interpreter, direct_zero_arg_class_function_call_preserves_frame_alignment)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    def method():\n"
+                                 L"        return 7\n"
+                                 L"Cls.method()\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(7), actual);
+}
+
+TEST(Interpreter,
+     direct_class_function_call_with_even_args_preserves_frame_alignment)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    def method(x, y):\n"
+                                 L"        return x + y\n"
+                                 L"Cls.method(4, 5)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(9), actual);
 }
 
 TEST(Interpreter, class_definition_uses_explicit_base)
@@ -1384,6 +1446,42 @@ TEST(Interpreter,
 
     Value actual = test_context.thread()->run(code_obj);
     EXPECT_EQ(Value::from_smi(4), actual);
+}
+
+TEST(Interpreter,
+     direct_zero_arg_method_call_to_builtin_preserves_argument_layout)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> cls_name(
+        test_context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> method_name(
+        test_context.vm().get_or_create_interned_string_value(L"method"));
+
+    TValue<BuiltinFunction> next_counter =
+        test_context.thread()->make_object_value<BuiltinFunction>(
+            builtin_next_counter, 0, 0);
+
+    CodeObject *setup_code = test_context.compile_file(L"class Cls:\n"
+                                                       L"    pass\n"
+                                                       L"obj = Cls()\n");
+    (void)test_context.thread()->run(setup_code);
+    Scope *module_scope = setup_code->module_scope.extract();
+    Value cls_value = module_scope->get_by_name(cls_name);
+    ASSERT_TRUE(cls_value.is_ptr());
+    ASSERT_EQ(NativeLayoutId::ClassObject,
+              cls_value.get_ptr<Object>()->native_layout_id());
+    cls_value.get_ptr<ClassObject>()->set_own_property(method_name,
+                                                       next_counter);
+
+    g_next_counter = 7;
+    CodeObject *code_obj =
+        test_context.compile_file(L"obj.method() + obj.method()\n");
+    code_obj->module_scope = module_scope;
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(15), actual);
 }
 
 TEST(Interpreter,

@@ -15,6 +15,7 @@
 #include "subscript.h"
 #include "tuple.h"
 #include "value.h"
+#include <cstdint>
 #include <fmt/core.h>
 
 namespace cl
@@ -26,6 +27,14 @@ namespace cl
 #define ARGS accumulator, fp, pc, dispatch, code_object
 
     using DispatchTableEntry = Value (*)(PARAMS);
+
+    static constexpr uintptr_t StackFrameAlignmentBytes = 16;
+
+    static ALWAYSINLINE bool is_stack_frame_aligned(Value *fp)
+    {
+        return (reinterpret_cast<uintptr_t>(fp) % StackFrameAlignmentBytes) ==
+               0;
+    }
 
     struct DispatchTable
     {
@@ -277,6 +286,7 @@ namespace cl
         Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
         TValue<Function> fun, Value *new_fp, uint32_t instr_len)
     {
+        assert(is_stack_frame_aligned(new_fp));
         pc += instr_len;
 
         initialize_frame_header(new_fp, fp, code_object, pc);
@@ -291,11 +301,9 @@ namespace cl
         TValue<Function> fun, int32_t first_arg_reg, uint32_t n_args,
         uint32_t instr_len)
     {
-        int32_t new_fp_reg =
-            n_args == 0
-                ? first_arg_reg - FrameHeaderSizeAboveFp
-                : first_arg_reg - int32_t(round_up_to_abi_alignment(n_args)) +
-                      1 - FrameHeaderSizeAboveFp;
+        int32_t new_fp_reg = first_arg_reg -
+                             int32_t(round_up_to_abi_alignment(n_args)) + 1 -
+                             FrameHeaderSizeAboveFp;
         Value *new_fp = fp + new_fp_reg;
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                        instr_len);
@@ -1206,6 +1214,7 @@ namespace cl
             fp + first_arg_reg -
             int32_t(round_up_to_abi_alignment(ClassBodyParameterCount)) + 1 -
             FrameHeaderSizeAboveFp;
+        assert(is_stack_frame_aligned(new_fp));
         initialize_frame_header(new_fp, fp, code_object, return_pc);
         initialize_class_body_frame(new_fp, body_code.extract());
 
@@ -1854,6 +1863,7 @@ namespace cl
 
     Value run_interpreter(Value *fp, CodeObject *code_object, uint32_t start_pc)
     {
+        assert(is_stack_frame_aligned(fp));
         const uint8_t *pc = &code_object->code[start_pc];
         void *dispatch = reinterpret_cast<void *>(&dispatch_table);
         Value accumulator = Value::from_smi(0);  // init accumulator to 0

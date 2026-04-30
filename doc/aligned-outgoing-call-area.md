@@ -356,10 +356,9 @@ The migration should be staged so each patch establishes one visible invariant.
    `doc/function-calling-convention.md` when the first internal Python-call
    slow path lands.
 
-9. Add frame-alignment assertions.
+9. Done: add frame-alignment assertions.
 
-   Ensure the initial interpreter frame is 16-byte aligned and assert alignment
-   after function and class-body frame transitions. This must happen after all
-   explicit and internal Python-call paths use the outgoing argument area;
-   otherwise direct call-window temporaries may still place callee frames on
-   odd `Value` slots.
+   The interpreter asserts that the initial frame is 16-byte aligned and that
+   function and class-body frame transitions preserve alignment. Future
+   internal Python-call slow paths should use the outgoing argument area before
+   entering Python frames so they satisfy the same assertion.

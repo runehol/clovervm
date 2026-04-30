@@ -431,14 +431,12 @@ namespace cl
             uint32_t body_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(class_obj));
             AstChildren bases = av.children[bases_idx];
-            TemporaryReg class_args(this, 2);
-
             uint32_t name_constant_idx =
                 code_obj->allocate_constant(av.constants[node_idx]);
             code_obj->emit_opcode_constant_idx(
                 source_offset, Bytecode::LdaConstant, name_constant_idx);
             code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                      class_args);
+                                      OutgoingArgReg(0));
 
             TemporaryReg base_regs(this, std::max<size_t>(bases.size(), 1));
             if(bases.empty())
@@ -463,11 +461,11 @@ namespace cl
                                             Bytecode::CreateTuple, base_regs,
                                             std::max<size_t>(bases.size(), 1));
             code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                      class_args + 1);
+                                      OutgoingArgReg(1));
 
             code_obj->emit_opcode_constant_idx_reg(
                 source_offset, Bytecode::CreateClass, body_constant_idx,
-                class_args);
+                OutgoingArgReg(0));
 
             perform_variable_assignment(source_offset, slot_idx, mode);
         }

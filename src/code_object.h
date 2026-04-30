@@ -190,6 +190,19 @@ namespace cl
             return result;
         }
 
+        uint32_t emit_opcode_constant_idx_reg(uint32_t source_offset,
+                                              Bytecode c, uint8_t constant_idx,
+                                              OutgoingArgReg reg)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            emplace_back(source_offset, constant_idx);
+            uint32_t operand_offset = code.size();
+            emplace_back(source_offset, reg.slot_offset);
+            add_outgoing_arg_relocation(operand_offset, reg.slot_offset);
+            return result;
+        }
+
         uint32_t emit_opcode_constant_idx_constant_idx(
             uint32_t source_offset, Bytecode c, uint8_t first_constant_idx,
             uint8_t second_constant_idx)
