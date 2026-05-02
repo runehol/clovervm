@@ -307,11 +307,13 @@ TEST(Parser, attribute_expression_and_assignment)
     std::string expected = ("obj.value\n"
                             "obj.value = 1\n"
                             "del obj.value\n"
-                            "del value\n");
+                            "del value\n"
+                            "del items[0]\n");
     std::string actual = parse(L"obj.value\n"
                                L"obj.value = 1\n"
                                L"del obj.value\n"
-                               L"del value\n");
+                               L"del value\n"
+                               L"del items[0]\n");
 
     EXPECT_EQ(expected, actual);
 }
@@ -424,12 +426,12 @@ TEST(Parser, yield_stmt_not_implemented)
                        "offset 0 (line 1, column 1), near \"yield 1\"");
 }
 
-TEST(Parser, del_subscript_target_not_supported)
+TEST(Parser, del_invalid_target_mentions_subscript)
 {
     expect_parse_error(
-        L"del items[0]\n",
-        "SyntaxError: del target must be a variable or attribute at offset 4 "
-        "(line 1, column 5), near \"del items[0]\"");
+        L"del items + 1\n",
+        "SyntaxError: del target must be a variable, attribute, or subscript "
+        "at offset 4 (line 1, column 5), near \"del items + 1\"");
 }
 
 TEST(Parser, tuple_assignment_target_not_supported)

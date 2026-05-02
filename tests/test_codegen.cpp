@@ -553,6 +553,25 @@ TEST(Codegen, subscript_store_uses_receiver_and_key_registers)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, subscript_delete_uses_receiver_and_key_registers)
+{
+    const wchar_t *test_case = L"def clear(obj, idx):\n"
+                               L"    del obj[idx]\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 CreateFunction c[0]\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 Halt\n"
+                           "Constant 0: Code object:\n"
+                           "    0 DelSubscript p0, p1\n"
+                           "    3 LdaNone\n"
+                           "    4 Return\n"
+                           "\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, subscript_augmented_assignment_evaluates_receiver_and_key_once)
 {
     const wchar_t *test_case = L"def bump(obj, idx):\n"

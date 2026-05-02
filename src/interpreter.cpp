@@ -1119,6 +1119,18 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_del_subscript(PARAMS)
+    {
+        START(3);
+        int8_t receiver_reg = pc[1];
+        int8_t key_reg = pc[2];
+        if(unlikely(!del_subscript(fp[receiver_reg], fp[key_reg])))
+        {
+            MUSTTAIL return subscript_error(ARGS);
+        }
+        COMPLETE();
+    }
+
     static Value op_add_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
@@ -2270,6 +2282,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::DelAttr, op_del_attr);
         SET_TABLE_ENTRY(Bytecode::LoadSubscript, op_load_subscript);
         SET_TABLE_ENTRY(Bytecode::StoreSubscript, op_store_subscript);
+        SET_TABLE_ENTRY(Bytecode::DelSubscript, op_del_subscript);
         SET_TABLE_ENTRY(Bytecode::CallMethodAttr, op_call_method_attr);
 
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);

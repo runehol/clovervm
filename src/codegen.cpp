@@ -1230,6 +1230,18 @@ namespace cl
                                            key_reg.reg);
         }
 
+        void codegen_subscript_target_delete(uint32_t source_offset,
+                                             int32_t target_idx)
+        {
+            AstChildren target_children = av.children[target_idx];
+            ScopedRegister receiver_reg =
+                codegen_node_to_register(target_children[0]);
+            ScopedRegister key_reg =
+                codegen_node_to_register(target_children[1]);
+            code_obj->emit_del_subscript(source_offset, receiver_reg.reg,
+                                         key_reg.reg);
+        }
+
         void codegen_attribute_assignment(int32_t node_idx)
         {
             AstKind kind = av.kinds[node_idx];
@@ -1492,6 +1504,14 @@ namespace cl
                                                             target_idx);
                             continue;
                         }
+                        if(target_kind == AstNodeKind::EXPRESSION_BINARY &&
+                           av.kinds[target_idx].operator_kind ==
+                               AstOperatorKind::SUBSCRIPT)
+                        {
+                            codegen_subscript_target_delete(source_offset,
+                                                            target_idx);
+                            continue;
+                        }
                         if(target_kind ==
                            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
@@ -1500,7 +1520,7 @@ namespace cl
                         }
                         throw std::runtime_error(
                             "We don't support del targets except variables and "
-                            "attributes yet");
+                            "attributes and subscripts yet");
                     }
                     break;
 

@@ -80,4 +80,32 @@ namespace cl
 
         return false;
     }
+
+    bool del_subscript(Value obj, Value key)
+    {
+        if(!obj.is_ptr())
+        {
+            return false;
+        }
+
+        Object *object = obj.get_ptr<Object>();
+        if(object->native_layout_id() == NativeLayoutId::List)
+        {
+            (void)static_cast<List *>(object)->pop_item(
+                list_index_from_value(key));
+            return true;
+        }
+        if(object->native_layout_id() == NativeLayoutId::Tuple)
+        {
+            throw std::runtime_error(
+                "TypeError: 'tuple' object does not support item deletion");
+        }
+        if(object->native_layout_id() == NativeLayoutId::Dict)
+        {
+            static_cast<Dict *>(object)->del_item(key);
+            return true;
+        }
+
+        return false;
+    }
 }  // namespace cl

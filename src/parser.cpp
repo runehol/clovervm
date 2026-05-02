@@ -1007,14 +1007,18 @@ namespace cl
         {
             if(ast.kinds[target].node_kind ==
                    AstNodeKind::EXPRESSION_VARIABLE_REFERENCE ||
-               ast.kinds[target].node_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
+               ast.kinds[target].node_kind ==
+                   AstNodeKind::EXPRESSION_ATTRIBUTE ||
+               (ast.kinds[target].node_kind == AstNodeKind::EXPRESSION_BINARY &&
+                ast.kinds[target].operator_kind == AstOperatorKind::SUBSCRIPT))
             {
                 return;
             }
 
             throw std::runtime_error(
                 std::string(
-                    "SyntaxError: del target must be a variable or attribute") +
+                    "SyntaxError: del target must be a variable, attribute, or "
+                    "subscript") +
                 format_error_context(del_target_source_pos(target)));
         }
 

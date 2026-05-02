@@ -316,6 +316,14 @@ namespace cl
                                    receiver_reg, key_reg);
     }
 
+    uint32_t CodeObjectBuilder::emit_del_subscript(uint32_t source_offset,
+                                                   uint32_t receiver_reg,
+                                                   uint32_t key_reg)
+    {
+        return emit_opcode_reg_reg(source_offset, Bytecode::DelSubscript,
+                                   receiver_reg, key_reg);
+    }
+
     uint32_t CodeObjectBuilder::emit_jump(uint32_t source_offset,
                                           JumpTarget &target)
     {

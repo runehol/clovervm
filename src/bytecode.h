@@ -74,6 +74,7 @@ namespace cl
         DelAttr,
         LoadSubscript,
         StoreSubscript,
+        DelSubscript,
         CallMethodAttr,
 
         // binary on accumulator. reg op acc

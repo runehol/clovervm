@@ -119,6 +119,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "LoadSubscript");
             case cl::Bytecode::StoreSubscript:
                 return format_to(out, "StoreSubscript");
+            case cl::Bytecode::DelSubscript:
+                return format_to(out, "DelSubscript");
             case cl::Bytecode::CallMethodAttr:
                 return format_to(out, "CallMethodAttr");
 
@@ -472,6 +474,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::StoreSubscript:
+            case cl::Bytecode::DelSubscript:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");

@@ -927,6 +927,16 @@ TEST(Interpreter, subscript_store_writes_dict_item)
     EXPECT_EQ(Value::from_smi(11), actual);
 }
 
+TEST(Interpreter, subscript_delete_removes_dict_item)
+{
+    test::FileRunner file_runner(L"xs = {\"alpha\": 4, \"beta\": 7}\n"
+                                 L"del xs[\"beta\"]\n"
+                                 L"xs[\"alpha\"]\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(4), actual);
+}
+
 TEST(Interpreter, subscript_augmented_assignment_updates_dict_item)
 {
     test::FileRunner file_runner(L"xs = {\"alpha\": 4, \"beta\": 7}\n"
@@ -975,6 +985,26 @@ TEST(Interpreter, subscript_store_writes_list_item)
     EXPECT_EQ(Value::from_smi(11), actual);
 }
 
+TEST(Interpreter, subscript_delete_removes_list_item)
+{
+    test::FileRunner file_runner(L"xs = [4, 7, 9]\n"
+                                 L"del xs[1]\n"
+                                 L"xs[1]\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(9), actual);
+}
+
+TEST(Interpreter, subscript_delete_supports_negative_list_index)
+{
+    test::FileRunner file_runner(L"xs = [4, 7, 9]\n"
+                                 L"del xs[-1]\n"
+                                 L"xs[1]\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(7), actual);
+}
+
 TEST(Interpreter, subscript_store_rejects_tuple_item_assignment)
 {
     expect_runtime_error(
@@ -982,6 +1012,15 @@ TEST(Interpreter, subscript_store_rejects_tuple_item_assignment)
         L"    pass\n"
         L"Cls.__mro__[0] = 1\n",
         "TypeError: 'tuple' object does not support item assignment");
+}
+
+TEST(Interpreter, subscript_delete_rejects_tuple_item_deletion)
+{
+    expect_runtime_error(
+        L"class Cls:\n"
+        L"    pass\n"
+        L"del Cls.__mro__[0]\n",
+        "TypeError: 'tuple' object does not support item deletion");
 }
 
 TEST(Interpreter, subscript_augmented_assignment_updates_list_item)
@@ -1045,6 +1084,12 @@ TEST(Interpreter, subscript_load_rejects_out_of_range_tuple_index)
 TEST(Interpreter, subscript_load_rejects_non_subscriptable_receiver)
 {
     expect_runtime_error(L"1[0]\n", "TypeError: object is not subscriptable");
+}
+
+TEST(Interpreter, subscript_delete_rejects_non_subscriptable_receiver)
+{
+    expect_runtime_error(L"del (1)[0]\n",
+                         "TypeError: object is not subscriptable");
 }
 
 TEST(Interpreter, attribute_load_through_list_subscript)
