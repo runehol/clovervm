@@ -32,16 +32,18 @@ namespace cl
             items.set(idx, value);
         }
         void insert_item_unchecked(size_t idx, Value value);
-        // Returns a transferred Value; the caller assumes ownership that was
-        // previously held by the list slot.
+        // Returns a borrowed Value. Interpreter callers immediately place the
+        // result on the stack/accumulator, which keeps it rooted after the list
+        // releases its slot ownership.
         Value pop_item_unchecked(size_t idx);
         void append(Value value) { items.push_back(value); }
 
         Value get_item(int64_t py_idx) const;
         void set_item(int64_t py_idx, Value value);
         void insert_item(int64_t py_idx, Value value);
-        // Returns a transferred Value; the caller assumes ownership that was
-        // previously held by the list slot.
+        // Returns a borrowed Value. Interpreter callers immediately place the
+        // result on the stack/accumulator, which keeps it rooted after the list
+        // releases its slot ownership.
         Value pop_item(int64_t py_idx = -1);
 
     private:
