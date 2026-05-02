@@ -97,6 +97,30 @@ namespace cl
         return code.finalize();
     }
 
+    static TValue<Tuple>
+    make_constructor_thunk_defaults(TValue<Tuple> init_defaults,
+                                    uint32_t init_n_positional_parameters)
+    {
+        uint32_t init_n_defaults = init_defaults.extract()->size();
+        uint32_t first_default_parameter_idx =
+            init_n_positional_parameters - init_n_defaults;
+        if(first_default_parameter_idx > 0)
+        {
+            return init_defaults;
+        }
+
+        assert(init_n_defaults > 0);
+        uint32_t thunk_n_defaults = init_n_defaults - 1;
+        TValue<Tuple> thunk_defaults =
+            make_object_value<Tuple>(static_cast<size_t>(thunk_n_defaults));
+        for(uint32_t idx = 0; idx < thunk_n_defaults; ++idx)
+        {
+            thunk_defaults.extract()->initialize_item_unchecked(
+                idx, init_defaults.extract()->item_unchecked(idx + 1));
+        }
+        return thunk_defaults;
+    }
+
     TValue<Function> make_constructor_thunk_function(ClassObject *cls,
                                                      Value init)
     {
@@ -116,12 +140,21 @@ namespace cl
         }
 
         TValue<Tuple> default_tuple(defaults);
-        if(default_tuple.extract()->size() > code->n_positional_parameters)
+        TValue<Tuple> thunk_defaults = make_constructor_thunk_defaults(
+            default_tuple, init_function.extract()
+                               ->code_object.extract()
+                               ->n_positional_parameters);
+        if(thunk_defaults.extract()->empty())
+        {
+            return make_object_value<Function>(
+                TValue<CodeObject>::from_oop(code));
+        }
+        if(thunk_defaults.extract()->size() > code->n_positional_parameters)
         {
             throw std::runtime_error(
                 "TypeError: unsupported __init__ default parameter layout");
         }
         return make_object_value<Function>(TValue<CodeObject>::from_oop(code),
-                                           default_tuple);
+                                           thunk_defaults);
     }
 }  // namespace cl

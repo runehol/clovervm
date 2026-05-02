@@ -711,6 +711,33 @@ TEST(Interpreter, class_constructor_uses_init_defaults)
     EXPECT_EQ(Value::from_smi(43), actual);
 }
 
+TEST(Interpreter, class_constructor_drops_self_default)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    def __init__(self=1):\n"
+                                 L"        pass\n"
+                                 L"Cls()\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::Instance,
+              actual.get_ptr<Object>()->native_layout_id());
+}
+
+TEST(Interpreter, class_constructor_remaps_defaults_after_self_default)
+{
+    test::FileRunner file_runner(
+        L"class Cls:\n"
+        L"    def __init__(self=1, x=2):\n"
+        L"        self.value = x\n"
+        L"default_obj = Cls()\n"
+        L"explicit_obj = Cls(5)\n"
+        L"default_obj.value * 10 + explicit_obj.value\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(25), actual);
+}
+
 TEST(Interpreter, class_constructor_forwards_varargs_tuple)
 {
     test::FileRunner file_runner(L"class Cls:\n"
