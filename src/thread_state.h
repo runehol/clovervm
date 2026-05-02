@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "heap.h"
+#include "owned.h"
 #include "typed_value.h"
 #include "value.h"
 #include <type_traits>
@@ -20,6 +21,22 @@ namespace cl
     struct CodeObject;
 
     ClassObject *class_for_native_layout(VirtualMachine *vm, NativeLayoutId id);
+
+    enum class PendingExceptionKind
+    {
+        None,
+        Object,
+        StopIteration,
+    };
+
+    struct PendingException
+    {
+        PendingExceptionKind kind = PendingExceptionKind::None;
+        OwnedValue object;
+        OwnedValue stop_iteration_value;
+
+        PendingException();
+    };
 
     class ThreadState
     {
@@ -48,6 +65,18 @@ namespace cl
         static void add_to_active_zero_count_table(HeapObject *obj);
 
         Value run(CodeObject *obj);
+
+        bool has_pending_exception() const;
+        PendingExceptionKind pending_exception_kind() const;
+        void clear_pending_exception();
+        void set_pending_exception_object(Value exception_object);
+        void set_pending_exception_string(TValue<ClassObject> type,
+                                          const char *message);
+        void set_pending_exception_none(TValue<ClassObject> type);
+        void set_pending_stop_iteration_no_value();
+        void set_pending_stop_iteration_value(Value value);
+        Value pending_exception_object() const;
+        Value pending_stop_iteration_value() const;
 
         static ThreadState *get_active()
         {
@@ -105,6 +134,7 @@ namespace cl
 
         std::vector<Value> stack;
         std::deque<HeapObject *> zero_count_table;
+        PendingException pending_exception;
 
         static thread_local ThreadState *current_thread;
     };

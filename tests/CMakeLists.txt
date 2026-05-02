@@ -23,6 +23,7 @@ target_sources(test_clovervm PRIVATE
 	test_list.cpp
 	test_shape.cpp
 	test_scope.cpp
+	test_thread_state.cpp
 	test_typed_value.cpp
 	test_tuple.cpp
 	test_vm_array.cpp

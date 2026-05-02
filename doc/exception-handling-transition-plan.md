@@ -83,8 +83,8 @@ interpret, while ordinary setup/return code has one documented slot contract.
 
 ## Stage 2: Pending Exception State
 
-- [ ] Add pending exception state to `ThreadState`.
-- [ ] Start with a conservative shape:
+- [x] Add pending exception state to `ThreadState`.
+- [x] Start with a conservative shape:
 
 ```cpp
 enum class PendingExceptionKind
@@ -95,11 +95,12 @@ enum class PendingExceptionKind
 };
 ```
 
-- [ ] Represent general exceptions as realized objects once exception objects
-      exist; until then, use narrow VM-originated placeholders only where needed
-      for migration.
-- [ ] Add helpers to set, inspect, clear, and assert pending exception state.
-- [ ] Ensure pending exception state is never used for normal returns.
+- [x] Add helpers to set, inspect, clear, and assert pending exception state.
+- [x] Add separate helpers for `StopIteration()` and `StopIteration(value)` so
+      callers do not need to remember the `Value::not_present()` convention.
+- [x] Add a `set_pending_exception_string` helper with the intended API shape,
+      but keep it explicitly unsupported until exception objects exist.
+- [x] Ensure pending exception state is never used for normal returns.
 
 Deliverable: the VM has one canonical location for a Python exception in flight.
 
