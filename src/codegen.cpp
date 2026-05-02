@@ -754,6 +754,32 @@ namespace cl
                 constant_idx, store_cache_idx);
         }
 
+        void codegen_attribute_delete(int32_t node_idx, Mode mode)
+        {
+            AstChildren children = av.children[node_idx];
+            uint32_t source_offset = av.source_offsets[node_idx];
+            for(int32_t target_idx: children)
+            {
+                if(av.kinds[target_idx].node_kind !=
+                   AstNodeKind::EXPRESSION_ATTRIBUTE)
+                {
+                    throw std::runtime_error(
+                        "We don't support del targets except attributes yet");
+                }
+
+                AstChildren target_children = av.children[target_idx];
+                uint8_t constant_idx =
+                    code_obj->allocate_constant(av.constants[target_idx]);
+                ScopedRegister receiver_reg =
+                    codegen_node_to_register(target_children[0], mode);
+                uint8_t cache_idx =
+                    code_obj->allocate_attribute_mutation_cache();
+                code_obj->emit_opcode_reg_constant_idx_cache_idx(
+                    source_offset, Bytecode::DelAttr, receiver_reg.reg,
+                    constant_idx, cache_idx);
+            }
+        }
+
         std::optional<uint8_t> direct_range_call_arity(int32_t node_idx) const
         {
             if(av.kinds[node_idx].node_kind != AstNodeKind::EXPRESSION_CALL)
@@ -1113,6 +1139,10 @@ namespace cl
                                                     mode);
                         break;
                     }
+
+                case AstNodeKind::STATEMENT_DEL:
+                    codegen_attribute_delete(node_idx, mode);
+                    break;
 
                 case AstNodeKind::EXPRESSION_BINARY:
                     if(kind.operator_kind == AstOperatorKind::SUBSCRIPT)

@@ -413,6 +413,20 @@ template <> struct fmt::formatter<cl::AstVector>
                 emit_indent(out, indent);
                 format_to(out, "pass\n");
                 break;
+            case cl::AstNodeKind::STATEMENT_DEL:
+                emit_indent(out, indent);
+                format_to(out, "del ");
+                for(size_t i = 0; i < children.size(); ++i)
+                {
+                    if(i != 0)
+                    {
+                        format_to(out, ", ");
+                    }
+                    render_node(av, out, children[i], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                }
+                format_to(out, "\n");
+                break;
             case cl::AstNodeKind::STATEMENT_BREAK:
                 emit_indent(out, indent);
                 format_to(out, "break\n");

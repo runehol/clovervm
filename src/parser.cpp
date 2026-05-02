@@ -998,6 +998,23 @@ namespace cl
                 format_error_context(assignment_target_source_pos(lhs)));
         }
 
+        uint32_t del_target_source_pos(int32_t node_idx)
+        {
+            return assignment_target_source_pos(node_idx);
+        }
+
+        void validate_del_target(int32_t target)
+        {
+            if(ast.kinds[target].node_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
+            {
+                return;
+            }
+
+            throw std::runtime_error(
+                std::string("SyntaxError: del target must be an attribute") +
+                format_error_context(del_target_source_pos(target)));
+        }
+
         int32_t assignment()
         {
             int32_t source_pos = source_pos_for_token();
@@ -1105,7 +1122,24 @@ namespace cl
 
         int32_t import_stmt() { return not_implemented("import statement"); }
 
-        int32_t del_stmt() { return not_implemented("del statement"); }
+        int32_t del_stmt()
+        {
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::DEL);
+            AstChildren ch;
+            ch.push_back(star_expressions());
+            validate_del_target(ch.back());
+            while(match(Token::COMMA))
+            {
+                if(peek() == Token::NEWLINE || peek() == Token::SEMI)
+                {
+                    break;
+                }
+                ch.push_back(star_expressions());
+                validate_del_target(ch.back());
+            }
+            return ast.emplace_back(AstNodeKind::STATEMENT_DEL, source_pos, ch);
+        }
 
         int32_t yield_stmt() { return not_implemented("yield statement"); }
 

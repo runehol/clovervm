@@ -1123,7 +1123,7 @@ TEST(Interpreter, store_attr_caches_instance_add_transition)
     EXPECT_TRUE(cache.plan.lookup_validity_cell->is_valid());
 }
 
-TEST(Interpreter, del_attr_bytecode_deletes_instance_property_and_caches_plan)
+TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
@@ -1135,21 +1135,18 @@ TEST(Interpreter, del_attr_bytecode_deletes_instance_property_and_caches_plan)
     TValue<String> value_name(
         test_context.vm().get_or_create_interned_string_value(L"value"));
 
-    CodeObject *definition_code = test_context.compile_file(L"def clear(obj):\n"
-                                                            L"    obj.value\n");
+    CodeObject *definition_code =
+        test_context.compile_file(L"def clear(obj):\n"
+                                  L"    del obj.value\n");
     (void)test_context.thread()->run(definition_code);
     Value function_value =
         definition_code->module_scope.extract()->get_by_name(clear_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(uint8_t(Bytecode::LoadAttr), function_code->code[0]);
-    ASSERT_EQ(1u, function_code->attribute_read_caches.size());
-    ASSERT_TRUE(function_code->attribute_mutation_caches.empty());
-
-    uint8_t cache_idx = function_code->allocate_attribute_mutation_cache();
-    function_code->code[0] = uint8_t(Bytecode::DelAttr);
-    function_code->code[3] = cache_idx;
+    ASSERT_EQ(uint8_t(Bytecode::DelAttr), function_code->code[0]);
+    ASSERT_TRUE(function_code->attribute_read_caches.empty());
+    ASSERT_EQ(1u, function_code->attribute_mutation_caches.size());
 
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, test_context.vm().object_class());
@@ -1180,7 +1177,7 @@ TEST(Interpreter, del_attr_bytecode_deletes_instance_property_and_caches_plan)
     EXPECT_TRUE(second->get_own_property(value_name).is_not_present());
 }
 
-TEST(Interpreter, del_attr_bytecode_missing_attribute_raises_attribute_error)
+TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
@@ -1190,17 +1187,13 @@ TEST(Interpreter, del_attr_bytecode_missing_attribute_raises_attribute_error)
     TValue<String> cls_name(
         test_context.vm().get_or_create_interned_string_value(L"Cls"));
 
-    CodeObject *definition_code = test_context.compile_file(L"def clear(obj):\n"
-                                                            L"    obj.value\n");
+    CodeObject *definition_code =
+        test_context.compile_file(L"def clear(obj):\n"
+                                  L"    del obj.value\n");
     (void)test_context.thread()->run(definition_code);
     Value function_value =
         definition_code->module_scope.extract()->get_by_name(clear_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
-    CodeObject *function_code =
-        assume_convert_to<Function>(function_value)->code_object.extract();
-    uint8_t cache_idx = function_code->allocate_attribute_mutation_cache();
-    function_code->code[0] = uint8_t(Bytecode::DelAttr);
-    function_code->code[3] = cache_idx;
 
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, test_context.vm().object_class());

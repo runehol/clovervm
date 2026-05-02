@@ -365,6 +365,26 @@ TEST(Codegen, attribute_store_uses_register_receiver_and_accumulator_value)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, attribute_delete_uses_register_receiver_and_mutation_cache)
+{
+    const wchar_t *test_case = L"def clear(obj):\n"
+                               "    del obj.value\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 CreateFunction c[0]\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 Halt\n"
+                           "Constant 0: Code object:\n"
+                           "    0 DelAttr p0, c[0], mutation_ic[0]\n"
+                           "    4 LdaNone\n"
+                           "    5 Return\n"
+                           "Constant 0: \n"
+                           "\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, direct_method_call_uses_callmethodattr)
 {
     const wchar_t *test_case = L"def invoke(obj, value):\n"
