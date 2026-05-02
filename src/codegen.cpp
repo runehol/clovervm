@@ -102,7 +102,7 @@ namespace cl
             FrameHeaderSize);
     }
 
-    class CodeObjectBuilder
+    class AstCodegen
     {
     public:
         using RegisterIndex = int32_t;
@@ -114,9 +114,9 @@ namespace cl
             Function
         };
 
-        CodeObjectBuilder(const AstVector &_av, Scope *_module_scope,
-                          CodeObject *_code_obj, Mode _mode, int32_t _body_idx,
-                          AstChildren param_children)
+        AstCodegen(const AstVector &_av, Scope *_module_scope,
+                   CodeObject *_code_obj, Mode _mode, int32_t _body_idx,
+                   AstChildren param_children)
             : av(_av), module_scope(_module_scope), code_obj(_code_obj),
               body_idx(_body_idx), analysis(_mode, _av.size()),
               temporary_reg(FrameHeaderSize), max_temporary_reg(FrameHeaderSize)
@@ -936,7 +936,7 @@ namespace cl
         class TemporaryReg
         {
         public:
-            TemporaryReg(CodeObjectBuilder *_builder, uint32_t _n_regs = 1)
+            TemporaryReg(AstCodegen *_builder, uint32_t _n_regs = 1)
                 : builder(_builder), n_regs(_n_regs)
             {
                 reg = builder->temporary_reg;
@@ -971,7 +971,7 @@ namespace cl
             operator uint32_t() const { return reg; }
 
         private:
-            CodeObjectBuilder *builder;
+            AstCodegen *builder;
             uint32_t n_regs;
             uint32_t reg;
         };
@@ -1947,7 +1947,7 @@ namespace cl
         }
     };
 
-    CodeObject *CodeObjectBuilder::run_module()
+    CodeObject *AstCodegen::run_module()
     {
         codegen_node(body_idx);
         code_obj->emit_opcode(0, Bytecode::Halt);
@@ -2010,10 +2010,9 @@ namespace cl
         }
         reserve_parameter_padding_and_frame_header(fun_obj);
 
-        CodeObjectBuilder fun_builder{
-            av,          module_scope,
-            fun_obj,     CodeObjectBuilder::Mode::Function,
-            children[1], param_children};
+        AstCodegen fun_builder{av,          module_scope,
+                               fun_obj,     AstCodegen::Mode::Function,
+                               children[1], param_children};
         fun_builder.run_function_body(source_offset, children[1]);
         return fun_obj;
     }
@@ -2034,16 +2033,13 @@ namespace cl
         class_obj->get_local_scope_ptr()->reserve_empty_slots(2);
         reserve_parameter_padding_and_frame_header(class_obj);
 
-        CodeObjectBuilder class_builder{
-            av,        module_scope,
-            class_obj, CodeObjectBuilder::Mode::Class,
-            body_idx,  {}};
+        AstCodegen class_builder{
+            av, module_scope, class_obj, AstCodegen::Mode::Class, body_idx, {}};
         class_builder.run_class_body(source_offset, body_idx);
         return class_obj;
     }
 
-    void CodeObjectBuilder::run_function_body(uint32_t source_offset,
-                                              int32_t body_idx)
+    void AstCodegen::run_function_body(uint32_t source_offset, int32_t body_idx)
     {
         emit_local_binding_prologue();
         codegen_node(body_idx);
@@ -2054,8 +2050,7 @@ namespace cl
         code_obj->finalize(max_temporary_reg);
     }
 
-    void CodeObjectBuilder::run_class_body(uint32_t source_offset,
-                                           int32_t body_idx)
+    void AstCodegen::run_class_body(uint32_t source_offset, int32_t body_idx)
     {
         emit_local_binding_prologue();
         codegen_node(body_idx);
@@ -2069,9 +2064,9 @@ namespace cl
             active_vm()->get_builtin_scope().extract());
         CodeObject *module_obj = make_object_raw<CodeObject>(
             av.compilation_unit, module_scope, nullptr, module_name);
-        CodeObjectBuilder builder{av,           module_scope,
-                                  module_obj,   CodeObjectBuilder::Mode::Module,
-                                  av.root_node, {}};
+        AstCodegen builder{av,           module_scope,
+                           module_obj,   AstCodegen::Mode::Module,
+                           av.root_node, {}};
         return builder.run_module();
     }
 
