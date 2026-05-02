@@ -36,6 +36,9 @@ namespace cl
         STATEMENT_NONLOCAL,
         STATEMENT_SEQUENCE,
         STATEMENT_ASSIGN,
+        // Matches CPython's AnnAssign(target, annotation, value?, simple).
+        // The simple bit is stored in AstVector::constants as True/False.
+        STATEMENT_ANN_ASSIGN,
         STATEMENT_EXPRESSION,
         PARAMETER_SEQUENCE,
         PARAMETER,
@@ -75,6 +78,7 @@ namespace cl
             case AstNodeKind::STATEMENT_NONLOCAL:
             case AstNodeKind::STATEMENT_SEQUENCE:
             case AstNodeKind::STATEMENT_ASSIGN:
+            case AstNodeKind::STATEMENT_ANN_ASSIGN:
             case AstNodeKind::STATEMENT_EXPRESSION:
             case AstNodeKind::PARAMETER_SEQUENCE:
             case AstNodeKind::PARAMETER:

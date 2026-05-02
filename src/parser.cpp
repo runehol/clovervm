@@ -1025,22 +1025,27 @@ namespace cl
         int32_t assignment()
         {
             int32_t source_pos = source_pos_for_token();
+            bool lhs_parenthesized = peek() == Token::LPAR;
             int32_t lhs = star_expressions();
 
             if(match(Token::COLON))
             {
-                expression();
+                validate_assignment_target(lhs);
+                int32_t annotation = expression();
+                AstChildren annotation_children{lhs, annotation};
                 if(match(Token::EQUAL))
                 {
-                    validate_assignment_target(lhs);
-                    int32_t rhs = annotated_rhs();
-                    return ast.emplace_back(
-                        AstKind(AstNodeKind::STATEMENT_ASSIGN,
-                                AstOperatorKind::NOP),
-                        source_pos_for_previous_token(), lhs, rhs);
+                    annotation_children.push_back(annotated_rhs());
                 }
-                return ast.emplace_back(AstNodeKind::STATEMENT_EXPRESSION,
-                                        source_pos, lhs);
+                Value simple =
+                    !lhs_parenthesized &&
+                            ast.kinds[lhs].node_kind ==
+                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE
+                        ? Value::True()
+                        : Value::False();
+                return ast.emplace_back(AstNodeKind::STATEMENT_ANN_ASSIGN,
+                                        source_pos, annotation_children,
+                                        simple);
             }
 
             AstOperatorKind op_kind = AstOperatorKind::FALSE;

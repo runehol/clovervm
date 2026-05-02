@@ -156,6 +156,62 @@ TEST(Interpreter, assignment2)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Interpreter, annotation_only_statement_does_not_read_or_bind_target)
+{
+    Value expected = Value::from_smi(1);
+    test::FileRunner file_runner(L"value: int\n"
+                                 "1\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, annotated_assignment_stores_rhs)
+{
+    Value expected = Value::from_smi(7);
+    test::FileRunner file_runner(L"value: int = 7\n"
+                                 "value\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, attribute_annotation_only_evaluates_receiver_without_load)
+{
+    Value expected = Value::from_smi(1);
+    test::FileRunner file_runner(L"marker = 0\n"
+                                 "class C:\n"
+                                 "    pass\n"
+                                 "def side():\n"
+                                 "    global marker\n"
+                                 "    marker = 1\n"
+                                 "    return C()\n"
+                                 "side().missing: int\n"
+                                 "marker\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, subscript_annotation_only_evaluates_receiver_and_key)
+{
+    Value expected = Value::from_smi(3);
+    test::FileRunner file_runner(L"marker = 0\n"
+                                 "def side():\n"
+                                 "    global marker\n"
+                                 "    marker = 1\n"
+                                 "    return []\n"
+                                 "def key():\n"
+                                 "    global marker\n"
+                                 "    marker = marker + 2\n"
+                                 "    return 0\n"
+                                 "side()[key()]: int\n"
+                                 "marker\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Interpreter, del_global_removes_binding)
 {
     expect_runtime_error(L"value = 7\n"

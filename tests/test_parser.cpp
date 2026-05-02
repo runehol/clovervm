@@ -288,14 +288,14 @@ TEST(Parser, function_and_method_parameter_annotations_parse)
 TEST(Parser, variable_annotations_parse_and_are_ignored)
 {
     std::string expected = (""
-                            "x\n"
-                            "y = 1\n"
+                            "x: int\n"
+                            "y: list[int] = 1\n"
                             "class C:\n"
-                            "    value\n"
-                            "    other = 2\n"
+                            "    value: list[int]\n"
+                            "    other: float = 2\n"
                             "def g():\n"
-                            "    local\n"
-                            "    typed = 3\n"
+                            "    local: tuple[int]\n"
+                            "    typed: int = 3\n"
                             "    return typed\n");
     std::string actual = parse(L"x: int\n"
                                L"y: list[int] = 1\n"

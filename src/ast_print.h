@@ -143,6 +143,18 @@ template <> struct fmt::formatter<cl::AstVector>
                 render_node(av, out, children[1], indent, self_precedence);
                 format_to(out, "\n");
                 break;
+            case cl::AstNodeKind::STATEMENT_ANN_ASSIGN:
+                emit_indent(out, indent);
+                render_node(av, out, children[0], indent, self_precedence);
+                format_to(out, ": ");
+                render_node(av, out, children[1], indent, self_precedence);
+                if(children.size() == 3)
+                {
+                    format_to(out, " = ");
+                    render_node(av, out, children[2], indent, self_precedence);
+                }
+                format_to(out, "\n");
+                break;
             case cl::AstNodeKind::EXPRESSION_ASSIGN:
                 render_node(av, out, children[0], indent, self_precedence);
                 assert(kind.operator_kind == cl::AstOperatorKind::NOP);

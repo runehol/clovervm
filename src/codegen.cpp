@@ -448,6 +448,27 @@ namespace cl
                         break;
                     }
 
+                case AstNodeKind::STATEMENT_ANN_ASSIGN:
+                    if(children.size() == 3 && analysis.mode != Mode::Module &&
+                       av.kinds[children[0]].node_kind ==
+                           AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                    {
+                        ensure_local_binding(
+                            target_code_obj, analysis,
+                            av.constants[children[0]].as_value());
+                    }
+                    if(children.size() == 3)
+                    {
+                        collect_code_object_bindings(target_code_obj, analysis,
+                                                     children[2]);
+                    }
+                    if(!ann_assign_is_simple(node_idx))
+                    {
+                        collect_code_object_bindings(target_code_obj, analysis,
+                                                     children[0]);
+                    }
+                    return;
+
                 case AstNodeKind::STATEMENT_DEL:
                     if(analysis.mode != Mode::Module)
                     {
@@ -525,6 +546,25 @@ namespace cl
                         break;
                     }
 
+                case AstNodeKind::STATEMENT_ANN_ASSIGN:
+                    if(children.size() == 3 &&
+                       av.kinds[children[0]].node_kind ==
+                           AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                    {
+                        mark_name(av.constants[children[0]].as_value());
+                    }
+                    if(children.size() == 3)
+                    {
+                        collect_modified_locals(analysis, children[2],
+                                                modified);
+                    }
+                    if(!ann_assign_is_simple(node_idx))
+                    {
+                        collect_modified_locals(analysis, children[0],
+                                                modified);
+                    }
+                    return;
+
                 case AstNodeKind::STATEMENT_DEL:
                     for(int32_t target_idx: children)
                     {
@@ -566,6 +606,13 @@ namespace cl
                                                    Presence::Present);
             }
             return state;
+        }
+
+        bool ann_assign_is_simple(int32_t node_idx) const
+        {
+            assert(av.kinds[node_idx].node_kind ==
+                   AstNodeKind::STATEMENT_ANN_ASSIGN);
+            return av.constants[node_idx].as_value() == Value::True();
         }
 
         FlowState merge_flow_states(const FlowState &left,
@@ -656,6 +703,29 @@ namespace cl
                                           children[1], state);
                         break;
                     }
+
+                case AstNodeKind::STATEMENT_ANN_ASSIGN:
+                    if(children.size() == 3)
+                    {
+                        if(av.kinds[children[0]].node_kind ==
+                           AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                        {
+                            analyze_flow_node(target_code_obj, analysis,
+                                              children[2], state);
+                            annotate_write(children[0]);
+                            break;
+                        }
+                        analyze_flow_node(target_code_obj, analysis,
+                                          children[0], state);
+                        analyze_flow_node(target_code_obj, analysis,
+                                          children[2], state);
+                    }
+                    else if(!ann_assign_is_simple(node_idx))
+                    {
+                        analyze_flow_node(target_code_obj, analysis,
+                                          children[0], state);
+                    }
+                    break;
 
                 case AstNodeKind::STATEMENT_DEL:
                     for(int32_t target_idx: children)
@@ -1538,6 +1608,60 @@ namespace cl
                         emit_variable_store(source_offset, lhs_idx);
                         break;
                     }
+
+                case AstNodeKind::STATEMENT_ANN_ASSIGN:
+                    if(children.size() == 3)
+                    {
+                        int32_t lhs_idx = children[0];
+                        AstNodeKind lhs_kind = av.kinds[lhs_idx].node_kind;
+                        if(lhs_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
+                        {
+                            AstChildren lhs_children = av.children[lhs_idx];
+                            uint8_t constant_idx = code_obj->allocate_constant(
+                                av.constants[lhs_idx]);
+                            ScopedRegister receiver_reg =
+                                codegen_node_to_register(lhs_children[0]);
+                            codegen_node(children[2]);
+                            code_obj->emit_store_attr(
+                                source_offset, receiver_reg.reg, constant_idx);
+                            break;
+                        }
+                        if(lhs_kind == AstNodeKind::EXPRESSION_BINARY)
+                        {
+                            AstChildren lhs_children = av.children[lhs_idx];
+                            ScopedRegister receiver_reg =
+                                codegen_node_to_register(lhs_children[0]);
+                            ScopedRegister key_reg =
+                                codegen_node_to_register(lhs_children[1]);
+                            codegen_node(children[2]);
+                            code_obj->emit_store_subscript(
+                                source_offset, receiver_reg.reg, key_reg.reg);
+                            break;
+                        }
+                        codegen_node(children[2]);
+                        emit_variable_store(source_offset, lhs_idx);
+                    }
+                    else if(!ann_assign_is_simple(node_idx))
+                    {
+                        int32_t lhs_idx = children[0];
+                        AstNodeKind lhs_kind = av.kinds[lhs_idx].node_kind;
+                        if(lhs_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
+                        {
+                            codegen_node(av.children[lhs_idx][0]);
+                            break;
+                        }
+                        if(lhs_kind == AstNodeKind::EXPRESSION_BINARY &&
+                           av.kinds[lhs_idx].operator_kind ==
+                               AstOperatorKind::SUBSCRIPT)
+                        {
+                            AstChildren lhs_children = av.children[lhs_idx];
+                            codegen_node(lhs_children[0]);
+                            codegen_node(lhs_children[1]);
+                            break;
+                        }
+                        codegen_node(lhs_idx);
+                    }
+                    break;
 
                 case AstNodeKind::STATEMENT_DEL:
                     for(int32_t target_idx: children)
