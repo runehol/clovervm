@@ -1172,13 +1172,9 @@ namespace cl
                     codegen_node(args[i]);
                     code_obj->emit_star(source_offset, OutgoingArgReg(1 + i));
                 }
-                uint8_t read_cache_idx =
-                    code_obj->allocate_attribute_read_cache();
-                uint8_t call_cache_idx =
-                    code_obj->allocate_function_call_cache();
-                code_obj->emit_call_method_attr(
-                    source_offset, OutgoingArgReg(0), constant_idx,
-                    read_cache_idx, call_cache_idx, args.size());
+                code_obj->emit_call_method_attr(source_offset,
+                                                OutgoingArgReg(0), constant_idx,
+                                                args.size());
                 return;
             }
 
@@ -1298,10 +1294,8 @@ namespace cl
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
                 codegen_node(children[1]);
-                uint8_t cache_idx =
-                    code_obj->allocate_attribute_mutation_cache();
                 code_obj->emit_store_attr(source_offset, receiver_reg.reg,
-                                          constant_idx, cache_idx);
+                                          constant_idx);
                 return;
             }
 
@@ -1309,9 +1303,8 @@ namespace cl
             std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
                 kind.operator_kind, entry, children[1]);
 
-            uint8_t load_cache_idx = code_obj->allocate_attribute_read_cache();
             code_obj->emit_load_attr(source_offset, receiver_reg.reg,
-                                     constant_idx, load_cache_idx);
+                                     constant_idx);
 
             if(immediate.has_value())
             {
@@ -1327,10 +1320,8 @@ namespace cl
                                          lhs_value_reg);
             }
 
-            uint8_t store_cache_idx =
-                code_obj->allocate_attribute_mutation_cache();
             code_obj->emit_store_attr(source_offset, receiver_reg.reg,
-                                      constant_idx, store_cache_idx);
+                                      constant_idx);
         }
 
         void codegen_attribute_target_delete(uint32_t source_offset,
@@ -1341,9 +1332,8 @@ namespace cl
                 code_obj->allocate_constant(av.constants[target_idx]);
             ScopedRegister receiver_reg =
                 codegen_node_to_register(target_children[0]);
-            uint8_t cache_idx = code_obj->allocate_attribute_mutation_cache();
             code_obj->emit_del_attr(source_offset, receiver_reg.reg,
-                                    constant_idx, cache_idx);
+                                    constant_idx);
         }
 
         std::optional<uint8_t> direct_range_call_arity(int32_t node_idx) const
@@ -1697,11 +1687,8 @@ namespace cl
                             codegen_node_to_register(children[0]);
                         uint8_t constant_idx =
                             code_obj->allocate_constant(av.constants[node_idx]);
-                        uint8_t cache_idx =
-                            code_obj->allocate_attribute_read_cache();
-                        code_obj->emit_load_attr(source_offset,
-                                                 receiver_reg.reg, constant_idx,
-                                                 cache_idx);
+                        code_obj->emit_load_attr(
+                            source_offset, receiver_reg.reg, constant_idx);
                         break;
                     }
 
