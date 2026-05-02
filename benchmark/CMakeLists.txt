@@ -1,3 +1,5 @@
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
 add_executable(bench_clovervm
     bench_interpreter.cpp
     class_attribute_read.cpp
@@ -38,8 +40,23 @@ target_compile_definitions(bench_clovervm
     PRIVATE CLOVERVM_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
 )
 
+add_custom_target(check_opcode_frames
+    COMMAND ${Python3_EXECUTABLE}
+            ${PROJECT_SOURCE_DIR}/tools/check_opcode_frames.py
+            --binary $<TARGET_FILE:clovervm>
+            --required-list
+            ${PROJECT_SOURCE_DIR}/benchmark/hot_path_opcode_handlers.txt
+            --nm ${CMAKE_NM}
+            --objdump ${CMAKE_OBJDUMP}
+            --warn-only
+    DEPENDS clovervm
+    USES_TERMINAL
+)
+
 add_custom_target(run_benchmark
-    COMMAND bench_clovervm --benchmark_min_time=0.1s --benchmark_counters_tabular=true
-    DEPENDS bench_clovervm
+    COMMAND $<TARGET_FILE:bench_clovervm>
+            --benchmark_min_time=0.1s
+            --benchmark_counters_tabular=true
+    DEPENDS check_opcode_frames bench_clovervm
     USES_TERMINAL
 )
