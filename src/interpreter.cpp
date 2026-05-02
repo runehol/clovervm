@@ -964,6 +964,21 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_del_global(PARAMS)
+    {
+        START(5);
+        int32_t slot_idx = read_uint32_le(&pc[1]);
+        Scope *module_scope = code_object->module_scope.extract();
+        Value old_value =
+            module_scope->get_by_slot_index_fastpath_only(slot_idx);
+        if(unlikely(old_value.is_not_present()))
+        {
+            MUSTTAIL return name_error(ARGS);
+        }
+        module_scope->set_by_slot_index(slot_idx, Value::not_present());
+        COMPLETE();
+    }
+
     static Value op_load_attr(PARAMS)
     {
         START(4);
@@ -2214,6 +2229,7 @@ namespace cl
 
         SET_TABLE_ENTRY(Bytecode::LdaGlobal, op_lda_global);
         SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);
+        SET_TABLE_ENTRY(Bytecode::DelGlobal, op_del_global);
         SET_TABLE_ENTRY(Bytecode::LoadAttr, op_load_attr);
         SET_TABLE_ENTRY(Bytecode::StoreAttr, op_store_attr);
         SET_TABLE_ENTRY(Bytecode::DelAttr, op_del_attr);

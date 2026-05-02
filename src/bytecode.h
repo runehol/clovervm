@@ -23,7 +23,6 @@ namespace cl
         Ldar,
         // store accumulator to register
         Star,
-
         // fast single-byte optimisation opcodes for the first 16 registers
         Ldar0,
         Ldar1,
@@ -62,6 +61,7 @@ namespace cl
         // load and store globals by slot index
         LdaGlobal,
         StaGlobal,
+        DelGlobal,
 
         // attribute access
         LoadAttr,

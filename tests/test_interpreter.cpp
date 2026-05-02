@@ -156,6 +156,26 @@ TEST(Interpreter, assignment2)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Interpreter, del_global_removes_binding)
+{
+    expect_runtime_error(L"value = 7\n"
+                         L"del value\n"
+                         L"value\n",
+                         "NameError");
+}
+
+TEST(Interpreter, del_missing_global_raises_name_error)
+{
+    expect_runtime_error(L"del missing\n", "NameError");
+}
+
+TEST(Interpreter, del_local_variable_not_supported_yet)
+{
+    expect_runtime_error(L"def clear(value):\n"
+                         L"    del value\n",
+                         "We don't support del non-global variables yet");
+}
+
 TEST(Interpreter, while1)
 {
     Value expected = Value::from_smi(4950);

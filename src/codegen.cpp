@@ -754,29 +754,38 @@ namespace cl
                 constant_idx, store_cache_idx);
         }
 
-        void codegen_attribute_delete(int32_t node_idx, Mode mode)
+        void codegen_attribute_target_delete(uint32_t source_offset,
+                                             int32_t target_idx, Mode mode)
         {
-            AstChildren children = av.children[node_idx];
-            uint32_t source_offset = av.source_offsets[node_idx];
-            for(int32_t target_idx: children)
-            {
-                if(av.kinds[target_idx].node_kind !=
-                   AstNodeKind::EXPRESSION_ATTRIBUTE)
-                {
-                    throw std::runtime_error(
-                        "We don't support del targets except attributes yet");
-                }
+            AstChildren target_children = av.children[target_idx];
+            uint8_t constant_idx =
+                code_obj->allocate_constant(av.constants[target_idx]);
+            ScopedRegister receiver_reg =
+                codegen_node_to_register(target_children[0], mode);
+            uint8_t cache_idx = code_obj->allocate_attribute_mutation_cache();
+            code_obj->emit_opcode_reg_constant_idx_cache_idx(
+                source_offset, Bytecode::DelAttr, receiver_reg.reg,
+                constant_idx, cache_idx);
+        }
 
-                AstChildren target_children = av.children[target_idx];
-                uint8_t constant_idx =
-                    code_obj->allocate_constant(av.constants[target_idx]);
-                ScopedRegister receiver_reg =
-                    codegen_node_to_register(target_children[0], mode);
-                uint8_t cache_idx =
-                    code_obj->allocate_attribute_mutation_cache();
-                code_obj->emit_opcode_reg_constant_idx_cache_idx(
-                    source_offset, Bytecode::DelAttr, receiver_reg.reg,
-                    constant_idx, cache_idx);
+        void codegen_variable_delete(uint32_t source_offset,
+                                     TValue<String> var_name, Mode mode)
+        {
+            switch(mode)
+            {
+                case Mode::Module:
+                    {
+                        uint32_t slot_idx =
+                            code_obj->module_scope.extract()
+                                ->register_slot_index_for_write(var_name);
+                        code_obj->emit_opcode_uint32(
+                            source_offset, Bytecode::DelGlobal, slot_idx);
+                        break;
+                    }
+                case Mode::Class:
+                case Mode::Function:
+                    throw std::runtime_error(
+                        "We don't support del non-global variables yet");
             }
         }
 
@@ -1141,7 +1150,28 @@ namespace cl
                     }
 
                 case AstNodeKind::STATEMENT_DEL:
-                    codegen_attribute_delete(node_idx, mode);
+                    for(int32_t target_idx: children)
+                    {
+                        AstNodeKind target_kind =
+                            av.kinds[target_idx].node_kind;
+                        if(target_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
+                        {
+                            codegen_attribute_target_delete(source_offset,
+                                                            target_idx, mode);
+                            continue;
+                        }
+                        if(target_kind ==
+                           AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                        {
+                            codegen_variable_delete(
+                                source_offset,
+                                TValue<String>(av.constants[target_idx]), mode);
+                            continue;
+                        }
+                        throw std::runtime_error(
+                            "We don't support del targets except variables and "
+                            "attributes yet");
+                    }
                     break;
 
                 case AstNodeKind::EXPRESSION_BINARY:

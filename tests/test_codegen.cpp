@@ -385,6 +385,21 @@ TEST(Codegen, attribute_delete_uses_register_receiver_and_mutation_cache)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, global_variable_delete_uses_binding_slot)
+{
+    const wchar_t *test_case = L"value = 1\n"
+                               "del value\n";
+
+    std::string expected = "Code object:\n"
+                           "    0 LdaSmi 1\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 DelGlobal [0]\n"
+                           "   12 Halt\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, direct_method_call_uses_callmethodattr)
 {
     const wchar_t *test_case = L"def invoke(obj, value):\n"

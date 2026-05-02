@@ -1005,13 +1005,16 @@ namespace cl
 
         void validate_del_target(int32_t target)
         {
-            if(ast.kinds[target].node_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
+            if(ast.kinds[target].node_kind ==
+                   AstNodeKind::EXPRESSION_VARIABLE_REFERENCE ||
+               ast.kinds[target].node_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
             {
                 return;
             }
 
             throw std::runtime_error(
-                std::string("SyntaxError: del target must be an attribute") +
+                std::string(
+                    "SyntaxError: del target must be a variable or attribute") +
                 format_error_context(del_target_source_pos(target)));
         }
 
