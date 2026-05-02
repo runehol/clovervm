@@ -1001,9 +1001,7 @@ namespace cl
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
         Scope *module_scope = code_object->module_scope.extract();
-        Value old_value =
-            module_scope->get_by_slot_index_fastpath_only(slot_idx);
-        if(unlikely(old_value.is_not_present()))
+        if(unlikely(!module_scope->slot_is_live(slot_idx)))
         {
             MUSTTAIL return name_error(ARGS);
         }

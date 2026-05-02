@@ -2387,6 +2387,25 @@ TEST(Interpreter, module_scope_can_shadow_builtin_scope)
     EXPECT_EQ(Value::from_smi(42), actual);
 }
 
+TEST(Interpreter, global_delete_does_not_delete_builtin_fallback)
+{
+    expect_runtime_error(L"range\n"
+                         L"del range\n",
+                         "NameError");
+}
+
+TEST(Interpreter, global_delete_reveals_builtin_after_shadow_delete)
+{
+    test::FileRunner file_runner(L"range = 42\n"
+                                 "del range\n"
+                                 "range(1)\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::RangeIterator,
+              actual.get_ptr<Object>()->native_layout_id());
+}
+
 TEST(Interpreter, range_builtin_requires_integer_argument)
 {
     expect_runtime_error(L"range(False)\n",
