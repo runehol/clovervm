@@ -4,6 +4,7 @@
 op_add
 op_add_smi
 op_call_simple
+op_call_method_attr
 op_check_init_returned_none
 op_clear_local
 op_del_local

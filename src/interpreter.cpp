@@ -1905,49 +1905,27 @@ namespace cl
         FunctionCallInlineCache &call_cache =
             code_object->function_call_caches[call_cache_idx];
 
-        if(likely(function_call_cache_matches(call_cache, callable, n_args)))
-        {
-            int32_t first_arg_reg = prepare_method_call_argument_slots(
-                fp, receiver_reg, n_user_args, self);
-            TValue<Function> function =
-                TValue<Function>::from_oop(call_cache.function);
-            enter_function_frame_from_positional_args(
-                fp, pc, code_object, function, first_arg_reg, n_args,
-                call_instr_len, call_cache.adaptation);
-
-            START(0);
-            COMPLETE();
-        }
-
-        if(unlikely(!callable.is_ptr()))
+        if(unlikely(!function_call_cache_matches(call_cache, callable, n_args)))
         {
             MUSTTAIL return op_call_method_attr_slow(ARGS);
         }
 
-        Object *fun_object = callable.get_ptr();
-        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
+        if(unlikely(call_cache.adaptation !=
+                    FunctionCallAdaptation::FixedArity))
         {
             MUSTTAIL return op_call_method_attr_slow(ARGS);
         }
 
-        TValue<Function> function(callable);
-        if(unlikely(!function.extract()->accepts_arity(n_args)))
-        {
-            MUSTTAIL return wrong_arity_error(ARGS);
-        }
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
-        FunctionCallAdaptation adaptation =
-            classify_function_call_adaptation(function);
-        populate_function_call_cache(call_cache, function, n_args, adaptation);
-        enter_function_frame_from_positional_args(fp, pc, code_object, function,
-                                                  first_arg_reg, n_args,
-                                                  call_instr_len, adaptation);
+        TValue<Function> function =
+            TValue<Function>::from_oop(call_cache.function);
+        enter_function_frame_from_positional_args(
+            fp, pc, code_object, function, first_arg_reg, n_args,
+            call_instr_len, FunctionCallAdaptation::FixedArity);
 
-        {
-            START(0);
-            COMPLETE();
-        }
+        START(0);
+        COMPLETE();
     }
 
     static ALWAYSINLINE Value get_native_arg(Value *fp, CodeObject *code_object,
