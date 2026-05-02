@@ -55,6 +55,9 @@ namespace cl
         static constexpr uint32_t kClassMetadataSlotBases = 2;
         static constexpr uint32_t kClassMetadataSlotMro = 3;
         static constexpr uint32_t kClassMetadataSlotCount = 4;
+        static constexpr uint32_t kClassPredefinedSlotNew = 4;
+        static constexpr uint32_t kClassPredefinedSlotInit = 5;
+        static constexpr uint32_t kClassPredefinedSlotCount = 6;
         static constexpr uint32_t kClassInlineStorageSlotCount = 48;
 
         ClassObject(

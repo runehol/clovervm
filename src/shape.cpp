@@ -63,9 +63,19 @@ namespace cl
         uint32_t descriptor_count, int32_t next_slot_index,
         ShapeFlags shape_flags)
     {
+        return make_root_with_descriptors(owner_class, descriptors,
+                                          descriptor_count, next_slot_index,
+                                          descriptor_count, shape_flags);
+    }
+
+    Shape *Shape::make_root_with_descriptors(
+        Value owner_class, const ShapeRootDescriptor *descriptors,
+        uint32_t descriptor_count, int32_t next_slot_index,
+        uint32_t present_count, ShapeFlags shape_flags)
+    {
         Shape *shape = make_internal_raw<Shape>(
             owner_class, nullptr, next_slot_index, descriptor_count,
-            shape_flags, descriptor_count);
+            shape_flags, present_count);
         for(uint32_t descriptor_idx = 0; descriptor_idx < descriptor_count;
             ++descriptor_idx)
         {

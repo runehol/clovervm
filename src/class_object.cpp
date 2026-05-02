@@ -166,10 +166,14 @@ namespace cl
         TValue<String> dunder_name_name = interned_string(L"__name__");
         TValue<String> dunder_bases_name = interned_string(L"__bases__");
         TValue<String> dunder_mro_name = interned_string(L"__mro__");
+        TValue<String> dunder_new_name = interned_string(L"__new__");
+        TValue<String> dunder_init_name = interned_string(L"__init__");
         DescriptorFlags class_metadata_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot);
-        ShapeRootDescriptor descriptors[kClassMetadataSlotCount] = {
+        DescriptorFlags class_predefined_flags =
+            descriptor_flag(DescriptorFlag::StableSlot);
+        ShapeRootDescriptor descriptors[kClassPredefinedSlotCount] = {
             ShapeRootDescriptor{
                 dunder_class_name,
                 DescriptorInfo::make(StorageLocation{kClassMetadataSlotClass,
@@ -190,10 +194,21 @@ namespace cl
                 DescriptorInfo::make(
                     StorageLocation{kClassMetadataSlotMro, StorageKind::Inline},
                     class_metadata_flags)},
+            ShapeRootDescriptor{
+                dunder_new_name,
+                DescriptorInfo::make(StorageLocation{kClassPredefinedSlotNew,
+                                                     StorageKind::Inline},
+                                     class_predefined_flags)},
+            ShapeRootDescriptor{
+                dunder_init_name,
+                DescriptorInfo::make(StorageLocation{kClassPredefinedSlotInit,
+                                                     StorageKind::Inline},
+                                     class_predefined_flags)},
         };
         set_shape(Shape::make_root_with_descriptors(
-            Value::from_oop(this), descriptors, kClassMetadataSlotCount,
-            kClassMetadataSlotCount, class_shape_flags));
+            Value::from_oop(this), descriptors, kClassPredefinedSlotCount,
+            kClassPredefinedSlotCount, kClassMetadataSlotCount,
+            class_shape_flags));
 
         for(uint32_t slot_idx = 0;
             slot_idx < kClassExtraInlineAttributeSlotCount; ++slot_idx)
