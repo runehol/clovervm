@@ -4,9 +4,11 @@
 #include "code_object_builder.h"
 #include "runtime_helpers.h"
 #include "scope.h"
+#include "str.h"
 #include "tokenizer.h"
 #include <fmt/core.h>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 
 namespace cl
@@ -210,10 +212,29 @@ namespace cl
             uint32_t slot_idx = 0;
         };
 
+        struct StringNameHash
+        {
+            size_t operator()(TValue<String> name) const
+            {
+                return size_t(string_hash(name));
+            }
+        };
+
+        struct StringNameEq
+        {
+            bool operator()(TValue<String> left, TValue<String> right) const
+            {
+                return string_eq(left, right);
+            }
+        };
+
         struct ScopeAnalysis
         {
             Mode mode = Mode::Module;
             std::vector<BindingInfo> bindings;
+            std::unordered_map<TValue<String>, int32_t, StringNameHash,
+                               StringNameEq>
+                binding_indices;
             std::vector<std::optional<NameAccessAnalysis>> loads;
             std::vector<std::optional<NameAccessAnalysis>> stores;
             std::vector<std::optional<NameAccessAnalysis>> deletes;
@@ -258,14 +279,13 @@ namespace cl
         int32_t find_binding_idx(const ScopeAnalysis &analysis,
                                  Value name) const
         {
-            for(size_t idx = 0; idx < analysis.bindings.size(); ++idx)
+            auto binding_iter =
+                analysis.binding_indices.find(TValue<String>(name));
+            if(binding_iter == analysis.binding_indices.end())
             {
-                if(analysis.bindings[idx].name == name)
-                {
-                    return int32_t(idx);
-                }
+                return -1;
             }
-            return -1;
+            return binding_iter->second;
         }
 
         BindingInfo *find_binding(ScopeAnalysis &analysis, Value name)
@@ -306,8 +326,10 @@ namespace cl
             uint32_t slot_idx =
                 target_code_obj->get_local_scope_ptr()
                     ->register_slot_index_for_write(TValue<String>(name));
+            int32_t binding_idx = int32_t(analysis.bindings.size());
             analysis.bindings.push_back(BindingInfo{
                 name, BindingScope::Local, slot_idx, initial_presence, false});
+            analysis.binding_indices[TValue<String>(name)] = binding_idx;
             return analysis.bindings.back();
         }
 
@@ -321,8 +343,10 @@ namespace cl
                 return *binding;
             }
 
+            int32_t binding_idx = int32_t(analysis.bindings.size());
             analysis.bindings.push_back(BindingInfo{name, BindingScope::Global,
                                                     0, Presence::Maybe, false});
+            analysis.binding_indices[TValue<String>(name)] = binding_idx;
             return analysis.bindings.back();
         }
 
@@ -383,6 +407,286 @@ namespace cl
             }
             state.local_presence[size_t(binding_idx)] = presence;
             state.may_be_entry_value[size_t(binding_idx)] = false;
+        }
+
+        struct GlobalDeclarationState
+        {
+            struct NameState
+            {
+                bool parameter = false;
+                bool used = false;
+                bool assigned = false;
+                bool annotated = false;
+                bool global = false;
+            };
+
+            Mode mode;
+            std::unordered_map<TValue<String>, NameState, StringNameHash,
+                               StringNameEq>
+                names;
+        };
+
+        GlobalDeclarationState::NameState &
+        global_name_state(GlobalDeclarationState &state, Value name)
+        {
+            return state.names[TValue<String>(name)];
+        }
+
+        void mark_global_validation_use(GlobalDeclarationState &state,
+                                        Value name)
+        {
+            global_name_state(state, name).used = true;
+        }
+
+        void mark_global_validation_assignment(GlobalDeclarationState &state,
+                                               Value name)
+        {
+            global_name_state(state, name).assigned = true;
+        }
+
+        void mark_global_validation_annotation(GlobalDeclarationState &state,
+                                               Value name)
+        {
+            GlobalDeclarationState::NameState &entry =
+                global_name_state(state, name);
+            if(entry.global && state.mode == Mode::Function)
+            {
+                throw std::runtime_error(
+                    "SyntaxError: annotated name can't be global");
+            }
+            entry.annotated = true;
+        }
+
+        void declare_global_name(GlobalDeclarationState &state, Value name)
+        {
+            GlobalDeclarationState::NameState &entry =
+                global_name_state(state, name);
+            if(entry.parameter)
+            {
+                throw std::runtime_error(
+                    "SyntaxError: name is parameter and global");
+            }
+            if(entry.annotated)
+            {
+                throw std::runtime_error(
+                    "SyntaxError: annotated name can't be global");
+            }
+            if(entry.assigned)
+            {
+                throw std::runtime_error(
+                    "SyntaxError: name is assigned to before global "
+                    "declaration");
+            }
+            if(entry.used)
+            {
+                throw std::runtime_error(
+                    "SyntaxError: name is used prior to global declaration");
+            }
+            entry.global = true;
+        }
+
+        void
+        validate_global_declaration_expression(GlobalDeclarationState &state,
+                                               int32_t node_idx)
+        {
+            AstKind kind = av.kinds[node_idx];
+            AstChildren children = av.children[node_idx];
+
+            switch(kind.node_kind)
+            {
+                case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
+                    mark_global_validation_use(
+                        state, av.constants[node_idx].as_value());
+                    return;
+
+                case AstNodeKind::EXPRESSION_ATTRIBUTE:
+                    validate_global_declaration_expression(state, children[0]);
+                    return;
+
+                default:
+                    for(int32_t child_idx: children)
+                    {
+                        validate_global_declaration_expression(state,
+                                                               child_idx);
+                    }
+                    return;
+            }
+        }
+
+        void validate_global_declaration_assignment_target(
+            GlobalDeclarationState &state, int32_t target_idx,
+            bool augmented_assignment)
+        {
+            AstKind target_kind = av.kinds[target_idx];
+            AstChildren target_children = av.children[target_idx];
+
+            if(target_kind.node_kind ==
+               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+            {
+                if(augmented_assignment)
+                {
+                    mark_global_validation_use(
+                        state, av.constants[target_idx].as_value());
+                }
+                mark_global_validation_assignment(
+                    state, av.constants[target_idx].as_value());
+                return;
+            }
+
+            if(target_kind.node_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
+            {
+                validate_global_declaration_expression(state,
+                                                       target_children[0]);
+                return;
+            }
+
+            if(target_kind.node_kind == AstNodeKind::EXPRESSION_BINARY &&
+               target_kind.operator_kind == AstOperatorKind::SUBSCRIPT)
+            {
+                validate_global_declaration_expression(state,
+                                                       target_children[0]);
+                validate_global_declaration_expression(state,
+                                                       target_children[1]);
+                return;
+            }
+
+            validate_global_declaration_expression(state, target_idx);
+        }
+
+        void validate_global_declarations_in_node(GlobalDeclarationState &state,
+                                                  int32_t node_idx)
+        {
+            AstKind kind = av.kinds[node_idx];
+            AstChildren children = av.children[node_idx];
+
+            switch(kind.node_kind)
+            {
+                case AstNodeKind::STATEMENT_GLOBAL:
+                    for(int32_t name_idx: children)
+                    {
+                        declare_global_name(state,
+                                            av.constants[name_idx].as_value());
+                    }
+                    return;
+
+                case AstNodeKind::STATEMENT_FUNCTION_DEF:
+                    {
+                        AstChildren param_children = av.children[children[0]];
+                        for(int32_t param_idx: param_children)
+                        {
+                            for(int32_t default_idx: av.children[param_idx])
+                            {
+                                validate_global_declaration_expression(
+                                    state, default_idx);
+                            }
+                        }
+                        mark_global_validation_assignment(
+                            state, av.constants[node_idx].as_value());
+                        return;
+                    }
+
+                case AstNodeKind::STATEMENT_CLASS_DEF:
+                    for(int32_t base_idx: av.children[children[0]])
+                    {
+                        validate_global_declaration_expression(state, base_idx);
+                    }
+                    mark_global_validation_assignment(
+                        state, av.constants[node_idx].as_value());
+                    return;
+
+                case AstNodeKind::STATEMENT_ASSIGN:
+                case AstNodeKind::EXPRESSION_ASSIGN:
+                    {
+                        int32_t lhs_idx = children[0];
+                        if(kind.operator_kind != AstOperatorKind::NOP)
+                        {
+                            validate_global_declaration_assignment_target(
+                                state, lhs_idx, true);
+                        }
+                        validate_global_declaration_expression(state,
+                                                               children[1]);
+                        if(kind.operator_kind == AstOperatorKind::NOP)
+                        {
+                            validate_global_declaration_assignment_target(
+                                state, lhs_idx, false);
+                        }
+                        return;
+                    }
+
+                case AstNodeKind::STATEMENT_ANN_ASSIGN:
+                    if(av.kinds[children[0]].node_kind ==
+                       AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                    {
+                        mark_global_validation_annotation(
+                            state, av.constants[children[0]].as_value());
+                    }
+                    else
+                    {
+                        validate_global_declaration_assignment_target(
+                            state, children[0], false);
+                    }
+                    if(children.size() == 3)
+                    {
+                        validate_global_declaration_expression(state,
+                                                               children[2]);
+                    }
+                    return;
+
+                case AstNodeKind::STATEMENT_DEL:
+                    for(int32_t target_idx: children)
+                    {
+                        validate_global_declaration_assignment_target(
+                            state, target_idx, false);
+                    }
+                    return;
+
+                case AstNodeKind::STATEMENT_FOR:
+                    validate_global_declaration_expression(state, children[1]);
+                    validate_global_declaration_assignment_target(
+                        state, children[0], false);
+                    validate_global_declarations_in_node(state, children[2]);
+                    if(children.size() == 4)
+                    {
+                        validate_global_declarations_in_node(state,
+                                                             children[3]);
+                    }
+                    return;
+
+                case AstNodeKind::STATEMENT_SEQUENCE:
+                    for(int32_t child_idx: children)
+                    {
+                        validate_global_declarations_in_node(state, child_idx);
+                    }
+                    return;
+
+                default:
+                    if(is_expression(kind.node_kind))
+                    {
+                        validate_global_declaration_expression(state, node_idx);
+                        return;
+                    }
+                    for(int32_t child_idx: children)
+                    {
+                        validate_global_declarations_in_node(state, child_idx);
+                    }
+                    return;
+            }
+        }
+
+        void validate_global_declarations(Mode mode, int32_t body_idx,
+                                          AstChildren param_children)
+        {
+            GlobalDeclarationState state{mode, {}};
+            if(mode == Mode::Function)
+            {
+                for(int32_t param_idx: param_children)
+                {
+                    global_name_state(state, av.constants[param_idx].as_value())
+                        .parameter = true;
+                }
+            }
+
+            validate_global_declarations_in_node(state, body_idx);
         }
 
         void collect_global_declarations(ScopeAnalysis &analysis,
@@ -946,6 +1250,7 @@ namespace cl
                                           AstChildren param_children = {})
         {
             ScopeAnalysis analysis(mode, av.size());
+            validate_global_declarations(mode, body_idx, param_children);
             collect_global_declarations(analysis, body_idx);
             if(mode == Mode::Function)
             {

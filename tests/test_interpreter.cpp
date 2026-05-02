@@ -1926,6 +1926,73 @@ TEST(Interpreter, global_statement_makes_function_delete_global)
                          "NameError");
 }
 
+TEST(Interpreter, global_statement_rejects_parameter_conflict)
+{
+    expect_runtime_error(L"def f(value):\n"
+                         L"    global value\n",
+                         "SyntaxError: name is parameter and global");
+}
+
+TEST(Interpreter, global_statement_rejects_prior_function_read)
+{
+    expect_runtime_error(
+        L"def f():\n"
+        L"    value\n"
+        L"    global value\n",
+        "SyntaxError: name is used prior to global declaration");
+}
+
+TEST(Interpreter, global_statement_rejects_prior_function_assignment)
+{
+    expect_runtime_error(
+        L"def f():\n"
+        L"    value = 1\n"
+        L"    global value\n",
+        "SyntaxError: name is assigned to before global declaration");
+}
+
+TEST(Interpreter, global_statement_rejects_prior_function_delete)
+{
+    expect_runtime_error(
+        L"def f():\n"
+        L"    del value\n"
+        L"    global value\n",
+        "SyntaxError: name is assigned to before global declaration");
+}
+
+TEST(Interpreter, module_global_statement_rejects_prior_read)
+{
+    expect_runtime_error(
+        L"value\n"
+        L"global value\n",
+        "SyntaxError: name is used prior to global declaration");
+}
+
+TEST(Interpreter, module_global_statement_rejects_prior_assignment)
+{
+    expect_runtime_error(
+        L"value = 1\n"
+        L"global value\n",
+        "SyntaxError: name is assigned to before global declaration");
+}
+
+TEST(Interpreter, module_global_statement_allows_following_annotation)
+{
+    Value expected = Value::from_smi(1);
+    test::FileRunner file_runner(L"global value\n"
+                                 L"value: int\n"
+                                 L"1\n");
+    EXPECT_EQ(expected, file_runner.return_value);
+}
+
+TEST(Interpreter, global_statement_rejects_annotated_name)
+{
+    expect_runtime_error(L"def f():\n"
+                         L"    global value\n"
+                         L"    value: int\n",
+                         "SyntaxError: annotated name can't be global");
+}
+
 TEST(Interpreter, function_nested_control_flow)
 {
     Value expected = Value::from_smi(2);
