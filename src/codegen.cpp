@@ -86,6 +86,22 @@ namespace cl
         return t;
     }
 
+    CodeObject *codegen_function(const AstVector &av, Scope *module_scope,
+                                 CodeObject *parent_code_obj, int32_t node_idx);
+    CodeObject *codegen_class(const AstVector &av, Scope *module_scope,
+                              CodeObject *parent_code_obj, int32_t node_idx);
+
+    void reserve_parameter_padding_and_frame_header(CodeObject *target_code_obj)
+    {
+        uint32_t n_parameter_padding =
+            target_code_obj->get_padded_n_parameters() -
+            target_code_obj->n_parameters;
+        target_code_obj->get_local_scope_ptr()->reserve_empty_slots(
+            n_parameter_padding);
+        target_code_obj->get_local_scope_ptr()->reserve_empty_slots(
+            FrameHeaderSize);
+    }
+
     class CodeObjectBuilder
     {
     public:
@@ -99,13 +115,11 @@ namespace cl
         };
 
         CodeObjectBuilder(const AstVector &_av, Scope *_module_scope,
-                          TValue<String> _module_name, CodeObject *_code_obj,
-                          Mode _mode, int32_t _body_idx,
+                          CodeObject *_code_obj, Mode _mode, int32_t _body_idx,
                           AstChildren param_children)
-            : av(_av), module_scope(_module_scope), module_name(_module_name),
-              code_obj(_code_obj), body_idx(_body_idx),
-              analysis(_mode, _av.size()), temporary_reg(FrameHeaderSize),
-              max_temporary_reg(FrameHeaderSize)
+            : av(_av), module_scope(_module_scope), code_obj(_code_obj),
+              body_idx(_body_idx), analysis(_mode, _av.size()),
+              temporary_reg(FrameHeaderSize), max_temporary_reg(FrameHeaderSize)
         {
             analysis =
                 analyze_code_object(code_obj, _body_idx, _mode, param_children);
@@ -121,33 +135,6 @@ namespace cl
         void run_class_body(uint32_t source_offset, int32_t body_idx);
 
     private:
-        CodeObject *make_code_obj(Mode mode, CodeObject *parent = nullptr)
-        {
-            Scope *local_scope = nullptr;
-            Value name = Value::None();
-            switch(mode)
-            {
-                case Mode::Module:
-                    name = module_name;
-                    break;
-
-                case Mode::Class:
-                    assert(parent != nullptr);
-                    local_scope =
-                        make_internal_raw<Scope>(parent->local_scope.extract());
-                    name = parent->name.as_value();
-                    break;
-                case Mode::Function:
-                    assert(parent != nullptr);
-                    local_scope =
-                        make_internal_raw<Scope>(parent->local_scope.extract());
-                    break;
-            }
-
-            return make_object_raw<CodeObject>(av.compilation_unit,
-                                               module_scope, local_scope, name);
-        }
-
         struct LoopTargetSet
         {
             LoopTargetSet(JumpTarget *_break_target,
@@ -195,7 +182,6 @@ namespace cl
 
         const AstVector &av;
         Scope *module_scope;
-        TValue<String> module_name;
 
         enum class BindingScope
         {
@@ -950,7 +936,6 @@ namespace cl
         class TemporaryReg
         {
         public:
-            friend class Codegen;
             TemporaryReg(CodeObjectBuilder *_builder, uint32_t _n_regs = 1)
                 : builder(_builder), n_regs(_n_regs)
             {
@@ -999,18 +984,6 @@ namespace cl
 
         static constexpr AstKind NumericalConstant =
             AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER);
-
-        void
-        reserve_parameter_padding_and_frame_header(CodeObject *target_code_obj)
-        {
-            uint32_t n_parameter_padding =
-                target_code_obj->get_padded_n_parameters() -
-                target_code_obj->n_parameters;
-            target_code_obj->get_local_scope_ptr()->reserve_empty_slots(
-                n_parameter_padding);
-            target_code_obj->get_local_scope_ptr()->reserve_empty_slots(
-                FrameHeaderSize);
-        }
 
         ScopedRegister codegen_node_to_register(int32_t node_idx)
         {
@@ -1080,47 +1053,11 @@ namespace cl
 
         void codegen_function_definition(int32_t node_idx)
         {
-            // function definitions are involved enough that we prefer a
-            // separate function for it
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
-
-            CodeObject *fun_obj = make_code_obj(Mode::Function, code_obj);
             AstChildren param_children = av.children[children[0]];
-            {
-                fun_obj->name = av.constants[node_idx];
-                /*
-                  Now we're generating code for the function
-                */
-                fun_obj->n_parameters = param_children.size();
-                fun_obj->n_positional_parameters =
-                    count_positional_parameters(param_children);
-                if(has_varargs_parameter(param_children))
-                {
-                    fun_obj->parameter_flags |=
-                        FunctionParameterFlags::HasVarArgs;
-                }
-                for(int32_t ch: param_children)
-                {
-                    assert(av.kinds[ch].node_kind == AstNodeKind::PARAMETER ||
-                           av.kinds[ch].node_kind ==
-                               AstNodeKind::PARAMETER_VARARGS);
-                    fun_obj->get_local_scope_ptr()
-                        ->register_slot_index_for_write(
-                            TValue<String>(av.constants[ch]));
-                }
-                reserve_parameter_padding_and_frame_header(fun_obj);
-
-                CodeObjectBuilder fun_builder{av,
-                                              module_scope,
-                                              module_name,
-                                              fun_obj,
-                                              Mode::Function,
-                                              children[1],
-                                              param_children};
-
-                fun_builder.run_function_body(source_offset, children[1]);
-            }
+            CodeObject *fun_obj =
+                codegen_function(av, module_scope, code_obj, node_idx);
 
             // stick this code object into the constant table, load it, and call
             // the
@@ -1178,53 +1115,13 @@ namespace cl
             return n_defaults;
         }
 
-        uint32_t count_positional_parameters(AstChildren param_children) const
-        {
-            uint32_t n_positional_parameters = 0;
-            for(int32_t param_idx: param_children)
-            {
-                if(av.kinds[param_idx].node_kind ==
-                   AstNodeKind::PARAMETER_VARARGS)
-                {
-                    break;
-                }
-                ++n_positional_parameters;
-            }
-            return n_positional_parameters;
-        }
-
-        bool has_varargs_parameter(AstChildren param_children) const
-        {
-            for(int32_t param_idx: param_children)
-            {
-                if(av.kinds[param_idx].node_kind ==
-                   AstNodeKind::PARAMETER_VARARGS)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
         void codegen_class_definition(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             int32_t bases_idx = children[0];
-            int32_t body_idx = children[1];
-
-            CodeObject *class_obj = make_code_obj(Mode::Class, code_obj);
-            {
-                class_obj->n_parameters = 2;
-                class_obj->get_local_scope_ptr()->reserve_empty_slots(2);
-                reserve_parameter_padding_and_frame_header(class_obj);
-
-                CodeObjectBuilder class_builder{
-                    av,          module_scope, module_name, class_obj,
-                    Mode::Class, body_idx,     {}};
-
-                class_builder.run_class_body(source_offset, body_idx);
-            }
+            CodeObject *class_obj =
+                codegen_class(av, module_scope, code_obj, node_idx);
 
             uint32_t body_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(class_obj));
@@ -2058,6 +1955,93 @@ namespace cl
         return incref(code_obj);
     }
 
+    uint32_t count_positional_parameters(const AstVector &av,
+                                         AstChildren param_children)
+    {
+        uint32_t n_positional_parameters = 0;
+        for(int32_t param_idx: param_children)
+        {
+            if(av.kinds[param_idx].node_kind == AstNodeKind::PARAMETER_VARARGS)
+            {
+                break;
+            }
+            ++n_positional_parameters;
+        }
+        return n_positional_parameters;
+    }
+
+    bool has_varargs_parameter(const AstVector &av, AstChildren param_children)
+    {
+        for(int32_t param_idx: param_children)
+        {
+            if(av.kinds[param_idx].node_kind == AstNodeKind::PARAMETER_VARARGS)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    CodeObject *codegen_function(const AstVector &av, Scope *module_scope,
+                                 CodeObject *parent_code_obj, int32_t node_idx)
+    {
+        AstChildren children = av.children[node_idx];
+        uint32_t source_offset = av.source_offsets[node_idx];
+        AstChildren param_children = av.children[children[0]];
+        Scope *local_scope =
+            make_internal_raw<Scope>(parent_code_obj->local_scope.extract());
+        CodeObject *fun_obj = make_object_raw<CodeObject>(
+            av.compilation_unit, module_scope, local_scope, Value::None());
+
+        fun_obj->name = av.constants[node_idx];
+        fun_obj->n_parameters = param_children.size();
+        fun_obj->n_positional_parameters =
+            count_positional_parameters(av, param_children);
+        if(has_varargs_parameter(av, param_children))
+        {
+            fun_obj->parameter_flags |= FunctionParameterFlags::HasVarArgs;
+        }
+        for(int32_t ch: param_children)
+        {
+            assert(av.kinds[ch].node_kind == AstNodeKind::PARAMETER ||
+                   av.kinds[ch].node_kind == AstNodeKind::PARAMETER_VARARGS);
+            fun_obj->get_local_scope_ptr()->register_slot_index_for_write(
+                TValue<String>(av.constants[ch]));
+        }
+        reserve_parameter_padding_and_frame_header(fun_obj);
+
+        CodeObjectBuilder fun_builder{
+            av,          module_scope,
+            fun_obj,     CodeObjectBuilder::Mode::Function,
+            children[1], param_children};
+        fun_builder.run_function_body(source_offset, children[1]);
+        return fun_obj;
+    }
+
+    CodeObject *codegen_class(const AstVector &av, Scope *module_scope,
+                              CodeObject *parent_code_obj, int32_t node_idx)
+    {
+        AstChildren children = av.children[node_idx];
+        uint32_t source_offset = av.source_offsets[node_idx];
+        int32_t body_idx = children[1];
+        Scope *local_scope =
+            make_internal_raw<Scope>(parent_code_obj->local_scope.extract());
+        CodeObject *class_obj = make_object_raw<CodeObject>(
+            av.compilation_unit, module_scope, local_scope,
+            parent_code_obj->name.as_value());
+
+        class_obj->n_parameters = 2;
+        class_obj->get_local_scope_ptr()->reserve_empty_slots(2);
+        reserve_parameter_padding_and_frame_header(class_obj);
+
+        CodeObjectBuilder class_builder{
+            av,        module_scope,
+            class_obj, CodeObjectBuilder::Mode::Class,
+            body_idx,  {}};
+        class_builder.run_class_body(source_offset, body_idx);
+        return class_obj;
+    }
+
     void CodeObjectBuilder::run_function_body(uint32_t source_offset,
                                               int32_t body_idx)
     {
@@ -2079,40 +2063,16 @@ namespace cl
         code_obj->finalize(max_temporary_reg);
     }
 
-    class Codegen
+    CodeObject *codegen_module(const AstVector &av, TValue<String> module_name)
     {
-    public:
-        Codegen(const AstVector &_av)
-            : av(_av), module_scope(make_internal_raw<Scope>(
-                           active_vm()->get_builtin_scope().extract())),
-              module_name(interned_string(L"<module>"))
-        {
-        }
-
-        CodeObject *codegen()
-        {
-            CodeObject *module_obj = make_object_raw<CodeObject>(
-                av.compilation_unit, module_scope, nullptr, module_name);
-            CodeObjectBuilder builder{av,
-                                      module_scope,
-                                      module_name,
-                                      module_obj,
-                                      CodeObjectBuilder::Mode::Module,
-                                      av.root_node,
-                                      {}};
-            return builder.run_module();
-        }
-
-    private:
-        const AstVector &av;
-        Scope *module_scope;
-        TValue<String> module_name;
-    };
-
-    CodeObject *generate_code(const AstVector &av)
-    {
-
-        return Codegen(av).codegen();
+        Scope *module_scope = make_internal_raw<Scope>(
+            active_vm()->get_builtin_scope().extract());
+        CodeObject *module_obj = make_object_raw<CodeObject>(
+            av.compilation_unit, module_scope, nullptr, module_name);
+        CodeObjectBuilder builder{av,           module_scope,
+                                  module_obj,   CodeObjectBuilder::Mode::Module,
+                                  av.root_node, {}};
+        return builder.run_module();
     }
 
 }  // namespace cl

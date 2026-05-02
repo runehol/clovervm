@@ -6,8 +6,10 @@
 namespace cl
 {
     struct AstVector;
+    struct String;
+    template <typename T> class TValue;
 
-    CodeObject *generate_code(const AstVector &av);
+    CodeObject *codegen_module(const AstVector &av, TValue<String> module_name);
 
 }  // namespace cl
 

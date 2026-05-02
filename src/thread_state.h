@@ -93,6 +93,8 @@ namespace cl
         }
 
         CodeObject *compile(const wchar_t *str, StartRule start_rule);
+        CodeObject *compile(const wchar_t *str, StartRule start_rule,
+                            const wchar_t *module_name);
 
         VirtualMachine *get_machine() const { return machine; }
 

@@ -3,6 +3,7 @@
 #include "compilation_unit.h"
 #include "interpreter.h"
 #include "parser.h"
+#include "runtime_helpers.h"
 #include "tokenizer.h"
 #include "virtual_machine.h"
 
@@ -28,12 +29,18 @@ namespace cl
 
     CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule)
     {
+        return compile(str, start_rule, L"<module>");
+    }
+
+    CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule,
+                                     const wchar_t *module_name)
+    {
         ActivationScope activation_scope(this);
 
         CompilationUnit input(str);
         TokenVector tv = tokenize(input);
         AstVector av = parse(*machine, tv, start_rule);
-        return generate_code(av);
+        return codegen_module(av, interned_string(module_name));
     }
 
     void ThreadState::add_to_active_zero_count_table(HeapObject *obj)
