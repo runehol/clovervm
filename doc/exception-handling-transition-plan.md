@@ -7,15 +7,16 @@ exception substrate, while preserving the interpreter's current call/return
 performance shape and keeping ordinary `for` loops cheap.
 
 The target design is described in
-[doc/lazy-exceptions-and-tracebacks.md](./lazy-exceptions-and-tracebacks.md).
+[doc/exception-transport-and-protocols.md](./exception-transport-and-protocols.md).
 This file tracks the implementation sequence we can check off as it lands.
 
 ## Current State
 
 - Runtime failures mostly throw `std::runtime_error` from cold interpreter and
   runtime helpers.
-- `Value::exception_marker()` exists, but there is no pending Python exception
-  state on `ThreadState`.
+- `Value::exception_marker()` and pending Python exception state on
+  `ThreadState` exist, but no opcode or adapter uses them as the managed
+  exception transport yet.
 - Frames currently keep caller metadata at and above `fp`: `fp[0]` is the
   previous frame pointer, `fp[2]` is the return `CodeObject`, and `fp[3]` is
   the return pc.
@@ -37,9 +38,9 @@ This file tracks the implementation sequence we can check off as it lands.
 - Preserve Python's `StopIteration` semantics: ordinary `for` loops discard
   `StopIteration.value`, while future delegation machinery such as `yield from`
   may inspect it.
-- Keep general user exception construction eager. Compact/lazy representation is
-  special to `StopIteration` until there is a measured and safe reason to widen
-  it.
+- Keep general user exception construction eager. Compact pending
+  representation is special to `StopIteration` until there is a measured and
+  safe reason to widen it.
 - Keep C++ exceptions available as temporary outer panic plumbing only while the
   VM exception transport is being migrated.
 - Treat eventual `-fno-exceptions` support as a design constraint. New runtime
@@ -109,41 +110,37 @@ Deliverable: the VM has one canonical location for a Python exception in flight.
 - [ ] Add an exceptional frame-exit helper distinct from `op_return`.
 - [ ] Make the helper restore or pop the current frame using the frame-layout
       helpers.
-- [ ] Initially treat all bytecode caller targets as ordinary propagation
-      targets.
+- [ ] Consult managed unwind metadata when it exists, and otherwise continue
+      unwinding to the caller frame.
 - [ ] At top-level or native test-harness boundaries, temporarily convert
       unhandled pending exceptions back into the current C++ error mechanism.
+- [ ] Keep normal `Return` unchanged and free of exception-marker checks.
 
 Deliverable: pending exceptions can cross Clover/Python frame boundaries without
 using C++ unwinding through the interpreter dispatch loop.
 
-## Stage 4: Exceptional Return Modes
+## Stage 4: Managed Return Adapters
 
-- [ ] Decide how exceptional frame exit records or recovers the return mode:
+- [ ] Add a `ReturnOrRaiseException` opcode or equivalent thunk return adapter.
+- [ ] Keep its contract local:
 
 ```text
-BytecodeViaUnwind
-BytecodeViaResult
-Native
+accumulator != Value::exception_marker():
+  normal Return
+
+accumulator == Value::exception_marker():
+  pending exception must be set
+  enter managed exceptional unwind
 ```
 
-- [ ] Keep the representation decision explicit. `fp[1]` is reserved for native
-      pc / compiled-frame metadata, and pointer tagging of the return
-      `CodeObject` is not assumed.
-- [ ] Evaluate representation options before committing to one:
-  - [ ] side metadata keyed by frame or call site
-  - [ ] call-site or `CodeObject` metadata that can recover the return mode
-  - [ ] a separate non-`Value` control stack for exception-return metadata
-  - [ ] another explicit representation that preserves the scanner contract
-- [ ] Make ordinary function calls install `BytecodeViaUnwind`.
-- [ ] Make protocol calls able to install `BytecodeViaResult` with a saved
-      continuation pc.
-- [ ] Make native/C boundaries install or emulate `Native` return targets where
-      a C sentinel convention is needed.
+- [ ] Use managed thunks/adapters rather than frame return-mode tagging.
+- [ ] Do not use `fp[1]` or tagged return `CodeObject` pointers for exception
+      transport.
+- [ ] Add a code-object flag such as `HideFromTraceback` later if thunk frames
+      should be hidden from user-visible tracebacks.
 
-Deliverable: exceptional exits can either keep unwinding, return
-`Value::exception_marker()` to a bytecode continuation, or convert to a native
-sentinel, without making the frame header opaque to stack scanning.
+Deliverable: native and protocol implementation details can return marker plus
+pending exception to managed adapter code, while ordinary return stays fast.
 
 ## Stage 5: Convert Selected VM Slow Errors
 
@@ -176,71 +173,70 @@ paths, even before `raise` or `try`.
 
 Deliverable: Python-authored `raise` exists and uses VM exception transport.
 
-## Stage 7: `ViaResult` Iterator Protocol
+## Stage 7: Fast Iterator Protocol For `range`
 
-- [ ] Split generic iterator protocol execution into a call half and a
-      continuation half, such as `FOR_ITER1` and `FOR_ITER2`.
-- [ ] Make the iterator-next call use a `BytecodeViaResult` return target whose
-      saved pc is the continuation opcode.
-- [ ] Teach the continuation to classify:
+- [ ] Define the local fast protocol convention:
 
 ```text
-normal result:
-  consume yielded item
+value:
+  accumulator contains yielded item
 
-pending StopIteration:
-  clear pending exception
-  exit loop
-
-other pending exception:
-  promote to ordinary propagation at this bytecode site
+completion:
+  pending StopIteration is set
+  accumulator contains Value::exception_marker()
 ```
 
-- [ ] Preserve current optimized builtin `range` paths as internal-exhaustion
-      fast paths.
-- [ ] Ensure ordinary `for` discards `StopIteration.value` in both compact and
-      materialized forms.
+- [ ] Split generic `FOR_ITER` into a protocol call and continuation shape.
+- [ ] Teach the continuation to consume marker + pending `StopIteration` by
+      clearing it and jumping to the loop exit/else target.
+- [ ] Treat marker + any other pending exception as managed exceptional unwind.
+- [ ] Make only `RangeIterator` participate at first.
+- [ ] Decide the iterator plan during loop setup where possible, not on every
+      iteration.
+- [ ] Ensure ordinary `for` discards `StopIteration.value`.
 
-Deliverable: user-visible `StopIteration` works for iterator protocol, while
-ordinary `for` keeps Python's payload-discarding behavior.
+Deliverable: the existing `range` iterator can use pending `StopIteration` plus
+`Value::exception_marker()` as a local fast completion result, without making
+ordinary opcodes marker-aware.
 
-## Stage 8: Compact Pending `StopIteration`
-
-- [ ] Add compact pending representation for `StopIteration`.
-- [ ] Use `Value::not_present()` to distinguish `StopIteration()` from
-      `StopIteration(None)`.
-- [ ] Lower recognized `raise StopIteration(value)` paths to the compact form
-      where construction side effects are known not to matter.
-- [ ] Teach `except StopIteration` matching to recognize the compact pending
-      kind without materializing the object.
-- [ ] Keep internal iterator exhaustion distinct from Python `StopIteration`.
-
-Deliverable: Python-authored `StopIteration` can be represented cheaply and
-remain JIT-visible, without confusing it with internal iterator exhaustion.
-
-## Stage 9: Native Exception Normalization
-
-- [ ] Add native thunk return adapters or a `NativeReturn` opcode shape that can
-      normalize native failures.
-- [ ] Make native failure leave pending exception state and return through the
-      caller's requested mode.
-- [ ] For ordinary bytecode callers, continue unwinding.
-- [ ] For `ViaResult` protocol callers, return `Value::exception_marker()`.
-- [ ] For C/native API boundaries, return the appropriate C sentinel.
-
-Deliverable: native failures no longer need to unwind C++ exceptions through
-the VM call stack.
-
-## Stage 10: Exception Tables And Local Handlers
+## Stage 8: Exception Tables And For-Loop Fallback
 
 - [ ] Add exception table metadata to `CodeObject`.
 - [ ] Add compiler tracking for protected bytecode ranges.
+- [ ] Add synthetic exception-table handlers for `for` loops so real
+      `StopIteration` from generic `__next__` exits the loop through ordinary
+      exception handling.
+- [ ] Keep the fast `FOR_ITER` continuation and the real-exception handler
+      targeting the same loop exit/else block.
 - [ ] Add `RAISE_UNWIND` for raise sites that may be covered by a local handler.
+- [ ] Keep `RAISE_FAST` valid only outside all protected regions.
+- [ ] Preserve the distinction between protocol `StopIteration` completion and
+      ordinary exceptions: fast-protocol participants may still use exception
+      tables, and exceptions leaking from callees must stay on the managed
+      exceptional path.
+
+Deliverable: fast protocol completion is an optimization; correctness for
+generic iterators comes from ordinary exception tables.
+
+## Stage 9: Native Exception Normalization
+
+- [ ] Convert fixed-arity native thunk bodies to end in
+      `ReturnOrRaiseException`.
+- [ ] Make native failure set pending exception state and place
+      `Value::exception_marker()` in the accumulator.
+- [ ] Keep native/C calling conventions inside managed thunks; do not make
+      native boundaries a first-order unwinder frame kind.
+- [ ] Add outer C API sentinel conversion only at actual external C API
+      boundaries.
+
+Deliverable: native failures no longer need to unwind C++ exceptions through
+the VM call stack, and managed unwinding still sees ordinary Clover frames.
+
+## Stage 10: Local Handlers
+
 - [ ] Add table lookup and stack/register trimming for local handler entry.
 - [ ] Add parser, AST, codegen, and interpreter support for a first useful
       `try` / `except` slice.
-- [ ] Keep `RAISE_FAST` valid only for bytecode offsets outside all protected
-      regions.
 
 Deliverable: pending exceptions can be caught by handlers in the current frame.
 
@@ -315,7 +311,7 @@ The first coherent milestone is stages 0 through 5:
 2. document frame-header slots and route access through named constants/helpers
 3. add pending exception state
 4. add exceptional frame exit
-5. add exceptional return modes
+5. add managed return adapters
 6. convert a few selected interpreter slow errors
 
 That milestone gives the VM an exception transport backbone without also taking

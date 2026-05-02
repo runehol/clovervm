@@ -135,13 +135,14 @@ native success:
 native failure:
   leave pending exception on ThreadState / PyErr state
   store Value::exception_marker() in accumulator
-  normalize according to the caller's return mode
+  return through a managed adapter
 ```
 
-That normalization may become a `NativeReturn` opcode or an equivalent thunk
-return adapter. At that point ordinary bytecode callers should still see normal
-exception unwinding, while `ViaResult` protocol callers can receive
-`Value::exception_marker()`.
+That normalization should be a `ReturnOrRaiseException` opcode or equivalent
+managed thunk return adapter. The adapter keeps ordinary bytecode callers on
+normal exception unwinding while still letting native implementations report
+failure as pending exception plus `Value::exception_marker()` locally inside the
+thunk. Native boundaries do not need to become a first-order unwinder frame kind.
 
 ## Arity
 
