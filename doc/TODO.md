@@ -67,11 +67,11 @@ model and first attribute inline-cache slices.
 - [ ] Expand call syntax and remaining statements.
 
   Useful next increments include keyword arguments, `**kwargs`, richer call
-  forms, `global`/`nonlocal` declarations, `import`, `with`, `try`, and
-  `yield`. Positional defaults and `*args` are already implemented for ordinary
-  functions and tier-1 constructor calls. `del` is no longer in this bucket for
-  the implemented simple targets: variables, attributes, and list/dictionary
-  subscripts now parse, lower, and execute.
+  forms, `nonlocal` declarations, `import`, `with`, `try`, and `yield`.
+  Positional defaults, `*args`, and `global` declarations are already
+  implemented for ordinary functions and tier-1 constructor calls. `del` is no
+  longer in this bucket for the implemented simple targets: variables,
+  attributes, and list/dictionary subscripts now parse, lower, and execute.
 
 ## Object Model Follow-Ups
 

@@ -311,6 +311,21 @@ namespace cl
             return analysis.bindings.back();
         }
 
+        BindingInfo &ensure_global_binding(ScopeAnalysis &analysis, Value name)
+        {
+            if(BindingInfo *binding = find_binding(analysis, name))
+            {
+                binding->scope = BindingScope::Global;
+                binding->initial_presence = Presence::Maybe;
+                binding->needs_entry_clear = false;
+                return *binding;
+            }
+
+            analysis.bindings.push_back(BindingInfo{name, BindingScope::Global,
+                                                    0, Presence::Maybe, false});
+            return analysis.bindings.back();
+        }
+
         BindingInfo binding_for_name(const ScopeAnalysis &analysis,
                                      Value name) const
         {
@@ -368,6 +383,36 @@ namespace cl
             }
             state.local_presence[size_t(binding_idx)] = presence;
             state.may_be_entry_value[size_t(binding_idx)] = false;
+        }
+
+        void collect_global_declarations(ScopeAnalysis &analysis,
+                                         int32_t node_idx)
+        {
+            AstKind kind = av.kinds[node_idx];
+            AstChildren children = av.children[node_idx];
+
+            switch(kind.node_kind)
+            {
+                case AstNodeKind::STATEMENT_GLOBAL:
+                    for(int32_t name_idx: children)
+                    {
+                        ensure_global_binding(
+                            analysis, av.constants[name_idx].as_value());
+                    }
+                    return;
+
+                case AstNodeKind::STATEMENT_FUNCTION_DEF:
+                case AstNodeKind::STATEMENT_CLASS_DEF:
+                    return;
+
+                default:
+                    break;
+            }
+
+            for(int32_t child_idx: children)
+            {
+                collect_global_declarations(analysis, child_idx);
+            }
         }
 
         void collect_code_object_bindings(CodeObjectBuilder *target_code_obj,
@@ -831,6 +876,7 @@ namespace cl
                                           AstChildren param_children = {})
         {
             ScopeAnalysis analysis(mode, av.size());
+            collect_global_declarations(analysis, body_idx);
             if(mode == Mode::Function)
             {
                 for(int32_t param_idx: param_children)

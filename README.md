@@ -16,6 +16,7 @@ and some runtime behavior is intentionally narrow.
   `obj.name = value`, and `del obj.name`.
 - `del` for global and local variables, attributes, list items, and dictionary
   items.
+- `global` declarations inside functions.
 - Function definitions, positional parameters, default values, `*args`, calls,
   recursion, and `return`.
 - Class definitions with executable class bodies and method definitions.
@@ -44,7 +45,7 @@ and some runtime behavior is intentionally narrow.
 ## Known limitations
 
 - Much of Python is not implemented yet, including `import`, `try`, `with`,
-  `global` declarations, `nonlocal`, and `yield`.
+  `nonlocal`, and `yield`.
 - Class support is still intentionally narrow:
   inheritance metadata exists and direct method calls work, but full inheritance
   semantics, custom `__new__`, metaclass machinery, and escaping bound-method

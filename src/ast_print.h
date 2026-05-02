@@ -456,7 +456,7 @@ template <> struct fmt::formatter<cl::AstVector>
                     render_node(av, out, children[i], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
-                format_to(out, "nonlocal\n");
+                format_to(out, "\n");
                 break;
 
             case cl::AstNodeKind::STATEMENT_SEQUENCE:

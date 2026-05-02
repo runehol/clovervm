@@ -1845,6 +1845,31 @@ TEST(Interpreter, function_reads_global_when_not_shadowed)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Interpreter, global_statement_makes_function_assignment_global)
+{
+    Value expected = Value::from_smi(24);
+    test::FileRunner file_runner(L"a = 10\n"
+                                 "def f():\n"
+                                 "    global a\n"
+                                 "    a = 12\n"
+                                 "    return a\n"
+                                 "f() + a\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, global_statement_makes_function_delete_global)
+{
+    expect_runtime_error(L"a = 10\n"
+                         L"def f():\n"
+                         L"    global a\n"
+                         L"    del a\n"
+                         L"f()\n"
+                         L"a\n",
+                         "NameError");
+}
+
 TEST(Interpreter, function_nested_control_flow)
 {
     Value expected = Value::from_smi(2);

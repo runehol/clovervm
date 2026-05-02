@@ -1176,7 +1176,28 @@ namespace cl
                                     AstChildren{});
         }
 
-        int32_t global_stmt() { return not_implemented("global statement"); }
+        int32_t global_stmt()
+        {
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::GLOBAL);
+
+            AstChildren ch;
+            do
+            {
+                consume(Token::NAME);
+                uint32_t name_source_pos = source_pos_for_previous_token();
+                std::wstring name = std::wstring(string_for_name_token(
+                    *ast.compilation_unit, name_source_pos));
+                Value v = vm.get_or_create_interned_string_value(name);
+                ch.push_back(
+                    ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
+                                     name_source_pos, v));
+            }
+            while(match(Token::COMMA));
+
+            return ast.emplace_back(AstNodeKind::STATEMENT_GLOBAL, source_pos,
+                                    ch);
+        }
 
         int32_t nonlocal_stmt()
         {

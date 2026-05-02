@@ -124,6 +124,14 @@ TEST(Parser, for_else_stmt)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, global_stmt)
+{
+    std::string expected = "global a, b\n";
+    std::string actual = parse(L"global a, b\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, string_literal_stores_constant_value)
 {
     test::ParsedFile parsed(L"\"abc\"\n");
