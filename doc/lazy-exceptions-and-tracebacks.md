@@ -234,8 +234,6 @@ FOR_ITER2:
     consume yielded item
     continue into the loop body
   else if pending.kind == StopIteration:
-    if pending.stop_iteration_value != not_present:
-      do one final loop iteration with stop_iteration_value
     clear pending exception
     goto loop_exit
   else:
@@ -243,8 +241,12 @@ FOR_ITER2:
 ```
 
 This keeps `StopIteration` special only at the protocol boundary that asked for
-the next item. A user-visible call to `it.__next__()` uses the ordinary call path;
-if it raises `StopIteration`, an enclosing `except StopIteration` can catch it.
+the next item. An ordinary `for` loop treats both `StopIteration()` and
+`StopIteration(value)` as loop exhaustion and discards the payload. Delegating
+iteration machinery such as `yield from` can inspect the same pending
+`stop_iteration_value` before clearing the exception. A user-visible call to
+`it.__next__()` uses the ordinary call path; if it raises `StopIteration`, an
+enclosing `except StopIteration` can catch it.
 
 Because instructions are variable length, the VM should not recover the call
 site by subtracting from `return_pc`. The tagged return target says whether an
