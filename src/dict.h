@@ -27,7 +27,7 @@ namespace cl
             {
                 key = Value::not_present();
                 value = Value::None();
-                hash = TValue<SMI>::from_value_unchecked(Value::from_smi(0));
+                hash = TValue<SMI>::from_smi(0);
             }
         };
 

@@ -49,7 +49,7 @@ namespace cl
             size_t n_chars = wcslen(_data);
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
-            count = TValue<SMI>::from_value_unchecked(Value::from_smi(n_chars));
+            count = TValue<SMI>::from_smi(n_chars);
         }
 
         String(HeapLayout layout, const cl_wchar *_data)
@@ -58,7 +58,7 @@ namespace cl
             size_t n_chars = wcslen(_data);
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
-            count = TValue<SMI>::from_value_unchecked(Value::from_smi(n_chars));
+            count = TValue<SMI>::from_smi(n_chars);
         }
 
         String(HeapLayout layout, ClassObject *cls, const std::wstring &str)
@@ -67,7 +67,7 @@ namespace cl
             size_t n_chars = str.size();
             memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
-            count = TValue<SMI>::from_value_unchecked(Value::from_smi(n_chars));
+            count = TValue<SMI>::from_smi(n_chars);
         }
 
         String(HeapLayout layout, const std::wstring &str)
@@ -76,7 +76,7 @@ namespace cl
             size_t n_chars = str.size();
             memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
-            count = TValue<SMI>::from_value_unchecked(Value::from_smi(n_chars));
+            count = TValue<SMI>::from_smi(n_chars);
         }
 
         void install_bootstrap_class(ClassObject *new_cls);

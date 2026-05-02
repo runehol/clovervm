@@ -91,9 +91,7 @@ TEST(ValueArray, SupportsFlatValueStructElements)
     ArrayOwner *owner = context.thread()->make_internal_raw<ArrayOwner>();
 
     ValueArray<ValuePair> &values = owner->pair_values;
-    values.push_back(
-        ValuePair{Value::from_smi(11),
-                  TValue<SMI>::from_value_checked(Value::from_smi(23))});
+    values.push_back(ValuePair{Value::from_smi(11), TValue<SMI>::from_smi(23)});
     values.reserve(4);
 
     ASSERT_EQ(1u, values.size());

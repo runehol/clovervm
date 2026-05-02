@@ -79,15 +79,14 @@ TEST(TValue, CheckedConstructionThrowsOnWrongType)
 
 TEST(TValue, SmiUsesTraitDefinedGetter)
 {
-    TValue<SMI> smi = TValue<SMI>::from_value_checked(Value::from_smi(42));
+    TValue<SMI> smi = TValue<SMI>::from_smi(42);
 
     EXPECT_EQ(42, smi.extract());
 }
 
 TEST(TValue, ClIntAcceptsCurrentIntegerRepresentation)
 {
-    TValue<CLInt> integer =
-        TValue<CLInt>::from_value_checked(Value::from_smi(42));
+    TValue<CLInt> integer = TValue<CLInt>::from_smi(42);
 
     EXPECT_EQ(Value::from_smi(42), integer.as_value());
 }

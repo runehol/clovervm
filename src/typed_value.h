@@ -115,6 +115,14 @@ namespace cl
         }
 
         template <typename U = T,
+                  typename = std::enable_if_t<std::is_same_v<U, SMI> ||
+                                              std::is_same_v<U, CLInt>>>
+        static TValue from_smi(int64_t value)
+        {
+            return from_value_unchecked(Value::from_smi(value));
+        }
+
+        template <typename U = T,
                   typename GetType = typename ValueTypeTraits<U>::get_type,
                   typename = std::enable_if_t<std::is_pointer_v<GetType>>>
         static TValue from_oop(std::remove_pointer_t<GetType> *ptr)
