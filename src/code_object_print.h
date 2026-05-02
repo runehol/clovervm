@@ -206,6 +206,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "CallNative2");
             case cl::Bytecode::CallNative3:
                 return format_to(out, "CallNative3");
+            case cl::Bytecode::EnterPreparedFunction:
+                return format_to(out, "EnterPreparedFunction");
             case cl::Bytecode::GetIter:
                 return format_to(out, "GetIter");
             case cl::Bytecode::ForIter:
@@ -229,12 +231,16 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "CreateFunctionWithDefaults");
             case cl::Bytecode::CreateClass:
                 return format_to(out, "CreateClass");
+            case cl::Bytecode::CreateInstanceKnownClass:
+                return format_to(out, "CreateInstanceKnownClass");
             case cl::Bytecode::CreateList:
                 return format_to(out, "CreateList");
             case cl::Bytecode::CreateTuple:
                 return format_to(out, "CreateTuple");
             case cl::Bytecode::BuildClass:
                 return format_to(out, "BuildClass");
+            case cl::Bytecode::CheckInitReturnedNone:
+                return format_to(out, "CheckInitReturnedNone");
 
             case cl::Bytecode::Jump:
                 return format_to(out, "Jump");
@@ -551,6 +557,14 @@ template <> struct fmt::formatter<cl::CodeObject>
                 format_to(out, " {}", code_obj.code[pc++]);
                 break;
 
+            case cl::Bytecode::EnterPreparedFunction:
+                format_to(out, " ");
+                disassemble_constant(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", {}", code_obj.code[pc++]);
+                break;
+
             case cl::Bytecode::GetIter:
                 break;
 
@@ -594,7 +608,13 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_reg(code_obj, out, pc++);
                 break;
 
+            case cl::Bytecode::CreateInstanceKnownClass:
+                format_to(out, " ");
+                disassemble_constant(code_obj, out, pc++);
+                break;
+
             case cl::Bytecode::BuildClass:
+            case cl::Bytecode::CheckInitReturnedNone:
                 break;
 
             case cl::Bytecode::Jump:

@@ -567,6 +567,67 @@ TEST(Interpreter, class_call_allocates_instance)
                                                ->native_layout_id());
 }
 
+TEST(Interpreter, class_constructor_calls_init_and_forwards_arguments)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    def __init__(self, x, y):\n"
+                                 L"        self.value = x * 10 + y\n"
+                                 L"obj = Cls(4, 7)\n"
+                                 L"obj.value\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(47), actual);
+}
+
+TEST(Interpreter, class_constructor_uses_init_defaults)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    def __init__(self, x, y=3):\n"
+                                 L"        self.value = x * 10 + y\n"
+                                 L"obj = Cls(4)\n"
+                                 L"obj.value\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(43), actual);
+}
+
+TEST(Interpreter, class_constructor_forwards_varargs_tuple)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    def __init__(self, x, *rest):\n"
+                                 L"        self.value = x + rest[0] + rest[1]\n"
+                                 L"obj = Cls(1, 20, 300)\n"
+                                 L"obj.value\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(321), actual);
+}
+
+TEST(Interpreter, class_constructor_rejects_non_none_init_return)
+{
+    expect_runtime_error(L"class Cls:\n"
+                         L"    def __init__(self):\n"
+                         L"        return 1\n"
+                         L"Cls()\n",
+                         "TypeError: __init__ should return None, not a value");
+}
+
+TEST(Interpreter, class_constructor_rebuilds_after_init_change)
+{
+    test::FileRunner file_runner(L"class Cls:\n"
+                                 L"    def __init__(self):\n"
+                                 L"        self.value = 1\n"
+                                 L"def replacement(self):\n"
+                                 L"    self.value = 2\n"
+                                 L"first = Cls()\n"
+                                 L"Cls.__init__ = replacement\n"
+                                 L"second = Cls()\n"
+                                 L"first.value * 10 + second.value\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(Value::from_smi(12), actual);
+}
+
 TEST(Interpreter, class_method_call_works_from_source)
 {
     test::FileRunner file_runner(L"class Cls:\n"

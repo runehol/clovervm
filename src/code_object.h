@@ -56,6 +56,7 @@ namespace cl
     struct CodeObject;
     class Function;
     class ClassObject;
+    class ValidityCell;
     class VirtualMachine;
 
     enum class FunctionCallAdaptation : uint8_t
@@ -65,10 +66,20 @@ namespace cl
         Varargs,
     };
 
+    enum class FunctionCallInlineCacheKind : uint8_t
+    {
+        Empty,
+        Function,
+        Constructor,
+    };
+
     struct FunctionCallInlineCache
     {
+        FunctionCallInlineCacheKind kind = FunctionCallInlineCacheKind::Empty;
+        Object *guard_object = nullptr;
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
+        ValidityCell *validity_cell = nullptr;
         uint32_t n_args = 0;
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
     };
@@ -265,6 +276,22 @@ namespace cl
             uint32_t operand_offset = code.size();
             emplace_back(source_offset, reg.slot_offset);
             add_outgoing_arg_relocation(operand_offset, reg.slot_offset);
+            return result;
+        }
+
+        uint32_t emit_opcode_constant_idx_reg_argc(uint32_t source_offset,
+                                                   Bytecode c,
+                                                   uint8_t constant_idx,
+                                                   OutgoingArgReg reg,
+                                                   uint8_t argc)
+        {
+            assert(c != Bytecode::Invalid);
+            uint32_t result = emplace_back(source_offset, uint8_t(c));
+            emplace_back(source_offset, constant_idx);
+            uint32_t operand_offset = code.size();
+            emplace_back(source_offset, reg.slot_offset);
+            add_outgoing_arg_relocation(operand_offset, reg.slot_offset);
+            emplace_back(source_offset, argc);
             return result;
         }
 

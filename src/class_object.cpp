@@ -1,10 +1,14 @@
 #include "class_object.h"
+#include "attr.h"
+#include "constructor_thunk.h"
+#include "function.h"
 #include "runtime_helpers.h"
 #include "str.h"
 #include "tuple.h"
 #include "virtual_machine.h"
 #include <algorithm>
 #include <deque>
+#include <stdexcept>
 #include <vector>
 
 namespace cl
@@ -145,8 +149,9 @@ namespace cl
           mro_shape_and_metaclass_mro_shape_and_contents_validity_cell(nullptr),
           attached_mro_shape_validity_cells(),
           attached_mro_shape_and_contents_validity_cells(),
-          instance_root_shape(nullptr), instance_default_inline_slot_count(
-                                            _instance_default_inline_slot_count)
+          instance_root_shape(nullptr), constructor_thunk(nullptr),
+          instance_default_inline_slot_count(
+              _instance_default_inline_slot_count)
     {
         TValue<String> dunder_class_name = interned_string(L"__class__");
         DescriptorFlags instance_class_flags =
@@ -352,6 +357,12 @@ namespace cl
                 (kClassInlineStorageSlotCount + 2 +
                  2 * HeapPtrArray<ValidityCell>::embedded_value_count) *
                     sizeof(Value));
+        static_assert(
+            CL_OFFSETOF(ClassObject, constructor_thunk) ==
+            CL_OFFSETOF(ClassObject, cls) +
+                (kClassInlineStorageSlotCount + 2 +
+                 2 * HeapPtrArray<ValidityCell>::embedded_value_count + 1) *
+                    sizeof(Value));
     }
 
     BuiltinClassDefinition make_type_class(VirtualMachine *vm)
@@ -473,6 +484,7 @@ namespace cl
 
     void ClassObject::invalidate_lookup_validity_cells_for_contents_change()
     {
+        constructor_thunk = nullptr;
         invalidate_attached_cells(
             attached_mro_shape_and_contents_validity_cells);
         if(mro_shape_and_contents_validity_cell != nullptr)
@@ -495,6 +507,63 @@ namespace cl
             mro_shape_and_metaclass_mro_shape_and_contents_validity_cell =
                 nullptr;
         }
+    }
+
+    ConstructorThunkLookup ClassObject::create_constructor_thunk_slow() const
+    {
+        ClassObject *self = const_cast<ClassObject *>(this);
+        if(get_class().extract() != active_vm()->type_class())
+        {
+            return ConstructorThunkLookup{nullptr, nullptr};
+        }
+
+        ValidityCell *lookup_cell =
+            get_or_create_mro_shape_and_contents_validity_cell();
+        Function *existing = constructor_thunk.extract();
+        if(existing != nullptr && lookup_cell->is_valid())
+        {
+            return ConstructorThunkLookup{existing, lookup_cell};
+        }
+
+        TValue<String> new_name(interned_string(L"__new__"));
+        AttributeReadDescriptor new_descriptor =
+            resolve_attr_read_descriptor(Value::from_oop(self), new_name);
+        if(new_descriptor.is_found())
+        {
+            return ConstructorThunkLookup{nullptr, nullptr};
+        }
+
+        TValue<String> init_name(interned_string(L"__init__"));
+        AttributeReadDescriptor init_descriptor =
+            resolve_attr_read_descriptor(Value::from_oop(self), init_name);
+        if(!init_descriptor.is_found())
+        {
+            TValue<Function> thunk =
+                make_constructor_thunk_function(self, Value::not_present());
+            constructor_thunk = thunk.extract();
+            return ConstructorThunkLookup{thunk.extract(), lookup_cell};
+        }
+
+        if(!init_descriptor.is_cacheable() ||
+           init_descriptor.plan.kind ==
+               AttributeReadPlanKind::DataDescriptorGet ||
+           init_descriptor.plan.kind ==
+               AttributeReadPlanKind::NonDataDescriptorGet)
+        {
+            return ConstructorThunkLookup{nullptr, nullptr};
+        }
+
+        Value init_value =
+            load_attr_from_plan(Value::from_oop(self), init_descriptor.plan);
+        if(!can_convert_to<Function>(init_value))
+        {
+            return ConstructorThunkLookup{nullptr, nullptr};
+        }
+
+        TValue<Function> thunk =
+            make_constructor_thunk_function(self, init_value);
+        constructor_thunk = thunk.extract();
+        return ConstructorThunkLookup{thunk.extract(), lookup_cell};
     }
 
     Value ClassObject::make_bases_tuple(ClassObject *single_base) const

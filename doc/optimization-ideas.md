@@ -1,50 +1,59 @@
 # Optimization Ideas
 
-This note collects interpreter optimization ideas that look promising but are
-not implemented yet.
+This note collects interpreter optimization ideas. Some sections describe
+implemented baseline machinery plus remaining follow-ups.
 
 ## CallSimple Inline Cache
 
-Add a positive, monomorphic inline cache for `CallSimple`, keyed by exact
-callable identity. The cache should describe a call-site-specific plan for the
-fixed positional argument count encoded in the bytecode, not just the callable's
-general type or arity.
+`CallSimple` now has a positive, monomorphic inline cache for ordinary
+`Function` calls and eligible constructor calls. The cache is keyed by exact
+callable identity and the fixed positional argument count encoded in the
+bytecode.
 
-The first version should focus on the common direct Python function case:
+Current behavior:
 
-- Cache only positive results. Do not cache non-callable or wrong-arity misses.
-- Key the cache by the callable object pointer, not by object shape.
-- Build the cache entry in the slow path with the call site's `n_args`.
-- Validate the argument count while building the plan.
+- Positive results are cached; non-callable and wrong-arity misses are not.
+- Plain `Function` calls cache the callable, code object, argument adaptation,
+  and any lookup validity needed by the plan.
+- Eligible `ClassObject` calls cache the class identity plus the constructor
+  thunk returned by `ClassObject::get_or_create_constructor_thunk()`.
+- Constructor cache entries use the class's existing MRO shape+contents
+  validity cell. The class owns thunk creation and invalidation.
+
+Useful follow-ups:
+
 - Keep only the hottest plan kind in the main `op_call_simple` handler.
 - Execute bulkier cached plans through a cold cached slow path.
+- Add structural tests for the constructor-cache lowering and guard shape if
+  those decisions become externally visible enough to pin down.
 
-A possible shape:
+The implemented shape is roughly:
 
 ```cpp
-enum class CallSimplePlanKind : uint8_t
+enum class FunctionCallInlineCacheKind : uint8_t
 {
     Empty,
-    PythonFunctionExactFrame,
-    NativeThunkExactFrame,
-    ClassObjectZeroArg,
+    Function,
+    Constructor,
 };
 
-struct CallSimpleInlineCache
+struct FunctionCallInlineCache
 {
-    Object *callable = nullptr;
-    CallSimplePlanKind kind = CallSimplePlanKind::Empty;
-
+    FunctionCallInlineCacheKind kind = FunctionCallInlineCacheKind::Empty;
+    Object *guard_object = nullptr;
+    Function *function = nullptr;
     CodeObject *code_object = nullptr;
+    ValidityCell *validity_cell = nullptr;
+    uint32_t n_args = 0;
+    FunctionCallAdaptation adaptation = FunctionCallAdaptation::Invalid;
 };
 ```
 
-For `PythonFunctionExactFrame`, the hot path can check callable identity and
-enter the cached function frame directly. Fixed-arity native thunks can share
-that plan at first because they are ordinary `Function` objects. A later
-`NativeThunkExactFrame` plan could recognize tiny `CallNativeN; Return` code
-objects and jump to a slimmer adapter when benchmarks show that the extra inline
-code pays for itself.
+For ordinary functions, the hot path checks callable identity and enters the
+cached function frame directly. Fixed-arity native thunks share that plan
+because they are ordinary `Function` objects. A later `NativeThunkExactFrame`
+plan could recognize tiny `CallNativeN; Return` code objects and jump to a
+slimmer adapter when benchmarks show that the extra inline code pays for itself.
 
 Future Python call features such as default arguments, keyword arguments,
 `*args`, and `**kwargs` should extend the plan model instead of turning

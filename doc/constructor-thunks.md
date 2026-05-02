@@ -1,8 +1,8 @@
 # Constructor Thunks
 
-This note sketches a constructor-call design for `Class(...)` that keeps the
-common case fast without turning `CallSimple` into a large constructor protocol
-engine.
+This note documents the first constructor-call implementation for `Class(...)`.
+The design keeps the common case fast without turning `CallSimple` into a large
+constructor protocol engine.
 
 ## Problem
 
@@ -39,8 +39,8 @@ initializer call caching, argument preservation, and special return behavior.
 
 ## Tier 1: Standard Constructor Thunk
 
-For the common case, attach an internal constructor routine to each eligible
-class. Conceptually:
+For the common case, the VM attaches an internal constructor routine to each
+eligible class on demand. Conceptually:
 
 ```python
 def Class_create_instance(...):
@@ -79,7 +79,7 @@ init_p1 = p0
 init_p2 = p1
 init_p3 = p2
 init_p4 = p3
-EnterPreparedFunction const[Class.__init__]
+EnterPreparedFunction const[Class.__init__], init_p0, argc + 1
 return inst
 ```
 
@@ -94,23 +94,24 @@ do.
 This spends one extra generated function/frame to keep constructor semantics out
 of `CallSimple` and out of a shared megamorphic `type.__call__` body.
 
-The thunk should inject the resolved `__init__` function as a constant. The
-thunk is already specialized on that implementation's signature, so the resolved
-function identity is part of the specialization rather than something the thunk
-should look up again.
+The thunk injects the resolved `__init__` function as a constant. The thunk is
+already specialized on that implementation's signature, so the resolved function
+identity is part of the specialization rather than something the thunk should
+look up again.
 
 ## Eligibility
 
-The tier-1 thunk applies only to ordinary construction:
+The implemented tier-1 thunk applies only to ordinary construction:
 
 - the class uses the standard `type` metaclass call behavior;
 - the class does not define a custom `__new__`;
-- `__init__` resolves to a supported `Function`;
+- `__init__` is absent or resolves to a supported `Function`;
 - descriptor behavior does not require generic dispatch;
 - the allocation path is the standard instance allocation for the class.
 
-The exact eligibility test can be conservative. If anything looks unusual, use
-the generic path instead.
+The eligibility test is intentionally conservative. If anything looks unusual,
+the VM currently treats the class call as unsupported. A later generic
+construction path should handle those cases correctly.
 
 ## Call-Site Cache Shape
 
@@ -120,84 +121,84 @@ The original call site remains a normal call:
 CallSimple callable, first_arg, argc, call_ic
 ```
 
-When `callable` is an eligible class, the call IC can specialize to the class's
+When `callable` is an eligible class, the call IC specializes to the class's
 attached constructor thunk:
 
 ```text
-guard ClassObject / existing class+metaclass lookup validity cell
+guard ClassObject / existing MRO shape+contents validity cell
 callee = Class.create_instance
 enter ordinary function-call path
 ```
 
-The call-site IC does not need to cache the full constructor protocol. It only
-needs enough state to prove that the class still maps to the same constructor
-routine. The class owns the heavier constructor plan.
+The call-site IC does not cache the full constructor protocol. It only stores
+enough state to prove that the class still maps to the same constructor routine.
+The class owns the heavier constructor plan.
 
 ## Class-Owned Constructor State
 
-Each eligible class can own or lazily create the thunk as hidden VM metadata,
-not as a Python-visible class attribute:
+Each eligible class owns the lazily created thunk as hidden VM metadata, not as
+a Python-visible class attribute:
 
 ```cpp
 ClassObject::constructor_thunk
-ClassObject::constructor_thunk_lookup_cell
 ```
 
-These slots are addressed directly by VM code. They are not part of the class
-shape, do not participate in attribute lookup, and cannot be observed or
-overwritten from Python code as `Class.create_instance`.
+This slot is addressed directly by VM code. It is not part of the class shape,
+does not participate in attribute lookup, and cannot be observed or overwritten
+from Python code as `Class.create_instance`.
 
-`constructor_thunk_lookup_cell` is not a constructor-specific validity cell. It
-remembers the existing combined
-`mro_shape_and_metaclass_mro_shape_and_contents_validity_cell` used to build the
-cached thunk, so VM code can tell whether the hidden thunk still corresponds to
-the current class/metaclass lookup assumptions.
+`ClassObject::get_or_create_constructor_thunk()` owns the cache policy. Its
+inline fast path checks whether `constructor_thunk` exists and whether the
+class's existing `mro_shape_and_contents_validity_cell` is still valid. The slow
+path creates that validity cell if needed, resolves the current `__new__` and
+`__init__` assumptions, builds the thunk, and stores it back on the class.
 
 The class-owned constructor state may eventually include:
 
 ```text
 constructor_thunk function
-constructor_thunk_lookup_cell borrowed from existing lookup validity machinery
 cached __init__ function / code object for assertions or debugging
 allocation assumptions
 ```
 
-The initial design deliberately does not add a dedicated constructor validity
-cell. Existing class/metaclass lookup invalidation is broad enough for the first
-tier:
+The implementation deliberately does not add a dedicated constructor validity
+cell. Existing class lookup invalidation is broad enough for the first tier:
 
 - class MRO or contents changes affecting `__init__` or `__new__`;
-- metaclass MRO or contents changes affecting `__call__`;
 - allocation layout changes that make the thunk's allocation primitive invalid.
 
-On demand, VM code gets the current combined lookup cell. It can reuse the
-hidden thunk only when `constructor_thunk_lookup_cell` is that same valid cell.
-If the class or metaclass changed, existing invalidation will invalidate/drop the
-old combined cell; the next constructor call resolves `__init__` again and
-builds a new thunk.
+For this first tier, custom metaclasses are simply ineligible. When custom
+metaclass construction becomes supported, this design will need a broader
+revisioned guard for metaclass `__call__` behavior.
 
-## Staging
+On demand, VM code asks the class for the current constructor thunk. It can
+reuse the hidden thunk only while the class-owned MRO shape+contents validity
+cell remains valid. If the class or one of its bases changes in a way that could
+affect `__init__` or `__new__`, existing invalidation clears the hidden thunk
+and invalidates the cell; the next constructor call resolves `__init__` again
+and builds a new thunk.
 
-The first implementation can be conservative:
+## Implemented Scope
+
+The current implementation is conservative:
 
 - support standard `type` metaclass behavior only;
 - reject custom `__new__`;
-- require `__init__` to resolve to a plain `Function`;
-- specialize the thunk on the resolved `__init__` function and its signature;
-- support fixed positional parameters and defaults first;
-- add varargs/keyword support after `EnterPreparedFunction` can enter a fully
-  normalized callee frame.
-
-Before `EnterPreparedFunction` exists, an intermediate thunk may use the normal
-function call machinery for the internal `__init__` call, but the target shape is
-the prepared enter primitive above.
+- support classes with no `__init__`;
+- require present `__init__` to resolve to a plain `Function`;
+- specialize the thunk on the resolved `__init__` function and its signature
+  when one is present;
+- support fixed positional parameters, defaults, and varargs through
+  `EnterPreparedFunction`;
+- leave keyword adaptation to the outer keyword-call opcode, so the thunk body
+  can still enter a fully prepared initializer frame.
 
 ## Generic Fallback
 
 Beyond tier 1, do not try to copy the normalized-call trick.
 
 For custom `__new__`, custom metaclass `__call__`, descriptor-heavy paths, or
-other unusual cases, use a generic construction path that may materialize
+other unusual cases, add a generic construction path that may materialize
 `*args` and `**kwargs` and run the full object-model protocol.
 
 That path is allowed to be slower:

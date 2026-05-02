@@ -13,6 +13,7 @@
 #include "runtime_helpers.h"
 #include "subscript.h"
 #include "tuple.h"
+#include "validity_cell.h"
 #include "value.h"
 #include <cstdint>
 #include <fmt/core.h>
@@ -263,6 +264,12 @@ namespace cl
         throw std::runtime_error("ValueError: range() arg 3 must not be zero");
     }
 
+    NOINLINE Value init_returned_non_none_error(PARAMS)
+    {
+        throw std::runtime_error(
+            "TypeError: __init__ should return None, not a value");
+    }
+
     NOINLINE static Value slow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
@@ -312,8 +319,26 @@ namespace cl
                                  TValue<Function> fun, uint32_t n_args,
                                  FunctionCallAdaptation adaptation)
     {
+        cache.kind = FunctionCallInlineCacheKind::Function;
+        cache.guard_object = fun.extract();
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
+        cache.validity_cell = nullptr;
+        cache.n_args = n_args;
+        cache.adaptation = adaptation;
+    }
+
+    static ALWAYSINLINE void
+    populate_constructor_call_cache(FunctionCallInlineCache &cache,
+                                    ClassObject *cls, TValue<Function> thunk,
+                                    ValidityCell *lookup_cell, uint32_t n_args,
+                                    FunctionCallAdaptation adaptation)
+    {
+        cache.kind = FunctionCallInlineCacheKind::Constructor;
+        cache.guard_object = cls;
+        cache.function = thunk.extract();
+        cache.code_object = thunk.extract()->code_object.extract();
+        cache.validity_cell = lookup_cell;
         cache.n_args = n_args;
         cache.adaptation = adaptation;
     }
@@ -322,8 +347,21 @@ namespace cl
     function_call_cache_matches(const FunctionCallInlineCache &cache, Value fun,
                                 uint32_t n_args)
     {
-        return fun.is_ptr() && cache.function == fun.get_ptr<Function>() &&
-               cache.n_args == n_args;
+        if(!fun.is_ptr() || cache.n_args != n_args ||
+           cache.guard_object != fun.get_ptr<Object>())
+        {
+            return false;
+        }
+        if(cache.kind == FunctionCallInlineCacheKind::Function)
+        {
+            return cache.function == fun.get_ptr<Function>();
+        }
+        if(cache.kind == FunctionCallInlineCacheKind::Constructor)
+        {
+            return cache.validity_cell != nullptr &&
+                   cache.validity_cell->is_valid();
+        }
+        return false;
     }
 
     static ALWAYSINLINE void
@@ -1265,6 +1303,17 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_create_instance_known_class(PARAMS)
+    {
+        START(2);
+        uint8_t const_offset = pc[1];
+        ClassObject *cls = assume_convert_to<ClassObject>(
+            code_object->constant_table[const_offset].as_value());
+        accumulator = Value::from_oop(make_internal_raw<Instance>(cls));
+
+        COMPLETE();
+    }
+
     static Value op_create_list(PARAMS)
     {
         START(3);
@@ -1345,6 +1394,17 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_check_init_returned_none(PARAMS)
+    {
+        START(1);
+        if(unlikely(accumulator != Value::None()))
+        {
+            MUSTTAIL return init_returned_non_none_error(ARGS);
+        }
+
+        COMPLETE();
+    }
+
     static Value op_jump(PARAMS)
     {
         int16_t rel_target = read_int16_le(&pc[1]);
@@ -1410,15 +1470,28 @@ namespace cl
         Object *fun_object = fun.get_ptr();
         if(fun_object->native_layout_id() == NativeLayoutId::ClassObject)
         {
-            if(unlikely(n_args != 0))
+            ClassObject *cls = static_cast<ClassObject *>(fun_object);
+            ConstructorThunkLookup constructor =
+                cls->get_or_create_constructor_thunk();
+            if(unlikely(!constructor.is_found()))
+            {
+                MUSTTAIL return not_callable_error(ARGS);
+            }
+
+            TValue<Function> thunk =
+                TValue<Function>::from_oop(constructor.thunk);
+            if(unlikely(!thunk.extract()->accepts_arity(n_args)))
             {
                 MUSTTAIL return wrong_arity_error(ARGS);
             }
-
-            ClassObject *cls = static_cast<ClassObject *>(fun_object);
-            accumulator = Value::from_oop(make_internal_raw<Instance>(cls));
-
-            pc += call_instr_len;
+            FunctionCallAdaptation adaptation =
+                classify_function_call_adaptation(thunk);
+            populate_constructor_call_cache(
+                code_object->function_call_caches[cache_idx], cls, thunk,
+                constructor.lookup_cell, n_args, adaptation);
+            enter_function_frame_from_positional_args(
+                fp, pc, code_object, thunk, first_arg_reg, n_args,
+                call_instr_len, adaptation);
 
             START(0);
             COMPLETE();
@@ -1459,6 +1532,22 @@ namespace cl
         enter_function_frame_from_positional_args(
             fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, cache.adaptation);
+
+        START(0);
+        COMPLETE();
+    }
+
+    static Value op_enter_prepared_function(PARAMS)
+    {
+        static constexpr uint32_t enter_instr_len = 4;
+        uint8_t const_offset = pc[1];
+        int8_t first_arg_reg = pc[2];
+        uint8_t n_args = pc[3];
+        TValue<Function> function(
+            code_object->constant_table[const_offset].as_value());
+        enter_function_frame_from_positional_args(
+            fp, pc, code_object, function, first_arg_reg, n_args,
+            enter_instr_len, FunctionCallAdaptation::FixedArity);
 
         START(0);
         COMPLETE();
@@ -2024,14 +2113,20 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);
         SET_TABLE_ENTRY(Bytecode::CreateFunctionWithDefaults,
                         op_create_function_with_defaults);
+        SET_TABLE_ENTRY(Bytecode::CreateInstanceKnownClass,
+                        op_create_instance_known_class);
         SET_TABLE_ENTRY(Bytecode::CreateClass, op_create_class);
         SET_TABLE_ENTRY(Bytecode::BuildClass, op_build_class);
+        SET_TABLE_ENTRY(Bytecode::CheckInitReturnedNone,
+                        op_check_init_returned_none);
 
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
         SET_TABLE_ENTRY(Bytecode::CallNative0, op_call_native0);
         SET_TABLE_ENTRY(Bytecode::CallNative1, op_call_native1);
         SET_TABLE_ENTRY(Bytecode::CallNative2, op_call_native2);
         SET_TABLE_ENTRY(Bytecode::CallNative3, op_call_native3);
+        SET_TABLE_ENTRY(Bytecode::EnterPreparedFunction,
+                        op_enter_prepared_function);
         SET_TABLE_ENTRY(Bytecode::GetIter, op_get_iter);
         SET_TABLE_ENTRY(Bytecode::ForIter, op_for_iter);
         SET_TABLE_ENTRY(Bytecode::ForPrepRange1, op_for_prep_range1);

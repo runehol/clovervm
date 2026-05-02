@@ -16,6 +16,7 @@
 
 namespace cl
 {
+    class Function;
     class Tuple;
 
     enum class MroValidityCellInstallMode : uint8_t
@@ -34,6 +35,14 @@ namespace cl
     {
         TValue<String> name;
         Value value;
+    };
+
+    struct ConstructorThunkLookup
+    {
+        Function *thunk;
+        ValidityCell *lookup_cell;
+
+        bool is_found() const { return thunk != nullptr; }
     };
 
     class ClassObject : public Object
@@ -141,6 +150,21 @@ namespace cl
         }
         void invalidate_lookup_validity_cells_for_shape_change();
         void invalidate_lookup_validity_cells_for_contents_change();
+        Function *current_constructor_thunk() const
+        {
+            return constructor_thunk.extract();
+        }
+        ALWAYSINLINE ConstructorThunkLookup
+        get_or_create_constructor_thunk() const
+        {
+            ValidityCell *cell = mro_shape_and_contents_validity_cell.extract();
+            Function *thunk = constructor_thunk.extract();
+            if(likely(thunk != nullptr && cell != nullptr && cell->is_valid()))
+            {
+                return ConstructorThunkLookup{thunk, cell};
+            }
+            return create_constructor_thunk_slow();
+        }
 
     private:
         static constexpr uint32_t kClassExtraInlineAttributeSlotCount =
@@ -153,6 +177,7 @@ namespace cl
         NOINLINE ValidityCell *
         create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_slow()
             const;
+        NOINLINE ConstructorThunkLookup create_constructor_thunk_slow() const;
         void install_validity_cell_along_mro(
             ValidityCell *cell, MroValidityCellInstallMode mode,
             MroValidityCellDependency dependency) const;
@@ -173,13 +198,14 @@ namespace cl
         mutable HeapPtrArray<ValidityCell>
             attached_mro_shape_and_contents_validity_cells;
         MemberHeapPtr<Shape> instance_root_shape;
+        mutable MemberHeapPtr<Function> constructor_thunk;
         uint32_t instance_default_inline_slot_count;
 
     public:
         CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(
             ClassObject, Object,
             3 + kClassExtraInlineAttributeSlotCount + 2 +
-                2 * HeapPtrArray<ValidityCell>::embedded_value_count + 1);
+                2 * HeapPtrArray<ValidityCell>::embedded_value_count + 2);
     };
 
     class VirtualMachine;

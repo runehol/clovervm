@@ -122,6 +122,7 @@ namespace cl
         CallNative1,
         CallNative2,
         CallNative3,
+        EnterPreparedFunction,
 
         // iteration
         GetIter,
@@ -139,7 +140,9 @@ namespace cl
         CreateFunction,
         CreateFunctionWithDefaults,
         CreateClass,
+        CreateInstanceKnownClass,
         BuildClass,
+        CheckInitReturnedNone,
 
         // control flow
         Return,

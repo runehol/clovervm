@@ -185,14 +185,19 @@ Remaining work:
 
 ### Improve Construction And Instance Layout Prediction
 
-Class instantiation still needs normal Python constructor semantics and a less
-hacky fast path.
+Class instantiation now has a tier-1 fast path for ordinary constructors. An
+eligible class lazily owns a hidden constructor thunk guarded by its existing
+MRO shape+contents validity cell. The thunk allocates the instance, enters the
+resolved `__init__` with a prepared frame when one is present, and rejects
+non-`None` initializer returns.
 
 Remaining work:
 
-- call `__init__` from class instantiation
-- forward constructor arguments and report arity errors cleanly
-- reject non-`None` `__init__` return values
+- add outer `CallKw` support so keyword constructor calls can still reuse the
+  prepared thunk body after call-site adaptation
+- implement the generic construction path for custom `__new__`
+- add the custom metaclass `__call__` story with an explicit revisioned guard
+- normalize constructor errors into specific VM exceptions
 - eventually recognize statically visible `__init__` member initialization and
   seed the instance root Shape/default inline slot count accordingly
 

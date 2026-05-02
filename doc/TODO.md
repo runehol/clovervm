@@ -5,20 +5,22 @@ model and first attribute inline-cache slices.
 
 ## Top Priority
 
-- [ ] Implement constructor semantics for class instantiation.
+- [ ] Expand constructor semantics beyond tier-1 constructor thunks.
 
-  `Cls(...)` currently allocates an instance but still needs proper
-  constructor behavior:
+  `Cls(...)` now uses an on-demand constructor thunk for ordinary classes:
+  standard `type`, no custom `__new__`, absent or plain-function `__init__`,
+  positional arguments, defaults, varargs, and non-`None` `__init__` return
+  checks are covered by interpreter tests.
 
-  1. call `__init__` automatically
-  2. forward constructor arguments
-  3. report arity errors cleanly
-  4. reject non-`None` `__init__` return values
-  5. add interpreter-first tests for success and failure modes
+  Remaining construction work:
 
-  Later, once `__init__` is visible to the compiler, use statically observed
-  member initialization to seed the instance root Shape and default inline slot
-  count.
+  1. add outer `CallKw` support so keyword constructor calls can still reuse
+     the prepared thunk body after call-site adaptation
+  2. implement the generic path for custom `__new__`
+  3. implement or explicitly stage custom metaclass `__call__`
+  4. normalize constructor failures into specific VM exceptions
+  5. use statically observed `__init__` member initialization to seed the
+     instance root Shape and default inline slot count
 
 - [ ] Execute descriptor protocol calls through interpreter-controlled dispatch.
 

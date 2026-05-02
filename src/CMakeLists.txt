@@ -13,6 +13,8 @@ add_library(libclovervm STATIC
     code_object.h
     class_object.cpp
     class_object.h
+    constructor_thunk.cpp
+    constructor_thunk.h
     codegen.cpp
     codegen.h
     compilation_unit.h
