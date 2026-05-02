@@ -1,6 +1,7 @@
 #include "codegen.h"
 #include "ast.h"
 #include "attr.h"
+#include "code_object_builder.h"
 #include "runtime_helpers.h"
 #include "scope.h"
 #include "tokenizer.h"
@@ -87,15 +88,18 @@ namespace cl
     }
 
     CodeObject *codegen_function(const AstVector &av, Scope *module_scope,
-                                 CodeObject *parent_code_obj, int32_t node_idx);
+                                 CodeObjectBuilder *parent_code_obj,
+                                 int32_t node_idx);
     CodeObject *codegen_class(const AstVector &av, Scope *module_scope,
-                              CodeObject *parent_code_obj, int32_t node_idx);
+                              CodeObjectBuilder *parent_code_obj,
+                              int32_t node_idx);
 
-    void reserve_parameter_padding_and_frame_header(CodeObject *target_code_obj)
+    void reserve_parameter_padding_and_frame_header(
+        CodeObjectBuilder *target_code_obj)
     {
         uint32_t n_parameter_padding =
             target_code_obj->get_padded_n_parameters() -
-            target_code_obj->n_parameters;
+            target_code_obj->n_parameters();
         target_code_obj->get_local_scope_ptr()->reserve_empty_slots(
             n_parameter_padding);
         target_code_obj->get_local_scope_ptr()->reserve_empty_slots(
@@ -115,7 +119,7 @@ namespace cl
         };
 
         AstCodegen(const AstVector &_av, Scope *_module_scope,
-                   CodeObject *_code_obj, Mode _mode, int32_t _body_idx,
+                   CodeObjectBuilder *_code_obj, Mode _mode, int32_t _body_idx,
                    AstChildren param_children)
             : av(_av), module_scope(_module_scope), code_obj(_code_obj),
               body_idx(_body_idx), analysis(_mode, _av.size()),
@@ -131,8 +135,8 @@ namespace cl
         }
 
         CodeObject *run_module();
-        void run_function_body(uint32_t source_offset, int32_t body_idx);
-        void run_class_body(uint32_t source_offset, int32_t body_idx);
+        CodeObject *run_function_body(uint32_t source_offset, int32_t body_idx);
+        CodeObject *run_class_body(uint32_t source_offset, int32_t body_idx);
 
     private:
         struct LoopTargetSet
@@ -234,7 +238,7 @@ namespace cl
 
         Mode mode() const { return analysis.mode; }
 
-        CodeObject *code_obj;
+        CodeObjectBuilder *code_obj;
         int32_t body_idx;
         ScopeAnalysis analysis;
         uint32_t temporary_reg;
@@ -294,7 +298,7 @@ namespace cl
         }
 
         BindingInfo &
-        ensure_local_binding(CodeObject *target_code_obj,
+        ensure_local_binding(CodeObjectBuilder *target_code_obj,
                              ScopeAnalysis &analysis, Value name,
                              Presence initial_presence = Presence::Missing)
         {
@@ -326,7 +330,7 @@ namespace cl
                                false};
         }
 
-        NameAccessAnalysis make_access(CodeObject *target_code_obj,
+        NameAccessAnalysis make_access(CodeObjectBuilder *target_code_obj,
                                        ScopeAnalysis &analysis, Value name,
                                        const FlowState &state, bool is_read,
                                        bool checks_presence)
@@ -352,9 +356,9 @@ namespace cl
 
             uint32_t slot_idx =
                 is_read
-                    ? target_code_obj->module_scope.extract()
+                    ? target_code_obj->module_scope()
                           ->register_slot_index_for_read(TValue<String>(name))
-                    : target_code_obj->module_scope.extract()
+                    : target_code_obj->module_scope()
                           ->register_slot_index_for_write(TValue<String>(name));
             return NameAccessAnalysis{BindingScope::Global, Presence::Maybe,
                                       slot_idx};
@@ -374,7 +378,7 @@ namespace cl
             state.may_be_entry_value[size_t(binding_idx)] = false;
         }
 
-        void collect_code_object_bindings(CodeObject *target_code_obj,
+        void collect_code_object_bindings(CodeObjectBuilder *target_code_obj,
                                           ScopeAnalysis &analysis,
                                           int32_t node_idx)
         {
@@ -547,7 +551,7 @@ namespace cl
             return merged;
         }
 
-        void analyze_flow_node(CodeObject *target_code_obj,
+        void analyze_flow_node(CodeObjectBuilder *target_code_obj,
                                ScopeAnalysis &analysis, int32_t node_idx,
                                FlowState &state)
         {
@@ -830,7 +834,7 @@ namespace cl
             }
         }
 
-        ScopeAnalysis analyze_code_object(CodeObject *target_code_obj,
+        ScopeAnalysis analyze_code_object(CodeObjectBuilder *target_code_obj,
                                           int32_t body_idx, Mode mode,
                                           AstChildren param_children = {})
         {
@@ -1951,8 +1955,8 @@ namespace cl
     {
         codegen_node(body_idx);
         code_obj->emit_opcode(0, Bytecode::Halt);
-        code_obj->finalize(max_temporary_reg);
-        return incref(code_obj);
+        CodeObject *result = code_obj->finalize(max_temporary_reg);
+        return incref(result);
     }
 
     uint32_t count_positional_parameters(const AstVector &av,
@@ -1983,63 +1987,64 @@ namespace cl
     }
 
     CodeObject *codegen_function(const AstVector &av, Scope *module_scope,
-                                 CodeObject *parent_code_obj, int32_t node_idx)
+                                 CodeObjectBuilder *parent_code_obj,
+                                 int32_t node_idx)
     {
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
         AstChildren param_children = av.children[children[0]];
         Scope *local_scope =
-            make_internal_raw<Scope>(parent_code_obj->local_scope.extract());
-        CodeObject *fun_obj = make_object_raw<CodeObject>(
-            av.compilation_unit, module_scope, local_scope, Value::None());
+            make_internal_raw<Scope>(parent_code_obj->local_scope());
+        CodeObjectBuilder fun_obj(av.compilation_unit, module_scope,
+                                  local_scope, Value::None());
 
-        fun_obj->name = av.constants[node_idx];
-        fun_obj->n_parameters = param_children.size();
-        fun_obj->n_positional_parameters =
+        fun_obj.set_name(av.constants[node_idx]);
+        fun_obj.n_parameters() = param_children.size();
+        fun_obj.n_positional_parameters() =
             count_positional_parameters(av, param_children);
         if(has_varargs_parameter(av, param_children))
         {
-            fun_obj->parameter_flags |= FunctionParameterFlags::HasVarArgs;
+            fun_obj.parameter_flags() |= FunctionParameterFlags::HasVarArgs;
         }
         for(int32_t ch: param_children)
         {
             assert(av.kinds[ch].node_kind == AstNodeKind::PARAMETER ||
                    av.kinds[ch].node_kind == AstNodeKind::PARAMETER_VARARGS);
-            fun_obj->get_local_scope_ptr()->register_slot_index_for_write(
+            fun_obj.get_local_scope_ptr()->register_slot_index_for_write(
                 TValue<String>(av.constants[ch]));
         }
-        reserve_parameter_padding_and_frame_header(fun_obj);
+        reserve_parameter_padding_and_frame_header(&fun_obj);
 
         AstCodegen fun_builder{av,          module_scope,
-                               fun_obj,     AstCodegen::Mode::Function,
+                               &fun_obj,    AstCodegen::Mode::Function,
                                children[1], param_children};
-        fun_builder.run_function_body(source_offset, children[1]);
-        return fun_obj;
+        return fun_builder.run_function_body(source_offset, children[1]);
     }
 
     CodeObject *codegen_class(const AstVector &av, Scope *module_scope,
-                              CodeObject *parent_code_obj, int32_t node_idx)
+                              CodeObjectBuilder *parent_code_obj,
+                              int32_t node_idx)
     {
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
         int32_t body_idx = children[1];
         Scope *local_scope =
-            make_internal_raw<Scope>(parent_code_obj->local_scope.extract());
-        CodeObject *class_obj = make_object_raw<CodeObject>(
-            av.compilation_unit, module_scope, local_scope,
-            parent_code_obj->name.as_value());
+            make_internal_raw<Scope>(parent_code_obj->local_scope());
+        CodeObjectBuilder class_obj(av.compilation_unit, module_scope,
+                                    local_scope, parent_code_obj->name());
 
-        class_obj->n_parameters = 2;
-        class_obj->get_local_scope_ptr()->reserve_empty_slots(2);
-        reserve_parameter_padding_and_frame_header(class_obj);
+        class_obj.n_parameters() = 2;
+        class_obj.get_local_scope_ptr()->reserve_empty_slots(2);
+        reserve_parameter_padding_and_frame_header(&class_obj);
 
-        AstCodegen class_builder{
-            av, module_scope, class_obj, AstCodegen::Mode::Class, body_idx, {}};
-        class_builder.run_class_body(source_offset, body_idx);
-        return class_obj;
+        AstCodegen class_builder{av,         module_scope,
+                                 &class_obj, AstCodegen::Mode::Class,
+                                 body_idx,   {}};
+        return class_builder.run_class_body(source_offset, body_idx);
     }
 
-    void AstCodegen::run_function_body(uint32_t source_offset, int32_t body_idx)
+    CodeObject *AstCodegen::run_function_body(uint32_t source_offset,
+                                              int32_t body_idx)
     {
         emit_local_binding_prologue();
         codegen_node(body_idx);
@@ -2047,25 +2052,26 @@ namespace cl
         // could check that all return paths already have a return statement
         code_obj->emit_opcode(source_offset, Bytecode::LdaNone);
         code_obj->emit_opcode(source_offset, Bytecode::Return);
-        code_obj->finalize(max_temporary_reg);
+        return code_obj->finalize(max_temporary_reg);
     }
 
-    void AstCodegen::run_class_body(uint32_t source_offset, int32_t body_idx)
+    CodeObject *AstCodegen::run_class_body(uint32_t source_offset,
+                                           int32_t body_idx)
     {
         emit_local_binding_prologue();
         codegen_node(body_idx);
         code_obj->emit_opcode(source_offset, Bytecode::BuildClass);
-        code_obj->finalize(max_temporary_reg);
+        return code_obj->finalize(max_temporary_reg);
     }
 
     CodeObject *codegen_module(const AstVector &av, TValue<String> module_name)
     {
         Scope *module_scope = make_internal_raw<Scope>(
             active_vm()->get_builtin_scope().extract());
-        CodeObject *module_obj = make_object_raw<CodeObject>(
-            av.compilation_unit, module_scope, nullptr, module_name);
+        CodeObjectBuilder module_obj(av.compilation_unit, module_scope, nullptr,
+                                     module_name);
         AstCodegen builder{av,           module_scope,
-                           module_obj,   AstCodegen::Mode::Module,
+                           &module_obj,  AstCodegen::Mode::Module,
                            av.root_node, {}};
         return builder.run_module();
     }

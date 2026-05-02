@@ -1,5 +1,6 @@
 #include "native_function.h"
 
+#include "code_object_builder.h"
 #include "thread_state.h"
 #include "tuple.h"
 #include "virtual_machine.h"
@@ -14,15 +15,15 @@ namespace cl
     {
         TValue<String> name =
             vm->get_or_create_interned_string_value(L"<native>");
-        TValue<CodeObject> code = vm->make_immortal_object_value<CodeObject>(
-            nullptr, nullptr, nullptr, name);
-        code.extract()->n_parameters = n_parameters;
-        code.extract()->n_positional_parameters = n_parameters;
-        uint32_t target_idx =
-            code.extract()->add_native_function_target(target);
-        code.extract()->emit_opcode_native_target_idx(0, call_opcode,
-                                                      uint8_t(target_idx));
-        code.extract()->emit_opcode(0, Bytecode::Return);
+        CodeObjectBuilder builder(vm, nullptr, nullptr, nullptr, name);
+        builder.n_parameters() = n_parameters;
+        builder.n_positional_parameters() = n_parameters;
+        uint32_t target_idx = builder.add_native_function_target(target);
+        builder.emit_opcode_native_target_idx(0, call_opcode,
+                                              uint8_t(target_idx));
+        builder.emit_opcode(0, Bytecode::Return);
+        TValue<CodeObject> code =
+            TValue<CodeObject>::from_oop(builder.finalize(FrameHeaderSize));
         if(default_parameters.as_value() != Value::None())
         {
             return vm->make_immortal_object_value<Function>(code,

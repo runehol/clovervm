@@ -11,6 +11,8 @@ add_library(libclovervm STATIC
     bytecode.h
     code_object.cpp
     code_object.h
+    code_object_builder.cpp
+    code_object_builder.h
     class_object.cpp
     class_object.h
     constructor_thunk.cpp
