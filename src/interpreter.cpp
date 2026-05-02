@@ -1733,8 +1733,9 @@ namespace cl
         uint8_t const_offset = pc[1];
         int8_t first_arg_reg = pc[2];
         uint8_t n_args = pc[3];
-        TValue<Function> function(
-            code_object->constant_table[const_offset].as_value());
+        TValue<Function> function =
+            TValue<Function>::from_oop(assume_convert_to<Function>(
+                code_object->constant_table[const_offset].as_value()));
         enter_function_frame_from_positional_args(
             fp, pc, code_object, function, first_arg_reg, n_args,
             enter_instr_len, FunctionCallAdaptation::FixedArity);
