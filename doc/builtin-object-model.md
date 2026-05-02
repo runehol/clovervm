@@ -32,7 +32,6 @@ Each VM currently owns builtin class objects for native layouts such as:
 - `list`
 - `dict`
 - `function`
-- `builtin_function`
 - `code`
 - `range_iterator`
 
@@ -79,7 +78,6 @@ Examples of native layouts include:
 - `List`
 - `Dict`
 - `Function`
-- `BuiltinFunction`
 - `RangeIterator`
 - `Scope`
 - `Shape`

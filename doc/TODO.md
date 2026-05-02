@@ -44,19 +44,13 @@ model and first attribute inline-cache slices.
   slow paths should raise specific exceptions rather than collapsing to generic
   runtime failures.
 
-- [ ] Finish the native-thunk transition.
-
-  Fixed-arity native callables can now be ordinary `Function` objects whose
-  code object runs a tiny `CallNative0`/`CallNative1`/`CallNative2` thunk.
-  Remaining work: move arity checks to the `Function` call boundary, design the
-  packed variable-arity convention, migrate `range` and other variable-arity
-  callables, and then retire the residual `BuiltinFunction` dispatch path.
-
 - [ ] Add another callable on top of the native function path.
 
-  `str.__str__` and `str.__add__` proved out fixed-arity native thunks. A small
-  builtin namespace callable such as `print` would validate builtin lookup,
-  arity checks, and the next native calling convention.
+  `str.__str__`, `str.__add__`, and `range` now run through ordinary
+  `Function` objects backed by native thunk code objects. A small builtin
+  namespace callable such as `print` would validate another public builtin
+  shape, including any tuple/vector native argument convention chosen for
+  true variadic callables.
 
 - [ ] Finish the iterator protocol.
 

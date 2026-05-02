@@ -8,9 +8,10 @@ BuiltinFunction?" branch for every native implementation detail.
 
 The transition is incremental:
 
-- fixed-arity native functions are already represented as ordinary `Function`
-  objects with tiny thunk `CodeObject`s
-- variable-arity builtins still use `BuiltinFunction` for now
+- native functions are represented as ordinary `Function` objects with tiny
+  thunk `CodeObject`s
+- call sites perform arity/default/varargs adaptation at the `Function`
+  boundary before entering the thunk frame
 - exception normalization, packed `*args` conventions, and lower-level native
   stack calling are later steps
 
@@ -26,6 +27,8 @@ TValue<Function> make_native_function(VirtualMachine *vm,
                                       NativeFunction1 function);
 TValue<Function> make_native_function(VirtualMachine *vm,
                                       NativeFunction2 function);
+TValue<Function> make_native_function(VirtualMachine *vm,
+                                      NativeFunction3 function);
 ```
 
 The C++ function type determines the arity. Call sites do not pass a separate
@@ -44,7 +47,7 @@ CallNativeN 0
 Return
 ```
 
-where `N` is currently `0`, `1`, or `2`. The operand indexes into the code
+where `N` is currently `0`, `1`, `2`, or `3`. The operand indexes into the code
 object's native target table.
 
 Native targets are stored in [src/code_object.h](../src/code_object.h) as an
@@ -54,12 +57,14 @@ untagged union:
 using NativeFunction0 = Value (*)();
 using NativeFunction1 = Value (*)(Value);
 using NativeFunction2 = Value (*)(Value, Value);
+using NativeFunction3 = Value (*)(Value, Value, Value);
 
 union NativeFunctionTarget
 {
     NativeFunction0 fixed0;
     NativeFunction1 fixed1;
     NativeFunction2 fixed2;
+    NativeFunction3 fixed3;
 };
 ```
 
@@ -76,7 +81,7 @@ caller
   CallSimple sets up a callee frame
 
 native thunk frame
-  CallNative0/1/2 reads p0, p1, ...
+  CallNative0/1/2/3 reads p0, p1, ...
   calls the C++ target
   stores the returned Value in the accumulator
   Return leaves the thunk like an ordinary bytecode function
@@ -89,16 +94,17 @@ Native callbacks no longer receive `ThreadState *`. Code that needs thread
 state should use the TLS-backed helpers such as `active_thread()` or wrappers
 like `make_object_value<T>(...)`.
 
-## Why BuiltinFunction Still Exists
+## Variable Arity
 
-`BuiltinFunction` remains as a transitional representation for variable-arity
-native callables such as `range`.
+There is no residual `BuiltinFunction` representation. `range` is an ordinary
+native thunk `Function`: its C++ target is a three-argument native function, and
+the `Function` object supplies two `None` defaults so the public arity is
+`range(stop)`, `range(start, stop)`, or `range(start, stop, step)`.
 
-The fixed-arity thunk path deliberately does not solve variable arity by passing
-`argc` through to the native target. Python functions do not receive a dynamic
-argument count either; callers normalize variable positional arguments into an
-object-level representation such as a tuple. The native equivalent should follow
-that shape when we add the next convention.
+True variadic native callables should still avoid receiving a raw `argc`.
+Python functions normalize variable positional arguments into an object-level
+representation such as a tuple. The native equivalent should follow that shape
+when we add the next convention.
 
 Likely next conventions:
 
@@ -109,8 +115,8 @@ CallNativeSlot      native slot shapes such as nb_add, tp_iternext, sq_length
 ```
 
 The exact opcode names are still open for the variable-arity work. The fixed
-opcodes are intentionally concrete: `CallNative0`, `CallNative1`, and
-`CallNative2`.
+opcodes are intentionally concrete: `CallNative0`, `CallNative1`,
+`CallNative2`, and `CallNative3`.
 
 ## Exception Normalization
 
@@ -139,39 +145,35 @@ exception unwinding, while `ViaResult` protocol callers can receive
 
 ## Arity
 
-Today the fixed-arity thunk `CodeObject` records `n_parameters`, and the opcode
-assumes the frame already has the right number of arguments. This is enough for
-the current internal uses and tests.
-
-A proper arity check belongs on the Python-visible `Function` call boundary, not
-inside `BuiltinFunction`. That refactor should cover bytecode functions and
-native thunk functions together.
+Arity checks live on the Python-visible `Function` call boundary. The
+interpreter checks `Function::accepts_arity()` before entering bytecode,
+constructor thunk, or native thunk frames, then applies default and `*args`
+adaptation in the shared frame setup path.
 
 ## Implemented Uses
 
-The first migrated methods are string methods:
+The first migrated methods and builtins are:
 
 - `str.__str__`
 - `str.__add__`
+- `range`
 
 `str.__add__(other_str)` now exercises the fixed-arity native thunk path.
 Passing a non-string currently raises `UnimplementedError`, which is the desired
 shape for later binary-operator fallback work.
 
 Tests cover direct native thunk calls for arities 0, 1, and 2, plus the string
-method cases.
+method cases and `range`'s defaulted three-argument native thunk.
 
 ## Remaining Work
 
 1. Migrate more fixed-arity native methods to `make_native_function()`.
-2. Add function-level arity checking for bytecode and native functions.
-3. Design and implement the packed variable-arity native convention.
-4. Move `range` and any other variable-arity callables off `BuiltinFunction`.
-5. Retire the `BuiltinFunction` object and the remaining call-site branches.
-6. Add native exception normalization through thunk return adapters.
-7. Add specialized interpreter or JIT fast paths for trivial native thunk code
+2. Design and implement the packed tuple/vector native convention for true
+   variadic native callables.
+3. Add native exception normalization through thunk return adapters.
+4. Add specialized interpreter or JIT fast paths for trivial native thunk code
    objects when measurements justify it.
-8. Move function and native-function entry to the Clover/Python stack on
+5. Move function and native-function entry to the Clover/Python stack on
    AArch64, using assembly transition stubs to save interpreter state, switch
    the machine stack pointer, enter the target, and return through an
    interpreter-resume thunk.
@@ -186,8 +188,8 @@ method cases.
   convention.
 - Native callbacks do not receive `ThreadState *`; thread state is available
   through TLS.
-- `BuiltinFunction` is transitional and should only remain for conventions that
-  have not yet moved to native thunks.
+- Public arity is owned by `Function`, including native functions with default
+  parameters.
 
 ## AArch64 Python-Stack Entry Plan
 

@@ -2280,6 +2280,13 @@ TEST(Interpreter, range_builtin_rejects_zero_step)
                          "ValueError: range() arg 3 must not be zero");
 }
 
+TEST(Interpreter, range_builtin_rejects_wrong_arity_at_function_boundary)
+{
+    expect_runtime_error(L"range()\n", "TypeError: wrong number of arguments");
+    expect_runtime_error(L"range(1, 2, 3, 4)\n",
+                         "TypeError: wrong number of arguments");
+}
+
 TEST(Interpreter, for_loop_rejects_non_iterable)
 {
     expect_runtime_error(L"for x in 1:\n"

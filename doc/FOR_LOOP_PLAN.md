@@ -17,9 +17,9 @@ The design should also set us up to add builtins such as `print` later through
 the runtime callable mechanisms.
 
 Status note: this plan records the first `for`/`range` implementation. Since
-then, fixed-arity native callables have started moving to native thunk
-`Function` objects; `BuiltinFunction` remains only as the transitional
-variable-arity path for callables such as `range`.
+then, native callables have moved to native thunk `Function` objects. `range`
+is now implemented as a defaulted three-argument native thunk rather than a
+separate `BuiltinFunction` path.
 
 ## Guiding Approach
 
@@ -101,7 +101,7 @@ Status:
   [tests/test_parser.cpp](../tests/test_parser.cpp)
 - Current behavior intentionally remains limited to simple variable targets
 
-### 2. Introduce builtin-function runtime support [done]
+### 2. Introduce builtin-function runtime support [done, later retired]
 
 Files:
 
@@ -127,18 +127,16 @@ Suggested direction:
 - Callback returns a `Value` directly.
 - Runtime errors can still use the current C++ exception strategy for now.
 
-Status:
+Retirement status:
 
-- Implemented in
-  [src/builtin_function.h](../src/builtin_function.h)
-  and [src/interpreter.cpp](../src/interpreter.cpp)
-- `CallSimple` now dispatches to either bytecode `Function` or native
-  `BuiltinFunction`
-- The builtin calling interface uses `CallArguments` instead of copying values
-  out of the interpreter stack
-- Arity handling now supports exact arity, bounded multi-arity, and varargs
-- Interpreter tests added in
-  [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
+- This was the initial implementation path for `range`, but it has since been
+  retired.
+- Native callables now use ordinary `Function` objects backed by native thunk
+  `CodeObject`s.
+- `CallSimple` dispatches to `Function` and constructor thunks; native targets
+  run through `CallNativeN` opcodes inside the ordinary function frame path.
+- Public arity is checked by `Function::accepts_arity()`, including native
+  thunks with default parameters such as `range`.
 
 ### 3. Add a builtin scope [done]
 
