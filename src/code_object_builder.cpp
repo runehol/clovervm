@@ -56,6 +56,24 @@ namespace cl
     {
     }
 
+    uint32_t CodeObjectBuilder::first_temporary_reg() const
+    {
+        assert(code_obj != nullptr);
+        if(code_obj->local_scope == nullptr)
+        {
+            return FrameHeaderSize;
+        }
+        return get_local_scope_ptr()->size();
+    }
+
+    uint32_t CodeObjectBuilder::reserve_local_scratch_reg()
+    {
+        assert_not_finalized();
+        uint32_t reg = first_temporary_reg();
+        get_local_scope_ptr()->reserve_empty_slots(1);
+        return reg;
+    }
+
     uint32_t CodeObjectBuilder::emit_clear_local(uint32_t source_offset,
                                                  uint32_t reg)
     {

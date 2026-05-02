@@ -136,6 +136,9 @@ namespace cl
             return code_obj->size();
         }
 
+        uint32_t first_temporary_reg() const;
+        uint32_t reserve_local_scratch_reg();
+
         uint32_t emit_clear_local(uint32_t source_offset, uint32_t reg);
         uint32_t emit_ldar(uint32_t source_offset, uint32_t reg);
         uint32_t emit_load_local_checked(uint32_t source_offset, uint32_t reg);

@@ -70,11 +70,10 @@ namespace cl
         if(!has_init)
         {
             code.emit_return(0);
-            return code.finalize(code.get_local_scope_ptr()->size());
+            return code.finalize(code.first_temporary_reg());
         }
 
-        uint32_t instance_reg = code.get_local_scope_ptr()->size();
-        code.get_local_scope_ptr()->reserve_empty_slots(1);
+        uint32_t instance_reg = code.reserve_local_scratch_reg();
 
         uint32_t init_const_idx = code.allocate_constant(init);
         code.emit_star(0, instance_reg);
@@ -93,7 +92,7 @@ namespace cl
         code.emit_check_init_returned_none(0);
         code.emit_ldar(0, instance_reg);
         code.emit_return(0);
-        return code.finalize(code.get_local_scope_ptr()->size());
+        return code.finalize(code.first_temporary_reg());
     }
 
     TValue<Function> make_constructor_thunk_function(ClassObject *cls,

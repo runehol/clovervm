@@ -129,7 +129,7 @@ namespace cl
                 analyze_code_object(code_obj, _body_idx, _mode, param_children);
             if(_mode != Mode::Module)
             {
-                temporary_reg = code_obj->get_local_scope_ptr()->size();
+                temporary_reg = code_obj->first_temporary_reg();
                 max_temporary_reg = temporary_reg;
             }
         }
