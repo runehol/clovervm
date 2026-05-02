@@ -879,8 +879,7 @@ namespace cl
                 if(binding.scope == BindingScope::Local &&
                    binding.needs_entry_clear)
                 {
-                    code_obj->emit_opcode_reg(0, Bytecode::ClearLocal,
-                                              binding.local_slot_idx);
+                    code_obj->emit_clear_local(0, binding.local_slot_idx);
                 }
             }
         }
@@ -891,16 +890,18 @@ namespace cl
             switch(access.scope)
             {
                 case BindingScope::Local:
-                    code_obj->emit_opcode_reg(source_offset,
-                                              access.presence ==
-                                                      Presence::Present
-                                                  ? Bytecode::Ldar
-                                                  : Bytecode::LoadLocalChecked,
-                                              access.slot_idx);
+                    if(access.presence == Presence::Present)
+                    {
+                        code_obj->emit_ldar(source_offset, access.slot_idx);
+                    }
+                    else
+                    {
+                        code_obj->emit_load_local_checked(source_offset,
+                                                          access.slot_idx);
+                    }
                     break;
                 case BindingScope::Global:
-                    code_obj->emit_opcode_uint32(
-                        source_offset, Bytecode::LdaGlobal, access.slot_idx);
+                    code_obj->emit_lda_global(source_offset, access.slot_idx);
                     break;
             }
         }
@@ -911,12 +912,10 @@ namespace cl
             switch(access.scope)
             {
                 case BindingScope::Local:
-                    code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              access.slot_idx);
+                    code_obj->emit_star(source_offset, access.slot_idx);
                     break;
                 case BindingScope::Global:
-                    code_obj->emit_opcode_uint32(
-                        source_offset, Bytecode::StaGlobal, access.slot_idx);
+                    code_obj->emit_sta_global(source_offset, access.slot_idx);
                     break;
             }
         }
@@ -927,12 +926,10 @@ namespace cl
             switch(access.scope)
             {
                 case BindingScope::Local:
-                    code_obj->emit_opcode_reg(source_offset, Bytecode::DelLocal,
-                                              access.slot_idx);
+                    code_obj->emit_del_local(source_offset, access.slot_idx);
                     break;
                 case BindingScope::Global:
-                    code_obj->emit_opcode_uint32(
-                        source_offset, Bytecode::DelGlobal, access.slot_idx);
+                    code_obj->emit_del_global(source_offset, access.slot_idx);
                     break;
             }
         }
@@ -1006,8 +1003,7 @@ namespace cl
             codegen_node(node_idx);
             std::optional<TemporaryReg> temp;
             temp.emplace(this);
-            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                      RegisterIndex(*temp));
+            code_obj->emit_star(source_offset, RegisterIndex(*temp));
             return {RegisterIndex(*temp), std::move(temp)};
         }
 
@@ -1025,15 +1021,15 @@ namespace cl
             if(immediate.has_value())
             {
                 codegen_node(children[0]);
-                code_obj->emit_opcode_smi(source_offset, entry.binary_acc_smi,
-                                          *immediate);
+                code_obj->emit_binary_smi_op(source_offset,
+                                             entry.binary_acc_smi, *immediate);
             }
             else
             {
                 ScopedRegister lhs_reg = codegen_node_to_register(children[0]);
                 codegen_node(children[1]);
-                code_obj->emit_opcode_reg(source_offset, entry.standard,
-                                          lhs_reg.reg);
+                code_obj->emit_binary_op(source_offset, entry.standard,
+                                         lhs_reg.reg);
             }
         }
 
@@ -1050,9 +1046,9 @@ namespace cl
             codegen_node(children[0]);
             if(prod >= 0)
             {
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star, prod);
+                code_obj->emit_star(source_offset, prod);
             }
-            code_obj->emit_opcode_reg(source_offset, entry.standard, recv);
+            code_obj->emit_compare_op(source_offset, entry.standard, recv);
         }
 
         void codegen_function_definition(int32_t node_idx)
@@ -1070,8 +1066,7 @@ namespace cl
             uint32_t n_defaults = count_default_parameters(param_children);
             if(n_defaults == 0)
             {
-                code_obj->emit_opcode_constant_idx(
-                    source_offset, Bytecode::CreateFunction, constant_idx);
+                code_obj->emit_create_function(source_offset, constant_idx);
             }
             else
             {
@@ -1084,19 +1079,15 @@ namespace cl
                     AstChildren default_children = av.children[param_idx];
                     assert(default_children.size() == 1);
                     codegen_node(default_children[0]);
-                    code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              default_values + i);
+                    code_obj->emit_star(source_offset, default_values + i);
                 }
-                code_obj->emit_opcode_reg_range(source_offset,
-                                                Bytecode::CreateTuple,
-                                                default_values, n_defaults);
+                code_obj->emit_create_tuple(source_offset, default_values,
+                                            n_defaults);
 
                 TemporaryReg default_tuple(this);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          default_tuple);
-                code_obj->emit_opcode_constant_idx_reg(
-                    source_offset, Bytecode::CreateFunctionWithDefaults,
-                    constant_idx, default_tuple);
+                code_obj->emit_star(source_offset, default_tuple);
+                code_obj->emit_create_function_with_defaults(
+                    source_offset, constant_idx, default_tuple);
             }
 
             emit_variable_store(source_offset, node_idx);
@@ -1132,39 +1123,31 @@ namespace cl
             AstChildren bases = av.children[bases_idx];
             uint32_t name_constant_idx =
                 code_obj->allocate_constant(av.constants[node_idx]);
-            code_obj->emit_opcode_constant_idx(
-                source_offset, Bytecode::LdaConstant, name_constant_idx);
-            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                      OutgoingArgReg(0));
+            code_obj->emit_lda_constant(source_offset, name_constant_idx);
+            code_obj->emit_star(source_offset, OutgoingArgReg(0));
 
             TemporaryReg base_regs(this, std::max<size_t>(bases.size(), 1));
             if(bases.empty())
             {
                 uint32_t object_constant_idx = code_obj->allocate_constant(
                     Value::from_oop(active_vm()->object_class()));
-                code_obj->emit_opcode_constant_idx(
-                    source_offset, Bytecode::LdaConstant, object_constant_idx);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          base_regs);
+                code_obj->emit_lda_constant(source_offset, object_constant_idx);
+                code_obj->emit_star(source_offset, base_regs);
             }
             else
             {
                 for(size_t i = 0; i < bases.size(); ++i)
                 {
                     codegen_node(bases[i]);
-                    code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              base_regs + i);
+                    code_obj->emit_star(source_offset, base_regs + i);
                 }
             }
-            code_obj->emit_opcode_reg_range(source_offset,
-                                            Bytecode::CreateTuple, base_regs,
-                                            std::max<size_t>(bases.size(), 1));
-            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                      OutgoingArgReg(1));
+            code_obj->emit_create_tuple(source_offset, base_regs,
+                                        std::max<size_t>(bases.size(), 1));
+            code_obj->emit_star(source_offset, OutgoingArgReg(1));
 
-            code_obj->emit_opcode_constant_idx_reg(
-                source_offset, Bytecode::CreateClass, body_constant_idx,
-                OutgoingArgReg(0));
+            code_obj->emit_create_class(source_offset, body_constant_idx,
+                                        OutgoingArgReg(0));
 
             emit_variable_store(source_offset, node_idx);
         }
@@ -1182,36 +1165,32 @@ namespace cl
                 uint8_t constant_idx =
                     code_obj->allocate_constant(av.constants[children[0]]);
                 codegen_node(method_children[0]);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          OutgoingArgReg(0));
+                code_obj->emit_star(source_offset, OutgoingArgReg(0));
 
                 for(size_t i = 0; i < args.size(); ++i)
                 {
                     codegen_node(args[i]);
-                    code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              OutgoingArgReg(1 + i));
+                    code_obj->emit_star(source_offset, OutgoingArgReg(1 + i));
                 }
                 uint8_t read_cache_idx =
                     code_obj->allocate_attribute_read_cache();
                 uint8_t call_cache_idx =
                     code_obj->allocate_function_call_cache();
-                code_obj->emit_opcode_reg_constant_idx_cache_idx_argc(
-                    source_offset, Bytecode::CallMethodAttr, OutgoingArgReg(0),
-                    constant_idx, read_cache_idx, call_cache_idx, args.size());
+                code_obj->emit_call_method_attr(
+                    source_offset, OutgoingArgReg(0), constant_idx,
+                    read_cache_idx, call_cache_idx, args.size());
                 return;
             }
 
             // function itself
             TemporaryReg callable_reg(this);
             codegen_node(children[0]);
-            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                      callable_reg);
+            code_obj->emit_star(source_offset, callable_reg);
 
             for(size_t i = 0; i < args.size(); ++i)
             {
                 codegen_node(args[i]);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          OutgoingArgReg(i));
+                code_obj->emit_star(source_offset, OutgoingArgReg(i));
             }
             code_obj->emit_call_simple(source_offset, callable_reg,
                                        OutgoingArgReg(0), args.size());
@@ -1226,11 +1205,9 @@ namespace cl
             for(size_t i = 0; i < children.size(); ++i)
             {
                 codegen_node(children[i]);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          regs + i);
+                code_obj->emit_star(source_offset, regs + i);
             }
-            code_obj->emit_opcode_reg_range(source_offset, Bytecode::CreateList,
-                                            regs, children.size());
+            code_obj->emit_create_list(source_offset, regs, children.size());
         }
 
         void codegen_tuple_literal(int32_t node_idx)
@@ -1242,11 +1219,9 @@ namespace cl
             for(size_t i = 0; i < children.size(); ++i)
             {
                 codegen_node(children[i]);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          regs + i);
+                code_obj->emit_star(source_offset, regs + i);
             }
-            code_obj->emit_opcode_reg_range(
-                source_offset, Bytecode::CreateTuple, regs, children.size());
+            code_obj->emit_create_tuple(source_offset, regs, children.size());
         }
 
         void codegen_dict_literal(int32_t node_idx)
@@ -1258,11 +1233,10 @@ namespace cl
             for(size_t i = 0; i < children.size(); ++i)
             {
                 codegen_node(children[i]);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          regs + i);
+                code_obj->emit_star(source_offset, regs + i);
             }
-            code_obj->emit_opcode_reg_range(source_offset, Bytecode::CreateDict,
-                                            regs, children.size() / 2);
+            code_obj->emit_create_dict(source_offset, regs,
+                                       children.size() / 2);
         }
 
         void codegen_subscript_assignment(int32_t node_idx)
@@ -1279,9 +1253,8 @@ namespace cl
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
                 codegen_node(children[1]);
-                code_obj->emit_opcode_reg_reg(source_offset,
-                                              Bytecode::StoreSubscript,
-                                              receiver_reg.reg, key_reg.reg);
+                code_obj->emit_store_subscript(source_offset, receiver_reg.reg,
+                                               key_reg.reg);
                 return;
             }
 
@@ -1289,29 +1262,25 @@ namespace cl
             std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
                 kind.operator_kind, entry, children[1]);
 
-            code_obj->emit_opcode_reg(source_offset, Bytecode::Ldar,
-                                      key_reg.reg);
-            code_obj->emit_opcode_reg(source_offset, Bytecode::LoadSubscript,
-                                      receiver_reg.reg);
+            code_obj->emit_ldar(source_offset, key_reg.reg);
+            code_obj->emit_load_subscript(source_offset, receiver_reg.reg);
 
             if(immediate.has_value())
             {
-                code_obj->emit_opcode_smi(source_offset, entry.binary_acc_smi,
-                                          *immediate);
+                code_obj->emit_binary_smi_op(source_offset,
+                                             entry.binary_acc_smi, *immediate);
             }
             else
             {
                 TemporaryReg lhs_value_reg(this);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          lhs_value_reg);
+                code_obj->emit_star(source_offset, lhs_value_reg);
                 codegen_node(children[1]);
-                code_obj->emit_opcode_reg(source_offset, entry.standard,
-                                          lhs_value_reg);
+                code_obj->emit_binary_op(source_offset, entry.standard,
+                                         lhs_value_reg);
             }
 
-            code_obj->emit_opcode_reg_reg(source_offset,
-                                          Bytecode::StoreSubscript,
-                                          receiver_reg.reg, key_reg.reg);
+            code_obj->emit_store_subscript(source_offset, receiver_reg.reg,
+                                           key_reg.reg);
         }
 
         void codegen_attribute_assignment(int32_t node_idx)
@@ -1331,9 +1300,8 @@ namespace cl
                 codegen_node(children[1]);
                 uint8_t cache_idx =
                     code_obj->allocate_attribute_mutation_cache();
-                code_obj->emit_opcode_reg_constant_idx_cache_idx(
-                    source_offset, Bytecode::StoreAttr, receiver_reg.reg,
-                    constant_idx, cache_idx);
+                code_obj->emit_store_attr(source_offset, receiver_reg.reg,
+                                          constant_idx, cache_idx);
                 return;
             }
 
@@ -1342,30 +1310,27 @@ namespace cl
                 kind.operator_kind, entry, children[1]);
 
             uint8_t load_cache_idx = code_obj->allocate_attribute_read_cache();
-            code_obj->emit_opcode_reg_constant_idx_cache_idx(
-                source_offset, Bytecode::LoadAttr, receiver_reg.reg,
-                constant_idx, load_cache_idx);
+            code_obj->emit_load_attr(source_offset, receiver_reg.reg,
+                                     constant_idx, load_cache_idx);
 
             if(immediate.has_value())
             {
-                code_obj->emit_opcode_smi(source_offset, entry.binary_acc_smi,
-                                          *immediate);
+                code_obj->emit_binary_smi_op(source_offset,
+                                             entry.binary_acc_smi, *immediate);
             }
             else
             {
                 TemporaryReg lhs_value_reg(this);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          lhs_value_reg);
+                code_obj->emit_star(source_offset, lhs_value_reg);
                 codegen_node(children[1]);
-                code_obj->emit_opcode_reg(source_offset, entry.standard,
-                                          lhs_value_reg);
+                code_obj->emit_binary_op(source_offset, entry.standard,
+                                         lhs_value_reg);
             }
 
             uint8_t store_cache_idx =
                 code_obj->allocate_attribute_mutation_cache();
-            code_obj->emit_opcode_reg_constant_idx_cache_idx(
-                source_offset, Bytecode::StoreAttr, receiver_reg.reg,
-                constant_idx, store_cache_idx);
+            code_obj->emit_store_attr(source_offset, receiver_reg.reg,
+                                      constant_idx, store_cache_idx);
         }
 
         void codegen_attribute_target_delete(uint32_t source_offset,
@@ -1377,9 +1342,8 @@ namespace cl
             ScopedRegister receiver_reg =
                 codegen_node_to_register(target_children[0]);
             uint8_t cache_idx = code_obj->allocate_attribute_mutation_cache();
-            code_obj->emit_opcode_reg_constant_idx_cache_idx(
-                source_offset, Bytecode::DelAttr, receiver_reg.reg,
-                constant_idx, cache_idx);
+            code_obj->emit_del_attr(source_offset, receiver_reg.reg,
+                                    constant_idx, cache_idx);
         }
 
         std::optional<uint8_t> direct_range_call_arity(int32_t node_idx) const
@@ -1431,15 +1395,13 @@ namespace cl
             JumpTarget continue_target(code_obj);
 
             loop_start_target.resolve();
-            code_obj->emit_opcode_reg_jump(source_offset, Bytecode::ForIter,
-                                           iterator_reg, else_target);
+            code_obj->emit_for_iter(source_offset, iterator_reg, else_target);
             emit_variable_store(source_offset, target_idx);
 
             codegen_loop_body(body_idx, break_target, continue_target);
 
             continue_target.resolve();
-            code_obj->emit_jump(source_offset, Bytecode::Jump,
-                                loop_start_target);
+            code_obj->emit_jump(source_offset, loop_start_target);
         }
 
         void codegen_direct_range_for_loop(int32_t node_idx, int32_t target_idx,
@@ -1462,13 +1424,11 @@ namespace cl
             JumpTarget break_target(code_obj);
 
             codegen_node(call_children[0]);
-            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                      range_regs + 0);
+            code_obj->emit_star(source_offset, range_regs + 0);
             for(size_t i = 0; i < args.size(); ++i)
             {
                 codegen_node(args[i]);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          range_regs + 1 + i);
+                code_obj->emit_star(source_offset, range_regs + 1 + i);
             }
 
             Bytecode prep_opcode = Bytecode::Invalid;
@@ -1491,31 +1451,27 @@ namespace cl
                     assert(false);
             }
 
-            code_obj->emit_opcode_reg_jump(source_offset, prep_opcode,
-                                           range_regs, generic_fallback_target);
+            code_obj->emit_for_prep_range(source_offset, prep_opcode,
+                                          range_regs, generic_fallback_target);
 
             fast_loop_start_target.resolve();
-            code_obj->emit_opcode_reg_jump(source_offset, iter_opcode,
-                                           range_regs, else_target);
+            code_obj->emit_for_iter_range(source_offset, iter_opcode,
+                                          range_regs, else_target);
             emit_variable_store(source_offset, target_idx);
             codegen_loop_body(body_idx, break_target, fast_continue_target);
             fast_continue_target.resolve();
-            code_obj->emit_jump(source_offset, Bytecode::Jump,
-                                fast_loop_start_target);
+            code_obj->emit_jump(source_offset, fast_loop_start_target);
 
             generic_fallback_target.resolve();
             for(size_t i = 0; i < args.size(); ++i)
             {
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Ldar,
-                                          range_regs + 1 + i);
-                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          OutgoingArgReg(i));
+                code_obj->emit_ldar(source_offset, range_regs + 1 + i);
+                code_obj->emit_star(source_offset, OutgoingArgReg(i));
             }
             code_obj->emit_call_simple(source_offset, range_regs,
                                        OutgoingArgReg(0), n_args);
-            code_obj->emit_opcode(source_offset, Bytecode::GetIter);
-            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                      iterator_reg);
+            code_obj->emit_get_iter(source_offset);
+            code_obj->emit_star(source_offset, iterator_reg);
             codegen_iterator_driven_for_loop(source_offset, target_idx,
                                              body_idx, iterator_reg,
                                              else_target, break_target);
@@ -1613,9 +1569,8 @@ namespace cl
                         ScopedRegister receiver_reg =
                             codegen_node_to_register(children[0]);
                         codegen_node(children[1]);
-                        code_obj->emit_opcode_reg(source_offset,
-                                                  Bytecode::LoadSubscript,
-                                                  receiver_reg.reg);
+                        code_obj->emit_load_subscript(source_offset,
+                                                      receiver_reg.reg);
                         break;
                     }
                     codegen_binary_expression(node_idx);
@@ -1626,7 +1581,7 @@ namespace cl
                         OpTableEntry entry =
                             get_operator_entry(kind.operator_kind);
                         codegen_node(children[0]);
-                        code_obj->emit_opcode(source_offset, entry.standard);
+                        code_obj->emit_unary_op(source_offset, entry.standard);
                         break;
                     }
                 case AstNodeKind::EXPRESSION_LITERAL:
@@ -1635,16 +1590,13 @@ namespace cl
                         switch(kind.operator_kind)
                         {
                             case AstOperatorKind::NONE:
-                                code_obj->emit_opcode(source_offset,
-                                                      Bytecode::LdaNone);
+                                code_obj->emit_lda_none(source_offset);
                                 break;
                             case AstOperatorKind::TRUE:
-                                code_obj->emit_opcode(source_offset,
-                                                      Bytecode::LdaTrue);
+                                code_obj->emit_lda_true(source_offset);
                                 break;
                             case AstOperatorKind::FALSE:
-                                code_obj->emit_opcode(source_offset,
-                                                      Bytecode::LdaFalse);
+                                code_obj->emit_lda_false(source_offset);
                                 break;
 
                             case AstOperatorKind::NUMBER:
@@ -1653,18 +1605,15 @@ namespace cl
                                         av.constants[node_idx].as_value();
                                     if(val.is_smi8())
                                     {
-                                        code_obj->emit_opcode_smi(
-                                            source_offset, Bytecode::LdaSmi,
-                                            val.get_smi());
+                                        code_obj->emit_lda_smi(source_offset,
+                                                               val.get_smi());
                                     }
                                     else
                                     {
                                         uint32_t constant_idx =
                                             code_obj->allocate_constant(val);
-                                        code_obj->emit_opcode_constant_idx(
-                                            source_offset,
-                                            Bytecode::LdaConstant,
-                                            constant_idx);
+                                        code_obj->emit_lda_constant(
+                                            source_offset, constant_idx);
                                         break;
                                     }
                                     break;
@@ -1675,9 +1624,8 @@ namespace cl
                                     uint32_t constant_idx =
                                         code_obj->allocate_constant(
                                             av.constants[node_idx]);
-                                    code_obj->emit_opcode_constant_idx(
-                                        source_offset, Bytecode::LdaConstant,
-                                        constant_idx);
+                                    code_obj->emit_lda_constant(source_offset,
+                                                                constant_idx);
                                     break;
                                 }
                             default:
@@ -1706,9 +1654,8 @@ namespace cl
 
                             if(!last)
                             {
-                                code_obj->emit_jump(source_offset,
-                                                    Bytecode::JumpIfFalse,
-                                                    skip_target);
+                                code_obj->emit_jump_if_false(source_offset,
+                                                             skip_target);
                             }
                             std::swap(recv, prod);
                         }
@@ -1724,14 +1671,12 @@ namespace cl
                         switch(kind.operator_kind)
                         {
                             case AstOperatorKind::SHORTCUTTING_AND:
-                                code_obj->emit_jump(source_offset,
-                                                    Bytecode::JumpIfFalse,
-                                                    skip_target);
+                                code_obj->emit_jump_if_false(source_offset,
+                                                             skip_target);
                                 break;
                             case AstOperatorKind::SHORTCUTTING_OR:
-                                code_obj->emit_jump(source_offset,
-                                                    Bytecode::JumpIfTrue,
-                                                    skip_target);
+                                code_obj->emit_jump_if_true(source_offset,
+                                                            skip_target);
                                 break;
                             default:
                                 assert(0);
@@ -1754,9 +1699,9 @@ namespace cl
                             code_obj->allocate_constant(av.constants[node_idx]);
                         uint8_t cache_idx =
                             code_obj->allocate_attribute_read_cache();
-                        code_obj->emit_opcode_reg_constant_idx_cache_idx(
-                            source_offset, Bytecode::LoadAttr, receiver_reg.reg,
-                            constant_idx, cache_idx);
+                        code_obj->emit_load_attr(source_offset,
+                                                 receiver_reg.reg, constant_idx,
+                                                 cache_idx);
                         break;
                     }
 
@@ -1777,9 +1722,8 @@ namespace cl
                             JumpTarget next_target(code_obj);
                             codegen_node(
                                 children[i + 0]);  // condition, initial check
-                            code_obj->emit_jump(source_offset,
-                                                Bytecode::JumpIfFalse,
-                                                next_target);
+                            code_obj->emit_jump_if_false(source_offset,
+                                                         next_target);
                             codegen_node(children[i + 1]);  // then
 
                             if(i + 2 != children.size())
@@ -1787,8 +1731,7 @@ namespace cl
                                 // if we have more to emit, we have to generate
                                 // a jump to the done target. otherwise, we'll
                                 // just fall through
-                                code_obj->emit_jump(
-                                    source_offset, Bytecode::Jump, done_target);
+                                code_obj->emit_jump(source_offset, done_target);
                             }
                             next_target.resolve();
                         }
@@ -1808,8 +1751,8 @@ namespace cl
                         JumpTarget break_target(code_obj);
                         JumpTarget continue_target(code_obj);
                         codegen_node(children[0]);  // condition, initial check
-                        code_obj->emit_jump(source_offset,
-                                            Bytecode::JumpIfFalse, else_target);
+                        code_obj->emit_jump_if_false(source_offset,
+                                                     else_target);
 
                         loop_start_target.resolve();
 
@@ -1821,8 +1764,8 @@ namespace cl
                         continue_target.resolve();
                         codegen_node(
                             children[0]);  // condition, non-initial check
-                        code_obj->emit_jump(source_offset, Bytecode::JumpIfTrue,
-                                            loop_start_target);
+                        code_obj->emit_jump_if_true(source_offset,
+                                                    loop_start_target);
                         else_target.resolve();
                         if(children.size() == 3)
                         {
@@ -1853,9 +1796,8 @@ namespace cl
                         JumpTarget break_target(code_obj);
 
                         codegen_node(iterable_idx);
-                        code_obj->emit_opcode(source_offset, Bytecode::GetIter);
-                        code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                                  iterator_reg);
+                        code_obj->emit_get_iter(source_offset);
+                        code_obj->emit_star(source_offset, iterator_reg);
                         codegen_iterator_driven_for_loop(
                             source_offset, target_idx, body_idx, iterator_reg,
                             else_target, break_target);
@@ -1876,7 +1818,7 @@ namespace cl
                     }
                     else
                     {
-                        code_obj->emit_jump(source_offset, Bytecode::Jump,
+                        code_obj->emit_jump(source_offset,
                                             *loop_targets.back().break_target);
                     }
                     break;
@@ -1890,7 +1832,7 @@ namespace cl
                     else
                     {
                         code_obj->emit_jump(
-                            source_offset, Bytecode::Jump,
+                            source_offset,
                             *loop_targets.back().continue_target);
                     }
                     break;
@@ -1907,9 +1849,9 @@ namespace cl
                     }
                     else
                     {
-                        code_obj->emit_opcode(source_offset, Bytecode::LdaNone);
+                        code_obj->emit_lda_none(source_offset);
                     }
-                    code_obj->emit_opcode(source_offset, Bytecode::Return);
+                    code_obj->emit_return(source_offset);
                     break;
 
                 case AstNodeKind::STATEMENT_PASS:
@@ -1954,7 +1896,7 @@ namespace cl
     CodeObject *AstCodegen::run_module()
     {
         codegen_node(body_idx);
-        code_obj->emit_opcode(0, Bytecode::Halt);
+        code_obj->emit_halt(0);
         CodeObject *result = code_obj->finalize(max_temporary_reg);
         return incref(result);
     }
@@ -2050,8 +1992,8 @@ namespace cl
         codegen_node(body_idx);
         // finally, emit return None just in case. as a future optimisation, we
         // could check that all return paths already have a return statement
-        code_obj->emit_opcode(source_offset, Bytecode::LdaNone);
-        code_obj->emit_opcode(source_offset, Bytecode::Return);
+        code_obj->emit_lda_none(source_offset);
+        code_obj->emit_return(source_offset);
         return code_obj->finalize(max_temporary_reg);
     }
 
@@ -2060,7 +2002,7 @@ namespace cl
     {
         emit_local_binding_prologue();
         codegen_node(body_idx);
-        code_obj->emit_opcode(source_offset, Bytecode::BuildClass);
+        code_obj->emit_build_class(source_offset);
         return code_obj->finalize(max_temporary_reg);
     }
 

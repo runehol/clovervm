@@ -66,11 +66,10 @@ namespace cl
         reserve_parameter_slots_and_frame_header(&code);
 
         uint32_t class_const_idx = code.allocate_constant(Value::from_oop(cls));
-        code.emit_opcode_constant_idx(0, Bytecode::CreateInstanceKnownClass,
-                                      class_const_idx);
+        code.emit_create_instance_known_class(0, class_const_idx);
         if(!has_init)
         {
-            code.emit_opcode(0, Bytecode::Return);
+            code.emit_return(0);
             return code.finalize(code.get_local_scope_ptr()->size());
         }
 
@@ -78,24 +77,22 @@ namespace cl
         code.get_local_scope_ptr()->reserve_empty_slots(1);
 
         uint32_t init_const_idx = code.allocate_constant(init);
-        code.emit_opcode_reg(0, Bytecode::Star, instance_reg);
+        code.emit_star(0, instance_reg);
 
-        code.emit_opcode_reg(0, Bytecode::Ldar, instance_reg);
-        code.emit_opcode_reg(0, Bytecode::Star, OutgoingArgReg(0));
+        code.emit_ldar(0, instance_reg);
+        code.emit_star(0, OutgoingArgReg(0));
         for(uint32_t param_idx = 0; param_idx < code.n_parameters();
             ++param_idx)
         {
-            code.emit_opcode_reg(0, Bytecode::Ldar, param_idx);
-            code.emit_opcode_reg(0, Bytecode::Star,
-                                 OutgoingArgReg(param_idx + 1));
+            code.emit_ldar(0, param_idx);
+            code.emit_star(0, OutgoingArgReg(param_idx + 1));
         }
 
-        code.emit_opcode_constant_idx_reg_argc(
-            0, Bytecode::EnterPreparedFunction, init_const_idx,
-            OutgoingArgReg(0), init_n_parameters);
-        code.emit_opcode(0, Bytecode::CheckInitReturnedNone);
-        code.emit_opcode_reg(0, Bytecode::Ldar, instance_reg);
-        code.emit_opcode(0, Bytecode::Return);
+        code.emit_enter_prepared_function(0, init_const_idx, OutgoingArgReg(0),
+                                          init_n_parameters);
+        code.emit_check_init_returned_none(0);
+        code.emit_ldar(0, instance_reg);
+        code.emit_return(0);
         return code.finalize(code.get_local_scope_ptr()->size());
     }
 

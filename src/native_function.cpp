@@ -19,9 +19,8 @@ namespace cl
         builder.n_parameters() = n_parameters;
         builder.n_positional_parameters() = n_parameters;
         uint32_t target_idx = builder.add_native_function_target(target);
-        builder.emit_opcode_native_target_idx(0, call_opcode,
-                                              uint8_t(target_idx));
-        builder.emit_opcode(0, Bytecode::Return);
+        builder.emit_call_native(0, call_opcode, uint8_t(target_idx));
+        builder.emit_return(0);
         TValue<CodeObject> code =
             TValue<CodeObject>::from_oop(builder.finalize(FrameHeaderSize));
         if(default_parameters.as_value() != Value::None())
