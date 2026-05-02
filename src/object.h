@@ -74,6 +74,8 @@ namespace cl
         bool set_own_property(TValue<String> name, Value value);
         bool delete_own_property(TValue<String> name);
         Value read_storage_location(StorageLocation location) const;
+        void write_existing_storage_location(StorageLocation location,
+                                             Value value);
         void write_storage_location(StorageLocation location, Value value);
         static void validate_inline_slot_layout();
         NativeLayoutId native_layout;
@@ -95,6 +97,7 @@ namespace cl
         void initialize_shape_for_class(ClassObject *class_object);
         void initialize_shape(Shape *instance_root_shape);
         OverflowSlots *get_overflow_slots() const { return overflow_storage; }
+        void ensure_storage_for_shape(Shape *new_shape);
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
     };
 

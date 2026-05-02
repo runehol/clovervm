@@ -34,6 +34,9 @@ namespace cl
             size = new_size;
         }
 
+        Value *slot_value_base() { return slots; }
+        const Value *slot_value_base() const { return slots; }
+
         Value get(uint32_t slot_idx) const
         {
             assert(slot_idx < capacity);

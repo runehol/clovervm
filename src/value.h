@@ -9,6 +9,8 @@
 
 namespace cl
 {
+    void add_to_active_zero_count_table(HeapObject *obj);
+
 /*
   A cl_value is a 64-bit generic cell to hold any value. It holds some of them
   inline, and some of them indirect.
@@ -278,6 +280,39 @@ namespace cl
                 }
         }
         __builtin_unreachable();
+    }
+
+    inline __attribute__((always_inline)) void
+    Object::write_existing_storage_location(StorageLocation location,
+                                            Value value)
+    {
+        Value *slots = nullptr;
+        switch(location.kind)
+        {
+            case StorageKind::Inline:
+                slots = inline_slot_base();
+                break;
+            case StorageKind::Overflow:
+                {
+                    OverflowSlots *overflow_slots = get_overflow_slots();
+                    assert(overflow_slots != nullptr);
+                    assert(uint32_t(location.physical_idx) <
+                           overflow_slots->get_size());
+                    slots = overflow_slots->slot_value_base();
+                    break;
+                }
+        }
+
+        Value old_value = slots[location.physical_idx];
+        if(value.is_refcounted_ptr())
+        {
+            ++value.as.ptr->refcount;
+        }
+        slots[location.physical_idx] = value;
+        if(old_value.is_refcounted_ptr() && --old_value.as.ptr->refcount == 0)
+        {
+            add_to_active_zero_count_table(old_value.as.ptr);
+        }
     }
 }  // namespace cl
 #endif  // CL_OVERFLOW_SLOTS_H

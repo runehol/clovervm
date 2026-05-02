@@ -111,6 +111,7 @@ namespace cl
         Shape *old_shape = shape;
         shape = incref(new_shape);
         decref(old_shape);
+        ensure_storage_for_shape(new_shape);
 
         if(old_shape != nullptr && old_shape != new_shape &&
            new_shape != nullptr &&
@@ -286,16 +287,38 @@ namespace cl
                 }
             case StorageKind::Overflow:
                 {
-                    OverflowSlots *overflow_slots =
-                        ensure_overflow_slot(location.physical_idx);
+                    OverflowSlots *overflow_slots = get_overflow_slots();
+                    assert(overflow_slots != nullptr);
+                    assert(uint32_t(location.physical_idx) <
+                           overflow_slots->get_size());
                     overflow_slots->set(location.physical_idx, value);
-                    overflow_slots->set_size(
-                        std::max(overflow_slots->get_size(),
-                                 uint32_t(location.physical_idx + 1)));
                     return;
                 }
         }
         __builtin_unreachable();
+    }
+
+    void Object::ensure_storage_for_shape(Shape *new_shape)
+    {
+        if(new_shape == nullptr)
+        {
+            return;
+        }
+
+        int32_t overflow_slot_count =
+            new_shape->get_next_slot_index() -
+            int32_t(new_shape->get_inline_slot_count());
+        if(overflow_slot_count <= 0)
+        {
+            return;
+        }
+
+        OverflowSlots *overflow_slots =
+            ensure_overflow_slot(overflow_slot_count - 1);
+        if(overflow_slots->get_size() < uint32_t(overflow_slot_count))
+        {
+            overflow_slots->set_size(overflow_slot_count);
+        }
     }
 
     OverflowSlots *Object::ensure_overflow_slot(int32_t physical_idx)

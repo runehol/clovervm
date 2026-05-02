@@ -529,13 +529,6 @@ namespace cl
             Object::static_value_offset_in_words());
     }
 
-    static ALWAYSINLINE Value *object_inline_slot_base(Object *object)
-    {
-        return reinterpret_cast<Value *>(
-            reinterpret_cast<uint64_t *>(object) +
-            Object::static_value_offset_in_words());
-    }
-
     static ALWAYSINLINE const Object *
     read_plan_storage_owner(Value receiver, const AttributeReadPlan &plan)
     {
@@ -567,20 +560,24 @@ namespace cl
         switch(plan.kind)
         {
             case AttributeReadPlanKind::ReceiverSlot:
-                if(plan.storage_location.kind != StorageKind::Inline)
+                if(unlikely(plan.storage_location.kind != StorageKind::Inline))
                 {
-                    value_out = Value::not_present();
-                    return AttributeLoadPlanStatus::Slow;
+                    value_out =
+                        read_plan_storage_owner(receiver, plan)
+                            ->read_storage_location(plan.storage_location);
+                    return AttributeLoadPlanStatus::Ready;
                 }
                 value_out = object_inline_slot_base(read_plan_storage_owner(
                     receiver, plan))[plan.storage_location.physical_idx];
                 return AttributeLoadPlanStatus::Ready;
 
             case AttributeReadPlanKind::BindFunctionReceiver:
-                if(plan.storage_location.kind != StorageKind::Inline)
+                if(unlikely(plan.storage_location.kind != StorageKind::Inline))
                 {
-                    value_out = Value::not_present();
-                    return AttributeLoadPlanStatus::Slow;
+                    value_out =
+                        read_plan_storage_owner(receiver, plan)
+                            ->read_storage_location(plan.storage_location);
+                    return AttributeLoadPlanStatus::Ready;
                 }
                 value_out = object_inline_slot_base(read_plan_storage_owner(
                     receiver, plan))[plan.storage_location.physical_idx];
@@ -603,20 +600,13 @@ namespace cl
             return false;
         }
         Object *storage_owner = mutation_plan_storage_owner(receiver, plan);
-        if(plan.storage_kind != StorageKind::Inline)
-        {
-            return false;
-        }
         Shape *shape = storage_owner->get_shape();
         if(shape != nullptr && shape->has_flag(ShapeFlag::IsClassObject))
         {
             return false;
         }
-
-        Value *slots = object_inline_slot_base(storage_owner);
-        Value old_value = slots[plan.physical_idx];
-        slots[plan.physical_idx] = incref(value);
-        decref(old_value);
+        storage_owner->write_existing_storage_location(plan.storage_location(),
+                                                       value);
         return true;
     }
 
@@ -1072,7 +1062,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_store_attr_non_store_existing_cache_hit(PARAMS)
+    NOINLINE static Value op_store_attr_cached_slow(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -1084,6 +1074,11 @@ namespace cl
         {
             store_attr_add_own_property_inline_fast(receiver, cache.plan,
                                                     accumulator);
+            COMPLETE();
+        }
+        if(cache.plan.kind == AttributeMutationPlanKind::StoreExisting)
+        {
+            store_attr_from_plan(receiver, cache.plan, accumulator);
             COMPLETE();
         }
         MUSTTAIL return op_store_attr_cache_miss(ARGS);
@@ -1104,7 +1099,7 @@ namespace cl
         if(unlikely(!store_attr_from_plan_inline_fast(receiver, cache.plan,
                                                       accumulator)))
         {
-            MUSTTAIL return op_store_attr_non_store_existing_cache_hit(ARGS);
+            MUSTTAIL return op_store_attr_cached_slow(ARGS);
         }
         COMPLETE();
     }
