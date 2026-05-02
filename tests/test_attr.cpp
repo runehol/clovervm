@@ -959,6 +959,35 @@ TEST(Attr, AttributeWriteDescriptorMissDoesNotCreateLookupValidityCell)
     EXPECT_EQ(0u, base->attached_mro_shape_and_contents_validity_cell_count());
 }
 
+TEST(Attr, AttributeDeleteDescriptorMissDoesNotCreateLookupValidityCell)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
+    ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
+        base_name, 2, context.vm().object_class());
+    ClassObject *child =
+        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+    Instance *instance = context.thread()->make_internal_raw<Instance>(child);
+
+    AttributeDeleteDescriptor descriptor =
+        resolve_attr_delete_descriptor(Value::from_oop(instance), attr_name);
+
+    EXPECT_FALSE(descriptor.is_found());
+    EXPECT_EQ(AttributeDeleteStatus::NotFound, descriptor.status);
+    EXPECT_EQ(attribute_cache_blocker(AttributeCacheBlocker::None),
+              descriptor.cache_blockers);
+    EXPECT_FALSE(descriptor.is_cacheable());
+    EXPECT_EQ(nullptr, child->current_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(0u, base->attached_mro_shape_and_contents_validity_cell_count());
+}
+
 TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
 {
     test::VmTestContext context;
@@ -995,6 +1024,56 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
     EXPECT_TRUE(cell->is_valid());
     EXPECT_EQ(cell, child->current_mro_shape_and_contents_validity_cell());
     EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
+
+    EXPECT_TRUE(base->set_own_property(descriptor_name, Value::from_smi(1)));
+
+    EXPECT_FALSE(cell->is_valid());
+}
+
+TEST(Attr, AttributeDeleteDescriptorCarriesLookupValidityForOwnDelete)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"value"));
+    TValue<String> descriptor_name(
+        context.vm().get_or_create_interned_string_value(L"descriptor"));
+    ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
+        base_name, 2, context.vm().object_class());
+    ClassObject *child =
+        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+    Instance *instance = context.thread()->make_internal_raw<Instance>(child);
+
+    EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));
+    Shape *shape_before_delete = instance->get_shape();
+
+    AttributeDeleteDescriptor descriptor =
+        resolve_attr_delete_descriptor(Value::from_oop(instance), attr_name);
+
+    ASSERT_TRUE(descriptor.is_found());
+    EXPECT_EQ(AttributeMutationPlanKind::DeleteOwnProperty,
+              descriptor.plan.kind);
+    EXPECT_EQ(attribute_cache_blocker(AttributeCacheBlocker::None),
+              descriptor.cache_blockers);
+    EXPECT_TRUE(descriptor.is_cacheable());
+    EXPECT_NE(shape_before_delete, descriptor.plan.next_shape);
+    EXPECT_TRUE(descriptor.plan.storage_location().is_found());
+    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ASSERT_NE(nullptr, cell);
+    EXPECT_TRUE(cell->is_valid());
+    EXPECT_EQ(cell, child->current_mro_shape_and_contents_validity_cell());
+    EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
+
+    EXPECT_TRUE(
+        delete_attr_from_plan(Value::from_oop(instance), descriptor.plan));
+    EXPECT_EQ(descriptor.plan.next_shape, instance->get_shape());
+    EXPECT_TRUE(instance->get_own_property(attr_name).is_not_present());
+    EXPECT_TRUE(cell->is_valid());
 
     EXPECT_TRUE(base->set_own_property(descriptor_name, Value::from_smi(1)));
 

@@ -44,6 +44,37 @@ namespace cl
                     nullptr, info.storage_location(), nullptr));
         }
 
+        AttributeDeleteDescriptor
+        lookup_existing_own_property_delete_descriptor(Object *object,
+                                                       TValue<String> name)
+        {
+            Shape *current_shape = object->get_shape();
+            if(!current_shape->allows_attribute_add_delete())
+            {
+                return AttributeDeleteDescriptor::disallowed();
+            }
+
+            int32_t descriptor_idx =
+                current_shape->lookup_descriptor_index(name);
+            if(descriptor_idx < 0)
+            {
+                return AttributeDeleteDescriptor::not_found();
+            }
+
+            DescriptorInfo info =
+                current_shape->get_descriptor_info(descriptor_idx);
+            if(info.has_flag(DescriptorFlag::ReadOnly))
+            {
+                return AttributeDeleteDescriptor::read_only();
+            }
+
+            Shape *next_shape = current_shape->derive_transition(
+                name, ShapeTransitionVerb::Delete);
+            return AttributeDeleteDescriptor::found(
+                AttributeMutationPlan::delete_own_property(
+                    next_shape, info.storage_location(), nullptr));
+        }
+
     }  // namespace
 
     void Object::validate_inline_slot_layout()
@@ -146,6 +177,12 @@ namespace cl
         return lookup_existing_own_property_write_descriptor(this, name);
     }
 
+    AttributeDeleteDescriptor
+    Object::lookup_own_attribute_delete_descriptor(TValue<String> name)
+    {
+        return lookup_existing_own_property_delete_descriptor(this, name);
+    }
+
     bool Object::add_own_property(TValue<String> name, Value value)
     {
         Shape *current_shape = get_shape();
@@ -226,30 +263,13 @@ namespace cl
 
     bool Object::delete_own_property(TValue<String> name)
     {
-        Shape *current_shape = get_shape();
-        if(!current_shape->allows_attribute_add_delete())
+        AttributeDeleteDescriptor descriptor =
+            lookup_own_attribute_delete_descriptor(name);
+        if(!descriptor.is_found())
         {
             return false;
         }
-
-        int32_t descriptor_idx = current_shape->lookup_descriptor_index(name);
-        if(descriptor_idx < 0)
-        {
-            return false;
-        }
-
-        DescriptorInfo info =
-            current_shape->get_descriptor_info(descriptor_idx);
-        if(info.has_flag(DescriptorFlag::ReadOnly))
-        {
-            return false;
-        }
-
-        Shape *next_shape =
-            current_shape->derive_transition(name, ShapeTransitionVerb::Delete);
-        set_shape(next_shape);
-        write_storage_location(info.storage_location(), Value::not_present());
-        return true;
+        return delete_attr_from_plan(Value::from_oop(this), descriptor.plan);
     }
 
     void Object::write_storage_location(StorageLocation location, Value value)

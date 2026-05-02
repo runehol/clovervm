@@ -36,10 +36,23 @@ namespace cl
 
     static_assert(static_cast<uint8_t>(AttributeWriteStatus::Found) == 0);
 
+    enum class AttributeDeleteStatus : uint8_t
+    {
+        Found = 0,
+        NotFound,
+        ReadOnly,
+        Disallowed,
+        NonObjectReceiver,
+        Error,
+    };
+
+    static_assert(static_cast<uint8_t>(AttributeDeleteStatus::Found) == 0);
+
     enum class AttributeMutationPlanKind : uint8_t
     {
         StoreExisting,
         AddOwnProperty,
+        DeleteOwnProperty,
     };
 
     enum class AttributeReadPlanPath : uint8_t
@@ -202,6 +215,19 @@ namespace cl
             return plan;
         }
 
+        static AttributeMutationPlan
+        delete_own_property(Shape *next_shape, StorageLocation location,
+                            ValidityCell *lookup_validity_cell)
+        {
+            AttributeMutationPlan plan;
+            plan.next_shape = next_shape;
+            plan.lookup_validity_cell = lookup_validity_cell;
+            plan.physical_idx = location.physical_idx;
+            plan.storage_kind = location.kind;
+            plan.kind = AttributeMutationPlanKind::DeleteOwnProperty;
+            return plan;
+        }
+
         StorageLocation storage_location() const
         {
             return StorageLocation{physical_idx, storage_kind};
@@ -210,6 +236,11 @@ namespace cl
         bool is_add_own_property() const
         {
             return kind == AttributeMutationPlanKind::AddOwnProperty;
+        }
+
+        bool is_delete_own_property() const
+        {
+            return kind == AttributeMutationPlanKind::DeleteOwnProperty;
         }
     };
 
@@ -268,6 +299,56 @@ namespace cl
         }
 
         bool is_found() const { return status == AttributeWriteStatus::Found; }
+        bool is_cacheable() const
+        {
+            return plan.lookup_validity_cell != nullptr;
+        }
+    };
+
+    struct AttributeDeleteDescriptor
+    {
+        AttributeDeleteStatus status;
+        AttributeMutationPlan plan;
+        AttributeCacheBlockers cache_blockers;
+
+        static AttributeDeleteDescriptor not_found()
+        {
+            return AttributeDeleteDescriptor{
+                AttributeDeleteStatus::NotFound,
+                AttributeMutationPlan::store_existing(
+                    nullptr, StorageLocation::not_found(), nullptr),
+                attribute_cache_blocker(AttributeCacheBlocker::None)};
+        }
+
+        static AttributeDeleteDescriptor read_only()
+        {
+            AttributeDeleteDescriptor descriptor = not_found();
+            descriptor.status = AttributeDeleteStatus::ReadOnly;
+            return descriptor;
+        }
+
+        static AttributeDeleteDescriptor disallowed()
+        {
+            AttributeDeleteDescriptor descriptor = not_found();
+            descriptor.status = AttributeDeleteStatus::Disallowed;
+            return descriptor;
+        }
+
+        static AttributeDeleteDescriptor non_object_receiver()
+        {
+            AttributeDeleteDescriptor descriptor = not_found();
+            descriptor.status = AttributeDeleteStatus::NonObjectReceiver;
+            return descriptor;
+        }
+
+        static AttributeDeleteDescriptor found(AttributeMutationPlan plan)
+        {
+            return AttributeDeleteDescriptor{
+                AttributeDeleteStatus::Found, plan,
+                attribute_cache_blocker(AttributeCacheBlocker::None)};
+        }
+
+        bool is_found() const { return status == AttributeDeleteStatus::Found; }
         bool is_cacheable() const
         {
             return plan.lookup_validity_cell != nullptr;

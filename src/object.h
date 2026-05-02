@@ -11,6 +11,7 @@
 
 namespace cl
 {
+    struct AttributeDeleteDescriptor;
     struct AttributeReadDescriptor;
     struct AttributeWriteDescriptor;
     struct BuiltinClassDefinition;
@@ -64,6 +65,8 @@ namespace cl
         lookup_own_attribute_descriptor(TValue<String> name) const;
         AttributeWriteDescriptor
         lookup_own_attribute_write_descriptor(TValue<String> name);
+        AttributeDeleteDescriptor
+        lookup_own_attribute_delete_descriptor(TValue<String> name);
         bool add_own_property(TValue<String> name, Value value);
         bool define_own_property(TValue<String> name, Value value,
                                  DescriptorFlags descriptor_flags);

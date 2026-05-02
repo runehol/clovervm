@@ -151,6 +151,20 @@ namespace cl
         return descriptor;
     }
 
+    static AttributeDeleteDescriptor
+    with_mro_shape_and_contents_validity_cell_if_unblocked(
+        AttributeDeleteDescriptor descriptor, ClassObject *cls)
+    {
+        descriptor.plan.lookup_validity_cell = nullptr;
+        if(descriptor.is_found() &&
+           attribute_cache_blockers_are_none(descriptor.cache_blockers))
+        {
+            descriptor.plan.lookup_validity_cell =
+                cls->get_or_create_mro_shape_and_contents_validity_cell();
+        }
+        return descriptor;
+    }
+
     static AttributeReadDescriptor lookup_class_chain_read_descriptor(
         const ClassObject *class_object, TValue<String> name,
         AttributeReadPlanPath path, AttributeBindingContext binding)
@@ -275,7 +289,7 @@ namespace cl
                               AttributeCacheBlocker::UnsupportedDescriptorKind);
     }
 
-    static bool class_read_descriptor_is_write_descriptor(
+    static bool class_read_descriptor_is_mutating_descriptor(
         const AttributeReadDescriptor &descriptor)
     {
         if(!descriptor.is_found())
@@ -448,13 +462,43 @@ namespace cl
         ClassObject *lookup_class = object->get_class().extract();
         AttributeReadDescriptor class_descriptor =
             lookup_class_attribute_read_descriptor(lookup_class, name);
-        if(class_read_descriptor_is_write_descriptor(class_descriptor))
+        if(class_read_descriptor_is_mutating_descriptor(class_descriptor))
         {
             return AttributeWriteDescriptor::disallowed();
         }
 
         AttributeWriteDescriptor own_descriptor =
             object->lookup_own_attribute_write_descriptor(name);
+        if(!own_descriptor.is_found())
+        {
+            return own_descriptor;
+        }
+
+        own_descriptor.cache_blockers |=
+            superseded_class_read_descriptor_cache_blockers(class_descriptor);
+        return with_mro_shape_and_contents_validity_cell_if_unblocked(
+            own_descriptor, lookup_class);
+    }
+
+    AttributeDeleteDescriptor
+    resolve_attr_delete_descriptor(Value obj, TValue<String> name)
+    {
+        if(!obj.is_ptr())
+        {
+            return AttributeDeleteDescriptor::non_object_receiver();
+        }
+
+        Object *object = obj.get_ptr<Object>();
+        ClassObject *lookup_class = object->get_class().extract();
+        AttributeReadDescriptor class_descriptor =
+            lookup_class_attribute_read_descriptor(lookup_class, name);
+        if(class_read_descriptor_is_mutating_descriptor(class_descriptor))
+        {
+            return AttributeDeleteDescriptor::disallowed();
+        }
+
+        AttributeDeleteDescriptor own_descriptor =
+            object->lookup_own_attribute_delete_descriptor(name);
         if(!own_descriptor.is_found())
         {
             return own_descriptor;
@@ -494,6 +538,19 @@ namespace cl
         return true;
     }
 
+    bool delete_attr_from_plan(Value receiver,
+                               const AttributeMutationPlan &plan)
+    {
+        assert(plan.is_delete_own_property());
+        assert(receiver.is_ptr());
+        assert(plan.next_shape != nullptr);
+        Object *object = receiver.get_ptr<Object>();
+        object->set_shape(plan.next_shape);
+        object->write_storage_location(plan.storage_location(),
+                                       Value::not_present());
+        return true;
+    }
+
     bool store_attr(Value obj, TValue<String> name, Value value)
     {
         AttributeWriteDescriptor descriptor =
@@ -505,6 +562,17 @@ namespace cl
         if(descriptor.status == AttributeWriteStatus::NotFound && obj.is_ptr())
         {
             return obj.get_ptr<Object>()->add_own_property(name, value);
+        }
+        return false;
+    }
+
+    bool delete_attr(Value obj, TValue<String> name)
+    {
+        AttributeDeleteDescriptor descriptor =
+            resolve_attr_delete_descriptor(obj, name);
+        if(descriptor.is_found())
+        {
+            return delete_attr_from_plan(obj, descriptor.plan);
         }
         return false;
     }
