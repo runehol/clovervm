@@ -79,25 +79,24 @@ init_p1 = p0
 init_p2 = p1
 init_p3 = p2
 init_p4 = p3
-EnterPreparedFunction const[Class.__init__], init_p0, argc + 1
+LoadConst const[Class.__init__.code_object]
+CallCodeObject init_p0, argc + 1
 return inst
 ```
 
-`EnterPreparedFunction` is an internal primitive: it enters a known `Function`
-using an already-prepared parameter layout, skipping public call adaptation.
-The name is intentional: `Call...` bytecodes perform callable protocol and
-argument adaptation, while `Enter...` bytecodes trust that the callee and frame
-slots are already prepared. It does not recursively enter the interpreter; it
+`CallCodeObject` is an internal primitive: it enters a known `CodeObject` using
+an already-prepared parameter layout, skipping public `Function` entry
+selection and call adaptation. It does not recursively enter the interpreter; it
 sets up the next Python frame on the existing CloverVM stack like ordinary calls
 do.
 
 This spends one extra generated function/frame to keep constructor semantics out
 of `CallSimple` and out of a shared megamorphic `type.__call__` body.
 
-The thunk injects the resolved `__init__` function as a constant. The thunk is
-already specialized on that implementation's signature, so the resolved function
-identity is part of the specialization rather than something the thunk should
-look up again.
+The thunk injects the resolved `__init__` code object as a constant. The thunk
+is already specialized on that implementation's signature, so the resolved
+function identity and code object are part of the specialization rather than
+something the thunk should look up again.
 
 ## Eligibility
 
@@ -189,7 +188,7 @@ The current implementation is conservative:
 - specialize the thunk on the resolved `__init__` function and its signature
   when one is present;
 - support fixed positional parameters, defaults, and varargs through
-  `EnterPreparedFunction`;
+  `CallCodeObject`;
 - leave keyword adaptation to the outer keyword-call opcode, so the thunk body
   can still enter a fully prepared initializer frame.
 

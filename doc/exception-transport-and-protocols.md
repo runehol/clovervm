@@ -116,6 +116,23 @@ Native functions participate through thunks. A native success writes a normal
 writes `Value::exception_marker()`. The thunk's `ReturnOrRaiseException`
 converts that marker into managed exceptional unwind.
 
+The same shape adapts fast-protocol entry points back into ordinary calls. If a
+caller is not participating in the fast protocol but the implementation wants to
+reuse the fast convention, the adapter can select the fast entry's `CodeObject`
+explicitly:
+
+```text
+LoadConst fast_protocol_code_object
+CallCodeObject
+ReturnOrRaiseException
+```
+
+`CallCodeObject` is an internal direct-code call. It assumes the surrounding
+thunk has already prepared the argument/frame window, and it enters exactly the
+supplied `CodeObject` without resolving the owning `Function`'s normal entry or
+adaptation policy again. The adapter then converts any
+`Value::exception_marker()` result into the ordinary managed exception path.
+
 ## StopIteration And Fast Protocol Return
 
 `StopIteration` is special only at protocol boundaries.
@@ -169,6 +186,78 @@ Thus the same fast protocol producer can serve both:
 for x in it:     consumes StopIteration as completion
 next(it)         raises StopIteration as a real exception
 ```
+
+## Iterator Entry Points
+
+Fast protocol support uses the same iterator object with two VM entry
+conventions. `iter(range_obj)` still returns a `RangeIterator`; it does not
+return a separate `FastRangeIterator` depending on who will consume it.
+
+For a fast-capable iterator type:
+
+```text
+normal next entry:
+  ordinary iterator protocol
+  value -> return value
+  exhaustion -> real StopIteration through managed exceptional unwind
+
+fast next entry:
+  VM-internal protocol entry
+  value -> return value
+  exhaustion -> pending StopIteration + Value::exception_marker()
+  other exception -> pending exception + Value::exception_marker()
+  no traceback segment is generated for the fast protocol frame itself
+```
+
+The consumer chooses the entry convention. A user-visible `next(it)` uses the
+ordinary next entry, or an adapter that converts fast completion into real
+`StopIteration`. A `for` loop may choose the fast entry when the iterator type
+advertises one, while still installing the ordinary exception-table fallback.
+
+For `Function` objects, the two entries may be represented as separate entry
+descriptors on the same logical function rather than separate functions:
+
+```text
+normal_entry:
+  CodeObject for ordinary call convention
+  ordinary call convention
+
+fast_protocol_entry:
+  optional
+  CodeObject for fast protocol convention
+  fast protocol convention
+```
+
+When the conventions differ, the preferred representation is two `CodeObject`s
+attached to one logical `Function`, rather than two offsets in the same
+`CodeObject`. The existing function-call inline cache already stores the
+selected `CodeObject`, so a `FOR_ITER` cache can keep the decision to call the
+fast protocol entry without changing the logical iterator object or function.
+
+Separate `CodeObject`s also make traceback policy cleaner. If one entry is a
+managed adapter or thunk that should be hidden, and the other is user-visible
+code, the hide flag can remain per `CodeObject` instead of becoming a per-entry
+special case.
+
+Native functions are already wrapped in managed `Function` thunks, so a native
+fast-capable function can have both a normal thunk code object and a
+fast-protocol thunk code object. The normal thunk may itself be the adapter
+shape:
+
+```text
+LoadConst fast_protocol_code_object
+CallCodeObject
+ReturnOrRaiseException
+```
+
+This lets the fast implementation be the single low-level body while
+non-participating callers still observe ordinary exception semantics.
+
+The fast entry is not a Python-visible `__fast_next__` attribute. CloverVM's
+current object model stores objects with shapes, so the open implementation
+question is where this VM-internal second entry point should live: exact
+builtin-class metadata, shape metadata, a side dispatch table keyed by iterator
+class/shape, or another equivalent internal descriptor.
 
 ## Fast Protocol Eligibility
 
@@ -241,6 +330,7 @@ internal iterator exhaustion:
 
 fast protocol StopIteration:
   pending compact StopIteration + exception_marker
+  no traceback
   valid only for protocol continuations or adapters
   consumed by for/yield-from-style machinery or promoted to a real exception
 
@@ -309,9 +399,23 @@ previous traceback chain, if any
 ```
 
 Protocol completion consumed by `FOR_ITER` is not user-visible exception
-propagation and does not attach the caller frame to a traceback. If the same
-compact completion is promoted to a real `StopIteration`, traceback handling
-continues through the ordinary exceptional path from the promotion site.
+propagation and does not attach the caller frame to a traceback.
+
+Fast iterator protocol execution does not generate traceback segments. If a
+fast entry returns `Value::exception_marker()` with pending `StopIteration`, the
+completion has no traceback. If the same compact completion is promoted to a
+real `StopIteration`, traceback handling resumes through the ordinary
+exceptional path from the promotion site. The fast protocol frame itself is not
+retroactively added. If promotion happens in a thunk or adapter, that adapter is
+the technical raise point, and its code object should be marked
+`HideFromTraceback` so user-visible tracebacks start at the caller-facing frame.
+
+The same rule applies to other exceptions reported by a native or VM-owned fast
+entry: the fast protocol boundary does not synthesize traceback frames. This is
+close to CPython's behavior for exceptions crossing C implementation code. If a
+callee has already raised through ordinary managed exception machinery, its
+existing traceback state is preserved, but the fast protocol frame does not add
+another traceback segment.
 
 The traceback remains lazy until it becomes observable or until the VM is about
 to invalidate stack memory needed by the lazy segment.
@@ -441,6 +545,8 @@ Recommended implementation order:
 - Only protocol `StopIteration` completion uses the fast protocol marker path;
   all other exceptions, including callee exceptions, use managed exceptional
   unwind.
+- Fast iterator protocol execution does not generate traceback segments for the
+  fast protocol frame itself.
 - If compact `StopIteration` escapes a protocol continuation or must be visible
   to user exception handling, it is promoted/materialized and follows the
   ordinary exception path.

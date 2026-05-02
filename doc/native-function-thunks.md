@@ -144,6 +144,11 @@ normal exception unwinding while still letting native implementations report
 failure as pending exception plus `Value::exception_marker()` locally inside the
 thunk. Native boundaries do not need to become a first-order unwinder frame kind.
 
+For native functions that also expose a fast protocol convention, the ordinary
+adapter thunk can call the fast thunk's explicit `CodeObject` with
+`CallCodeObject`, then run `ReturnOrRaiseException`. That avoids calling the
+owning `Function` while asking it to ignore its normal entry/adaptation policy.
+
 ## Arity
 
 Arity checks live on the Python-visible `Function` call boundary. The

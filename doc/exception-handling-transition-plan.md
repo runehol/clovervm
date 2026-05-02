@@ -138,6 +138,12 @@ accumulator == Value::exception_marker():
       transport.
 - [ ] Add a code-object flag such as `HideFromTraceback` later if thunk frames
       should be hidden from user-visible tracebacks.
+- [ ] Add the non-participant adapter shape for fast-convention callees:
+      `LoadConst fast_protocol_code_object`, `CallCodeObject`, then
+      `ReturnOrRaiseException`.
+- [ ] Prefer `CallCodeObject` as a small shared primitive: it calls an explicit
+      `CodeObject` with an already-prepared argument/frame window, bypassing
+      normal `Function` entry selection.
 
 Deliverable: native and protocol implementation details can return marker plus
 pending exception to managed adapter code, while ordinary return stays fast.
@@ -190,10 +196,26 @@ completion:
 - [ ] Teach the continuation to consume marker + pending `StopIteration` by
       clearing it and jumping to the loop exit/else target.
 - [ ] Treat marker + any other pending exception as managed exceptional unwind.
-- [ ] Make only `RangeIterator` participate at first.
+- [ ] Give `RangeIterator` both an ordinary next entry and a VM-internal fast
+      next entry; `iter(range_obj)` still returns the same `RangeIterator`
+      object in both modes.
+- [ ] Represent the fast entry as an optional second entry point on the
+      `Function` used for iteration, preferably as a separate `CodeObject` for
+      the fast convention.
+- [ ] For native next functions, build two managed thunks: a fast-protocol thunk
+      and a normal adapter thunk that can call the fast convention's
+      `CodeObject` with `CallCodeObject` and then `ReturnOrRaiseException`.
+- [ ] Teach the `FOR_ITER` inline cache to store the decision to use the fast
+      protocol entry, including the selected `CodeObject` and the guards that
+      make that decision valid.
+- [ ] Decide where the VM-internal fast next entry is stored for shape-based
+      objects: builtin-class metadata, shape metadata, side dispatch table, or
+      another internal descriptor.
+- [ ] Make only `RangeIterator` advertise the fast entry at first.
 - [ ] Decide the iterator plan during loop setup where possible, not on every
       iteration.
 - [ ] Ensure ordinary `for` discards `StopIteration.value`.
+- [ ] Do not generate traceback segments for the fast protocol frame itself.
 
 Deliverable: the existing `range` iterator can use pending `StopIteration` plus
 `Value::exception_marker()` as a local fast completion result, without making
@@ -263,6 +285,12 @@ transport state.
       must be copied or materialized.
 - [ ] Materialize traceback objects for observation boundaries such as
       `e.__traceback__`, formatting, debugging, and APIs exposing frames.
+- [ ] Preserve the fast protocol rule: marker-based iterator protocol
+      completion does not synthesize traceback frames, even if later promoted at
+      an adapter or continuation.
+- [ ] Hide adapter/thunk code objects from user-visible tracebacks so promoted
+      fast completions do not expose implementation frames as the visible raise
+      point.
 
 Deliverable: exception propagation can produce Python-compatible tracebacks
 without eagerly allocating traceback objects on every hot failure path.

@@ -8,6 +8,8 @@ This note documents the calling convention currently implemented by CloverVM's b
 - The interpreter also carries key VM state in native function arguments/registers: `fp`, `pc`, `accumulator`, `dispatch`, and `code_object`.
 - Call arguments are laid out in a contiguous register window in the caller.
 - Entering a function does not copy arguments into a separate argument array. Instead, the interpreter moves `fp` so the existing call window becomes the callee's frame.
+- Internal forwarding thunks can enter an explicit `CodeObject` with
+  `CallCodeObject` after preparing the call window themselves.
 - Fixed-arity native functions use the same frame path: a native thunk `CodeObject` reads `p0`, `p1`, ... directly and calls a C++ target.
 - The stack grows toward lower addresses.
 - Parameters live at positive offsets from `fp`.
@@ -218,6 +220,32 @@ pc = code_object->code.data();
 ```
 
 This is the key idea: the interpreter does not allocate/copy a fresh argument block. It reinterprets the caller's already-laid-out call window as the callee frame.
+
+`CallSimple` is the public callable path: it resolves a callable's `Function`
+semantics, including the selected entry code object and any arity/default
+adaptation. Some VM-generated thunks instead need to forward into already
+selected code. Those thunks can use `CallCodeObject`:
+
+```text
+CallCodeObject target_code_object, first_arg, argc
+```
+
+`CallCodeObject` has a narrower contract:
+
+- the target is an explicit `CodeObject` value
+- the surrounding thunk has already prepared the argument/register window
+- no `Function` entry selection, default handling, or callable protocol lookup
+  happens at the opcode
+- the interpreter enters exactly the supplied `CodeObject` using the ordinary
+  frame setup/return machinery
+
+This keeps constructor thunks and future protocol adapters from having to say
+"call this `Function`, but ignore the normal `Function` call behavior".
+
+Class bodies are adjacent but already have their own direct-code path:
+`CreateClass` loads a class body `CodeObject`, prepares the class-body frame,
+and enters that code object internally. It does not need to be expressed through
+`CallCodeObject` unless the implementation later chooses to unify those paths.
 
 ### Why `new_fp` is computed this way
 
