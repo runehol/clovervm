@@ -29,6 +29,10 @@ template <> struct fmt::formatter<cl::Bytecode>
 
             case cl::Bytecode::Ldar:
                 return format_to(out, "Ldar");
+            case cl::Bytecode::LoadLocalChecked:
+                return format_to(out, "LoadLocalChecked");
+            case cl::Bytecode::ClearLocal:
+                return format_to(out, "ClearLocal");
             case cl::Bytecode::Star:
                 return format_to(out, "Star");
             case cl::Bytecode::Ldar0:
@@ -103,6 +107,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "StaGlobal");
             case cl::Bytecode::DelGlobal:
                 return format_to(out, "DelGlobal");
+            case cl::Bytecode::DelLocal:
+                return format_to(out, "DelLocal");
             case cl::Bytecode::LoadAttr:
                 return format_to(out, "LoadAttr");
             case cl::Bytecode::StoreAttr:
@@ -391,7 +397,10 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::Ldar:
+            case cl::Bytecode::LoadLocalChecked:
+            case cl::Bytecode::ClearLocal:
             case cl::Bytecode::Star:
+            case cl::Bytecode::DelLocal:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 break;

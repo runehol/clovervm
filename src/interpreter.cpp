@@ -865,12 +865,44 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_load_local_checked(PARAMS)
+    {
+        START(2);
+        int8_t reg = pc[1];
+        accumulator = fp[reg];
+        if(unlikely(accumulator.is_not_present()))
+        {
+            MUSTTAIL return name_error(ARGS);
+        }
+        COMPLETE();
+    }
+
+    static Value op_clear_local(PARAMS)
+    {
+        START(2);
+        int8_t reg = pc[1];
+        fp[reg] = Value::not_present();
+        COMPLETE();
+    }
+
     static Value op_star(PARAMS)
     {
         START(2);
         int8_t reg = pc[1];
         fp[reg] = accumulator;
 
+        COMPLETE();
+    }
+
+    static Value op_del_local(PARAMS)
+    {
+        START(2);
+        int8_t reg = pc[1];
+        if(unlikely(fp[reg].is_not_present()))
+        {
+            MUSTTAIL return name_error(ARGS);
+        }
+        fp[reg] = Value::not_present();
         COMPLETE();
     }
 
@@ -2200,6 +2232,8 @@ namespace cl
         }
 #define SET_TABLE_ENTRY(bytecode, fun) tbl.table[size_t(bytecode)] = fun
         SET_TABLE_ENTRY(Bytecode::Ldar, op_ldar);
+        SET_TABLE_ENTRY(Bytecode::LoadLocalChecked, op_load_local_checked);
+        SET_TABLE_ENTRY(Bytecode::ClearLocal, op_clear_local);
         SET_TABLE_ENTRY(Bytecode::Star, op_star);
         SET_TABLE_ENTRY(Bytecode::LdaConstant, op_lda_constant);
         SET_TABLE_ENTRY(Bytecode::LdaSmi, op_lda_smi);
@@ -2230,6 +2264,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::LdaGlobal, op_lda_global);
         SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);
         SET_TABLE_ENTRY(Bytecode::DelGlobal, op_del_global);
+        SET_TABLE_ENTRY(Bytecode::DelLocal, op_del_local);
         SET_TABLE_ENTRY(Bytecode::LoadAttr, op_load_attr);
         SET_TABLE_ENTRY(Bytecode::StoreAttr, op_store_attr);
         SET_TABLE_ENTRY(Bytecode::DelAttr, op_del_attr);

@@ -169,11 +169,55 @@ TEST(Interpreter, del_missing_global_raises_name_error)
     expect_runtime_error(L"del missing\n", "NameError");
 }
 
-TEST(Interpreter, del_local_variable_not_supported_yet)
+TEST(Interpreter, del_local_variable_removes_binding)
 {
     expect_runtime_error(L"def clear(value):\n"
-                         L"    del value\n",
-                         "We don't support del non-global variables yet");
+                         L"    del value\n"
+                         L"    return value\n"
+                         L"clear(7)\n",
+                         "NameError");
+}
+
+TEST(Interpreter, del_missing_local_raises_name_error)
+{
+    expect_runtime_error(L"def clear():\n"
+                         L"    del value\n"
+                         L"clear()\n",
+                         "NameError");
+}
+
+TEST(Interpreter, local_read_before_assignment_raises_name_error)
+{
+    expect_runtime_error(L"def read_before_write():\n"
+                         L"    value\n"
+                         L"    value = 7\n"
+                         L"read_before_write()\n",
+                         "NameError");
+}
+
+TEST(Interpreter, conditional_local_assignment_raises_on_missing_path)
+{
+    expect_runtime_error(L"def maybe_write(flag):\n"
+                         L"    if flag:\n"
+                         L"        value = 7\n"
+                         L"    return value\n"
+                         L"maybe_write(False)\n",
+                         "NameError");
+}
+
+TEST(Interpreter, conditional_local_assignment_available_after_all_paths)
+{
+    Value expected = Value::from_smi(8);
+    test::FileRunner file_runner(L"def maybe_write(flag):\n"
+                                 L"    if flag:\n"
+                                 L"        value = 7\n"
+                                 L"    else:\n"
+                                 L"        value = 8\n"
+                                 L"    return value\n"
+                                 L"maybe_write(False)\n");
+    Value actual = file_runner.return_value;
+
+    EXPECT_EQ(expected, actual);
 }
 
 TEST(Interpreter, while1)

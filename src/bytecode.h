@@ -21,6 +21,10 @@ namespace cl
 
         // load accumulator from register
         Ldar,
+        // load accumulator from local binding register and raise if absent
+        LoadLocalChecked,
+        // clear local binding register to absent
+        ClearLocal,
         // store accumulator to register
         Star,
         // fast single-byte optimisation opcodes for the first 16 registers
@@ -62,6 +66,7 @@ namespace cl
         LdaGlobal,
         StaGlobal,
         DelGlobal,
+        DelLocal,
 
         // attribute access
         LoadAttr,
