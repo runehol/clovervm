@@ -6,6 +6,7 @@
 #include "tokenizer.h"
 #include <fmt/core.h>
 #include <optional>
+#include <utility>
 
 namespace cl
 {
@@ -85,22 +86,11 @@ namespace cl
         return t;
     }
 
-    class Codegen
+    class CodeObjectBuilder
     {
     public:
         using RegisterIndex = int32_t;
 
-        Codegen(const AstVector &_av)
-            : av(_av), module_scope(make_internal_raw<Scope>(
-                           active_vm()->get_builtin_scope().extract())),
-              module_name(interned_string(L"<module>"))
-
-        {
-        }
-
-        CodeObject *codegen();
-
-    private:
         enum class Mode
         {
             Module,
@@ -108,6 +98,29 @@ namespace cl
             Function
         };
 
+        CodeObjectBuilder(const AstVector &_av, Scope *_module_scope,
+                          TValue<String> _module_name, CodeObject *_code_obj,
+                          Mode _mode, int32_t _body_idx,
+                          AstChildren param_children)
+            : av(_av), module_scope(_module_scope), module_name(_module_name),
+              code_obj(_code_obj), body_idx(_body_idx),
+              analysis(_mode, _av.size()), temporary_reg(FrameHeaderSize),
+              max_temporary_reg(FrameHeaderSize)
+        {
+            analysis =
+                analyze_code_object(code_obj, _body_idx, _mode, param_children);
+            if(_mode != Mode::Module)
+            {
+                temporary_reg = code_obj->get_local_scope_ptr()->size();
+                max_temporary_reg = temporary_reg;
+            }
+        }
+
+        CodeObject *run_module();
+        void run_function_body(uint32_t source_offset, int32_t body_idx);
+        void run_class_body(uint32_t source_offset, int32_t body_idx);
+
+    private:
         CodeObject *make_code_obj(Mode mode, CodeObject *parent = nullptr)
         {
             Scope *local_scope = nullptr;
@@ -146,8 +159,6 @@ namespace cl
             JumpTarget *break_target;
             JumpTarget *continue_target;
         };
-        std::vector<LoopTargetSet> loop_targets;
-
         constexpr static OpTable operator_table = make_table();
 
         constexpr static OpTableEntry get_operator_entry(AstOperatorKind ok)
@@ -235,19 +246,14 @@ namespace cl
             std::vector<bool> may_be_entry_value;
         };
 
-        struct CodegenContext
-        {
-            CodeObject *code_obj = nullptr;
-            const ScopeAnalysis *analysis = nullptr;
-            uint32_t temporary_reg = FrameHeaderSize;
-            uint32_t max_temporary_reg = FrameHeaderSize;
+        Mode mode() const { return analysis.mode; }
 
-            Mode mode() const
-            {
-                assert(analysis != nullptr);
-                return analysis->mode;
-            }
-        };
+        CodeObject *code_obj;
+        int32_t body_idx;
+        ScopeAnalysis analysis;
+        uint32_t temporary_reg;
+        uint32_t max_temporary_reg;
+        std::vector<LoopTargetSet> loop_targets;
 
         static Presence merge_presence(Presence left, Presence right)
         {
@@ -858,93 +864,84 @@ namespace cl
             return analysis;
         }
 
-        const NameAccessAnalysis &load_access(const CodegenContext &ctx,
-                                              int32_t node_idx) const
+        const NameAccessAnalysis &load_access(int32_t node_idx) const
         {
-            assert(ctx.analysis != nullptr);
-            assert(ctx.analysis->loads[node_idx].has_value());
-            return *ctx.analysis->loads[node_idx];
+            assert(analysis.loads[node_idx].has_value());
+            return *analysis.loads[node_idx];
         }
 
-        const NameAccessAnalysis &store_access(const CodegenContext &ctx,
-                                               int32_t node_idx) const
+        const NameAccessAnalysis &store_access(int32_t node_idx) const
         {
-            assert(ctx.analysis != nullptr);
-            assert(ctx.analysis->stores[node_idx].has_value());
-            return *ctx.analysis->stores[node_idx];
+            assert(analysis.stores[node_idx].has_value());
+            return *analysis.stores[node_idx];
         }
 
-        const NameAccessAnalysis &delete_access(const CodegenContext &ctx,
-                                                int32_t node_idx) const
+        const NameAccessAnalysis &delete_access(int32_t node_idx) const
         {
-            assert(ctx.analysis != nullptr);
-            assert(ctx.analysis->deletes[node_idx].has_value());
-            return *ctx.analysis->deletes[node_idx];
+            assert(analysis.deletes[node_idx].has_value());
+            return *analysis.deletes[node_idx];
         }
 
-        void emit_local_binding_prologue(CodegenContext &ctx)
+        void emit_local_binding_prologue()
         {
-            for(const BindingInfo &binding: ctx.analysis->bindings)
+            for(const BindingInfo &binding: analysis.bindings)
             {
                 if(binding.scope == BindingScope::Local &&
                    binding.needs_entry_clear)
                 {
-                    ctx.code_obj->emit_opcode_reg(0, Bytecode::ClearLocal,
-                                                  binding.local_slot_idx);
+                    code_obj->emit_opcode_reg(0, Bytecode::ClearLocal,
+                                              binding.local_slot_idx);
                 }
             }
         }
 
-        void emit_variable_load(CodegenContext &ctx, uint32_t source_offset,
-                                int32_t node_idx)
+        void emit_variable_load(uint32_t source_offset, int32_t node_idx)
         {
-            const NameAccessAnalysis &access = load_access(ctx, node_idx);
+            const NameAccessAnalysis &access = load_access(node_idx);
             switch(access.scope)
             {
                 case BindingScope::Local:
-                    ctx.code_obj->emit_opcode_reg(
-                        source_offset,
-                        access.presence == Presence::Present
-                            ? Bytecode::Ldar
-                            : Bytecode::LoadLocalChecked,
-                        access.slot_idx);
+                    code_obj->emit_opcode_reg(source_offset,
+                                              access.presence ==
+                                                      Presence::Present
+                                                  ? Bytecode::Ldar
+                                                  : Bytecode::LoadLocalChecked,
+                                              access.slot_idx);
                     break;
                 case BindingScope::Global:
-                    ctx.code_obj->emit_opcode_uint32(
+                    code_obj->emit_opcode_uint32(
                         source_offset, Bytecode::LdaGlobal, access.slot_idx);
                     break;
             }
         }
 
-        void emit_variable_store(CodegenContext &ctx, uint32_t source_offset,
-                                 int32_t node_idx)
+        void emit_variable_store(uint32_t source_offset, int32_t node_idx)
         {
-            const NameAccessAnalysis &access = store_access(ctx, node_idx);
+            const NameAccessAnalysis &access = store_access(node_idx);
             switch(access.scope)
             {
                 case BindingScope::Local:
-                    ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                                  access.slot_idx);
+                    code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                              access.slot_idx);
                     break;
                 case BindingScope::Global:
-                    ctx.code_obj->emit_opcode_uint32(
+                    code_obj->emit_opcode_uint32(
                         source_offset, Bytecode::StaGlobal, access.slot_idx);
                     break;
             }
         }
 
-        void emit_variable_delete(CodegenContext &ctx, uint32_t source_offset,
-                                  int32_t node_idx)
+        void emit_variable_delete(uint32_t source_offset, int32_t node_idx)
         {
-            const NameAccessAnalysis &access = delete_access(ctx, node_idx);
+            const NameAccessAnalysis &access = delete_access(node_idx);
             switch(access.scope)
             {
                 case BindingScope::Local:
-                    ctx.code_obj->emit_opcode_reg(
-                        source_offset, Bytecode::DelLocal, access.slot_idx);
+                    code_obj->emit_opcode_reg(source_offset, Bytecode::DelLocal,
+                                              access.slot_idx);
                     break;
                 case BindingScope::Global:
-                    ctx.code_obj->emit_opcode_uint32(
+                    code_obj->emit_opcode_uint32(
                         source_offset, Bytecode::DelGlobal, access.slot_idx);
                     break;
             }
@@ -954,22 +951,22 @@ namespace cl
         {
         public:
             friend class Codegen;
-            TemporaryReg(CodegenContext *_ctx, uint32_t _n_regs = 1)
-                : ctx(_ctx), n_regs(_n_regs)
+            TemporaryReg(CodeObjectBuilder *_builder, uint32_t _n_regs = 1)
+                : builder(_builder), n_regs(_n_regs)
             {
-                reg = ctx->temporary_reg;
-                ctx->temporary_reg += n_regs;
-                ctx->max_temporary_reg =
-                    std::max(ctx->max_temporary_reg, ctx->temporary_reg);
+                reg = builder->temporary_reg;
+                builder->temporary_reg += n_regs;
+                builder->max_temporary_reg = std::max(
+                    builder->max_temporary_reg, builder->temporary_reg);
             }
 
             TemporaryReg(const TemporaryReg &) = delete;
             TemporaryReg &operator=(const TemporaryReg &) = delete;
 
             TemporaryReg(TemporaryReg &&other) noexcept
-                : ctx(other.ctx), n_regs(other.n_regs), reg(other.reg)
+                : builder(other.builder), n_regs(other.n_regs), reg(other.reg)
             {
-                other.ctx = nullptr;
+                other.builder = nullptr;
                 other.n_regs = 0;
                 other.reg = 0;
             }
@@ -978,18 +975,18 @@ namespace cl
 
             ~TemporaryReg()
             {
-                if(ctx == nullptr)
+                if(builder == nullptr)
                 {
                     return;
                 }
-                ctx->temporary_reg -= n_regs;
-                assert(reg == ctx->temporary_reg);
+                builder->temporary_reg -= n_regs;
+                assert(reg == builder->temporary_reg);
             }
 
             operator uint32_t() const { return reg; }
 
         private:
-            CodegenContext *ctx;
+            CodeObjectBuilder *builder;
             uint32_t n_regs;
             uint32_t reg;
         };
@@ -1015,13 +1012,12 @@ namespace cl
                 FrameHeaderSize);
         }
 
-        ScopedRegister codegen_node_to_register(CodegenContext &ctx,
-                                                int32_t node_idx)
+        ScopedRegister codegen_node_to_register(int32_t node_idx)
         {
             AstKind kind = av.kinds[node_idx];
             if(kind.node_kind == AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
             {
-                const NameAccessAnalysis &access = load_access(ctx, node_idx);
+                const NameAccessAnalysis &access = load_access(node_idx);
                 if(access.scope == BindingScope::Local &&
                    access.presence == Presence::Present)
                 {
@@ -1030,17 +1026,17 @@ namespace cl
             }
 
             uint32_t source_offset = av.source_offsets[node_idx];
-            codegen_node(ctx, node_idx);
+            codegen_node(node_idx);
             std::optional<TemporaryReg> temp;
-            temp.emplace(&ctx);
-            ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          RegisterIndex(*temp));
+            temp.emplace(this);
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                      RegisterIndex(*temp));
             return {RegisterIndex(*temp), std::move(temp)};
         }
 
         // used for both regular binary expressions and augmented assignment, so
         // pull out
-        void codegen_binary_expression(CodegenContext &ctx, int32_t node_idx)
+        void codegen_binary_expression(int32_t node_idx)
         {
             AstKind kind = av.kinds[node_idx];
             AstChildren children = av.children[node_idx];
@@ -1051,22 +1047,21 @@ namespace cl
 
             if(immediate.has_value())
             {
-                codegen_node(ctx, children[0]);
-                ctx.code_obj->emit_opcode_smi(source_offset,
-                                              entry.binary_acc_smi, *immediate);
+                codegen_node(children[0]);
+                code_obj->emit_opcode_smi(source_offset, entry.binary_acc_smi,
+                                          *immediate);
             }
             else
             {
-                ScopedRegister lhs_reg =
-                    codegen_node_to_register(ctx, children[0]);
-                codegen_node(ctx, children[1]);
-                ctx.code_obj->emit_opcode_reg(source_offset, entry.standard,
-                                              lhs_reg.reg);
+                ScopedRegister lhs_reg = codegen_node_to_register(children[0]);
+                codegen_node(children[1]);
+                code_obj->emit_opcode_reg(source_offset, entry.standard,
+                                          lhs_reg.reg);
             }
         }
 
-        void codegen_comparison_fragment(CodegenContext &ctx, int32_t node_idx,
-                                         int32_t recv, int32_t prod)
+        void codegen_comparison_fragment(int32_t node_idx, int32_t recv,
+                                         int32_t prod)
         {
             AstKind kind = av.kinds[node_idx];
             assert(kind.node_kind ==
@@ -1075,23 +1070,22 @@ namespace cl
             uint32_t source_offset = av.source_offsets[node_idx];
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
 
-            codegen_node(ctx, children[0]);
+            codegen_node(children[0]);
             if(prod >= 0)
             {
-                ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              prod);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star, prod);
             }
-            ctx.code_obj->emit_opcode_reg(source_offset, entry.standard, recv);
+            code_obj->emit_opcode_reg(source_offset, entry.standard, recv);
         }
 
-        void codegen_function_definition(CodegenContext &ctx, int32_t node_idx)
+        void codegen_function_definition(int32_t node_idx)
         {
             // function definitions are involved enough that we prefer a
             // separate function for it
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
 
-            CodeObject *fun_obj = make_code_obj(Mode::Function, ctx.code_obj);
+            CodeObject *fun_obj = make_code_obj(Mode::Function, code_obj);
             AstChildren param_children = av.children[children[0]];
             {
                 fun_obj->name = av.constants[node_idx];
@@ -1116,37 +1110,31 @@ namespace cl
                             TValue<String>(av.constants[ch]));
                 }
                 reserve_parameter_padding_and_frame_header(fun_obj);
-                ScopeAnalysis analysis = analyze_code_object(
-                    fun_obj, children[1], Mode::Function, param_children);
 
-                CodegenContext fun_ctx{fun_obj, &analysis,
-                                       fun_obj->get_local_scope_ptr()->size(),
-                                       fun_obj->get_local_scope_ptr()->size()};
+                CodeObjectBuilder fun_builder{av,
+                                              module_scope,
+                                              module_name,
+                                              fun_obj,
+                                              Mode::Function,
+                                              children[1],
+                                              param_children};
 
-                // now generate code for the body
-                emit_local_binding_prologue(fun_ctx);
-                codegen_node(fun_ctx, children[1]);
-                // finally, emit return None just in case. as a future
-                // optimisation, we could check that all return paths already
-                // have a return statement
-                fun_ctx.code_obj->emit_opcode(source_offset, Bytecode::LdaNone);
-                fun_ctx.code_obj->emit_opcode(source_offset, Bytecode::Return);
-                fun_ctx.code_obj->finalize(fun_ctx.max_temporary_reg);
+                fun_builder.run_function_body(source_offset, children[1]);
             }
 
             // stick this code object into the constant table, load it, and call
             // the
             uint32_t constant_idx =
-                ctx.code_obj->allocate_constant(Value::from_oop(fun_obj));
+                code_obj->allocate_constant(Value::from_oop(fun_obj));
             uint32_t n_defaults = count_default_parameters(param_children);
             if(n_defaults == 0)
             {
-                ctx.code_obj->emit_opcode_constant_idx(
+                code_obj->emit_opcode_constant_idx(
                     source_offset, Bytecode::CreateFunction, constant_idx);
             }
             else
             {
-                TemporaryReg default_values(&ctx, n_defaults);
+                TemporaryReg default_values(this, n_defaults);
                 size_t first_default_idx =
                     fun_obj->n_positional_parameters - n_defaults;
                 for(size_t i = 0; i < n_defaults; ++i)
@@ -1154,23 +1142,23 @@ namespace cl
                     int32_t param_idx = param_children[first_default_idx + i];
                     AstChildren default_children = av.children[param_idx];
                     assert(default_children.size() == 1);
-                    codegen_node(ctx, default_children[0]);
-                    ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                                  default_values + i);
+                    codegen_node(default_children[0]);
+                    code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                              default_values + i);
                 }
-                ctx.code_obj->emit_opcode_reg_range(source_offset,
-                                                    Bytecode::CreateTuple,
-                                                    default_values, n_defaults);
+                code_obj->emit_opcode_reg_range(source_offset,
+                                                Bytecode::CreateTuple,
+                                                default_values, n_defaults);
 
-                TemporaryReg default_tuple(&ctx);
-                ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              default_tuple);
-                ctx.code_obj->emit_opcode_constant_idx_reg(
+                TemporaryReg default_tuple(this);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          default_tuple);
+                code_obj->emit_opcode_constant_idx_reg(
                     source_offset, Bytecode::CreateFunctionWithDefaults,
                     constant_idx, default_tuple);
             }
 
-            emit_variable_store(ctx, source_offset, node_idx);
+            emit_variable_store(source_offset, node_idx);
         }
 
         uint32_t count_default_parameters(AstChildren param_children) const
@@ -1218,76 +1206,69 @@ namespace cl
             return false;
         }
 
-        void codegen_class_definition(CodegenContext &ctx, int32_t node_idx)
+        void codegen_class_definition(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             int32_t bases_idx = children[0];
             int32_t body_idx = children[1];
 
-            CodeObject *class_obj = make_code_obj(Mode::Class, ctx.code_obj);
+            CodeObject *class_obj = make_code_obj(Mode::Class, code_obj);
             {
                 class_obj->n_parameters = 2;
                 class_obj->get_local_scope_ptr()->reserve_empty_slots(2);
                 reserve_parameter_padding_and_frame_header(class_obj);
-                ScopeAnalysis analysis =
-                    analyze_code_object(class_obj, body_idx, Mode::Class);
 
-                CodegenContext class_ctx{
-                    class_obj, &analysis,
-                    class_obj->get_local_scope_ptr()->size(),
-                    class_obj->get_local_scope_ptr()->size()};
+                CodeObjectBuilder class_builder{
+                    av,          module_scope, module_name, class_obj,
+                    Mode::Class, body_idx,     {}};
 
-                emit_local_binding_prologue(class_ctx);
-                codegen_node(class_ctx, body_idx);
-                class_ctx.code_obj->emit_opcode(source_offset,
-                                                Bytecode::BuildClass);
-                class_ctx.code_obj->finalize(class_ctx.max_temporary_reg);
+                class_builder.run_class_body(source_offset, body_idx);
             }
 
             uint32_t body_constant_idx =
-                ctx.code_obj->allocate_constant(Value::from_oop(class_obj));
+                code_obj->allocate_constant(Value::from_oop(class_obj));
             AstChildren bases = av.children[bases_idx];
             uint32_t name_constant_idx =
-                ctx.code_obj->allocate_constant(av.constants[node_idx]);
-            ctx.code_obj->emit_opcode_constant_idx(
+                code_obj->allocate_constant(av.constants[node_idx]);
+            code_obj->emit_opcode_constant_idx(
                 source_offset, Bytecode::LdaConstant, name_constant_idx);
-            ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          OutgoingArgReg(0));
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                      OutgoingArgReg(0));
 
-            TemporaryReg base_regs(&ctx, std::max<size_t>(bases.size(), 1));
+            TemporaryReg base_regs(this, std::max<size_t>(bases.size(), 1));
             if(bases.empty())
             {
-                uint32_t object_constant_idx = ctx.code_obj->allocate_constant(
+                uint32_t object_constant_idx = code_obj->allocate_constant(
                     Value::from_oop(active_vm()->object_class()));
-                ctx.code_obj->emit_opcode_constant_idx(
+                code_obj->emit_opcode_constant_idx(
                     source_offset, Bytecode::LdaConstant, object_constant_idx);
-                ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              base_regs);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          base_regs);
             }
             else
             {
                 for(size_t i = 0; i < bases.size(); ++i)
                 {
-                    codegen_node(ctx, bases[i]);
-                    ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                                  base_regs + i);
+                    codegen_node(bases[i]);
+                    code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                              base_regs + i);
                 }
             }
-            ctx.code_obj->emit_opcode_reg_range(
-                source_offset, Bytecode::CreateTuple, base_regs,
-                std::max<size_t>(bases.size(), 1));
-            ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          OutgoingArgReg(1));
+            code_obj->emit_opcode_reg_range(source_offset,
+                                            Bytecode::CreateTuple, base_regs,
+                                            std::max<size_t>(bases.size(), 1));
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                      OutgoingArgReg(1));
 
-            ctx.code_obj->emit_opcode_constant_idx_reg(
+            code_obj->emit_opcode_constant_idx_reg(
                 source_offset, Bytecode::CreateClass, body_constant_idx,
                 OutgoingArgReg(0));
 
-            emit_variable_store(ctx, source_offset, node_idx);
+            emit_variable_store(source_offset, node_idx);
         }
 
-        void codegen_function_call(CodegenContext &ctx, int32_t node_idx)
+        void codegen_function_call(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
@@ -1298,92 +1279,92 @@ namespace cl
             {
                 AstChildren method_children = av.children[children[0]];
                 uint8_t constant_idx =
-                    ctx.code_obj->allocate_constant(av.constants[children[0]]);
-                codegen_node(ctx, method_children[0]);
-                ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              OutgoingArgReg(0));
+                    code_obj->allocate_constant(av.constants[children[0]]);
+                codegen_node(method_children[0]);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          OutgoingArgReg(0));
 
                 for(size_t i = 0; i < args.size(); ++i)
                 {
-                    codegen_node(ctx, args[i]);
-                    ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                                  OutgoingArgReg(1 + i));
+                    codegen_node(args[i]);
+                    code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                              OutgoingArgReg(1 + i));
                 }
                 uint8_t read_cache_idx =
-                    ctx.code_obj->allocate_attribute_read_cache();
+                    code_obj->allocate_attribute_read_cache();
                 uint8_t call_cache_idx =
-                    ctx.code_obj->allocate_function_call_cache();
-                ctx.code_obj->emit_opcode_reg_constant_idx_cache_idx_argc(
+                    code_obj->allocate_function_call_cache();
+                code_obj->emit_opcode_reg_constant_idx_cache_idx_argc(
                     source_offset, Bytecode::CallMethodAttr, OutgoingArgReg(0),
                     constant_idx, read_cache_idx, call_cache_idx, args.size());
                 return;
             }
 
             // function itself
-            TemporaryReg callable_reg(&ctx);
-            codegen_node(ctx, children[0]);
-            ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          callable_reg);
+            TemporaryReg callable_reg(this);
+            codegen_node(children[0]);
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                      callable_reg);
 
             for(size_t i = 0; i < args.size(); ++i)
             {
-                codegen_node(ctx, args[i]);
-                ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              OutgoingArgReg(i));
+                codegen_node(args[i]);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          OutgoingArgReg(i));
             }
-            ctx.code_obj->emit_call_simple(source_offset, callable_reg,
-                                           OutgoingArgReg(0), args.size());
+            code_obj->emit_call_simple(source_offset, callable_reg,
+                                       OutgoingArgReg(0), args.size());
         }
 
-        void codegen_list_literal(CodegenContext &ctx, int32_t node_idx)
+        void codegen_list_literal(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
 
-            TemporaryReg regs(&ctx, std::max<size_t>(children.size(), 1));
+            TemporaryReg regs(this, std::max<size_t>(children.size(), 1));
             for(size_t i = 0; i < children.size(); ++i)
             {
-                codegen_node(ctx, children[i]);
-                ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              regs + i);
+                codegen_node(children[i]);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          regs + i);
             }
-            ctx.code_obj->emit_opcode_reg_range(
-                source_offset, Bytecode::CreateList, regs, children.size());
+            code_obj->emit_opcode_reg_range(source_offset, Bytecode::CreateList,
+                                            regs, children.size());
         }
 
-        void codegen_tuple_literal(CodegenContext &ctx, int32_t node_idx)
+        void codegen_tuple_literal(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
 
-            TemporaryReg regs(&ctx, std::max<size_t>(children.size(), 1));
+            TemporaryReg regs(this, std::max<size_t>(children.size(), 1));
             for(size_t i = 0; i < children.size(); ++i)
             {
-                codegen_node(ctx, children[i]);
-                ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              regs + i);
+                codegen_node(children[i]);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          regs + i);
             }
-            ctx.code_obj->emit_opcode_reg_range(
+            code_obj->emit_opcode_reg_range(
                 source_offset, Bytecode::CreateTuple, regs, children.size());
         }
 
-        void codegen_dict_literal(CodegenContext &ctx, int32_t node_idx)
+        void codegen_dict_literal(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
 
-            TemporaryReg regs(&ctx, std::max<size_t>(children.size(), 1));
+            TemporaryReg regs(this, std::max<size_t>(children.size(), 1));
             for(size_t i = 0; i < children.size(); ++i)
             {
-                codegen_node(ctx, children[i]);
-                ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              regs + i);
+                codegen_node(children[i]);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          regs + i);
             }
-            ctx.code_obj->emit_opcode_reg_range(
-                source_offset, Bytecode::CreateDict, regs, children.size() / 2);
+            code_obj->emit_opcode_reg_range(source_offset, Bytecode::CreateDict,
+                                            regs, children.size() / 2);
         }
 
-        void codegen_subscript_assignment(CodegenContext &ctx, int32_t node_idx)
+        void codegen_subscript_assignment(int32_t node_idx)
         {
             AstKind kind = av.kinds[node_idx];
             AstChildren children = av.children[node_idx];
@@ -1391,16 +1372,15 @@ namespace cl
             int32_t lhs_idx = children[0];
             AstChildren lhs_children = av.children[lhs_idx];
             ScopedRegister receiver_reg =
-                codegen_node_to_register(ctx, lhs_children[0]);
-            ScopedRegister key_reg =
-                codegen_node_to_register(ctx, lhs_children[1]);
+                codegen_node_to_register(lhs_children[0]);
+            ScopedRegister key_reg = codegen_node_to_register(lhs_children[1]);
 
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
-                codegen_node(ctx, children[1]);
-                ctx.code_obj->emit_opcode_reg_reg(
-                    source_offset, Bytecode::StoreSubscript, receiver_reg.reg,
-                    key_reg.reg);
+                codegen_node(children[1]);
+                code_obj->emit_opcode_reg_reg(source_offset,
+                                              Bytecode::StoreSubscript,
+                                              receiver_reg.reg, key_reg.reg);
                 return;
             }
 
@@ -1408,32 +1388,32 @@ namespace cl
             std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
                 kind.operator_kind, entry, children[1]);
 
-            ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Ldar,
-                                          key_reg.reg);
-            ctx.code_obj->emit_opcode_reg(
-                source_offset, Bytecode::LoadSubscript, receiver_reg.reg);
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Ldar,
+                                      key_reg.reg);
+            code_obj->emit_opcode_reg(source_offset, Bytecode::LoadSubscript,
+                                      receiver_reg.reg);
 
             if(immediate.has_value())
             {
-                ctx.code_obj->emit_opcode_smi(source_offset,
-                                              entry.binary_acc_smi, *immediate);
+                code_obj->emit_opcode_smi(source_offset, entry.binary_acc_smi,
+                                          *immediate);
             }
             else
             {
-                TemporaryReg lhs_value_reg(&ctx);
-                ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              lhs_value_reg);
-                codegen_node(ctx, children[1]);
-                ctx.code_obj->emit_opcode_reg(source_offset, entry.standard,
-                                              lhs_value_reg);
+                TemporaryReg lhs_value_reg(this);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          lhs_value_reg);
+                codegen_node(children[1]);
+                code_obj->emit_opcode_reg(source_offset, entry.standard,
+                                          lhs_value_reg);
             }
 
-            ctx.code_obj->emit_opcode_reg_reg(source_offset,
-                                              Bytecode::StoreSubscript,
-                                              receiver_reg.reg, key_reg.reg);
+            code_obj->emit_opcode_reg_reg(source_offset,
+                                          Bytecode::StoreSubscript,
+                                          receiver_reg.reg, key_reg.reg);
         }
 
-        void codegen_attribute_assignment(CodegenContext &ctx, int32_t node_idx)
+        void codegen_attribute_assignment(int32_t node_idx)
         {
             AstKind kind = av.kinds[node_idx];
             AstChildren children = av.children[node_idx];
@@ -1441,16 +1421,16 @@ namespace cl
             int32_t lhs_idx = children[0];
             AstChildren lhs_children = av.children[lhs_idx];
             uint8_t constant_idx =
-                ctx.code_obj->allocate_constant(av.constants[lhs_idx]);
+                code_obj->allocate_constant(av.constants[lhs_idx]);
             ScopedRegister receiver_reg =
-                codegen_node_to_register(ctx, lhs_children[0]);
+                codegen_node_to_register(lhs_children[0]);
 
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
-                codegen_node(ctx, children[1]);
+                codegen_node(children[1]);
                 uint8_t cache_idx =
-                    ctx.code_obj->allocate_attribute_mutation_cache();
-                ctx.code_obj->emit_opcode_reg_constant_idx_cache_idx(
+                    code_obj->allocate_attribute_mutation_cache();
+                code_obj->emit_opcode_reg_constant_idx_cache_idx(
                     source_offset, Bytecode::StoreAttr, receiver_reg.reg,
                     constant_idx, cache_idx);
                 return;
@@ -1460,46 +1440,43 @@ namespace cl
             std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
                 kind.operator_kind, entry, children[1]);
 
-            uint8_t load_cache_idx =
-                ctx.code_obj->allocate_attribute_read_cache();
-            ctx.code_obj->emit_opcode_reg_constant_idx_cache_idx(
+            uint8_t load_cache_idx = code_obj->allocate_attribute_read_cache();
+            code_obj->emit_opcode_reg_constant_idx_cache_idx(
                 source_offset, Bytecode::LoadAttr, receiver_reg.reg,
                 constant_idx, load_cache_idx);
 
             if(immediate.has_value())
             {
-                ctx.code_obj->emit_opcode_smi(source_offset,
-                                              entry.binary_acc_smi, *immediate);
+                code_obj->emit_opcode_smi(source_offset, entry.binary_acc_smi,
+                                          *immediate);
             }
             else
             {
-                TemporaryReg lhs_value_reg(&ctx);
-                ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              lhs_value_reg);
-                codegen_node(ctx, children[1]);
-                ctx.code_obj->emit_opcode_reg(source_offset, entry.standard,
-                                              lhs_value_reg);
+                TemporaryReg lhs_value_reg(this);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          lhs_value_reg);
+                codegen_node(children[1]);
+                code_obj->emit_opcode_reg(source_offset, entry.standard,
+                                          lhs_value_reg);
             }
 
             uint8_t store_cache_idx =
-                ctx.code_obj->allocate_attribute_mutation_cache();
-            ctx.code_obj->emit_opcode_reg_constant_idx_cache_idx(
+                code_obj->allocate_attribute_mutation_cache();
+            code_obj->emit_opcode_reg_constant_idx_cache_idx(
                 source_offset, Bytecode::StoreAttr, receiver_reg.reg,
                 constant_idx, store_cache_idx);
         }
 
-        void codegen_attribute_target_delete(CodegenContext &ctx,
-                                             uint32_t source_offset,
+        void codegen_attribute_target_delete(uint32_t source_offset,
                                              int32_t target_idx)
         {
             AstChildren target_children = av.children[target_idx];
             uint8_t constant_idx =
-                ctx.code_obj->allocate_constant(av.constants[target_idx]);
+                code_obj->allocate_constant(av.constants[target_idx]);
             ScopedRegister receiver_reg =
-                codegen_node_to_register(ctx, target_children[0]);
-            uint8_t cache_idx =
-                ctx.code_obj->allocate_attribute_mutation_cache();
-            ctx.code_obj->emit_opcode_reg_constant_idx_cache_idx(
+                codegen_node_to_register(target_children[0]);
+            uint8_t cache_idx = code_obj->allocate_attribute_mutation_cache();
+            code_obj->emit_opcode_reg_constant_idx_cache_idx(
                 source_offset, Bytecode::DelAttr, receiver_reg.reg,
                 constant_idx, cache_idx);
         }
@@ -1534,37 +1511,37 @@ namespace cl
             return uint8_t(n_args);
         }
 
-        void codegen_loop_body(CodegenContext &ctx, int32_t body_idx,
-                               JumpTarget &break_target,
+        void codegen_loop_body(int32_t body_idx, JumpTarget &break_target,
                                JumpTarget &continue_target)
         {
             loop_targets.emplace_back(&break_target, &continue_target);
-            codegen_node(ctx, body_idx);
+            codegen_node(body_idx);
             loop_targets.pop_back();
         }
 
-        void codegen_iterator_driven_for_loop(
-            CodegenContext &ctx, uint32_t source_offset, int32_t target_idx,
-            int32_t body_idx, uint32_t iterator_reg, JumpTarget &else_target,
-            JumpTarget &break_target)
+        void codegen_iterator_driven_for_loop(uint32_t source_offset,
+                                              int32_t target_idx,
+                                              int32_t body_idx,
+                                              uint32_t iterator_reg,
+                                              JumpTarget &else_target,
+                                              JumpTarget &break_target)
         {
-            JumpTarget loop_start_target(ctx.code_obj);
-            JumpTarget continue_target(ctx.code_obj);
+            JumpTarget loop_start_target(code_obj);
+            JumpTarget continue_target(code_obj);
 
             loop_start_target.resolve();
-            ctx.code_obj->emit_opcode_reg_jump(source_offset, Bytecode::ForIter,
-                                               iterator_reg, else_target);
-            emit_variable_store(ctx, source_offset, target_idx);
+            code_obj->emit_opcode_reg_jump(source_offset, Bytecode::ForIter,
+                                           iterator_reg, else_target);
+            emit_variable_store(source_offset, target_idx);
 
-            codegen_loop_body(ctx, body_idx, break_target, continue_target);
+            codegen_loop_body(body_idx, break_target, continue_target);
 
             continue_target.resolve();
-            ctx.code_obj->emit_jump(source_offset, Bytecode::Jump,
-                                    loop_start_target);
+            code_obj->emit_jump(source_offset, Bytecode::Jump,
+                                loop_start_target);
         }
 
-        void codegen_direct_range_for_loop(CodegenContext &ctx,
-                                           int32_t node_idx, int32_t target_idx,
+        void codegen_direct_range_for_loop(int32_t node_idx, int32_t target_idx,
                                            uint8_t n_args)
         {
             AstChildren children = av.children[node_idx];
@@ -1575,22 +1552,22 @@ namespace cl
             AstChildren call_children = av.children[iterable_idx];
             AstChildren args = av.children[call_children[1]];
 
-            TemporaryReg range_regs(&ctx, 1 + n_args);
-            TemporaryReg iterator_reg(&ctx);
-            JumpTarget generic_fallback_target(ctx.code_obj);
-            JumpTarget fast_loop_start_target(ctx.code_obj);
-            JumpTarget fast_continue_target(ctx.code_obj);
-            JumpTarget else_target(ctx.code_obj);
-            JumpTarget break_target(ctx.code_obj);
+            TemporaryReg range_regs(this, 1 + n_args);
+            TemporaryReg iterator_reg(this);
+            JumpTarget generic_fallback_target(code_obj);
+            JumpTarget fast_loop_start_target(code_obj);
+            JumpTarget fast_continue_target(code_obj);
+            JumpTarget else_target(code_obj);
+            JumpTarget break_target(code_obj);
 
-            codegen_node(ctx, call_children[0]);
-            ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          range_regs + 0);
+            codegen_node(call_children[0]);
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                      range_regs + 0);
             for(size_t i = 0; i < args.size(); ++i)
             {
-                codegen_node(ctx, args[i]);
-                ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              range_regs + 1 + i);
+                codegen_node(args[i]);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          range_regs + 1 + i);
             }
 
             Bytecode prep_opcode = Bytecode::Invalid;
@@ -1613,46 +1590,44 @@ namespace cl
                     assert(false);
             }
 
-            ctx.code_obj->emit_opcode_reg_jump(source_offset, prep_opcode,
-                                               range_regs,
-                                               generic_fallback_target);
+            code_obj->emit_opcode_reg_jump(source_offset, prep_opcode,
+                                           range_regs, generic_fallback_target);
 
             fast_loop_start_target.resolve();
-            ctx.code_obj->emit_opcode_reg_jump(source_offset, iter_opcode,
-                                               range_regs, else_target);
-            emit_variable_store(ctx, source_offset, target_idx);
-            codegen_loop_body(ctx, body_idx, break_target,
-                              fast_continue_target);
+            code_obj->emit_opcode_reg_jump(source_offset, iter_opcode,
+                                           range_regs, else_target);
+            emit_variable_store(source_offset, target_idx);
+            codegen_loop_body(body_idx, break_target, fast_continue_target);
             fast_continue_target.resolve();
-            ctx.code_obj->emit_jump(source_offset, Bytecode::Jump,
-                                    fast_loop_start_target);
+            code_obj->emit_jump(source_offset, Bytecode::Jump,
+                                fast_loop_start_target);
 
             generic_fallback_target.resolve();
             for(size_t i = 0; i < args.size(); ++i)
             {
-                ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Ldar,
-                                              range_regs + 1 + i);
-                ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                              OutgoingArgReg(i));
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Ldar,
+                                          range_regs + 1 + i);
+                code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                          OutgoingArgReg(i));
             }
-            ctx.code_obj->emit_call_simple(source_offset, range_regs,
-                                           OutgoingArgReg(0), n_args);
-            ctx.code_obj->emit_opcode(source_offset, Bytecode::GetIter);
-            ctx.code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
-                                          iterator_reg);
-            codegen_iterator_driven_for_loop(ctx, source_offset, target_idx,
+            code_obj->emit_call_simple(source_offset, range_regs,
+                                       OutgoingArgReg(0), n_args);
+            code_obj->emit_opcode(source_offset, Bytecode::GetIter);
+            code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                      iterator_reg);
+            codegen_iterator_driven_for_loop(source_offset, target_idx,
                                              body_idx, iterator_reg,
                                              else_target, break_target);
 
             else_target.resolve();
             if(else_idx >= 0)
             {
-                codegen_node(ctx, else_idx);
+                codegen_node(else_idx);
             }
             break_target.resolve();
         }
 
-        void codegen_node(CodegenContext &ctx, int32_t node_idx)
+        void codegen_node(int32_t node_idx)
         {
             AstKind kind = av.kinds[node_idx];
             AstChildren children = av.children[node_idx];
@@ -1661,7 +1636,7 @@ namespace cl
             {
 
                 case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
-                    emit_variable_load(ctx, source_offset, node_idx);
+                    emit_variable_load(source_offset, node_idx);
                     break;
 
                 case AstNodeKind::STATEMENT_ASSIGN:
@@ -1685,26 +1660,26 @@ namespace cl
 
                         if(lhs_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
                         {
-                            codegen_attribute_assignment(ctx, node_idx);
+                            codegen_attribute_assignment(node_idx);
                             break;
                         }
                         if(lhs_kind == AstNodeKind::EXPRESSION_BINARY)
                         {
-                            codegen_subscript_assignment(ctx, node_idx);
+                            codegen_subscript_assignment(node_idx);
                             break;
                         }
 
                         // augmented assignment
                         if(kind.operator_kind != AstOperatorKind::NOP)
                         {
-                            codegen_binary_expression(ctx, node_idx);
+                            codegen_binary_expression(node_idx);
                         }
                         else
                         {
                             // just compute the RHS
-                            codegen_node(ctx, children[1]);
+                            codegen_node(children[1]);
                         }
-                        emit_variable_store(ctx, source_offset, lhs_idx);
+                        emit_variable_store(source_offset, lhs_idx);
                         break;
                     }
 
@@ -1715,15 +1690,14 @@ namespace cl
                             av.kinds[target_idx].node_kind;
                         if(target_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
                         {
-                            codegen_attribute_target_delete(ctx, source_offset,
+                            codegen_attribute_target_delete(source_offset,
                                                             target_idx);
                             continue;
                         }
                         if(target_kind ==
                            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
-                            emit_variable_delete(ctx, source_offset,
-                                                 target_idx);
+                            emit_variable_delete(source_offset, target_idx);
                             continue;
                         }
                         throw std::runtime_error(
@@ -1736,23 +1710,22 @@ namespace cl
                     if(kind.operator_kind == AstOperatorKind::SUBSCRIPT)
                     {
                         ScopedRegister receiver_reg =
-                            codegen_node_to_register(ctx, children[0]);
-                        codegen_node(ctx, children[1]);
-                        ctx.code_obj->emit_opcode_reg(source_offset,
-                                                      Bytecode::LoadSubscript,
-                                                      receiver_reg.reg);
+                            codegen_node_to_register(children[0]);
+                        codegen_node(children[1]);
+                        code_obj->emit_opcode_reg(source_offset,
+                                                  Bytecode::LoadSubscript,
+                                                  receiver_reg.reg);
                         break;
                     }
-                    codegen_binary_expression(ctx, node_idx);
+                    codegen_binary_expression(node_idx);
                     break;
 
                 case AstNodeKind::EXPRESSION_UNARY:
                     {
                         OpTableEntry entry =
                             get_operator_entry(kind.operator_kind);
-                        codegen_node(ctx, children[0]);
-                        ctx.code_obj->emit_opcode(source_offset,
-                                                  entry.standard);
+                        codegen_node(children[0]);
+                        code_obj->emit_opcode(source_offset, entry.standard);
                         break;
                     }
                 case AstNodeKind::EXPRESSION_LITERAL:
@@ -1761,16 +1734,16 @@ namespace cl
                         switch(kind.operator_kind)
                         {
                             case AstOperatorKind::NONE:
-                                ctx.code_obj->emit_opcode(source_offset,
-                                                          Bytecode::LdaNone);
+                                code_obj->emit_opcode(source_offset,
+                                                      Bytecode::LdaNone);
                                 break;
                             case AstOperatorKind::TRUE:
-                                ctx.code_obj->emit_opcode(source_offset,
-                                                          Bytecode::LdaTrue);
+                                code_obj->emit_opcode(source_offset,
+                                                      Bytecode::LdaTrue);
                                 break;
                             case AstOperatorKind::FALSE:
-                                ctx.code_obj->emit_opcode(source_offset,
-                                                          Bytecode::LdaFalse);
+                                code_obj->emit_opcode(source_offset,
+                                                      Bytecode::LdaFalse);
                                 break;
 
                             case AstOperatorKind::NUMBER:
@@ -1779,16 +1752,15 @@ namespace cl
                                         av.constants[node_idx].as_value();
                                     if(val.is_smi8())
                                     {
-                                        ctx.code_obj->emit_opcode_smi(
+                                        code_obj->emit_opcode_smi(
                                             source_offset, Bytecode::LdaSmi,
                                             val.get_smi());
                                     }
                                     else
                                     {
                                         uint32_t constant_idx =
-                                            ctx.code_obj->allocate_constant(
-                                                val);
-                                        ctx.code_obj->emit_opcode_constant_idx(
+                                            code_obj->allocate_constant(val);
+                                        code_obj->emit_opcode_constant_idx(
                                             source_offset,
                                             Bytecode::LdaConstant,
                                             constant_idx);
@@ -1800,9 +1772,9 @@ namespace cl
                             case AstOperatorKind::STRING:
                                 {
                                     uint32_t constant_idx =
-                                        ctx.code_obj->allocate_constant(
+                                        code_obj->allocate_constant(
                                             av.constants[node_idx]);
-                                    ctx.code_obj->emit_opcode_constant_idx(
+                                    code_obj->emit_opcode_constant_idx(
                                         source_offset, Bytecode::LdaConstant,
                                         constant_idx);
                                     break;
@@ -1815,11 +1787,11 @@ namespace cl
 
                 case AstNodeKind::EXPRESSION_COMPARISON:
                     {
-                        JumpTarget skip_target(ctx.code_obj);
+                        JumpTarget skip_target(code_obj);
 
                         ScopedRegister recv_reg =
-                            codegen_node_to_register(ctx, children[0]);
-                        TemporaryReg prod_reg(&ctx);
+                            codegen_node_to_register(children[0]);
+                        TemporaryReg prod_reg(this);
                         int32_t recv = recv_reg.reg;
                         int32_t prod = prod_reg;
                         for(size_t i = 1; i < children.size(); ++i)
@@ -1828,14 +1800,14 @@ namespace cl
                             if(last)
                                 prod = -1;
 
-                            codegen_comparison_fragment(ctx, children[i], recv,
+                            codegen_comparison_fragment(children[i], recv,
                                                         prod);
 
                             if(!last)
                             {
-                                ctx.code_obj->emit_jump(source_offset,
-                                                        Bytecode::JumpIfFalse,
-                                                        skip_target);
+                                code_obj->emit_jump(source_offset,
+                                                    Bytecode::JumpIfFalse,
+                                                    skip_target);
                             }
                             std::swap(recv, prod);
                         }
@@ -1846,42 +1818,42 @@ namespace cl
 
                 case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
                     {
-                        JumpTarget skip_target(ctx.code_obj);
-                        codegen_node(ctx, children[0]);
+                        JumpTarget skip_target(code_obj);
+                        codegen_node(children[0]);
                         switch(kind.operator_kind)
                         {
                             case AstOperatorKind::SHORTCUTTING_AND:
-                                ctx.code_obj->emit_jump(source_offset,
-                                                        Bytecode::JumpIfFalse,
-                                                        skip_target);
+                                code_obj->emit_jump(source_offset,
+                                                    Bytecode::JumpIfFalse,
+                                                    skip_target);
                                 break;
                             case AstOperatorKind::SHORTCUTTING_OR:
-                                ctx.code_obj->emit_jump(source_offset,
-                                                        Bytecode::JumpIfTrue,
-                                                        skip_target);
+                                code_obj->emit_jump(source_offset,
+                                                    Bytecode::JumpIfTrue,
+                                                    skip_target);
                                 break;
                             default:
                                 assert(0);
                                 break;
                         }
-                        codegen_node(ctx, children[1]);
+                        codegen_node(children[1]);
                         skip_target.resolve();
                         break;
                     }
 
                 case AstNodeKind::EXPRESSION_CALL:
-                    codegen_function_call(ctx, node_idx);
+                    codegen_function_call(node_idx);
                     break;
 
                 case AstNodeKind::EXPRESSION_ATTRIBUTE:
                     {
                         ScopedRegister receiver_reg =
-                            codegen_node_to_register(ctx, children[0]);
-                        uint8_t constant_idx = ctx.code_obj->allocate_constant(
-                            av.constants[node_idx]);
+                            codegen_node_to_register(children[0]);
+                        uint8_t constant_idx =
+                            code_obj->allocate_constant(av.constants[node_idx]);
                         uint8_t cache_idx =
-                            ctx.code_obj->allocate_attribute_read_cache();
-                        ctx.code_obj->emit_opcode_reg_constant_idx_cache_idx(
+                            code_obj->allocate_attribute_read_cache();
+                        code_obj->emit_opcode_reg_constant_idx_cache_idx(
                             source_offset, Bytecode::LoadAttr, receiver_reg.reg,
                             constant_idx, cache_idx);
                         break;
@@ -1891,38 +1863,37 @@ namespace cl
                 case AstNodeKind::STATEMENT_EXPRESSION:
                     for(int32_t ch_idx: children)
                     {
-                        codegen_node(ctx, ch_idx);
+                        codegen_node(ch_idx);
                     }
                     break;
 
                 case AstNodeKind::STATEMENT_IF:
                     {
-                        JumpTarget done_target(ctx.code_obj);
+                        JumpTarget done_target(code_obj);
 
                         for(size_t i = 0; i < children.size() - 1; i += 2)
                         {
-                            JumpTarget next_target(ctx.code_obj);
+                            JumpTarget next_target(code_obj);
                             codegen_node(
-                                ctx,
                                 children[i + 0]);  // condition, initial check
-                            ctx.code_obj->emit_jump(source_offset,
-                                                    Bytecode::JumpIfFalse,
-                                                    next_target);
-                            codegen_node(ctx, children[i + 1]);  // then
+                            code_obj->emit_jump(source_offset,
+                                                Bytecode::JumpIfFalse,
+                                                next_target);
+                            codegen_node(children[i + 1]);  // then
 
                             if(i + 2 != children.size())
                             {
                                 // if we have more to emit, we have to generate
                                 // a jump to the done target. otherwise, we'll
                                 // just fall through
-                                ctx.code_obj->emit_jump(
+                                code_obj->emit_jump(
                                     source_offset, Bytecode::Jump, done_target);
                             }
                             next_target.resolve();
                         }
                         if(children.size() & 1)  // odd -> else
                         {
-                            codegen_node(ctx, children.back());  // else
+                            codegen_node(children.back());  // else
                         }
                         done_target.resolve();
 
@@ -1931,33 +1902,30 @@ namespace cl
 
                 case AstNodeKind::STATEMENT_WHILE:
                     {
-                        JumpTarget loop_start_target(ctx.code_obj);
-                        JumpTarget else_target(ctx.code_obj);
-                        JumpTarget break_target(ctx.code_obj);
-                        JumpTarget continue_target(ctx.code_obj);
-                        codegen_node(ctx,
-                                     children[0]);  // condition, initial check
-                        ctx.code_obj->emit_jump(
-                            source_offset, Bytecode::JumpIfFalse, else_target);
+                        JumpTarget loop_start_target(code_obj);
+                        JumpTarget else_target(code_obj);
+                        JumpTarget break_target(code_obj);
+                        JumpTarget continue_target(code_obj);
+                        codegen_node(children[0]);  // condition, initial check
+                        code_obj->emit_jump(source_offset,
+                                            Bytecode::JumpIfFalse, else_target);
 
                         loop_start_target.resolve();
 
                         loop_targets.emplace_back(&break_target,
                                                   &continue_target);
-                        codegen_node(ctx, children[1]);  // body
+                        codegen_node(children[1]);  // body
                         loop_targets.pop_back();
 
                         continue_target.resolve();
                         codegen_node(
-                            ctx, children[0]);  // condition, non-initial check
-                        ctx.code_obj->emit_jump(source_offset,
-                                                Bytecode::JumpIfTrue,
-                                                loop_start_target);
+                            children[0]);  // condition, non-initial check
+                        code_obj->emit_jump(source_offset, Bytecode::JumpIfTrue,
+                                            loop_start_target);
                         else_target.resolve();
                         if(children.size() == 3)
                         {
-                            codegen_node(ctx,
-                                         children[2]);  // else clause of a loop
+                            codegen_node(children[2]);  // else clause of a loop
                         }
                         break_target.resolve();
                         break;
@@ -1970,8 +1938,8 @@ namespace cl
                             direct_range_call_arity(children[1]);
                         if(range_call_arity.has_value())
                         {
-                            codegen_direct_range_for_loop(
-                                ctx, node_idx, target_idx, *range_call_arity);
+                            codegen_direct_range_for_loop(node_idx, target_idx,
+                                                          *range_call_arity);
                             break;
                         }
 
@@ -1979,22 +1947,21 @@ namespace cl
                         int32_t body_idx = children[2];
                         int32_t else_idx =
                             children.size() == 4 ? children[3] : -1;
-                        TemporaryReg iterator_reg(&ctx);
-                        JumpTarget else_target(ctx.code_obj);
-                        JumpTarget break_target(ctx.code_obj);
+                        TemporaryReg iterator_reg(this);
+                        JumpTarget else_target(code_obj);
+                        JumpTarget break_target(code_obj);
 
-                        codegen_node(ctx, iterable_idx);
-                        ctx.code_obj->emit_opcode(source_offset,
-                                                  Bytecode::GetIter);
-                        ctx.code_obj->emit_opcode_reg(
-                            source_offset, Bytecode::Star, iterator_reg);
+                        codegen_node(iterable_idx);
+                        code_obj->emit_opcode(source_offset, Bytecode::GetIter);
+                        code_obj->emit_opcode_reg(source_offset, Bytecode::Star,
+                                                  iterator_reg);
                         codegen_iterator_driven_for_loop(
-                            ctx, source_offset, target_idx, body_idx,
-                            iterator_reg, else_target, break_target);
+                            source_offset, target_idx, body_idx, iterator_reg,
+                            else_target, break_target);
                         else_target.resolve();
                         if(else_idx >= 0)
                         {
-                            codegen_node(ctx, else_idx);
+                            codegen_node(else_idx);
                         }
                         break_target.resolve();
                         break;
@@ -2008,9 +1975,8 @@ namespace cl
                     }
                     else
                     {
-                        ctx.code_obj->emit_jump(
-                            source_offset, Bytecode::Jump,
-                            *loop_targets.back().break_target);
+                        code_obj->emit_jump(source_offset, Bytecode::Jump,
+                                            *loop_targets.back().break_target);
                     }
                     break;
 
@@ -2022,28 +1988,27 @@ namespace cl
                     }
                     else
                     {
-                        ctx.code_obj->emit_jump(
+                        code_obj->emit_jump(
                             source_offset, Bytecode::Jump,
                             *loop_targets.back().continue_target);
                     }
                     break;
 
                 case AstNodeKind::STATEMENT_RETURN:
-                    if(ctx.mode() != Mode::Function)
+                    if(mode() != Mode::Function)
                     {
                         throw std::runtime_error(
                             "SyntaxError: 'return' outside function");
                     }
                     if(!children.empty())
                     {
-                        codegen_node(ctx, children[0]);
+                        codegen_node(children[0]);
                     }
                     else
                     {
-                        ctx.code_obj->emit_opcode(source_offset,
-                                                  Bytecode::LdaNone);
+                        code_obj->emit_opcode(source_offset, Bytecode::LdaNone);
                     }
-                    ctx.code_obj->emit_opcode(source_offset, Bytecode::Return);
+                    code_obj->emit_opcode(source_offset, Bytecode::Return);
                     break;
 
                 case AstNodeKind::STATEMENT_PASS:
@@ -2052,23 +2017,23 @@ namespace cl
                     break;
 
                 case AstNodeKind::STATEMENT_FUNCTION_DEF:
-                    codegen_function_definition(ctx, node_idx);
+                    codegen_function_definition(node_idx);
                     break;
 
                 case AstNodeKind::STATEMENT_CLASS_DEF:
-                    codegen_class_definition(ctx, node_idx);
+                    codegen_class_definition(node_idx);
                     break;
 
                 case AstNodeKind::EXPRESSION_TUPLE:
-                    codegen_tuple_literal(ctx, node_idx);
+                    codegen_tuple_literal(node_idx);
                     break;
 
                 case AstNodeKind::EXPRESSION_LIST:
-                    codegen_list_literal(ctx, node_idx);
+                    codegen_list_literal(node_idx);
                     break;
 
                 case AstNodeKind::EXPRESSION_DICT:
-                    codegen_dict_literal(ctx, node_idx);
+                    codegen_dict_literal(node_idx);
                     break;
 
                 case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
@@ -2085,18 +2050,64 @@ namespace cl
         }
     };
 
-    CodeObject *Codegen::codegen()
+    CodeObject *CodeObjectBuilder::run_module()
     {
-        CodeObject *module_obj = make_code_obj(Mode::Module);
-        ScopeAnalysis analysis =
-            analyze_code_object(module_obj, av.root_node, Mode::Module);
-        CodegenContext ctx{module_obj, &analysis, FrameHeaderSize,
-                           FrameHeaderSize};
-        codegen_node(ctx, av.root_node);
-        ctx.code_obj->emit_opcode(0, Bytecode::Halt);
-        ctx.code_obj->finalize(ctx.max_temporary_reg);
-        return incref(ctx.code_obj);
+        codegen_node(body_idx);
+        code_obj->emit_opcode(0, Bytecode::Halt);
+        code_obj->finalize(max_temporary_reg);
+        return incref(code_obj);
     }
+
+    void CodeObjectBuilder::run_function_body(uint32_t source_offset,
+                                              int32_t body_idx)
+    {
+        emit_local_binding_prologue();
+        codegen_node(body_idx);
+        // finally, emit return None just in case. as a future optimisation, we
+        // could check that all return paths already have a return statement
+        code_obj->emit_opcode(source_offset, Bytecode::LdaNone);
+        code_obj->emit_opcode(source_offset, Bytecode::Return);
+        code_obj->finalize(max_temporary_reg);
+    }
+
+    void CodeObjectBuilder::run_class_body(uint32_t source_offset,
+                                           int32_t body_idx)
+    {
+        emit_local_binding_prologue();
+        codegen_node(body_idx);
+        code_obj->emit_opcode(source_offset, Bytecode::BuildClass);
+        code_obj->finalize(max_temporary_reg);
+    }
+
+    class Codegen
+    {
+    public:
+        Codegen(const AstVector &_av)
+            : av(_av), module_scope(make_internal_raw<Scope>(
+                           active_vm()->get_builtin_scope().extract())),
+              module_name(interned_string(L"<module>"))
+        {
+        }
+
+        CodeObject *codegen()
+        {
+            CodeObject *module_obj = make_object_raw<CodeObject>(
+                av.compilation_unit, module_scope, nullptr, module_name);
+            CodeObjectBuilder builder{av,
+                                      module_scope,
+                                      module_name,
+                                      module_obj,
+                                      CodeObjectBuilder::Mode::Module,
+                                      av.root_node,
+                                      {}};
+            return builder.run_module();
+        }
+
+    private:
+        const AstVector &av;
+        Scope *module_scope;
+        TValue<String> module_name;
+    };
 
     CodeObject *generate_code(const AstVector &av)
     {
