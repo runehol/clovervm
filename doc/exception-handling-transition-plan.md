@@ -61,17 +61,25 @@ This file tracks the implementation sequence we can check off as it lands.
 Deliverable: one canonical frame metadata area, with no Python exception
 semantic changes.
 
-## Stage 1: Return Target Abstraction
+## Stage 1: Frame Header Contract And Accessors
 
-- [ ] Introduce helper types/functions for writing and reading return targets.
-- [ ] Route frame setup through those helpers instead of open-coding physical
-      frame slots.
-- [ ] Route normal return restoration through those helpers.
-- [ ] Keep the internal representation equivalent to the current
-      `CodeObject* + pc` shape until tagging is needed.
+- [x] Document the current frame header slots as part of the runtime contract:
+      `fp[0]` is previous `fp`, `fp[1]` is reserved for native pc / future
+      compiled-frame metadata, `fp[2]` is the return `CodeObject`, and `fp[3]`
+      is the return pc.
+- [x] Add named constants or small accessors for these slots so interpreter code
+      stops open-coding magic indices.
+- [x] Route frame setup and normal return restoration through those constants or
+      accessors.
+- [ ] Make the GC/root-scanning contract consume the documented slot meanings
+      directly.
+- [x] Do not use `fp[1]` for exception transport. It is reserved for future
+      native pc state.
+- [x] Do not introduce pointer tagging or opaque encoded return-target objects
+      in this stage.
 
-Deliverable: later exception work can change return-target representation in one
-place rather than across every call path.
+Deliverable: the frame header remains easy for stack scanning and debugging to
+interpret, while ordinary setup/return code has one documented slot contract.
 
 ## Stage 2: Pending Exception State
 
@@ -108,9 +116,9 @@ Deliverable: the VM has one canonical location for a Python exception in flight.
 Deliverable: pending exceptions can cross Clover/Python frame boundaries without
 using C++ unwinding through the interpreter dispatch loop.
 
-## Stage 4: Tagged Return Modes
+## Stage 4: Exceptional Return Modes
 
-- [ ] Extend the return-target abstraction with:
+- [ ] Decide how exceptional frame exit records or recovers the return mode:
 
 ```text
 BytecodeViaUnwind
@@ -118,8 +126,14 @@ BytecodeViaResult
 Native
 ```
 
-- [ ] Encode the return-target kind in frame metadata, using pointer tagging or
-      another representation that preserves raw bytecode pcs.
+- [ ] Keep the representation decision explicit. `fp[1]` is reserved for native
+      pc / compiled-frame metadata, and pointer tagging of the return
+      `CodeObject` is not assumed.
+- [ ] Evaluate representation options before committing to one:
+  - [ ] side metadata keyed by frame or call site
+  - [ ] call-site or `CodeObject` metadata that can recover the return mode
+  - [ ] a separate non-`Value` control stack for exception-return metadata
+  - [ ] another explicit representation that preserves the scanner contract
 - [ ] Make ordinary function calls install `BytecodeViaUnwind`.
 - [ ] Make protocol calls able to install `BytecodeViaResult` with a saved
       continuation pc.
@@ -128,7 +142,7 @@ Native
 
 Deliverable: exceptional exits can either keep unwinding, return
 `Value::exception_marker()` to a bytecode continuation, or convert to a native
-sentinel.
+sentinel, without making the frame header opaque to stack scanning.
 
 ## Stage 5: Convert Selected VM Slow Errors
 
@@ -297,10 +311,10 @@ exceptions are represented by CloverVM state, not host-language unwinding.
 The first coherent milestone is stages 0 through 5:
 
 1. finish the call-frame layout refactor
-2. hide return-target physical layout behind helpers
+2. document frame-header slots and route access through named constants/helpers
 3. add pending exception state
 4. add exceptional frame exit
-5. add tagged return modes
+5. add exceptional return modes
 6. convert a few selected interpreter slow errors
 
 That milestone gives the VM an exception transport backbone without also taking

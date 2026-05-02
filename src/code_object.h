@@ -94,10 +94,16 @@ namespace cl
         uint32_t slot_offset;
     };
 
+    static constexpr int32_t FrameHeaderPreviousFpOffset = 0;
+    static constexpr int32_t FrameHeaderCompiledReturnPcOffset = 1;
+    static constexpr int32_t FrameHeaderReturnCodeObjectOffset = 2;
+    static constexpr int32_t FrameHeaderReturnPcOffset = 3;
     static constexpr int32_t FrameHeaderSizeAboveFp = 4;
     static constexpr int32_t FrameHeaderSizeBelowFp = 0;
     static constexpr int32_t FrameHeaderSize =
         FrameHeaderSizeAboveFp + FrameHeaderSizeBelowFp;
+    static_assert(FrameHeaderSizeAboveFp ==
+                  FrameHeaderReturnPcOffset - FrameHeaderPreviousFpOffset + 1);
 
     constexpr uint32_t round_up_to_abi_alignment(uint32_t value)
     {

@@ -147,18 +147,20 @@ namespace cl
     {
         // these aren't really values. we're just going to whack them in and
         // ask the refcounter to ignore them.
-        new_fp[0].as.ptr = (Object *)previous_fp;
-        new_fp[2] = Value::from_oop(return_code_object);
-        new_fp[3].as.ptr = (Object *)return_pc;
+        new_fp[FrameHeaderPreviousFpOffset].as.ptr = (Object *)previous_fp;
+        new_fp[FrameHeaderReturnCodeObjectOffset] =
+            Value::from_oop(return_code_object);
+        new_fp[FrameHeaderReturnPcOffset].as.ptr = (Object *)return_pc;
     }
 
     static ALWAYSINLINE void restore_frame_header(Value *&fp,
                                                   const uint8_t *&pc,
                                                   CodeObject *&code_object)
     {
-        pc = (const uint8_t *)fp[3].as.ptr;
-        code_object = fp[2].get_ptr<CodeObject>();
-        fp = (Value *)fp[0].as.ptr;
+        pc = (const uint8_t *)fp[FrameHeaderReturnPcOffset].as.ptr;
+        code_object =
+            fp[FrameHeaderReturnCodeObjectOffset].get_ptr<CodeObject>();
+        fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
     }
 
     static void initialize_class_body_frame(Value *fp, CodeObject *body_code)
