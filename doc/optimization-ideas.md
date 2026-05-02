@@ -55,10 +55,10 @@ because they are ordinary `Function` objects. A later `NativeThunkExactFrame`
 plan could recognize tiny `CallNativeN; Return` code objects and jump to a
 slimmer adapter when benchmarks show that the extra inline code pays for itself.
 
-Future Python call features such as default arguments, keyword arguments,
-`*args`, and `**kwargs` should extend the plan model instead of turning
-`CallSimple` into one generic mega-handler. For example, later plans could
-describe how many defaults to fill or whether argument normalization is needed.
+Python call features should extend the plan model instead of turning
+`CallSimple` into one generic mega-handler. Defaults and `*args` already flow
+through call adaptation; keyword arguments and `**kwargs` should add their own
+normalization/adaptation plans rather than becoming an unstructured slow path.
 
 ## CallGlobalSimple Macro Opcode
 

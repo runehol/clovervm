@@ -18,7 +18,7 @@ The important completed pieces are:
 - VM-specific builtin class objects exist for the current Python-visible native
   layouts, and `NativeLayoutId` has replaced the old static `Klass` type
   identity.
-- Attribute lookup returns shared read/write descriptor records and executable
+- Attribute lookup and mutation return shared descriptor records and executable
   plans.
 - `CallMethodAttr` replaced the old method lookup/call split for direct method
   calls, with receiver and explicit arguments in one contiguous register span.
@@ -47,10 +47,10 @@ Relevant code:
 
 ## Current Attribute Pipeline
 
-Attribute lookup is split into two levels:
+Attribute lookup and mutation are split into two levels:
 
 1. **Resolution** returns an `AttributeReadDescriptor` or
-   `AttributeWriteDescriptor`.
+   mutation descriptor.
 2. **Execution** runs the descriptor's successful plan against the current
    receiver.
 
@@ -69,9 +69,9 @@ Read descriptors currently cover:
 - descriptor get classification as `DataDescriptorGet` or
   `NonDataDescriptorGet`
 
-Write descriptors currently cover existing-slot writes. A missing write that
-adds a new receiver-local property is deliberately not represented as a
-cacheable write plan, because the add immediately changes the receiver Shape.
+Mutation descriptors currently cover cacheable existing-slot writes and
+deletes. Missing writes that add a new receiver-local property use explicit
+mutation plans because the add immediately changes the receiver Shape.
 
 Descriptor `__get__`, `__set__`, and `__delete__` invocation is still surfaced
 to the interpreter rather than performed inside lookup helpers. That boundary
@@ -103,20 +103,20 @@ resolved value or descriptor behavior.
 
 ## Inline Cache State
 
-`CodeObject` owns separate read and write cache arrays:
+`CodeObject` owns separate read and mutation cache arrays:
 
 ```cpp
 std::vector<AttributeReadInlineCache> attribute_read_caches;
-std::vector<AttributeWriteInlineCache> attribute_write_caches;
+std::vector<AttributeMutationInlineCache> attribute_mutation_caches;
 ```
 
-Read caches are used by `LoadAttr` and `CallMethodAttr`; write caches are used
-by `StoreAttr`.
+Read caches are used by `LoadAttr` and `CallMethodAttr`; mutation caches are
+used by `StoreAttr` and `DelAttr`.
 
 Each cache entry stores:
 
 - `receiver_shape`
-- the executable read or write plan
+- the executable read or mutation plan
 
 The cache hit test is:
 
@@ -211,7 +211,7 @@ Remaining work:
 - keep shaving cache-hit instruction count in `interpreter.cpp`
 - add descriptor execution only through cold opcode paths or carefully factored
   interpreter dispatch
-- decide whether read/write cache structures can share more representation
+- decide whether read/mutation cache structures can share more representation
 - keep `CallMethodAttr` lowering aligned with the same read-plan cache model
 - add codegen/JIT-facing tests once specialization decisions become visible
 

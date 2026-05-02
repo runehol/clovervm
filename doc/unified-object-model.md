@@ -845,16 +845,17 @@ the constant table:
 
 ```cpp
 std::vector<AttributeReadInlineCache> attribute_read_caches;
-std::vector<AttributeWriteInlineCache> attribute_write_caches;
+std::vector<AttributeMutationInlineCache> attribute_mutation_caches;
 ```
 
-Load and method-call bytecodes use the read cache array. Store bytecodes use the
-write cache array. Each cache entry is derived from a cacheable plan and records:
+Load and method-call bytecodes use the read cache array. Store and delete
+bytecodes use the mutation cache array. Each cache entry is derived from a
+cacheable plan and records:
 
 | Field | Meaning |
 |---|---|
 | `receiver_shape` | guards receiver layout |
-| `plan` | the successful read or write plan to execute on a cache hit |
+| `plan` | the successful read or mutation plan to execute on a cache hit |
 
 For read caches, the plan's path says which attribute algorithm was specialized. This is
 important because `InstanceAttribute` and `ClassAttribute` search

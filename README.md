@@ -12,10 +12,15 @@ and some runtime behavior is intentionally narrow.
 - Module-style execution of expressions and simple statement sequences.
 - Integer, boolean, and `None` values.
 - Names, assignment, and augmented assignment such as `+=`.
-- Attribute access and assignment with `obj.name` and `obj.name = value`.
-- Function definitions, parameter passing, calls, recursion, and `return`.
+- Attribute access, assignment, and deletion with `obj.name`,
+  `obj.name = value`, and `del obj.name`.
+- `del` for global and local variables, attributes, list items, and dictionary
+  items.
+- Function definitions, positional parameters, default values, `*args`, calls,
+  recursion, and `return`.
 - Class definitions with executable class bodies and method definitions.
-- Basic instance creation with `Cls()`.
+- Instance creation with ordinary `__init__` calls, including positional
+  arguments, default values, and `*args`.
 - Direct method-call syntax such as `obj.method(...)`.
 - `pass`.
 - `if` / `elif` / `else` statements.
@@ -28,7 +33,8 @@ and some runtime behavior is intentionally narrow.
 - Boolean operators and comparisons:
   `not`, `and`, `or`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `is`, `is not`, `in`,
   `not in`.
-- Tuple syntax in the parser for comma-separated expression lists.
+- List, tuple, and dictionary literals, plus load/store/delete subscript syntax
+  for the currently implemented list and dictionary cases.
 - Tokenization for names, indentation-sensitive blocks, and Python-style short
   string literals with single or double quotes, escape sequences, and `r` / `u`
   prefixes (no triple-quoted strings yet).
@@ -38,12 +44,14 @@ and some runtime behavior is intentionally narrow.
 ## Known limitations
 
 - Much of Python is not implemented yet, including `import`, `try`, `with`,
-  `global`, `nonlocal`, `del`, and `yield`.
+  `global` declarations, `nonlocal`, and `yield`.
 - Class support is still intentionally narrow:
-  no inheritance semantics yet, no `__init__` calls during instantiation, no
-  metaclass machinery, and no escaping bound-method objects.
-- Assignment is currently much narrower than Python. In practice, codegen only
-  supports simple variable targets cleanly.
+  inheritance metadata exists and direct method calls work, but full inheritance
+  semantics, custom `__new__`, metaclass machinery, and escaping bound-method
+  objects are still incomplete.
+- Assignment targets are still much narrower than Python. Simple variables,
+  attributes, and subscripts are supported; destructuring and other complex
+  targets are not.
 - String support still does not include triple-quoted literals, bytes literals,
   f-strings, or implicit literal concatenation.
 - Arithmetic currently focuses on tagged small integers. Overflow and several
