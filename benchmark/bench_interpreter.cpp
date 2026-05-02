@@ -342,6 +342,21 @@ namespace
         return std::make_unique<Program>(relative_path, n);
     }
 
+    void verify_benchmark_result(const char *relative_path, int64_t n,
+                                 int64_t expected, int64_t actual)
+    {
+        if(actual == expected)
+        {
+            return;
+        }
+
+        throw std::runtime_error(std::string("benchmark produced unexpected "
+                                             "result for ") +
+                                 relative_path + "/" + std::to_string(n) +
+                                 ": expected " + std::to_string(expected) +
+                                 ", got " + std::to_string(actual));
+    }
+
     double measure_python_items_per_second(const char *relative_path, int64_t n,
                                            int64_t expected,
                                            int64_t items_per_iteration)
@@ -356,10 +371,7 @@ namespace
         }
 
         PythonSubprocess program(relative_path, n);
-        if(program.run() != expected)
-        {
-            throw std::runtime_error("benchmark produced unexpected result");
-        }
+        verify_benchmark_result(relative_path, n, expected, program.run());
 
         const int64_t batch_size =
             std::max<int64_t>(1, 1000000 / items_per_iteration);
@@ -368,11 +380,7 @@ namespace
         while(total_seconds < 0.1)
         {
             auto [result, elapsed_seconds] = program.run_batch(batch_size);
-            if(result != expected)
-            {
-                throw std::runtime_error(
-                    "benchmark produced unexpected result");
-            }
+            verify_benchmark_result(relative_path, n, expected, result);
             total_items += batch_size * items_per_iteration;
             total_seconds += elapsed_seconds;
         }
@@ -397,21 +405,14 @@ namespace
         }
 
         Program program(relative_path, n);
-        if(program.run() != expected)
-        {
-            throw std::runtime_error("benchmark produced unexpected result");
-        }
+        verify_benchmark_result(relative_path, n, expected, program.run());
 
         int64_t total_items = 0;
         auto start = std::chrono::steady_clock::now();
         auto now = start;
         while(std::chrono::duration<double>(now - start).count() < 0.1)
         {
-            if(program.run() != expected)
-            {
-                throw std::runtime_error(
-                    "benchmark produced unexpected result");
-            }
+            verify_benchmark_result(relative_path, n, expected, program.run());
             total_items += items_per_iteration;
             now = std::chrono::steady_clock::now();
         }
@@ -440,37 +441,34 @@ namespace
     void run_benchmark_case(benchmark::State &state, const char *relative_path,
                             int64_t n)
     {
-        BenchmarkCase benchmark_case = get_benchmark_case(relative_path);
-        int64_t expected = benchmark_case.run(n);
-        int64_t items_per_iteration = benchmark_case.items(n);
-
-        std::unique_ptr<Program> program;
         try
         {
+            BenchmarkCase benchmark_case = get_benchmark_case(relative_path);
+            int64_t expected = benchmark_case.run(n);
+            int64_t items_per_iteration = benchmark_case.items(n);
+
+            std::unique_ptr<Program> program;
             program = make_program<Program>(relative_path, n);
+
+            verify_benchmark_result(relative_path, n, expected,
+                                    program->run());
+
+            for(auto _: state)
+            {
+                benchmark::DoNotOptimize(program->run());
+            }
+
+            state.SetItemsProcessed(state.iterations() * items_per_iteration);
+
+            if constexpr(std::is_same_v<Program, CloverProgram>)
+            {
+                set_comparison_counters(state, relative_path, n, expected,
+                                        items_per_iteration);
+            }
         }
         catch(const std::exception &err)
         {
             state.SkipWithError(err.what());
-            return;
-        }
-
-        if(program->run() != expected)
-        {
-            throw std::runtime_error("benchmark produced unexpected result");
-        }
-
-        for(auto _: state)
-        {
-            benchmark::DoNotOptimize(program->run());
-        }
-
-        state.SetItemsProcessed(state.iterations() * items_per_iteration);
-
-        if constexpr(std::is_same_v<Program, CloverProgram>)
-        {
-            set_comparison_counters(state, relative_path, n, expected,
-                                    items_per_iteration);
         }
     }
 }  // namespace

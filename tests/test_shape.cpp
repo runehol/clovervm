@@ -1024,7 +1024,7 @@ TEST(ClassObject,
 }
 
 TEST(ClassObject,
-     NewMroShapeAndContentsValidityCellReusesInvalidBaseContentsAttachmentSlot)
+     NewMroShapeAndContentsValidityCellReusesNearFrontBaseContentsAttachment)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -1056,6 +1056,10 @@ TEST(ClassObject,
     EXPECT_NE(first_cell, second_cell);
     EXPECT_TRUE(second_cell->is_valid());
     EXPECT_EQ(1u, base->attached_mro_shape_and_contents_validity_cell_count());
+
+    EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(2)));
+    EXPECT_FALSE(second_cell->is_valid());
+    EXPECT_EQ(0u, base->attached_mro_shape_and_contents_validity_cell_count());
 }
 
 TEST(ClassObject,

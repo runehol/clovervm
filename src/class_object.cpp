@@ -13,6 +13,8 @@
 
 namespace cl
 {
+    static constexpr size_t kMaxAttachedValidityCellReuseScan = 8;
+
     static std::deque<ClassObject *> class_deque_from_tuple(const Tuple *tuple)
     {
         std::vector<ClassObject *> vector =
@@ -475,7 +477,9 @@ namespace cl
                 ? attached_mro_shape_validity_cells
                 : attached_mro_shape_and_contents_validity_cells;
 
-        for(size_t idx = 0; idx < attached_cells.size(); ++idx)
+        size_t reuse_scan_count =
+            std::min(attached_cells.size(), kMaxAttachedValidityCellReuseScan);
+        for(size_t idx = 0; idx < reuse_scan_count; ++idx)
         {
             ValidityCell *attached_cell = attached_cells[idx];
             if(!attached_cell->is_valid())
