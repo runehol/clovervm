@@ -127,7 +127,7 @@ TEST(Codegen, function_multiple_parameters)
                            "   19 Star a1\n"
                            "   21 LdaSmi 3\n"
                            "   23 Star a2\n"
-                           "   25 CallSimple r0, a0a2, call_ic[0]\n"
+                           "   25 CallSimple r0, {a0..a2}, call_ic[0]\n"
                            "   30 Halt\n"
                            "Constant 0: Code object:\n"
                            "    0 Ldar p1\n"
@@ -153,7 +153,7 @@ TEST(Codegen, function_defaults_use_create_function_with_defaults)
     std::string expected = "Code object:\n"
                            "    0 LdaSmi 2\n"
                            "    2 Star0\n"
-                           "    3 CreateTuple r0, 1\n"
+                           "    3 CreateTuple {r0:1}\n"
                            "    6 Star1\n"
                            "    7 CreateFunctionWithDefaults c[0], r1\n"
                            "   10 StaGlobal [0]\n"
@@ -161,7 +161,7 @@ TEST(Codegen, function_defaults_use_create_function_with_defaults)
                            "   20 Star0\n"
                            "   21 LdaSmi 1\n"
                            "   23 Star a0\n"
-                           "   25 CallSimple r0, a0, call_ic[0]\n"
+                           "   25 CallSimple r0, {a0:1}, call_ic[0]\n"
                            "   30 Halt\n"
                            "Constant 0: Code object:\n"
                            "    0 Ldar p1\n"
@@ -273,7 +273,7 @@ TEST(Codegen, function_implicit_return_none)
                            "    2 StaGlobal [0]\n"
                            "    7 LdaGlobal [0]\n"
                            "   12 Star0\n"
-                           "   13 CallSimple r0, a0, 0, call_ic[0]\n"
+                           "   13 CallSimple r0, {a0:0}, call_ic[0]\n"
                            "   18 Halt\n"
                            "Constant 0: Code object:\n"
                            "    0 LdaSmi 1\n"
@@ -297,7 +297,7 @@ TEST(Codegen, class_definition_passes_hidden_name_and_bases_to_create_class)
                            "    2 Star a0\n"
                            "    4 LdaConstant c[2]\n"
                            "    6 Star0\n"
-                           "    7 CreateTuple r0, 1\n"
+                           "    7 CreateTuple {r0:1}\n"
                            "   10 Star a1\n"
                            "   12 CreateClass c[0], a0\n"
                            "   15 StaGlobal [0]\n"
@@ -437,7 +437,7 @@ TEST(Codegen, list_literal_uses_createlist_with_contiguous_register_range)
                            "    5 Star1\n"
                            "    6 LdaSmi 4\n"
                            "    8 Star2\n"
-                           "    9 CreateList r0, 3\n"
+                           "    9 CreateList {r0..r2}\n"
                            "   12 Halt\n";
     std::string actual = bytecode_str_from_file(test_case);
 
@@ -455,7 +455,7 @@ TEST(Codegen, tuple_literal_uses_createtuple_with_contiguous_register_range)
                            "    5 Star1\n"
                            "    6 LdaSmi 4\n"
                            "    8 Star2\n"
-                           "    9 CreateTuple r0, 3\n"
+                           "    9 CreateTuple {r0..r2}\n"
                            "   12 Halt\n";
     std::string actual = bytecode_str_from_file(test_case);
 
@@ -473,7 +473,7 @@ TEST(Codegen, parenthesized_tuple_literal_uses_createtuple)
                            "    5 Star1\n"
                            "    6 LdaSmi 4\n"
                            "    8 Star2\n"
-                           "    9 CreateTuple r0, 3\n"
+                           "    9 CreateTuple {r0..r2}\n"
                            "   12 Halt\n";
     std::string actual = bytecode_str_from_file(test_case);
 
@@ -485,7 +485,7 @@ TEST(Codegen, empty_tuple_literal_uses_createtuple)
     const wchar_t *test_case = L"()\n";
 
     std::string expected = "Code object:\n"
-                           "    0 CreateTuple r0, 0\n"
+                           "    0 CreateTuple {r0:0}\n"
                            "    3 Halt\n";
     std::string actual = bytecode_str_from_file(test_case);
 
@@ -505,7 +505,7 @@ TEST(Codegen, dict_literal_uses_createdict_with_contiguous_register_pairs)
                            "    8 Star2\n"
                            "    9 LdaSmi 8\n"
                            "   11 Star3\n"
-                           "   12 CreateDict r0, 2\n"
+                           "   12 CreateDict {r0..r3}\n"
                            "   15 Halt\n";
     std::string actual = bytecode_str_from_file(test_case);
 
@@ -614,7 +614,7 @@ TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
                            "   47 Jump 20\n"
                            "   50 Ldar1\n"
                            "   51 Star a0\n"
-                           "   53 CallSimple r0, a0, call_ic[0]\n"
+                           "   53 CallSimple r0, {a0:1}, call_ic[0]\n"
                            "   58 GetIter\n"
                            "   59 Star2\n"
                            "   60 ForIter r2, 90\n"
@@ -642,7 +642,7 @@ TEST(Codegen, non_direct_for_loop_still_uses_generic_iterator_bytecodes)
                            "    5 Star0\n"
                            "    6 LdaSmi 3\n"
                            "    8 Star a0\n"
-                           "   10 CallSimple r0, a0, call_ic[0]\n"
+                           "   10 CallSimple r0, {a0:1}, call_ic[0]\n"
                            "   15 StaGlobal [1]\n"
                            "   20 LdaGlobal [1]\n"
                            "   25 GetIter\n"

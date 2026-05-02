@@ -309,6 +309,33 @@ template <> struct fmt::formatter<cl::CodeObject>
     }
 
     template <typename Out>
+    void print_reg_span(Out &out, const cl::CodeObject &code_obj,
+                        int8_t first_reg, uint8_t n_regs) const
+    {
+        format_to(out, "{{");
+        print_reg(out, code_obj, first_reg);
+        if(n_regs < 2)
+        {
+            format_to(out, ":{}", n_regs);
+        }
+        else
+        {
+            format_to(out, "..");
+            print_reg(out, code_obj,
+                      static_cast<int8_t>(first_reg - n_regs + 1));
+        }
+        format_to(out, "}}");
+    }
+
+    template <typename Out>
+    void disassemble_reg_span(const cl::CodeObject &code_obj, Out &out,
+                              uint32_t pc) const
+    {
+        print_reg_span(out, code_obj, static_cast<int8_t>(code_obj.code[pc]),
+                       code_obj.code[pc + 1]);
+    }
+
+    template <typename Out>
     void disassemble_constant(const cl::CodeObject &code_obj, Out &out,
                               uint32_t pc) const
     {
@@ -552,15 +579,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                     uint32_t cache_idx_offset = pc++;
                     print_reg(out, code_obj, callable_reg);
                     format_to(out, ", ");
-                    print_reg(out, code_obj, first_arg_reg);
-                    if(n_args == 0)
-                    {
-                        format_to(out, ", 0");
-                    }
-                    else if(n_args > 1)
-                    {
-                        print_reg(out, code_obj, first_arg_reg - n_args + 1);
-                    }
+                    print_reg_span(out, code_obj, first_arg_reg, n_args);
                     format_to(out, ", ");
                     disassemble_function_call_cache(code_obj, out,
                                                     cache_idx_offset);
@@ -598,12 +617,21 @@ template <> struct fmt::formatter<cl::CodeObject>
                 pc += 2;
                 break;
 
-            case cl::Bytecode::CreateDict:
             case cl::Bytecode::CreateList:
             case cl::Bytecode::CreateTuple:
                 format_to(out, " ");
-                disassemble_reg(code_obj, out, pc++);
-                format_to(out, ", {}", code_obj.code[pc++]);
+                disassemble_reg_span(code_obj, out, pc);
+                pc += 2;
+                break;
+
+            case cl::Bytecode::CreateDict:
+                {
+                    format_to(out, " ");
+                    int8_t first_reg = static_cast<int8_t>(code_obj.code[pc++]);
+                    uint8_t n_entries = code_obj.code[pc++];
+                    print_reg_span(out, code_obj, first_reg,
+                                   static_cast<uint8_t>(n_entries * 2));
+                }
                 break;
 
             case cl::Bytecode::CreateFunction:
