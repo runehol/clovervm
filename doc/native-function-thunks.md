@@ -311,23 +311,18 @@ This suggests a staged implementation:
    interpreter fallback until the AArch64 path is stable, then decide whether
    native-only thunk code objects still need bytecode bodies.
 
-### Frame Layout Follow-Up
+### Current Frame Layout
 
-Before implementing the AArch64 bridge, consider refactoring the interpreted
-frame layout to match an AArch64/V8-style frame more closely. The current
-layout stores interpreter resume metadata below `fp`, which collides with the
-normal AArch64 prologue pattern:
+The interpreted frame layout now matches the AArch64/V8-style shape the bridge
+needs. The whole fixed header lives above or at `fp`, leaving the first slots
+below incoming `sp` available for a normal native frame record:
 
 ```asm
 stp x29, x30, [sp, #-16]!
 mov x29, sp
 ```
 
-because a native callee claims the first 16 bytes below incoming `sp` for the
-new frame record.
-
-A more future-proof Clover layout would put the whole fixed header above or at
-`fp`:
+The fixed header is:
 
 ```text
 higher addresses
@@ -347,18 +342,19 @@ fp->fp[0]                                      previous frame pointer
 lower addresses
 ```
 
-Interpreted calls can still eagerly initialize the full header for now:
+Interpreted calls eagerly initialize the interpreter-visible header:
 
 ```cpp
 new_fp[0] = old_fp;
-new_fp[1] = native_or_compiled_return_pc;
 new_fp[2] = return_code_object;
 new_fp[3] = return_pc;
 ```
 
-The important change is the order, not immediately moving prologue
-responsibility to callees. Once the layout is shifted, native/JIT entry can use
-ordinary AArch64 incoming state:
+`fp[1]` remains the LR-compatible compiled/native return PC slot. Interpreted
+bytecode calls do not currently need to populate it, but mixed-mode entry can
+write it when crossing into native/JIT code.
+
+With this layout, native/JIT entry can use ordinary AArch64 incoming state:
 
 ```text
 entry sp = new_fp + 16
