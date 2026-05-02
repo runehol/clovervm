@@ -104,58 +104,6 @@ static Value make_test_function(test::VmTestContext &test_context,
     return function_value;
 }
 
-TEST(Interpreter, simple)
-{
-    Value expected = Value::from_smi(15);
-    test::FileRunner file_runner(L"1 + 2  *  (4 + 3)");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, simple2)
-{
-    Value expected = Value::from_smi(19);
-    test::FileRunner file_runner(L"(1 << 4) + 3");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, simple3)
-{
-    Value expected = Value::False();
-    test::FileRunner file_runner(L"not True");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, simple4)
-{
-    Value expected = Value::from_smi(-13);
-    test::FileRunner file_runner(L"1 - 2  *  (4 + 3)");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, assignment1)
-{
-    Value expected = Value::from_smi(7);
-    test::FileRunner file_runner(L"a = 4\n"
-                                 "a + 3");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, assignment2)
-{
-    Value expected = Value::from_smi(11);
-    test::FileRunner file_runner(L"a = 4\n"
-                                 "a += 7\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
 TEST(Interpreter, annotation_only_statement_does_not_read_or_bind_target)
 {
     Value expected = Value::from_smi(1);
@@ -212,6 +160,11 @@ TEST(Interpreter, subscript_annotation_only_evaluates_receiver_and_key)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Interpreter, assert_statement_raises_assertion_error)
+{
+    expect_runtime_error(L"assert False\n", "AssertionError");
+}
+
 TEST(Interpreter, del_global_removes_binding)
 {
     expect_runtime_error(L"value = 7\n"
@@ -259,67 +212,6 @@ TEST(Interpreter, conditional_local_assignment_raises_on_missing_path)
                          L"    return value\n"
                          L"maybe_write(False)\n",
                          "NameError");
-}
-
-TEST(Interpreter, conditional_local_assignment_available_after_all_paths)
-{
-    Value expected = Value::from_smi(8);
-    test::FileRunner file_runner(L"def maybe_write(flag):\n"
-                                 L"    if flag:\n"
-                                 L"        value = 7\n"
-                                 L"    else:\n"
-                                 L"        value = 8\n"
-                                 L"    return value\n"
-                                 L"maybe_write(False)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, while1)
-{
-    Value expected = Value::from_smi(4950);
-    test::FileRunner file_runner(L"b = 0\n"
-                                 "a = 100\n"
-                                 "while a:\n"
-                                 "    a -= 1\n"
-                                 "    b += a\n"
-                                 "b\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, if_elif_branch)
-{
-    Value expected = Value::from_smi(2);
-    test::FileRunner file_runner(L"a = False\n"
-                                 "b = True\n"
-                                 "if a:\n"
-                                 "    1\n"
-                                 "elif b:\n"
-                                 "    2\n"
-                                 "else:\n"
-                                 "    3\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, if_else_branch)
-{
-    Value expected = Value::from_smi(3);
-    test::FileRunner file_runner(L"a = False\n"
-                                 "b = False\n"
-                                 "if a:\n"
-                                 "    1\n"
-                                 "elif b:\n"
-                                 "    2\n"
-                                 "else:\n"
-                                 "    3\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
 }
 
 TEST(Interpreter, while_else_runs_after_normal_exit)

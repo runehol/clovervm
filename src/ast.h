@@ -29,7 +29,7 @@ namespace cl
         STATEMENT_PASS,
         STATEMENT_DEL,
         // STATEMENT_YIELD,
-        // STATEMENT_ASSERT,
+        STATEMENT_ASSERT,
         STATEMENT_BREAK,
         STATEMENT_CONTINUE,
         STATEMENT_GLOBAL,
@@ -72,6 +72,7 @@ namespace cl
             case AstNodeKind::STATEMENT_RETURN:
             case AstNodeKind::STATEMENT_PASS:
             case AstNodeKind::STATEMENT_DEL:
+            case AstNodeKind::STATEMENT_ASSERT:
             case AstNodeKind::STATEMENT_BREAK:
             case AstNodeKind::STATEMENT_CONTINUE:
             case AstNodeKind::STATEMENT_GLOBAL:

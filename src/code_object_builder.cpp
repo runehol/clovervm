@@ -195,6 +195,11 @@ namespace cl
         return emit_opcode(source_offset, Bytecode::CheckInitReturnedNone);
     }
 
+    uint32_t CodeObjectBuilder::emit_assert(uint32_t source_offset)
+    {
+        return emit_opcode(source_offset, Bytecode::Assert);
+    }
+
     uint32_t
     CodeObjectBuilder::emit_create_instance_known_class(uint32_t source_offset,
                                                         uint8_t class_idx)

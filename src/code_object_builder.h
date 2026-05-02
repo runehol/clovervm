@@ -179,6 +179,7 @@ namespace cl
         uint32_t emit_get_iter(uint32_t source_offset);
         uint32_t emit_build_class(uint32_t source_offset);
         uint32_t emit_check_init_returned_none(uint32_t source_offset);
+        uint32_t emit_assert(uint32_t source_offset);
         uint32_t emit_create_instance_known_class(uint32_t source_offset,
                                                   uint8_t class_idx);
         uint32_t emit_create_function(uint32_t source_offset, uint8_t code_idx);

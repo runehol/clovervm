@@ -252,6 +252,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "BuildClass");
             case cl::Bytecode::CheckInitReturnedNone:
                 return format_to(out, "CheckInitReturnedNone");
+            case cl::Bytecode::Assert:
+                return format_to(out, "Assert");
 
             case cl::Bytecode::Jump:
                 return format_to(out, "Jump");
@@ -660,6 +662,7 @@ template <> struct fmt::formatter<cl::CodeObject>
 
             case cl::Bytecode::BuildClass:
             case cl::Bytecode::CheckInitReturnedNone:
+            case cl::Bytecode::Assert:
                 break;
 
             case cl::Bytecode::Jump:

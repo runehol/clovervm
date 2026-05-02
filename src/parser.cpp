@@ -1155,7 +1155,19 @@ namespace cl
 
         int32_t yield_stmt() { return not_implemented("yield statement"); }
 
-        int32_t assert_stmt() { return not_implemented("assert statement"); }
+        int32_t assert_stmt()
+        {
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::ASSERT);
+            AstChildren ch;
+            ch.push_back(expression());
+            if(match(Token::COMMA))
+            {
+                ch.push_back(expression());
+            }
+            return ast.emplace_back(AstNodeKind::STATEMENT_ASSERT, source_pos,
+                                    ch);
+        }
 
         int32_t break_stmt()
         {

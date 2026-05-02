@@ -1228,6 +1228,11 @@ namespace cl
                     }
                     break;
 
+                case AstNodeKind::STATEMENT_ASSERT:
+                    analyze_flow_node(target_code_obj, analysis, children[0],
+                                      state);
+                    break;
+
                 case AstNodeKind::STATEMENT_BREAK:
                 case AstNodeKind::STATEMENT_CONTINUE:
                 case AstNodeKind::STATEMENT_PASS:
@@ -1997,6 +2002,11 @@ namespace cl
                             "We don't support del targets except variables and "
                             "attributes and subscripts yet");
                     }
+                    break;
+
+                case AstNodeKind::STATEMENT_ASSERT:
+                    codegen_node(children[0]);
+                    code_obj->emit_assert(source_offset);
                     break;
 
                 case AstNodeKind::EXPRESSION_BINARY:

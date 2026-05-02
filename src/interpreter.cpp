@@ -270,6 +270,11 @@ namespace cl
             "TypeError: __init__ should return None, not a value");
     }
 
+    NOINLINE Value assertion_error(PARAMS)
+    {
+        throw std::runtime_error("AssertionError");
+    }
+
     NOINLINE static Value slow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
@@ -1626,6 +1631,16 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_assert(PARAMS)
+    {
+        START(1);
+        if(unlikely(!accumulator.is_ptr() && accumulator.is_falsy()))
+        {
+            MUSTTAIL return assertion_error(ARGS);
+        }
+        COMPLETE();
+    }
+
     NOINLINE static Value op_call_simple_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 5;
@@ -2298,6 +2313,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::BuildClass, op_build_class);
         SET_TABLE_ENTRY(Bytecode::CheckInitReturnedNone,
                         op_check_init_returned_none);
+        SET_TABLE_ENTRY(Bytecode::Assert, op_assert);
 
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
         SET_TABLE_ENTRY(Bytecode::CallNative0, op_call_native0);
