@@ -76,7 +76,7 @@ namespace cl
     struct FunctionCallInlineCache
     {
         FunctionCallInlineCacheKind kind = FunctionCallInlineCacheKind::Empty;
-        Object *guard_object = nullptr;
+        Value guard_value = Value::not_present();
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
         ValidityCell *validity_cell = nullptr;

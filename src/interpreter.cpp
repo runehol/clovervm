@@ -320,7 +320,7 @@ namespace cl
                                  FunctionCallAdaptation adaptation)
     {
         cache.kind = FunctionCallInlineCacheKind::Function;
-        cache.guard_object = fun.extract();
+        cache.guard_value = fun.as_value();
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
         cache.validity_cell = nullptr;
@@ -335,7 +335,7 @@ namespace cl
                                     FunctionCallAdaptation adaptation)
     {
         cache.kind = FunctionCallInlineCacheKind::Constructor;
-        cache.guard_object = cls;
+        cache.guard_value = Value::from_oop(cls);
         cache.function = thunk.extract();
         cache.code_object = thunk.extract()->code_object.extract();
         cache.validity_cell = lookup_cell;
@@ -347,14 +347,13 @@ namespace cl
     function_call_cache_matches(const FunctionCallInlineCache &cache, Value fun,
                                 uint32_t n_args)
     {
-        if(!fun.is_ptr() || cache.n_args != n_args ||
-           cache.guard_object != fun.get_ptr<Object>())
+        if(cache.n_args != n_args || cache.guard_value != fun)
         {
             return false;
         }
         if(cache.kind == FunctionCallInlineCacheKind::Function)
         {
-            return cache.function == fun.get_ptr<Function>();
+            return true;
         }
         if(cache.kind == FunctionCallInlineCacheKind::Constructor)
         {
