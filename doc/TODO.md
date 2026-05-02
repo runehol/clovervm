@@ -19,15 +19,15 @@ model and first attribute inline-cache slices.
   2. implement the generic path for custom `__new__`
   3. implement or explicitly stage custom metaclass `__call__`
   4. normalize constructor failures into specific VM exceptions
-  5. use statically observed `__init__` member initialization to seed the
-     instance root Shape and default inline slot count
 
 - [ ] Execute descriptor protocol calls through interpreter-controlled dispatch.
 
   Lookup now classifies descriptors and surfaces descriptor get/set/delete work
   as descriptor plans. The next semantic step is to actually call descriptor
   `__get__`, `__set__`, and `__delete__` without hiding Python bytecode
-  execution inside lookup helpers.
+  execution inside lookup helpers. This is intentionally parked behind a real
+  VM exception story because descriptor calls need to report and propagate
+  Python-visible failures correctly.
 
 - [ ] Continue tightening attribute inline-cache hot paths.
 
@@ -44,19 +44,12 @@ model and first attribute inline-cache slices.
   slow paths should raise specific exceptions rather than collapsing to generic
   runtime failures.
 
-- [ ] Add another callable on top of the native function path.
-
-  `str.__str__`, `str.__add__`, and `range` now run through ordinary
-  `Function` objects backed by native thunk code objects. A small builtin
-  namespace callable such as `print` would validate another public builtin
-  shape, including any tuple/vector native argument convention chosen for
-  true variadic callables.
-
 - [ ] Finish the iterator protocol.
 
   `range()` currently returns a `RangeIterator` directly. Python semantics want
   `range()` to return a range object and `iter(range_obj)` to produce the
-  iterator.
+  iterator. This is exception-gated because real iterator exhaustion must be
+  represented as Python `StopIteration`.
 
 - [ ] Expand call syntax and remaining statements.
 
@@ -66,6 +59,8 @@ model and first attribute inline-cache slices.
   implemented for ordinary functions and tier-1 constructor calls. `del` is no
   longer in this bucket for the implemented simple targets: variables,
   attributes, and list/dictionary subscripts now parse, lower, and execute.
+  Keyword calls for ordinary functions are the main non-exception-gated slice
+  in this bucket.
 
 ## Object Model Follow-Ups
 

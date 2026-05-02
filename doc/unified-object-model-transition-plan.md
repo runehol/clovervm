@@ -183,7 +183,7 @@ Remaining work:
 - keep low-level native dispatch, such as call and subscript dispatch, separate
   from Python-visible type semantics
 
-### Improve Construction And Instance Layout Prediction
+### Improve Construction
 
 Class instantiation now has a tier-1 fast path for ordinary constructors. An
 eligible class lazily owns a hidden constructor thunk guarded by its existing
@@ -198,8 +198,12 @@ Remaining work:
 - implement the generic construction path for custom `__new__`
 - add the custom metaclass `__call__` story with an explicit revisioned guard
 - normalize constructor errors into specific VM exceptions
-- eventually recognize statically visible `__init__` member initialization and
-  seed the instance root Shape/default inline slot count accordingly
+
+Do not precompute a single post-constructor instance Shape from `__init__`
+stores. Different control-flow paths can assign the same attributes in
+different orders, and that order is observable through the eventual instance
+dictionary view. The executed `StoreAttr` transitions should remain the source
+of truth; ICs and the JIT can optimize observed shape paths locally.
 
 ### Tighten Cache And JIT Readiness
 

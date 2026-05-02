@@ -162,18 +162,17 @@ The first migrated methods and builtins are:
 Passing a non-string currently raises `UnimplementedError`, which is the desired
 shape for later binary-operator fallback work.
 
-Tests cover direct native thunk calls for arities 0, 1, and 2, plus the string
+Tests cover direct native thunk calls for arities 0, 1, 2, and 3, plus the string
 method cases and `range`'s defaulted three-argument native thunk.
 
 ## Remaining Work
 
-1. Migrate more fixed-arity native methods to `make_native_function()`.
-2. Design and implement the packed tuple/vector native convention for true
+1. Design and implement the packed tuple/vector native convention for true
    variadic native callables.
-3. Add native exception normalization through thunk return adapters.
-4. Add specialized interpreter or JIT fast paths for trivial native thunk code
+2. Add native exception normalization through thunk return adapters.
+3. Add specialized interpreter or JIT fast paths for trivial native thunk code
    objects when measurements justify it.
-5. Move function and native-function entry to the Clover/Python stack on
+4. Move function and native-function entry to the Clover/Python stack on
    AArch64, using assembly transition stubs to save interpreter state, switch
    the machine stack pointer, enter the target, and return through an
    interpreter-resume thunk.
