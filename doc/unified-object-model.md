@@ -988,6 +988,26 @@ because metaclass data descriptors take precedence over class-path results.
 Ordinary contents writes along the class path do not invalidate this cell;
 cached class-path reads reload from the cached storage location.
 
+Current caveat: full descriptor execution is not implemented yet, and
+class-chain read caches currently rely on the cached plan kind remaining
+semantically valid while the cached storage slot is reloaded. Before descriptor
+execution is enabled, this must be tightened. Replacing a class attribute with
+a value whose descriptor behavior differs from the previous value can change
+how the cached slot should be interpreted, for example:
+
+```python
+C.x = 1
+c.x      # cached as an ordinary class-chain slot read
+C.x = descriptor_with___get__
+c.x      # must miss or dispatch descriptor protocol, not return descriptor
+```
+
+Possible fixes include invalidating class-chain read caches on all relevant
+class contents writes, selectively invalidating when the old and new values
+have different descriptor behavior, or making the cached plan re-check the
+descriptor access kind before using the slot. This is deferred while
+descriptors are classified but not executed.
+
 Getting or creating either owned cell is responsible for maintaining the
 attachment invariant. Callers must not separately allocate a cell and then
 remember to attach it. The hot path is the inline check that returns the
