@@ -32,6 +32,27 @@ namespace cl
     class CodeObjectBuilder
     {
     public:
+        class TemporaryReg
+        {
+        public:
+            TemporaryReg(CodeObjectBuilder &_builder, uint32_t _n_regs = 1);
+
+            TemporaryReg(const TemporaryReg &) = delete;
+            TemporaryReg &operator=(const TemporaryReg &) = delete;
+
+            TemporaryReg(TemporaryReg &&other) noexcept;
+            TemporaryReg &operator=(TemporaryReg &&other) = delete;
+
+            ~TemporaryReg();
+
+            operator uint32_t() const { return reg; }
+
+        private:
+            CodeObjectBuilder *builder;
+            uint32_t n_regs;
+            uint32_t reg;
+        };
+
         CodeObjectBuilder(const CompilationUnit *compilation_unit,
                           Scope *module_scope, Scope *local_scope, Value name);
         CodeObjectBuilder(VirtualMachine *vm,
@@ -43,6 +64,8 @@ namespace cl
 
         CodeObjectBuilder(CodeObjectBuilder &&other) noexcept
             : code_obj(other.code_obj), finalized(other.finalized),
+              temporary_reg(other.temporary_reg),
+              max_temporary_reg(other.max_temporary_reg),
               outgoing_arg_relocations(
                   std::move(other.outgoing_arg_relocations))
         {
@@ -136,9 +159,6 @@ namespace cl
             return code_obj->size();
         }
 
-        uint32_t first_temporary_reg() const;
-        uint32_t reserve_local_scratch_reg();
-
         uint32_t emit_clear_local(uint32_t source_offset, uint32_t reg);
         uint32_t emit_ldar(uint32_t source_offset, uint32_t reg);
         uint32_t emit_load_local_checked(uint32_t source_offset, uint32_t reg);
@@ -217,7 +237,7 @@ namespace cl
         uint32_t allocate_constant(Value val);
         uint32_t add_native_function_target(NativeFunctionTarget target);
 
-        CodeObject *finalize(uint32_t max_temporary_reg);
+        CodeObject *finalize();
 
     private:
         friend class JumpTarget;
@@ -275,9 +295,15 @@ namespace cl
         void patch_outgoing_arg_relocations();
         void add_outgoing_arg_relocation(uint32_t operand_offset,
                                          uint32_t outgoing_slot_offset);
+        uint32_t first_temporary_reg() const;
+        void sync_temporary_reg_base();
+        uint32_t reserve_registers(uint32_t n_regs);
+        void release_registers(uint32_t reg, uint32_t n_regs);
 
         CodeObject *code_obj;
         bool finalized = false;
+        uint32_t temporary_reg = FrameHeaderSize;
+        uint32_t max_temporary_reg = FrameHeaderSize;
         struct OutgoingArgRelocation
         {
             uint32_t operand_offset;

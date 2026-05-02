@@ -40,6 +40,30 @@ namespace cl
         unresolved_relocations.clear();
     }
 
+    CodeObjectBuilder::TemporaryReg::TemporaryReg(CodeObjectBuilder &_builder,
+                                                  uint32_t _n_regs)
+        : builder(&_builder), n_regs(_n_regs),
+          reg(builder->reserve_registers(n_regs))
+    {
+    }
+
+    CodeObjectBuilder::TemporaryReg::TemporaryReg(TemporaryReg &&other) noexcept
+        : builder(other.builder), n_regs(other.n_regs), reg(other.reg)
+    {
+        other.builder = nullptr;
+        other.n_regs = 0;
+        other.reg = 0;
+    }
+
+    CodeObjectBuilder::TemporaryReg::~TemporaryReg()
+    {
+        if(builder == nullptr)
+        {
+            return;
+        }
+        builder->release_registers(reg, n_regs);
+    }
+
     CodeObjectBuilder::CodeObjectBuilder(
         const CompilationUnit *compilation_unit, Scope *module_scope,
         Scope *local_scope, Value name)
@@ -64,14 +88,6 @@ namespace cl
             return FrameHeaderSize;
         }
         return get_local_scope_ptr()->size();
-    }
-
-    uint32_t CodeObjectBuilder::reserve_local_scratch_reg()
-    {
-        assert_not_finalized();
-        uint32_t reg = first_temporary_reg();
-        get_local_scope_ptr()->reserve_empty_slots(1);
-        return reg;
     }
 
     uint32_t CodeObjectBuilder::emit_clear_local(uint32_t source_offset,
@@ -423,7 +439,7 @@ namespace cl
         return idx;
     }
 
-    CodeObject *CodeObjectBuilder::finalize(uint32_t max_temporary_reg)
+    CodeObject *CodeObjectBuilder::finalize()
     {
         assert_not_finalized();
         uint32_t local_scope_size = FrameHeaderSize;
@@ -435,6 +451,8 @@ namespace cl
             assert(named_local_and_header_slots >= FrameHeaderSize);
             code_obj->n_locals = named_local_and_header_slots - FrameHeaderSize;
         }
+        sync_temporary_reg_base();
+        assert(temporary_reg == local_scope_size);
         assert(max_temporary_reg >= local_scope_size);
         code_obj->n_temporaries = max_temporary_reg - local_scope_size;
         patch_outgoing_arg_relocations();
@@ -723,5 +741,31 @@ namespace cl
         code_obj->n_outgoing_call_slots =
             std::max(code_obj->n_outgoing_call_slots,
                      round_up_to_abi_alignment(outgoing_slot_offset + 1));
+    }
+
+    void CodeObjectBuilder::sync_temporary_reg_base()
+    {
+        uint32_t base = first_temporary_reg();
+        if(temporary_reg < base)
+        {
+            temporary_reg = base;
+        }
+        max_temporary_reg = std::max(max_temporary_reg, temporary_reg);
+    }
+
+    uint32_t CodeObjectBuilder::reserve_registers(uint32_t n_regs)
+    {
+        assert_not_finalized();
+        sync_temporary_reg_base();
+        uint32_t reg = temporary_reg;
+        temporary_reg += n_regs;
+        max_temporary_reg = std::max(max_temporary_reg, temporary_reg);
+        return reg;
+    }
+
+    void CodeObjectBuilder::release_registers(uint32_t reg, uint32_t n_regs)
+    {
+        temporary_reg -= n_regs;
+        assert(reg == temporary_reg);
     }
 }  // namespace cl

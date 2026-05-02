@@ -122,16 +122,10 @@ namespace cl
                    CodeObjectBuilder *_code_obj, Mode _mode, int32_t _body_idx,
                    AstChildren param_children)
             : av(_av), module_scope(_module_scope), code_obj(_code_obj),
-              body_idx(_body_idx), analysis(_mode, _av.size()),
-              temporary_reg(FrameHeaderSize), max_temporary_reg(FrameHeaderSize)
+              body_idx(_body_idx), analysis(_mode, _av.size())
         {
             analysis =
                 analyze_code_object(code_obj, _body_idx, _mode, param_children);
-            if(_mode != Mode::Module)
-            {
-                temporary_reg = code_obj->first_temporary_reg();
-                max_temporary_reg = temporary_reg;
-            }
         }
 
         CodeObject *run_module();
@@ -241,8 +235,6 @@ namespace cl
         CodeObjectBuilder *code_obj;
         int32_t body_idx;
         ScopeAnalysis analysis;
-        uint32_t temporary_reg;
-        uint32_t max_temporary_reg;
         std::vector<LoopTargetSet> loop_targets;
 
         static Presence merge_presence(Presence left, Presence right)
@@ -934,48 +926,7 @@ namespace cl
             }
         }
 
-        class TemporaryReg
-        {
-        public:
-            TemporaryReg(AstCodegen *_builder, uint32_t _n_regs = 1)
-                : builder(_builder), n_regs(_n_regs)
-            {
-                reg = builder->temporary_reg;
-                builder->temporary_reg += n_regs;
-                builder->max_temporary_reg = std::max(
-                    builder->max_temporary_reg, builder->temporary_reg);
-            }
-
-            TemporaryReg(const TemporaryReg &) = delete;
-            TemporaryReg &operator=(const TemporaryReg &) = delete;
-
-            TemporaryReg(TemporaryReg &&other) noexcept
-                : builder(other.builder), n_regs(other.n_regs), reg(other.reg)
-            {
-                other.builder = nullptr;
-                other.n_regs = 0;
-                other.reg = 0;
-            }
-
-            TemporaryReg &operator=(TemporaryReg &&other) = delete;
-
-            ~TemporaryReg()
-            {
-                if(builder == nullptr)
-                {
-                    return;
-                }
-                builder->temporary_reg -= n_regs;
-                assert(reg == builder->temporary_reg);
-            }
-
-            operator uint32_t() const { return reg; }
-
-        private:
-            AstCodegen *builder;
-            uint32_t n_regs;
-            uint32_t reg;
-        };
+        using TemporaryReg = CodeObjectBuilder::TemporaryReg;
 
         struct ScopedRegister
         {
@@ -1001,8 +952,7 @@ namespace cl
 
             uint32_t source_offset = av.source_offsets[node_idx];
             codegen_node(node_idx);
-            std::optional<TemporaryReg> temp;
-            temp.emplace(this);
+            std::optional<TemporaryReg> temp{std::in_place, *code_obj};
             code_obj->emit_star(source_offset, RegisterIndex(*temp));
             return {RegisterIndex(*temp), std::move(temp)};
         }
@@ -1070,7 +1020,7 @@ namespace cl
             }
             else
             {
-                TemporaryReg default_values(this, n_defaults);
+                TemporaryReg default_values(*code_obj, n_defaults);
                 size_t first_default_idx =
                     fun_obj->n_positional_parameters - n_defaults;
                 for(size_t i = 0; i < n_defaults; ++i)
@@ -1084,7 +1034,7 @@ namespace cl
                 code_obj->emit_create_tuple(source_offset, default_values,
                                             n_defaults);
 
-                TemporaryReg default_tuple(this);
+                TemporaryReg default_tuple(*code_obj);
                 code_obj->emit_star(source_offset, default_tuple);
                 code_obj->emit_create_function_with_defaults(
                     source_offset, constant_idx, default_tuple);
@@ -1126,7 +1076,8 @@ namespace cl
             code_obj->emit_lda_constant(source_offset, name_constant_idx);
             code_obj->emit_star(source_offset, OutgoingArgReg(0));
 
-            TemporaryReg base_regs(this, std::max<size_t>(bases.size(), 1));
+            TemporaryReg base_regs(*code_obj,
+                                   std::max<size_t>(bases.size(), 1));
             if(bases.empty())
             {
                 uint32_t object_constant_idx = code_obj->allocate_constant(
@@ -1179,7 +1130,7 @@ namespace cl
             }
 
             // function itself
-            TemporaryReg callable_reg(this);
+            TemporaryReg callable_reg(*code_obj);
             codegen_node(children[0]);
             code_obj->emit_star(source_offset, callable_reg);
 
@@ -1197,7 +1148,7 @@ namespace cl
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
 
-            TemporaryReg regs(this, std::max<size_t>(children.size(), 1));
+            TemporaryReg regs(*code_obj, std::max<size_t>(children.size(), 1));
             for(size_t i = 0; i < children.size(); ++i)
             {
                 codegen_node(children[i]);
@@ -1211,7 +1162,7 @@ namespace cl
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
 
-            TemporaryReg regs(this, std::max<size_t>(children.size(), 1));
+            TemporaryReg regs(*code_obj, std::max<size_t>(children.size(), 1));
             for(size_t i = 0; i < children.size(); ++i)
             {
                 codegen_node(children[i]);
@@ -1225,7 +1176,7 @@ namespace cl
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
 
-            TemporaryReg regs(this, std::max<size_t>(children.size(), 1));
+            TemporaryReg regs(*code_obj, std::max<size_t>(children.size(), 1));
             for(size_t i = 0; i < children.size(); ++i)
             {
                 codegen_node(children[i]);
@@ -1268,7 +1219,7 @@ namespace cl
             }
             else
             {
-                TemporaryReg lhs_value_reg(this);
+                TemporaryReg lhs_value_reg(*code_obj);
                 code_obj->emit_star(source_offset, lhs_value_reg);
                 codegen_node(children[1]);
                 code_obj->emit_binary_op(source_offset, entry.standard,
@@ -1313,7 +1264,7 @@ namespace cl
             }
             else
             {
-                TemporaryReg lhs_value_reg(this);
+                TemporaryReg lhs_value_reg(*code_obj);
                 code_obj->emit_star(source_offset, lhs_value_reg);
                 codegen_node(children[1]);
                 code_obj->emit_binary_op(source_offset, entry.standard,
@@ -1405,8 +1356,8 @@ namespace cl
             AstChildren call_children = av.children[iterable_idx];
             AstChildren args = av.children[call_children[1]];
 
-            TemporaryReg range_regs(this, 1 + n_args);
-            TemporaryReg iterator_reg(this);
+            TemporaryReg range_regs(*code_obj, 1 + n_args);
+            TemporaryReg iterator_reg(*code_obj);
             JumpTarget generic_fallback_target(code_obj);
             JumpTarget fast_loop_start_target(code_obj);
             JumpTarget fast_continue_target(code_obj);
@@ -1630,7 +1581,7 @@ namespace cl
 
                         ScopedRegister recv_reg =
                             codegen_node_to_register(children[0]);
-                        TemporaryReg prod_reg(this);
+                        TemporaryReg prod_reg(*code_obj);
                         int32_t recv = recv_reg.reg;
                         int32_t prod = prod_reg;
                         for(size_t i = 1; i < children.size(); ++i)
@@ -1778,7 +1729,7 @@ namespace cl
                         int32_t body_idx = children[2];
                         int32_t else_idx =
                             children.size() == 4 ? children[3] : -1;
-                        TemporaryReg iterator_reg(this);
+                        TemporaryReg iterator_reg(*code_obj);
                         JumpTarget else_target(code_obj);
                         JumpTarget break_target(code_obj);
 
@@ -1884,7 +1835,7 @@ namespace cl
     {
         codegen_node(body_idx);
         code_obj->emit_halt(0);
-        CodeObject *result = code_obj->finalize(max_temporary_reg);
+        CodeObject *result = code_obj->finalize();
         return incref(result);
     }
 
@@ -1981,7 +1932,7 @@ namespace cl
         // could check that all return paths already have a return statement
         code_obj->emit_lda_none(source_offset);
         code_obj->emit_return(source_offset);
-        return code_obj->finalize(max_temporary_reg);
+        return code_obj->finalize();
     }
 
     CodeObject *AstCodegen::run_class_body(uint32_t source_offset,
@@ -1990,7 +1941,7 @@ namespace cl
         emit_local_binding_prologue();
         codegen_node(body_idx);
         code_obj->emit_build_class(source_offset);
-        return code_obj->finalize(max_temporary_reg);
+        return code_obj->finalize();
     }
 
     CodeObject *codegen_module(const AstVector &av, TValue<String> module_name)

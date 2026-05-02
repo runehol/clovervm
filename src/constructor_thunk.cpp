@@ -70,29 +70,31 @@ namespace cl
         if(!has_init)
         {
             code.emit_return(0);
-            return code.finalize(code.first_temporary_reg());
+            return code.finalize();
         }
 
-        uint32_t instance_reg = code.reserve_local_scratch_reg();
-
-        uint32_t init_const_idx = code.allocate_constant(init);
-        code.emit_star(0, instance_reg);
-
-        code.emit_ldar(0, instance_reg);
-        code.emit_star(0, OutgoingArgReg(0));
-        for(uint32_t param_idx = 0; param_idx < code.n_parameters();
-            ++param_idx)
         {
-            code.emit_ldar(0, param_idx);
-            code.emit_star(0, OutgoingArgReg(param_idx + 1));
-        }
+            CodeObjectBuilder::TemporaryReg instance_reg(code);
 
-        code.emit_enter_prepared_function(0, init_const_idx, OutgoingArgReg(0),
-                                          init_n_parameters);
-        code.emit_check_init_returned_none(0);
-        code.emit_ldar(0, instance_reg);
-        code.emit_return(0);
-        return code.finalize(code.first_temporary_reg());
+            uint32_t init_const_idx = code.allocate_constant(init);
+            code.emit_star(0, instance_reg);
+
+            code.emit_ldar(0, instance_reg);
+            code.emit_star(0, OutgoingArgReg(0));
+            for(uint32_t param_idx = 0; param_idx < code.n_parameters();
+                ++param_idx)
+            {
+                code.emit_ldar(0, param_idx);
+                code.emit_star(0, OutgoingArgReg(param_idx + 1));
+            }
+
+            code.emit_enter_prepared_function(
+                0, init_const_idx, OutgoingArgReg(0), init_n_parameters);
+            code.emit_check_init_returned_none(0);
+            code.emit_ldar(0, instance_reg);
+            code.emit_return(0);
+        }
+        return code.finalize();
     }
 
     TValue<Function> make_constructor_thunk_function(ClassObject *cls,

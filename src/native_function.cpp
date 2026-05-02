@@ -22,7 +22,7 @@ namespace cl
         builder.emit_call_native(0, call_opcode, uint8_t(target_idx));
         builder.emit_return(0);
         TValue<CodeObject> code =
-            TValue<CodeObject>::from_oop(builder.finalize(FrameHeaderSize));
+            TValue<CodeObject>::from_oop(builder.finalize());
         if(default_parameters.as_value() != Value::None())
         {
             return vm->make_immortal_object_value<Function>(code,
