@@ -371,6 +371,58 @@ The intended direction is:
 This follows modern CPython direction and keeps reflective function-locals
 behavior from dominating the local-variable fast path.
 
+## Future Module Objects And Global Lookup
+
+Module objects should eventually become the primary home for module globals.
+
+The attractive long-term direction is for a module to be a normal shape-backed
+object whose namespace is stored through the object/shape property machinery.
+That would make these operations agree on one backing store:
+
+- bytecode global access in the module
+- `module.x`
+- `globals()["x"]`
+- the module's eventual `__dict__` mapping view
+
+In that design, global lookup is similar to a tiny namespace-chain or MRO:
+
+- first search the module namespace
+- if absent, search the builtins namespace
+
+The analogy is useful, but the semantics are simpler than class attribute
+lookup. Module global lookup does not need descriptors, metaclasses,
+instance/class precedence, bound methods, or descriptor-kind cache
+classification. It is only a string-keyed namespace chain.
+
+Reads, writes, and deletes deliberately use different parts of that chain:
+
+- `LOAD_GLOBAL x`: module namespace, then builtins namespace
+- `STORE_GLOBAL x`: module namespace only
+- `DEL_GLOBAL x`: module namespace only
+- `module.x`: module namespace only
+
+This means builtin fallback is a lookup rule, not a storage rule. A missing
+module binding should not be represented as a module attribute whose value is a
+builtin. Likewise, deleting `x` must never delete `builtins.x`; it should only
+delete the module's own binding and raise `NameError` if that binding is not
+live.
+
+If modules become shape-backed, global inline caches can reuse the broad
+invalidation machinery from object/class attribute caches while keeping a
+module-specific plan:
+
+- module-hit plans guard the module namespace and ignore builtins
+- builtin-hit plans guard both module absence and the builtin namespace
+- module stores and deletes invalidate module namespace caches
+- builtin mutation invalidates builtin-hit caches
+
+This would be a nice unification with the object model, but it should not be
+confused with the current `Scope` parent-slot shortcut. `Scope` stores
+`not_present(parent_slot_idx)` holes to accelerate nested or builtin lookup.
+Those holes are an implementation detail of scope lookup, not observable
+module attributes. A future module object should not expose those parent
+lookup holes through `module.x` or `__dict__`.
+
 ## Shape Tables Are Not Python Dicts
 
 Shape metadata should remain VM-internal and specialized.
