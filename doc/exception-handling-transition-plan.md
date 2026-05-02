@@ -48,14 +48,14 @@ This file tracks the implementation sequence we can check off as it lands.
 
 ## Stage 0: Call Frame Layout Refactor
 
-- [ ] Move the full call frame/header to the above-`fp` side.
-- [ ] Update frame setup helpers to write caller metadata through one canonical
+- [x] Move the full call frame/header to the above-`fp` side.
+- [x] Update frame setup helpers to write caller metadata through one canonical
       layout.
-- [ ] Update `op_return` and any class-body, constructor-thunk, and native-thunk
+- [x] Update `op_return` and any class-body, constructor-thunk, and native-thunk
       setup paths to read the new layout.
-- [ ] Keep runtime behavior identical: ordinary calls, constructor calls, class
+- [x] Keep runtime behavior identical: ordinary calls, constructor calls, class
       bodies, native thunks, and returns should still pass existing tests.
-- [ ] Add or adjust structural tests only where they pin down frame layout or
+- [x] Add or adjust structural tests only where they pin down frame layout or
       call/return invariants that are otherwise easy to regress.
 
 Deliverable: one canonical frame metadata area, with no Python exception
