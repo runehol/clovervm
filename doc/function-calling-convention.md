@@ -13,10 +13,10 @@ This note documents the calling convention currently implemented by CloverVM's b
 - Parameters live at positive offsets from `fp`.
 - Locals and temporaries live at negative offsets from `fp`.
 - A small frame header is kept around `fp`; current call paths store:
+  - interpreter return program counter at `fp[3]`
+  - interpreter return code object at `fp[2]`
   - compiled return PC at `fp[1]`
   - previous frame pointer at `fp[0]`
-  - interpreter return code object at `fp[-1]`
-  - interpreter return program counter at `fp[-2]`
 
 This matches the Native AArch64 calling convention for compiled code, while still having enough metadata to jump back to the interpreter when needed.
 
@@ -55,8 +55,8 @@ With the `MUSTTAIL` threaded-dispatch style in the interpreter, these values are
 In [src/code_object.h](../src/code_object.h):
 
 ```cpp
-static constexpr int32_t FrameHeaderSizeAboveFp = 2;
-static constexpr int32_t FrameHeaderSizeBelowFp = 2;
+static constexpr int32_t FrameHeaderSizeAboveFp = 4;
+static constexpr int32_t FrameHeaderSizeBelowFp = 0;
 static constexpr int32_t FrameHeaderSize =
     FrameHeaderSizeAboveFp + FrameHeaderSizeBelowFp;
 ```
@@ -126,21 +126,21 @@ Combined with interpreter access through `fp[reg]`, this gives the physical layo
 ```text
 higher addresses
 
-    fp[padded_n_parameters + 1]   p0
-    fp[padded_n_parameters + 0]   p1
+    fp[padded_n_parameters + 3]   p0
+    fp[padded_n_parameters + 2]   p1
     ...
-    fp[3]                         p(n-1) if n is even, padding if n is odd
-    fp[2]                         p(n-1) if n is odd, otherwise last param
+    fp[5]                         p(n-1) if n is even, padding if n is odd
+    fp[4]                         p(n-1) if n is odd, otherwise last param
+    fp[3]                  interpreter return program counter
+    fp[2]                  interpreter return code object
     fp[1]                  compiled return PC (when JITed)
 fp->fp[0]                  previous frame pointer
-    fp[-1]                 interpreter return code object
-    fp[-2]                 interpreter return program counter
-    fp[-3]                 r0
-    fp[-4]                 r1
-    fp[-5]                 r2
+    fp[-1]                 r0
+    fp[-2]                 r1
+    fp[-3]                 r2
     ...
-    fp[-3 - padded_n_ordinary_below_frame_slots] a0
-    fp[-4 - padded_n_ordinary_below_frame_slots] a1
+    fp[-1 - padded_n_ordinary_below_frame_slots] a0
+    fp[-2 - padded_n_ordinary_below_frame_slots] a1
     ...
 
 lower addresses
@@ -209,8 +209,8 @@ int32_t new_fp_reg = first_arg_reg - round_up_to_abi_alignment(n_args) + 1 -
 Value *new_fp = fp + new_fp_reg;
 
 new_fp[0].as.ptr = (Object *)fp;
-new_fp[-1] = Value::from_oop(code_object);
-new_fp[-2].as.ptr = (Object *)pc;
+new_fp[2] = Value::from_oop(code_object);
+new_fp[3].as.ptr = (Object *)pc;
 
 fp = new_fp;
 code_object = fun.get_ptr<Function>()->code_object.extract();
@@ -233,14 +233,14 @@ So:
 ```text
 first argument slot  = fp[first_arg_reg]
 last argument slot   = fp[first_arg_reg - n_args + 1]
-new fp               = fp[first_arg_reg - round_up_to_abi_alignment(n_args) + 1 - 2]
+new fp               = fp[first_arg_reg - round_up_to_abi_alignment(n_args) + 1 - 4]
 ```
 
-The extra `2` is `FrameHeaderSizeAboveFp`, which places the new `fp` so that:
+The extra `4` is `FrameHeaderSizeAboveFp`, which places the new `fp` so that:
 
 - the last parameter lands above any odd-argument padding
-- the first parameter lands at `fp[round_up_to_abi_alignment(n_args) + 1]`
-- header words occupy `fp[1]`, `fp[0]`, `fp[-1]`, `fp[-2]`
+- the first parameter lands at `fp[round_up_to_abi_alignment(n_args) + 3]`
+- header words occupy `fp[3]`, `fp[2]`, `fp[1]`, and `fp[0]`
 
 ## Frame Diagrams
 
@@ -254,14 +254,14 @@ stack grows downward
         |
         v
 
-    fp[3]   p0   first parameter
-    fp[2]   p1   last parameter
+    fp[5]   p0   first parameter
+    fp[4]   p1   last parameter
+    fp[3]        interpreter return PC
+    fp[2]        interpreter return code object
     fp[1]        compiled return PC (when jitted)
 fp  fp[0]        previous frame pointer
-    fp[-1]       interpreter return code object
-    fp[-2]       interpreter return PC
-    fp[-3]  r0   first local/temporary
-    fp[-4]  r1
+    fp[-1]  r0   first local/temporary
+    fp[-2]  r1
 
     lower addresses
 ```
@@ -277,16 +277,16 @@ stack grows downward
         |
         v
 
-    fp[5]   p0   first parameter
-    fp[4]   p1
-    fp[3]   p2   last parameter
-    fp[2]        parameter padding
+    fp[7]   p0   first parameter
+    fp[6]   p1
+    fp[5]   p2   last parameter
+    fp[4]        parameter padding
+    fp[3]        interpreter return PC
+    fp[2]        interpreter return code object
     fp[1]        compiled return PC (when jitted)
 fp  fp[0]        previous frame pointer
-    fp[-1]       interpreter return code object
-    fp[-2]       interpreter return PC
-    fp[-3]  r0   first local/temporary
-    fp[-4]  r1
+    fp[-1]  r0   first local/temporary
+    fp[-2]  r1
 
     lower addresses
 ```
@@ -302,15 +302,15 @@ Before call in caller frame:
     [arg1 = y]
     ...
 
-After `new_fp = fp + first_arg_reg - round_up_to_abi_alignment(n_args) + 1 - 2`:
+After `new_fp = fp + first_arg_reg - round_up_to_abi_alignment(n_args) + 1 - 4`:
 
-    new_fp[3]  p0 = x
-    new_fp[2]  p1 = y
+    new_fp[5]  p0 = x
+    new_fp[4]  p1 = y
+    new_fp[3]      interpreter return PC
+    new_fp[2]      interpreter return code object
     new_fp[1]      compiled return PC
     new_fp[0]      previous fp
-    new_fp[-1]     interpreter return code object
-    new_fp[-2]     interpreter return PC
-    new_fp[-3]     r0
+    new_fp[-1]     r0
     ...
 ```
 
@@ -319,8 +319,8 @@ After `new_fp = fp + first_arg_reg - round_up_to_abi_alignment(n_args) + 1 - 2`:
 Returning is the inverse operation. `op_return` in [src/interpreter.cpp](../src/interpreter.cpp) restores the caller context from the frame header:
 
 ```cpp
-pc = (const uint8_t *)fp[-2].as.ptr;
-code_object = fp[-1].get_ptr<CodeObject>();
+pc = (const uint8_t *)fp[3].as.ptr;
+code_object = fp[2].get_ptr<CodeObject>();
 fp = (Value *)fp[0].as.ptr;
 ```
 
@@ -330,7 +330,7 @@ So the full convention is:
 
 - arguments flow into the callee through frame slots
 - return values flow back in the accumulator
-- return control state is restored from `fp[0]`, `fp[-1]`, and `fp[-2]`
+- return control state is restored from `fp[0]`, `fp[2]`, and `fp[3]`
 
 ## Top-Level Entry
 
@@ -351,8 +351,8 @@ If you are reasoning about CloverVM calls, the safest mental model is:
 1. The callable lives separately from the outgoing argument span.
 2. The outgoing argument span starts at `a0` and grows downward as `a1`, `a2`, ...
 3. The interpreter moves `fp` below the argument window padded up to the ABI alignment, so those argument cells become `p0`, `p1`, ...
-4. `fp[0]`, `fp[-1]`, and `fp[-2]` hold the caller state needed by `Return`.
-5. Locals/temporaries for the callee start at `r0 = fp[-3]`.
+4. `fp[0]`, `fp[2]`, and `fp[3]` hold the caller state needed by `Return`.
+5. Locals/temporaries for the callee start at `r0 = fp[-1]`.
 6. The accumulator carries the return value across the `Return` instruction.
 
 ## Source Pointers

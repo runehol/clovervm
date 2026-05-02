@@ -229,12 +229,12 @@ The proposed split is:
   - tail-enter the interpreter dispatch loop at the saved return PC
 
 The frame header already reserves `fp[1]` as a compiled return PC and
-`fp[0]` as the previous Python frame pointer. Today interpreted returns use
-`fp[-1]` and `fp[-2]` to restore the bytecode `code_object` and `pc`. JIT/native
-entry should preserve that dual use:
+`fp[0]` as the previous Python frame pointer. Interpreted returns use `fp[2]`
+and `fp[3]` to restore the bytecode `code_object` and `pc`. JIT/native entry
+should preserve that dual use:
 
 - compiled/native returns use `fp[1]` as the LR-compatible continuation
-- interpreter returns use `fp[-1]` and `fp[-2]` as the resume metadata
+- interpreter returns use `fp[2]` and `fp[3]` as the resume metadata
 - mixed-mode calls write both when crossing from interpreted code into
   native/JIT code, so either return path has enough state
 
@@ -250,9 +250,9 @@ slots Clover already reserves:
 - `new_fp[1]`: native/compiled return PC, populated from LR, which holds the
   thunk-back converter
 - `new_fp[0]`: previous Clover frame pointer, populated from incoming `x29`
-- `new_fp[-1]`: interpreter return code object, written by the caller-side
+- `new_fp[2]`: interpreter return code object, written by the caller-side
   transition
-- `new_fp[-2]`: interpreter return PC, written by the caller-side transition
+- `new_fp[3]`: interpreter return PC, written by the caller-side transition
 
 The native target can then follow the same frame convention as JIT code. Its LR
 points at the thunk-back converter, and the converter can restore interpreted

@@ -94,8 +94,8 @@ namespace cl
         uint32_t slot_offset;
     };
 
-    static constexpr int32_t FrameHeaderSizeAboveFp = 2;
-    static constexpr int32_t FrameHeaderSizeBelowFp = 2;
+    static constexpr int32_t FrameHeaderSizeAboveFp = 4;
+    static constexpr int32_t FrameHeaderSizeBelowFp = 0;
     static constexpr int32_t FrameHeaderSize =
         FrameHeaderSizeAboveFp + FrameHeaderSizeBelowFp;
 

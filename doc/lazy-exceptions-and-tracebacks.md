@@ -85,7 +85,7 @@ return restores the caller frame and jumps to the saved return pc with the retur
 value in the accumulator. `ViaUnwind` versus `ViaResult` matters only after the
 callee has failed to handle a pending exception locally.
 
-The return mode is encoded in the tagged return target stored in `fp[-1]`.
+The return mode is encoded in the tagged return target stored in `fp[2]`.
 Ordinary call sites tag the callee frame for `ViaUnwind`. Protocol call sites
 tag the callee frame for `ViaResult` and set the saved return pc to a
 continuation opcode, such as the second half of `FOR_ITER`. Native/C boundaries
@@ -363,25 +363,25 @@ and leave the pending exception in thread state. The exception is not delivered
 to a bytecode exception table until a continuation chooses to promote it.
 
 The frame header should keep the saved return pc as an honest bytecode pc. To
-avoid fake pc sentinels, tag the saved return target in `fp[-1]`, which currently
+avoid fake pc sentinels, tag the saved return target in `fp[2]`, which currently
 stores the interpreter return code object:
 
 ```text
-fp[-1] tag = BytecodeViaUnwind:
+fp[2] tag = BytecodeViaUnwind:
   masked pointer is a CodeObject*
-  fp[-2] is a raw bytecode return pc
+  fp[3] is a raw bytecode return pc
 
-fp[-1] tag = BytecodeViaResult:
+fp[2] tag = BytecodeViaResult:
   masked pointer is a CodeObject*
-  fp[-2] is a raw bytecode return pc that will receive Value::exception_marker()
+  fp[3] is a raw bytecode return pc that will receive Value::exception_marker()
 
-fp[-1] tag = Native:
+fp[2] tag = Native:
   masked pointer is a NativeReturnDescriptor*
-  fp[-2] is native return metadata, a cookie, or otherwise descriptor-defined
+  fp[3] is native return metadata, a cookie, or otherwise descriptor-defined
 ```
 
 Object and descriptor pointers are aligned, so low-bit tagging is safer here
-than tagging `fp[-2]`: bytecode return pcs are byte-addressed and variable-length
+than tagging `fp[3]`: bytecode return pcs are byte-addressed and variable-length
 instructions do not guarantee spare low bits.
 
 All frame-header access should go through helpers that decode the return target:
@@ -412,7 +412,7 @@ if return target is Native:
   convert pending exception to the native/C result convention
 else if return target is BytecodeViaResult:
   restore the caller with Value::exception_marker() in the accumulator
-  dispatch the opcode at fp[-2] normally
+  dispatch the opcode at fp[3] normally
 else:
   enter ordinary bytecode unwinding for the caller
 ```
@@ -543,8 +543,8 @@ Recommended implementation order:
 3. Add `ViaUnwind` handling for ordinary bytecode calls.
 4. Split iterator bytecode into call and continuation opcodes, such as
    `FOR_ITER1` and `FOR_ITER2`.
-5. Add `ViaResult` handling keyed by the tagged return target in `fp[-1]`.
-6. Extend the `fp[-1]` tag so bytecode `ViaUnwind`, bytecode `ViaResult`, and
+5. Add `ViaResult` handling keyed by the tagged return target in `fp[2]`.
+6. Extend the `fp[2]` tag so bytecode `ViaUnwind`, bytecode `ViaResult`, and
    native/C return targets are distinguishable without fake pc sentinels.
 7. Add `RAISE_UNWIND` and `RAISE_FAST`, with codegen emitting `RAISE_FAST` only
    outside local exception-protected regions.
@@ -566,12 +566,12 @@ The first working version does not need arbitrary lazy exception objects.
   do not require normal returns to carry an exception marker.
 - Normal return uses the accumulator and saved return pc only; exception
   classification happens only on exceptional frame exit.
-- The tagged return target in `fp[-1]` determines whether an exceptional return
+- The tagged return target in `fp[2]` determines whether an exceptional return
   is bytecode `ViaUnwind`, bytecode `ViaResult`, or native/C result return.
 - For bytecode `ViaResult`, the saved return pc names the continuation opcode
   that receives `Value::exception_marker()` in the accumulator.
-- Native/C return targets are represented by the same tagged `fp[-1]` return
-  target, not by fake bytecode pc values in `fp[-2]`.
+- Native/C return targets are represented by the same tagged `fp[2]` return
+  target, not by fake bytecode pc values in `fp[3]`.
 - Table unwinding stops at `ViaResult` and native return targets. It resumes
   ordinary caller table search only across `BytecodeViaUnwind` targets.
 - `RAISE_FAST` is valid only for bytecode offsets outside all local

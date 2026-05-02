@@ -187,7 +187,7 @@ TEST(Codegen, function_varargs_parameter_layout)
     EXPECT_EQ(3, function_code->n_parameters);
     EXPECT_EQ(2, function_code->n_positional_parameters);
     EXPECT_TRUE(function_code->has_varargs());
-    EXPECT_EQ(5, function_code->get_highest_occupied_frame_offset());
+    EXPECT_EQ(7, function_code->get_highest_occupied_frame_offset());
 }
 
 TEST(Codegen, parameter_frame_offsets_are_padded_to_abi_alignment)
@@ -202,19 +202,19 @@ TEST(Codegen, parameter_frame_offsets_are_padded_to_abi_alignment)
     CodeObject *four_params = test_context.compile_file(L"def f(a, b, c, d):\n"
                                                         L"    return a\n");
 
-    EXPECT_EQ(3, one_param->constant_table[0]
+    EXPECT_EQ(5, one_param->constant_table[0]
                      .as_value()
                      .get_ptr<CodeObject>()
                      ->get_highest_occupied_frame_offset());
-    EXPECT_EQ(3, two_params->constant_table[0]
+    EXPECT_EQ(5, two_params->constant_table[0]
                      .as_value()
                      .get_ptr<CodeObject>()
                      ->get_highest_occupied_frame_offset());
-    EXPECT_EQ(5, three_params->constant_table[0]
+    EXPECT_EQ(7, three_params->constant_table[0]
                      .as_value()
                      .get_ptr<CodeObject>()
                      ->get_highest_occupied_frame_offset());
-    EXPECT_EQ(5, four_params->constant_table[0]
+    EXPECT_EQ(7, four_params->constant_table[0]
                      .as_value()
                      .get_ptr<CodeObject>()
                      ->get_highest_occupied_frame_offset());

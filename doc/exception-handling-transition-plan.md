@@ -16,8 +16,8 @@ This file tracks the implementation sequence we can check off as it lands.
   runtime helpers.
 - `Value::exception_marker()` exists, but there is no pending Python exception
   state on `ThreadState`.
-- Frames currently keep caller metadata split around `fp`: `fp[0]` is the
-  previous frame pointer, `fp[-1]` is the return `CodeObject`, and `fp[-2]` is
+- Frames currently keep caller metadata at and above `fp`: `fp[0]` is the
+  previous frame pointer, `fp[2]` is the return `CodeObject`, and `fp[3]` is
   the return pc.
 - Native function thunks return through ordinary bytecode `Return`; native
   failures may still throw C++ exceptions.
