@@ -141,7 +141,7 @@ accumulator == Value::exception_marker():
 - [ ] Add the non-participant adapter shape for fast-convention callees:
       `LoadConst fast_protocol_code_object`, `CallCodeObject`, then
       `ReturnOrRaiseException`.
-- [ ] Prefer `CallCodeObject` as a small shared primitive: it calls an explicit
+- [x] Prefer `CallCodeObject` as a small shared primitive: it calls an explicit
       `CodeObject` with an already-prepared argument/frame window, bypassing
       normal `Function` entry selection.
 

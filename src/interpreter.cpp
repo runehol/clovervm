@@ -428,6 +428,34 @@ namespace cl
         return fp + new_fp_reg;
     }
 
+    static ALWAYSINLINE Value *
+    new_frame_pointer_from_first_arg(Value *fp, CodeObject *target_code_object,
+                                     int32_t first_arg_reg)
+    {
+        int32_t new_fp_reg =
+            first_arg_reg -
+            int32_t(target_code_object->get_padded_n_parameters()) + 1 -
+            FrameHeaderSizeAboveFp;
+        return fp + new_fp_reg;
+    }
+
+    static ALWAYSINLINE void enter_code_object_frame_from_prepared_args(
+        Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
+        CodeObject *target_code_object, int32_t first_arg_reg,
+        uint32_t instr_len)
+    {
+        Value *new_fp = new_frame_pointer_from_first_arg(fp, target_code_object,
+                                                         first_arg_reg);
+        assert(is_stack_frame_aligned(new_fp));
+        pc += instr_len;
+
+        initialize_frame_header(new_fp, fp, code_object, pc);
+
+        fp = new_fp;
+        code_object = target_code_object;
+        pc = code_object->code.data();
+    }
+
     static ALWAYSINLINE void enter_function_frame_from_positional_args(
         Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
         TValue<Function> fun, int32_t first_arg_reg, uint32_t n_args,
@@ -1730,18 +1758,19 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_enter_prepared_function(PARAMS)
+    static Value op_call_code_object(PARAMS)
     {
-        static constexpr uint32_t enter_instr_len = 4;
+        static constexpr uint32_t call_instr_len = 4;
         uint8_t const_offset = pc[1];
         int8_t first_arg_reg = pc[2];
         uint8_t n_args = pc[3];
-        TValue<Function> function =
-            TValue<Function>::from_oop(assume_convert_to<Function>(
-                code_object->constant_table[const_offset].as_value()));
-        enter_function_frame_from_positional_args(
-            fp, pc, code_object, function, first_arg_reg, n_args,
-            enter_instr_len, FunctionCallAdaptation::FixedArity);
+        CodeObject *target_code_object = assume_convert_to<CodeObject>(
+            code_object->constant_table[const_offset].as_value());
+        assert(n_args == target_code_object->n_parameters);
+        (void)n_args;
+        enter_code_object_frame_from_prepared_args(
+            fp, pc, code_object, target_code_object, first_arg_reg,
+            call_instr_len);
 
         START(0);
         COMPLETE();
@@ -2305,8 +2334,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CallNative1, op_call_native1);
         SET_TABLE_ENTRY(Bytecode::CallNative2, op_call_native2);
         SET_TABLE_ENTRY(Bytecode::CallNative3, op_call_native3);
-        SET_TABLE_ENTRY(Bytecode::EnterPreparedFunction,
-                        op_enter_prepared_function);
+        SET_TABLE_ENTRY(Bytecode::CallCodeObject, op_call_code_object);
         SET_TABLE_ENTRY(Bytecode::GetIter, op_get_iter);
         SET_TABLE_ENTRY(Bytecode::ForIter, op_for_iter);
         SET_TABLE_ENTRY(Bytecode::ForPrepRange1, op_for_prep_range1);

@@ -217,8 +217,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "CallNative2");
             case cl::Bytecode::CallNative3:
                 return format_to(out, "CallNative3");
-            case cl::Bytecode::EnterPreparedFunction:
-                return format_to(out, "EnterPreparedFunction");
+            case cl::Bytecode::CallCodeObject:
+                return format_to(out, "CallCodeObject");
             case cl::Bytecode::GetIter:
                 return format_to(out, "GetIter");
             case cl::Bytecode::ForIter:
@@ -595,7 +595,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 format_to(out, " {}", code_obj.code[pc++]);
                 break;
 
-            case cl::Bytecode::EnterPreparedFunction:
+            case cl::Bytecode::CallCodeObject:
                 format_to(out, " ");
                 disassemble_constant(code_obj, out, pc++);
                 format_to(out, ", ");

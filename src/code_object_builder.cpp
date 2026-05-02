@@ -399,12 +399,12 @@ namespace cl
         return emit_opcode(source_offset, op);
     }
 
-    uint32_t CodeObjectBuilder::emit_enter_prepared_function(
-        uint32_t source_offset, uint8_t function_idx,
+    uint32_t CodeObjectBuilder::emit_call_code_object(
+        uint32_t source_offset, uint8_t code_object_idx,
         OutgoingArgReg first_arg_reg, uint8_t argc)
     {
         return emit_opcode_constant_idx_reg_argc(
-            source_offset, Bytecode::EnterPreparedFunction, function_idx,
+            source_offset, Bytecode::CallCodeObject, code_object_idx,
             first_arg_reg, argc);
     }
 

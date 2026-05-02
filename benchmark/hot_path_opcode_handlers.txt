@@ -8,7 +8,7 @@ op_call_method_attr
 op_check_init_returned_none
 op_clear_local
 op_del_local
-op_enter_prepared_function
+op_call_code_object
 op_for_iter
 op_for_iter_range1
 op_for_iter_range_step

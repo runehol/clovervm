@@ -77,7 +77,8 @@ namespace cl
         {
             CodeObjectBuilder::TemporaryReg instance_reg(code);
 
-            uint32_t init_const_idx = code.allocate_constant(init);
+            uint32_t init_code_const_idx =
+                code.allocate_constant(Value::from_oop(init_code));
             code.emit_star(0, instance_reg);
 
             code.emit_ldar(0, instance_reg);
@@ -89,8 +90,8 @@ namespace cl
                 code.emit_star(0, OutgoingArgReg(param_idx + 1));
             }
 
-            code.emit_enter_prepared_function(
-                0, init_const_idx, OutgoingArgReg(0), init_n_parameters);
+            code.emit_call_code_object(0, init_code_const_idx,
+                                       OutgoingArgReg(0), init_n_parameters);
             code.emit_check_init_returned_none(0);
             code.emit_ldar(0, instance_reg);
             code.emit_return(0);

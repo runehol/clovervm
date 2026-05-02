@@ -228,10 +228,10 @@ namespace cl
         uint32_t emit_compare_op(uint32_t source_offset, Bytecode op,
                                  uint32_t lhs_reg);
         uint32_t emit_unary_op(uint32_t source_offset, Bytecode op);
-        uint32_t emit_enter_prepared_function(uint32_t source_offset,
-                                              uint8_t function_idx,
-                                              OutgoingArgReg first_arg_reg,
-                                              uint8_t argc);
+        uint32_t emit_call_code_object(uint32_t source_offset,
+                                       uint8_t code_object_idx,
+                                       OutgoingArgReg first_arg_reg,
+                                       uint8_t argc);
         uint32_t emit_call_native(uint32_t source_offset, Bytecode op,
                                   uint8_t target_idx);
         uint32_t emit_call_simple(uint32_t source_offset, uint32_t callable_reg,

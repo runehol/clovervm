@@ -129,7 +129,7 @@ namespace cl
         CallNative1,
         CallNative2,
         CallNative3,
-        EnterPreparedFunction,
+        CallCodeObject,
 
         // iteration
         GetIter,
