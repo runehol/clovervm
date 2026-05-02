@@ -560,9 +560,12 @@ namespace cl
     static ALWAYSINLINE bool store_attr_from_plan_inline_fast(
         Value receiver, const AttributeWritePlan &plan, Value value)
     {
-        assert(plan.kind == AttributeWritePlanKind::StoreExisting);
+        if(unlikely(plan.kind != AttributeWritePlanKind::StoreExisting))
+        {
+            return false;
+        }
         Object *storage_owner = write_plan_storage_owner(receiver, plan);
-        if(plan.storage_location.kind != StorageKind::Inline)
+        if(plan.storage_kind != StorageKind::Inline)
         {
             return false;
         }
@@ -573,8 +576,8 @@ namespace cl
         }
 
         Value *slots = object_inline_slot_base(storage_owner);
-        Value old_value = slots[plan.storage_location.physical_idx];
-        slots[plan.storage_location.physical_idx] = incref(value);
+        Value old_value = slots[plan.physical_idx];
+        slots[plan.physical_idx] = incref(value);
         decref(old_value);
         return true;
     }
@@ -582,12 +585,13 @@ namespace cl
     static ALWAYSINLINE bool store_attr_add_own_property_inline_fast(
         Value receiver, const AttributeWritePlan &plan, Value value)
     {
-        assert(plan.kind == AttributeWritePlanKind::AddOwnProperty);
+        assert(plan.is_add_own_property());
         assert(receiver.is_ptr());
         assert(plan.add_next_shape != nullptr);
+        assert(plan.storage_kind == StorageKind::Inline);
         Object *object = receiver.get_ptr<Object>();
         object->set_shape(plan.add_next_shape);
-        object->write_storage_location(plan.storage_location, value);
+        object->write_storage_location(plan.storage_location(), value);
         return true;
     }
 
@@ -755,15 +759,18 @@ namespace cl
                 StorageLocation storage_location =
                     next_shape->resolve_present_property(attr_name);
                 assert(storage_location.is_found());
-                AttributeWritePlan plan = AttributeWritePlan::add_own_property(
-                    next_shape, storage_location,
-                    receiver_object->get_class()
-                        .extract()
-                        ->get_or_create_mro_shape_and_contents_validity_cell());
-                cache.populate(receiver, plan);
-                store_attr_add_own_property_inline_fast(receiver, cache.plan,
-                                                        accumulator);
-                COMPLETE();
+                if(storage_location.kind == StorageKind::Inline)
+                {
+                    AttributeWritePlan plan = AttributeWritePlan::add_own_property(
+                        next_shape, storage_location,
+                        receiver_object->get_class()
+                            .extract()
+                            ->get_or_create_mro_shape_and_contents_validity_cell());
+                    cache.populate(receiver, plan);
+                    store_attr_add_own_property_inline_fast(
+                        receiver, cache.plan, accumulator);
+                    COMPLETE();
+                }
             }
             if(likely(
                    receiver_object->add_own_property(attr_name, accumulator)))
@@ -944,6 +951,23 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static Value op_store_attr_non_store_existing_cache_hit(PARAMS)
+    {
+        START(4);
+        int8_t reg = pc[1];
+        uint8_t cache_idx = pc[3];
+        Value receiver = fp[reg];
+        AttributeWriteInlineCache &cache =
+            code_object->attribute_write_caches[cache_idx];
+        if(cache.plan.is_add_own_property())
+        {
+            store_attr_add_own_property_inline_fast(receiver, cache.plan,
+                                                    accumulator);
+            COMPLETE();
+        }
+        MUSTTAIL return op_store_attr_cache_miss(ARGS);
+    }
+
     static Value op_store_attr(PARAMS)
     {
         START(4);
@@ -956,18 +980,11 @@ namespace cl
         {
             MUSTTAIL return op_store_attr_cache_miss(ARGS);
         }
-        if(likely(cache.plan.kind == AttributeWritePlanKind::StoreExisting))
+        if(unlikely(!store_attr_from_plan_inline_fast(receiver, cache.plan,
+                                                      accumulator)))
         {
-            if(unlikely(!store_attr_from_plan_inline_fast(receiver, cache.plan,
-                                                          accumulator)))
-            {
-                MUSTTAIL return op_store_attr_cache_miss(ARGS);
-            }
-            COMPLETE();
+            MUSTTAIL return op_store_attr_non_store_existing_cache_hit(ARGS);
         }
-        assert(cache.plan.kind == AttributeWritePlanKind::AddOwnProperty);
-        store_attr_add_own_property_inline_fast(receiver, cache.plan,
-                                                accumulator);
         COMPLETE();
     }
 

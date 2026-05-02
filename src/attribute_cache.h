@@ -75,6 +75,9 @@ namespace cl
         }
     };
 
+    static_assert(sizeof(AttributeWriteInlineCache) == 32,
+                  "AttributeWriteInlineCache should stay compact");
+
 }  // namespace cl
 
 #endif  // CL_ATTRIBUTE_CACHE_H

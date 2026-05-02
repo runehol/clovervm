@@ -3,6 +3,7 @@
 
 #include "shape_descriptor.h"
 #include "value.h"
+#include <cassert>
 #include <cstdint>
 
 namespace cl
@@ -164,30 +165,56 @@ namespace cl
 
     struct AttributeWritePlan
     {
-        AttributeWritePlanKind kind;
-        Object *storage_owner;
-        StorageLocation storage_location;
+        union
+        {
+            Object *storage_owner;
+            Shape *add_next_shape;
+        };
         ValidityCell *lookup_validity_cell;
-        Shape *add_next_shape;
+        int32_t physical_idx;
+        StorageKind storage_kind;
+        AttributeWritePlanKind kind;
 
         static AttributeWritePlan
         store_existing(Object *storage_owner, StorageLocation location,
                        ValidityCell *lookup_validity_cell)
         {
-            return AttributeWritePlan{AttributeWritePlanKind::StoreExisting,
-                                      storage_owner, location,
-                                      lookup_validity_cell, nullptr};
+            AttributeWritePlan plan;
+            plan.storage_owner = storage_owner;
+            plan.lookup_validity_cell = lookup_validity_cell;
+            plan.physical_idx = location.physical_idx;
+            plan.storage_kind = location.kind;
+            plan.kind = AttributeWritePlanKind::StoreExisting;
+            return plan;
         }
 
         static AttributeWritePlan
         add_own_property(Shape *next_shape, StorageLocation location,
                          ValidityCell *lookup_validity_cell)
         {
-            return AttributeWritePlan{AttributeWritePlanKind::AddOwnProperty,
-                                      nullptr, location, lookup_validity_cell,
-                                      next_shape};
+            assert(location.kind == StorageKind::Inline);
+            AttributeWritePlan plan;
+            plan.add_next_shape = next_shape;
+            plan.lookup_validity_cell = lookup_validity_cell;
+            plan.physical_idx = location.physical_idx;
+            plan.storage_kind = location.kind;
+            plan.kind = AttributeWritePlanKind::AddOwnProperty;
+            return plan;
+        }
+
+        StorageLocation storage_location() const
+        {
+            return StorageLocation{physical_idx, storage_kind};
+        }
+
+        bool is_add_own_property() const
+        {
+            return kind == AttributeWritePlanKind::AddOwnProperty;
         }
     };
+
+    static_assert(sizeof(AttributeWritePlan) == 24,
+                  "AttributeWritePlan should stay compact for write caches");
 
     struct AttributeWriteDescriptor
     {
