@@ -579,12 +579,12 @@ TEST(Attr, BuiltinInstancesExposeDunderClassThroughAttributeLookup)
                                                  L"    return 1\n",
                                                  StartRule::File);
     Function *function = context.thread()->make_object_raw<Function>(
-        TValue<CodeObject>(Value::from_oop(code)));
+        TValue<CodeObject>::from_oop(code));
     RangeIterator *range_iterator =
         context.thread()->make_object_raw<RangeIterator>(
-            TValue<CLInt>(Value::from_smi(0)),
-            TValue<CLInt>(Value::from_smi(3)),
-            TValue<CLInt>(Value::from_smi(1)));
+            TValue<CLInt>::from_value_unchecked(Value::from_smi(0)),
+            TValue<CLInt>::from_value_unchecked(Value::from_smi(3)),
+            TValue<CLInt>::from_value_unchecked(Value::from_smi(1)));
 
     struct BuiltinInstance
     {
@@ -629,12 +629,12 @@ TEST(Attr, BuiltinInstancesRejectUnsupportedAttributeWrites)
                                                  L"    return 1\n",
                                                  StartRule::File);
     Function *function = context.thread()->make_object_raw<Function>(
-        TValue<CodeObject>(Value::from_oop(code)));
+        TValue<CodeObject>::from_oop(code));
     RangeIterator *range_iterator =
         context.thread()->make_object_raw<RangeIterator>(
-            TValue<CLInt>(Value::from_smi(0)),
-            TValue<CLInt>(Value::from_smi(3)),
-            TValue<CLInt>(Value::from_smi(1)));
+            TValue<CLInt>::from_value_unchecked(Value::from_smi(0)),
+            TValue<CLInt>::from_value_unchecked(Value::from_smi(3)),
+            TValue<CLInt>::from_value_unchecked(Value::from_smi(1)));
 
     Value instances[] = {
         string_value.as_value(),   Value::from_oop(list),

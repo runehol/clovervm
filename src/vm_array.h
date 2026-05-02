@@ -106,7 +106,7 @@ namespace cl
 
         TValue<SMI> len() const
         {
-            return TValue<SMI>::unsafe_unchecked(size_value.as_value());
+            return TValue<SMI>::from_value_unchecked(size_value.as_value());
         }
 
         size_t capacity() const
@@ -340,7 +340,7 @@ namespace cl
 
         TValue<SMI> len() const
         {
-            return TValue<SMI>::unsafe_unchecked(size_value.as_value());
+            return TValue<SMI>::from_value_unchecked(size_value.as_value());
         }
 
         size_t capacity() const
@@ -624,7 +624,7 @@ namespace cl
 
         TValue<SMI> len() const
         {
-            return TValue<SMI>::unsafe_unchecked(size_value.as_value());
+            return TValue<SMI>::from_value_unchecked(size_value.as_value());
         }
 
         size_t capacity() const

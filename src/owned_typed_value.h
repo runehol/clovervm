@@ -10,10 +10,13 @@ namespace cl
     {
         using extracted_type = typename ValueTypeTraits<T>::get_type;
 
-        static TValue<T> from_value(Value value) { return TValue<T>(value); }
+        static TValue<T> from_value(Value value)
+        {
+            return TValue<T>::from_value_checked(value);
+        }
         static TValue<T> from_value_unchecked(Value value)
         {
-            return TValue<T>::unsafe_unchecked(value);
+            return TValue<T>::from_value_unchecked(value);
         }
         static Value to_value(TValue<T> value) { return Value(value); }
         static TValue<T> none() { return from_value_unchecked(Value::None()); }

@@ -180,7 +180,7 @@ TEST(Interpreter, function_varargs_collect_empty_tuple)
     ASSERT_TRUE(actual.is_ptr());
     ASSERT_EQ(NativeLayoutId::Tuple,
               actual.get_ptr<Object>()->native_layout_id());
-    EXPECT_TRUE(TValue<Tuple>(actual).extract()->empty());
+    EXPECT_TRUE(TValue<Tuple>::from_value_checked(actual).extract()->empty());
 }
 
 TEST(Interpreter, function_varargs_still_requires_positional_arguments)
@@ -342,7 +342,8 @@ TEST(Interpreter, string_literal_value)
     test::VmTestContext test_context;
     Value actual = test_context.run_file(L"\"abc\"\n");
 
-    EXPECT_STREQ(L"abc", string_as_wchar_t(TValue<String>(actual)));
+    EXPECT_STREQ(L"abc",
+                 string_as_wchar_t(TValue<String>::from_value_checked(actual)));
 }
 
 TEST(Interpreter, string_dunder_add_calls_native_function)
@@ -351,7 +352,8 @@ TEST(Interpreter, string_dunder_add_calls_native_function)
     Value actual = test_context.run_file(L"\"ab\".__add__(\"cd\")\n");
 
     ASSERT_TRUE(can_convert_to<String>(actual));
-    EXPECT_STREQ(L"abcd", string_as_wchar_t(TValue<String>(actual)));
+    EXPECT_STREQ(L"abcd",
+                 string_as_wchar_t(TValue<String>::from_value_checked(actual)));
 }
 
 TEST(Interpreter, string_dunder_add_wrong_type_reports_unimplemented)

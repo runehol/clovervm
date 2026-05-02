@@ -65,7 +65,7 @@ TEST(TValue, UnsafeUncheckedRoundTripsRawValue)
     String *string = context.thread()->make_internal_raw<String>(L"unsafe");
     Value raw = Value::from_oop(string);
 
-    TValue<String> typed_string = TValue<String>::unsafe_unchecked(raw);
+    TValue<String> typed_string = TValue<String>::from_value_unchecked(raw);
 
     EXPECT_EQ(raw, typed_string.as_value());
     EXPECT_EQ(string, typed_string.extract());
@@ -73,19 +73,21 @@ TEST(TValue, UnsafeUncheckedRoundTripsRawValue)
 
 TEST(TValue, CheckedConstructionThrowsOnWrongType)
 {
-    EXPECT_THROW((void)TValue<String>(Value::True()), std::runtime_error);
+    EXPECT_THROW((void)TValue<String>::from_value_checked(Value::True()),
+                 std::runtime_error);
 }
 
 TEST(TValue, SmiUsesTraitDefinedGetter)
 {
-    TValue<SMI> smi(Value::from_smi(42));
+    TValue<SMI> smi = TValue<SMI>::from_value_checked(Value::from_smi(42));
 
     EXPECT_EQ(42, smi.extract());
 }
 
 TEST(TValue, ClIntAcceptsCurrentIntegerRepresentation)
 {
-    TValue<CLInt> integer(Value::from_smi(42));
+    TValue<CLInt> integer =
+        TValue<CLInt>::from_value_checked(Value::from_smi(42));
 
     EXPECT_EQ(Value::from_smi(42), integer.as_value());
 }

@@ -181,7 +181,7 @@ namespace cl
         TValue<String> get_property_name(uint32_t property_idx) const
         {
             assert(property_idx < property_count_);
-            return TValue<String>::unsafe_unchecked(
+            return TValue<String>::from_value_unchecked(
                 descriptor_names[property_idx]);
         }
         StorageLocation

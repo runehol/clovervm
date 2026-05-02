@@ -279,8 +279,8 @@ namespace cl
         int32_t find_binding_idx(const ScopeAnalysis &analysis,
                                  Value name) const
         {
-            auto binding_iter =
-                analysis.binding_indices.find(TValue<String>(name));
+            auto binding_iter = analysis.binding_indices.find(
+                TValue<String>::from_value_checked(name));
             if(binding_iter == analysis.binding_indices.end())
             {
                 return -1;
@@ -325,11 +325,13 @@ namespace cl
 
             uint32_t slot_idx =
                 target_code_obj->get_local_scope_ptr()
-                    ->register_slot_index_for_write(TValue<String>(name));
+                    ->register_slot_index_for_write(
+                        TValue<String>::from_value_checked(name));
             int32_t binding_idx = int32_t(analysis.bindings.size());
             analysis.bindings.push_back(BindingInfo{
                 name, BindingScope::Local, slot_idx, initial_presence, false});
-            analysis.binding_indices[TValue<String>(name)] = binding_idx;
+            analysis.binding_indices[TValue<String>::from_value_checked(name)] =
+                binding_idx;
             return analysis.bindings.back();
         }
 
@@ -346,7 +348,8 @@ namespace cl
             int32_t binding_idx = int32_t(analysis.bindings.size());
             analysis.bindings.push_back(BindingInfo{name, BindingScope::Global,
                                                     0, Presence::Maybe, false});
-            analysis.binding_indices[TValue<String>(name)] = binding_idx;
+            analysis.binding_indices[TValue<String>::from_value_checked(name)] =
+                binding_idx;
             return analysis.bindings.back();
         }
 
@@ -386,11 +389,12 @@ namespace cl
             }
 
             uint32_t slot_idx =
-                is_read
-                    ? target_code_obj->module_scope()
-                          ->register_slot_index_for_read(TValue<String>(name))
-                    : target_code_obj->module_scope()
-                          ->register_slot_index_for_write(TValue<String>(name));
+                is_read ? target_code_obj->module_scope()
+                              ->register_slot_index_for_read(
+                                  TValue<String>::from_value_checked(name))
+                        : target_code_obj->module_scope()
+                              ->register_slot_index_for_write(
+                                  TValue<String>::from_value_checked(name));
             return NameAccessAnalysis{BindingScope::Global, Presence::Maybe,
                                       slot_idx};
         }
@@ -429,7 +433,7 @@ namespace cl
         GlobalDeclarationState::NameState &
         global_name_state(GlobalDeclarationState &state, Value name)
         {
-            return state.names[TValue<String>(name)];
+            return state.names[TValue<String>::from_value_checked(name)];
         }
 
         void mark_global_validation_use(GlobalDeclarationState &state,
@@ -2396,7 +2400,7 @@ namespace cl
             assert(av.kinds[ch].node_kind == AstNodeKind::PARAMETER ||
                    av.kinds[ch].node_kind == AstNodeKind::PARAMETER_VARARGS);
             fun_obj.get_local_scope_ptr()->register_slot_index_for_write(
-                TValue<String>(av.constants[ch]));
+                TValue<String>::from_value_checked(av.constants[ch]));
         }
         reserve_parameter_padding_and_frame_header(&fun_obj);
 

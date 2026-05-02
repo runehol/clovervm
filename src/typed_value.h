@@ -3,6 +3,7 @@
 
 #include "object.h"
 #include "value.h"
+#include <cassert>
 #include <stdexcept>
 #include <type_traits>
 
@@ -94,12 +95,19 @@ namespace cl
     template <typename T> class TValue
     {
     public:
-        explicit TValue(Value value) : value_(value)
+        static TValue from_value_checked(Value value)
         {
-            validate_typed_value<T>(value_);
+            validate_typed_value<T>(value);
+            return from_value_unchecked(value);
         }
 
-        static TValue unsafe_unchecked(Value value)
+        static TValue from_value_assumed(Value value)
+        {
+            assert(ValueTypeTraits<T>::is_instance(value));
+            return from_value_unchecked(value);
+        }
+
+        static TValue from_value_unchecked(Value value)
         {
             TValue typed_value;
             typed_value.value_ = value;
@@ -111,7 +119,7 @@ namespace cl
                   typename = std::enable_if_t<std::is_pointer_v<GetType>>>
         static TValue from_oop(std::remove_pointer_t<GetType> *ptr)
         {
-            return unsafe_unchecked(Value::from_oop(ptr));
+            return from_value_unchecked(Value::from_oop(ptr));
         }
 
         template <typename U = T,

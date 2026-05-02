@@ -319,7 +319,7 @@ TEST(Codegen, string_literal_constant_value)
     CodeObject *code_obj = test_context.compile_file(L"\"abc\"\n");
 
     ASSERT_EQ(size_t(1), code_obj->constant_table.size());
-    EXPECT_STREQ(L"abc", string_as_wchar_t(TValue<String>(
+    EXPECT_STREQ(L"abc", string_as_wchar_t(TValue<String>::from_value_checked(
                              code_obj->constant_table[0].as_value())));
 }
 

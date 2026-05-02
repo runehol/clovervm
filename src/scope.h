@@ -126,7 +126,7 @@ namespace cl
         {
             int32_t slot_idx = entries[entry_idx].get_slot_idx();
             assert(slot_idx >= 0);
-            return TValue<String>::unsafe_unchecked(slot_names[slot_idx]);
+            return TValue<String>::from_value_unchecked(slot_names[slot_idx]);
         }
 
     private:

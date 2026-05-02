@@ -11,7 +11,7 @@ namespace cl
         VirtualMachine *vm, NativeFunctionTarget target, Bytecode call_opcode,
         uint32_t n_parameters,
         TValue<Tuple> default_parameters =
-            TValue<Tuple>::unsafe_unchecked(Value::None()))
+            TValue<Tuple>::from_value_unchecked(Value::None()))
     {
         TValue<String> name =
             vm->get_or_create_interned_string_value(L"<native>");

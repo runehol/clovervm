@@ -34,7 +34,7 @@ namespace cl
             throw std::runtime_error(
                 "TypeError: range() arguments must be integers");
         }
-        return TValue<CLInt>(arg);
+        return TValue<CLInt>::from_value_unchecked(arg);
     }
 
     static Value builtin_range(Value start_arg, Value end_arg, Value step_arg)
@@ -71,7 +71,9 @@ namespace cl
         }
 
         return make_object_value<RangeIterator>(
-            TValue<CLInt>(start), TValue<CLInt>(stop), TValue<CLInt>(step));
+            TValue<CLInt>::from_value_unchecked(start),
+            TValue<CLInt>::from_value_unchecked(stop),
+            TValue<CLInt>::from_value_unchecked(step));
     }
 
     VirtualMachine::VirtualMachine()

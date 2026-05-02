@@ -33,7 +33,8 @@ namespace cl
 
         if(has_init)
         {
-            TValue<Function> init_function(init);
+            TValue<Function> init_function =
+                TValue<Function>::from_value_checked(init);
             init_code = init_function.extract()->code_object.extract();
             init_n_parameters = init_code->n_parameters;
             if(init_n_parameters == 0 ||
@@ -131,7 +132,8 @@ namespace cl
                 TValue<CodeObject>::from_oop(code));
         }
 
-        TValue<Function> init_function(init);
+        TValue<Function> init_function =
+            TValue<Function>::from_value_checked(init);
         Value defaults = init_function.extract()->default_parameters.as_value();
         if(defaults.is_not_present() || defaults == Value::None())
         {
@@ -139,7 +141,8 @@ namespace cl
                 TValue<CodeObject>::from_oop(code));
         }
 
-        TValue<Tuple> default_tuple(defaults);
+        TValue<Tuple> default_tuple =
+            TValue<Tuple>::from_value_checked(defaults);
         TValue<Tuple> thunk_defaults = make_constructor_thunk_defaults(
             default_tuple, init_function.extract()
                                ->code_object.extract()

@@ -214,9 +214,10 @@ namespace cl
 
     static Value build_class_from_frame(Value *fp, CodeObject *body_code)
     {
-        TValue<String> class_name(
+        TValue<String> class_name = TValue<String>::from_value_assumed(
             fp[body_code->encode_reg(ClassBodyNameParameter)]);
-        TValue<Tuple> bases(fp[body_code->encode_reg(ClassBodyBasesParameter)]);
+        TValue<Tuple> bases = TValue<Tuple>::from_value_assumed(
+            fp[body_code->encode_reg(ClassBodyBasesParameter)]);
 
         TValue<ClassObject> cls = make_internal_value<ClassObject>(
             active_vm()->type_class(), class_name,
@@ -385,7 +386,8 @@ namespace cl
             return;
         }
 
-        TValue<Tuple> defaults(fun.extract()->default_parameters.as_value());
+        TValue<Tuple> defaults = TValue<Tuple>::from_value_assumed(
+            fun.extract()->default_parameters.as_value());
         uint32_t first_default_idx =
             uint32_t(defaults.extract()->size()) - n_missing_args;
         CodeObject *target_code_object = fun.extract()->code_object.extract();
@@ -712,7 +714,7 @@ namespace cl
         uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
-        TValue<String> attr_name(
+        TValue<String> attr_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].as_value());
         AttributeReadInlineCache &cache =
             code_object->attribute_read_caches[cache_idx];
@@ -751,7 +753,7 @@ namespace cl
         uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
-        TValue<String> attr_name(
+        TValue<String> attr_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].as_value());
         AttributeMutationInlineCache &cache =
             code_object->attribute_mutation_caches[cache_idx];
@@ -809,7 +811,7 @@ namespace cl
         uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
-        TValue<String> attr_name(
+        TValue<String> attr_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].as_value());
         AttributeMutationInlineCache &cache =
             code_object->attribute_mutation_caches[cache_idx];
@@ -1461,7 +1463,7 @@ namespace cl
     {
         START(2);
         uint8_t const_offset = pc[1];
-        TValue<CodeObject> code_obj(
+        TValue<CodeObject> code_obj = TValue<CodeObject>::from_value_assumed(
             code_object->constant_table[const_offset].as_value());
 
         accumulator = make_object_value<Function>(code_obj);
@@ -1474,9 +1476,10 @@ namespace cl
         START(3);
         uint8_t const_offset = pc[1];
         int8_t defaults_reg = pc[2];
-        TValue<CodeObject> code_obj(
+        TValue<CodeObject> code_obj = TValue<CodeObject>::from_value_assumed(
             code_object->constant_table[const_offset].as_value());
-        TValue<Tuple> defaults(fp[defaults_reg]);
+        TValue<Tuple> defaults =
+            TValue<Tuple>::from_value_assumed(fp[defaults_reg]);
 
         accumulator = make_object_value<Function>(code_obj, defaults);
 
@@ -1544,7 +1547,7 @@ namespace cl
         static constexpr uint32_t create_class_instr_len = 3;
         uint8_t body_const_offset = pc[1];
         int8_t first_arg_reg = pc[2];
-        TValue<CodeObject> body_code(
+        TValue<CodeObject> body_code = TValue<CodeObject>::from_value_assumed(
             code_object->constant_table[body_const_offset].as_value());
 
         const uint8_t *return_pc = pc + create_class_instr_len;
@@ -1692,7 +1695,7 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        TValue<Function> function(fun);
+        TValue<Function> function = TValue<Function>::from_value_assumed(fun);
         if(unlikely(!function.extract()->accepts_arity(n_args)))
         {
             MUSTTAIL return wrong_arity_error(ARGS);
@@ -1792,7 +1795,7 @@ namespace cl
         uint8_t call_cache_idx = pc[4];
         uint32_t n_user_args = uint8_t(pc[5]);
         Value receiver = fp[receiver_reg];
-        TValue<String> attr_name(
+        TValue<String> attr_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].as_value());
 
         AttributeReadInlineCache &cache =
@@ -1841,7 +1844,8 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        TValue<Function> function(callable);
+        TValue<Function> function =
+            TValue<Function>::from_value_assumed(callable);
         FunctionCallInlineCache &call_cache =
             code_object->function_call_caches[call_cache_idx];
         if(function_call_cache_matches(call_cache, callable, n_args))

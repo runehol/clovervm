@@ -10,22 +10,22 @@ namespace cl
     class Tuple;
     class VirtualMachine;
 
-    TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction0 function,
-                         TValue<Tuple> default_parameters =
-                             TValue<Tuple>::unsafe_unchecked(Value::None()));
-    TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction1 function,
-                         TValue<Tuple> default_parameters =
-                             TValue<Tuple>::unsafe_unchecked(Value::None()));
-    TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction2 function,
-                         TValue<Tuple> default_parameters =
-                             TValue<Tuple>::unsafe_unchecked(Value::None()));
-    TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction3 function,
-                         TValue<Tuple> default_parameters =
-                             TValue<Tuple>::unsafe_unchecked(Value::None()));
+    TValue<Function> make_native_function(
+        VirtualMachine *vm, NativeFunction0 function,
+        TValue<Tuple> default_parameters =
+            TValue<Tuple>::from_value_unchecked(Value::None()));
+    TValue<Function> make_native_function(
+        VirtualMachine *vm, NativeFunction1 function,
+        TValue<Tuple> default_parameters =
+            TValue<Tuple>::from_value_unchecked(Value::None()));
+    TValue<Function> make_native_function(
+        VirtualMachine *vm, NativeFunction2 function,
+        TValue<Tuple> default_parameters =
+            TValue<Tuple>::from_value_unchecked(Value::None()));
+    TValue<Function> make_native_function(
+        VirtualMachine *vm, NativeFunction3 function,
+        TValue<Tuple> default_parameters =
+            TValue<Tuple>::from_value_unchecked(Value::None()));
 
 }  // namespace cl
 

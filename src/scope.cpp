@@ -24,8 +24,8 @@ namespace cl
             {
                 return &name_table[hash_idx];
             }
-            if(string_eq(
-                   key, TValue<String>::unsafe_unchecked(slot_names[slot_idx])))
+            if(string_eq(key, TValue<String>::from_value_unchecked(
+                                  slot_names[slot_idx])))
             {
                 return &name_table[hash_idx];
             }
@@ -56,7 +56,7 @@ namespace cl
             }
 
             int32_t *name_table_entry = find_name_table_entry(
-                TValue<String>::unsafe_unchecked(slot_names[slot_idx]));
+                TValue<String>::from_value_unchecked(slot_names[slot_idx]));
             *name_table_entry = slot_idx;
         }
     }
@@ -90,7 +90,7 @@ namespace cl
         (void)new_entry_idx;
 
         TValue<String> name =
-            TValue<String>::unsafe_unchecked(slot_names[slot_idx]);
+            TValue<String>::from_value_unchecked(slot_names[slot_idx]);
         int32_t *name_table_entry = find_name_table_entry(name);
         *name_table_entry = slot_idx;
     }
@@ -98,7 +98,7 @@ namespace cl
     TValue<String> Scope::get_name_by_slot_index(int32_t slot_idx) const
     {
         assert(slot_names[slot_idx] != Value::None());
-        return TValue<String>::unsafe_unchecked(slot_names[slot_idx]);
+        return TValue<String>::from_value_unchecked(slot_names[slot_idx]);
     }
 
     /* For a write, we just insert a regular not-present value with no parent

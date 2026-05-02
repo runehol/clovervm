@@ -13,13 +13,14 @@ namespace cl
 
     static TValue<SMI> internal_hash(Value key)
     {
-        return TValue<SMI>::unsafe_unchecked(
-            Value::from_smi(string_hash(TValue<String>(key))));
+        return TValue<SMI>::from_value_unchecked(Value::from_smi(
+            string_hash(TValue<String>::from_value_unchecked(key))));
     }
 
     static bool internal_eq(Value a, Value b)
     {
-        return string_eq(TValue<String>(a), TValue<String>(b));
+        return string_eq(TValue<String>::from_value_unchecked(a),
+                         TValue<String>::from_value_unchecked(b));
     }
 
     Dict::Dict(ClassObject *cls)
@@ -126,7 +127,8 @@ namespace cl
         if(idx >= 0)
         {
             entries.set(idx, Entry(Value::not_present(), Value::None(),
-                                   TValue<SMI>(Value::from_smi(0))));
+                                   TValue<SMI>::from_value_unchecked(
+                                       Value::from_smi(0))));
             *iidx = tombstone;
             --n_valid_entries;
         }
