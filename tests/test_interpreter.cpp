@@ -1088,6 +1088,41 @@ TEST(Interpreter, attribute_load_and_store_syntax)
               obj_value.get_ptr<Instance>()->get_own_property(attr_name));
 }
 
+TEST(Interpreter, store_attr_caches_instance_add_transition)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"make"));
+    CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
+                                                     L"    pass\n"
+                                                     L"def make(value):\n"
+                                                     L"    obj = Cls()\n"
+                                                     L"    obj.value = value\n"
+                                                     L"    return obj.value\n"
+                                                     L"make(1)\n"
+                                                     L"make(2)\n");
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(2), actual);
+
+    Value function_value =
+        code_obj->module_scope.extract()->get_by_name(function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->attribute_write_caches.size());
+    const AttributeWriteInlineCache &cache =
+        function_code->attribute_write_caches[0];
+    EXPECT_EQ(AttributeWritePlanKind::AddOwnProperty, cache.plan.kind);
+    ASSERT_NE(nullptr, cache.receiver_shape);
+    ASSERT_NE(nullptr, cache.plan.add_next_shape);
+    ASSERT_TRUE(cache.plan.storage_location.is_found());
+    ASSERT_NE(nullptr, cache.plan.lookup_validity_cell);
+    EXPECT_TRUE(cache.plan.lookup_validity_cell->is_valid());
+}
+
 TEST(Interpreter, cached_class_attribute_read_observes_class_write)
 {
     test::FileRunner file_runner(L"class Cls:\n"

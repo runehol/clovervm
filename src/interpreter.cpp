@@ -560,6 +560,7 @@ namespace cl
     static ALWAYSINLINE bool store_attr_from_plan_inline_fast(
         Value receiver, const AttributeWritePlan &plan, Value value)
     {
+        assert(plan.kind == AttributeWritePlanKind::StoreExisting);
         Object *storage_owner = write_plan_storage_owner(receiver, plan);
         if(plan.storage_location.kind != StorageKind::Inline)
         {
@@ -575,6 +576,18 @@ namespace cl
         Value old_value = slots[plan.storage_location.physical_idx];
         slots[plan.storage_location.physical_idx] = incref(value);
         decref(old_value);
+        return true;
+    }
+
+    static ALWAYSINLINE bool store_attr_add_own_property_inline_fast(
+        Value receiver, const AttributeWritePlan &plan, Value value)
+    {
+        assert(plan.kind == AttributeWritePlanKind::AddOwnProperty);
+        assert(receiver.is_ptr());
+        assert(plan.add_next_shape != nullptr);
+        Object *object = receiver.get_ptr<Object>();
+        object->set_shape(plan.add_next_shape);
+        object->write_storage_location(plan.storage_location, value);
         return true;
     }
 
@@ -731,8 +744,29 @@ namespace cl
         if(descriptor.status == AttributeWriteStatus::NotFound &&
            receiver.is_ptr())
         {
-            if(likely(receiver.get_ptr<Object>()->add_own_property(
-                   attr_name, accumulator)))
+            Object *receiver_object = receiver.get_ptr<Object>();
+            Shape *receiver_shape = receiver_object->get_shape();
+            if(receiver_shape != nullptr &&
+               !receiver_shape->has_flag(ShapeFlag::IsClassObject) &&
+               receiver_shape->allows_attribute_add_delete())
+            {
+                Shape *next_shape = receiver_shape->derive_transition(
+                    attr_name, ShapeTransitionVerb::Add);
+                StorageLocation storage_location =
+                    next_shape->resolve_present_property(attr_name);
+                assert(storage_location.is_found());
+                AttributeWritePlan plan = AttributeWritePlan::add_own_property(
+                    next_shape, storage_location,
+                    receiver_object->get_class()
+                        .extract()
+                        ->get_or_create_mro_shape_and_contents_validity_cell());
+                cache.populate(receiver, plan);
+                store_attr_add_own_property_inline_fast(receiver, cache.plan,
+                                                        accumulator);
+                COMPLETE();
+            }
+            if(likely(
+                   receiver_object->add_own_property(attr_name, accumulator)))
             {
                 COMPLETE();
             }
@@ -922,11 +956,18 @@ namespace cl
         {
             MUSTTAIL return op_store_attr_cache_miss(ARGS);
         }
-        if(unlikely(!store_attr_from_plan_inline_fast(receiver, cache.plan,
-                                                      accumulator)))
+        if(likely(cache.plan.kind == AttributeWritePlanKind::StoreExisting))
         {
-            MUSTTAIL return op_store_attr_cache_miss(ARGS);
+            if(unlikely(!store_attr_from_plan_inline_fast(receiver, cache.plan,
+                                                          accumulator)))
+            {
+                MUSTTAIL return op_store_attr_cache_miss(ARGS);
+            }
+            COMPLETE();
         }
+        assert(cache.plan.kind == AttributeWritePlanKind::AddOwnProperty);
+        store_attr_add_own_property_inline_fast(receiver, cache.plan,
+                                                accumulator);
         COMPLETE();
     }
 

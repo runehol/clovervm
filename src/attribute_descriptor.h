@@ -35,6 +35,12 @@ namespace cl
 
     static_assert(static_cast<uint8_t>(AttributeWriteStatus::Found) == 0);
 
+    enum class AttributeWritePlanKind : uint8_t
+    {
+        StoreExisting,
+        AddOwnProperty,
+    };
+
     enum class AttributeReadPlanPath : uint8_t
     {
         ReceiverOwnProperty,
@@ -158,16 +164,28 @@ namespace cl
 
     struct AttributeWritePlan
     {
+        AttributeWritePlanKind kind;
         Object *storage_owner;
         StorageLocation storage_location;
         ValidityCell *lookup_validity_cell;
+        Shape *add_next_shape;
 
         static AttributeWritePlan
         store_existing(Object *storage_owner, StorageLocation location,
                        ValidityCell *lookup_validity_cell)
         {
-            return AttributeWritePlan{storage_owner, location,
-                                      lookup_validity_cell};
+            return AttributeWritePlan{AttributeWritePlanKind::StoreExisting,
+                                      storage_owner, location,
+                                      lookup_validity_cell, nullptr};
+        }
+
+        static AttributeWritePlan
+        add_own_property(Shape *next_shape, StorageLocation location,
+                         ValidityCell *lookup_validity_cell)
+        {
+            return AttributeWritePlan{AttributeWritePlanKind::AddOwnProperty,
+                                      nullptr, location, lookup_validity_cell,
+                                      next_shape};
         }
     };
 

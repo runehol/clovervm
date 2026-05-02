@@ -60,6 +60,14 @@ namespace cl
             plan = descriptor.plan;
         }
 
+        void populate(Value receiver, AttributeWritePlan write_plan)
+        {
+            assert(receiver.is_ptr());
+            assert(write_plan.lookup_validity_cell != nullptr);
+            receiver_shape = receiver.get_ptr<Object>()->get_shape();
+            plan = write_plan;
+        }
+
         void clear()
         {
             receiver_shape = nullptr;

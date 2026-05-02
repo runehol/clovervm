@@ -469,15 +469,26 @@ namespace cl
     bool store_attr_from_plan(Value receiver, const AttributeWritePlan &plan,
                               Value value)
     {
-        Object *storage_owner = plan.storage_owner;
-        if(storage_owner == nullptr)
+        if(likely(plan.kind == AttributeWritePlanKind::StoreExisting))
         {
-            assert(receiver.is_ptr());
-            storage_owner = receiver.get_ptr<Object>();
+            Object *storage_owner = plan.storage_owner;
+            if(storage_owner == nullptr)
+            {
+                assert(receiver.is_ptr());
+                storage_owner = receiver.get_ptr<Object>();
+            }
+
+            storage_owner->write_storage_location(plan.storage_location, value);
+            invalidate_lookup_cells_for_class_target(storage_owner);
+            return true;
         }
 
-        storage_owner->write_storage_location(plan.storage_location, value);
-        invalidate_lookup_cells_for_class_target(storage_owner);
+        assert(plan.kind == AttributeWritePlanKind::AddOwnProperty);
+        assert(receiver.is_ptr());
+        assert(plan.add_next_shape != nullptr);
+        Object *object = receiver.get_ptr<Object>();
+        object->set_shape(plan.add_next_shape);
+        object->write_storage_location(plan.storage_location, value);
         return true;
     }
 
