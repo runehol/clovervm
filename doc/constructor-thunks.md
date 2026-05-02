@@ -70,8 +70,8 @@ p2 = args_tuple
 p3 = kwargs_dict
 ```
 
-Its body then allocates the instance and performs an internal straight call to
-`__init__` with the already-normalized frame layout:
+Its body then allocates the instance and enters the resolved `__init__`
+implementation with an already-prepared frame layout:
 
 ```text
 init_p0 = inst
@@ -79,17 +79,25 @@ init_p1 = p0
 init_p2 = p1
 init_p3 = p2
 init_p4 = p3
-StraightCallNormalized Class.__init__
+EnterPreparedFunction const[Class.__init__]
 return inst
 ```
 
-`StraightCallNormalized` is an internal primitive: it enters a known function
-using an already-normalized parameter layout, skipping public call adaptation.
-It does not recursively enter the interpreter; it sets up the next Python frame
-on the existing CloverVM stack like ordinary calls do.
+`EnterPreparedFunction` is an internal primitive: it enters a known `Function`
+using an already-prepared parameter layout, skipping public call adaptation.
+The name is intentional: `Call...` bytecodes perform callable protocol and
+argument adaptation, while `Enter...` bytecodes trust that the callee and frame
+slots are already prepared. It does not recursively enter the interpreter; it
+sets up the next Python frame on the existing CloverVM stack like ordinary calls
+do.
 
 This spends one extra generated function/frame to keep constructor semantics out
 of `CallSimple` and out of a shared megamorphic `type.__call__` body.
+
+The thunk should inject the resolved `__init__` function as a constant. The
+thunk is already specialized on that implementation's signature, so the resolved
+function identity is part of the specialization rather than something the thunk
+should look up again.
 
 ## Eligibility
 
@@ -116,7 +124,7 @@ When `callable` is an eligible class, the call IC can specialize to the class's
 attached constructor thunk:
 
 ```text
-guard ClassObject / constructor validity
+guard ClassObject / existing class+metaclass lookup validity cell
 callee = Class.create_instance
 enter ordinary function-call path
 ```
@@ -132,32 +140,57 @@ not as a Python-visible class attribute:
 
 ```cpp
 ClassObject::constructor_thunk
+ClassObject::constructor_thunk_lookup_cell
 ```
 
-This slot is addressed directly by VM code. It is not part of the class shape,
-does not participate in attribute lookup, and cannot be observed or overwritten
-from Python code as `Class.create_instance`.
+These slots are addressed directly by VM code. They are not part of the class
+shape, do not participate in attribute lookup, and cannot be observed or
+overwritten from Python code as `Class.create_instance`.
+
+`constructor_thunk_lookup_cell` is not a constructor-specific validity cell. It
+remembers the existing combined
+`mro_shape_and_metaclass_mro_shape_and_contents_validity_cell` used to build the
+cached thunk, so VM code can tell whether the hidden thunk still corresponds to
+the current class/metaclass lookup assumptions.
 
 The class-owned constructor state may eventually include:
 
 ```text
 constructor_thunk function
-constructor validity cell, if a dedicated cell proves useful
-cached __init__ function / code object
+constructor_thunk_lookup_cell borrowed from existing lookup validity machinery
+cached __init__ function / code object for assertions or debugging
 allocation assumptions
 ```
 
-Invalidating the constructor validity should happen when any assumption that can
-change construction semantics changes, including:
+The initial design deliberately does not add a dedicated constructor validity
+cell. Existing class/metaclass lookup invalidation is broad enough for the first
+tier:
 
 - class MRO or contents changes affecting `__init__` or `__new__`;
 - metaclass MRO or contents changes affecting `__call__`;
 - allocation layout changes that make the thunk's allocation primitive invalid.
 
-Initially this can over-invalidate using broad class/metaclass lookup validity
-cells or simply discard/rebuild the hidden thunk when relevant class state
-changes. A dedicated constructor validity cell is optional and can come later if
-it proves useful.
+On demand, VM code gets the current combined lookup cell. It can reuse the
+hidden thunk only when `constructor_thunk_lookup_cell` is that same valid cell.
+If the class or metaclass changed, existing invalidation will invalidate/drop the
+old combined cell; the next constructor call resolves `__init__` again and
+builds a new thunk.
+
+## Staging
+
+The first implementation can be conservative:
+
+- support standard `type` metaclass behavior only;
+- reject custom `__new__`;
+- require `__init__` to resolve to a plain `Function`;
+- specialize the thunk on the resolved `__init__` function and its signature;
+- support fixed positional parameters and defaults first;
+- add varargs/keyword support after `EnterPreparedFunction` can enter a fully
+  normalized callee frame.
+
+Before `EnterPreparedFunction` exists, an intermediate thunk may use the normal
+function call machinery for the internal `__init__` call, but the target shape is
+the prepared enter primitive above.
 
 ## Generic Fallback
 
