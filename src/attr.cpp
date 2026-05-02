@@ -466,7 +466,7 @@ namespace cl
             own_descriptor, lookup_class);
     }
 
-    bool store_attr_from_plan(Value receiver, const AttributeWritePlan &plan,
+    bool store_attr_from_plan(Value receiver, const AttributeMutationPlan &plan,
                               Value value)
     {
         if(likely(!plan.is_add_own_property()))
@@ -486,10 +486,10 @@ namespace cl
 
         assert(plan.is_add_own_property());
         assert(receiver.is_ptr());
-        assert(plan.add_next_shape != nullptr);
+        assert(plan.next_shape != nullptr);
         assert(plan.storage_kind == StorageKind::Inline);
         Object *object = receiver.get_ptr<Object>();
-        object->set_shape(plan.add_next_shape);
+        object->set_shape(plan.next_shape);
         object->write_storage_location(plan.storage_location(), value);
         return true;
     }

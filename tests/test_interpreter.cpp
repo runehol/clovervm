@@ -1112,11 +1112,11 @@ TEST(Interpreter, store_attr_caches_instance_add_transition)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->attribute_write_caches.size());
-    const AttributeWriteInlineCache &cache =
-        function_code->attribute_write_caches[0];
+    ASSERT_EQ(1u, function_code->attribute_mutation_caches.size());
+    const AttributeMutationInlineCache &cache =
+        function_code->attribute_mutation_caches[0];
     ASSERT_NE(nullptr, cache.receiver_shape);
-    ASSERT_NE(nullptr, cache.plan.add_next_shape);
+    ASSERT_NE(nullptr, cache.plan.next_shape);
     ASSERT_TRUE(cache.plan.storage_location().is_found());
     EXPECT_TRUE(cache.plan.is_add_own_property());
     ASSERT_NE(nullptr, cache.plan.lookup_validity_cell);

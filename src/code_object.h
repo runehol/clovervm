@@ -174,7 +174,7 @@ namespace cl
         std::vector<uint32_t> source_offsets;
         std::vector<OwnedValue> constant_table;
         std::vector<AttributeReadInlineCache> attribute_read_caches;
-        std::vector<AttributeWriteInlineCache> attribute_write_caches;
+        std::vector<AttributeMutationInlineCache> attribute_mutation_caches;
         std::vector<FunctionCallInlineCache> function_call_caches;
         std::vector<NativeFunctionTarget> native_function_targets;
 
@@ -551,10 +551,10 @@ namespace cl
             return idx;
         }
 
-        uint32_t allocate_attribute_write_cache()
+        uint32_t allocate_attribute_mutation_cache()
         {
-            uint32_t idx = attribute_write_caches.size();
-            attribute_write_caches.emplace_back();
+            uint32_t idx = attribute_mutation_caches.size();
+            attribute_mutation_caches.emplace_back();
             assert(idx < 256);
             return idx;
         }

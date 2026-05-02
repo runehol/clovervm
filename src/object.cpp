@@ -40,7 +40,7 @@ namespace cl
             }
 
             return AttributeWriteDescriptor::found(
-                AttributeWritePlan::store_existing(
+                AttributeMutationPlan::store_existing(
                     nullptr, info.storage_location(), nullptr));
         }
 

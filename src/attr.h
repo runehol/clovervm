@@ -14,7 +14,7 @@ namespace cl
                                Value &callable_out, Value &self_out);
     AttributeWriteDescriptor resolve_attr_write_descriptor(Value obj,
                                                            TValue<String> name);
-    bool store_attr_from_plan(Value receiver, const AttributeWritePlan &plan,
+    bool store_attr_from_plan(Value receiver, const AttributeMutationPlan &plan,
                               Value value);
     Value load_attr(Value obj, TValue<String> name);
     bool store_attr(Value obj, TValue<String> name, Value value);

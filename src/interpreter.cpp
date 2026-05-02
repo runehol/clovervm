@@ -512,7 +512,8 @@ namespace cl
     }
 
     static ALWAYSINLINE Object *
-    write_plan_storage_owner(Value receiver, const AttributeWritePlan &plan)
+    mutation_plan_storage_owner(Value receiver,
+                                const AttributeMutationPlan &plan)
     {
         Object *storage_owner = plan.storage_owner;
         if(storage_owner == nullptr)
@@ -558,13 +559,13 @@ namespace cl
     }
 
     static ALWAYSINLINE bool store_attr_from_plan_inline_fast(
-        Value receiver, const AttributeWritePlan &plan, Value value)
+        Value receiver, const AttributeMutationPlan &plan, Value value)
     {
-        if(unlikely(plan.kind != AttributeWritePlanKind::StoreExisting))
+        if(unlikely(plan.kind != AttributeMutationPlanKind::StoreExisting))
         {
             return false;
         }
-        Object *storage_owner = write_plan_storage_owner(receiver, plan);
+        Object *storage_owner = mutation_plan_storage_owner(receiver, plan);
         if(plan.storage_kind != StorageKind::Inline)
         {
             return false;
@@ -583,14 +584,14 @@ namespace cl
     }
 
     static ALWAYSINLINE bool store_attr_add_own_property_inline_fast(
-        Value receiver, const AttributeWritePlan &plan, Value value)
+        Value receiver, const AttributeMutationPlan &plan, Value value)
     {
         assert(plan.is_add_own_property());
         assert(receiver.is_ptr());
-        assert(plan.add_next_shape != nullptr);
+        assert(plan.next_shape != nullptr);
         assert(plan.storage_kind == StorageKind::Inline);
         Object *object = receiver.get_ptr<Object>();
-        object->set_shape(plan.add_next_shape);
+        object->set_shape(plan.next_shape);
         object->write_storage_location(plan.storage_location(), value);
         return true;
     }
@@ -732,8 +733,8 @@ namespace cl
         Value receiver = fp[reg];
         TValue<String> attr_name(
             code_object->constant_table[const_offset].as_value());
-        AttributeWriteInlineCache &cache =
-            code_object->attribute_write_caches[cache_idx];
+        AttributeMutationInlineCache &cache =
+            code_object->attribute_mutation_caches[cache_idx];
         AttributeWriteDescriptor descriptor =
             resolve_attr_write_descriptor(receiver, attr_name);
         if(descriptor.is_found())
@@ -761,7 +762,7 @@ namespace cl
                 assert(storage_location.is_found());
                 if(storage_location.kind == StorageKind::Inline)
                 {
-                    AttributeWritePlan plan = AttributeWritePlan::add_own_property(
+                    AttributeMutationPlan plan = AttributeMutationPlan::add_own_property(
                         next_shape, storage_location,
                         receiver_object->get_class()
                             .extract()
@@ -957,8 +958,8 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
-        AttributeWriteInlineCache &cache =
-            code_object->attribute_write_caches[cache_idx];
+        AttributeMutationInlineCache &cache =
+            code_object->attribute_mutation_caches[cache_idx];
         if(cache.plan.is_add_own_property())
         {
             store_attr_add_own_property_inline_fast(receiver, cache.plan,
@@ -974,8 +975,8 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
-        AttributeWriteInlineCache &cache =
-            code_object->attribute_write_caches[cache_idx];
+        AttributeMutationInlineCache &cache =
+            code_object->attribute_mutation_caches[cache_idx];
         if(unlikely(!cache.matches(receiver)))
         {
             MUSTTAIL return op_store_attr_cache_miss(ARGS);

@@ -355,7 +355,7 @@ TEST(Codegen, attribute_store_uses_register_receiver_and_accumulator_value)
                            "    7 Halt\n"
                            "Constant 0: Code object:\n"
                            "    0 Ldar p1\n"
-                           "    2 StoreAttr p0, c[0], write_ic[0]\n"
+                           "    2 StoreAttr p0, c[0], mutation_ic[0]\n"
                            "    6 LdaNone\n"
                            "    7 Return\n"
                            "Constant 0: \n"

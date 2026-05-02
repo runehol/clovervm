@@ -38,10 +38,10 @@ namespace cl
         }
     };
 
-    struct AttributeWriteInlineCache
+    struct AttributeMutationInlineCache
     {
         Shape *receiver_shape = nullptr;
-        AttributeWritePlan plan = AttributeWriteDescriptor::not_found().plan;
+        AttributeMutationPlan plan = AttributeWriteDescriptor::not_found().plan;
 
         ALWAYSINLINE bool matches(Value receiver) const
         {
@@ -60,12 +60,12 @@ namespace cl
             plan = descriptor.plan;
         }
 
-        void populate(Value receiver, AttributeWritePlan write_plan)
+        void populate(Value receiver, AttributeMutationPlan mutation_plan)
         {
             assert(receiver.is_ptr());
-            assert(write_plan.lookup_validity_cell != nullptr);
+            assert(mutation_plan.lookup_validity_cell != nullptr);
             receiver_shape = receiver.get_ptr<Object>()->get_shape();
-            plan = write_plan;
+            plan = mutation_plan;
         }
 
         void clear()
@@ -75,8 +75,8 @@ namespace cl
         }
     };
 
-    static_assert(sizeof(AttributeWriteInlineCache) == 32,
-                  "AttributeWriteInlineCache should stay compact");
+    static_assert(sizeof(AttributeMutationInlineCache) == 32,
+                  "AttributeMutationInlineCache should stay compact");
 
 }  // namespace cl
 

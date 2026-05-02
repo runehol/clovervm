@@ -36,7 +36,7 @@ namespace cl
 
     static_assert(static_cast<uint8_t>(AttributeWriteStatus::Found) == 0);
 
-    enum class AttributeWritePlanKind : uint8_t
+    enum class AttributeMutationPlanKind : uint8_t
     {
         StoreExisting,
         AddOwnProperty,
@@ -163,42 +163,42 @@ namespace cl
         }
     };
 
-    struct AttributeWritePlan
+    struct AttributeMutationPlan
     {
         union
         {
             Object *storage_owner;
-            Shape *add_next_shape;
+            Shape *next_shape;
         };
         ValidityCell *lookup_validity_cell;
         int32_t physical_idx;
         StorageKind storage_kind;
-        AttributeWritePlanKind kind;
+        AttributeMutationPlanKind kind;
 
-        static AttributeWritePlan
+        static AttributeMutationPlan
         store_existing(Object *storage_owner, StorageLocation location,
                        ValidityCell *lookup_validity_cell)
         {
-            AttributeWritePlan plan;
+            AttributeMutationPlan plan;
             plan.storage_owner = storage_owner;
             plan.lookup_validity_cell = lookup_validity_cell;
             plan.physical_idx = location.physical_idx;
             plan.storage_kind = location.kind;
-            plan.kind = AttributeWritePlanKind::StoreExisting;
+            plan.kind = AttributeMutationPlanKind::StoreExisting;
             return plan;
         }
 
-        static AttributeWritePlan
+        static AttributeMutationPlan
         add_own_property(Shape *next_shape, StorageLocation location,
                          ValidityCell *lookup_validity_cell)
         {
             assert(location.kind == StorageKind::Inline);
-            AttributeWritePlan plan;
-            plan.add_next_shape = next_shape;
+            AttributeMutationPlan plan;
+            plan.next_shape = next_shape;
             plan.lookup_validity_cell = lookup_validity_cell;
             plan.physical_idx = location.physical_idx;
             plan.storage_kind = location.kind;
-            plan.kind = AttributeWritePlanKind::AddOwnProperty;
+            plan.kind = AttributeMutationPlanKind::AddOwnProperty;
             return plan;
         }
 
@@ -209,24 +209,25 @@ namespace cl
 
         bool is_add_own_property() const
         {
-            return kind == AttributeWritePlanKind::AddOwnProperty;
+            return kind == AttributeMutationPlanKind::AddOwnProperty;
         }
     };
 
-    static_assert(sizeof(AttributeWritePlan) == 24,
-                  "AttributeWritePlan should stay compact for write caches");
+    static_assert(
+        sizeof(AttributeMutationPlan) == 24,
+        "AttributeMutationPlan should stay compact for mutation caches");
 
     struct AttributeWriteDescriptor
     {
         AttributeWriteStatus status;
-        AttributeWritePlan plan;
+        AttributeMutationPlan plan;
         AttributeCacheBlockers cache_blockers;
 
         static AttributeWriteDescriptor not_found()
         {
             return AttributeWriteDescriptor{
                 AttributeWriteStatus::NotFound,
-                AttributeWritePlan::store_existing(
+                AttributeMutationPlan::store_existing(
                     nullptr, StorageLocation::not_found(), nullptr),
                 attribute_cache_blocker(AttributeCacheBlocker::None)};
         }
@@ -259,7 +260,7 @@ namespace cl
             return descriptor;
         }
 
-        static AttributeWriteDescriptor found(AttributeWritePlan plan)
+        static AttributeWriteDescriptor found(AttributeMutationPlan plan)
         {
             return AttributeWriteDescriptor{
                 AttributeWriteStatus::Found, plan,

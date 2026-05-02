@@ -715,7 +715,8 @@ namespace cl
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
                 codegen_node(children[1], mode);
-                uint8_t cache_idx = code_obj->allocate_attribute_write_cache();
+                uint8_t cache_idx =
+                    code_obj->allocate_attribute_mutation_cache();
                 code_obj->emit_opcode_reg_constant_idx_cache_idx(
                     source_offset, Bytecode::StoreAttr, receiver_reg.reg,
                     constant_idx, cache_idx);
@@ -747,7 +748,7 @@ namespace cl
             }
 
             uint8_t store_cache_idx =
-                code_obj->allocate_attribute_write_cache();
+                code_obj->allocate_attribute_mutation_cache();
             code_obj->emit_opcode_reg_constant_idx_cache_idx(
                 source_offset, Bytecode::StoreAttr, receiver_reg.reg,
                 constant_idx, store_cache_idx);
