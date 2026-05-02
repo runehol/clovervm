@@ -162,6 +162,36 @@ pending exception to managed adapter code, while ordinary return stays fast.
       path until object materialization and native normalization are ready.
 - [ ] Add interpreter tests for propagation across nested calls.
 
+Helper-layer transition convention:
+
+- [ ] Make fallible VM-runtime helpers return `Value` rather than throwing:
+      success returns the natural result, or `Value::None()` for operations with
+      no natural result; failure sets pending exception state and returns
+      `Value::exception_marker()`.
+- [ ] Add a `Value::is_exception_marker()` predicate and use it instead of
+      spelling marker comparisons at call sites.
+- [ ] Mark fallible `Value` helpers `[[nodiscard]]` where practical so ignored
+      results become compiler-visible during the migration.
+- [ ] Add a small propagation macro, tentatively
+      `CL_PROPAGATE_EXCEPTION(expr)`, that evaluates a `Value` expression once
+      and returns it from the current function only when it is
+      `Value::exception_marker()`.
+- [ ] Use the macro mainly for void-like success helpers, e.g. checked
+      `set_item`/`del_item` operations that return `Value::None()` on success.
+      For value-producing helpers, prefer the explicit two-step form so the
+      successful value remains visible:
+
+```cpp
+Value item = list->get_item(idx);
+CL_PROPAGATE_EXCEPTION(item);
+```
+
+- [ ] Keep unchecked primitives such as `item_unchecked` and
+      `set_item_unchecked` free of pending-exception semantics; callers must
+      prove validity before using them.
+- [ ] Add debug assertions on container/register writes where useful so
+      `Value::exception_marker()` does not accidentally become ordinary VM data.
+
 Deliverable: real VM exception propagation exists for selected existing failure
 paths, even before `raise` or `try`.
 
