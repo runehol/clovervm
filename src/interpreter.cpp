@@ -138,7 +138,15 @@ namespace cl
         throw std::runtime_error("TypeError: wrong number of arguments");
     }
 
-    static constexpr uint32_t kDefaultFactoryInlineSlotCount = 4;
+    static constexpr size_t kObjectCacheLineBytes = 128;
+    static constexpr size_t kObjectCacheLineStartOffset = 16;
+    static constexpr uint32_t kDefaultFactoryInlineSlotCount =
+        1 + (kObjectCacheLineBytes - kObjectCacheLineStartOffset -
+             sizeof(Instance)) /
+                sizeof(Value);
+    static_assert(sizeof(Instance) +
+                      sizeof(Value) * (kDefaultFactoryInlineSlotCount - 1) ==
+                  kObjectCacheLineBytes - kObjectCacheLineStartOffset);
 
     static ALWAYSINLINE void
     initialize_frame_header(Value *new_fp, Value *previous_fp,
