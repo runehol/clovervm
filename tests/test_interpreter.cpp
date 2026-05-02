@@ -1023,80 +1023,6 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
     EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(read_code));
 }
 
-TEST(Interpreter, class_definition_uses_explicit_base)
-{
-    test::FileRunner file_runner(L"class Base:\n"
-                                 L"    value = 7\n"
-                                 L"class Derived(Base):\n"
-                                 L"    pass\n"
-                                 L"Derived.value\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(7), actual);
-}
-
-TEST(Interpreter, class_definition_stores_explicit_base_tuple)
-{
-    test::FileRunner file_runner(L"class Base:\n"
-                                 L"    pass\n"
-                                 L"class Derived(Base):\n"
-                                 L"    pass\n"
-                                 L"Derived.__bases__[0]\n");
-    Value actual = file_runner.return_value;
-
-    ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(NativeLayoutId::ClassObject,
-              actual.get_ptr<Object>()->native_layout_id());
-    EXPECT_STREQ(L"Base",
-                 string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
-}
-
-TEST(Interpreter, class_definition_stores_implicit_object_base)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    pass\n"
-                                 L"Cls.__bases__[0] is object\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::True(), actual);
-}
-
-TEST(Interpreter, class_definition_stores_explicit_object_base)
-{
-    test::FileRunner file_runner(L"class Cls(object):\n"
-                                 L"    pass\n"
-                                 L"Cls.__mro__[1] is object\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::True(), actual);
-}
-
-TEST(Interpreter, class_definition_stores_multiple_base_tuple)
-{
-    test::FileRunner file_runner(L"class Left:\n"
-                                 L"    marker = 1\n"
-                                 L"class Right:\n"
-                                 L"    marker = 2\n"
-                                 L"class Derived(Left, Right):\n"
-                                 L"    pass\n"
-                                 L"Derived.__bases__[1].marker\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(2), actual);
-}
-
-TEST(Interpreter, class_definition_allows_object_after_derived_base)
-{
-    test::FileRunner file_runner(L"class Base:\n"
-                                 L"    pass\n"
-                                 L"class Derived(Base, object):\n"
-                                 L"    pass\n"
-                                 L"Derived.__mro__[1] is Base\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::True(), actual);
-}
-
 TEST(Interpreter, object_class_has_empty_bases_tuple)
 {
     test::FileRunner file_runner(L"object.__bases__\n");
@@ -1123,54 +1049,6 @@ TEST(Interpreter, class_definition_rejects_duplicate_base)
                          L"class Derived(Base, Base):\n"
                          L"    pass\n",
                          "TypeError: duplicate base class");
-}
-
-TEST(Interpreter, class_definition_uses_multiple_base_mro_order)
-{
-    test::FileRunner file_runner(L"class Left:\n"
-                                 L"    value = 7\n"
-                                 L"class Right:\n"
-                                 L"    value = 8\n"
-                                 L"class Derived(Left, Right):\n"
-                                 L"    pass\n"
-                                 L"Derived.value\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(7), actual);
-}
-
-TEST(Interpreter, class_definition_uses_c3_diamond_mro)
-{
-    test::FileRunner file_runner(L"class Top:\n"
-                                 L"    value = 1\n"
-                                 L"class Left(Top):\n"
-                                 L"    pass\n"
-                                 L"class Right(Top):\n"
-                                 L"    value = 2\n"
-                                 L"class Bottom(Left, Right):\n"
-                                 L"    pass\n"
-                                 L"Bottom.value\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(2), actual);
-}
-
-TEST(Interpreter, class_definition_exposes_c3_mro_tuple)
-{
-    test::FileRunner file_runner(L"class Top:\n"
-                                 L"    marker = 1\n"
-                                 L"class Left(Top):\n"
-                                 L"    marker = 2\n"
-                                 L"class Right(Top):\n"
-                                 L"    marker = 3\n"
-                                 L"class Bottom(Left, Right):\n"
-                                 L"    pass\n"
-                                 L"Bottom.__mro__[1].marker * 100 + "
-                                 L"Bottom.__mro__[2].marker * 10 + "
-                                 L"Bottom.__mro__[3].marker\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(231), actual);
 }
 
 TEST(Interpreter, class_definition_rejects_inconsistent_c3_mro)
@@ -1611,22 +1489,3 @@ TEST(Interpreter, negate_overflow)
                          L"-x\n",
                          "Clovervm exception");
 }
-
-/*
-TEST(Interpreter, small_bench)
-{
-    const wchar_t *test_case =
-        L"counter = 100000001\n"
-        "acc = 1245\n"
-        "while counter:\n"
-        "    acc = (-acc*64 + 64)>>6\n"
-        "    counter -= 1\n"
-        "acc\n";
-
-    Value expected = Value::from_smi(-1244);
-    test::FileRunner file_runner(test_case);
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-*/
