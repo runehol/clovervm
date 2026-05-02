@@ -3,12 +3,14 @@ add_executable(bench_clovervm
     class_attribute_read.cpp
     class_attribute_write.cpp
     class_instantiation.cpp
+    class_instantiation_with_init.cpp
     for_loop.cpp
     for_loop_slow_path.cpp
     function_default_varargs.cpp
     function_default_parameter.cpp
     function_varargs.cpp
     function_varargs_with_positional.cpp
+    instance_attribute_add_after_construction.cpp
     instance_attribute_add_member.cpp
     instance_attribute_read.cpp
     instance_attribute_write.cpp

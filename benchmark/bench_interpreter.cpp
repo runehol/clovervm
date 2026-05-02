@@ -50,9 +50,15 @@ namespace
             {"benchmark/class_instantiation.py",
              {benchmark_cpp::class_instantiation_run,
               benchmark_cpp::class_instantiation_items}},
+            {"benchmark/class_instantiation_with_init.py",
+             {benchmark_cpp::class_instantiation_with_init_run,
+              benchmark_cpp::class_instantiation_with_init_items}},
             {"benchmark/instance_attribute_add_member.py",
              {benchmark_cpp::instance_attribute_add_member_run,
               benchmark_cpp::instance_attribute_add_member_items}},
+            {"benchmark/instance_attribute_add_after_construction.py",
+             {benchmark_cpp::instance_attribute_add_after_construction_run,
+              benchmark_cpp::instance_attribute_add_after_construction_items}},
             {"benchmark/instance_attribute_read.py",
              {benchmark_cpp::instance_attribute_read_run,
               benchmark_cpp::instance_attribute_read_items}},
@@ -515,13 +521,23 @@ BENCHMARK_TEMPLATE(BM_NestedForLoop, CloverProgram)
     ->Arg(100000);
 
 template <typename Program>
-static void BM_ClassInstantiation(benchmark::State &state)
+static void BM_ClassInstantiationNoInit(benchmark::State &state)
 {
     run_benchmark_case<Program>(state, "benchmark/class_instantiation.py",
                                 state.range(0));
 }
-BENCHMARK_TEMPLATE(BM_ClassInstantiation, CloverProgram)
-    ->Name("BM_ClassInstantiation")
+BENCHMARK_TEMPLATE(BM_ClassInstantiationNoInit, CloverProgram)
+    ->Name("BM_ClassInstantiationNoInit")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ClassInstantiationWithInit(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/class_instantiation_with_init.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ClassInstantiationWithInit, CloverProgram)
+    ->Name("BM_ClassInstantiationWithInit")
     ->Arg(100000);
 
 template <typename Program>
@@ -532,6 +548,17 @@ static void BM_InstanceAttributeAddMember(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_InstanceAttributeAddMember, CloverProgram)
     ->Name("BM_InstanceAttributeAddMember")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_InstanceAttributeAddAfterConstruction(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/instance_attribute_add_after_construction.py",
+        state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_InstanceAttributeAddAfterConstruction, CloverProgram)
+    ->Name("BM_InstanceAttributeAddAfterConstruction")
     ->Arg(100000);
 
 template <typename Program>
