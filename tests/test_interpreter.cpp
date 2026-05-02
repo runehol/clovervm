@@ -1123,6 +1123,103 @@ TEST(Interpreter, store_attr_caches_instance_add_transition)
     EXPECT_TRUE(cache.plan.lookup_validity_cell->is_valid());
 }
 
+TEST(Interpreter, del_attr_bytecode_deletes_instance_property_and_caches_plan)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> clear_name(
+        test_context.vm().get_or_create_interned_string_value(L"clear"));
+    TValue<String> cls_name(
+        test_context.vm().get_or_create_interned_string_value(L"Cls"));
+    TValue<String> value_name(
+        test_context.vm().get_or_create_interned_string_value(L"value"));
+
+    CodeObject *definition_code = test_context.compile_file(L"def clear(obj):\n"
+                                                            L"    obj.value\n");
+    (void)test_context.thread()->run(definition_code);
+    Value function_value =
+        definition_code->module_scope.extract()->get_by_name(clear_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(uint8_t(Bytecode::LoadAttr), function_code->code[0]);
+    ASSERT_EQ(1u, function_code->attribute_read_caches.size());
+    ASSERT_TRUE(function_code->attribute_mutation_caches.empty());
+
+    uint8_t cache_idx = function_code->allocate_attribute_mutation_cache();
+    function_code->code[0] = uint8_t(Bytecode::DelAttr);
+    function_code->code[3] = cache_idx;
+
+    ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
+        cls_name, 2, test_context.vm().object_class());
+    Instance *first = test_context.thread()->make_internal_raw<Instance>(cls);
+    ASSERT_TRUE(first->set_own_property(value_name, Value::from_smi(7)));
+
+    CodeObject *call_code = test_context.compile_file(L"clear(obj)\n"
+                                                      L"42\n");
+    bind_global(test_context, call_code, L"clear", function_value);
+    bind_global(test_context, call_code, L"obj", Value::from_oop(first));
+    EXPECT_EQ(Value::from_smi(42), test_context.thread()->run(call_code));
+    EXPECT_TRUE(first->get_own_property(value_name).is_not_present());
+
+    ASSERT_EQ(1u, function_code->attribute_mutation_caches.size());
+    const AttributeMutationInlineCache &cache =
+        function_code->attribute_mutation_caches[0];
+    ASSERT_NE(nullptr, cache.receiver_shape);
+    EXPECT_TRUE(cache.plan.is_delete_own_property());
+    ASSERT_NE(nullptr, cache.plan.next_shape);
+    EXPECT_TRUE(cache.plan.storage_location().is_found());
+    ASSERT_NE(nullptr, cache.plan.lookup_validity_cell);
+    EXPECT_TRUE(cache.plan.lookup_validity_cell->is_valid());
+
+    Instance *second = test_context.thread()->make_internal_raw<Instance>(cls);
+    ASSERT_TRUE(second->set_own_property(value_name, Value::from_smi(8)));
+    bind_global(test_context, call_code, L"obj", Value::from_oop(second));
+    EXPECT_EQ(Value::from_smi(42), test_context.thread()->run(call_code));
+    EXPECT_TRUE(second->get_own_property(value_name).is_not_present());
+}
+
+TEST(Interpreter, del_attr_bytecode_missing_attribute_raises_attribute_error)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> clear_name(
+        test_context.vm().get_or_create_interned_string_value(L"clear"));
+    TValue<String> cls_name(
+        test_context.vm().get_or_create_interned_string_value(L"Cls"));
+
+    CodeObject *definition_code = test_context.compile_file(L"def clear(obj):\n"
+                                                            L"    obj.value\n");
+    (void)test_context.thread()->run(definition_code);
+    Value function_value =
+        definition_code->module_scope.extract()->get_by_name(clear_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    uint8_t cache_idx = function_code->allocate_attribute_mutation_cache();
+    function_code->code[0] = uint8_t(Bytecode::DelAttr);
+    function_code->code[3] = cache_idx;
+
+    ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
+        cls_name, 2, test_context.vm().object_class());
+    Instance *obj = test_context.thread()->make_internal_raw<Instance>(cls);
+    CodeObject *call_code = test_context.compile_file(L"clear(obj)\n");
+    bind_global(test_context, call_code, L"clear", function_value);
+    bind_global(test_context, call_code, L"obj", Value::from_oop(obj));
+
+    try
+    {
+        (void)test_context.thread()->run(call_code);
+        FAIL() << "Expected AttributeError";
+    }
+    catch(const std::runtime_error &err)
+    {
+        EXPECT_STREQ("AttributeError", err.what());
+    }
+}
+
 TEST(Interpreter, cached_class_attribute_read_observes_class_write)
 {
     test::FileRunner file_runner(L"class Cls:\n"

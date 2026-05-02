@@ -60,6 +60,15 @@ namespace cl
             plan = descriptor.plan;
         }
 
+        void populate(Value receiver,
+                      const AttributeDeleteDescriptor &descriptor)
+        {
+            assert(receiver.is_ptr());
+            assert(descriptor.is_cacheable());
+            receiver_shape = receiver.get_ptr<Object>()->get_shape();
+            plan = descriptor.plan;
+        }
+
         void populate(Value receiver, AttributeMutationPlan mutation_plan)
         {
             assert(receiver.is_ptr());

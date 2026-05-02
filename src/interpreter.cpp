@@ -596,6 +596,19 @@ namespace cl
         return true;
     }
 
+    static ALWAYSINLINE bool delete_attr_delete_own_property_inline_fast(
+        Value receiver, const AttributeMutationPlan &plan)
+    {
+        assert(plan.is_delete_own_property());
+        assert(receiver.is_ptr());
+        assert(plan.next_shape != nullptr);
+        Object *object = receiver.get_ptr<Object>();
+        object->set_shape(plan.next_shape);
+        object->write_storage_location(plan.storage_location(),
+                                       Value::not_present());
+        return true;
+    }
+
     static ALWAYSINLINE MethodCallTargetStatus
     prepare_method_call_target_from_plan(Value receiver,
                                          const AttributeReadPlan &plan,
@@ -780,6 +793,31 @@ namespace cl
             }
         }
         MUSTTAIL return attribute_assignment_error(ARGS);
+    }
+
+    NOINLINE static Value op_del_attr_cache_miss(PARAMS)
+    {
+        START(4);
+        int8_t reg = pc[1];
+        uint8_t const_offset = pc[2];
+        uint8_t cache_idx = pc[3];
+        Value receiver = fp[reg];
+        TValue<String> attr_name(
+            code_object->constant_table[const_offset].as_value());
+        AttributeMutationInlineCache &cache =
+            code_object->attribute_mutation_caches[cache_idx];
+        AttributeDeleteDescriptor descriptor =
+            resolve_attr_delete_descriptor(receiver, attr_name);
+        if(descriptor.is_found())
+        {
+            if(descriptor.is_cacheable())
+            {
+                cache.populate(receiver, descriptor);
+            }
+            delete_attr_from_plan(receiver, descriptor.plan);
+            COMPLETE();
+        }
+        MUSTTAIL return attribute_error(ARGS);
     }
 
     static Value op_lda_constant(PARAMS)
@@ -986,6 +1024,26 @@ namespace cl
         {
             MUSTTAIL return op_store_attr_non_store_existing_cache_hit(ARGS);
         }
+        COMPLETE();
+    }
+
+    static Value op_del_attr(PARAMS)
+    {
+        START(4);
+        int8_t reg = pc[1];
+        uint8_t cache_idx = pc[3];
+        Value receiver = fp[reg];
+        AttributeMutationInlineCache &cache =
+            code_object->attribute_mutation_caches[cache_idx];
+        if(unlikely(!cache.matches(receiver)))
+        {
+            MUSTTAIL return op_del_attr_cache_miss(ARGS);
+        }
+        if(unlikely(!cache.plan.is_delete_own_property()))
+        {
+            MUSTTAIL return op_del_attr_cache_miss(ARGS);
+        }
+        delete_attr_delete_own_property_inline_fast(receiver, cache.plan);
         COMPLETE();
     }
 
@@ -2158,6 +2216,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);
         SET_TABLE_ENTRY(Bytecode::LoadAttr, op_load_attr);
         SET_TABLE_ENTRY(Bytecode::StoreAttr, op_store_attr);
+        SET_TABLE_ENTRY(Bytecode::DelAttr, op_del_attr);
         SET_TABLE_ENTRY(Bytecode::LoadSubscript, op_load_subscript);
         SET_TABLE_ENTRY(Bytecode::StoreSubscript, op_store_subscript);
         SET_TABLE_ENTRY(Bytecode::CallMethodAttr, op_call_method_attr);

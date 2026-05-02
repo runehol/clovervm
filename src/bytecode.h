@@ -66,6 +66,7 @@ namespace cl
         // attribute access
         LoadAttr,
         StoreAttr,
+        DelAttr,
         LoadSubscript,
         StoreSubscript,
         CallMethodAttr,
