@@ -32,7 +32,9 @@ target_link_libraries(test_clovervm PRIVATE gtest_main)
 target_link_libraries(test_clovervm PRIVATE libclovervm)
 target_link_libraries(test_clovervm PRIVATE project_options project_warnings)
 
-gtest_discover_tests(test_clovervm WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+gtest_discover_tests(test_clovervm
+	WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+	DISCOVERY_MODE PRE_TEST)
 
 set(CMAKE_CTEST_COMMAND ctest --progress --output-on-failure)
 

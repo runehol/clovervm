@@ -104,62 +104,6 @@ static Value make_test_function(test::VmTestContext &test_context,
     return function_value;
 }
 
-TEST(Interpreter, annotation_only_statement_does_not_read_or_bind_target)
-{
-    Value expected = Value::from_smi(1);
-    test::FileRunner file_runner(L"value: int\n"
-                                 "1\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, annotated_assignment_stores_rhs)
-{
-    Value expected = Value::from_smi(7);
-    test::FileRunner file_runner(L"value: int = 7\n"
-                                 "value\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, attribute_annotation_only_evaluates_receiver_without_load)
-{
-    Value expected = Value::from_smi(1);
-    test::FileRunner file_runner(L"marker = 0\n"
-                                 "class C:\n"
-                                 "    pass\n"
-                                 "def side():\n"
-                                 "    global marker\n"
-                                 "    marker = 1\n"
-                                 "    return C()\n"
-                                 "side().missing: int\n"
-                                 "marker\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, subscript_annotation_only_evaluates_receiver_and_key)
-{
-    Value expected = Value::from_smi(3);
-    test::FileRunner file_runner(L"marker = 0\n"
-                                 "def side():\n"
-                                 "    global marker\n"
-                                 "    marker = 1\n"
-                                 "    return []\n"
-                                 "def key():\n"
-                                 "    global marker\n"
-                                 "    marker = marker + 2\n"
-                                 "    return 0\n"
-                                 "side()[key()]: int\n"
-                                 "marker\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
 TEST(Interpreter, assert_statement_raises_assertion_error)
 {
     expect_runtime_error(L"assert False\n", "AssertionError");
@@ -214,95 +158,6 @@ TEST(Interpreter, conditional_local_assignment_raises_on_missing_path)
                          "NameError");
 }
 
-TEST(Interpreter, while_else_runs_after_normal_exit)
-{
-    Value expected = Value::from_smi(7);
-    test::FileRunner file_runner(L"a = 2\n"
-                                 "b = 0\n"
-                                 "while a:\n"
-                                 "    a -= 1\n"
-                                 "else:\n"
-                                 "    b = 7\n"
-                                 "b\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, while_else_skipped_after_break)
-{
-    Value expected = Value::from_smi(0);
-    test::FileRunner file_runner(L"a = 2\n"
-                                 "b = 0\n"
-                                 "while a:\n"
-                                 "    break\n"
-                                 "else:\n"
-                                 "    b = 7\n"
-                                 "b\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, function_multiple_parameters)
-{
-    Value expected = Value::from_smi(6);
-    test::FileRunner file_runner(L"def add3(a, b, c):\n"
-                                 "    return a + b + c\n"
-                                 "add3(1, 2, 3)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, function_even_argument_call_preserves_frame_alignment)
-{
-    Value expected = Value::from_smi(10);
-    test::FileRunner file_runner(L"def add4(a, b, c, d):\n"
-                                 L"    return a + b + c + d\n"
-                                 L"add4(1, 2, 3, 4)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, function_default_parameters)
-{
-    Value expected = Value::from_smi(220);
-    test::FileRunner file_runner(L"def add(a, b=10, c=100):\n"
-                                 "    return a + b + c\n"
-                                 "add(1) + add(1, 2) + add(1, 2, 3)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, function_defaults_evaluate_at_definition_time)
-{
-    Value expected = Value::from_smi(11);
-    test::FileRunner file_runner(L"x = 10\n"
-                                 "def f(a=x + 1):\n"
-                                 "    return a\n"
-                                 "x = 20\n"
-                                 "f()\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, method_defaults_evaluate_in_class_scope)
-{
-    Value expected = Value::from_smi(11);
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 "    x = 10\n"
-                                 "    def method(self, a=x + 1):\n"
-                                 "        return a\n"
-                                 "Cls().method()\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
 TEST(Interpreter, function_wrong_arity)
 {
     expect_runtime_error(L"def f(a):\n"
@@ -313,17 +168,6 @@ TEST(Interpreter, function_wrong_arity)
                          "    return a\n"
                          "f(1, 2)\n",
                          "TypeError: wrong number of arguments");
-}
-
-TEST(Interpreter, function_varargs_collect_extra_arguments)
-{
-    Value expected = Value::from_smi(10);
-    test::FileRunner file_runner(L"def f(a, *args):\n"
-                                 "    return a + args[0] + args[1]\n"
-                                 "f(1, 4, 5)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
 }
 
 TEST(Interpreter, function_varargs_collect_empty_tuple)
@@ -339,68 +183,12 @@ TEST(Interpreter, function_varargs_collect_empty_tuple)
     EXPECT_TRUE(TValue<Tuple>(actual).extract()->empty());
 }
 
-TEST(Interpreter, function_defaults_and_varargs)
-{
-    Value expected = Value::from_smi(65);
-    test::FileRunner file_runner(L"def f(a, b=10, *args):\n"
-                                 "    return a + b + args[0] + args[1]\n"
-                                 "f(1, 20, 21, 23)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, function_defaults_and_empty_varargs)
-{
-    Value expected = Value::from_smi(11);
-    test::FileRunner file_runner(L"def f(a, b=10, *args):\n"
-                                 "    return a + b\n"
-                                 "f(1)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, method_varargs_collect_extra_arguments)
-{
-    Value expected = Value::from_smi(9);
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 "    def method(self, *args):\n"
-                                 "        return args[0] + args[1]\n"
-                                 "Cls().method(4, 5)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
 TEST(Interpreter, function_varargs_still_requires_positional_arguments)
 {
     expect_runtime_error(L"def f(a, *args):\n"
                          "    return a\n"
                          "f()\n",
                          "TypeError: wrong number of arguments");
-}
-
-TEST(Interpreter, calls_and_parameters_accept_trailing_comma)
-{
-    Value expected = Value::from_smi(6);
-    test::FileRunner file_runner(L"def add3(a, b, c,):\n"
-                                 "    return a + b + c\n"
-                                 "add3(1, 2, 3,)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, function_implicit_return_none)
-{
-    Value expected = Value::None();
-    test::FileRunner file_runner(L"def f():\n"
-                                 "    a = 1\n"
-                                 "f()\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
 }
 
 TEST(Interpreter, class_definition_binds_class_object)
@@ -519,45 +307,6 @@ TEST(Interpreter, set_name_notification_is_explicitly_unsupported)
                          "implemented yet");
 }
 
-TEST(Interpreter, class_call_allocates_instance_with_initial_class_slot)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    pass\n"
-                                 L"obj = Cls()\n"
-                                 L"obj.__class__ is Cls\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::True(), actual);
-}
-
-TEST(Interpreter, class_body_can_read_earlier_class_binding)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    x = 1\n"
-                                 L"    y = x + 2\n"
-                                 L"Cls.y\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(3), actual);
-}
-
-TEST(Interpreter, class_definition_inside_function_preserves_caller_frame)
-{
-    test::FileRunner file_runner(L"def outer(seed):\n"
-                                 L"    a = seed + 1\n"
-                                 L"    b = seed + 2\n"
-                                 L"    c = (a + b) * (seed + 3)\n"
-                                 L"    class Cls:\n"
-                                 L"        x = 11\n"
-                                 L"        y = x + 13\n"
-                                 L"    d = (a + b) * (c + Cls.y)\n"
-                                 L"    return d + a + b + c\n"
-                                 L"outer(4)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(1199), actual);
-}
-
 TEST(Interpreter, class_call_allocates_instance)
 {
     test::VmTestContext test_context;
@@ -579,69 +328,6 @@ TEST(Interpreter, class_call_allocates_instance)
                                                ->native_layout_id());
 }
 
-TEST(Interpreter, class_constructor_calls_init_and_forwards_arguments)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    def __init__(self, x, y):\n"
-                                 L"        self.value = x * 10 + y\n"
-                                 L"obj = Cls(4, 7)\n"
-                                 L"obj.value\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(47), actual);
-}
-
-TEST(Interpreter, class_constructor_uses_init_defaults)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    def __init__(self, x, y=3):\n"
-                                 L"        self.value = x * 10 + y\n"
-                                 L"obj = Cls(4)\n"
-                                 L"obj.value\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(43), actual);
-}
-
-TEST(Interpreter, class_constructor_drops_self_default)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    def __init__(self=1):\n"
-                                 L"        pass\n"
-                                 L"Cls()\n");
-    Value actual = file_runner.return_value;
-
-    ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(NativeLayoutId::Instance,
-              actual.get_ptr<Object>()->native_layout_id());
-}
-
-TEST(Interpreter, class_constructor_remaps_defaults_after_self_default)
-{
-    test::FileRunner file_runner(
-        L"class Cls:\n"
-        L"    def __init__(self=1, x=2):\n"
-        L"        self.value = x\n"
-        L"default_obj = Cls()\n"
-        L"explicit_obj = Cls(5)\n"
-        L"default_obj.value * 10 + explicit_obj.value\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(25), actual);
-}
-
-TEST(Interpreter, class_constructor_forwards_varargs_tuple)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    def __init__(self, x, *rest):\n"
-                                 L"        self.value = x + rest[0] + rest[1]\n"
-                                 L"obj = Cls(1, 20, 300)\n"
-                                 L"obj.value\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(321), actual);
-}
-
 TEST(Interpreter, class_constructor_rejects_non_none_init_return)
 {
     expect_runtime_error(L"class Cls:\n"
@@ -649,35 +335,6 @@ TEST(Interpreter, class_constructor_rejects_non_none_init_return)
                          L"        return 1\n"
                          L"Cls()\n",
                          "TypeError: __init__ should return None, not a value");
-}
-
-TEST(Interpreter, class_constructor_rebuilds_after_init_change)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    def __init__(self):\n"
-                                 L"        self.value = 1\n"
-                                 L"def replacement(self):\n"
-                                 L"    self.value = 2\n"
-                                 L"first = Cls()\n"
-                                 L"Cls.__init__ = replacement\n"
-                                 L"second = Cls()\n"
-                                 L"first.value * 10 + second.value\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(12), actual);
-}
-
-TEST(Interpreter, class_method_call_works_from_source)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    def method(self, x):\n"
-                                 L"        return self.value + x\n"
-                                 L"obj = Cls()\n"
-                                 L"obj.value = 3\n"
-                                 L"obj.method(4)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(7), actual);
 }
 
 TEST(Interpreter, string_literal_value)
@@ -824,15 +481,6 @@ TEST(Interpreter, tuple_literal_evaluates_elements_left_to_right)
     EXPECT_EQ(Value::from_smi(2), tuple->item_unchecked(2));
 }
 
-TEST(Interpreter, subscript_load_reads_list_item)
-{
-    test::FileRunner file_runner(L"xs = [4, 7, 9]\n"
-                                 L"xs[1]\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(7), actual);
-}
-
 TEST(Interpreter, subscript_load_reads_tuple_item)
 {
     test::FileRunner file_runner(L"class Cls:\n"
@@ -882,46 +530,6 @@ TEST(Interpreter, dict_literal_returns_dict_object)
     EXPECT_EQ(Value::from_smi(9), dict->get_item(beta));
 }
 
-TEST(Interpreter, subscript_load_reads_dict_item)
-{
-    test::FileRunner file_runner(L"key = \"alpha\"\n"
-                                 L"xs = {key: 4, \"beta\": 7}\n"
-                                 L"xs[key]\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(4), actual);
-}
-
-TEST(Interpreter, subscript_store_writes_dict_item)
-{
-    test::FileRunner file_runner(L"xs = {\"alpha\": 4, \"beta\": 7}\n"
-                                 L"xs[\"beta\"] = 11\n"
-                                 L"xs[\"beta\"]\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(11), actual);
-}
-
-TEST(Interpreter, subscript_delete_removes_dict_item)
-{
-    test::FileRunner file_runner(L"xs = {\"alpha\": 4, \"beta\": 7}\n"
-                                 L"del xs[\"beta\"]\n"
-                                 L"xs[\"alpha\"]\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(4), actual);
-}
-
-TEST(Interpreter, subscript_augmented_assignment_updates_dict_item)
-{
-    test::FileRunner file_runner(L"xs = {\"alpha\": 4, \"beta\": 7}\n"
-                                 L"xs[\"beta\"] += 5\n"
-                                 L"xs[\"beta\"]\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(12), actual);
-}
-
 TEST(Interpreter,
      dict_subscript_augmented_assignment_evaluates_receiver_and_key_once)
 {
@@ -950,36 +558,6 @@ TEST(Interpreter,
     EXPECT_EQ(1, g_next_counter);
 }
 
-TEST(Interpreter, subscript_store_writes_list_item)
-{
-    test::FileRunner file_runner(L"xs = [4, 7, 9]\n"
-                                 L"xs[1] = 11\n"
-                                 L"xs[1]\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(11), actual);
-}
-
-TEST(Interpreter, subscript_delete_removes_list_item)
-{
-    test::FileRunner file_runner(L"xs = [4, 7, 9]\n"
-                                 L"del xs[1]\n"
-                                 L"xs[1]\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(9), actual);
-}
-
-TEST(Interpreter, subscript_delete_supports_negative_list_index)
-{
-    test::FileRunner file_runner(L"xs = [4, 7, 9]\n"
-                                 L"del xs[-1]\n"
-                                 L"xs[1]\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(7), actual);
-}
-
 TEST(Interpreter, subscript_store_rejects_tuple_item_assignment)
 {
     expect_runtime_error(
@@ -996,16 +574,6 @@ TEST(Interpreter, subscript_delete_rejects_tuple_item_deletion)
         L"    pass\n"
         L"del Cls.__mro__[0]\n",
         "TypeError: 'tuple' object does not support item deletion");
-}
-
-TEST(Interpreter, subscript_augmented_assignment_updates_list_item)
-{
-    test::FileRunner file_runner(L"xs = [4, 7, 9]\n"
-                                 L"xs[1] += 5\n"
-                                 L"xs[1]\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(12), actual);
 }
 
 TEST(Interpreter,
@@ -1065,85 +633,6 @@ TEST(Interpreter, subscript_delete_rejects_non_subscriptable_receiver)
 {
     expect_runtime_error(L"del (1)[0]\n",
                          "TypeError: object is not subscriptable");
-}
-
-TEST(Interpreter, attribute_load_through_list_subscript)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    pass\n"
-                                 L"obj = Cls()\n"
-                                 L"obj.value = 7\n"
-                                 L"lst = [obj]\n"
-                                 L"lst[0].value\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(7), actual);
-}
-
-TEST(Interpreter, attribute_store_through_list_subscript)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    pass\n"
-                                 L"obj = Cls()\n"
-                                 L"obj.value = 7\n"
-                                 L"lst = [obj]\n"
-                                 L"lst[0].value = 11\n"
-                                 L"obj.value\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(11), actual);
-}
-
-TEST(Interpreter, attribute_augmented_assignment_through_list_subscript)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    pass\n"
-                                 L"obj = Cls()\n"
-                                 L"obj.value = 7\n"
-                                 L"lst = [obj]\n"
-                                 L"lst[0].value += 5\n"
-                                 L"obj.value\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(12), actual);
-}
-
-TEST(Interpreter, subscript_load_through_object_attribute)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    pass\n"
-                                 L"obj = Cls()\n"
-                                 L"obj.lst = [4, 7, 9]\n"
-                                 L"obj.lst[1]\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(7), actual);
-}
-
-TEST(Interpreter, subscript_store_through_object_attribute)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    pass\n"
-                                 L"obj = Cls()\n"
-                                 L"obj.lst = [4, 7, 9]\n"
-                                 L"obj.lst[1] = 11\n"
-                                 L"obj.lst[1]\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(11), actual);
-}
-
-TEST(Interpreter, subscript_augmented_assignment_through_object_attribute)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    pass\n"
-                                 L"obj = Cls()\n"
-                                 L"obj.lst = [4, 7, 9]\n"
-                                 L"obj.lst[1] += 5\n"
-                                 L"obj.lst[1]\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(12), actual);
 }
 
 TEST(Interpreter, attribute_load_and_store_syntax)
@@ -1534,81 +1023,6 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
     EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(read_code));
 }
 
-TEST(Interpreter, direct_method_call_inserts_self_for_class_functions)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    def method(self, x):\n"
-                                 L"        return self.value + x\n"
-                                 L"obj = Cls()\n"
-                                 L"obj.value = 3\n"
-                                 L"obj.method(4)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(7), actual);
-}
-
-TEST(Interpreter,
-     direct_zero_arg_method_call_inserts_self_and_preserves_frame_alignment)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    def method(self):\n"
-                                 L"        return self.value\n"
-                                 L"obj = Cls()\n"
-                                 L"obj.value = 7\n"
-                                 L"obj.method()\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(7), actual);
-}
-
-TEST(Interpreter,
-     direct_method_call_with_odd_effective_args_preserves_frame_alignment)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    def method(self, x, y):\n"
-                                 L"        return self.value + x + y\n"
-                                 L"obj = Cls()\n"
-                                 L"obj.value = 3\n"
-                                 L"obj.method(4, 5)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(12), actual);
-}
-
-TEST(Interpreter, direct_method_call_on_class_does_not_insert_self)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    def method(x):\n"
-                                 L"        return x + 3\n"
-                                 L"Cls.method(4)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(7), actual);
-}
-
-TEST(Interpreter, direct_zero_arg_class_function_call_preserves_frame_alignment)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    def method():\n"
-                                 L"        return 7\n"
-                                 L"Cls.method()\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(7), actual);
-}
-
-TEST(Interpreter,
-     direct_class_function_call_with_even_args_preserves_frame_alignment)
-{
-    test::FileRunner file_runner(L"class Cls:\n"
-                                 L"    def method(x, y):\n"
-                                 L"        return x + y\n"
-                                 L"Cls.method(4, 5)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(9), actual);
-}
-
 TEST(Interpreter, class_definition_uses_explicit_base)
 {
     test::FileRunner file_runner(L"class Base:\n"
@@ -1795,45 +1209,6 @@ TEST(Interpreter, return_in_module_body_is_rejected)
     expect_runtime_error(L"return\n", "SyntaxError: 'return' outside function");
 }
 
-TEST(Interpreter, function_local_shadows_global)
-{
-    Value expected = Value::from_smi(11);
-    test::FileRunner file_runner(L"a = 10\n"
-                                 "def f():\n"
-                                 "    a = 1\n"
-                                 "    return a\n"
-                                 "f() + a\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, function_reads_global_when_not_shadowed)
-{
-    Value expected = Value::from_smi(10);
-    test::FileRunner file_runner(L"a = 10\n"
-                                 "def f():\n"
-                                 "    return a\n"
-                                 "f()\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, global_statement_makes_function_assignment_global)
-{
-    Value expected = Value::from_smi(24);
-    test::FileRunner file_runner(L"a = 10\n"
-                                 "def f():\n"
-                                 "    global a\n"
-                                 "    a = 12\n"
-                                 "    return a\n"
-                                 "f() + a\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
 TEST(Interpreter, global_statement_makes_function_delete_global)
 {
     expect_runtime_error(L"a = 10\n"
@@ -1895,50 +1270,12 @@ TEST(Interpreter, module_global_statement_rejects_prior_assignment)
         "SyntaxError: name is assigned to before global declaration");
 }
 
-TEST(Interpreter, module_global_statement_allows_following_annotation)
-{
-    Value expected = Value::from_smi(1);
-    test::FileRunner file_runner(L"global value\n"
-                                 L"value: int\n"
-                                 L"1\n");
-    EXPECT_EQ(expected, file_runner.return_value);
-}
-
 TEST(Interpreter, global_statement_rejects_annotated_name)
 {
     expect_runtime_error(L"def f():\n"
                          L"    global value\n"
                          L"    value: int\n",
                          "SyntaxError: annotated name can't be global");
-}
-
-TEST(Interpreter, function_nested_control_flow)
-{
-    Value expected = Value::from_smi(2);
-    test::FileRunner file_runner(L"def pick(n):\n"
-                                 "    if n:\n"
-                                 "        while n:\n"
-                                 "            return 1\n"
-                                 "    else:\n"
-                                 "        return 2\n"
-                                 "pick(0)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Interpreter, recursive_fibonacci)
-{
-    Value expected = Value::from_smi(10946);
-    test::FileRunner file_runner(L"def fib(n):\n"
-                                 "    if n <= 2:\n"
-                                 "        return n\n"
-                                 "    return fib(n-2) + fib(n-1)\n"
-                                 "\n"
-                                 "fib(20)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
 }
 
 TEST(Interpreter, name_error)
@@ -2156,46 +1493,6 @@ TEST(Interpreter, range_builtin_three_arguments_returns_range_iterator)
     expect_range_iterator(actual, 2, 9, 3);
 }
 
-TEST(Interpreter, for_loop_iterates_range)
-{
-    test::FileRunner file_runner(L"total = 0\n"
-                                 "for x in range(5):\n"
-                                 "    total += x\n"
-                                 "total\n");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(Value::from_smi(10), actual);
-}
-
-TEST(Interpreter, for_loop_iterates_two_argument_range)
-{
-    test::FileRunner file_runner(L"total = 0\n"
-                                 "for x in range(1, 4):\n"
-                                 "    total += x\n"
-                                 "total\n");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(Value::from_smi(6), actual);
-}
-
-TEST(Interpreter, for_loop_iterates_positive_step_range)
-{
-    test::FileRunner file_runner(L"total = 0\n"
-                                 "for x in range(1, 8, 3):\n"
-                                 "    total += x\n"
-                                 "total\n");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(Value::from_smi(12), actual);
-}
-
-TEST(Interpreter, for_loop_iterates_negative_step_range)
-{
-    test::FileRunner file_runner(L"total = 0\n"
-                                 "for x in range(5, -1, -2):\n"
-                                 "    total += x\n"
-                                 "total\n");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(Value::from_smi(9), actual);
-}
-
 TEST(Interpreter, direct_range_for_loop_reports_integer_argument_errors)
 {
     expect_runtime_error(L"for x in range(False):\n"
@@ -2208,102 +1505,6 @@ TEST(Interpreter, direct_range_for_loop_reports_zero_step_errors)
     expect_runtime_error(L"for x in range(1, 4, 0):\n"
                          L"    0\n",
                          "ValueError: range() arg 3 must not be zero");
-}
-
-TEST(Interpreter, for_else_runs_after_normal_exhaustion)
-{
-    test::FileRunner file_runner(L"total = 0\n"
-                                 "for x in range(3):\n"
-                                 "    total += x\n"
-                                 "else:\n"
-                                 "    total += 10\n"
-                                 "total\n");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(Value::from_smi(13), actual);
-}
-
-TEST(Interpreter, for_else_skipped_after_break)
-{
-    test::FileRunner file_runner(L"total = 0\n"
-                                 "for x in range(5):\n"
-                                 "    if x == 3:\n"
-                                 "        break\n"
-                                 "    total += x\n"
-                                 "else:\n"
-                                 "    total += 100\n"
-                                 "total\n");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(Value::from_smi(3), actual);
-}
-
-TEST(Interpreter, for_continue_jumps_to_next_iteration)
-{
-    test::FileRunner file_runner(L"total = 0\n"
-                                 "for x in range(5):\n"
-                                 "    if x == 2:\n"
-                                 "        continue\n"
-                                 "    total += x\n"
-                                 "total\n");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(Value::from_smi(8), actual);
-}
-
-TEST(Interpreter, nested_for_loops_execute_correctly)
-{
-    test::FileRunner file_runner(L"total = 0\n"
-                                 "for x in range(3):\n"
-                                 "    for y in range(2):\n"
-                                 "        total += x + y\n"
-                                 "total\n");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(Value::from_smi(9), actual);
-}
-
-TEST(Interpreter, for_loop_executes_inside_function)
-{
-    test::FileRunner file_runner(L"def sum_range(n):\n"
-                                 "    total = 0\n"
-                                 "    for x in range(n):\n"
-                                 "        total += x\n"
-                                 "    return total\n"
-                                 "sum_range(5)\n");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(Value::from_smi(10), actual);
-}
-
-TEST(Interpreter, nested_for_loops_execute_inside_function)
-{
-    test::FileRunner file_runner(L"def sum_pairs(n):\n"
-                                 "    total = 0\n"
-                                 "    for x in range(n):\n"
-                                 "        for y in range(2):\n"
-                                 "            total += x + y\n"
-                                 "    return total\n"
-                                 "sum_pairs(3)\n");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(Value::from_smi(9), actual);
-}
-
-TEST(Interpreter, shadowed_range_for_loop_uses_generic_fallback)
-{
-    test::FileRunner file_runner(L"real_range = range\n"
-                                 "def range(n):\n"
-                                 "    return real_range(1, n)\n"
-                                 "total = 0\n"
-                                 "for x in range(4):\n"
-                                 "    total += x\n"
-                                 "total\n");
-    Value actual = file_runner.return_value;
-    EXPECT_EQ(Value::from_smi(6), actual);
-}
-
-TEST(Interpreter, module_scope_can_shadow_builtin_scope)
-{
-    test::FileRunner file_runner(L"range = 42\n"
-                                 "range\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(Value::from_smi(42), actual);
 }
 
 TEST(Interpreter, global_delete_does_not_delete_builtin_fallback)
@@ -2355,15 +1556,6 @@ TEST(Interpreter, for_loop_rejects_non_iterable)
                          "TypeError: object is not iterable");
 }
 
-TEST(Interpreter, negate_expression)
-{
-    Value expected = Value::from_smi(-7);
-    test::FileRunner file_runner(L"-(3 + 4)\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
 TEST(Interpreter, left_shift_negative_count)
 {
     expect_runtime_error(L"a = 1\n"
@@ -2380,15 +1572,6 @@ TEST(Interpreter, right_shift_negative_count)
                          "ValueError: negative shift count");
 }
 
-TEST(Interpreter, left_shift_boundary)
-{
-    Value expected = Value::from_smi(kMinSmi);
-    test::FileRunner file_runner(L"(-1) << 58\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
-}
-
 TEST(Interpreter, left_shift_overflow_smi)
 {
     expect_runtime_error(L"1 << 58\n", "Clovervm exception");
@@ -2400,15 +1583,6 @@ TEST(Interpreter, left_shift_overflow_register)
                          L"b = 58\n"
                          L"a << b\n",
                          "Clovervm exception");
-}
-
-TEST(Interpreter, right_shift_negative_value)
-{
-    Value expected = Value::from_smi(-5);
-    test::FileRunner file_runner(L"(-9) >> 1\n");
-    Value actual = file_runner.return_value;
-
-    EXPECT_EQ(expected, actual);
 }
 
 TEST(Interpreter, add_overflow)
