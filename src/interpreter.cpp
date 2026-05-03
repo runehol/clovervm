@@ -10,6 +10,7 @@
 #include "function.h"
 #include "instance.h"
 #include "list.h"
+#include "python_exception.h"
 #include "range_iterator.h"
 #include "refcount.h"
 #include "runtime_helpers.h"
@@ -94,27 +95,18 @@ namespace cl
     resolve_exceptional_frame_exit(Value *fp, const uint8_t *pc,
                                    CodeObject *code_object);
 
-    static std::string narrow_cl_string(TValue<String> string)
+    static std::wstring cl_string_to_wstring(TValue<String> string)
     {
         String *str = string.extract();
-        size_t n_chars = size_t(str->count.extract());
-        std::string result;
-        result.reserve(n_chars);
-        for(size_t idx = 0; idx < n_chars; ++idx)
-        {
-            cl_wchar ch = str->data[idx];
-            result.push_back(ch >= 0 && ch <= 0x7f ? static_cast<char>(ch)
-                                                   : '?');
-        }
-        return result;
+        return std::wstring(str->data, size_t(str->count.extract()));
     }
 
-    static std::string format_unhandled_python_exception(ThreadState *thread)
+    static std::wstring format_unhandled_python_exception(ThreadState *thread)
     {
         if(thread->pending_exception_kind() ==
            PendingExceptionKind::StopIteration)
         {
-            return "StopIteration";
+            return L"StopIteration";
         }
 
         assert(thread->pending_exception_kind() ==
@@ -122,13 +114,13 @@ namespace cl
         TValue<ExceptionObject> exception =
             TValue<ExceptionObject>::from_value_checked(
                 thread->pending_exception_object());
-        std::string result = narrow_cl_string(
+        std::wstring result = cl_string_to_wstring(
             exception.extract()->get_class().extract()->get_name());
-        std::string message = narrow_cl_string(
+        std::wstring message = cl_string_to_wstring(
             static_cast<TValue<String>>(exception.extract()->message));
         if(!message.empty())
         {
-            result += ": ";
+            result += L": ";
             result += message;
         }
         return result;
@@ -2555,7 +2547,7 @@ namespace cl
         {
             case PendingExceptionKind::StopIteration:
             case PendingExceptionKind::Object:
-                throw std::runtime_error(
+                throw PythonException(
                     format_unhandled_python_exception(thread));
             case PendingExceptionKind::None:
                 break;

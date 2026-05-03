@@ -11,6 +11,7 @@
 #include "list.h"
 #include "native_function.h"
 #include "parser.h"
+#include "python_exception.h"
 #include "range_iterator.h"
 #include "scope.h"
 #include "shape.h"
@@ -41,6 +42,32 @@ static void expect_runtime_error(const wchar_t *source,
     catch(const std::runtime_error &err)
     {
         EXPECT_STREQ(expected_message, err.what());
+    }
+}
+
+static std::string narrow_test_wstring(const wchar_t *message)
+{
+    std::string result;
+    for(const wchar_t *ch = message; *ch != 0; ++ch)
+    {
+        result.push_back(*ch >= 0 && *ch <= 0x7f ? static_cast<char>(*ch)
+                                                 : '?');
+    }
+    return result;
+}
+
+static void expect_python_error(const wchar_t *source,
+                                const wchar_t *expected_message)
+{
+    try
+    {
+        (void)test::FileRunner(source);
+        FAIL() << "Expected PythonException";
+    }
+    catch(const PythonException &err)
+    {
+        EXPECT_STREQ(expected_message, err.wide_what().c_str());
+        EXPECT_STREQ(narrow_test_wstring(expected_message).c_str(), err.what());
     }
 }
 
@@ -127,95 +154,95 @@ static Value make_test_function(test::VmTestContext &test_context,
 
 TEST(Interpreter, assert_statement_raises_assertion_error)
 {
-    expect_runtime_error(L"assert False\n", "AssertionError");
+    expect_python_error(L"assert False\n", L"AssertionError");
 }
 
 TEST(Interpreter, assert_statement_raises_assertion_error_with_message)
 {
-    expect_runtime_error(L"assert False, \"basic math is broken\"\n",
-                         "AssertionError: basic math is broken");
+    expect_python_error(L"assert False, \"basic math is broken\"\n",
+                        L"AssertionError: basic math is broken");
 }
 
 TEST(Interpreter, assert_statement_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def fail():\n"
-                         L"    assert False\n"
-                         L"    return 99\n"
-                         L"fail()\n",
-                         "AssertionError");
+    expect_python_error(L"def fail():\n"
+                        L"    assert False\n"
+                        L"    return 99\n"
+                        L"fail()\n",
+                        L"AssertionError");
 }
 
 TEST(Interpreter, del_global_removes_binding)
 {
-    expect_runtime_error(L"value = 7\n"
-                         L"del value\n"
-                         L"value\n",
-                         "NameError: name 'value' is not defined");
+    expect_python_error(L"value = 7\n"
+                        L"del value\n"
+                        L"value\n",
+                        L"NameError: name 'value' is not defined");
 }
 
 TEST(Interpreter, del_missing_global_raises_name_error)
 {
-    expect_runtime_error(L"del missing\n",
-                         "NameError: name 'missing' is not defined");
+    expect_python_error(L"del missing\n",
+                        L"NameError: name 'missing' is not defined");
 }
 
 TEST(Interpreter, del_local_variable_removes_binding)
 {
-    expect_runtime_error(L"def clear(value):\n"
-                         L"    del value\n"
-                         L"    return value\n"
-                         L"clear(7)\n",
-                         "NameError: name 'value' is not defined");
+    expect_python_error(L"def clear(value):\n"
+                        L"    del value\n"
+                        L"    return value\n"
+                        L"clear(7)\n",
+                        L"NameError: name 'value' is not defined");
 }
 
 TEST(Interpreter, del_missing_local_raises_name_error)
 {
-    expect_runtime_error(L"def clear():\n"
-                         L"    del value\n"
-                         L"clear()\n",
-                         "NameError: name 'value' is not defined");
+    expect_python_error(L"def clear():\n"
+                        L"    del value\n"
+                        L"clear()\n",
+                        L"NameError: name 'value' is not defined");
 }
 
 TEST(Interpreter, local_read_before_assignment_raises_name_error)
 {
-    expect_runtime_error(L"def read_before_write():\n"
-                         L"    value\n"
-                         L"    value = 7\n"
-                         L"read_before_write()\n",
-                         "NameError: name 'value' is not defined");
+    expect_python_error(L"def read_before_write():\n"
+                        L"    value\n"
+                        L"    value = 7\n"
+                        L"read_before_write()\n",
+                        L"NameError: name 'value' is not defined");
 }
 
 TEST(Interpreter, conditional_local_assignment_raises_on_missing_path)
 {
-    expect_runtime_error(L"def maybe_write(flag):\n"
-                         L"    if flag:\n"
-                         L"        value = 7\n"
-                         L"    return value\n"
-                         L"maybe_write(False)\n",
-                         "NameError: name 'value' is not defined");
+    expect_python_error(L"def maybe_write(flag):\n"
+                        L"    if flag:\n"
+                        L"        value = 7\n"
+                        L"    return value\n"
+                        L"maybe_write(False)\n",
+                        L"NameError: name 'value' is not defined");
 }
 
 TEST(Interpreter, function_wrong_arity)
 {
-    expect_runtime_error(L"def f(a):\n"
-                         "    return a\n"
-                         "f()\n",
-                         "TypeError: wrong number of arguments");
-    expect_runtime_error(L"def f(a):\n"
-                         "    return a\n"
-                         "f(1, 2)\n",
-                         "TypeError: wrong number of arguments");
+    expect_python_error(L"def f(a):\n"
+                        L"    return a\n"
+                        L"f()\n",
+                        L"TypeError: wrong number of arguments");
+    expect_python_error(L"def f(a):\n"
+                        L"    return a\n"
+                        L"f(1, 2)\n",
+                        L"TypeError: wrong number of arguments");
 }
 
 TEST(Interpreter, function_wrong_arity_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def f(a):\n"
-                         "    return a\n"
-                         "def fail():\n"
-                         "    f()\n"
-                         "    return 99\n"
-                         "fail()\n",
-                         "TypeError: wrong number of arguments");
+    expect_python_error(L"def f(a):\n"
+                        L"    return a\n"
+                        L"def fail():\n"
+                        L"    f()\n"
+                        L"    return 99\n"
+                        L"fail()\n",
+                        L"TypeError: wrong number of arguments");
 }
 
 TEST(Interpreter, function_varargs_collect_empty_tuple)
@@ -233,10 +260,10 @@ TEST(Interpreter, function_varargs_collect_empty_tuple)
 
 TEST(Interpreter, function_varargs_still_requires_positional_arguments)
 {
-    expect_runtime_error(L"def f(a, *args):\n"
-                         "    return a\n"
-                         "f()\n",
-                         "TypeError: wrong number of arguments");
+    expect_python_error(L"def f(a, *args):\n"
+                        L"    return a\n"
+                        L"f()\n",
+                        L"TypeError: wrong number of arguments");
 }
 
 TEST(Interpreter, class_definition_binds_class_object)
@@ -378,23 +405,23 @@ TEST(Interpreter, class_call_allocates_instance)
 
 TEST(Interpreter, class_constructor_rejects_non_none_init_return)
 {
-    expect_runtime_error(L"class Cls:\n"
-                         L"    def __init__(self):\n"
-                         L"        return 1\n"
-                         L"Cls()\n",
-                         "TypeError: __init__ should return None, not a value");
+    expect_python_error(L"class Cls:\n"
+                        L"    def __init__(self):\n"
+                        L"        return 1\n"
+                        L"Cls()\n",
+                        L"TypeError: __init__ should return None, not a value");
 }
 
 TEST(Interpreter, class_constructor_non_none_init_return_unwinds_nested_frames)
 {
-    expect_runtime_error(L"class Cls:\n"
-                         L"    def __init__(self):\n"
-                         L"        return 1\n"
-                         L"def fail():\n"
-                         L"    Cls()\n"
-                         L"    return 99\n"
-                         L"fail()\n",
-                         "TypeError: __init__ should return None, not a value");
+    expect_python_error(L"class Cls:\n"
+                        L"    def __init__(self):\n"
+                        L"        return 1\n"
+                        L"def fail():\n"
+                        L"    Cls()\n"
+                        L"    return 99\n"
+                        L"fail()\n",
+                        L"TypeError: __init__ should return None, not a value");
 }
 
 TEST(Interpreter, string_literal_value)
@@ -418,15 +445,15 @@ TEST(Interpreter, string_dunder_add_calls_native_function)
 
 TEST(Interpreter, string_dunder_add_wrong_type_reports_unimplemented)
 {
-    expect_runtime_error(L"\"ab\".__add__(3)\n", "UnimplementedError");
+    expect_python_error(L"\"ab\".__add__(3)\n", L"UnimplementedError");
 }
 
 TEST(Interpreter, string_dunder_add_wrong_type_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def fail():\n"
-                         L"    return \"ab\".__add__(3)\n"
-                         L"fail()\n",
-                         "UnimplementedError");
+    expect_python_error(L"def fail():\n"
+                        L"    return \"ab\".__add__(3)\n"
+                        L"fail()\n",
+                        L"UnimplementedError");
 }
 
 TEST(Interpreter, list_literal_returns_list_object)
@@ -630,42 +657,42 @@ TEST(Interpreter,
 
 TEST(Interpreter, subscript_store_rejects_tuple_item_assignment)
 {
-    expect_runtime_error(
+    expect_python_error(
         L"class Cls:\n"
         L"    pass\n"
         L"Cls.__mro__[0] = 1\n",
-        "TypeError: 'tuple' object does not support item assignment");
+        L"TypeError: 'tuple' object does not support item assignment");
 }
 
 TEST(Interpreter, subscript_store_tuple_item_assignment_unwinds_nested_frames)
 {
-    expect_runtime_error(
+    expect_python_error(
         L"def fail():\n"
         L"    class Cls:\n"
         L"        pass\n"
         L"    Cls.__mro__[0] = 1\n"
         L"fail()\n",
-        "TypeError: 'tuple' object does not support item assignment");
+        L"TypeError: 'tuple' object does not support item assignment");
 }
 
 TEST(Interpreter, subscript_delete_rejects_tuple_item_deletion)
 {
-    expect_runtime_error(
+    expect_python_error(
         L"class Cls:\n"
         L"    pass\n"
         L"del Cls.__mro__[0]\n",
-        "TypeError: 'tuple' object does not support item deletion");
+        L"TypeError: 'tuple' object does not support item deletion");
 }
 
 TEST(Interpreter, subscript_delete_tuple_item_deletion_unwinds_nested_frames)
 {
-    expect_runtime_error(
+    expect_python_error(
         L"def fail():\n"
         L"    class Cls:\n"
         L"        pass\n"
         L"    del Cls.__mro__[0]\n"
         L"fail()\n",
-        "TypeError: 'tuple' object does not support item deletion");
+        L"TypeError: 'tuple' object does not support item deletion");
 }
 
 TEST(Interpreter,
@@ -695,111 +722,111 @@ TEST(Interpreter,
 
 TEST(Interpreter, subscript_load_rejects_non_integer_list_index)
 {
-    expect_runtime_error(L"xs = [1, 2, 3]\n"
-                         L"xs[False]\n",
-                         "TypeError: list indices must be integers");
+    expect_python_error(L"xs = [1, 2, 3]\n"
+                        L"xs[False]\n",
+                        L"TypeError: list indices must be integers");
 }
 
 TEST(Interpreter, subscript_load_non_integer_list_index_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def fail():\n"
-                         L"    xs = [1, 2, 3]\n"
-                         L"    return xs[False]\n"
-                         L"fail()\n",
-                         "TypeError: list indices must be integers");
+    expect_python_error(L"def fail():\n"
+                        L"    xs = [1, 2, 3]\n"
+                        L"    return xs[False]\n"
+                        L"fail()\n",
+                        L"TypeError: list indices must be integers");
 }
 
 TEST(Interpreter, subscript_load_rejects_non_integer_tuple_index)
 {
-    expect_runtime_error(L"class Cls:\n"
-                         L"    pass\n"
-                         L"Cls.__mro__[False]\n",
-                         "TypeError: tuple indices must be integers");
+    expect_python_error(L"class Cls:\n"
+                        L"    pass\n"
+                        L"Cls.__mro__[False]\n",
+                        L"TypeError: tuple indices must be integers");
 }
 
 TEST(Interpreter, subscript_load_rejects_out_of_range_list_index)
 {
-    expect_runtime_error(L"xs = [1, 2, 3]\n"
-                         L"xs[3]\n",
-                         "IndexError: list index out of range");
+    expect_python_error(L"xs = [1, 2, 3]\n"
+                        L"xs[3]\n",
+                        L"IndexError: list index out of range");
 }
 
 TEST(Interpreter, subscript_load_out_of_range_list_index_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def fail():\n"
-                         L"    xs = [1, 2, 3]\n"
-                         L"    return xs[3]\n"
-                         L"fail()\n",
-                         "IndexError: list index out of range");
+    expect_python_error(L"def fail():\n"
+                        L"    xs = [1, 2, 3]\n"
+                        L"    return xs[3]\n"
+                        L"fail()\n",
+                        L"IndexError: list index out of range");
 }
 
 TEST(Interpreter, subscript_load_rejects_out_of_range_tuple_index)
 {
-    expect_runtime_error(L"class Cls:\n"
-                         L"    pass\n"
-                         L"Cls.__mro__[2]\n",
-                         "IndexError: tuple index out of range");
+    expect_python_error(L"class Cls:\n"
+                        L"    pass\n"
+                        L"Cls.__mro__[2]\n",
+                        L"IndexError: tuple index out of range");
 }
 
 TEST(Interpreter, subscript_load_out_of_range_tuple_index_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def fail():\n"
-                         L"    class Cls:\n"
-                         L"        pass\n"
-                         L"    return Cls.__mro__[2]\n"
-                         L"fail()\n",
-                         "IndexError: tuple index out of range");
+    expect_python_error(L"def fail():\n"
+                        L"    class Cls:\n"
+                        L"        pass\n"
+                        L"    return Cls.__mro__[2]\n"
+                        L"fail()\n",
+                        L"IndexError: tuple index out of range");
 }
 
 TEST(Interpreter, subscript_load_missing_dict_key_raises_key_error)
 {
-    expect_runtime_error(L"xs = {\"alpha\": 1}\n"
-                         L"xs[\"beta\"]\n",
-                         "KeyError");
+    expect_python_error(L"xs = {\"alpha\": 1}\n"
+                        L"xs[\"beta\"]\n",
+                        L"KeyError");
 }
 
 TEST(Interpreter, subscript_load_missing_dict_key_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def fail():\n"
-                         L"    xs = {\"alpha\": 1}\n"
-                         L"    return xs[\"beta\"]\n"
-                         L"fail()\n",
-                         "KeyError");
+    expect_python_error(L"def fail():\n"
+                        L"    xs = {\"alpha\": 1}\n"
+                        L"    return xs[\"beta\"]\n"
+                        L"fail()\n",
+                        L"KeyError");
 }
 
 TEST(Interpreter, subscript_load_rejects_non_subscriptable_receiver)
 {
-    expect_runtime_error(L"1[0]\n", "TypeError: object is not subscriptable");
+    expect_python_error(L"1[0]\n", L"TypeError: object is not subscriptable");
 }
 
 TEST(Interpreter, subscript_load_non_subscriptable_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def fail():\n"
-                         L"    return 1[0]\n"
-                         L"fail()\n",
-                         "TypeError: object is not subscriptable");
+    expect_python_error(L"def fail():\n"
+                        L"    return 1[0]\n"
+                        L"fail()\n",
+                        L"TypeError: object is not subscriptable");
 }
 
 TEST(Interpreter, subscript_delete_rejects_non_subscriptable_receiver)
 {
-    expect_runtime_error(L"del (1)[0]\n",
-                         "TypeError: object is not subscriptable");
+    expect_python_error(L"del (1)[0]\n",
+                        L"TypeError: object is not subscriptable");
 }
 
 TEST(Interpreter, subscript_delete_missing_dict_key_raises_key_error)
 {
-    expect_runtime_error(L"xs = {\"alpha\": 1}\n"
-                         L"del xs[\"beta\"]\n",
-                         "KeyError");
+    expect_python_error(L"xs = {\"alpha\": 1}\n"
+                        L"del xs[\"beta\"]\n",
+                        L"KeyError");
 }
 
 TEST(Interpreter, subscript_delete_missing_dict_key_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def fail():\n"
-                         L"    xs = {\"alpha\": 1}\n"
-                         L"    del xs[\"beta\"]\n"
-                         L"fail()\n",
-                         "KeyError");
+    expect_python_error(L"def fail():\n"
+                        L"    xs = {\"alpha\": 1}\n"
+                        L"    del xs[\"beta\"]\n"
+                        L"fail()\n",
+                        L"KeyError");
 }
 
 TEST(Interpreter, attribute_load_and_store_syntax)
@@ -1236,10 +1263,10 @@ TEST(Interpreter, class_definition_rejects_inconsistent_c3_mro)
 
 TEST(Interpreter, class_call_rejects_arguments)
 {
-    expect_runtime_error(L"class Cls:\n"
-                         L"    pass\n"
-                         L"Cls(1)\n",
-                         "TypeError: wrong number of arguments");
+    expect_python_error(L"class Cls:\n"
+                        L"    pass\n"
+                        L"Cls(1)\n",
+                        L"TypeError: wrong number of arguments");
 }
 
 TEST(Interpreter, return_in_class_body_is_rejected)
@@ -1256,13 +1283,13 @@ TEST(Interpreter, return_in_module_body_is_rejected)
 
 TEST(Interpreter, global_statement_makes_function_delete_global)
 {
-    expect_runtime_error(L"a = 10\n"
-                         L"def f():\n"
-                         L"    global a\n"
-                         L"    del a\n"
-                         L"f()\n"
-                         L"a\n",
-                         "NameError: name 'a' is not defined");
+    expect_python_error(L"a = 10\n"
+                        L"def f():\n"
+                        L"    global a\n"
+                        L"    del a\n"
+                        L"f()\n"
+                        L"a\n",
+                        L"NameError: name 'a' is not defined");
 }
 
 TEST(Interpreter, global_statement_rejects_parameter_conflict)
@@ -1325,22 +1352,22 @@ TEST(Interpreter, global_statement_rejects_annotated_name)
 
 TEST(Interpreter, name_error)
 {
-    expect_runtime_error(L"missing_name\n",
-                         "NameError: name 'missing_name' is not defined");
+    expect_python_error(L"missing_name\n",
+                        L"NameError: name 'missing_name' is not defined");
 }
 
 TEST(Interpreter, call_non_callable)
 {
-    expect_runtime_error(L"1()\n", "TypeError: object is not callable");
+    expect_python_error(L"1()\n", L"TypeError: object is not callable");
 }
 
 TEST(Interpreter, call_non_callable_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def fail():\n"
-                         L"    1()\n"
-                         L"    return 99\n"
-                         L"fail()\n",
-                         "TypeError: object is not callable");
+    expect_python_error(L"def fail():\n"
+                        L"    1()\n"
+                        L"    return 99\n"
+                        L"fail()\n",
+                        L"TypeError: object is not callable");
 }
 
 TEST(Interpreter, call_native_zero_arg_function)
@@ -1413,8 +1440,9 @@ TEST(Interpreter, native_exception_marker_materializes_stop_iteration)
         (void)test_context.thread()->run(code_obj);
         FAIL() << "Expected unhandled pending exception";
     }
-    catch(const std::runtime_error &err)
+    catch(const PythonException &err)
     {
+        EXPECT_STREQ(L"StopIteration", err.wide_what().c_str());
         EXPECT_STREQ("StopIteration", err.what());
     }
 
@@ -1444,8 +1472,9 @@ TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
         (void)test_context.thread()->run(code_obj);
         FAIL() << "Expected unhandled pending exception";
     }
-    catch(const std::runtime_error &err)
+    catch(const PythonException &err)
     {
+        EXPECT_STREQ(L"StopIteration", err.wide_what().c_str());
         EXPECT_STREQ("StopIteration", err.what());
     }
 
@@ -1472,8 +1501,9 @@ TEST(Interpreter, unhandled_python_exception_reports_class_and_message)
         (void)test_context.thread()->run(code_obj);
         FAIL() << "Expected unhandled pending exception";
     }
-    catch(const std::runtime_error &err)
+    catch(const PythonException &err)
     {
+        EXPECT_STREQ(L"BaseException: boom", err.wide_what().c_str());
         EXPECT_STREQ("BaseException: boom", err.what());
     }
 }
@@ -1669,23 +1699,23 @@ TEST(Interpreter, range_builtin_three_arguments_returns_range_iterator)
 
 TEST(Interpreter, direct_range_for_loop_reports_integer_argument_errors)
 {
-    expect_runtime_error(L"for x in range(False):\n"
-                         L"    0\n",
-                         "TypeError: range() arguments must be integers");
+    expect_python_error(L"for x in range(False):\n"
+                        L"    0\n",
+                        L"TypeError: range() arguments must be integers");
 }
 
 TEST(Interpreter, direct_range_for_loop_reports_zero_step_errors)
 {
-    expect_runtime_error(L"for x in range(1, 4, 0):\n"
-                         L"    0\n",
-                         "ValueError: range() arg 3 must not be zero");
+    expect_python_error(L"for x in range(1, 4, 0):\n"
+                        L"    0\n",
+                        L"ValueError: range() arg 3 must not be zero");
 }
 
 TEST(Interpreter, global_delete_does_not_delete_builtin_fallback)
 {
-    expect_runtime_error(L"range\n"
-                         L"del range\n",
-                         "NameError: name 'range' is not defined");
+    expect_python_error(L"range\n"
+                        L"del range\n",
+                        L"NameError: name 'range' is not defined");
 }
 
 TEST(Interpreter, global_delete_reveals_builtin_after_shadow_delete)
@@ -1702,85 +1732,85 @@ TEST(Interpreter, global_delete_reveals_builtin_after_shadow_delete)
 
 TEST(Interpreter, range_builtin_requires_integer_argument)
 {
-    expect_runtime_error(L"range(False)\n",
-                         "TypeError: range() arguments must be integers");
-    expect_runtime_error(L"range(1, False)\n",
-                         "TypeError: range() arguments must be integers");
-    expect_runtime_error(L"range(1, 2, False)\n",
-                         "TypeError: range() arguments must be integers");
+    expect_python_error(L"range(False)\n",
+                        L"TypeError: range() arguments must be integers");
+    expect_python_error(L"range(1, False)\n",
+                        L"TypeError: range() arguments must be integers");
+    expect_python_error(L"range(1, 2, False)\n",
+                        L"TypeError: range() arguments must be integers");
 }
 
 TEST(Interpreter, range_integer_argument_error_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def fail():\n"
-                         L"    range(False)\n"
-                         L"    return 99\n"
-                         L"fail()\n",
-                         "TypeError: range() arguments must be integers");
+    expect_python_error(L"def fail():\n"
+                        L"    range(False)\n"
+                        L"    return 99\n"
+                        L"fail()\n",
+                        L"TypeError: range() arguments must be integers");
 }
 
 TEST(Interpreter, range_builtin_rejects_zero_step)
 {
-    expect_runtime_error(L"range(1, 2, 0)\n",
-                         "ValueError: range() arg 3 must not be zero");
+    expect_python_error(L"range(1, 2, 0)\n",
+                        L"ValueError: range() arg 3 must not be zero");
 }
 
 TEST(Interpreter, range_zero_step_error_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def fail():\n"
-                         L"    range(1, 2, 0)\n"
-                         L"    return 99\n"
-                         L"fail()\n",
-                         "ValueError: range() arg 3 must not be zero");
+    expect_python_error(L"def fail():\n"
+                        L"    range(1, 2, 0)\n"
+                        L"    return 99\n"
+                        L"fail()\n",
+                        L"ValueError: range() arg 3 must not be zero");
 }
 
 TEST(Interpreter, range_builtin_rejects_wrong_arity_at_function_boundary)
 {
-    expect_runtime_error(L"range()\n", "TypeError: wrong number of arguments");
-    expect_runtime_error(L"range(1, 2, 3, 4)\n",
-                         "TypeError: wrong number of arguments");
+    expect_python_error(L"range()\n", L"TypeError: wrong number of arguments");
+    expect_python_error(L"range(1, 2, 3, 4)\n",
+                        L"TypeError: wrong number of arguments");
 }
 
 TEST(Interpreter, for_loop_rejects_non_iterable)
 {
-    expect_runtime_error(L"for x in 1:\n"
-                         L"    x\n",
-                         "TypeError: object is not iterable");
+    expect_python_error(L"for x in 1:\n"
+                        L"    x\n",
+                        L"TypeError: object is not iterable");
 }
 
 TEST(Interpreter, for_loop_non_iterable_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def fail():\n"
-                         L"    for x in 1:\n"
-                         L"        x\n"
-                         L"    return 99\n"
-                         L"fail()\n",
-                         "TypeError: object is not iterable");
+    expect_python_error(L"def fail():\n"
+                        L"    for x in 1:\n"
+                        L"        x\n"
+                        L"    return 99\n"
+                        L"fail()\n",
+                        L"TypeError: object is not iterable");
 }
 
 TEST(Interpreter, left_shift_negative_count)
 {
-    expect_runtime_error(L"a = 1\n"
-                         L"b = -1\n"
-                         L"a << b\n",
-                         "ValueError: negative shift count");
+    expect_python_error(L"a = 1\n"
+                        L"b = -1\n"
+                        L"a << b\n",
+                        L"ValueError: negative shift count");
 }
 
 TEST(Interpreter, right_shift_negative_count)
 {
-    expect_runtime_error(L"a = 8\n"
-                         L"b = -1\n"
-                         L"a >> b\n",
-                         "ValueError: negative shift count");
+    expect_python_error(L"a = 8\n"
+                        L"b = -1\n"
+                        L"a >> b\n",
+                        L"ValueError: negative shift count");
 }
 
 TEST(Interpreter, negative_shift_count_unwinds_nested_frames)
 {
-    expect_runtime_error(L"def fail():\n"
-                         L"    1 << -1\n"
-                         L"    return 99\n"
-                         L"fail()\n",
-                         "ValueError: negative shift count");
+    expect_python_error(L"def fail():\n"
+                        L"    1 << -1\n"
+                        L"    return 99\n"
+                        L"fail()\n",
+                        L"ValueError: negative shift count");
 }
 
 TEST(Interpreter, left_shift_overflow_smi)
