@@ -92,6 +92,15 @@ static Value native_marker_without_pending_exception()
     return Value::exception_marker();
 }
 
+static Value native_base_exception_with_message()
+{
+    ClassObject *cls =
+        active_thread()->class_for_native_layout(NativeLayoutId::Exception);
+    active_thread()->set_pending_exception_string(
+        TValue<ClassObject>::from_oop(cls), "boom");
+    return Value::exception_marker();
+}
+
 static void bind_global(test::VmTestContext &test_context,
                         CodeObject *code_object, const wchar_t *name,
                         Value value)
@@ -1253,7 +1262,7 @@ TEST(Interpreter, native_exception_marker_materializes_stop_iteration)
     }
     catch(const std::runtime_error &err)
     {
-        EXPECT_STREQ("Unhandled Python exception", err.what());
+        EXPECT_STREQ("StopIteration", err.what());
     }
 
     ASSERT_EQ(PendingExceptionKind::Object,
@@ -1262,6 +1271,58 @@ TEST(Interpreter, native_exception_marker_materializes_stop_iteration)
         TValue<StopIterationObject>::from_value_checked(
             test_context.thread()->pending_exception_object());
     EXPECT_EQ(Value::from_smi(123), exception.extract()->value.as_value());
+}
+
+TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj = test_context.compile_file(L"def call_stop():\n"
+                                                     L"    native_stop()\n"
+                                                     L"    return 99\n"
+                                                     L"call_stop()\n");
+
+    bind_global(test_context, code_obj, L"native_stop",
+                make_native_function(&test_context.vm(),
+                                     native_stop_iteration_with_value));
+
+    try
+    {
+        (void)test_context.thread()->run(code_obj);
+        FAIL() << "Expected unhandled pending exception";
+    }
+    catch(const std::runtime_error &err)
+    {
+        EXPECT_STREQ("StopIteration", err.what());
+    }
+
+    ASSERT_EQ(PendingExceptionKind::Object,
+              test_context.thread()->pending_exception_kind());
+    TValue<StopIterationObject> exception =
+        TValue<StopIterationObject>::from_value_checked(
+            test_context.thread()->pending_exception_object());
+    EXPECT_EQ(Value::from_smi(123), exception.extract()->value.as_value());
+}
+
+TEST(Interpreter, unhandled_python_exception_reports_class_and_message)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj = test_context.compile_file(L"native_boom()\n");
+
+    bind_global(test_context, code_obj, L"native_boom",
+                make_native_function(&test_context.vm(),
+                                     native_base_exception_with_message));
+
+    try
+    {
+        (void)test_context.thread()->run(code_obj);
+        FAIL() << "Expected unhandled pending exception";
+    }
+    catch(const std::runtime_error &err)
+    {
+        EXPECT_STREQ("BaseException: boom", err.what());
+    }
 }
 
 TEST(Interpreter, native_exception_marker_requires_pending_exception)

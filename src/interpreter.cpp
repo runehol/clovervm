@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <fmt/core.h>
 #include <stdexcept>
+#include <string>
 
 namespace cl
 {
@@ -87,6 +88,46 @@ namespace cl
 #else
         return (p[0] << 0) | (p[1] << 8);
 #endif
+    }
+
+    static std::string narrow_cl_string(TValue<String> string)
+    {
+        String *str = string.extract();
+        size_t n_chars = size_t(str->count.extract());
+        std::string result;
+        result.reserve(n_chars);
+        for(size_t idx = 0; idx < n_chars; ++idx)
+        {
+            cl_wchar ch = str->data[idx];
+            result.push_back(ch >= 0 && ch <= 0x7f ? static_cast<char>(ch)
+                                                   : '?');
+        }
+        return result;
+    }
+
+    static std::string format_unhandled_python_exception(ThreadState *thread)
+    {
+        if(thread->pending_exception_kind() ==
+           PendingExceptionKind::StopIteration)
+        {
+            return "StopIteration";
+        }
+
+        assert(thread->pending_exception_kind() ==
+               PendingExceptionKind::Object);
+        TValue<ExceptionObject> exception =
+            TValue<ExceptionObject>::from_value_checked(
+                thread->pending_exception_object());
+        std::string result = narrow_cl_string(
+            exception.extract()->get_class().extract()->get_name());
+        std::string message = narrow_cl_string(
+            static_cast<TValue<String>>(exception.extract()->message));
+        if(!message.empty())
+        {
+            result += ": ";
+            result += message;
+        }
+        return result;
     }
 
     NOINLINE Value raise_generic_exception(PARAMS)
@@ -181,10 +222,13 @@ namespace cl
     {
         assert(active_thread()->has_pending_exception());
 
-        // Exception tables do not exist yet, so this initial helper only models
-        // the no-local-handler frame exit. The startup wrapper will provide the
-        // eventual unhandled-exception boundary.
-        restore_frame_header(fp, pc, code_object);
+        // Exception tables do not exist yet. Until they do, unwind all the way
+        // to the synthetic startup wrapper's unhandled-exception boundary.
+        while(static_cast<Bytecode>(*pc) != Bytecode::RaiseIfUnhandledException)
+        {
+            restore_frame_header(fp, pc, code_object);
+        }
+
         return {fp, code_object, pc, nullptr};
     }
 
@@ -2346,9 +2390,9 @@ namespace cl
         switch(thread->pending_exception_kind())
         {
             case PendingExceptionKind::StopIteration:
-                throw std::runtime_error("StopIteration");
             case PendingExceptionKind::Object:
-                throw std::runtime_error("Unhandled Python exception");
+                throw std::runtime_error(
+                    format_unhandled_python_exception(thread));
             case PendingExceptionKind::None:
                 break;
         }
