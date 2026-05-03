@@ -39,9 +39,9 @@ namespace cl
         Dict(ClassObject *cls, const Dict &other);
 
         void set_item(Value key, Value value);
-        Value get_item(Value key) const;
+        [[nodiscard]] Value get_item(Value key) const;
 
-        void del_item(Value key);
+        [[nodiscard]] Value del_item(Value key);
 
         bool contains(Value key) const;
 

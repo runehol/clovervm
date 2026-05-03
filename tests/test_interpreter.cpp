@@ -721,6 +721,22 @@ TEST(Interpreter, subscript_load_out_of_range_tuple_index_unwinds_nested_frames)
                          "IndexError: tuple index out of range");
 }
 
+TEST(Interpreter, subscript_load_missing_dict_key_raises_key_error)
+{
+    expect_runtime_error(L"xs = {\"alpha\": 1}\n"
+                         L"xs[\"beta\"]\n",
+                         "KeyError");
+}
+
+TEST(Interpreter, subscript_load_missing_dict_key_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def fail():\n"
+                         L"    xs = {\"alpha\": 1}\n"
+                         L"    return xs[\"beta\"]\n"
+                         L"fail()\n",
+                         "KeyError");
+}
+
 TEST(Interpreter, subscript_load_rejects_non_subscriptable_receiver)
 {
     expect_runtime_error(L"1[0]\n", "TypeError: object is not subscriptable");
@@ -738,6 +754,22 @@ TEST(Interpreter, subscript_delete_rejects_non_subscriptable_receiver)
 {
     expect_runtime_error(L"del (1)[0]\n",
                          "TypeError: object is not subscriptable");
+}
+
+TEST(Interpreter, subscript_delete_missing_dict_key_raises_key_error)
+{
+    expect_runtime_error(L"xs = {\"alpha\": 1}\n"
+                         L"del xs[\"beta\"]\n",
+                         "KeyError");
+}
+
+TEST(Interpreter, subscript_delete_missing_dict_key_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def fail():\n"
+                         L"    xs = {\"alpha\": 1}\n"
+                         L"    del xs[\"beta\"]\n"
+                         L"fail()\n",
+                         "KeyError");
 }
 
 TEST(Interpreter, attribute_load_and_store_syntax)

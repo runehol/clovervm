@@ -2,6 +2,7 @@
 #include "class_object.h"
 #include "refcount.h"
 #include "str.h"
+#include "thread_state.h"
 #include "virtual_machine.h"
 
 namespace cl
@@ -117,10 +118,10 @@ namespace cl
                 return e.value;
             }
         }
-        throw std::runtime_error("KeyError");
+        return active_thread()->set_pending_builtin_exception_none(L"KeyError");
     }
 
-    void Dict::del_item(Value key)
+    Value Dict::del_item(Value key)
     {
         int32_t *iidx = find_entry(key);
         int32_t idx = *iidx;
@@ -130,11 +131,9 @@ namespace cl
                                    TValue<SMI>::from_smi(0)));
             *iidx = tombstone;
             --n_valid_entries;
+            return Value::None();
         }
-        else
-        {
-            throw std::runtime_error("KeyError");
-        }
+        return active_thread()->set_pending_builtin_exception_none(L"KeyError");
     }
 
     void Dict::set_item(Value key, Value value)

@@ -1,9 +1,9 @@
 #include "dict.h"
+#include "exception_object.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
 #include <gtest/gtest.h>
-#include <stdexcept>
 
 using namespace cl;
 
@@ -12,6 +12,27 @@ namespace
     static Value make_string(test::VmTestContext &context, const wchar_t *text)
     {
         return context.thread()->make_internal_value<String>(text);
+    }
+
+    static void expect_pending_exception(ThreadState *thread,
+                                         const wchar_t *class_name,
+                                         const wchar_t *message)
+    {
+        ASSERT_EQ(PendingExceptionKind::Object,
+                  thread->pending_exception_kind());
+        TValue<ExceptionObject> exception =
+            TValue<ExceptionObject>::from_value_checked(
+                thread->pending_exception_object());
+        EXPECT_STREQ(class_name, exception.extract()
+                                     ->get_class()
+                                     .extract()
+                                     ->get_name()
+                                     .extract()
+                                     ->data);
+        EXPECT_STREQ(message, TValue<String>::from_value_checked(
+                                  exception.extract()->message)
+                                  .extract()
+                                  ->data);
     }
 }  // namespace
 
@@ -61,13 +82,14 @@ TEST(Dict, DelItemRemovesKeyFromLookupAndLogicalSize)
 
     dict->set_item(keep, Value::from_smi(1));
     dict->set_item(erase, Value::from_smi(2));
-    dict->del_item(erase);
+    EXPECT_EQ(Value::None(), dict->del_item(erase));
 
     EXPECT_EQ(1u, dict->size());
     EXPECT_TRUE(dict->contains(keep));
     EXPECT_FALSE(dict->contains(erase));
     EXPECT_EQ(Value::from_smi(1), dict->get_item(keep));
-    EXPECT_THROW((void)dict->get_item(erase), std::runtime_error);
+    EXPECT_TRUE(dict->get_item(erase).is_exception_marker());
+    expect_pending_exception(context.thread(), L"KeyError", L"");
 }
 
 TEST(Dict, CopyConstructorPreservesLiveEntriesOnly)
@@ -81,7 +103,7 @@ TEST(Dict, CopyConstructorPreservesLiveEntriesOnly)
 
     dict->set_item(first, Value::from_smi(10));
     dict->set_item(second, Value::from_smi(20));
-    dict->del_item(first);
+    EXPECT_EQ(Value::None(), dict->del_item(first));
 
     Dict copy(context.thread()->class_for_native_layout(Dict::native_layout_id),
               *dict);
@@ -90,7 +112,8 @@ TEST(Dict, CopyConstructorPreservesLiveEntriesOnly)
     EXPECT_FALSE(copy.contains(first));
     EXPECT_TRUE(copy.contains(second));
     EXPECT_EQ(Value::from_smi(20), copy.get_item(second));
-    EXPECT_THROW((void)copy.get_item(first), std::runtime_error);
+    EXPECT_TRUE(copy.get_item(first).is_exception_marker());
+    expect_pending_exception(context.thread(), L"KeyError", L"");
 }
 
 TEST(Dict, ClearRemovesAllEntriesAndAllowsReuse)
@@ -109,7 +132,9 @@ TEST(Dict, ClearRemovesAllEntriesAndAllowsReuse)
     EXPECT_EQ(0u, dict->size());
     EXPECT_TRUE(dict->empty());
     EXPECT_FALSE(dict->contains(alpha));
-    EXPECT_THROW((void)dict->get_item(alpha), std::runtime_error);
+    EXPECT_TRUE(dict->get_item(alpha).is_exception_marker());
+    expect_pending_exception(context.thread(), L"KeyError", L"");
+    context.thread()->clear_pending_exception();
 
     dict->set_item(alpha, Value::from_smi(7));
     EXPECT_EQ(1u, dict->size());

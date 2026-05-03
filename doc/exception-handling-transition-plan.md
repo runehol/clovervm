@@ -134,7 +134,7 @@ using C++ unwinding through the interpreter dispatch loop.
       simple exception instances for VM-originated errors.
 - [x] Support at least the initial builtin exception classes needed by the first
       converted slow paths: `Exception`, `NameError`, `TypeError`, `ValueError`,
-      `IndexError`, `AssertionError`, and `StopIteration`.
+      `IndexError`, `KeyError`, `AssertionError`, and `StopIteration`.
 - [x] Make `set_pending_exception_string` construct and store an exception object
       instead of throwing its unsupported placeholder.
 - [x] Keep construction deliberately narrow: message-only VM exceptions are

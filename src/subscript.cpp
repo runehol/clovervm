@@ -55,7 +55,9 @@ namespace cl
         }
         if(object->native_layout_id() == NativeLayoutId::Dict)
         {
-            return static_cast<Dict *>(object)->get_item(key);
+            Value result = static_cast<Dict *>(object)->get_item(key);
+            CL_PROPAGATE_EXCEPTION(result);
+            return result;
         }
 
         return Value::not_present();
@@ -113,7 +115,7 @@ namespace cl
         }
         if(object->native_layout_id() == NativeLayoutId::Dict)
         {
-            static_cast<Dict *>(object)->del_item(key);
+            CL_PROPAGATE_EXCEPTION(static_cast<Dict *>(object)->del_item(key));
             return Value::None();
         }
 
