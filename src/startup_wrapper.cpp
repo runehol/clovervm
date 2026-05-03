@@ -17,6 +17,7 @@ namespace cl
         uint32_t entry_const_idx =
             code.allocate_constant(Value::from_oop(entry_code_object));
         code.emit_call_code_object(0, entry_const_idx, OutgoingArgReg(0), 0);
+        code.emit_raise_if_unhandled_exception(0);
         code.emit_halt(0);
         return TValue<CodeObject>::from_oop(code.finalize());
     }

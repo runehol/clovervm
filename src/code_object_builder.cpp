@@ -174,6 +174,12 @@ namespace cl
         return emit_opcode(source_offset, Bytecode::Return);
     }
 
+    uint32_t
+    CodeObjectBuilder::emit_raise_if_unhandled_exception(uint32_t source_offset)
+    {
+        return emit_opcode(source_offset, Bytecode::RaiseIfUnhandledException);
+    }
+
     uint32_t CodeObjectBuilder::emit_halt(uint32_t source_offset)
     {
         return emit_opcode(source_offset, Bytecode::Halt);

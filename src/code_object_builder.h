@@ -175,6 +175,7 @@ namespace cl
         uint32_t emit_lda_constant(uint32_t source_offset,
                                    uint8_t constant_idx);
         uint32_t emit_return(uint32_t source_offset);
+        uint32_t emit_raise_if_unhandled_exception(uint32_t source_offset);
         uint32_t emit_halt(uint32_t source_offset);
         uint32_t emit_get_iter(uint32_t source_offset);
         uint32_t emit_build_class(uint32_t source_offset);

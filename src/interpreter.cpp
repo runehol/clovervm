@@ -2273,6 +2273,34 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static Value op_raise_if_unhandled_exception(PARAMS)
+    {
+        START(1);
+        if(accumulator != Value::exception_marker())
+        {
+            COMPLETE();
+        }
+
+        ThreadState *thread = active_thread();
+        if(!thread->has_pending_exception())
+        {
+            throw std::runtime_error(
+                "InternalError: exception marker without pending exception");
+        }
+
+        switch(thread->pending_exception_kind())
+        {
+            case PendingExceptionKind::StopIteration:
+                throw std::runtime_error("StopIteration");
+            case PendingExceptionKind::Object:
+                throw std::runtime_error("Unhandled Python exception");
+            case PendingExceptionKind::None:
+                break;
+        }
+        throw std::runtime_error(
+            "InternalError: exception marker without pending exception");
+    }
+
     static Value op_halt(PARAMS)
     {
         START(1);
@@ -2365,6 +2393,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::JumpIfTrue, op_jump_if_true);
         SET_TABLE_ENTRY(Bytecode::JumpIfFalse, op_jump_if_false);
         SET_TABLE_ENTRY(Bytecode::Return, op_return);
+        SET_TABLE_ENTRY(Bytecode::RaiseIfUnhandledException,
+                        op_raise_if_unhandled_exception);
         SET_TABLE_ENTRY(Bytecode::Halt, op_halt);
 
 #define REGISTER_LDAR_STAR_FASTPATH(idx)                                       \

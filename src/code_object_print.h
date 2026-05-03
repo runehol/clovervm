@@ -263,6 +263,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "JumpIfFalse");
             case cl::Bytecode::Return:
                 return format_to(out, "Return");
+            case cl::Bytecode::RaiseIfUnhandledException:
+                return format_to(out, "RaiseIfUnhandledException");
             case cl::Bytecode::Halt:
                 return format_to(out, "Halt");
 
@@ -674,6 +676,9 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::Return:
+                break;
+
+            case cl::Bytecode::RaiseIfUnhandledException:
                 break;
 
             case cl::Bytecode::Halt:

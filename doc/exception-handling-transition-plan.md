@@ -114,7 +114,7 @@ Deliverable: the VM has one canonical location for a Python exception in flight.
 - [x] Have the cold helper resolve unwinding to a target containing `fp`,
       `code_object`, always-valid `interpreted_pc`, and optional `jit_pc =
       nullptr`.
-- [ ] Make the helper restore or pop the current frame using the frame-layout
+- [x] Make the helper restore or pop the current frame using the frame-layout
       helpers.
 - [ ] Consult managed unwind metadata when it exists, and otherwise continue
       unwinding to the caller frame. At this stage there may be no metadata, so
@@ -124,9 +124,9 @@ Deliverable: the VM has one canonical location for a Python exception in flight.
 - [x] Change module entry `CodeObject`s to return normally to their caller rather
       than ending in `Halt`. This also matches future import behavior, where a
       module body returns to its importer instead of terminating the VM.
-- [ ] At top-level or native test-harness boundaries, temporarily convert
+- [x] At top-level or native test-harness boundaries, temporarily convert
       unhandled pending exceptions back into the current C++ error mechanism.
-- [ ] Keep normal `Return` unchanged and free of exception-marker checks.
+- [x] Keep normal `Return` unchanged and free of exception-marker checks.
 
 Deliverable: pending exceptions can cross Clover/Python frame boundaries without
 using C++ unwinding through the interpreter dispatch loop.
