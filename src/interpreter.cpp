@@ -344,7 +344,17 @@ namespace cl
 
     NOINLINE Value assertion_error(PARAMS)
     {
-        throw std::runtime_error("AssertionError");
+        ThreadState *thread = active_thread();
+        thread->set_pending_exception_none(TValue<ClassObject>::from_oop(
+            thread->class_for_builtin_name(L"AssertionError")));
+        accumulator = Value::exception_marker();
+        ExceptionalTarget target =
+            resolve_exceptional_frame_exit(fp, pc, code_object);
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE static Value slow_path(PARAMS)

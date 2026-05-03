@@ -131,6 +131,15 @@ TEST(Interpreter, assert_statement_raises_assertion_error)
     expect_runtime_error(L"assert False\n", "AssertionError");
 }
 
+TEST(Interpreter, assert_statement_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def fail():\n"
+                         L"    assert False\n"
+                         L"    return 99\n"
+                         L"fail()\n",
+                         "AssertionError");
+}
+
 TEST(Interpreter, del_global_removes_binding)
 {
     expect_runtime_error(L"value = 7\n"

@@ -192,7 +192,7 @@ pending exception to managed adapter code, while ordinary return stays fast.
   - [ ] `NameError`
   - [ ] simple `TypeError`
   - [ ] `ValueError: negative shift count`
-  - [ ] `AssertionError`
+  - [x] `AssertionError`
 - [ ] Keep complex runtime failures and construction-time failures on the old
       path until their dependencies are normalized.
 - [ ] Add interpreter tests for propagation across nested calls.

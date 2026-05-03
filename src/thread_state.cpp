@@ -1,4 +1,5 @@
 #include "thread_state.h"
+#include "class_object.h"
 #include "codegen.h"
 #include "compilation_unit.h"
 #include "exception_object.h"
@@ -10,6 +11,7 @@
 #include "tokenizer.h"
 #include "virtual_machine.h"
 #include <stdexcept>
+#include <string>
 
 namespace cl
 {
@@ -97,6 +99,18 @@ namespace cl
     {
         assert(pending_exception.kind == PendingExceptionKind::StopIteration);
         return pending_exception.stop_iteration_value;
+    }
+
+    ClassObject *ThreadState::class_for_builtin_name(const wchar_t *name) const
+    {
+        TValue<String> name_value =
+            machine->get_or_create_interned_string_value(std::wstring(name));
+        Value value =
+            machine->get_builtin_scope().extract()->get_by_name(name_value);
+        assert(value.is_ptr());
+        assert(value.get_ptr<Object>()->native_layout_id() ==
+               NativeLayoutId::ClassObject);
+        return value.get_ptr<ClassObject>();
     }
 
     CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule)

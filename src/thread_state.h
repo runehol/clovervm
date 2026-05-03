@@ -104,6 +104,7 @@ namespace cl
         {
             return cl::class_for_native_layout(machine, id);
         }
+        ClassObject *class_for_builtin_name(const wchar_t *name) const;
 
         template <typename T, typename... Args>
         T *make_object_raw(Args &&...args)
