@@ -116,9 +116,6 @@ Deliverable: the VM has one canonical location for a Python exception in flight.
       nullptr`.
 - [x] Make the helper restore or pop the current frame using the frame-layout
       helpers.
-- [ ] Consult managed unwind metadata when it exists, and otherwise continue
-      unwinding to the caller frame. At this stage there may be no metadata, so
-      the no-local-handler path is the only exercised path.
 - [x] Introduce a synthetic startup wrapper `CodeObject` that calls the requested
       module entry point and owns final process/thread termination.
 - [x] Change module entry `CodeObject`s to return normally to their caller rather
