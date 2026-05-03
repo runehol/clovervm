@@ -144,10 +144,26 @@ normal exception unwinding while still letting native implementations report
 failure as pending exception plus `Value::exception_marker()` locally inside the
 thunk. Native boundaries do not need to become a first-order unwinder frame kind.
 
-For native functions that also expose a fast protocol convention, the ordinary
-adapter thunk can call the fast thunk's explicit `CodeObject` with
-`CallCodeObject`, then run `ReturnOrRaiseException`. That avoids calling the
-owning `Function` while asking it to ignore its normal entry/adaptation policy.
+For native functions that also expose a stop-returning convention, the ordinary
+and stop-returning `CodeObject`s are sibling thunks. Both thunks call the same
+native implementation directly rather than having one thunk call the other's
+`CodeObject`.
+
+```text
+ordinary native thunk:
+  CallNativeN
+  ReturnOrRaiseException
+
+stop-returning native thunk:
+  CallNativeN
+  ReturnStopIterationOrRaiseException
+```
+
+The ordinary thunk normalizes native failure and stop-returning completion into
+ordinary managed exceptional unwind. The stop-returning thunk leaves its own
+protocol completion as pending `StopIteration` plus
+`Value::exception_marker()`, while marker plus any other pending exception enters
+managed exceptional unwind.
 
 ## Arity
 

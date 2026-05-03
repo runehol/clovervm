@@ -111,11 +111,19 @@ Deliverable: the VM has one canonical location for a Python exception in flight.
 ## Stage 3: Exceptional Frame Exit
 
 - [ ] Add an exceptional frame-exit helper distinct from `op_return`.
+- [ ] Have the cold helper resolve unwinding to a target containing `fp`,
+      `code_object`, always-valid `interpreted_pc`, and optional `jit_pc =
+      nullptr`.
 - [ ] Make the helper restore or pop the current frame using the frame-layout
       helpers.
 - [ ] Consult managed unwind metadata when it exists, and otherwise continue
       unwinding to the caller frame. At this stage there may be no metadata, so
       the no-local-handler path is the only exercised path.
+- [ ] Introduce a synthetic startup wrapper `CodeObject` that calls the requested
+      module entry point and owns final process/thread termination.
+- [ ] Change module entry `CodeObject`s to return normally to their caller rather
+      than ending in `Halt`. This also matches future import behavior, where a
+      module body returns to its importer instead of terminating the VM.
 - [ ] At top-level or native test-harness boundaries, temporarily convert
       unhandled pending exceptions back into the current C++ error mechanism.
 - [ ] Keep normal `Return` unchanged and free of exception-marker checks.
@@ -135,6 +143,9 @@ using C++ unwinding through the interpreter dispatch loop.
 - [ ] Keep construction deliberately narrow: message-only VM exceptions are
       enough for this stage; traceback objects, handler binding, and rich
       exception attributes can land later.
+- [ ] Keep early VM exception construction internal and non-reentrant: do not call
+      Python code or user-overridable constructors while building these simple
+      builtin exception objects.
 - [ ] Preserve the compact `StopIteration` representation as separate pending
       state. Do not force all `StopIteration` completion through object
       allocation.
@@ -153,11 +164,13 @@ accumulator != Value::exception_marker():
 
 accumulator == Value::exception_marker():
   pending exception must be set
+  compact pending StopIteration is materialized before unwinding
   enter managed exceptional unwind
 ```
 
 - [ ] Add a `Value::is_exception_marker()` predicate and use it instead of
       spelling marker comparisons at call sites.
+- [ ] Treat marker with no pending exception as an internal VM error.
 - [ ] Use managed thunks/adapters rather than frame return-mode tagging.
 - [ ] Do not use `fp[1]` or tagged return `CodeObject` pointers for exception
       transport.
@@ -230,6 +243,9 @@ paths, backed by real exception objects, even before `raise` or `try`.
 - [ ] Add AST and parser support for a narrow first slice of `raise`.
 - [ ] Add bytecode and codegen for unprotected raise sites, initially
       `RAISE_FAST`.
+- [ ] Evaluate and construct user-authored raise expressions before setting the
+      pending exception. If construction raises, propagate that construction
+      exception instead; the original raise has not started.
 - [ ] Implement `RAISE_FAST` by setting pending exception state and entering
       exceptional frame exit without a local table lookup.
 - [ ] Keep the first version outside `try`, `with`, `finally`, and other
@@ -277,21 +293,31 @@ completion:
 - [ ] Give `RangeIterator` both ordinary next code and VM-internal
       stop-returning next code; `iter(range_obj)` still returns the same
       `RangeIterator` object in both modes.
-- [ ] Represent the stop-returning body as an optional `stop_returning_code`
-      `CodeObject` on the `Function` used for iteration. The ordinary
-      `CodeObject` remains mandatory.
+- [ ] Replace the current single `Function::code_object` member with mandatory
+      `ordinary_code_object` and optional `stop_returning_code_object`.
+- [ ] Keep arity checks, defaults, and call-window layout independent of code
+      selection because both code objects use the same argument calling
+      convention.
 - [ ] For native next functions, build two sibling managed thunks that both call
       the native implementation directly: an ordinary thunk that normalizes
       marker results through `ReturnOrRaiseException`, and a stop-returning thunk
       that returns marker plus pending `StopIteration` to the protocol
       continuation while raising other pending exceptions.
+- [ ] Add `ReturnStopIterationOrRaiseException` or equivalent: normal values
+      return normally, marker plus pending `StopIteration` returns to the
+      protocol continuation, marker plus any other pending exception unwinds, and
+      marker with no pending exception is an internal VM error.
 - [ ] Teach the `FOR_ITER` inline cache to store the decision to use the
-      stop-returning protocol path, including the selected `stop_returning_code`
-      `CodeObject` and the guards that make that decision valid.
-- [ ] Decide where the VM-internal stop-returning `CodeObject` is stored for
+      stop-returning protocol path, including the selected
+      `stop_returning_code_object` and the guards that make that decision valid.
+- [ ] Make ordinary call lookup and inline caches select `ordinary_code_object`;
+      add a later call-site policy such as `PreferStopReturning` that selects
+      `stop_returning_code_object` when available and falls back to
+      `ordinary_code_object`.
+- [ ] Decide where VM-internal `stop_returning_code_object` is stored for
       shape-based objects: builtin-class metadata, shape metadata, side dispatch
       table, or another internal descriptor.
-- [ ] Make only `RangeIterator` advertise `stop_returning_code` at first.
+- [ ] Make only `RangeIterator` advertise `stop_returning_code_object` at first.
 - [ ] Decide the iterator plan during loop setup where possible, not on every
       iteration.
 - [ ] Do not generate traceback segments for stop-returning completion
@@ -307,9 +333,20 @@ making ordinary opcodes marker-aware.
 - [ ] Add exception table metadata to `CodeObject` as bytecode-local interpreted
       pc triples: protected start pc, protected end pc, and handler pc.
 - [ ] Add compiler tracking for protected bytecode ranges.
+- [ ] Give the synthetic startup wrapper a catch-all exception handler that
+      materializes/reports unhandled exceptions and executes the final error
+      `Halt`; normal module return executes the success `Halt`.
+- [ ] Emit exception table entries in priority order. Entries may overlap, and
+      lookup returns the first covering entry, so innermost handlers must come
+      before enclosing handlers.
 - [ ] Teach exceptional frame exit to look for a local handler before popping the
       frame.
+- [ ] Use the raising instruction's pc for local raises, and the interpreted
+      caller's saved return pc minus one when an exception escapes a callee into
+      its caller, so lookup targets the protected call instruction rather than
+      the following instruction.
 - [ ] Enter handlers with the active exception object in the accumulator. Keep
+      pending exception state active until a matching handler clears it. Keep
       traceback materialization lazy and driven by handler code/observation.
 - [ ] Add synthetic exception-table handlers for `for` loops so real
       `StopIteration` from generic `__next__` exits the loop through ordinary

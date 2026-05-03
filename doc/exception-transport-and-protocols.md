@@ -54,6 +54,18 @@ lazy traceback. General user exception construction remains eager: constructing
 an arbitrary exception may run Python code, mutate state, or raise another
 exception.
 
+Early VM-originated exceptions use an internal, non-reentrant construction path
+for simple builtin exception objects. That path does not call Python code or
+user-overridable constructors; allocation failure is treated as fatal or as a
+separate out-of-memory path.
+
+User-authored `raise SomeUserException("x")` first evaluates and constructs the
+exception object through ordinary execution. If that construction raises a
+different exception, that different exception propagates; the original
+`SomeUserException` raise never begins. Only after construction succeeds does the
+`raise` operation attach the raise-site pc/fp state and set the pending
+exception.
+
 `StopIteration` may use a compact pending representation:
 
 ```text
@@ -71,11 +83,29 @@ Real exception propagation uses a slow exceptional path, not ordinary return.
 The exceptional path consults managed unwind metadata such as bytecode exception
 tables or future JIT unwind tables.
 
+The cold unwind helper resolves metadata into an executable managed target rather
+than returning raw table entries:
+
+```cpp
+struct ExceptionalTarget
+{
+    Value *fp;
+    CodeObject *code_object;
+
+    // Always valid: bytecode landing-pad pc in code_object.
+    const uint8_t *interpreted_pc;
+
+    // Optional compiled landing-pad entry. Null means enter the interpreter at
+    // interpreted_pc.
+    const void *jit_pc = nullptr;
+};
+```
+
 ```text
 exceptional frame exit:
   pending exception is set on ThreadState
   consult this frame's managed unwind metadata
-  jump to a handler if one applies
+  return an ExceptionalTarget if one applies
   otherwise pop/restore the caller frame and continue exceptional unwinding
 ```
 
@@ -105,8 +135,12 @@ if accumulator != Value::exception_marker():
 
 if accumulator == Value::exception_marker():
   pending exception must be set
+  if pending.kind == StopIteration:
+    materialize/promote StopIteration to an ordinary exception object
   enter managed exceptional unwind
 ```
+
+Marker with no pending exception is an internal VM error.
 
 Only explicit adapter or protocol continuation opcodes observe
 `Value::exception_marker()`. Ordinary opcodes and ordinary returns do not.
@@ -116,10 +150,10 @@ Native functions participate through thunks. A native success writes a normal
 writes `Value::exception_marker()`. The thunk's `ReturnOrRaiseException`
 converts that marker into managed exceptional unwind.
 
-The same shape adapts stop-returning code objects back into ordinary calls. If a
-caller is not participating in the stop-returning convention but the
-implementation wants to reuse that body, the adapter can select the
-stop-returning `CodeObject` explicitly:
+The same shape adapts `stop_returning_code_object` back into ordinary calls. If
+a caller is not participating in the stop-returning convention but the
+implementation wants to reuse that body, the adapter can select
+`stop_returning_code_object` explicitly:
 
 ```text
 LoadConst stop_returning_code_object
@@ -194,18 +228,18 @@ Stop-returning support uses the same iterator object with two code-object
 conventions. `iter(range_obj)` still returns a `RangeIterator`; it does not
 return a separate `FastRangeIterator` depending on who will consume it.
 
-Every `Function` has an ordinary code object. A few iterator/generator protocol
-functions also have an optional stop-returning code object:
+Every `Function` has `ordinary_code_object`. A few iterator/generator protocol
+functions also have optional `stop_returning_code_object`:
 
 ```text
-ordinary_code:
+ordinary_code_object:
   always present
   ordinary iterator protocol
   value -> return value
   exhaustion -> real StopIteration through managed exceptional unwind
   ordinary exceptions -> managed exceptional unwind
 
-stop_returning_code:
+stop_returning_code_object:
   optional
   VM-internal protocol-completion convention
   value -> return value
@@ -214,40 +248,48 @@ stop_returning_code:
   stop-returning completion itself generates no traceback
 ```
 
-The consumer chooses the entry convention. A user-visible `next(it)` uses the
-ordinary code object, or an adapter that calls `stop_returning_code` and
+The consumer chooses the entry convention. A user-visible `next(it)` uses
+`ordinary_code_object`, or an adapter that calls `stop_returning_code_object` and
 converts marker completion into real `StopIteration`. A `for` loop may choose
-`stop_returning_code` when the iterator type advertises one, while still
+`stop_returning_code_object` when the iterator type advertises one, while still
 installing the ordinary exception-table fallback.
 
 For `Function` objects, the two conventions are represented as separate
 `CodeObject`s on the same logical function rather than separate functions:
 
 ```text
-ordinary_code:
+ordinary_code_object:
   always present
   ordinary call convention
 
-stop_returning_code:
+stop_returning_code_object:
   optional
   stop-returning protocol-completion convention
 ```
+
+This replaces the current single `Function::code_object` member with
+`ordinary_code_object` and `stop_returning_code_object`. Both code objects use
+the same argument calling convention, so arity checks, defaults, and call-window
+layout do not depend on which one is selected. Ordinary call lookup and inline
+caches select `ordinary_code_object`. A later call-site policy such as
+`PreferStopReturning` may select `stop_returning_code_object` when it exists and
+fall back to `ordinary_code_object` otherwise.
 
 When the conventions differ, the preferred representation is two `CodeObject`s
 attached to one logical `Function`, rather than two offsets in the same
 `CodeObject`. The existing function-call inline cache already stores the
 selected `CodeObject`, so a `FOR_ITER` cache can keep the decision to call the
-stop-returning code object without changing the logical iterator object or
+`stop_returning_code_object` without changing the logical iterator object or
 function.
 
-Separate `CodeObject`s also make traceback policy cleaner. If the ordinary code
-object is a managed adapter or thunk that should be hidden, and the
-stop-returning code object is the real implementation, the hide flag can remain
+Separate `CodeObject`s also make traceback policy cleaner. If
+`ordinary_code_object` is a managed adapter or thunk that should be hidden, and
+`stop_returning_code_object` is the real implementation, the hide flag can remain
 per `CodeObject` instead of becoming a per-entry special case.
 
 Native functions are already wrapped in managed `Function` thunks, so a native
-stop-returning function can have both an ordinary thunk code object and a
-stop-returning thunk code object. These are sibling thunk bodies that both call
+stop-returning function can have both an `ordinary_code_object` thunk and a
+`stop_returning_code_object` thunk. These are sibling thunk bodies that both call
 the same native implementation directly. The ordinary thunk normalizes native
 failure and stop-returning completion into ordinary managed exceptional unwind;
 the stop-returning thunk leaves its own protocol completion as pending
@@ -267,11 +309,23 @@ This keeps the native implementation as the shared low-level body without making
 one thunk variant call the other.
 
 `ReturnStopIterationOrRaiseException` is the stop-returning sibling of
-`ReturnOrRaiseException`: normal values return normally, marker plus pending
-`StopIteration` returns normally for a protocol continuation to consume, and
-marker plus any other pending exception enters managed exceptional unwind.
+`ReturnOrRaiseException`:
 
-The stop-returning code object is not a Python-visible `__fast_next__`
+```text
+if accumulator != Value::exception_marker():
+  normal Return
+
+if accumulator == Value::exception_marker() and pending.kind == StopIteration:
+  return marker normally for a protocol continuation to consume
+
+if accumulator == Value::exception_marker() and pending.kind != StopIteration:
+  pending exception must be set
+  enter managed exceptional unwind
+```
+
+Marker with no pending exception is an internal VM error.
+
+`stop_returning_code_object` is not a Python-visible `__fast_next__`
 attribute. CloverVM's current object model stores objects with shapes, so the
 open implementation question is where this VM-internal second code object should
 live: exact builtin-class metadata, shape metadata, a side dispatch table keyed
@@ -384,11 +438,18 @@ without protected regions has no entries. The compiler owns register liveness at
 the landing pad; handler code treats protected-region temporaries as dead unless
 codegen explicitly preserves them.
 
+Entries may overlap. Lookup is priority ordered: the unwinder returns the first
+entry whose half-open range covers the lookup pc. Codegen emits entries in
+priority order, with innermost handlers before enclosing handlers. A later table
+builder may flatten ranges for binary search, but that is an optimization rather
+than the initial semantic model.
+
 ```text
 find handler covering current pc in this frame's exception metadata
 if found:
   unwind fp to this managed frame
   accumulator = active exception object
+  pending exception remains active
   jump to handler_pc in the same CodeObject
 else:
   the exception escapes this frame
@@ -398,6 +459,18 @@ Handler bytecode performs Python-level decisions such as `except NameError as e`
 matching, handler binding, synthetic `for` `StopIteration` checks, cleanup, or
 continuing exceptional unwind. The table itself is structural metadata; it does
 not encode arbitrary Python exception classes.
+
+A matching handler clears the pending exception when it takes ownership of the
+exception. Reraise, `finally`, and cleanup paths can re-enter the unwinder
+without modifying pending exception state.
+
+For an exception raised by the current instruction, table lookup uses that
+instruction's pc. When an exception escapes a callee and unwinding continues in
+an interpreted caller, the saved return pc points to the next instruction after
+the call. The caller-side lookup uses `return_pc - 1`, which is guaranteed to be
+inside the variable-length call instruction. Codegen must make protected call
+instruction ranges include that byte so half-open table lookup finds the handler
+attached to the call.
 
 For source-level handlers, names in exception expressions are evaluated by the
 handler code, so rebinding globals such as `NameError` affects explicit
@@ -447,12 +520,13 @@ Protocol completion consumed by `FOR_ITER` is not user-visible exception
 propagation and does not attach the caller frame to a traceback.
 
 The no-traceback rule belongs to stop-returning protocol completion, not to
-every frame that has a stop-returning code object. If stop-returning code returns
-`Value::exception_marker()` with pending `StopIteration` as its own completion
-signal, that signal has no traceback. If the same stop-returning completion is
-promoted to a real `StopIteration`, traceback handling resumes through the
-ordinary exceptional path from the promotion site. The completed stop-returning
-activation is not retroactively added.
+every frame that has `stop_returning_code_object`. If
+`stop_returning_code_object` returns `Value::exception_marker()` with pending
+`StopIteration` as its own completion signal, that signal has no traceback. If
+the same stop-returning completion is promoted to a real `StopIteration`,
+traceback handling resumes through the ordinary exceptional path from the
+promotion site. The completed stop-returning activation is not retroactively
+added.
 
 Stop-returning managed frames may still raise ordinary exceptions or let
 ordinary callee exceptions escape. Those exceptions use managed exceptional

@@ -222,9 +222,11 @@ pc = code_object->code.data();
 This is the key idea: the interpreter does not allocate/copy a fresh argument block. It reinterprets the caller's already-laid-out call window as the callee frame.
 
 `CallSimple` is the public callable path: it resolves a callable's `Function`
-semantics, including the selected entry code object and any arity/default
-adaptation. Some VM-generated thunks instead need to forward into already
-selected code. Those thunks can use `CallCodeObject`:
+semantics, including selecting the `ordinary_code_object` and applying any
+arity/default adaptation. Future call-site policies may choose an alternate code
+object such as `stop_returning_code_object` when available. Some VM-generated
+thunks instead need to forward into already selected code. Those thunks can use
+`CallCodeObject`:
 
 ```text
 CallCodeObject target_code_object, first_arg, argc
