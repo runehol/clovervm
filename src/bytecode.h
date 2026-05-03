@@ -150,7 +150,8 @@ namespace cl
         CreateInstanceKnownClass,
         BuildClass,
         CheckInitReturnedNone,
-        Assert,
+        RaiseAssertionError,
+        RaiseAssertionErrorWithMessage,
 
         // control flow
         Return,

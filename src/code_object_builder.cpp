@@ -207,9 +207,17 @@ namespace cl
         return emit_opcode(source_offset, Bytecode::CheckInitReturnedNone);
     }
 
-    uint32_t CodeObjectBuilder::emit_assert(uint32_t source_offset)
+    uint32_t
+    CodeObjectBuilder::emit_raise_assertion_error(uint32_t source_offset)
     {
-        return emit_opcode(source_offset, Bytecode::Assert);
+        return emit_opcode(source_offset, Bytecode::RaiseAssertionError);
+    }
+
+    uint32_t CodeObjectBuilder::emit_raise_assertion_error_with_message(
+        uint32_t source_offset)
+    {
+        return emit_opcode(source_offset,
+                           Bytecode::RaiseAssertionErrorWithMessage);
     }
 
     uint32_t

@@ -131,6 +131,12 @@ TEST(Interpreter, assert_statement_raises_assertion_error)
     expect_runtime_error(L"assert False\n", "AssertionError");
 }
 
+TEST(Interpreter, assert_statement_raises_assertion_error_with_message)
+{
+    expect_runtime_error(L"assert False, \"basic math is broken\"\n",
+                         "AssertionError: basic math is broken");
+}
+
 TEST(Interpreter, assert_statement_unwinds_nested_frames)
 {
     expect_runtime_error(L"def fail():\n"

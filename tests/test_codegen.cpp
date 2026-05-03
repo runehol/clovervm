@@ -262,6 +262,32 @@ TEST(Codegen, comparison_reuses_local_register_operand)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, assert_statement_uses_explicit_failure_path)
+{
+    std::string expected = "Code object:\n"
+                           "    0 LdaFalse\n"
+                           "    1 JumpIfTrue 5\n"
+                           "    4 RaiseAssertionError\n"
+                           "    5 Return\n";
+    std::string actual = bytecode_str_from_file(L"assert False\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, assert_statement_message_is_only_evaluated_on_failure)
+{
+    std::string expected = "Code object:\n"
+                           "    0 LdaFalse\n"
+                           "    1 JumpIfTrue 7\n"
+                           "    4 LdaConstant c[0]\n"
+                           "    6 RaiseAssertionErrorWithMessage\n"
+                           "    7 Return\n"
+                           "Constant 0: \n";
+    std::string actual = bytecode_str_from_file(L"assert False, \"lol\"\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, function_implicit_return_none)
 {
     const wchar_t *test_case = L"def f():\n"

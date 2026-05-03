@@ -357,6 +357,23 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE Value assertion_error_with_message(PARAMS)
+    {
+        ThreadState *thread = active_thread();
+        thread->set_pending_exception_object(make_exception_object(
+            TValue<ClassObject>::from_oop(
+                thread->class_for_builtin_name(L"AssertionError")),
+            TValue<String>::from_value_checked(accumulator)));
+        accumulator = Value::exception_marker();
+        ExceptionalTarget target =
+            resolve_exceptional_frame_exit(fp, pc, code_object);
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE static Value slow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
@@ -1738,14 +1755,14 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_assert(PARAMS)
+    static Value op_raise_assertion_error(PARAMS)
     {
-        START(1);
-        if(unlikely(!accumulator.is_ptr() && accumulator.is_falsy()))
-        {
-            MUSTTAIL return assertion_error(ARGS);
-        }
-        COMPLETE();
+        MUSTTAIL return assertion_error(ARGS);
+    }
+
+    static Value op_raise_assertion_error_with_message(PARAMS)
+    {
+        MUSTTAIL return assertion_error_with_message(ARGS);
     }
 
     NOINLINE static Value op_call_simple_slow(PARAMS)
@@ -2482,7 +2499,10 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::BuildClass, op_build_class);
         SET_TABLE_ENTRY(Bytecode::CheckInitReturnedNone,
                         op_check_init_returned_none);
-        SET_TABLE_ENTRY(Bytecode::Assert, op_assert);
+        SET_TABLE_ENTRY(Bytecode::RaiseAssertionError,
+                        op_raise_assertion_error);
+        SET_TABLE_ENTRY(Bytecode::RaiseAssertionErrorWithMessage,
+                        op_raise_assertion_error_with_message);
 
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
         SET_TABLE_ENTRY(Bytecode::CallNative0, op_call_native0);

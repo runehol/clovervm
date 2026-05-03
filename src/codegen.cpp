@@ -2009,8 +2009,22 @@ namespace cl
                     break;
 
                 case AstNodeKind::STATEMENT_ASSERT:
-                    codegen_node(children[0]);
-                    code_obj->emit_assert(source_offset);
+                    {
+                        JumpTarget ok_target(code_obj);
+                        codegen_node(children[0]);
+                        code_obj->emit_jump_if_true(source_offset, ok_target);
+                        if(children.size() == 1)
+                        {
+                            code_obj->emit_raise_assertion_error(source_offset);
+                        }
+                        else
+                        {
+                            codegen_node(children[1]);
+                            code_obj->emit_raise_assertion_error_with_message(
+                                source_offset);
+                        }
+                        ok_target.resolve();
+                    }
                     break;
 
                 case AstNodeKind::EXPRESSION_BINARY:
