@@ -8,6 +8,12 @@
 
 namespace cl
 {
+    JumpTarget::~JumpTarget()
+    {
+        assert(target != -1);
+        assert(unresolved_relocations.empty());
+    }
+
     void JumpTarget::add_relocation(uint32_t pos)
     {
         if(target == -1)
@@ -32,6 +38,7 @@ namespace cl
 
     void JumpTarget::resolve()
     {
+        assert(target == -1);
         target = builder->size();
         for(uint32_t pos: unresolved_relocations)
         {

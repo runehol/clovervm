@@ -17,6 +17,11 @@ namespace cl
         {
         }
 
+        JumpTarget(const JumpTarget &) = delete;
+        JumpTarget &operator=(const JumpTarget &) = delete;
+
+        ~JumpTarget();
+
         void resolve();
 
         void add_relocation(uint32_t pos);
