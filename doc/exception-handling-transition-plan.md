@@ -174,16 +174,11 @@ accumulator == Value::exception_marker():
 - [x] Prefer `CallCodeObject` as a small shared primitive: it calls an explicit
       `CodeObject` with an already-prepared argument/frame window, bypassing
       normal `Function` entry selection.
-- [ ] Add the adapter shape for ordinary callers of stop-returning code:
-      `LoadConst stop_returning_code_object`, `CallCodeObject`, then
-      `ReturnOrRaiseException`.
 - [x] Convert fixed-arity native thunk bodies to end in `ReturnOrRaiseException`.
-- [x] Make native failure set pending exception state and place
-      `Value::exception_marker()` in the accumulator.
+- [x] Make explicit native VM-exception results set pending exception state and
+      place `Value::exception_marker()` in the accumulator.
 - [x] Keep native/C calling conventions inside managed thunks; do not make
       native boundaries a first-order unwinder frame kind.
-- [ ] Add outer C API sentinel conversion only at actual external C API
-      boundaries.
 
 Deliverable: native and protocol implementation details can return marker plus
 pending exception to managed adapter code, while ordinary return stays fast.
@@ -295,6 +290,9 @@ completion:
 - [ ] Keep arity checks, defaults, and call-window layout independent of code
       selection because both code objects use the same argument calling
       convention.
+- [ ] Add the adapter shape for ordinary callers of stop-returning code:
+      `CallCodeObject c[stop_returning_code_object]`, then
+      `ReturnOrRaiseException`.
 - [ ] For native next functions, build two sibling managed thunks that both call
       the native implementation directly: an ordinary thunk that normalizes
       marker results through `ReturnOrRaiseException`, and a stop-returning thunk
@@ -421,6 +419,8 @@ Deliverable: Python-compatible reraising and the first machinery that makes
   - [ ] benchmark/tooling-only helper
   - [ ] fatal internal panic
 - [ ] Convert Python-visible runtime failures to pending VM exceptions.
+- [ ] Add outer C API sentinel conversion only at actual external C API
+      boundaries.
 - [ ] Convert fatal internal failures to explicit abort/panic helpers that do not
       require C++ exception unwinding.
 - [ ] Keep parser/compiler diagnostics separate from the interpreter runtime

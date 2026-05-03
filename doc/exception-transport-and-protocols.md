@@ -146,9 +146,9 @@ Only explicit adapter or protocol continuation opcodes observe
 `Value::exception_marker()`. Ordinary opcodes and ordinary returns do not.
 
 Native functions participate through thunks. A native success writes a normal
-`Value` to the accumulator. A native failure sets pending exception state and
-writes `Value::exception_marker()`. The thunk's `ReturnOrRaiseException`
-converts that marker into managed exceptional unwind.
+`Value` to the accumulator. An explicit native VM-exception result sets pending
+exception state and writes `Value::exception_marker()`. The thunk's
+`ReturnOrRaiseException` converts that marker into managed exceptional unwind.
 
 The same shape adapts `stop_returning_code_object` back into ordinary calls. If
 a caller is not participating in the stop-returning convention but the
@@ -156,8 +156,7 @@ implementation wants to reuse that body, the adapter can select
 `stop_returning_code_object` explicitly:
 
 ```text
-LoadConst stop_returning_code_object
-CallCodeObject
+CallCodeObject c[stop_returning_code_object]
 ReturnOrRaiseException
 ```
 
@@ -630,8 +629,8 @@ Recommended implementation order:
 1. Add pending exception state to `ThreadState`.
 2. Add an exceptional frame-exit path distinct from normal `Return`.
 3. Add `ReturnOrRaiseException` for managed thunks/adapters.
-4. Convert native thunk bodies to normalize native failures through
-   `ReturnOrRaiseException`.
+4. Convert native thunk bodies to normalize explicit native VM-exception results
+   through `ReturnOrRaiseException`.
 5. Add the compact pending `StopIteration` representation and helpers.
 6. Add a stop-returning path for `RangeIterator`.
 7. Split `FOR_ITER` into a stop-returning call/continuation shape that consumes
