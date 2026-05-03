@@ -508,10 +508,9 @@ builder may flatten ranges for binary search, but that is an optimization rather
 than the initial semantic model.
 
 ```text
-find handler covering current pc in this frame's exception metadata
+find handler covering the byte before the current continuation pc
 if found:
   unwind fp to this managed frame
-  accumulator = active exception object
   pending exception remains active
   jump to handler_pc in the same CodeObject
 else:
@@ -523,17 +522,23 @@ matching, handler binding, synthetic `for` `StopIteration` checks, cleanup, or
 continuing exceptional unwind. The table itself is structural metadata; it does
 not encode arbitrary Python exception classes.
 
-A matching handler clears the pending exception when it takes ownership of the
-exception. Reraise, `finally`, and cleanup paths can re-enter the unwinder
-without modifying pending exception state.
+Handler entry does not eagerly put the exception object in the accumulator.
+`finally` and cleanup code often do not need it, and compact pending exceptions
+may otherwise be forced to materialize too early. Handler bytecode uses an
+explicit instruction to read/materialize the active exception when a catch
+binding or match operation needs it. A matching handler uses an explicit
+instruction to clear pending exception state when it takes ownership of the
+exception. Reraise uses a separate instruction that re-enters exceptional unwind
+without clearing pending state.
 
-For an exception raised by the current instruction, table lookup uses that
-instruction's pc. When an exception escapes a callee and unwinding continues in
-an interpreted caller, the saved return pc points to the next instruction after
-the call. The caller-side lookup uses `return_pc - 1`, which is guaranteed to be
-inside the variable-length call instruction. Codegen must make protected call
-instruction ranges include that byte so half-open table lookup finds the handler
-attached to the call.
+Exception table lookup is normalized around continuation pcs. For the frame
+that is actively raising, the unwinder internally treats the continuation pc as
+the byte after the raising instruction. When an exception escapes a callee and
+unwinding continues in an interpreted caller, the saved return pc is already the
+continuation pc after the protected call instruction. In both cases, table lookup
+uses the byte immediately before the continuation pc. Codegen must make
+protected instruction ranges include that byte so half-open table lookup finds
+the handler attached to the instruction.
 
 For source-level handlers, names in exception expressions are evaluated by the
 handler code, so rebinding globals such as `NameError` affects explicit
@@ -544,6 +549,14 @@ When no local handler is found, the VM pops/restores the caller frame and
 continues the exceptional path there. Future JIT frames participate with their
 own managed unwind metadata; the distinction is managed Clover frame versus
 native implementation detail, not bytecode versus native code object.
+
+Initial exception tables are interpreted `CodeObject` metadata only. A compiled
+specialization may exit or deopt to the interpreter for exceptional unwind,
+recovering the interpreted pc for the raising or protected operation and then
+using the `CodeObject` table. Specialization-local JIT unwind tables and
+compiled handler landing pads are future optimizations, especially because one
+`CodeObject` may have multiple compiled specializations with different native
+pc layouts.
 
 ## Raise Opcodes
 

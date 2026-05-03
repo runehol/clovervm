@@ -288,19 +288,32 @@ Deliverable: stop-returning protocol completion can become an ordinary Python
 - [ ] Teach exceptional frame exit to look for a local handler before popping the
       frame.
 - [ ] Give the synthetic startup wrapper a real catch-all table entry, or an
-      equivalent final handler, that materializes/reports unhandled exceptions
-      and executes the final error `Halt`; normal module return executes the
-      success `Halt`.
-- [ ] Use the raising instruction's pc for local raises, and the interpreted
-      caller's saved return pc minus one when an exception escapes a callee into
-      its caller, so lookup targets the protected call instruction rather than
-      the following instruction.
-- [ ] Enter handlers with the active exception object in the accumulator. Keep
-      pending exception state active until a matching handler clears it. Keep
-      traceback materialization lazy and driven by handler code/observation.
+      equivalent final handler.
+- [ ] Add opcodes to read/materialize the active exception, clear the active
+      exception when a handler takes ownership, and reraise the active exception
+      without clearing it.
 - [x] Use existing `RaiseUnwind` for raise sites that may be covered by a local
       handler.
 - [ ] Add `RaiseFast` later, valid only outside all protected regions.
+
+Design notes:
+
+- Exception-table lookup is normalized around continuation pcs inside the
+  unwinder: current-frame raises use the byte after the raising instruction,
+  caller frames use the saved return pc, and lookup always tests the byte before
+  that continuation pc.
+- Handler entry unwinds `fp` to the handler's frame and jumps to the handler pc
+  in the handler's `CodeObject`, as if executing ordinary code in that function.
+  Pending exception state remains active; handler bytecode can lazily
+  materialize/read the active exception when needed.
+- The synthetic startup-wrapper catch-all should have the same shape as
+  compiler-emitted Python handlers. It materializes/reports unhandled exceptions
+  and executes the final error `Halt`; normal module return executes the success
+  `Halt`.
+- Initial exception tables are interpreted-only `CodeObject` metadata. JIT
+  frames may exit/deopt to the interpreter for exceptional unwind; compiled
+  landing pads and specialization-local JIT unwind tables are future
+  optimizations.
 
 Deliverable: managed frames can catch their own exceptions through structural
 exception-table metadata; ordinary frame popping remains the fallback when no
