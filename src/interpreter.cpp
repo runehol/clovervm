@@ -5,6 +5,7 @@
 #include "code_object.h"
 #include "code_object_print.h"
 #include "dict.h"
+#include "exception_handling.h"
 #include "function.h"
 #include "instance.h"
 #include "list.h"
@@ -12,6 +13,7 @@
 #include "refcount.h"
 #include "runtime_helpers.h"
 #include "subscript.h"
+#include "thread_state.h"
 #include "tuple.h"
 #include "validity_cell.h"
 #include "value.h"
@@ -169,6 +171,19 @@ namespace cl
         code_object =
             fp[FrameHeaderReturnCodeObjectOffset].get_ptr<CodeObject>();
         fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
+    }
+
+    [[maybe_unused]] static NOINLINE ExceptionalTarget
+    resolve_exceptional_frame_exit(Value *fp, const uint8_t *pc,
+                                   CodeObject *code_object)
+    {
+        assert(active_thread()->has_pending_exception());
+
+        // Exception tables do not exist yet, so this initial helper only models
+        // the no-local-handler frame exit. The startup wrapper will provide the
+        // eventual unhandled-exception boundary.
+        restore_frame_header(fp, pc, code_object);
+        return {fp, code_object, pc, nullptr};
     }
 
     static void initialize_class_body_frame(Value *fp, CodeObject *body_code)

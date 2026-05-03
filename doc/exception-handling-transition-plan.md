@@ -110,8 +110,8 @@ Deliverable: the VM has one canonical location for a Python exception in flight.
 
 ## Stage 3: Exceptional Frame Exit
 
-- [ ] Add an exceptional frame-exit helper distinct from `op_return`.
-- [ ] Have the cold helper resolve unwinding to a target containing `fp`,
+- [x] Add an exceptional frame-exit helper distinct from `op_return`.
+- [x] Have the cold helper resolve unwinding to a target containing `fp`,
       `code_object`, always-valid `interpreted_pc`, and optional `jit_pc =
       nullptr`.
 - [ ] Make the helper restore or pop the current frame using the frame-layout
