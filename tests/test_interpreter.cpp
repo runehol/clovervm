@@ -207,6 +207,17 @@ TEST(Interpreter, function_wrong_arity)
                          "TypeError: wrong number of arguments");
 }
 
+TEST(Interpreter, function_wrong_arity_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def f(a):\n"
+                         "    return a\n"
+                         "def fail():\n"
+                         "    f()\n"
+                         "    return 99\n"
+                         "fail()\n",
+                         "TypeError: wrong number of arguments");
+}
+
 TEST(Interpreter, function_varargs_collect_empty_tuple)
 {
     test::FileRunner file_runner(L"def f(*args):\n"
@@ -371,6 +382,18 @@ TEST(Interpreter, class_constructor_rejects_non_none_init_return)
                          L"    def __init__(self):\n"
                          L"        return 1\n"
                          L"Cls()\n",
+                         "TypeError: __init__ should return None, not a value");
+}
+
+TEST(Interpreter, class_constructor_non_none_init_return_unwinds_nested_frames)
+{
+    expect_runtime_error(L"class Cls:\n"
+                         L"    def __init__(self):\n"
+                         L"        return 1\n"
+                         L"def fail():\n"
+                         L"    Cls()\n"
+                         L"    return 99\n"
+                         L"fail()\n",
                          "TypeError: __init__ should return None, not a value");
 }
 
@@ -666,6 +689,14 @@ TEST(Interpreter, subscript_load_rejects_out_of_range_tuple_index)
 TEST(Interpreter, subscript_load_rejects_non_subscriptable_receiver)
 {
     expect_runtime_error(L"1[0]\n", "TypeError: object is not subscriptable");
+}
+
+TEST(Interpreter, subscript_load_non_subscriptable_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def fail():\n"
+                         L"    return 1[0]\n"
+                         L"fail()\n",
+                         "TypeError: object is not subscriptable");
 }
 
 TEST(Interpreter, subscript_delete_rejects_non_subscriptable_receiver)
@@ -1205,6 +1236,15 @@ TEST(Interpreter, call_non_callable)
     expect_runtime_error(L"1()\n", "TypeError: object is not callable");
 }
 
+TEST(Interpreter, call_non_callable_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def fail():\n"
+                         L"    1()\n"
+                         L"    return 99\n"
+                         L"fail()\n",
+                         "TypeError: object is not callable");
+}
+
 TEST(Interpreter, call_native_zero_arg_function)
 {
     test::VmTestContext test_context;
@@ -1572,6 +1612,15 @@ TEST(Interpreter, range_builtin_requires_integer_argument)
                          "TypeError: range() arguments must be integers");
 }
 
+TEST(Interpreter, range_integer_argument_error_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def fail():\n"
+                         L"    range(False)\n"
+                         L"    return 99\n"
+                         L"fail()\n",
+                         "TypeError: range() arguments must be integers");
+}
+
 TEST(Interpreter, range_builtin_rejects_zero_step)
 {
     expect_runtime_error(L"range(1, 2, 0)\n",
@@ -1589,6 +1638,16 @@ TEST(Interpreter, for_loop_rejects_non_iterable)
 {
     expect_runtime_error(L"for x in 1:\n"
                          L"    x\n",
+                         "TypeError: object is not iterable");
+}
+
+TEST(Interpreter, for_loop_non_iterable_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def fail():\n"
+                         L"    for x in 1:\n"
+                         L"        x\n"
+                         L"    return 99\n"
+                         L"fail()\n",
                          "TypeError: object is not iterable");
 }
 

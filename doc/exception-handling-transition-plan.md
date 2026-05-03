@@ -190,7 +190,7 @@ pending exception to managed adapter code, while ordinary return stays fast.
       frame exit.
 - [ ] Good first candidates:
   - [ ] `NameError`
-  - [ ] simple `TypeError`
+  - [x] simple `TypeError`
   - [x] `ValueError: negative shift count`
   - [x] `AssertionError`
 - [ ] Keep complex runtime failures and construction-time failures on the old

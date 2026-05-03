@@ -144,14 +144,21 @@ namespace cl
         throw std::runtime_error("Unknown opcode");
     }
 
+    static NOINLINE ExceptionalTarget
+    set_builtin_exception_and_resolve_frame_exit(Value *fp, const uint8_t *pc,
+                                                 CodeObject *code_object,
+                                                 const wchar_t *type_name,
+                                                 const char *message)
+    {
+        active_thread()->set_pending_builtin_exception_string(type_name,
+                                                              message);
+        return resolve_exceptional_frame_exit(fp, pc, code_object);
+    }
+
     NOINLINE Value raise_value_error_negative_shift_count(PARAMS)
     {
-        ThreadState *thread = active_thread();
-        thread->set_pending_builtin_exception_string(L"ValueError",
-                                                     "negative shift count");
-        accumulator = Value::exception_marker();
-        ExceptionalTarget target =
-            resolve_exceptional_frame_exit(fp, pc, code_object);
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            fp, pc, code_object, L"ValueError", "negative shift count");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -163,7 +170,13 @@ namespace cl
 
     NOINLINE Value not_callable_error(PARAMS)
     {
-        throw std::runtime_error("TypeError: object is not callable");
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            fp, pc, code_object, L"TypeError", "object is not callable");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE Value attribute_error(PARAMS)
@@ -178,7 +191,13 @@ namespace cl
 
     NOINLINE Value subscript_error(PARAMS)
     {
-        throw std::runtime_error("TypeError: object is not subscriptable");
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            fp, pc, code_object, L"TypeError", "object is not subscriptable");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE Value method_lookup_error(PARAMS)
@@ -194,7 +213,13 @@ namespace cl
 
     NOINLINE Value wrong_arity_error(PARAMS)
     {
-        throw std::runtime_error("TypeError: wrong number of arguments");
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            fp, pc, code_object, L"TypeError", "wrong number of arguments");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     static constexpr size_t kObjectCacheLineBytes = 128;
@@ -331,18 +356,36 @@ namespace cl
 
     NOINLINE Value not_iterable_error(PARAMS)
     {
-        throw std::runtime_error("TypeError: object is not iterable");
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            fp, pc, code_object, L"TypeError", "object is not iterable");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE Value not_iterator_error(PARAMS)
     {
-        throw std::runtime_error("TypeError: object is not an iterator");
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            fp, pc, code_object, L"TypeError", "object is not an iterator");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE Value range_integer_argument_error(PARAMS)
     {
-        throw std::runtime_error(
-            "TypeError: range() arguments must be integers");
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            fp, pc, code_object, L"TypeError",
+            "range() arguments must be integers");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE Value range_zero_step_error(PARAMS)
@@ -352,15 +395,20 @@ namespace cl
 
     NOINLINE Value init_returned_non_none_error(PARAMS)
     {
-        throw std::runtime_error(
-            "TypeError: __init__ should return None, not a value");
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            fp, pc, code_object, L"TypeError",
+            "__init__ should return None, not a value");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE Value assertion_error(PARAMS)
     {
         ThreadState *thread = active_thread();
         thread->set_pending_builtin_exception_none(L"AssertionError");
-        accumulator = Value::exception_marker();
         ExceptionalTarget target =
             resolve_exceptional_frame_exit(fp, pc, code_object);
         fp = target.fp;
@@ -377,7 +425,6 @@ namespace cl
             TValue<ClassObject>::from_oop(
                 thread->class_for_builtin_name(L"AssertionError")),
             TValue<String>::from_value_checked(accumulator)));
-        accumulator = Value::exception_marker();
         ExceptionalTarget target =
             resolve_exceptional_frame_exit(fp, pc, code_object);
         fp = target.fp;
@@ -2415,16 +2462,10 @@ namespace cl
     NOINLINE static Value op_raise_if_unhandled_exception(PARAMS)
     {
         START(1);
-        if(!accumulator.is_exception_marker())
-        {
-            COMPLETE();
-        }
-
         ThreadState *thread = active_thread();
         if(!thread->has_pending_exception())
         {
-            throw std::runtime_error(
-                "InternalError: exception marker without pending exception");
+            COMPLETE();
         }
 
         switch(thread->pending_exception_kind())
@@ -2437,7 +2478,7 @@ namespace cl
                 break;
         }
         throw std::runtime_error(
-            "InternalError: exception marker without pending exception");
+            "InternalError: pending exception state without exception");
     }
 
     static Value op_halt(PARAMS)
