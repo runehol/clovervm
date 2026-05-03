@@ -269,6 +269,24 @@ namespace cl
         return emit_opcode(source_offset, Bytecode::RaiseIfUnhandledException);
     }
 
+    uint32_t
+    CodeObjectBuilder::emit_lda_active_exception(uint32_t source_offset)
+    {
+        return emit_opcode(source_offset, Bytecode::LdaActiveException);
+    }
+
+    uint32_t
+    CodeObjectBuilder::emit_clear_active_exception(uint32_t source_offset)
+    {
+        return emit_opcode(source_offset, Bytecode::ClearActiveException);
+    }
+
+    uint32_t
+    CodeObjectBuilder::emit_reraise_active_exception(uint32_t source_offset)
+    {
+        return emit_opcode(source_offset, Bytecode::ReraiseActiveException);
+    }
+
     uint32_t CodeObjectBuilder::emit_halt(uint32_t source_offset)
     {
         return emit_opcode(source_offset, Bytecode::Halt);

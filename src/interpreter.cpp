@@ -511,6 +511,66 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static void materialize_pending_stop_iteration(ThreadState *thread)
+    {
+        Value value = thread->pending_stop_iteration_value();
+        ClassObject *stop_iteration =
+            thread->class_for_native_layout(NativeLayoutId::StopIteration);
+        TValue<StopIterationObject> exception = make_stop_iteration_object(
+            TValue<ClassObject>::from_oop(stop_iteration), value);
+        (void)thread->set_pending_exception_object(
+            TValue<ExceptionObject>::from_value_checked(exception.as_value()));
+    }
+
+    static Value op_lda_active_exception(PARAMS)
+    {
+        ThreadState *thread = active_thread();
+        if(!thread->has_pending_exception())
+        {
+            throw std::runtime_error(
+                "InternalError: active exception required");
+        }
+        if(thread->pending_exception_kind() ==
+           PendingExceptionKind::StopIteration)
+        {
+            materialize_pending_stop_iteration(thread);
+        }
+        else if(thread->pending_exception_kind() !=
+                PendingExceptionKind::Object)
+        {
+            throw std::runtime_error(
+                "InternalError: active exception required");
+        }
+
+        accumulator = thread->pending_exception_object();
+        START(1);
+        COMPLETE();
+    }
+
+    static Value op_clear_active_exception(PARAMS)
+    {
+        active_thread()->clear_pending_exception();
+        START(1);
+        COMPLETE();
+    }
+
+    static Value op_reraise_active_exception(PARAMS)
+    {
+        if(!active_thread()->has_pending_exception())
+        {
+            throw std::runtime_error(
+                "InternalError: active exception required");
+        }
+
+        ExceptionalTarget target =
+            resolve_exceptional_frame_exit(fp, pc, code_object);
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE Value raise_unwind(PARAMS)
     {
         ThreadState *thread = active_thread();
@@ -2549,17 +2609,6 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static void materialize_pending_stop_iteration(ThreadState *thread)
-    {
-        Value value = thread->pending_stop_iteration_value();
-        ClassObject *stop_iteration =
-            thread->class_for_native_layout(NativeLayoutId::StopIteration);
-        TValue<StopIterationObject> exception = make_stop_iteration_object(
-            TValue<ClassObject>::from_oop(stop_iteration), value);
-        (void)thread->set_pending_exception_object(
-            TValue<ExceptionObject>::from_value_checked(exception.as_value()));
-    }
-
     NOINLINE static Value op_return_or_raise_exception_slow(PARAMS)
     {
         ThreadState *thread = active_thread();
@@ -2724,6 +2773,11 @@ namespace cl
                         op_return_or_raise_exception);
         SET_TABLE_ENTRY(Bytecode::RaiseIfUnhandledException,
                         op_raise_if_unhandled_exception);
+        SET_TABLE_ENTRY(Bytecode::LdaActiveException, op_lda_active_exception);
+        SET_TABLE_ENTRY(Bytecode::ClearActiveException,
+                        op_clear_active_exception);
+        SET_TABLE_ENTRY(Bytecode::ReraiseActiveException,
+                        op_reraise_active_exception);
         SET_TABLE_ENTRY(Bytecode::Halt, op_halt);
 
 #define REGISTER_LDAR_STAR_FASTPATH(idx)                                       \

@@ -226,6 +226,9 @@ namespace cl
         uint32_t emit_return(uint32_t source_offset);
         uint32_t emit_return_or_raise_exception(uint32_t source_offset);
         uint32_t emit_raise_if_unhandled_exception(uint32_t source_offset);
+        uint32_t emit_lda_active_exception(uint32_t source_offset);
+        uint32_t emit_clear_active_exception(uint32_t source_offset);
+        uint32_t emit_reraise_active_exception(uint32_t source_offset);
         uint32_t emit_halt(uint32_t source_offset);
         uint32_t emit_get_iter(uint32_t source_offset);
         uint32_t emit_build_class(uint32_t source_offset);

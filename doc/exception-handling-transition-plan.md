@@ -289,7 +289,7 @@ Deliverable: stop-returning protocol completion can become an ordinary Python
       frame.
 - [x] Give the synthetic startup wrapper a real catch-all table entry, or an
       equivalent final handler.
-- [ ] Add opcodes to read/materialize the active exception, clear the active
+- [x] Add opcodes to read/materialize the active exception, clear the active
       exception when a handler takes ownership, and reraise the active exception
       without clearing it.
 - [x] Use existing `RaiseUnwind` for raise sites that may be covered by a local

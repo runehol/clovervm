@@ -192,6 +192,100 @@ make_raise_unwind_same_frame_handler_code(test::VmTestContext &test_context,
     return builder.finalize();
 }
 
+static CodeObject *
+make_lda_active_exception_handler_code(test::VmTestContext &test_context,
+                                       Value raised)
+{
+    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
+        L"<active-exception-test>");
+    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
+                              name);
+    uint32_t constant_idx = builder.allocate_constant(raised);
+    JumpTarget handler(&builder);
+
+    {
+        ExceptionTableRangeBuilder range(&builder, handler);
+        builder.emit_lda_constant(0, uint8_t(constant_idx));
+        builder.emit_raise_unwind(0);
+        range.close();
+    }
+
+    handler.resolve();
+    builder.emit_lda_active_exception(0);
+    builder.emit_halt(0);
+    return builder.finalize();
+}
+
+static CodeObject *
+make_clear_active_exception_handler_code(test::VmTestContext &test_context,
+                                         Value raised)
+{
+    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
+        L"<clear-active-exception-test>");
+    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
+                              name);
+    uint32_t constant_idx = builder.allocate_constant(raised);
+    JumpTarget handler(&builder);
+
+    {
+        ExceptionTableRangeBuilder range(&builder, handler);
+        builder.emit_lda_constant(0, uint8_t(constant_idx));
+        builder.emit_raise_unwind(0);
+        range.close();
+    }
+
+    handler.resolve();
+    builder.emit_clear_active_exception(0);
+    builder.emit_lda_smi(0, 42);
+    builder.emit_halt(0);
+    return builder.finalize();
+}
+
+static CodeObject *
+make_reraise_active_exception_handler_code(test::VmTestContext &test_context,
+                                           Value raised)
+{
+    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
+        L"<reraise-active-exception-test>");
+    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
+                              name);
+    uint32_t constant_idx = builder.allocate_constant(raised);
+    JumpTarget inner_handler(&builder);
+    JumpTarget outer_handler(&builder);
+
+    {
+        ExceptionTableRangeBuilder outer_range(&builder, outer_handler);
+        {
+            ExceptionTableRangeBuilder inner_range(&builder, inner_handler);
+            builder.emit_lda_constant(0, uint8_t(constant_idx));
+            builder.emit_raise_unwind(0);
+            inner_range.close();
+        }
+
+        inner_handler.resolve();
+        builder.emit_reraise_active_exception(0);
+        outer_range.close();
+    }
+
+    outer_handler.resolve();
+    builder.emit_clear_active_exception(0);
+    builder.emit_lda_smi(0, 99);
+    builder.emit_halt(0);
+    return builder.finalize();
+}
+
+static CodeObject *
+make_lda_active_exception_code(test::VmTestContext &test_context)
+{
+    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
+        L"<lda-active-exception-test>");
+    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
+                              name);
+    builder.emit_lda_active_exception(0);
+    builder.emit_halt(0);
+    return builder.finalize();
+}
+
 TEST(Interpreter, assert_statement_raises_assertion_error)
 {
     expect_python_error(L"assert False\n", L"AssertionError");
@@ -1664,6 +1758,66 @@ TEST(Interpreter, raise_unwind_enters_same_frame_exception_handler)
     EXPECT_EQ(Value::from_smi(42), actual);
     EXPECT_TRUE(test_context.thread()->has_pending_exception());
     test_context.thread()->clear_pending_exception();
+}
+
+TEST(Interpreter, lda_active_exception_reads_pending_exception_object)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value exception_class = Value::from_oop(
+        test_context.thread()->class_for_builtin_name(L"Exception"));
+    CodeObject *code_obj =
+        make_lda_active_exception_handler_code(test_context, exception_class);
+
+    Value actual = test_context.thread()->run(code_obj);
+    ASSERT_TRUE(can_convert_to<ExceptionObject>(actual));
+    EXPECT_TRUE(test_context.thread()->has_pending_exception());
+    test_context.thread()->clear_pending_exception();
+}
+
+TEST(Interpreter, lda_active_exception_materializes_compact_stop_iteration)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj = make_lda_active_exception_code(test_context);
+
+    (void)test_context.thread()->set_pending_stop_iteration_value(
+        Value::from_smi(7));
+    Value actual = test_context.thread()->run(code_obj);
+
+    TValue<StopIterationObject> exception =
+        TValue<StopIterationObject>::from_value_checked(actual);
+    EXPECT_EQ(Value::from_smi(7), exception.extract()->value.as_value());
+    EXPECT_TRUE(test_context.thread()->has_pending_exception());
+    test_context.thread()->clear_pending_exception();
+}
+
+TEST(Interpreter, clear_active_exception_swallows_pending_exception)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value exception_class = Value::from_oop(
+        test_context.thread()->class_for_builtin_name(L"Exception"));
+    CodeObject *code_obj =
+        make_clear_active_exception_handler_code(test_context, exception_class);
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(42), actual);
+    EXPECT_FALSE(test_context.thread()->has_pending_exception());
+}
+
+TEST(Interpreter, reraise_active_exception_reenters_exception_unwind)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value exception_class = Value::from_oop(
+        test_context.thread()->class_for_builtin_name(L"Exception"));
+    CodeObject *code_obj = make_reraise_active_exception_handler_code(
+        test_context, exception_class);
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(99), actual);
+    EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }
 
 TEST(Interpreter, code_object_prints_exception_table)
