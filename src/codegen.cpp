@@ -1837,15 +1837,30 @@ namespace cl
                 if(handler_children.size() == 2)
                 {
                     JumpTarget no_match_target(code_obj);
+                    JumpTarget cleanup_target(code_obj);
                     codegen_node(handler_children[0]);
                     code_obj->emit_active_exception_is_instance(
                         handler_source_offset);
                     code_obj->emit_jump_if_false(handler_source_offset,
                                                  no_match_target);
-                    code_obj->emit_clear_active_exception(
-                        handler_source_offset);
-                    codegen_node(handler_body_idx);
+                    TemporaryReg saved_exception(*code_obj);
+                    code_obj->emit_drain_active_exception_into(
+                        handler_source_offset, saved_exception);
+                    {
+                        ExceptionTableRangeBuilder range(code_obj,
+                                                         cleanup_target);
+                        codegen_node(handler_body_idx);
+                        range.close();
+                    }
+                    code_obj->emit_clear_local(handler_source_offset,
+                                               saved_exception);
                     code_obj->emit_jump(handler_source_offset, done_target);
+
+                    cleanup_target.resolve();
+                    code_obj->emit_clear_local(handler_source_offset,
+                                               saved_exception);
+                    code_obj->emit_reraise_active_exception(
+                        handler_source_offset);
 
                     no_match_target.resolve();
                     continue;
@@ -1853,8 +1868,23 @@ namespace cl
 
                 assert(child_offset == children.size() - 1);
                 has_bare_handler = true;
-                code_obj->emit_clear_active_exception(handler_source_offset);
-                codegen_node(handler_body_idx);
+                JumpTarget cleanup_target(code_obj);
+                TemporaryReg saved_exception(*code_obj);
+                code_obj->emit_drain_active_exception_into(
+                    handler_source_offset, saved_exception);
+                {
+                    ExceptionTableRangeBuilder range(code_obj, cleanup_target);
+                    codegen_node(handler_body_idx);
+                    range.close();
+                }
+                code_obj->emit_clear_local(handler_source_offset,
+                                           saved_exception);
+                code_obj->emit_jump(handler_source_offset, done_target);
+
+                cleanup_target.resolve();
+                code_obj->emit_clear_local(handler_source_offset,
+                                           saved_exception);
+                code_obj->emit_reraise_active_exception(handler_source_offset);
                 break;
             }
 

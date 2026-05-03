@@ -282,6 +282,14 @@ namespace cl
     }
 
     uint32_t
+    CodeObjectBuilder::emit_drain_active_exception_into(uint32_t source_offset,
+                                                        uint32_t reg)
+    {
+        return emit_opcode_reg(source_offset,
+                               Bytecode::DrainActiveExceptionInto, reg);
+    }
+
+    uint32_t
     CodeObjectBuilder::emit_clear_active_exception(uint32_t source_offset)
     {
         return emit_opcode(source_offset, Bytecode::ClearActiveException);

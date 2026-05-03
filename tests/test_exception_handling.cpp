@@ -58,6 +58,34 @@ make_clear_active_exception_handler_code(test::VmTestContext &test_context,
 }
 
 static CodeObject *
+make_drain_active_exception_handler_code(test::VmTestContext &test_context,
+                                         Value raised)
+{
+    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
+        L"<drain-active-exception-test>");
+    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
+                              name);
+    uint32_t constant_idx = builder.allocate_constant(raised);
+    JumpTarget handler(&builder);
+
+    {
+        ExceptionTableRangeBuilder range(&builder, handler);
+        builder.emit_lda_constant(0, uint8_t(constant_idx));
+        builder.emit_raise_unwind(0);
+        range.close();
+    }
+
+    handler.resolve();
+    {
+        CodeObjectBuilder::TemporaryReg saved_exception(builder);
+        builder.emit_drain_active_exception_into(0, saved_exception);
+        builder.emit_ldar(0, saved_exception);
+    }
+    builder.emit_halt(0);
+    return builder.finalize();
+}
+
+static CodeObject *
 make_reraise_active_exception_handler_code(test::VmTestContext &test_context,
                                            Value raised)
 {
@@ -161,6 +189,21 @@ TEST(ExceptionHandling, clear_active_exception_swallows_pending_exception)
 
     Value actual = test_context.thread()->run(code_obj);
     EXPECT_EQ(Value::from_smi(42), actual);
+    EXPECT_FALSE(test_context.thread()->has_pending_exception());
+}
+
+TEST(ExceptionHandling,
+     drain_active_exception_into_stores_object_and_clears_pending_exception)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value exception_class = Value::from_oop(
+        test_context.thread()->class_for_builtin_name(L"Exception"));
+    CodeObject *code_obj =
+        make_drain_active_exception_handler_code(test_context, exception_class);
+
+    Value actual = test_context.thread()->run(code_obj);
+    ASSERT_TRUE(can_convert_to<ExceptionObject>(actual));
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }
 

@@ -588,6 +588,33 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_drain_active_exception_into(PARAMS)
+    {
+        ThreadState *thread = active_thread();
+        if(!thread->has_pending_exception())
+        {
+            throw std::runtime_error(
+                "InternalError: active exception required");
+        }
+        if(thread->pending_exception_kind() ==
+           PendingExceptionKind::StopIteration)
+        {
+            materialize_pending_stop_iteration(thread);
+        }
+        else if(thread->pending_exception_kind() !=
+                PendingExceptionKind::Object)
+        {
+            throw std::runtime_error(
+                "InternalError: active exception required");
+        }
+
+        START(2);
+        int8_t reg = pc[1];
+        fp[reg] = thread->pending_exception_object();
+        thread->clear_pending_exception();
+        COMPLETE();
+    }
+
     static Value op_clear_active_exception(PARAMS)
     {
         active_thread()->clear_pending_exception();
@@ -2817,6 +2844,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::LdaActiveException, op_lda_active_exception);
         SET_TABLE_ENTRY(Bytecode::ActiveExceptionIsInstance,
                         op_active_exception_is_instance);
+        SET_TABLE_ENTRY(Bytecode::DrainActiveExceptionInto,
+                        op_drain_active_exception_into);
         SET_TABLE_ENTRY(Bytecode::ClearActiveException,
                         op_clear_active_exception);
         SET_TABLE_ENTRY(Bytecode::ReraiseActiveException,

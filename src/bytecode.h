@@ -160,6 +160,7 @@ namespace cl
         RaiseIfUnhandledException,
         LdaActiveException,
         ActiveExceptionIsInstance,
+        DrainActiveExceptionInto,
         ClearActiveException,
         ReraiseActiveException,
         Halt,
