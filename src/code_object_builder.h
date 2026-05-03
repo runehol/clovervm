@@ -184,6 +184,7 @@ namespace cl
         uint32_t emit_raise_assertion_error(uint32_t source_offset);
         uint32_t
         emit_raise_assertion_error_with_message(uint32_t source_offset);
+        uint32_t emit_raise_unwind(uint32_t source_offset);
         uint32_t emit_create_instance_known_class(uint32_t source_offset,
                                                   uint8_t class_idx);
         uint32_t emit_create_function(uint32_t source_offset, uint8_t code_idx);

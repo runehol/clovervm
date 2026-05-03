@@ -863,6 +863,37 @@ TEST(ClassObject, PredefinedBasesAndMroReflectSingleBaseChain)
               mro_value.get_ptr<Tuple>()->item_unchecked(2));
 }
 
+TEST(ClassObject, IsSubclassOfAndIsInstanceOfFollowMro)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> base_name(
+        context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> sibling_name(
+        context.vm().get_or_create_interned_string_value(L"Sibling"));
+    ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
+        base_name, 2, context.vm().object_class());
+    ClassObject *child =
+        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+    ClassObject *sibling = context.thread()->make_internal_raw<ClassObject>(
+        sibling_name, 2, context.vm().object_class());
+    Instance *instance = context.thread()->make_internal_raw<Instance>(child);
+
+    EXPECT_TRUE(is_subclass_of(child, child));
+    EXPECT_TRUE(is_subclass_of(child, base));
+    EXPECT_TRUE(is_subclass_of(child, context.vm().object_class()));
+    EXPECT_FALSE(is_subclass_of(base, child));
+    EXPECT_FALSE(is_subclass_of(child, sibling));
+
+    EXPECT_TRUE(is_instance_of(instance, child));
+    EXPECT_TRUE(is_instance_of(instance, base));
+    EXPECT_TRUE(is_instance_of(instance, context.vm().object_class()));
+    EXPECT_FALSE(is_instance_of(instance, sibling));
+}
+
 TEST(ClassObject, OwnPropertyApiDoesNotFallBackToBaseChain)
 {
     test::VmTestContext context;

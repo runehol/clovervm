@@ -220,6 +220,11 @@ namespace cl
                            Bytecode::RaiseAssertionErrorWithMessage);
     }
 
+    uint32_t CodeObjectBuilder::emit_raise_unwind(uint32_t source_offset)
+    {
+        return emit_opcode(source_offset, Bytecode::RaiseUnwind);
+    }
+
     uint32_t
     CodeObjectBuilder::emit_create_instance_known_class(uint32_t source_offset,
                                                         uint8_t class_idx)

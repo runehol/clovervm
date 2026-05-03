@@ -215,6 +215,8 @@ namespace cl
     };
 
     class VirtualMachine;
+    bool is_subclass_of(ClassObject *cls, ClassObject *base);
+    bool is_instance_of(Object *obj, ClassObject *cls);
     BuiltinClassDefinition make_type_class(VirtualMachine *vm);
 
 }  // namespace cl

@@ -1,5 +1,6 @@
 #include "attr.h"
 #include "class_object.h"
+#include "code_object_builder.h"
 #include "code_object_print.h"
 #include "codegen.h"
 #include "compilation_unit.h"
@@ -150,6 +151,20 @@ static Value make_test_function(test::VmTestContext &test_context,
     assert(function_value.get_ptr<Object>()->native_layout_id() ==
            NativeLayoutId::Function);
     return function_value;
+}
+
+static CodeObject *make_raise_unwind_code(test::VmTestContext &test_context,
+                                          Value raised)
+{
+    TValue<String> name =
+        test_context.vm().get_or_create_interned_string_value(L"<raise-test>");
+    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
+                              name);
+    uint32_t constant_idx = builder.allocate_constant(raised);
+    builder.emit_lda_constant(0, uint8_t(constant_idx));
+    builder.emit_raise_unwind(0);
+    builder.emit_halt(0);
+    return builder.finalize();
 }
 
 TEST(Interpreter, assert_statement_raises_assertion_error)
@@ -1528,6 +1543,67 @@ TEST(Interpreter, native_exception_marker_requires_pending_exception)
         EXPECT_STREQ(
             "InternalError: exception marker without pending exception",
             err.what());
+    }
+}
+
+TEST(Interpreter, raise_unwind_raises_exception_class)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value exception_class = Value::from_oop(
+        test_context.thread()->class_for_builtin_name(L"Exception"));
+    CodeObject *code_obj =
+        make_raise_unwind_code(test_context, exception_class);
+
+    try
+    {
+        (void)test_context.thread()->run(code_obj);
+        FAIL() << "Expected PythonException";
+    }
+    catch(const PythonException &err)
+    {
+        EXPECT_STREQ(L"Exception", err.wide_what().c_str());
+    }
+}
+
+TEST(Interpreter, raise_unwind_raises_exception_object)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<ExceptionObject> exception = make_exception_object(
+        TValue<ClassObject>::from_oop(
+            test_context.thread()->class_for_builtin_name(L"ValueError")),
+        L"boom");
+    CodeObject *code_obj =
+        make_raise_unwind_code(test_context, exception.as_value());
+
+    try
+    {
+        (void)test_context.thread()->run(code_obj);
+        FAIL() << "Expected PythonException";
+    }
+    catch(const PythonException &err)
+    {
+        EXPECT_STREQ(L"ValueError: boom", err.wide_what().c_str());
+    }
+}
+
+TEST(Interpreter, raise_unwind_rejects_non_exception)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj =
+        make_raise_unwind_code(test_context, Value::from_smi(1));
+
+    try
+    {
+        (void)test_context.thread()->run(code_obj);
+        FAIL() << "Expected PythonException";
+    }
+    catch(const PythonException &err)
+    {
+        EXPECT_STREQ(L"TypeError: exceptions must derive from BaseException",
+                     err.wide_what().c_str());
     }
 }
 

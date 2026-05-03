@@ -493,6 +493,54 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE Value raise_unwind(PARAMS)
+    {
+        ThreadState *thread = active_thread();
+        if(can_convert_to<ExceptionObject>(accumulator))
+        {
+            (void)thread->set_pending_exception_object(
+                TValue<ExceptionObject>::from_value_checked(accumulator));
+        }
+        else if(can_convert_to<ClassObject>(accumulator))
+        {
+            ClassObject *cls = accumulator.get_ptr<ClassObject>();
+            if(!is_subclass_of(cls, thread->class_for_native_layout(
+                                        NativeLayoutId::Exception)))
+            {
+                (void)thread->set_pending_builtin_exception_string(
+                    L"TypeError", L"exceptions must derive from BaseException");
+            }
+            else if(cls == thread->class_for_native_layout(
+                               NativeLayoutId::StopIteration))
+            {
+                (void)thread->set_pending_exception_object(
+                    TValue<ExceptionObject>::from_value_checked(
+                        make_stop_iteration_object(
+                            TValue<ClassObject>::from_oop(cls))
+                            .as_value()));
+            }
+            else
+            {
+                (void)thread->set_pending_exception_object(
+                    make_exception_object(TValue<ClassObject>::from_oop(cls),
+                                          L""));
+            }
+        }
+        else
+        {
+            (void)thread->set_pending_builtin_exception_string(
+                L"TypeError", L"exceptions must derive from BaseException");
+        }
+
+        ExceptionalTarget target =
+            resolve_exceptional_frame_exit(fp, pc, code_object);
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE static Value slow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
@@ -1900,6 +1948,8 @@ namespace cl
         MUSTTAIL return assertion_error_with_message(ARGS);
     }
 
+    static Value op_raise_unwind(PARAMS) { MUSTTAIL return raise_unwind(ARGS); }
+
     NOINLINE static Value op_call_simple_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 5;
@@ -2632,6 +2682,7 @@ namespace cl
                         op_raise_assertion_error);
         SET_TABLE_ENTRY(Bytecode::RaiseAssertionErrorWithMessage,
                         op_raise_assertion_error_with_message);
+        SET_TABLE_ENTRY(Bytecode::RaiseUnwind, op_raise_unwind);
 
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
         SET_TABLE_ENTRY(Bytecode::CallNative0, op_call_native0);

@@ -234,8 +234,10 @@ paths, backed by real exception objects, even before `raise` or `try`.
 ## Stage 7: `raise` Without Local Handlers
 
 - [ ] Add AST and parser support for a narrow first slice of `raise`.
-- [ ] Add bytecode and codegen for unprotected raise sites, initially
-      `RAISE_FAST`.
+- [x] Add cold `RaiseUnwind` bytecode for raise sites that may need local
+      table unwinding.
+- [ ] Add codegen for raise sites, initially `RaiseUnwind`;
+      `RaiseFast` is only for compiler-proven unprotected ranges.
 - [ ] Evaluate and construct user-authored raise expressions before setting the
       pending exception. If construction raises, propagate that construction
       exception instead; the original raise has not started.
@@ -243,8 +245,10 @@ paths, backed by real exception objects, even before `raise` or `try`.
       exceptional frame exit without a local table lookup.
 - [ ] Keep the first version outside `try`, `with`, `finally`, and other
       protected regions.
+- [x] Add direct interpreter tests for `RaiseUnwind` exception classes,
+      exception objects, and invalid raise targets.
 - [ ] Add interpreter tests for Python-authored raises propagating out through
-      nested calls.
+      nested calls once parser/codegen support exists.
 
 Deliverable: Python-authored `raise` exists and uses VM exception transport for
 the no-local-handler case.

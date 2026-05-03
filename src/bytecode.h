@@ -152,6 +152,7 @@ namespace cl
         CheckInitReturnedNone,
         RaiseAssertionError,
         RaiseAssertionErrorWithMessage,
+        RaiseUnwind,
 
         // control flow
         Return,

@@ -76,6 +76,35 @@ namespace cl
         }
     }
 
+    bool is_subclass_of(ClassObject *cls, ClassObject *base)
+    {
+        if(cls == base)
+        {
+            return true;
+        }
+
+        Value mro_value = cls->get_mro_value();
+        if(!can_convert_to<Tuple>(mro_value))
+        {
+            return false;
+        }
+
+        Tuple *mro = mro_value.get_ptr<Tuple>();
+        for(size_t idx = 0; idx < mro->size(); ++idx)
+        {
+            if(mro->item_unchecked(idx) == Value::from_oop(base))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool is_instance_of(Object *obj, ClassObject *cls)
+    {
+        return is_subclass_of(obj->get_class().extract(), cls);
+    }
+
     static Value compute_mro(ClassObject *cls, const Tuple *bases)
     {
         TValue<String> dunder_mro_name = interned_string(L"__mro__");
