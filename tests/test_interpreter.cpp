@@ -1,8 +1,10 @@
 #include "attr.h"
 #include "class_object.h"
+#include "code_object_print.h"
 #include "codegen.h"
 #include "compilation_unit.h"
 #include "dict.h"
+#include "exception_object.h"
 #include "function.h"
 #include "instance.h"
 #include "interpreter.h"
@@ -77,6 +79,17 @@ static Value native_add(Value left, Value right)
         throw std::runtime_error("native_add expected smi arguments");
     }
     return Value::from_smi(left.get_smi() + right.get_smi());
+}
+
+static Value native_stop_iteration_with_value()
+{
+    active_thread()->set_pending_stop_iteration_value(Value::from_smi(123));
+    return Value::exception_marker();
+}
+
+static Value native_marker_without_pending_exception()
+{
+    return Value::exception_marker();
 }
 
 static void bind_global(test::VmTestContext &test_context,
@@ -1181,6 +1194,22 @@ TEST(Interpreter, call_native_zero_arg_function)
     EXPECT_EQ(Value::from_smi(17), actual);
 }
 
+TEST(Interpreter, native_function_thunk_uses_return_or_raise_adapter)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<Function> native =
+        make_native_function(&test_context.vm(), native_zero);
+
+    std::string actual =
+        fmt::to_string(*native.extract()->code_object.extract());
+    std::string expected = "Code object:\n"
+                           "    0 CallNative0 0\n"
+                           "    2 ReturnOrRaiseException\n";
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Interpreter, call_native_one_arg_function)
 {
     test::VmTestContext test_context;
@@ -1205,6 +1234,57 @@ TEST(Interpreter, call_native_two_arg_function)
 
     Value actual = test_context.thread()->run(code_obj);
     EXPECT_EQ(Value::from_smi(42), actual);
+}
+
+TEST(Interpreter, native_exception_marker_materializes_stop_iteration)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj = test_context.compile_file(L"native_stop()\n");
+
+    bind_global(test_context, code_obj, L"native_stop",
+                make_native_function(&test_context.vm(),
+                                     native_stop_iteration_with_value));
+
+    try
+    {
+        (void)test_context.thread()->run(code_obj);
+        FAIL() << "Expected unhandled pending exception";
+    }
+    catch(const std::runtime_error &err)
+    {
+        EXPECT_STREQ("Unhandled Python exception", err.what());
+    }
+
+    ASSERT_EQ(PendingExceptionKind::Object,
+              test_context.thread()->pending_exception_kind());
+    TValue<StopIterationObject> exception =
+        TValue<StopIterationObject>::from_value_checked(
+            test_context.thread()->pending_exception_object());
+    EXPECT_EQ(Value::from_smi(123), exception.extract()->value.as_value());
+}
+
+TEST(Interpreter, native_exception_marker_requires_pending_exception)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj = test_context.compile_file(L"native_broken()\n");
+
+    bind_global(test_context, code_obj, L"native_broken",
+                make_native_function(&test_context.vm(),
+                                     native_marker_without_pending_exception));
+
+    try
+    {
+        (void)test_context.thread()->run(code_obj);
+        FAIL() << "Expected internal exception-marker error";
+    }
+    catch(const std::runtime_error &err)
+    {
+        EXPECT_STREQ(
+            "InternalError: exception marker without pending exception",
+            err.what());
+    }
 }
 
 TEST(Interpreter, builtin_scope_lookup)

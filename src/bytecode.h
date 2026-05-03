@@ -154,6 +154,7 @@ namespace cl
 
         // control flow
         Return,
+        ReturnOrRaiseException,
         RaiseIfUnhandledException,
         Halt,
         Jump,

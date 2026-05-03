@@ -152,8 +152,8 @@ before runtime helpers start depending on VM exception transport.
 
 ## Stage 5: Managed Return Adapters And Native Normalization
 
-- [ ] Add a `ReturnOrRaiseException` opcode or equivalent thunk return adapter.
-- [ ] Keep its contract local:
+- [x] Add a `ReturnOrRaiseException` opcode or equivalent thunk return adapter.
+- [x] Keep its contract local:
 
 ```text
 accumulator != Value::exception_marker():
@@ -165,11 +165,11 @@ accumulator == Value::exception_marker():
   enter managed exceptional unwind
 ```
 
-- [ ] Add a `Value::is_exception_marker()` predicate and use it instead of
+- [x] Add a `Value::is_exception_marker()` predicate and use it instead of
       spelling marker comparisons at call sites.
-- [ ] Treat marker with no pending exception as an internal VM error.
-- [ ] Use managed thunks/adapters rather than frame return-mode tagging.
-- [ ] Do not use `fp[1]` or tagged return `CodeObject` pointers for exception
+- [x] Treat marker with no pending exception as an internal VM error.
+- [x] Use managed thunks/adapters rather than frame return-mode tagging.
+- [x] Do not use `fp[1]` or tagged return `CodeObject` pointers for exception
       transport.
 - [x] Prefer `CallCodeObject` as a small shared primitive: it calls an explicit
       `CodeObject` with an already-prepared argument/frame window, bypassing
@@ -177,10 +177,10 @@ accumulator == Value::exception_marker():
 - [ ] Add the adapter shape for ordinary callers of stop-returning code:
       `LoadConst stop_returning_code_object`, `CallCodeObject`, then
       `ReturnOrRaiseException`.
-- [ ] Convert fixed-arity native thunk bodies to end in `ReturnOrRaiseException`.
-- [ ] Make native failure set pending exception state and place
+- [x] Convert fixed-arity native thunk bodies to end in `ReturnOrRaiseException`.
+- [x] Make native failure set pending exception state and place
       `Value::exception_marker()` in the accumulator.
-- [ ] Keep native/C calling conventions inside managed thunks; do not make
+- [x] Keep native/C calling conventions inside managed thunks; do not make
       native boundaries a first-order unwinder frame kind.
 - [ ] Add outer C API sentinel conversion only at actual external C API
       boundaries.

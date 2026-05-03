@@ -117,6 +117,11 @@ namespace cl
             return val;
         }
 
+        bool is_exception_marker() const
+        {
+            return as.integer == value_exception;
+        }
+
         static inline Value not_present(int32_t next_idx = -1)
         {
             Value val;

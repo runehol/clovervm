@@ -20,7 +20,7 @@ namespace cl
         builder.n_positional_parameters() = n_parameters;
         uint32_t target_idx = builder.add_native_function_target(target);
         builder.emit_call_native(0, call_opcode, uint8_t(target_idx));
-        builder.emit_return(0);
+        builder.emit_return_or_raise_exception(0);
         TValue<CodeObject> code =
             TValue<CodeObject>::from_oop(builder.finalize());
         if(default_parameters.as_value() != Value::None())

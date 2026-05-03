@@ -6,6 +6,7 @@
 #include "code_object_print.h"
 #include "dict.h"
 #include "exception_handling.h"
+#include "exception_object.h"
 #include "function.h"
 #include "instance.h"
 #include "list.h"
@@ -19,6 +20,7 @@
 #include "value.h"
 #include <cstdint>
 #include <fmt/core.h>
+#include <stdexcept>
 
 namespace cl
 {
@@ -2273,10 +2275,63 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static void materialize_pending_stop_iteration(ThreadState *thread)
+    {
+        Value value = thread->pending_stop_iteration_value();
+        ClassObject *stop_iteration =
+            thread->class_for_native_layout(NativeLayoutId::StopIteration);
+        TValue<StopIterationObject> exception = make_stop_iteration_object(
+            TValue<ClassObject>::from_oop(stop_iteration), value);
+        thread->set_pending_exception_object(
+            TValue<ExceptionObject>::from_value_checked(exception.as_value()));
+    }
+
+    NOINLINE static Value op_return_or_raise_exception_slow(PARAMS)
+    {
+        ThreadState *thread = active_thread();
+        if(!thread->has_pending_exception())
+        {
+            throw std::runtime_error(
+                "InternalError: exception marker without pending exception");
+        }
+
+        if(thread->pending_exception_kind() ==
+           PendingExceptionKind::StopIteration)
+        {
+            materialize_pending_stop_iteration(thread);
+        }
+        else if(thread->pending_exception_kind() !=
+                PendingExceptionKind::Object)
+        {
+            throw std::runtime_error(
+                "InternalError: exception marker without pending exception");
+        }
+
+        ExceptionalTarget target =
+            resolve_exceptional_frame_exit(fp, pc, code_object);
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    static Value op_return_or_raise_exception(PARAMS)
+    {
+        if(unlikely(accumulator.is_exception_marker()))
+        {
+            MUSTTAIL return op_return_or_raise_exception_slow(ARGS);
+        }
+
+        restore_frame_header(fp, pc, code_object);
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE static Value op_raise_if_unhandled_exception(PARAMS)
     {
         START(1);
-        if(accumulator != Value::exception_marker())
+        if(!accumulator.is_exception_marker())
         {
             COMPLETE();
         }
@@ -2393,6 +2448,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::JumpIfTrue, op_jump_if_true);
         SET_TABLE_ENTRY(Bytecode::JumpIfFalse, op_jump_if_false);
         SET_TABLE_ENTRY(Bytecode::Return, op_return);
+        SET_TABLE_ENTRY(Bytecode::ReturnOrRaiseException,
+                        op_return_or_raise_exception);
         SET_TABLE_ENTRY(Bytecode::RaiseIfUnhandledException,
                         op_raise_if_unhandled_exception);
         SET_TABLE_ENTRY(Bytecode::Halt, op_halt);
