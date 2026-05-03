@@ -186,7 +186,7 @@ pending exception to managed adapter code, while ordinary return stays fast.
 
 ## Stage 6: Convert Selected VM Slow Errors
 
-- [ ] Convert a small set of cold interpreter helpers from direct
+- [x] Convert a small set of cold interpreter helpers from direct
       `std::runtime_error` throws to pending-exception setup plus exceptional
       frame exit.
 - [ ] Good first candidates:
@@ -194,13 +194,13 @@ pending exception to managed adapter code, while ordinary return stays fast.
   - [x] simple `TypeError`
   - [x] `ValueError: negative shift count`
   - [x] `AssertionError`
-- [ ] Keep complex runtime failures and construction-time failures on the old
+- [x] Keep complex runtime failures and construction-time failures on the old
       path until their dependencies are normalized.
 - [x] Add interpreter tests for propagation across nested calls.
 
 Helper-layer transition convention:
 
-- [ ] Make fallible VM-runtime helpers return `Value` rather than throwing:
+- [x] Make fallible VM-runtime helpers return `Value` rather than throwing:
       success returns the natural result, or `Value::None()` for operations with
       no natural result; failure sets pending exception state and returns
       `Value::exception_marker()`.
