@@ -419,6 +419,67 @@ real Python StopIteration:
 inside their implementation, but the external stop-returning convention speaks
 in terms of pending `StopIteration` plus `Value::exception_marker()`.
 
+## Possible Iterator-Plan Direction
+
+A possible future loop optimization direction is a loop-site iterator-plan inline
+cache rather than front-end recognition of specific producer expressions such as
+`range(...)`.
+
+The loop site would specialize on the iterable value it actually receives and
+select a plan with guards, behavior, and a loop-local state layout. The VM
+analogue of a C++ iterator held by value would be a small set of hidden frame
+slots rather than a single `Value`:
+
+```text
+RangePlan:
+  state slots: current, end, step
+
+ListPlan:
+  state slots: list, index, length/version
+
+GeneratorPlan:
+  state slots: generator/frame, cached current value, state tag
+```
+
+Such plans could use a C++-style cursor shape:
+
+```text
+begin(iterable) -> state slots
+end(iterable) -> sentinel or end state
+state != end
+*state
+++state
+```
+
+For containers and ranges, `end` is explicit. For generators and generic Python
+iterator protocol fallbacks, `begin` or `++state` may resume/call `__next__` and
+transition the state to an exhausted sentinel. In that model,
+`StopIteration` is the bridge from Python's public iterator protocol to internal
+exhaustion, not necessarily the internal representation of loop completion.
+
+This direction is not yet an implementation commitment. It exists to keep the
+stop-returning work from over-centering `StopIteration` as the only loop
+optimization mechanism. The performance mechanism may become iterator-plan
+specialization; compact `StopIteration` remains the protocol-correctness bridge
+for producer/generator/fallback paths that can expose completion as an ordinary
+Python exception.
+
+Open concerns before implementing this direction:
+
+- Shared loop-site inline cache state cannot contain active iterator state.
+  Recursive or re-entrant calls to the same code object could otherwise overwrite
+  the outer activation's loop state. Any selected plan and all active cursor
+  fields that affect an in-progress loop must be activation-local, most likely in
+  frame registers.
+- A frame-local selected plan may push the interpreter toward a switch over plan
+  kinds. The JIT specialization story is not settled: a loop-site cache may
+  still provide profiling data and guards, but compiled code must prove or guard
+  the activation-local selected plan before inlining a concrete plan.
+- Mutable-container plans need their own invalidation semantics. Dict iteration,
+  and possibly list/set-like plans later, must track the relevant version or
+  shape state and raise the correct Python error if mutation invalidates active
+  iteration.
+
 ## Table Unwinding
 
 Within a managed frame, exception handling is table-driven. An opcode that
