@@ -427,6 +427,14 @@ template <> struct fmt::formatter<cl::AstVector>
                 format_to(out, "\n");
                 break;
 
+            case cl::AstNodeKind::STATEMENT_RAISE:
+                emit_indent(out, indent);
+                format_to(out, "raise ");
+                render_node(av, out, children[0], indent,
+                            cl::ExpressionPrecedence::Lowest);
+                format_to(out, "\n");
+                break;
+
             case cl::AstNodeKind::STATEMENT_PASS:
                 emit_indent(out, indent);
                 format_to(out, "pass\n");

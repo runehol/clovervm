@@ -187,6 +187,20 @@ TEST(Interpreter, assert_statement_unwinds_nested_frames)
                         L"AssertionError");
 }
 
+TEST(Interpreter, raise_statement_raises_exception_class)
+{
+    expect_python_error(L"raise ValueError\n", L"ValueError");
+}
+
+TEST(Interpreter, raise_statement_unwinds_nested_frames)
+{
+    expect_python_error(L"def fail():\n"
+                        L"    raise ValueError\n"
+                        L"    return 99\n"
+                        L"fail()\n",
+                        L"ValueError");
+}
+
 TEST(Interpreter, del_global_removes_binding)
 {
     expect_python_error(L"value = 7\n"

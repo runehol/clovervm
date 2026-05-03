@@ -288,6 +288,17 @@ TEST(Codegen, assert_statement_message_is_only_evaluated_on_failure)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, raise_statement_evaluates_expression_and_unwinds)
+{
+    std::string expected = "Code object:\n"
+                           "    0 LdaGlobal [0]\n"
+                           "    5 RaiseUnwind\n"
+                           "    6 Return\n";
+    std::string actual = bytecode_str_from_file(L"raise ValueError\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, function_implicit_return_none)
 {
     const wchar_t *test_case = L"def f():\n"

@@ -1132,6 +1132,25 @@ namespace cl
                                     ch);
         }
 
+        int32_t raise_stmt()
+        {
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::RAISE);
+            if(peek() == Token::NEWLINE || peek() == Token::SEMI)
+            {
+                return not_implemented("bare raise statement");
+            }
+
+            AstChildren ch;
+            ch.push_back(expression());
+            if(peek() == Token::FROM)
+            {
+                return not_implemented("raise from statement");
+            }
+            return ast.emplace_back(AstNodeKind::STATEMENT_RAISE, source_pos,
+                                    ch);
+        }
+
         int32_t import_stmt() { return not_implemented("import statement"); }
 
         int32_t del_stmt()
@@ -1227,6 +1246,8 @@ namespace cl
             {
                 case Token::RETURN:
                     return return_stmt();
+                case Token::RAISE:
+                    return raise_stmt();
                 case Token::IMPORT:
                 case Token::FROM:
                     return import_stmt();

@@ -98,6 +98,14 @@ TEST(Parser, while_else_stmt)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, raise_stmt)
+{
+    std::string expected = "raise ValueError\n";
+    std::string actual = parse(L"raise ValueError\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, for_stmt)
 {
     std::string expected = ("for x in y:\n"

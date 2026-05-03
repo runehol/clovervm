@@ -1232,6 +1232,11 @@ namespace cl
                     }
                     break;
 
+                case AstNodeKind::STATEMENT_RAISE:
+                    analyze_flow_node(target_code_obj, analysis, children[0],
+                                      state);
+                    break;
+
                 case AstNodeKind::STATEMENT_ASSERT:
                     analyze_flow_node(target_code_obj, analysis, children[0],
                                       state);
@@ -2025,6 +2030,11 @@ namespace cl
                         }
                         ok_target.resolve();
                     }
+                    break;
+
+                case AstNodeKind::STATEMENT_RAISE:
+                    codegen_node(children[0]);
+                    code_obj->emit_raise_unwind(source_offset);
                     break;
 
                 case AstNodeKind::EXPRESSION_BINARY:
