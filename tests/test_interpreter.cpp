@@ -206,31 +206,6 @@ TEST(Interpreter, startup_wrapper_handles_unhandled_exception_through_table)
     expect_python_error(L"raise ValueError\n", L"ValueError");
 }
 
-TEST(Interpreter, try_bare_except_catches_raise)
-{
-    test::FileRunner file_runner(L"result = 0\n"
-                                 "try:\n"
-                                 "    raise ValueError\n"
-                                 "    result = 1\n"
-                                 "except:\n"
-                                 "    result = 7\n"
-                                 "result\n");
-
-    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
-}
-
-TEST(Interpreter, try_bare_except_falls_through_on_success)
-{
-    test::FileRunner file_runner(L"result = 0\n"
-                                 "try:\n"
-                                 "    result = 3\n"
-                                 "except:\n"
-                                 "    result = 7\n"
-                                 "result\n");
-
-    EXPECT_EQ(Value::from_smi(3), file_runner.return_value);
-}
-
 TEST(Interpreter, try_bare_except_handler_can_raise)
 {
     expect_python_error(L"try:\n"

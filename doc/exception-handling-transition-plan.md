@@ -332,6 +332,8 @@ local table entry applies.
 - [x] Add parser, AST, codegen, and interpreter support for a first useful
       bare `try` / `except` slice.
 - [x] Arrange the pending exception state expected by handlers.
+- [x] Support typed `except SomeError:` handlers with
+      `ActiveExceptionIsInstance` and reraising on mismatch.
 - [ ] Support `except SomeError as e` for object-backed pending exceptions.
 - [ ] Support `except StopIteration as e` and `e.value` by materializing compact
       `StopIteration` when the exception object becomes observable.
@@ -343,11 +345,11 @@ local table entry applies.
 Deliverable: pending exceptions can be caught in the current frame and observed
 as Python exception objects.
 
-Current first slice: `try: ... except: ...` parses and emits a real
-exception-table protected range. The handler clears the active pending exception
-before running its body. Typed matching such as `except Exception`, `as e`,
-multiple handlers, `else`, and `finally` remain follow-up work and will need
-explicit handler-match bytecode rather than pretending a catch-all is typed.
+Current handler slices: `try: ... except: ...` catches unconditionally, while
+`try: ... except SomeError: ...` evaluates the handler class, checks the active
+pending exception with `ActiveExceptionIsInstance`, and reraises on mismatch.
+The match opcode does not materialize compact `StopIteration`. `as e`, multiple
+handlers, `else`, and `finally` remain follow-up work.
 
 ## Stage 11: Generic For-Loop Exception Fallback
 

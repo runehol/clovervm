@@ -273,6 +273,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "RaiseIfUnhandledException");
             case cl::Bytecode::LdaActiveException:
                 return format_to(out, "LdaActiveException");
+            case cl::Bytecode::ActiveExceptionIsInstance:
+                return format_to(out, "ActiveExceptionIsInstance");
             case cl::Bytecode::ClearActiveException:
                 return format_to(out, "ClearActiveException");
             case cl::Bytecode::ReraiseActiveException:
@@ -695,6 +697,7 @@ template <> struct fmt::formatter<cl::CodeObject>
 
             case cl::Bytecode::RaiseIfUnhandledException:
             case cl::Bytecode::LdaActiveException:
+            case cl::Bytecode::ActiveExceptionIsInstance:
             case cl::Bytecode::ClearActiveException:
             case cl::Bytecode::ReraiseActiveException:
                 break;

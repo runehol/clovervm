@@ -102,6 +102,21 @@ make_lda_active_exception_code(test::VmTestContext &test_context)
     return builder.finalize();
 }
 
+static CodeObject *
+make_active_exception_is_instance_code(test::VmTestContext &test_context,
+                                       Value handler_class)
+{
+    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
+        L"<active-exception-is-instance-test>");
+    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
+                              name);
+    uint32_t constant_idx = builder.allocate_constant(handler_class);
+    builder.emit_lda_constant(0, uint8_t(constant_idx));
+    builder.emit_active_exception_is_instance(0);
+    builder.emit_halt(0);
+    return builder.finalize();
+}
+
 TEST(ExceptionHandling, lda_active_exception_reads_pending_exception_object)
 {
     test::VmTestContext test_context;
@@ -147,6 +162,26 @@ TEST(ExceptionHandling, clear_active_exception_swallows_pending_exception)
     Value actual = test_context.thread()->run(code_obj);
     EXPECT_EQ(Value::from_smi(42), actual);
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
+}
+
+TEST(ExceptionHandling,
+     active_exception_is_instance_does_not_materialize_stop_iteration)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value stop_iteration_class = Value::from_oop(
+        test_context.thread()->class_for_builtin_name(L"StopIteration"));
+    CodeObject *code_obj = make_active_exception_is_instance_code(
+        test_context, stop_iteration_class);
+
+    (void)test_context.thread()->set_pending_stop_iteration_value(
+        Value::from_smi(7));
+    Value actual = test_context.thread()->run(code_obj);
+
+    EXPECT_EQ(Value::True(), actual);
+    EXPECT_EQ(PendingExceptionKind::StopIteration,
+              test_context.thread()->pending_exception_kind());
+    test_context.thread()->clear_pending_exception();
 }
 
 TEST(ExceptionHandling, reraise_active_exception_reenters_exception_unwind)

@@ -1511,6 +1511,10 @@ namespace cl
             }
 
             consume(Token::EXCEPT);
+            if(peek() != Token::COLON)
+            {
+                children.push_back(expression());
+            }
             consume(Token::COLON);
             children.push_back(block());
 

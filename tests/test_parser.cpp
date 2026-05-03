@@ -120,6 +120,20 @@ TEST(Parser, try_bare_except_stmt)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, try_typed_except_stmt)
+{
+    std::string expected = ("try:\n"
+                            "    risky()\n"
+                            "except NameError:\n"
+                            "    recovered()\n");
+    std::string actual = parse(L"try:\n"
+                               "    risky()\n"
+                               "except NameError:\n"
+                               "    recovered()\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, for_stmt)
 {
     std::string expected = ("for x in y:\n"

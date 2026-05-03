@@ -421,8 +421,15 @@ template <> struct fmt::formatter<cl::AstVector>
                 render_node(av, out, children[0], indent + 1,
                             cl::ExpressionPrecedence::Lowest);
                 emit_indent(out, indent);
-                format_to(out, "except:\n");
-                render_node(av, out, children[1], indent + 1,
+                format_to(out, "except");
+                if(children.size() == 3)
+                {
+                    format_to(out, " ");
+                    render_node(av, out, children[1], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                }
+                format_to(out, ":\n");
+                render_node(av, out, children.back(), indent + 1,
                             cl::ExpressionPrecedence::Lowest);
                 break;
 

@@ -547,6 +547,47 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_active_exception_is_instance(PARAMS)
+    {
+        ThreadState *thread = active_thread();
+        if(!thread->has_pending_exception())
+        {
+            throw std::runtime_error(
+                "InternalError: active exception required");
+        }
+        if(!can_convert_to<ClassObject>(accumulator))
+        {
+            throw std::runtime_error(
+                "TypeError: catching classes that do not inherit from "
+                "BaseException is not implemented yet");
+        }
+
+        ClassObject *handler_class = accumulator.get_ptr<ClassObject>();
+        ClassObject *exception_class = nullptr;
+        switch(thread->pending_exception_kind())
+        {
+            case PendingExceptionKind::Object:
+                exception_class = thread->pending_exception_object()
+                                      .get_ptr<ExceptionObject>()
+                                      ->get_class()
+                                      .extract();
+                break;
+            case PendingExceptionKind::StopIteration:
+                exception_class = thread->class_for_native_layout(
+                    NativeLayoutId::StopIteration);
+                break;
+            case PendingExceptionKind::None:
+                throw std::runtime_error(
+                    "InternalError: active exception required");
+        }
+
+        accumulator = is_subclass_of(exception_class, handler_class)
+                          ? Value::True()
+                          : Value::False();
+        START(1);
+        COMPLETE();
+    }
+
     static Value op_clear_active_exception(PARAMS)
     {
         active_thread()->clear_pending_exception();
@@ -2774,6 +2815,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::RaiseIfUnhandledException,
                         op_raise_if_unhandled_exception);
         SET_TABLE_ENTRY(Bytecode::LdaActiveException, op_lda_active_exception);
+        SET_TABLE_ENTRY(Bytecode::ActiveExceptionIsInstance,
+                        op_active_exception_is_instance);
         SET_TABLE_ENTRY(Bytecode::ClearActiveException,
                         op_clear_active_exception);
         SET_TABLE_ENTRY(Bytecode::ReraiseActiveException,

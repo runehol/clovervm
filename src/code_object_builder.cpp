@@ -276,6 +276,12 @@ namespace cl
     }
 
     uint32_t
+    CodeObjectBuilder::emit_active_exception_is_instance(uint32_t source_offset)
+    {
+        return emit_opcode(source_offset, Bytecode::ActiveExceptionIsInstance);
+    }
+
+    uint32_t
     CodeObjectBuilder::emit_clear_active_exception(uint32_t source_offset)
     {
         return emit_opcode(source_offset, Bytecode::ClearActiveException);
