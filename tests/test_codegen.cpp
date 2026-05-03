@@ -390,6 +390,34 @@ TEST(Codegen, bare_raise_in_handler_uses_saved_exception_register)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, except_as_without_bare_raise_drains_directly_to_local)
+{
+    std::string actual = bytecode_str_from_file(L"def f():\n"
+                                                L"    try:\n"
+                                                L"        raise NameError\n"
+                                                L"    except NameError as e:\n"
+                                                L"        pass\n");
+
+    EXPECT_NE(std::string::npos, actual.find("DrainActiveExceptionInto r0\n"
+                                             "   20 Jump"));
+}
+
+TEST(Codegen, except_as_with_bare_raise_keeps_hidden_original)
+{
+    std::string actual = bytecode_str_from_file(L"def f():\n"
+                                                L"    try:\n"
+                                                L"        raise NameError\n"
+                                                L"    except NameError as e:\n"
+                                                L"        e = TypeError\n"
+                                                L"        raise\n");
+
+    EXPECT_NE(std::string::npos, actual.find("DrainActiveExceptionInto r1\n"
+                                             "   20 Ldar1\n"
+                                             "   21 Star0"));
+    EXPECT_NE(std::string::npos, actual.find("   28 Ldar1\n"
+                                             "   29 RaiseUnwind"));
+}
+
 TEST(Codegen, bare_raise_outside_handler_is_syntax_error)
 {
     expect_codegen_error(L"raise\n",

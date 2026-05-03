@@ -71,6 +71,25 @@ assert result == 7
 
 result = 0
 try:
+    raise NameError
+except NameError as e:
+    e = 7
+    result = e
+assert result == 7
+
+result = 0
+try:
+    try:
+        raise NameError
+    except NameError as e:
+        e = TypeError
+        raise
+except NameError:
+    result = 7
+assert result == 7
+
+result = 0
+try:
     try:
         raise NameError
     except NameError:

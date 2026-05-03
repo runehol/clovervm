@@ -260,6 +260,33 @@ namespace cl
         std::vector<LoopTargetSet> loop_targets;
         std::vector<RegisterIndex> caught_exception_regs;
 
+        static bool handler_has_type(AstChildren handler_children)
+        {
+            return handler_children.size() >= 2;
+        }
+
+        static bool handler_has_name(AstChildren handler_children)
+        {
+            return handler_children.size() == 3;
+        }
+
+        static int32_t handler_type_idx(AstChildren handler_children)
+        {
+            assert(handler_has_type(handler_children));
+            return handler_children[0];
+        }
+
+        static int32_t handler_name_idx(AstChildren handler_children)
+        {
+            assert(handler_has_name(handler_children));
+            return handler_children[1];
+        }
+
+        static int32_t handler_body_idx(AstChildren handler_children)
+        {
+            return handler_children.back();
+        }
+
         static Presence merge_presence(Presence left, Presence right)
         {
             if(left == right)
@@ -658,6 +685,21 @@ namespace cl
                     }
                     return;
 
+                case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
+                    if(handler_has_type(children))
+                    {
+                        validate_global_declaration_expression(
+                            state, handler_type_idx(children));
+                    }
+                    if(handler_has_name(children))
+                    {
+                        validate_global_declaration_assignment_target(
+                            state, handler_name_idx(children), false);
+                    }
+                    validate_global_declarations_in_node(
+                        state, handler_body_idx(children));
+                    return;
+
                 case AstNodeKind::STATEMENT_SEQUENCE:
                     for(int32_t child_idx: children)
                     {
@@ -809,6 +851,24 @@ namespace cl
                     }
                     break;
 
+                case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
+                    if(handler_has_name(children) &&
+                       analysis.mode != Mode::Module)
+                    {
+                        int32_t name_idx = handler_name_idx(children);
+                        ensure_local_binding(target_code_obj, analysis,
+                                             av.constants[name_idx].as_value());
+                    }
+                    if(handler_has_type(children))
+                    {
+                        collect_code_object_bindings(
+                            target_code_obj, analysis,
+                            handler_type_idx(children));
+                    }
+                    collect_code_object_bindings(target_code_obj, analysis,
+                                                 handler_body_idx(children));
+                    return;
+
                 default:
                     break;
             }
@@ -893,6 +953,21 @@ namespace cl
                         mark_name(av.constants[children[0]].as_value());
                     }
                     break;
+
+                case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
+                    if(handler_has_name(children))
+                    {
+                        mark_name(av.constants[handler_name_idx(children)]
+                                      .as_value());
+                    }
+                    if(handler_has_type(children))
+                    {
+                        collect_modified_locals(
+                            analysis, handler_type_idx(children), modified);
+                    }
+                    collect_modified_locals(
+                        analysis, handler_body_idx(children), modified);
+                    return;
 
                 default:
                     break;
@@ -1216,15 +1291,22 @@ namespace cl
                             AstChildren handler_children =
                                 av.children[handler_idx];
                             FlowState handler_state = state;
-                            if(handler_children.size() == 2)
+                            if(handler_has_type(handler_children))
                             {
-                                analyze_flow_node(target_code_obj, analysis,
-                                                  handler_children[0],
-                                                  handler_state);
+                                analyze_flow_node(
+                                    target_code_obj, analysis,
+                                    handler_type_idx(handler_children),
+                                    handler_state);
                             }
-                            analyze_flow_node(target_code_obj, analysis,
-                                              handler_children.back(),
-                                              handler_state);
+                            if(handler_has_name(handler_children))
+                            {
+                                annotate_write(
+                                    handler_name_idx(handler_children));
+                            }
+                            analyze_flow_node(
+                                target_code_obj, analysis,
+                                handler_body_idx(handler_children),
+                                handler_state);
                             merged_state =
                                 merge_flow_states(merged_state, handler_state);
                         }
@@ -1836,9 +1918,9 @@ namespace cl
                         assert(av.kinds[handler_idx].node_kind ==
                                AstNodeKind::STATEMENT_EXCEPT_HANDLER);
                         AstChildren handler_children = av.children[handler_idx];
-                        if(handler_children.size() == 2 &&
+                        if(handler_has_type(handler_children) &&
                            node_needs_enclosing_caught_exception(
-                               handler_children[0]))
+                               handler_type_idx(handler_children)))
                         {
                             return true;
                         }
@@ -1860,7 +1942,26 @@ namespace cl
         bool handler_needs_caught_exception(int32_t handler_idx) const
         {
             AstChildren children = av.children[handler_idx];
-            return node_needs_enclosing_caught_exception(children.back());
+            return node_needs_enclosing_caught_exception(
+                handler_body_idx(children));
+        }
+
+        void emit_drain_active_exception_to_binding(uint32_t source_offset,
+                                                    int32_t name_idx)
+        {
+            const NameAccessAnalysis &access = store_access(name_idx);
+            if(access.scope == BindingScope::Local)
+            {
+                code_obj->emit_drain_active_exception_into(source_offset,
+                                                           access.slot_idx);
+                return;
+            }
+
+            TemporaryReg saved_exception(*code_obj);
+            code_obj->emit_drain_active_exception_into(source_offset,
+                                                       saved_exception);
+            code_obj->emit_ldar(source_offset, saved_exception);
+            emit_variable_store(source_offset, name_idx);
         }
 
         void codegen_try_statement(int32_t node_idx)
@@ -1888,37 +1989,54 @@ namespace cl
                 AstChildren handler_children = av.children[handler_idx];
                 assert(av.kinds[handler_idx].node_kind ==
                        AstNodeKind::STATEMENT_EXCEPT_HANDLER);
-                assert(handler_children.size() == 1 ||
-                       handler_children.size() == 2);
+                assert(handler_children.size() >= 1 &&
+                       handler_children.size() <= 3);
 
-                int32_t handler_body_idx = handler_children.back();
+                int32_t body_idx = handler_body_idx(handler_children);
                 uint32_t handler_source_offset = av.source_offsets[handler_idx];
-                bool needs_caught_exception =
+                bool needs_original_exception =
                     handler_needs_caught_exception(handler_idx);
-                if(handler_children.size() == 2)
+                bool binds_exception_name = handler_has_name(handler_children);
+                if(handler_has_type(handler_children))
                 {
                     JumpTarget no_match_target(code_obj);
-                    codegen_node(handler_children[0]);
+                    codegen_node(handler_type_idx(handler_children));
                     code_obj->emit_active_exception_is_instance(
                         handler_source_offset);
                     code_obj->emit_jump_if_false(handler_source_offset,
                                                  no_match_target);
-                    if(needs_caught_exception)
+                    if(needs_original_exception)
                     {
                         TemporaryReg saved_exception(*code_obj);
                         code_obj->emit_drain_active_exception_into(
                             handler_source_offset, saved_exception);
+                        if(binds_exception_name)
+                        {
+                            code_obj->emit_ldar(handler_source_offset,
+                                                saved_exception);
+                            emit_variable_store(
+                                handler_source_offset,
+                                handler_name_idx(handler_children));
+                        }
                         caught_exception_regs.push_back(
                             RegisterIndex(saved_exception));
-                        codegen_node(handler_body_idx);
+                        codegen_node(body_idx);
                         caught_exception_regs.pop_back();
+                        code_obj->emit_jump(handler_source_offset, done_target);
+                    }
+                    else if(binds_exception_name)
+                    {
+                        emit_drain_active_exception_to_binding(
+                            handler_source_offset,
+                            handler_name_idx(handler_children));
+                        codegen_node(body_idx);
                         code_obj->emit_jump(handler_source_offset, done_target);
                     }
                     else
                     {
                         code_obj->emit_clear_active_exception(
                             handler_source_offset);
-                        codegen_node(handler_body_idx);
+                        codegen_node(body_idx);
                         code_obj->emit_jump(handler_source_offset, done_target);
                     }
 
@@ -1928,22 +2046,37 @@ namespace cl
 
                 assert(child_offset == children.size() - 1);
                 has_bare_handler = true;
-                if(needs_caught_exception)
+                if(needs_original_exception)
                 {
                     TemporaryReg saved_exception(*code_obj);
                     code_obj->emit_drain_active_exception_into(
                         handler_source_offset, saved_exception);
+                    if(binds_exception_name)
+                    {
+                        code_obj->emit_ldar(handler_source_offset,
+                                            saved_exception);
+                        emit_variable_store(handler_source_offset,
+                                            handler_name_idx(handler_children));
+                    }
                     caught_exception_regs.push_back(
                         RegisterIndex(saved_exception));
-                    codegen_node(handler_body_idx);
+                    codegen_node(body_idx);
                     caught_exception_regs.pop_back();
+                    code_obj->emit_jump(handler_source_offset, done_target);
+                }
+                else if(binds_exception_name)
+                {
+                    emit_drain_active_exception_to_binding(
+                        handler_source_offset,
+                        handler_name_idx(handler_children));
+                    codegen_node(body_idx);
                     code_obj->emit_jump(handler_source_offset, done_target);
                 }
                 else
                 {
                     code_obj->emit_clear_active_exception(
                         handler_source_offset);
-                    codegen_node(handler_body_idx);
+                    codegen_node(body_idx);
                     code_obj->emit_jump(handler_source_offset, done_target);
                 }
                 break;

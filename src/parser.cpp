@@ -1526,6 +1526,18 @@ namespace cl
                 if(peek() != Token::COLON)
                 {
                     handler_children.push_back(expression());
+                    if(match(Token::AS))
+                    {
+                        consume(Token::NAME);
+                        uint32_t name_source_pos =
+                            source_pos_for_previous_token();
+                        std::wstring name = std::wstring(string_for_name_token(
+                            *ast.compilation_unit, name_source_pos));
+                        Value v = vm.get_or_create_interned_string_value(name);
+                        handler_children.push_back(ast.emplace_back(
+                            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
+                            name_source_pos, v));
+                    }
                 }
                 else
                 {

@@ -344,7 +344,7 @@ local table entry applies.
 - [x] Support bare `raise` inside handlers by reraising the nearest hidden
       caught-exception register. Bare `raise` outside a handler is currently a
       `SyntaxError`.
-- [ ] Support `except SomeError as e` for object-backed pending exceptions.
+- [x] Support `except SomeError as e` for object-backed pending exceptions.
 - [ ] Support `except StopIteration as e` and `e.value` by materializing compact
       `StopIteration` when the exception object becomes observable.
 - [ ] Replace remaining placeholder VM-originated exceptions with specific
@@ -359,11 +359,12 @@ Current handler slices: `try: ... except: ...` catches unconditionally, while
 `try: ... except SomeError: ...` evaluates the handler class, checks the active
 pending exception with `ActiveExceptionIsInstance`, and falls through to the
 next handler or reraises on mismatch. After a match, handlers that do not need
-the caught exception use `ClearActiveException`; handlers that do need it use
+the caught exception use `ClearActiveException`; `except ... as e` without bare
+`raise` drains directly into the `e` binding when it is register-backed; handlers
+that need to preserve the original for bare `raise` use
 `DrainActiveExceptionInto` to materialize the active exception into a hidden
 handler register and clear pending exception state. The match opcode does not
-materialize compact `StopIteration`. `as e`, `else`, and `finally` remain
-follow-up work.
+materialize compact `StopIteration`. `else` and `finally` remain follow-up work.
 
 ## Stage 11: Generic For-Loop Exception Fallback
 

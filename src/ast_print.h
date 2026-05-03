@@ -431,11 +431,17 @@ template <> struct fmt::formatter<cl::AstVector>
             case cl::AstNodeKind::STATEMENT_EXCEPT_HANDLER:
                 emit_indent(out, indent);
                 format_to(out, "except");
-                if(children.size() == 2)
+                if(children.size() >= 2)
                 {
                     format_to(out, " ");
                     render_node(av, out, children[0], indent,
                                 cl::ExpressionPrecedence::Lowest);
+                    if(children.size() == 3)
+                    {
+                        format_to(out, " as ");
+                        render_node(av, out, children[1], indent,
+                                    cl::ExpressionPrecedence::Lowest);
+                    }
                 }
                 format_to(out, ":\n");
                 render_node(av, out, children.back(), indent + 1,
