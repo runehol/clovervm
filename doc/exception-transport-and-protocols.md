@@ -368,15 +368,41 @@ in terms of pending `StopIteration` plus `Value::exception_marker()`.
 Within a managed frame, exception handling is table-driven. An opcode that
 raises from inside a protected region enters table unwinding at the current pc:
 
+The first bytecode form is just an interpreted-pc triple:
+
+```cpp
+struct ExceptionTableEntry
+{
+    uint64_t start_pc;    // inclusive, local to this CodeObject
+    uint64_t end_pc;      // exclusive, local to this CodeObject
+    uint64_t handler_pc;  // landing pad pc in this CodeObject
+};
+```
+
+There is no handler kind or stack-depth field in the initial shape. A frame
+without protected regions has no entries. The compiler owns register liveness at
+the landing pad; handler code treats protected-region temporaries as dead unless
+codegen explicitly preserves them.
+
 ```text
 find handler covering current pc in this frame's exception metadata
 if found:
-  trim frame state to the handler depth
-  arrange pending exception state expected by the handler
-  jump to the handler target in the same frame
+  unwind fp to this managed frame
+  accumulator = active exception object
+  jump to handler_pc in the same CodeObject
 else:
   the exception escapes this frame
 ```
+
+Handler bytecode performs Python-level decisions such as `except NameError as e`
+matching, handler binding, synthetic `for` `StopIteration` checks, cleanup, or
+continuing exceptional unwind. The table itself is structural metadata; it does
+not encode arbitrary Python exception classes.
+
+For source-level handlers, names in exception expressions are evaluated by the
+handler code, so rebinding globals such as `NameError` affects explicit
+`except NameError` semantics. Synthetic VM handlers such as `for` loop
+`StopIteration` handling use runtime-known protocol semantics instead.
 
 When no local handler is found, the VM pops/restores the caller frame and
 continues the exceptional path there. Future JIT frames participate with their

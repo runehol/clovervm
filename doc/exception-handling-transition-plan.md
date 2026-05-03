@@ -304,10 +304,13 @@ making ordinary opcodes marker-aware.
 
 ## Stage 10: Exception Tables And Generic For-Loop Fallback
 
-- [ ] Add exception table metadata to `CodeObject`.
+- [ ] Add exception table metadata to `CodeObject` as bytecode-local interpreted
+      pc triples: protected start pc, protected end pc, and handler pc.
 - [ ] Add compiler tracking for protected bytecode ranges.
 - [ ] Teach exceptional frame exit to look for a local handler before popping the
       frame.
+- [ ] Enter handlers with the active exception object in the accumulator. Keep
+      traceback materialization lazy and driven by handler code/observation.
 - [ ] Add synthetic exception-table handlers for `for` loops so real
       `StopIteration` from generic `__next__` exits the loop through ordinary
       exception handling.
