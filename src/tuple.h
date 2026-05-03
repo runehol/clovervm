@@ -36,7 +36,7 @@ namespace cl
             return elements[idx];
         }
         void initialize_item_unchecked(size_t idx, Value value);
-        Value get_item(int64_t py_idx) const;
+        [[nodiscard]] Value get_item(int64_t py_idx) const;
 
         static ALWAYSINLINE TValue<Tuple>
         from_frame_arguments(Value *fp, int8_t first_arg_reg, uint32_t n_args)
@@ -81,7 +81,8 @@ namespace cl
                                      static_fixed_value_count() + size};
         }
 
-        size_t normalize_index(int64_t py_idx) const;
+        size_t wrap_index(int64_t py_idx) const;
+        [[nodiscard]] Value check_index(size_t idx) const;
         void initialize_items(size_t size);
 
         MemberTValue<SMI> size_value;

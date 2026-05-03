@@ -221,6 +221,8 @@ namespace cl
             make_exception_subclass(this, L"ValueError", exception));
         register_builtin_class(
             make_exception_subclass(this, L"AssertionError", exception));
+        register_builtin_class(
+            make_exception_subclass(this, L"IndexError", exception));
         register_builtin_class(make_stop_iteration_class(this, exception));
         install_str_class_methods(this);
 

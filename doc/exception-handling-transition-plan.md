@@ -134,7 +134,7 @@ using C++ unwinding through the interpreter dispatch loop.
       simple exception instances for VM-originated errors.
 - [x] Support at least the initial builtin exception classes needed by the first
       converted slow paths: `Exception`, `NameError`, `TypeError`, `ValueError`,
-      `AssertionError`, and `StopIteration`.
+      `IndexError`, `AssertionError`, and `StopIteration`.
 - [x] Make `set_pending_exception_string` construct and store an exception object
       instead of throwing its unsupported placeholder.
 - [x] Keep construction deliberately narrow: message-only VM exceptions are
@@ -195,7 +195,7 @@ pending exception to managed adapter code, while ordinary return stays fast.
   - [x] `AssertionError`
 - [ ] Keep complex runtime failures and construction-time failures on the old
       path until their dependencies are normalized.
-- [ ] Add interpreter tests for propagation across nested calls.
+- [x] Add interpreter tests for propagation across nested calls.
 
 Helper-layer transition convention:
 
@@ -203,13 +203,13 @@ Helper-layer transition convention:
       success returns the natural result, or `Value::None()` for operations with
       no natural result; failure sets pending exception state and returns
       `Value::exception_marker()`.
-- [ ] Mark fallible `Value` helpers `[[nodiscard]]` where practical so ignored
+- [x] Mark fallible `Value` helpers `[[nodiscard]]` where practical so ignored
       results become compiler-visible during the migration.
 - [x] Add a small propagation macro, tentatively
       `CL_PROPAGATE_EXCEPTION(expr)`, that evaluates a `Value` expression once
       and returns it from the current function only when it is
       `Value::exception_marker()`.
-- [ ] Use the macro mainly for void-like success helpers, e.g. checked
+- [x] Use the macro mainly for void-like success helpers, e.g. checked
       `set_item`/`del_item` operations that return `Value::None()` on success.
       For value-producing helpers, prefer the explicit two-step form so the
       successful value remains visible:
@@ -219,7 +219,7 @@ Value item = list->get_item(idx);
 CL_PROPAGATE_EXCEPTION(item);
 ```
 
-- [ ] Keep unchecked primitives such as `item_unchecked` and
+- [x] Keep unchecked primitives such as `item_unchecked` and
       `set_item_unchecked` free of pending-exception semantics; callers must
       prove validity before using them.
 - [ ] Add debug assertions on container/register writes where useful so

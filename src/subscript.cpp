@@ -1,30 +1,36 @@
 #include "subscript.h"
 
 #include "dict.h"
+#include "exception_propagation.h"
 #include "list.h"
+#include "thread_state.h"
 #include "tuple.h"
 #include <stdexcept>
 
 namespace cl
 {
-    static int64_t list_index_from_value(Value key)
+    [[nodiscard]] static Value list_index_from_value(Value key,
+                                                     int64_t &idx_out)
     {
         if(!key.is_integer())
         {
-            throw std::runtime_error(
-                "TypeError: list indices must be integers");
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"list indices must be integers");
         }
-        return key.get_smi();
+        idx_out = key.get_smi();
+        return Value::None();
     }
 
-    static int64_t tuple_index_from_value(Value key)
+    [[nodiscard]] static Value tuple_index_from_value(Value key,
+                                                      int64_t &idx_out)
     {
         if(!key.is_integer())
         {
-            throw std::runtime_error(
-                "TypeError: tuple indices must be integers");
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"tuple indices must be integers");
         }
-        return key.get_smi();
+        idx_out = key.get_smi();
+        return Value::None();
     }
 
     Value load_subscript(Value obj, Value key)
@@ -37,13 +43,15 @@ namespace cl
         Object *object = obj.get_ptr<Object>();
         if(object->native_layout_id() == NativeLayoutId::List)
         {
-            return static_cast<List *>(object)->get_item(
-                list_index_from_value(key));
+            int64_t idx = 0;
+            CL_PROPAGATE_EXCEPTION(list_index_from_value(key, idx));
+            return static_cast<List *>(object)->get_item(idx);
         }
         if(object->native_layout_id() == NativeLayoutId::Tuple)
         {
-            return static_cast<Tuple *>(object)->get_item(
-                tuple_index_from_value(key));
+            int64_t idx = 0;
+            CL_PROPAGATE_EXCEPTION(tuple_index_from_value(key, idx));
+            return static_cast<Tuple *>(object)->get_item(idx);
         }
         if(object->native_layout_id() == NativeLayoutId::Dict)
         {
@@ -53,19 +61,21 @@ namespace cl
         return Value::not_present();
     }
 
-    bool store_subscript(Value obj, Value key, Value value)
+    Value store_subscript(Value obj, Value key, Value value)
     {
         if(!obj.is_ptr())
         {
-            return false;
+            return Value::not_present();
         }
 
         Object *object = obj.get_ptr<Object>();
         if(object->native_layout_id() == NativeLayoutId::List)
         {
-            static_cast<List *>(object)->set_item(list_index_from_value(key),
-                                                  value);
-            return true;
+            int64_t idx = 0;
+            CL_PROPAGATE_EXCEPTION(list_index_from_value(key, idx));
+            CL_PROPAGATE_EXCEPTION(
+                static_cast<List *>(object)->set_item(idx, value));
+            return Value::None();
         }
         if(object->native_layout_id() == NativeLayoutId::Tuple)
         {
@@ -75,25 +85,26 @@ namespace cl
         if(object->native_layout_id() == NativeLayoutId::Dict)
         {
             static_cast<Dict *>(object)->set_item(key, value);
-            return true;
+            return Value::None();
         }
 
-        return false;
+        return Value::not_present();
     }
 
-    bool del_subscript(Value obj, Value key)
+    Value del_subscript(Value obj, Value key)
     {
         if(!obj.is_ptr())
         {
-            return false;
+            return Value::not_present();
         }
 
         Object *object = obj.get_ptr<Object>();
         if(object->native_layout_id() == NativeLayoutId::List)
         {
-            (void)static_cast<List *>(object)->pop_item(
-                list_index_from_value(key));
-            return true;
+            int64_t idx = 0;
+            CL_PROPAGATE_EXCEPTION(list_index_from_value(key, idx));
+            CL_PROPAGATE_EXCEPTION(static_cast<List *>(object)->pop_item(idx));
+            return Value::None();
         }
         if(object->native_layout_id() == NativeLayoutId::Tuple)
         {
@@ -103,9 +114,9 @@ namespace cl
         if(object->native_layout_id() == NativeLayoutId::Dict)
         {
             static_cast<Dict *>(object)->del_item(key);
-            return true;
+            return Value::None();
         }
 
-        return false;
+        return Value::not_present();
     }
 }  // namespace cl

@@ -5,9 +5,9 @@
 
 namespace cl
 {
-    Value load_subscript(Value obj, Value key);
-    bool store_subscript(Value obj, Value key, Value value);
-    bool del_subscript(Value obj, Value key);
+    [[nodiscard]] Value load_subscript(Value obj, Value key);
+    [[nodiscard]] Value store_subscript(Value obj, Value key, Value value);
+    [[nodiscard]] Value del_subscript(Value obj, Value key);
 }  // namespace cl
 
 #endif  // CL_SUBSCRIPT_H

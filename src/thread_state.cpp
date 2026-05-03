@@ -56,66 +56,70 @@ namespace cl
         pending_exception.stop_iteration_value = Value::not_present();
     }
 
-    void
+    Value
     ThreadState::set_pending_exception_object(TValue<ExceptionObject> exception)
     {
         pending_exception.object = exception;
         pending_exception.stop_iteration_value = Value::not_present();
         pending_exception.kind = PendingExceptionKind::Object;
+        return Value::exception_marker();
     }
 
-    void ThreadState::set_pending_exception_string(TValue<ClassObject> type,
-                                                   TValue<String> message)
+    Value ThreadState::set_pending_exception_string(TValue<ClassObject> type,
+                                                    TValue<String> message)
     {
-        set_pending_exception_object(make_exception_object(type, message));
+        return set_pending_exception_object(
+            make_exception_object(type, message));
     }
 
-    void ThreadState::set_pending_exception_string(TValue<ClassObject> type,
-                                                   const wchar_t *message)
+    Value ThreadState::set_pending_exception_string(TValue<ClassObject> type,
+                                                    const wchar_t *message)
     {
-        set_pending_exception_string(type, interned_string(message));
+        return set_pending_exception_string(type, interned_string(message));
     }
 
-    void ThreadState::set_pending_exception_none(TValue<ClassObject> type)
+    Value ThreadState::set_pending_exception_none(TValue<ClassObject> type)
     {
-        set_pending_exception_string(type, L"");
+        return set_pending_exception_string(type, L"");
     }
 
-    void
+    Value
     ThreadState::set_pending_builtin_exception_string(const wchar_t *type_name,
                                                       TValue<String> message)
     {
-        set_pending_exception_string(
+        return set_pending_exception_string(
             TValue<ClassObject>::from_oop(class_for_builtin_name(type_name)),
             message);
     }
 
-    void
+    Value
     ThreadState::set_pending_builtin_exception_string(const wchar_t *type_name,
                                                       const wchar_t *message)
     {
-        set_pending_builtin_exception_string(type_name,
-                                             interned_string(message));
+        return set_pending_builtin_exception_string(type_name,
+                                                    interned_string(message));
     }
 
-    void
+    Value
     ThreadState::set_pending_builtin_exception_none(const wchar_t *type_name)
     {
-        set_pending_builtin_exception_string(type_name, L"");
+        return set_pending_builtin_exception_string(type_name, L"");
     }
 
-    void ThreadState::set_pending_stop_iteration_no_value()
+    Value ThreadState::set_pending_stop_iteration_no_value()
     {
         pending_exception.object.clear();
         pending_exception.stop_iteration_value = Value::not_present();
         pending_exception.kind = PendingExceptionKind::StopIteration;
+        return Value::exception_marker();
     }
 
-    void ThreadState::set_pending_stop_iteration_value(Value value)
+    Value ThreadState::set_pending_stop_iteration_value(Value value)
     {
         pending_exception.object.clear();
         pending_exception.stop_iteration_value = value;
         pending_exception.kind = PendingExceptionKind::StopIteration;
+        return Value::exception_marker();
     }
 
     Value ThreadState::pending_exception_object() const

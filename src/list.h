@@ -38,16 +38,17 @@ namespace cl
         Value pop_item_unchecked(size_t idx);
         void append(Value value) { items.push_back(value); }
 
-        Value get_item(int64_t py_idx) const;
-        void set_item(int64_t py_idx, Value value);
+        [[nodiscard]] Value get_item(int64_t py_idx) const;
+        [[nodiscard]] Value set_item(int64_t py_idx, Value value);
         void insert_item(int64_t py_idx, Value value);
         // Returns a borrowed Value. Interpreter callers immediately place the
         // result on the stack/accumulator, which keeps it rooted after the list
         // releases its slot ownership.
-        Value pop_item(int64_t py_idx = -1);
+        [[nodiscard]] Value pop_item(int64_t py_idx = -1);
 
     private:
-        size_t normalize_index(int64_t py_idx) const;
+        size_t wrap_index(int64_t py_idx) const;
+        [[nodiscard]] Value check_index(size_t idx) const;
         size_t normalize_insertion_index(int64_t py_idx) const;
 
         ValueArray<Value> items;

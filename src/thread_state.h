@@ -70,19 +70,26 @@ namespace cl
         bool has_pending_exception() const;
         PendingExceptionKind pending_exception_kind() const;
         void clear_pending_exception();
-        void set_pending_exception_object(TValue<ExceptionObject> exception);
-        void set_pending_exception_string(TValue<ClassObject> type,
-                                          TValue<String> message);
-        void set_pending_exception_string(TValue<ClassObject> type,
-                                          const wchar_t *message);
-        void set_pending_exception_none(TValue<ClassObject> type);
-        void set_pending_builtin_exception_string(const wchar_t *type_name,
-                                                  TValue<String> message);
-        void set_pending_builtin_exception_string(const wchar_t *type_name,
-                                                  const wchar_t *message);
-        void set_pending_builtin_exception_none(const wchar_t *type_name);
-        void set_pending_stop_iteration_no_value();
-        void set_pending_stop_iteration_value(Value value);
+        [[nodiscard]] Value
+        set_pending_exception_object(TValue<ExceptionObject> exception);
+        [[nodiscard]] Value
+        set_pending_exception_string(TValue<ClassObject> type,
+                                     TValue<String> message);
+        [[nodiscard]] Value
+        set_pending_exception_string(TValue<ClassObject> type,
+                                     const wchar_t *message);
+        [[nodiscard]] Value
+        set_pending_exception_none(TValue<ClassObject> type);
+        [[nodiscard]] Value
+        set_pending_builtin_exception_string(const wchar_t *type_name,
+                                             TValue<String> message);
+        [[nodiscard]] Value
+        set_pending_builtin_exception_string(const wchar_t *type_name,
+                                             const wchar_t *message);
+        [[nodiscard]] Value
+        set_pending_builtin_exception_none(const wchar_t *type_name);
+        [[nodiscard]] Value set_pending_stop_iteration_no_value();
+        [[nodiscard]] Value set_pending_stop_iteration_value(Value value);
         Value pending_exception_object() const;
         Value pending_stop_iteration_value() const;
 

@@ -26,7 +26,8 @@ namespace cl
         TValue<ExceptionObject> exception = make_exception_object(
             TValue<ClassObject>::from_oop(base_exception), L"boom");
 
-        thread->set_pending_exception_object(exception);
+        EXPECT_TRUE(thread->set_pending_exception_object(exception)
+                        .is_exception_marker());
 
         EXPECT_TRUE(thread->has_pending_exception());
         EXPECT_EQ(PendingExceptionKind::Object,
@@ -39,7 +40,8 @@ namespace cl
         test::VmTestContext context;
         ThreadState *thread = context.thread();
 
-        thread->set_pending_stop_iteration_no_value();
+        EXPECT_TRUE(thread->set_pending_stop_iteration_no_value()
+                        .is_exception_marker());
 
         EXPECT_TRUE(thread->has_pending_exception());
         EXPECT_EQ(PendingExceptionKind::StopIteration,
@@ -52,7 +54,8 @@ namespace cl
         test::VmTestContext context;
         ThreadState *thread = context.thread();
 
-        thread->set_pending_stop_iteration_value(Value::None());
+        EXPECT_TRUE(thread->set_pending_stop_iteration_value(Value::None())
+                        .is_exception_marker());
 
         EXPECT_TRUE(thread->has_pending_exception());
         EXPECT_EQ(PendingExceptionKind::StopIteration,
@@ -66,7 +69,9 @@ namespace cl
         test::VmTestContext context;
         ThreadState *thread = context.thread();
 
-        thread->set_pending_stop_iteration_value(Value::from_smi(42));
+        EXPECT_TRUE(
+            thread->set_pending_stop_iteration_value(Value::from_smi(42))
+                .is_exception_marker());
         thread->clear_pending_exception();
 
         EXPECT_FALSE(thread->has_pending_exception());
@@ -81,8 +86,11 @@ namespace cl
             context.vm().class_for_native_layout(NativeLayoutId::Exception);
         ThreadState::ActivationScope active_thread(thread);
 
-        thread->set_pending_exception_string(
-            TValue<ClassObject>::from_oop(base_exception), L"boom");
+        EXPECT_TRUE(
+            thread
+                ->set_pending_exception_string(
+                    TValue<ClassObject>::from_oop(base_exception), L"boom")
+                .is_exception_marker());
 
         EXPECT_TRUE(thread->has_pending_exception());
         EXPECT_EQ(PendingExceptionKind::Object,

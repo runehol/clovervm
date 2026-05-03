@@ -83,8 +83,8 @@ static Value native_add(Value left, Value right)
 
 static Value native_stop_iteration_with_value()
 {
-    active_thread()->set_pending_stop_iteration_value(Value::from_smi(123));
-    return Value::exception_marker();
+    return active_thread()->set_pending_stop_iteration_value(
+        Value::from_smi(123));
 }
 
 static Value native_marker_without_pending_exception()
@@ -96,9 +96,8 @@ static Value native_base_exception_with_message()
 {
     ClassObject *cls =
         active_thread()->class_for_native_layout(NativeLayoutId::Exception);
-    active_thread()->set_pending_exception_string(
+    return active_thread()->set_pending_exception_string(
         TValue<ClassObject>::from_oop(cls), L"boom");
-    return Value::exception_marker();
 }
 
 static void bind_global(test::VmTestContext &test_context,
@@ -671,6 +670,15 @@ TEST(Interpreter, subscript_load_rejects_non_integer_list_index)
                          "TypeError: list indices must be integers");
 }
 
+TEST(Interpreter, subscript_load_non_integer_list_index_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def fail():\n"
+                         L"    xs = [1, 2, 3]\n"
+                         L"    return xs[False]\n"
+                         L"fail()\n",
+                         "TypeError: list indices must be integers");
+}
+
 TEST(Interpreter, subscript_load_rejects_non_integer_tuple_index)
 {
     expect_runtime_error(L"class Cls:\n"
@@ -679,11 +687,37 @@ TEST(Interpreter, subscript_load_rejects_non_integer_tuple_index)
                          "TypeError: tuple indices must be integers");
 }
 
+TEST(Interpreter, subscript_load_rejects_out_of_range_list_index)
+{
+    expect_runtime_error(L"xs = [1, 2, 3]\n"
+                         L"xs[3]\n",
+                         "IndexError: list index out of range");
+}
+
+TEST(Interpreter, subscript_load_out_of_range_list_index_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def fail():\n"
+                         L"    xs = [1, 2, 3]\n"
+                         L"    return xs[3]\n"
+                         L"fail()\n",
+                         "IndexError: list index out of range");
+}
+
 TEST(Interpreter, subscript_load_rejects_out_of_range_tuple_index)
 {
     expect_runtime_error(L"class Cls:\n"
                          L"    pass\n"
                          L"Cls.__mro__[2]\n",
+                         "IndexError: tuple index out of range");
+}
+
+TEST(Interpreter, subscript_load_out_of_range_tuple_index_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def fail():\n"
+                         L"    class Cls:\n"
+                         L"        pass\n"
+                         L"    return Cls.__mro__[2]\n"
+                         L"fail()\n",
                          "IndexError: tuple index out of range");
 }
 

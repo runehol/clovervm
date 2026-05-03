@@ -1,8 +1,9 @@
 #include "list.h"
 #include "class_object.h"
+#include "exception_propagation.h"
+#include "thread_state.h"
 #include "virtual_machine.h"
 #include <algorithm>
-#include <stdexcept>
 
 namespace cl
 {
@@ -51,12 +52,17 @@ namespace cl
 
     Value List::get_item(int64_t py_idx) const
     {
-        return item_unchecked(normalize_index(py_idx));
+        size_t idx = wrap_index(py_idx);
+        CL_PROPAGATE_EXCEPTION(check_index(idx));
+        return item_unchecked(idx);
     }
 
-    void List::set_item(int64_t py_idx, Value value)
+    Value List::set_item(int64_t py_idx, Value value)
     {
-        set_item_unchecked(normalize_index(py_idx), value);
+        size_t idx = wrap_index(py_idx);
+        CL_PROPAGATE_EXCEPTION(check_index(idx));
+        set_item_unchecked(idx, value);
+        return Value::None();
     }
 
     void List::insert_item(int64_t py_idx, Value value)
@@ -66,10 +72,12 @@ namespace cl
 
     Value List::pop_item(int64_t py_idx)
     {
-        return pop_item_unchecked(normalize_index(py_idx));
+        size_t idx = wrap_index(py_idx);
+        CL_PROPAGATE_EXCEPTION(check_index(idx));
+        return pop_item_unchecked(idx);
     }
 
-    size_t List::normalize_index(int64_t py_idx) const
+    size_t List::wrap_index(int64_t py_idx) const
     {
         int64_t n_items = static_cast<int64_t>(size());
         int64_t normalized = py_idx;
@@ -77,11 +85,17 @@ namespace cl
         {
             normalized += n_items;
         }
-        if(normalized < 0 || normalized >= n_items)
-        {
-            throw std::runtime_error("IndexError: list index out of range");
-        }
         return static_cast<size_t>(normalized);
+    }
+
+    Value List::check_index(size_t idx) const
+    {
+        if(idx >= size())
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"IndexError", L"list index out of range");
+        }
+        return Value::None();
     }
 
     size_t List::normalize_insertion_index(int64_t py_idx) const

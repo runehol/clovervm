@@ -1,3 +1,4 @@
+#include "exception_object.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -13,6 +14,27 @@ namespace
                                const wchar_t *text)
     {
         return context.thread()->make_internal_raw<String>(text);
+    }
+
+    static void expect_pending_exception(ThreadState *thread,
+                                         const wchar_t *class_name,
+                                         const wchar_t *message)
+    {
+        ASSERT_EQ(PendingExceptionKind::Object,
+                  thread->pending_exception_kind());
+        TValue<ExceptionObject> exception =
+            TValue<ExceptionObject>::from_value_checked(
+                thread->pending_exception_object());
+        EXPECT_STREQ(class_name, exception.extract()
+                                     ->get_class()
+                                     .extract()
+                                     ->get_name()
+                                     .extract()
+                                     ->data);
+        EXPECT_STREQ(message, TValue<String>::from_value_checked(
+                                  exception.extract()->message)
+                                  .extract()
+                                  ->data);
     }
 }  // namespace
 
@@ -86,29 +108,18 @@ TEST(Tuple, CheckedIndexingSupportsNegativeIndices)
 TEST(Tuple, CheckedIndexingRaisesIndexError)
 {
     test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-    Tuple *tuple =
-        context.thread()->make_internal_raw<Tuple>(BootstrapObjectTag{}, 1);
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Tuple *tuple = thread->make_internal_raw<Tuple>(BootstrapObjectTag{}, 1);
 
     tuple->initialize_item_unchecked(0, Value::from_smi(1));
 
-    try
-    {
-        (void)tuple->get_item(1);
-        FAIL() << "Expected std::runtime_error";
-    }
-    catch(const std::runtime_error &err)
-    {
-        EXPECT_STREQ("IndexError: tuple index out of range", err.what());
-    }
+    EXPECT_TRUE(tuple->get_item(1).is_exception_marker());
+    expect_pending_exception(thread, L"IndexError",
+                             L"tuple index out of range");
+    thread->clear_pending_exception();
 
-    try
-    {
-        (void)tuple->get_item(-2);
-        FAIL() << "Expected std::runtime_error";
-    }
-    catch(const std::runtime_error &err)
-    {
-        EXPECT_STREQ("IndexError: tuple index out of range", err.what());
-    }
+    EXPECT_TRUE(tuple->get_item(-2).is_exception_marker());
+    expect_pending_exception(thread, L"IndexError",
+                             L"tuple index out of range");
 }

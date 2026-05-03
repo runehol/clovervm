@@ -160,8 +160,8 @@ namespace cl
                                                  const wchar_t *type_name,
                                                  const wchar_t *message)
     {
-        active_thread()->set_pending_builtin_exception_string(type_name,
-                                                              message);
+        (void)active_thread()->set_pending_builtin_exception_string(type_name,
+                                                                    message);
         return resolve_exceptional_frame_exit(fp, pc, code_object);
     }
 
@@ -170,8 +170,8 @@ namespace cl
         TValue<String> name)
     {
         std::wstring message = format_name_error_message(name);
-        active_thread()->set_pending_builtin_exception_string(L"NameError",
-                                                              message.c_str());
+        (void)active_thread()->set_pending_builtin_exception_string(
+            L"NameError", message.c_str());
         return resolve_exceptional_frame_exit(fp, pc, code_object);
     }
 
@@ -241,6 +241,18 @@ namespace cl
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             fp, pc, code_object, L"TypeError", L"object is not subscriptable");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE Value propagate_pending_exception(PARAMS)
+    {
+        assert(active_thread()->has_pending_exception());
+        ExceptionalTarget target =
+            resolve_exceptional_frame_exit(fp, pc, code_object);
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -456,7 +468,7 @@ namespace cl
     NOINLINE Value assertion_error(PARAMS)
     {
         ThreadState *thread = active_thread();
-        thread->set_pending_builtin_exception_none(L"AssertionError");
+        (void)thread->set_pending_builtin_exception_none(L"AssertionError");
         ExceptionalTarget target =
             resolve_exceptional_frame_exit(fp, pc, code_object);
         fp = target.fp;
@@ -469,7 +481,7 @@ namespace cl
     NOINLINE Value assertion_error_with_message(PARAMS)
     {
         ThreadState *thread = active_thread();
-        thread->set_pending_exception_object(make_exception_object(
+        (void)thread->set_pending_exception_object(make_exception_object(
             TValue<ClassObject>::from_oop(
                 thread->class_for_builtin_name(L"AssertionError")),
             TValue<String>::from_value_checked(accumulator)));
@@ -1333,6 +1345,10 @@ namespace cl
         START(2);
         int8_t reg = pc[1];
         accumulator = load_subscript(fp[reg], accumulator);
+        if(unlikely(accumulator.is_exception_marker()))
+        {
+            MUSTTAIL return propagate_pending_exception(ARGS);
+        }
         if(unlikely(accumulator.is_not_present()))
         {
             MUSTTAIL return subscript_error(ARGS);
@@ -1345,8 +1361,14 @@ namespace cl
         START(3);
         int8_t receiver_reg = pc[1];
         int8_t key_reg = pc[2];
-        if(unlikely(
-               !store_subscript(fp[receiver_reg], fp[key_reg], accumulator)))
+        Value result =
+            store_subscript(fp[receiver_reg], fp[key_reg], accumulator);
+        if(unlikely(result.is_exception_marker()))
+        {
+            accumulator = result;
+            MUSTTAIL return propagate_pending_exception(ARGS);
+        }
+        if(unlikely(result.is_not_present()))
         {
             MUSTTAIL return subscript_error(ARGS);
         }
@@ -1358,7 +1380,13 @@ namespace cl
         START(3);
         int8_t receiver_reg = pc[1];
         int8_t key_reg = pc[2];
-        if(unlikely(!del_subscript(fp[receiver_reg], fp[key_reg])))
+        Value result = del_subscript(fp[receiver_reg], fp[key_reg]);
+        if(unlikely(result.is_exception_marker()))
+        {
+            accumulator = result;
+            MUSTTAIL return propagate_pending_exception(ARGS);
+        }
+        if(unlikely(result.is_not_present()))
         {
             MUSTTAIL return subscript_error(ARGS);
         }
@@ -2461,7 +2489,7 @@ namespace cl
             thread->class_for_native_layout(NativeLayoutId::StopIteration);
         TValue<StopIterationObject> exception = make_stop_iteration_object(
             TValue<ClassObject>::from_oop(stop_iteration), value);
-        thread->set_pending_exception_object(
+        (void)thread->set_pending_exception_object(
             TValue<ExceptionObject>::from_value_checked(exception.as_value()));
     }
 
