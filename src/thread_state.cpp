@@ -1,6 +1,7 @@
 #include "thread_state.h"
 #include "codegen.h"
 #include "compilation_unit.h"
+#include "exception_object.h"
 #include "interpreter.h"
 #include "owned_typed_value.h"
 #include "parser.h"
@@ -16,7 +17,7 @@ namespace cl
     thread_local ThreadState *ThreadState::current_thread = nullptr;
 
     PendingException::PendingException()
-        : object(Value::None()), stop_iteration_value(Value::not_present())
+        : stop_iteration_value(Value::not_present())
     {
     }
 
@@ -25,12 +26,6 @@ namespace cl
           refcounted_heap(&machine->get_refcounted_global_heap()),
           stack(1024 * 1024)
     {
-    }
-
-    ThreadState::~ThreadState()
-    {
-        ActivationScope activation_scope(this);
-        clear_pending_exception();
     }
 
     Value ThreadState::run(CodeObject *obj)
@@ -55,22 +50,22 @@ namespace cl
     void ThreadState::clear_pending_exception()
     {
         pending_exception.kind = PendingExceptionKind::None;
-        pending_exception.object = Value::None();
+        pending_exception.object.clear();
         pending_exception.stop_iteration_value = Value::not_present();
     }
 
-    void ThreadState::set_pending_exception_object(Value exception_object)
+    void
+    ThreadState::set_pending_exception_object(TValue<ExceptionObject> exception)
     {
-        pending_exception.object = exception_object;
+        pending_exception.object = exception;
         pending_exception.stop_iteration_value = Value::not_present();
         pending_exception.kind = PendingExceptionKind::Object;
     }
 
-    void ThreadState::set_pending_exception_string(TValue<ClassObject>,
-                                                   const char *)
+    void ThreadState::set_pending_exception_string(TValue<ClassObject> type,
+                                                   const char *message)
     {
-        throw std::runtime_error(
-            "set_pending_exception_string requires exception object support");
+        set_pending_exception_object(make_exception_object(type, message));
     }
 
     void ThreadState::set_pending_exception_none(TValue<ClassObject> type)
@@ -80,14 +75,14 @@ namespace cl
 
     void ThreadState::set_pending_stop_iteration_no_value()
     {
-        pending_exception.object = Value::None();
+        pending_exception.object.clear();
         pending_exception.stop_iteration_value = Value::not_present();
         pending_exception.kind = PendingExceptionKind::StopIteration;
     }
 
     void ThreadState::set_pending_stop_iteration_value(Value value)
     {
-        pending_exception.object = Value::None();
+        pending_exception.object.clear();
         pending_exception.stop_iteration_value = value;
         pending_exception.kind = PendingExceptionKind::StopIteration;
     }
@@ -95,7 +90,7 @@ namespace cl
     Value ThreadState::pending_exception_object() const
     {
         assert(pending_exception.kind == PendingExceptionKind::Object);
-        return pending_exception.object;
+        return pending_exception.object.as_value();
     }
 
     Value ThreadState::pending_stop_iteration_value() const

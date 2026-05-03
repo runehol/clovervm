@@ -130,20 +130,20 @@ using C++ unwinding through the interpreter dispatch loop.
 
 ## Stage 4: Minimal Exception Objects
 
-- [ ] Add enough Python-visible exception class/object support to eagerly create
+- [x] Add enough Python-visible exception class/object support to eagerly create
       simple exception instances for VM-originated errors.
-- [ ] Support at least the initial builtin exception classes needed by the first
+- [x] Support at least the initial builtin exception classes needed by the first
       converted slow paths: `Exception`, `NameError`, `TypeError`, `ValueError`,
       `AssertionError`, and `StopIteration`.
-- [ ] Make `set_pending_exception_string` construct and store an exception object
+- [x] Make `set_pending_exception_string` construct and store an exception object
       instead of throwing its unsupported placeholder.
-- [ ] Keep construction deliberately narrow: message-only VM exceptions are
+- [x] Keep construction deliberately narrow: message-only VM exceptions are
       enough for this stage; traceback objects, handler binding, and rich
       exception attributes can land later.
-- [ ] Keep early VM exception construction internal and non-reentrant: do not call
+- [x] Keep early VM exception construction internal and non-reentrant: do not call
       Python code or user-overridable constructors while building these simple
       builtin exception objects.
-- [ ] Preserve the compact `StopIteration` representation as separate pending
+- [x] Preserve the compact `StopIteration` representation as separate pending
       state. Do not force all `StopIteration` completion through object
       allocation.
 

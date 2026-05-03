@@ -17,6 +17,7 @@ namespace cl
         RangeIterator,
         CodeObject,
         ClassObject,
+        Exception,
         Instance,
 
         Count,

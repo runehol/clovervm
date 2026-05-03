@@ -15,6 +15,11 @@ namespace cl
         size_t native_layout_id_count;
     };
 
+    inline BuiltinClassDefinition builtin_class_definition(ClassObject *cls)
+    {
+        return BuiltinClassDefinition{cls, nullptr, 0};
+    }
+
     template <size_t N>
     BuiltinClassDefinition
     builtin_class_definition(ClassObject *cls,

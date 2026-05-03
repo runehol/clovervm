@@ -7,6 +7,7 @@
 
 #include "heap.h"
 #include "owned.h"
+#include "owned_typed_value.h"
 #include "typed_value.h"
 #include "value.h"
 #include <type_traits>
@@ -17,6 +18,7 @@ namespace cl
     enum class StartRule;
 
     class ClassObject;
+    class ExceptionObject;
     class VirtualMachine;
     struct CodeObject;
 
@@ -32,8 +34,8 @@ namespace cl
     struct PendingException
     {
         PendingExceptionKind kind = PendingExceptionKind::None;
-        OwnedValue object;
-        OwnedValue stop_iteration_value;
+        MemberTValue<ExceptionObject> object;
+        MemberValue stop_iteration_value;
 
         PendingException();
     };
@@ -60,7 +62,6 @@ namespace cl
         };
 
         ThreadState(VirtualMachine *_machine);
-        ~ThreadState();
 
         static void add_to_active_zero_count_table(HeapObject *obj);
 
@@ -69,7 +70,7 @@ namespace cl
         bool has_pending_exception() const;
         PendingExceptionKind pending_exception_kind() const;
         void clear_pending_exception();
-        void set_pending_exception_object(Value exception_object);
+        void set_pending_exception_object(TValue<ExceptionObject> exception);
         void set_pending_exception_string(TValue<ClassObject> type,
                                           const char *message);
         void set_pending_exception_none(TValue<ClassObject> type);

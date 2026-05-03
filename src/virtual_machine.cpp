@@ -1,6 +1,7 @@
 #include "virtual_machine.h"
 #include "code_object.h"
 #include "dict.h"
+#include "exception_object.h"
 #include "function.h"
 #include "instance.h"
 #include "list.h"
@@ -204,6 +205,24 @@ namespace cl
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));
+        BuiltinClassDefinition base_exception_definition =
+            make_base_exception_class(this);
+        ClassObject *base_exception = base_exception_definition.cls;
+        register_builtin_class(base_exception_definition);
+        BuiltinClassDefinition exception_definition =
+            make_exception_class(this, base_exception);
+        ClassObject *exception = exception_definition.cls;
+        register_builtin_class(exception_definition);
+        register_builtin_class(
+            make_exception_subclass(this, L"NameError", exception));
+        register_builtin_class(
+            make_exception_subclass(this, L"TypeError", exception));
+        register_builtin_class(
+            make_exception_subclass(this, L"ValueError", exception));
+        register_builtin_class(
+            make_exception_subclass(this, L"AssertionError", exception));
+        register_builtin_class(
+            make_exception_subclass(this, L"StopIteration", exception));
         install_str_class_methods(this);
 
         for(ClassObject *cls: builtin_classes)

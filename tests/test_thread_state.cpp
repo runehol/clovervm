@@ -1,5 +1,7 @@
 #include "test_helpers.h"
 
+#include "exception_object.h"
+
 #include <gtest/gtest.h>
 
 namespace cl
@@ -14,17 +16,22 @@ namespace cl
         EXPECT_EQ(PendingExceptionKind::None, thread->pending_exception_kind());
     }
 
-    TEST(ThreadState, PendingExceptionObjectStoresValue)
+    TEST(ThreadState, PendingExceptionObjectStoresTypedObject)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
+        ClassObject *base_exception =
+            context.vm().class_for_native_layout(NativeLayoutId::Exception);
+        ThreadState::ActivationScope active_thread(thread);
+        TValue<ExceptionObject> exception = make_exception_object(
+            TValue<ClassObject>::from_oop(base_exception), "boom");
 
-        thread->set_pending_exception_object(Value::True());
+        thread->set_pending_exception_object(exception);
 
         EXPECT_TRUE(thread->has_pending_exception());
         EXPECT_EQ(PendingExceptionKind::Object,
                   thread->pending_exception_kind());
-        EXPECT_EQ(Value::True(), thread->pending_exception_object());
+        EXPECT_EQ(exception.as_value(), thread->pending_exception_object());
     }
 
     TEST(ThreadState, PendingStopIterationNoValueUsesNotPresent)
@@ -64,6 +71,29 @@ namespace cl
 
         EXPECT_FALSE(thread->has_pending_exception());
         EXPECT_EQ(PendingExceptionKind::None, thread->pending_exception_kind());
+    }
+
+    TEST(ThreadState, PendingExceptionStringCreatesExceptionObject)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ClassObject *base_exception =
+            context.vm().class_for_native_layout(NativeLayoutId::Exception);
+        ThreadState::ActivationScope active_thread(thread);
+
+        thread->set_pending_exception_string(
+            TValue<ClassObject>::from_oop(base_exception), "boom");
+
+        EXPECT_TRUE(thread->has_pending_exception());
+        EXPECT_EQ(PendingExceptionKind::Object,
+                  thread->pending_exception_kind());
+        TValue<ExceptionObject> exception =
+            TValue<ExceptionObject>::from_value_checked(
+                thread->pending_exception_object());
+        EXPECT_EQ(base_exception, exception.extract()->get_class().extract());
+        TValue<String> message =
+            TValue<String>::from_value_checked(exception.extract()->message);
+        EXPECT_STREQ(L"boom", message.extract()->data);
     }
 
 }  // namespace cl

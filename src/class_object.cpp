@@ -404,6 +404,15 @@ namespace cl
         return instance_root_shape.extract();
     }
 
+    void ClassObject::install_builtin_instance_root_shape(
+        const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
+        int32_t next_slot_index, ShapeFlags shape_flags)
+    {
+        instance_root_shape = Shape::make_root_with_descriptors(
+            Value::from_oop(this), descriptors, descriptor_count,
+            next_slot_index, shape_flags);
+    }
+
     void ClassObject::install_bootstrap_inheritance(Value bases_tuple,
                                                     Value mro_tuple)
     {

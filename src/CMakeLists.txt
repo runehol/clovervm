@@ -23,6 +23,8 @@ add_library(libclovervm STATIC
     dict.cpp
     dict.h
     exception_handling.h
+    exception_object.cpp
+    exception_object.h
     function.cpp
     heap.cpp
     heap.h

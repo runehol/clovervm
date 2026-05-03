@@ -151,9 +151,9 @@ namespace cl
         void initialize_builtin_types();
         void initialize_builtin_scope();
 
-        std::vector<std::unique_ptr<ThreadState>> threads;
         GlobalHeap refcounted_global_heap;
         GlobalHeap interned_global_heap;
+        std::vector<std::unique_ptr<ThreadState>> threads;
         InternStore<std::wstring, String> interned_strings;
         ClassObject *type_class_ = nullptr;
         ClassObject *str_class_ = nullptr;
