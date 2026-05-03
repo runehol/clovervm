@@ -25,7 +25,8 @@ normal return:
 Normal opcode completion does not test for `Value::exception_marker()` and does
 not inspect frame flags.
 
-Real Python exceptions live as pending exception state on `ThreadState`:
+Real Python exceptions live as pending exception state on `ThreadState`. The
+current minimal storage shape is:
 
 ```cpp
 enum class PendingExceptionKind
@@ -40,18 +41,20 @@ struct PendingException
     PendingExceptionKind kind;
 
     // Used when kind == Object.
-    OwnedValue object;
+    MemberTValue<ExceptionObject> object;
 
     // Used when kind == StopIteration. Value::not_present() means no value.
-    OwnedValue stop_iteration_value;
-
-    LazyTraceback traceback;
+    MemberValue stop_iteration_value;
 };
 ```
 
-Most exceptions are represented by an already-realized exception object plus a
-lazy traceback. General user exception construction remains eager: constructing
-an arbitrary exception may run Python code, mutate state, or raise another
+Lazy traceback state is added later; it is deliberately absent from the current
+pending-exception storage until the traceback stage.
+
+Most exceptions are represented by an already-realized exception object. Once
+lazy tracebacks land, that pending object will be paired with lazy traceback
+state. General user exception construction remains eager: constructing an
+arbitrary exception may run Python code, mutate state, or raise another
 exception.
 
 Early VM-originated exceptions use an internal, non-reentrant construction path
@@ -487,20 +490,24 @@ The compiler can avoid local table lookup at raise sites that are known not to
 be inside any local exception-protected range:
 
 ```text
-RAISE_UNWIND:
+RaiseUnwind:
   used when the instruction may be covered by this frame's exception metadata
   creates/sets the pending exception
   enters table unwinding at the current pc
 
-RAISE_FAST:
+RaiseFast:
   used only when the instruction is outside all local protected ranges
   creates/sets the pending exception
   exits this frame on the slow exceptional path
 ```
 
-`RAISE_FAST` is a compiler invariant, not a dynamic guess. It is only valid for
+`RaiseFast` is a compiler invariant, not a dynamic guess. It is only valid for
 bytecode offsets that no `try`, `with`, `finally`, or other exceptional cleanup
 range can cover.
+
+The initial implementation emits `RaiseUnwind` for all Python-authored
+`raise <expr>` sites. `RaiseFast` remains a future refinement once codegen has
+protected-range information precise enough to prove the invariant.
 
 ## Lazy Tracebacks
 
@@ -632,16 +639,16 @@ Recommended implementation order:
 4. Convert native thunk bodies to normalize explicit native VM-exception results
    through `ReturnOrRaiseException`.
 5. Add the compact pending `StopIteration` representation and helpers.
-6. Add a stop-returning path for `RangeIterator`.
-7. Split `FOR_ITER` into a stop-returning call/continuation shape that consumes
+6. Add parser/codegen/runtime support for `raise`, initially emitting
+   `RaiseUnwind`.
+7. Promote compact pending `StopIteration` to a real `StopIterationObject` in
+   managed adapters that expose completion as an ordinary exception.
+8. Add a stop-returning path for `RangeIterator`.
+9. Split `FOR_ITER` into a stop-returning call/continuation shape that consumes
    marker + pending `StopIteration`.
-8. Add exception tables and synthetic `for` loop handlers so real
+10. Add exception tables and synthetic `for` loop handlers so real
    `StopIteration` from generic `__next__` exits the loop through the ordinary
    exception path.
-9. Add parser/codegen/runtime support for `raise`, using `RAISE_FAST` only
-   outside protected regions.
-10. Add materialization helpers for compact `StopIteration` and lazy traceback
-    segments.
 11. Add Python generators and mark eligible generator code objects as
     stop-returning participants when codegen can distinguish their own protocol
     completion from ordinary exceptions and callee failures.

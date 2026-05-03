@@ -14,21 +14,26 @@ is the source of truth for semantics.
 
 ## Current State
 
-- Runtime failures mostly throw `std::runtime_error` from cold interpreter and
-  runtime helpers.
+- Runtime failures are partly converted to pending Python exception state plus
+  managed exceptional unwind. Complex construction-time failures and some deep
+  runtime paths still use the old host-side error path.
 - `Value::exception_marker()` and pending Python exception state on
-  `ThreadState` exist, but no opcode or adapter uses them as the managed
-  exception transport yet.
+  `ThreadState` are active VM exception transport. Managed native thunks
+  normalize marker results through `ReturnOrRaiseException`.
 - Frames currently keep caller metadata at and above `fp`: `fp[0]` is the
   previous frame pointer, `fp[1]` is reserved for native pc / future
   compiled-frame metadata, `fp[2]` is the return `CodeObject`, and `fp[3]` is
   the return pc.
-- Native function thunks return through ordinary bytecode `Return`; native
-  failures may still throw C++ exceptions.
+- Native function thunks return through `ReturnOrRaiseException`; explicit
+  native VM failures set pending exception state and return
+  `Value::exception_marker()`.
 - `for` loops use internal iterator exhaustion for builtin `RangeIterator`
   paths, not user-visible `StopIteration`.
-- `raise`, `try`, `except`, reraise, Python-visible exception objects, and
-  tracebacks are not implemented.
+- Python-visible builtin exception classes and minimal exception objects exist.
+  Python-authored `raise <expr>` exists for the no-local-handler case and lowers
+  to the cold `RaiseUnwind` opcode.
+- `try`, `except`, reraise, full traceback objects, and the stop-returning
+  iterator protocol are not implemented.
 
 ## Guiding Constraints
 
@@ -189,7 +194,7 @@ pending exception to managed adapter code, while ordinary return stays fast.
 - [x] Convert a small set of cold interpreter helpers from direct
       `std::runtime_error` throws to pending-exception setup plus exceptional
       frame exit.
-- [ ] Good first candidates:
+- [x] Good first candidates:
   - [x] `NameError`
   - [x] simple `TypeError`
   - [x] `ValueError: negative shift count`
@@ -255,16 +260,18 @@ the no-local-handler case.
 
 ## Stage 8: Compact `StopIteration` Materialization
 
-- [ ] Add helpers to materialize compact pending `StopIteration` into a real
+- [x] Add helpers to materialize compact pending `StopIteration` into a real
       `StopIteration` exception object.
-- [ ] Preserve `StopIteration()` as `Value::not_present()`, distinct from
+- [x] Preserve `StopIteration()` as `Value::not_present()`, distinct from
       `StopIteration(None)`.
-- [ ] Make adapters that expose stop-returning completion to ordinary callers
+- [x] Make adapters that expose stop-returning completion to ordinary callers
       promote compact `StopIteration` before entering managed exceptional unwind.
-- [ ] Keep ordinary `for` loops payload-discarding.
-- [ ] Add tests for unhandled/user-visible `next(it)` exhaustion once ordinary
-      next paths use this machinery.
-- [ ] Keep traceback handling minimal for now: this stage may use the current
+- [x] Keep ordinary `for` loops payload-discarding.
+- [x] Add direct adapter tests showing compact pending `StopIteration` becomes a
+      real `StopIterationObject` when it escapes through ordinary managed
+      unwind. Add user-visible `next(it)` tests later, once ordinary next paths
+      use this machinery.
+- [x] Keep traceback handling minimal for now: this stage may use the current
       top-level error conversion and should not promise full traceback objects.
 
 Deliverable: stop-returning protocol completion can become an ordinary Python
@@ -353,8 +360,9 @@ making ordinary opcodes marker-aware.
       exception handling.
 - [ ] Keep the stop-returning `FOR_ITER` continuation and the real-exception handler
       targeting the same loop exit/else block.
-- [ ] Add `RAISE_UNWIND` for raise sites that may be covered by a local handler.
-- [ ] Keep `RAISE_FAST` valid only outside all protected regions.
+- [x] Use existing `RaiseUnwind` for raise sites that may be covered by a local
+      handler.
+- [ ] Add `RaiseFast` later, valid only outside all protected regions.
 - [ ] Preserve the distinction between protocol `StopIteration` completion and
       ordinary exceptions: stop-returning participants may still use exception
       tables, and exceptions leaking from callees must stay on the managed
@@ -459,7 +467,7 @@ iterator protocol.
 The second milestone is stages 7 through 10:
 
 1. add no-local-handler `raise`
-2. add compact `StopIteration` materialization
+2. add compact `StopIteration` materialization for managed adapters
 3. add the stop-returning `RangeIterator` protocol path
 4. add exception tables and generic `for` fallback
 
