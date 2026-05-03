@@ -258,6 +258,7 @@ namespace cl
         int32_t body_idx;
         ScopeAnalysis analysis;
         std::vector<LoopTargetSet> loop_targets;
+        std::vector<RegisterIndex> caught_exception_regs;
 
         static Presence merge_presence(Presence left, Presence right)
         {
@@ -1265,8 +1266,11 @@ namespace cl
                     break;
 
                 case AstNodeKind::STATEMENT_RAISE:
-                    analyze_flow_node(target_code_obj, analysis, children[0],
-                                      state);
+                    if(!children.empty())
+                    {
+                        analyze_flow_node(target_code_obj, analysis,
+                                          children[0], state);
+                    }
                     break;
 
                 case AstNodeKind::STATEMENT_ASSERT:
@@ -1901,25 +1905,14 @@ namespace cl
                                                  no_match_target);
                     if(needs_caught_exception)
                     {
-                        JumpTarget cleanup_target(code_obj);
                         TemporaryReg saved_exception(*code_obj);
                         code_obj->emit_drain_active_exception_into(
                             handler_source_offset, saved_exception);
-                        {
-                            ExceptionTableRangeBuilder range(code_obj,
-                                                             cleanup_target);
-                            codegen_node(handler_body_idx);
-                            range.close();
-                        }
-                        code_obj->emit_clear_local(handler_source_offset,
-                                                   saved_exception);
+                        caught_exception_regs.push_back(
+                            RegisterIndex(saved_exception));
+                        codegen_node(handler_body_idx);
+                        caught_exception_regs.pop_back();
                         code_obj->emit_jump(handler_source_offset, done_target);
-
-                        cleanup_target.resolve();
-                        code_obj->emit_clear_local(handler_source_offset,
-                                                   saved_exception);
-                        code_obj->emit_reraise_active_exception(
-                            handler_source_offset);
                     }
                     else
                     {
@@ -1937,25 +1930,14 @@ namespace cl
                 has_bare_handler = true;
                 if(needs_caught_exception)
                 {
-                    JumpTarget cleanup_target(code_obj);
                     TemporaryReg saved_exception(*code_obj);
                     code_obj->emit_drain_active_exception_into(
                         handler_source_offset, saved_exception);
-                    {
-                        ExceptionTableRangeBuilder range(code_obj,
-                                                         cleanup_target);
-                        codegen_node(handler_body_idx);
-                        range.close();
-                    }
-                    code_obj->emit_clear_local(handler_source_offset,
-                                               saved_exception);
+                    caught_exception_regs.push_back(
+                        RegisterIndex(saved_exception));
+                    codegen_node(handler_body_idx);
+                    caught_exception_regs.pop_back();
                     code_obj->emit_jump(handler_source_offset, done_target);
-
-                    cleanup_target.resolve();
-                    code_obj->emit_clear_local(handler_source_offset,
-                                               saved_exception);
-                    code_obj->emit_reraise_active_exception(
-                        handler_source_offset);
                 }
                 else
                 {
@@ -2236,7 +2218,21 @@ namespace cl
                     break;
 
                 case AstNodeKind::STATEMENT_RAISE:
-                    codegen_node(children[0]);
+                    if(children.empty())
+                    {
+                        if(caught_exception_regs.empty())
+                        {
+                            throw std::runtime_error(
+                                "SyntaxError: bare raise outside exception "
+                                "handler");
+                        }
+                        code_obj->emit_ldar(source_offset,
+                                            caught_exception_regs.back());
+                    }
+                    else
+                    {
+                        codegen_node(children[0]);
+                    }
                     code_obj->emit_raise_unwind(source_offset);
                     break;
 

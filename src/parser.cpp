@@ -1136,9 +1136,12 @@ namespace cl
         {
             int32_t source_pos = source_pos_for_token();
             consume(Token::RAISE);
-            if(peek() == Token::NEWLINE || peek() == Token::SEMI)
+            if(peek() == Token::NEWLINE || peek() == Token::SEMI ||
+               peek() == Token::DEDENT || peek() == Token::ENDMARKER)
             {
-                return not_implemented("bare raise statement");
+                AstChildren ch;
+                return ast.emplace_back(AstNodeKind::STATEMENT_RAISE,
+                                        source_pos, ch);
             }
 
             AstChildren ch;

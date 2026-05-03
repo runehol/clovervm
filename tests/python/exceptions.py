@@ -68,3 +68,36 @@ try:
 except TypeError:
     result = 7
 assert result == 7
+
+result = 0
+try:
+    try:
+        raise NameError
+    except NameError:
+        raise
+except NameError:
+    result = 7
+assert result == 7
+
+result = 0
+try:
+    raise ValueError
+except:
+    try:
+        raise
+    except ValueError:
+        result = 7
+assert result == 7
+
+result = 0
+try:
+    try:
+        raise ValueError
+    except:
+        try:
+            raise TypeError
+        except TypeError:
+            raise
+except TypeError:
+    result = 7
+assert result == 7

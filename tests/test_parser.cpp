@@ -106,6 +106,14 @@ TEST(Parser, raise_stmt)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, bare_raise_stmt)
+{
+    std::string expected = "raise\n";
+    std::string actual = parse(L"raise\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, try_bare_except_stmt)
 {
     std::string expected = ("try:\n"

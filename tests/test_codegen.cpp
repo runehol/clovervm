@@ -19,6 +19,21 @@ std::string bytecode_str_from_file(const wchar_t *expr)
     return actual;
 }
 
+static void expect_codegen_error(const wchar_t *source,
+                                 const char *expected_message)
+{
+    try
+    {
+        (void)bytecode_str_from_file(source);
+        FAIL() << "Expected std::runtime_error with message: "
+               << expected_message;
+    }
+    catch(const std::runtime_error &err)
+    {
+        EXPECT_STREQ(expected_message, err.what());
+    }
+}
+
 // Keep this file intentionally small and structural. Interpreter tests own
 // most semantic coverage; codegen tests should pin down bytecode shapes that
 // matter for lowering strategy or calling conventions.
@@ -348,6 +363,37 @@ TEST(Codegen, try_typed_except_checks_active_exception)
                                                 L"result\n");
 
     EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, bare_raise_in_handler_uses_saved_exception_register)
+{
+    std::string expected = "Code object:\n"
+                           "    0 LdaGlobal [0]\n"
+                           "    5 RaiseUnwind\n"
+                           "    6 Jump 26\n"
+                           "    9 LdaGlobal [1]\n"
+                           "   14 ActiveExceptionIsInstance\n"
+                           "   15 JumpIfFalse 25\n"
+                           "   18 DrainActiveExceptionInto r0\n"
+                           "   20 Ldar0\n"
+                           "   21 RaiseUnwind\n"
+                           "   22 Jump 26\n"
+                           "   25 ReraiseActiveException\n"
+                           "   26 Return\n"
+                           "Exception table:\n"
+                           "    0..6 -> 9\n";
+    std::string actual = bytecode_str_from_file(L"try:\n"
+                                                L"    raise ValueError\n"
+                                                L"except Exception:\n"
+                                                L"    raise\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, bare_raise_outside_handler_is_syntax_error)
+{
+    expect_codegen_error(L"raise\n",
+                         "SyntaxError: bare raise outside exception handler");
 }
 
 TEST(Codegen, startup_wrapper_uses_exception_table_for_unhandled_exception)

@@ -320,10 +320,9 @@ Design notes:
   the protected start, explicit `close()` marks the end and appends the entry.
   Nested source generation therefore closes inner ranges before enclosing
   ranges, producing lookup priority order naturally.
-- Source-level handler bodies only get cleanup ranges when they save the caught
-  exception in a hidden register. If such a handler body raises, cleanup clears
-  the hidden caught-exception register and then reraises the new pending
-  exception.
+- Hidden caught-exception registers are compiler temporaries. Codegen does not
+  eagerly clear them on handler exit; later register reuse or frame exit ends
+  their practical liveness, and refcounting already defers reclamation.
 
 Deliverable: managed frames can catch their own exceptions through structural
 exception-table metadata; ordinary frame popping remains the fallback when no
@@ -342,6 +341,9 @@ local table entry applies.
       `ActiveExceptionIsInstance` and reraising on mismatch.
 - [x] Support multiple regular `except` handlers with an optional bare fallback
       as the last handler.
+- [x] Support bare `raise` inside handlers by reraising the nearest hidden
+      caught-exception register. Bare `raise` outside a handler is currently a
+      `SyntaxError`.
 - [ ] Support `except SomeError as e` for object-backed pending exceptions.
 - [ ] Support `except StopIteration as e` and `e.value` by materializing compact
       `StopIteration` when the exception object becomes observable.
@@ -360,8 +362,8 @@ next handler or reraises on mismatch. After a match, handlers that do not need
 the caught exception use `ClearActiveException`; handlers that do need it use
 `DrainActiveExceptionInto` to materialize the active exception into a hidden
 handler register and clear pending exception state. The match opcode does not
-materialize compact `StopIteration`. `as e`, bare `raise`, `else`, and
-`finally` remain follow-up work.
+materialize compact `StopIteration`. `as e`, `else`, and `finally` remain
+follow-up work.
 
 ## Stage 11: Generic For-Loop Exception Fallback
 
@@ -467,7 +469,7 @@ without eagerly allocating traceback objects on every hot failure path.
 
 ## Stage 14: Reraise And Delegating Iteration
 
-- [ ] Add bare `raise` support.
+- [x] Add initial bare `raise` support for active source handlers.
 - [ ] Preserve the current logical exception and traceback chain on reraise.
 - [ ] Start a fresh lazy traceback segment at the reraise site.
 - [ ] Add `yield from` or equivalent delegating-iteration machinery that consumes
