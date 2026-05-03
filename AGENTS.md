@@ -37,6 +37,11 @@ This repository contains clovervm, a Python VM.
 - For fixed-width integer and size types, include `<cstdint>` or `<cstdlib>`/`<cstddef>` as needed and use unqualified names like `int64_t` and `size_t`.
 - Prefer small non-virtual accessor definitions in headers so they are easy to inline.
 
+# Pending exception propagation
+- Functions that can set or propagate pending exception state must return `[[nodiscard]] Value`: success is the natural result or `Value::None()`, failure is `Value::exception_marker()`.
+- This contract is transitive. `CL_PROPAGATE_EXCEPTION(...)` propagates fallibility upward; only explicit local handling may clear pending exception state.
+- Keep unchecked primitives free of pending-exception semantics; callers must prove validity before using them.
+
 # Ownership semantics
 - `Value` and `TValue<T>` are borrowed handles. Use them for C++ parameters and for locals whose lifetime is managed elsewhere.
 - `TValue<T>` should be preferred over `Value` when the value is known to satisfy a specific semantic type, such as `String`, `SMI`, `CLInt`, or a concrete `Object` subclass.

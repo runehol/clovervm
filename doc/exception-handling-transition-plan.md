@@ -205,7 +205,7 @@ Helper-layer transition convention:
       `Value::exception_marker()`.
 - [ ] Mark fallible `Value` helpers `[[nodiscard]]` where practical so ignored
       results become compiler-visible during the migration.
-- [ ] Add a small propagation macro, tentatively
+- [x] Add a small propagation macro, tentatively
       `CL_PROPAGATE_EXCEPTION(expr)`, that evaluates a `Value` expression once
       and returns it from the current function only when it is
       `Value::exception_marker()`.

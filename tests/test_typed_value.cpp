@@ -1,4 +1,5 @@
 #include "dict.h"
+#include "exception_propagation.h"
 #include "owned_typed_value.h"
 #include "scope.h"
 #include "str.h"
@@ -9,6 +10,40 @@
 #include <stdexcept>
 
 using namespace cl;
+
+static Value propagate_success_for_test(Value value)
+{
+    CL_PROPAGATE_EXCEPTION(value);
+    return Value::from_smi(42);
+}
+
+static Value propagate_expression_once_for_test(int &n_evaluations, Value value)
+{
+    CL_PROPAGATE_EXCEPTION((++n_evaluations, value));
+    return Value::from_smi(42);
+}
+
+TEST(ExceptionPropagation, ContinuesForOrdinaryValues)
+{
+    EXPECT_EQ(Value::from_smi(42),
+              propagate_success_for_test(Value::from_smi(1)));
+}
+
+TEST(ExceptionPropagation, ReturnsExceptionMarker)
+{
+    EXPECT_TRUE(propagate_success_for_test(Value::exception_marker())
+                    .is_exception_marker());
+}
+
+TEST(ExceptionPropagation, EvaluatesExpressionOnce)
+{
+    int n_evaluations = 0;
+
+    EXPECT_TRUE(propagate_expression_once_for_test(n_evaluations,
+                                                   Value::exception_marker())
+                    .is_exception_marker());
+    EXPECT_EQ(1, n_evaluations);
+}
 
 TEST(TValue, StringAllowsCheckedConstructionFromNonInternedString)
 {

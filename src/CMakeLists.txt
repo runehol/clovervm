@@ -25,6 +25,7 @@ add_library(libclovervm STATIC
     exception_handling.h
     exception_object.cpp
     exception_object.h
+    exception_propagation.h
     function.cpp
     heap.cpp
     heap.h
