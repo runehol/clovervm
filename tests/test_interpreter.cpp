@@ -167,6 +167,31 @@ static CodeObject *make_raise_unwind_code(test::VmTestContext &test_context,
     return builder.finalize();
 }
 
+static CodeObject *
+make_raise_unwind_same_frame_handler_code(test::VmTestContext &test_context,
+                                          Value raised)
+{
+    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
+        L"<raise-handler-test>");
+    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
+                              name);
+    uint32_t constant_idx = builder.allocate_constant(raised);
+    JumpTarget protected_start(&builder);
+    JumpTarget protected_end(&builder);
+    JumpTarget handler(&builder);
+
+    builder.emit_lda_constant(0, uint8_t(constant_idx));
+    protected_start.resolve();
+    builder.emit_raise_unwind(0);
+    protected_end.resolve();
+    builder.add_exception_table_entry(protected_start, protected_end, handler);
+
+    handler.resolve();
+    builder.emit_lda_smi(0, 42);
+    builder.emit_halt(0);
+    return builder.finalize();
+}
+
 TEST(Interpreter, assert_statement_raises_assertion_error)
 {
     expect_python_error(L"assert False\n", L"AssertionError");
@@ -1619,6 +1644,42 @@ TEST(Interpreter, raise_unwind_rejects_non_exception)
         EXPECT_STREQ(L"TypeError: exceptions must derive from BaseException",
                      err.wide_what().c_str());
     }
+}
+
+TEST(Interpreter, raise_unwind_enters_same_frame_exception_handler)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value exception_class = Value::from_oop(
+        test_context.thread()->class_for_builtin_name(L"Exception"));
+    CodeObject *code_obj = make_raise_unwind_same_frame_handler_code(
+        test_context, exception_class);
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(42), actual);
+    EXPECT_TRUE(test_context.thread()->has_pending_exception());
+    test_context.thread()->clear_pending_exception();
+}
+
+TEST(Interpreter, code_object_prints_exception_table)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value exception_class = Value::from_oop(
+        test_context.thread()->class_for_builtin_name(L"Exception"));
+    CodeObject *code_obj = make_raise_unwind_same_frame_handler_code(
+        test_context, exception_class);
+
+    std::string actual = fmt::to_string(*code_obj);
+    std::string expected = "Code object:\n"
+                           "    0 LdaConstant c[0]\n"
+                           "    2 RaiseUnwind\n"
+                           "    3 LdaSmi 42\n"
+                           "    5 Halt\n"
+                           "Exception table:\n"
+                           "    2..3 -> 3\n"
+                           "Constant 0: \n";
+    EXPECT_EQ(expected, actual);
 }
 
 TEST(Interpreter, builtin_scope_lookup)

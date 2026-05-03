@@ -94,6 +94,13 @@ namespace cl
         uint32_t slot_offset;
     };
 
+    struct ExceptionTableEntry
+    {
+        uint32_t start_pc;
+        uint32_t end_pc;
+        uint32_t handler_pc;
+    };
+
     static constexpr int32_t FrameHeaderPreviousFpOffset = 0;
     static constexpr int32_t FrameHeaderCompiledReturnPcOffset = 1;
     static constexpr int32_t FrameHeaderReturnCodeObjectOffset = 2;
@@ -156,6 +163,7 @@ namespace cl
         std::vector<AttributeMutationInlineCache> attribute_mutation_caches;
         std::vector<FunctionCallInlineCache> function_call_caches;
         std::vector<NativeFunctionTarget> native_function_targets;
+        std::vector<ExceptionTableEntry> exception_table;
 
         uint32_t get_n_registers() const
         {
@@ -211,6 +219,34 @@ namespace cl
         {
             assert(code.size() == source_offsets.size());
             return code.size();
+        }
+
+        ALWAYSINLINE uint32_t offset_for_interpreted_pc(const uint8_t *pc) const
+        {
+            const uint8_t *base = code.data();
+            assert(pc >= base);
+            assert(pc <= base + code.size());
+            return uint32_t(pc - base);
+        }
+
+        ALWAYSINLINE const uint8_t *
+        interpreted_pc_for_offset(uint32_t offset) const
+        {
+            assert(offset < code.size());
+            return code.data() + offset;
+        }
+
+        ALWAYSINLINE const ExceptionTableEntry *
+        find_exception_handler(uint32_t pc_offset) const
+        {
+            for(const ExceptionTableEntry &entry: exception_table)
+            {
+                if(pc_offset >= entry.start_pc && pc_offset < entry.end_pc)
+                {
+                    return &entry;
+                }
+            }
+            return nullptr;
         }
 
         CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(CodeObject, Object, 3);

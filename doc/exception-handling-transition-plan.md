@@ -279,13 +279,13 @@ Deliverable: stop-returning protocol completion can become an ordinary Python
 
 ## Stage 9: Exception Tables And Local Unwind Metadata
 
-- [ ] Add exception table metadata to `CodeObject` as bytecode-local interpreted
+- [x] Add exception table metadata to `CodeObject` as bytecode-local interpreted
       pc triples: protected start pc, protected end pc, and handler pc.
 - [ ] Add compiler tracking for protected bytecode ranges.
 - [ ] Emit exception table entries in priority order. Entries may overlap, and
       lookup returns the first covering entry, so innermost handlers must come
       before enclosing handlers.
-- [ ] Teach exceptional frame exit to look for a local handler before popping the
+- [x] Teach exceptional frame exit to look for a local handler before popping the
       frame.
 - [ ] Give the synthetic startup wrapper a real catch-all table entry, or an
       equivalent final handler.

@@ -10,6 +10,20 @@ namespace cl
 {
     class CodeObjectBuilder;
 
+    enum class JumpRelocationKind : uint8_t
+    {
+        BytecodeRelativeI16,
+        ExceptionTableStartAbsoluteU32,
+        ExceptionTableEndAbsoluteU32,
+        ExceptionTableHandlerAbsoluteU32,
+    };
+
+    struct JumpRelocation
+    {
+        JumpRelocationKind kind;
+        uint32_t index;
+    };
+
     class JumpTarget
     {
     public:
@@ -25,13 +39,21 @@ namespace cl
         void resolve();
 
         void add_relocation(uint32_t pos);
+        void add_bytecode_relative_i16_relocation(uint32_t operand_offset);
+        void
+        add_exception_table_start_absolute_u32_relocation(uint32_t entry_idx);
+        void
+        add_exception_table_end_absolute_u32_relocation(uint32_t entry_idx);
+        void
+        add_exception_table_handler_absolute_u32_relocation(uint32_t entry_idx);
 
     private:
-        void resolve_relocation(uint32_t pos);
+        void add_relocation(JumpRelocation relocation);
+        void resolve_relocation(JumpRelocation relocation);
 
         CodeObjectBuilder *builder;
         int32_t target;
-        std::vector<uint32_t> unresolved_relocations;
+        std::vector<JumpRelocation> unresolved_relocations;
     };
 
     class CodeObjectBuilder
@@ -246,6 +268,8 @@ namespace cl
                                   uint8_t target_idx);
         uint32_t emit_call_simple(uint32_t source_offset, uint32_t callable_reg,
                                   OutgoingArgReg first_arg_reg, uint8_t argc);
+        uint32_t add_exception_table_entry(JumpTarget &start, JumpTarget &end,
+                                           JumpTarget &handler);
 
         uint32_t allocate_constant(Value val);
         uint32_t add_native_function_target(NativeFunctionTarget target);
@@ -303,6 +327,9 @@ namespace cl
         uint32_t emit_jump(uint32_t source_offset, Bytecode c,
                            JumpTarget &target);
         void set_int16(uint32_t pos, int16_t v);
+        void set_exception_table_start_pc(uint32_t entry_idx, uint32_t pc);
+        void set_exception_table_end_pc(uint32_t entry_idx, uint32_t pc);
+        void set_exception_table_handler_pc(uint32_t entry_idx, uint32_t pc);
         void set_encoded_reg(uint32_t pos, uint32_t reg);
         void assert_not_finalized() const;
         void patch_outgoing_arg_relocations();

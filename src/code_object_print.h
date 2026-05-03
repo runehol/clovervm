@@ -712,6 +712,16 @@ template <> struct fmt::formatter<cl::CodeObject>
             pc = disassemble_instruction(code_obj, out, pc);
         }
 
+        if(!code_obj.exception_table.empty())
+        {
+            format_to(out, "Exception table:\n");
+            for(const cl::ExceptionTableEntry &entry: code_obj.exception_table)
+            {
+                format_to(out, "    {}..{} -> {}\n", entry.start_pc,
+                          entry.end_pc, entry.handler_pc);
+            }
+        }
+
         for(uint32_t cidx = 0; cidx < code_obj.constant_table.size(); ++cidx)
         {
             format_to(out, "Constant {}: ", cidx);

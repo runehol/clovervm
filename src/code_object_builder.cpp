@@ -16,33 +16,84 @@ namespace cl
 
     void JumpTarget::add_relocation(uint32_t pos)
     {
+        add_bytecode_relative_i16_relocation(pos);
+    }
+
+    void
+    JumpTarget::add_bytecode_relative_i16_relocation(uint32_t operand_offset)
+    {
+        add_relocation(JumpRelocation{JumpRelocationKind::BytecodeRelativeI16,
+                                      operand_offset});
+    }
+
+    void JumpTarget::add_exception_table_start_absolute_u32_relocation(
+        uint32_t entry_idx)
+    {
+        add_relocation(JumpRelocation{
+            JumpRelocationKind::ExceptionTableStartAbsoluteU32, entry_idx});
+    }
+
+    void JumpTarget::add_exception_table_end_absolute_u32_relocation(
+        uint32_t entry_idx)
+    {
+        add_relocation(JumpRelocation{
+            JumpRelocationKind::ExceptionTableEndAbsoluteU32, entry_idx});
+    }
+
+    void JumpTarget::add_exception_table_handler_absolute_u32_relocation(
+        uint32_t entry_idx)
+    {
+        add_relocation(JumpRelocation{
+            JumpRelocationKind::ExceptionTableHandlerAbsoluteU32, entry_idx});
+    }
+
+    void JumpTarget::add_relocation(JumpRelocation relocation)
+    {
         if(target == -1)
         {
-            unresolved_relocations.push_back(pos);
+            unresolved_relocations.push_back(relocation);
         }
         else
         {
-            resolve_relocation(pos);
+            resolve_relocation(relocation);
         }
     }
 
-    void JumpTarget::resolve_relocation(uint32_t pos)
+    void JumpTarget::resolve_relocation(JumpRelocation relocation)
     {
-        int32_t rel_dest = target - (pos + 2);
-        if(rel_dest != int16_t(rel_dest))
+        switch(relocation.kind)
         {
-            throw std::runtime_error("Relocation out of range");
+            case JumpRelocationKind::BytecodeRelativeI16:
+                {
+                    uint32_t pos = relocation.index;
+                    int32_t rel_dest = target - (pos + 2);
+                    if(rel_dest != int16_t(rel_dest))
+                    {
+                        throw std::runtime_error("Relocation out of range");
+                    }
+                    builder->set_int16(pos, rel_dest);
+                    break;
+                }
+            case JumpRelocationKind::ExceptionTableStartAbsoluteU32:
+                builder->set_exception_table_start_pc(relocation.index, target);
+                break;
+            case JumpRelocationKind::ExceptionTableEndAbsoluteU32:
+                builder->set_exception_table_end_pc(relocation.index, target);
+                break;
+            case JumpRelocationKind::ExceptionTableHandlerAbsoluteU32:
+                builder->set_exception_table_handler_pc(relocation.index,
+                                                        target);
+                break;
         }
-        builder->set_int16(pos, rel_dest);
     }
 
     void JumpTarget::resolve()
     {
         assert(target == -1);
         target = builder->size();
-        for(uint32_t pos: unresolved_relocations)
+        for(JumpRelocation relocation: unresolved_relocations)
         {
-            resolve_relocation(pos);
+            resolve_relocation(relocation);
         }
         unresolved_relocations.clear();
     }
@@ -484,6 +535,19 @@ namespace cl
         return idx;
     }
 
+    uint32_t CodeObjectBuilder::add_exception_table_entry(JumpTarget &start,
+                                                          JumpTarget &end,
+                                                          JumpTarget &handler)
+    {
+        assert_not_finalized();
+        uint32_t idx = code_obj->exception_table.size();
+        code_obj->exception_table.push_back({0, 0, 0});
+        start.add_exception_table_start_absolute_u32_relocation(idx);
+        end.add_exception_table_end_absolute_u32_relocation(idx);
+        handler.add_exception_table_handler_absolute_u32_relocation(idx);
+        return idx;
+    }
+
     CodeObject *CodeObjectBuilder::finalize()
     {
         assert_not_finalized();
@@ -755,6 +819,27 @@ namespace cl
     {
         code_obj->code[pos + 0] = (v >> 0) & 0xff;
         code_obj->code[pos + 1] = (v >> 8) & 0xff;
+    }
+
+    void CodeObjectBuilder::set_exception_table_start_pc(uint32_t entry_idx,
+                                                         uint32_t pc)
+    {
+        assert(entry_idx < code_obj->exception_table.size());
+        code_obj->exception_table[entry_idx].start_pc = pc;
+    }
+
+    void CodeObjectBuilder::set_exception_table_end_pc(uint32_t entry_idx,
+                                                       uint32_t pc)
+    {
+        assert(entry_idx < code_obj->exception_table.size());
+        code_obj->exception_table[entry_idx].end_pc = pc;
+    }
+
+    void CodeObjectBuilder::set_exception_table_handler_pc(uint32_t entry_idx,
+                                                           uint32_t pc)
+    {
+        assert(entry_idx < code_obj->exception_table.size());
+        code_obj->exception_table[entry_idx].handler_pc = pc;
     }
 
     void CodeObjectBuilder::set_encoded_reg(uint32_t pos, uint32_t reg)

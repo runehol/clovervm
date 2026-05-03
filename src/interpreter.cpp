@@ -313,14 +313,41 @@ namespace cl
     {
         assert(active_thread()->has_pending_exception());
 
-        // Exception tables do not exist yet. Until they do, unwind all the way
-        // to the synthetic startup wrapper's unhandled-exception boundary.
-        while(static_cast<Bytecode>(*pc) != Bytecode::RaiseIfUnhandledException)
+        const uint8_t *continuation_pc = pc + 1;
+        for(;;)
         {
-            restore_frame_header(fp, pc, code_object);
-        }
+            // Exception tables cover the bytecode instruction that raised or
+            // returned into an exceptional path. The loop carries continuation
+            // pcs: the first iteration uses the byte after the raising
+            // instruction, and caller-frame iterations use the saved return pc.
+            // Subtracting one byte is sufficient because no instruction is
+            // smaller than one byte. For multi-byte instructions this may land
+            // in the middle of the instruction, but the protected table range
+            // covers the whole instruction, so membership is unchanged.
+            uint32_t continuation_offset =
+                code_object->offset_for_interpreted_pc(continuation_pc);
+            assert(continuation_offset > 0);
+            const ExceptionTableEntry *entry =
+                code_object->find_exception_handler(continuation_offset - 1);
+            if(entry != nullptr)
+            {
+                return {
+                    fp, code_object,
+                    code_object->interpreted_pc_for_offset(entry->handler_pc),
+                    nullptr};
+            }
 
-        return {fp, code_object, pc, nullptr};
+            const uint8_t *code_end =
+                code_object->code.data() + code_object->code.size();
+            if(continuation_pc < code_end &&
+               static_cast<Bytecode>(*continuation_pc) ==
+                   Bytecode::RaiseIfUnhandledException)
+            {
+                return {fp, code_object, continuation_pc, nullptr};
+            }
+
+            restore_frame_header(fp, continuation_pc, code_object);
+        }
     }
 
     static void initialize_class_body_frame(Value *fp, CodeObject *body_code)

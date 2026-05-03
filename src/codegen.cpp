@@ -146,6 +146,46 @@ namespace cl
             JumpTarget *break_target;
             JumpTarget *continue_target;
         };
+
+        class ExceptionTableRangeBuilder
+        {
+        public:
+            ExceptionTableRangeBuilder(CodeObjectBuilder *_code_obj,
+                                       JumpTarget &_handler_target)
+                : code_obj(_code_obj), start_target(_code_obj),
+                  end_target(_code_obj), handler_target(_handler_target)
+            {
+                start_target.resolve();
+            }
+
+            ExceptionTableRangeBuilder(const ExceptionTableRangeBuilder &) =
+                delete;
+            ExceptionTableRangeBuilder &
+            operator=(const ExceptionTableRangeBuilder &) = delete;
+
+            ~ExceptionTableRangeBuilder() { assert(closed); }
+
+            void close()
+            {
+                assert(!closed);
+                end_target.resolve();
+                // Ranges are appended at close time. With depth-first AST
+                // codegen, inner protected ranges close before outer ranges,
+                // which puts overlapping entries in exception-table priority
+                // order.
+                code_obj->add_exception_table_entry(start_target, end_target,
+                                                    handler_target);
+                closed = true;
+            }
+
+        private:
+            CodeObjectBuilder *code_obj;
+            JumpTarget start_target;
+            JumpTarget end_target;
+            JumpTarget &handler_target;
+            bool closed = false;
+        };
+
         constexpr static OpTable operator_table = make_table();
 
         constexpr static OpTableEntry get_operator_entry(AstOperatorKind ok)
