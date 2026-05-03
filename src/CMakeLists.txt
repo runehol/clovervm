@@ -63,6 +63,8 @@ add_library(libclovervm STATIC
     shape_descriptor.h
     slab_allocator.cpp
     slab_allocator.h
+    startup_wrapper.cpp
+    startup_wrapper.h
     str.cpp
     str.h
     subscript.cpp

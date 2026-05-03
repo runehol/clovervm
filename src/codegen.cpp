@@ -2343,7 +2343,7 @@ namespace cl
     CodeObject *AstCodegen::run_module()
     {
         codegen_node(body_idx);
-        code_obj->emit_halt(0);
+        code_obj->emit_return(0);
         CodeObject *result = code_obj->finalize();
         return incref(result);
     }

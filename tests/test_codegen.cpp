@@ -28,7 +28,7 @@ TEST(Codegen, simple2)
                            "    0 LdaSmi 1\n"
                            "    2 LeftShiftSmi 4\n"
                            "    4 AddSmi 3\n"
-                           "    6 Halt\n";
+                           "    6 Return\n";
     std::string actual = bytecode_str_from_file(L"(1 << 4) + 3");
 
     EXPECT_EQ(expected, actual);
@@ -42,7 +42,7 @@ TEST(Codegen, assignment2)
                            "    7 LdaGlobal [0]\n"
                            "   12 AddSmi 7\n"
                            "   14 StaGlobal [0]\n"
-                           "   19 Halt\n";
+                           "   19 Return\n";
     std::string actual = bytecode_str_from_file(L"a = 4\n"
                                                 "a += 7\n");
 
@@ -73,7 +73,7 @@ TEST(Codegen, if_elif_else)
                            "   36 LdaSmi 3\n"
                            "   38 StaGlobal [1]\n"
                            "   43 LdaGlobal [1]\n"
-                           "   48 Halt\n";
+                           "   48 Return\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -104,7 +104,7 @@ TEST(Codegen, while_else)
                            "   42 LdaSmi 7\n"
                            "   44 StaGlobal [1]\n"
                            "   49 LdaGlobal [1]\n"
-                           "   54 Halt\n";
+                           "   54 Return\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -128,7 +128,7 @@ TEST(Codegen, function_multiple_parameters)
                            "   21 LdaSmi 3\n"
                            "   23 Star a2\n"
                            "   25 CallSimple r0, {a0..a2}, call_ic[0]\n"
-                           "   30 Halt\n"
+                           "   30 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 Ldar p1\n"
                            "    2 Add p0\n"
@@ -162,7 +162,7 @@ TEST(Codegen, function_defaults_use_create_function_with_defaults)
                            "   21 LdaSmi 1\n"
                            "   23 Star a0\n"
                            "   25 CallSimple r0, {a0:1}, call_ic[0]\n"
-                           "   30 Halt\n"
+                           "   30 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 Ldar p1\n"
                            "    2 Add p0\n"
@@ -228,7 +228,7 @@ TEST(Codegen, binary_expression_reuses_local_register_operand)
     std::string expected = "Code object:\n"
                            "    0 CreateFunction c[0]\n"
                            "    2 StaGlobal [0]\n"
-                           "    7 Halt\n"
+                           "    7 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 Ldar p1\n"
                            "    2 Add p0\n"
@@ -249,7 +249,7 @@ TEST(Codegen, comparison_reuses_local_register_operand)
     std::string expected = "Code object:\n"
                            "    0 CreateFunction c[0]\n"
                            "    2 StaGlobal [0]\n"
-                           "    7 Halt\n"
+                           "    7 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 Ldar p1\n"
                            "    2 TestLess p0\n"
@@ -274,7 +274,7 @@ TEST(Codegen, function_implicit_return_none)
                            "    7 LdaGlobal [0]\n"
                            "   12 Star0\n"
                            "   13 CallSimple r0, {a0:0}, call_ic[0]\n"
-                           "   18 Halt\n"
+                           "   18 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 LdaSmi 1\n"
                            "    2 Star0\n"
@@ -302,7 +302,7 @@ TEST(Codegen, class_definition_passes_hidden_name_and_bases_to_create_class)
                            "   12 CreateClass c[0], a0\n"
                            "   15 StaGlobal [0]\n"
                            "   20 LdaGlobal [0]\n"
-                           "   25 Halt\n"
+                           "   25 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 BuildClass\n"
                            "\n"
@@ -331,7 +331,7 @@ TEST(Codegen, attribute_load_uses_register_receiver)
     std::string expected = "Code object:\n"
                            "    0 CreateFunction c[0]\n"
                            "    2 StaGlobal [0]\n"
-                           "    7 Halt\n"
+                           "    7 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 LoadAttr p0, c[0], read_ic[0]\n"
                            "    4 Return\n"
@@ -352,7 +352,7 @@ TEST(Codegen, attribute_store_uses_register_receiver_and_accumulator_value)
     std::string expected = "Code object:\n"
                            "    0 CreateFunction c[0]\n"
                            "    2 StaGlobal [0]\n"
-                           "    7 Halt\n"
+                           "    7 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 Ldar p1\n"
                            "    2 StoreAttr p0, c[0], mutation_ic[0]\n"
@@ -373,7 +373,7 @@ TEST(Codegen, attribute_delete_uses_register_receiver_and_mutation_cache)
     std::string expected = "Code object:\n"
                            "    0 CreateFunction c[0]\n"
                            "    2 StaGlobal [0]\n"
-                           "    7 Halt\n"
+                           "    7 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 DelAttr p0, c[0], mutation_ic[0]\n"
                            "    4 LdaNone\n"
@@ -394,7 +394,7 @@ TEST(Codegen, global_variable_delete_uses_binding_slot)
                            "    0 LdaSmi 1\n"
                            "    2 StaGlobal [0]\n"
                            "    7 DelGlobal [0]\n"
-                           "   12 Halt\n";
+                           "   12 Return\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -408,7 +408,7 @@ TEST(Codegen, direct_method_call_uses_callmethodattr)
     std::string expected = "Code object:\n"
                            "    0 CreateFunction c[0]\n"
                            "    2 StaGlobal [0]\n"
-                           "    7 Halt\n"
+                           "    7 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 Ldar p0\n"
                            "    2 Star a0\n"
@@ -438,7 +438,7 @@ TEST(Codegen, list_literal_uses_createlist_with_contiguous_register_range)
                            "    6 LdaSmi 4\n"
                            "    8 Star2\n"
                            "    9 CreateList {r0..r2}\n"
-                           "   12 Halt\n";
+                           "   12 Return\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -456,7 +456,7 @@ TEST(Codegen, tuple_literal_uses_createtuple_with_contiguous_register_range)
                            "    6 LdaSmi 4\n"
                            "    8 Star2\n"
                            "    9 CreateTuple {r0..r2}\n"
-                           "   12 Halt\n";
+                           "   12 Return\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -474,7 +474,7 @@ TEST(Codegen, parenthesized_tuple_literal_uses_createtuple)
                            "    6 LdaSmi 4\n"
                            "    8 Star2\n"
                            "    9 CreateTuple {r0..r2}\n"
-                           "   12 Halt\n";
+                           "   12 Return\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -486,7 +486,7 @@ TEST(Codegen, empty_tuple_literal_uses_createtuple)
 
     std::string expected = "Code object:\n"
                            "    0 CreateTuple {r0:0}\n"
-                           "    3 Halt\n";
+                           "    3 Return\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -506,7 +506,7 @@ TEST(Codegen, dict_literal_uses_createdict_with_contiguous_register_pairs)
                            "    9 LdaSmi 8\n"
                            "   11 Star3\n"
                            "   12 CreateDict {r0..r3}\n"
-                           "   15 Halt\n";
+                           "   15 Return\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -520,7 +520,7 @@ TEST(Codegen, subscript_load_uses_receiver_register_and_accumulator_key)
     std::string expected = "Code object:\n"
                            "    0 CreateFunction c[0]\n"
                            "    2 StaGlobal [0]\n"
-                           "    7 Halt\n"
+                           "    7 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 Ldar p1\n"
                            "    2 LoadSubscript p0\n"
@@ -541,7 +541,7 @@ TEST(Codegen, subscript_store_uses_receiver_and_key_registers)
     std::string expected = "Code object:\n"
                            "    0 CreateFunction c[0]\n"
                            "    2 StaGlobal [0]\n"
-                           "    7 Halt\n"
+                           "    7 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 Ldar p2\n"
                            "    2 StoreSubscript p0, p1\n"
@@ -561,7 +561,7 @@ TEST(Codegen, subscript_delete_uses_receiver_and_key_registers)
     std::string expected = "Code object:\n"
                            "    0 CreateFunction c[0]\n"
                            "    2 StaGlobal [0]\n"
-                           "    7 Halt\n"
+                           "    7 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 DelSubscript p0, p1\n"
                            "    3 LdaNone\n"
@@ -580,7 +580,7 @@ TEST(Codegen, subscript_augmented_assignment_evaluates_receiver_and_key_once)
     std::string expected = "Code object:\n"
                            "    0 CreateFunction c[0]\n"
                            "    2 StaGlobal [0]\n"
-                           "    7 Halt\n"
+                           "    7 Return\n"
                            "Constant 0: Code object:\n"
                            "    0 Ldar p1\n"
                            "    2 LoadSubscript p0\n"
@@ -626,7 +626,7 @@ TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
                            "   82 StaGlobal [0]\n"
                            "   87 Jump 60\n"
                            "   90 LdaGlobal [0]\n"
-                           "   95 Halt\n";
+                           "   95 Return\n";
     std::string actual = bytecode_str_from_file(L"total = 0\n"
                                                 "for x in range(3):\n"
                                                 "    total += x\n"
@@ -651,7 +651,7 @@ TEST(Codegen, non_direct_for_loop_still_uses_generic_iterator_bytecodes)
                            "   31 StaGlobal [2]\n"
                            "   36 LdaGlobal [2]\n"
                            "   41 Jump 27\n"
-                           "   44 Halt\n";
+                           "   44 Return\n";
     std::string actual = bytecode_str_from_file(L"it = range(3)\n"
                                                 "for x in it:\n"
                                                 "    x\n");

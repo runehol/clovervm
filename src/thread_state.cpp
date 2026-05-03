@@ -2,8 +2,10 @@
 #include "codegen.h"
 #include "compilation_unit.h"
 #include "interpreter.h"
+#include "owned_typed_value.h"
 #include "parser.h"
 #include "runtime_helpers.h"
+#include "startup_wrapper.h"
 #include "tokenizer.h"
 #include "virtual_machine.h"
 #include <stdexcept>
@@ -34,7 +36,10 @@ namespace cl
     Value ThreadState::run(CodeObject *obj)
     {
         ActivationScope activation_scope(this);
-        return run_interpreter(&stack[stack.size() - 1024], obj, 0);
+        OwnedTValue<CodeObject> startup_wrapper(
+            make_startup_wrapper_code_object(obj));
+        return run_interpreter(&stack[stack.size() - 1024],
+                               startup_wrapper.extract(), 0);
     }
 
     bool ThreadState::has_pending_exception() const

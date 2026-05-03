@@ -119,9 +119,9 @@ Deliverable: the VM has one canonical location for a Python exception in flight.
 - [ ] Consult managed unwind metadata when it exists, and otherwise continue
       unwinding to the caller frame. At this stage there may be no metadata, so
       the no-local-handler path is the only exercised path.
-- [ ] Introduce a synthetic startup wrapper `CodeObject` that calls the requested
+- [x] Introduce a synthetic startup wrapper `CodeObject` that calls the requested
       module entry point and owns final process/thread termination.
-- [ ] Change module entry `CodeObject`s to return normally to their caller rather
+- [x] Change module entry `CodeObject`s to return normally to their caller rather
       than ending in `Halt`. This also matches future import behavior, where a
       module body returns to its importer instead of terminating the VM.
 - [ ] At top-level or native test-harness boundaries, temporarily convert
