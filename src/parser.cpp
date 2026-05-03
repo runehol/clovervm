@@ -1497,7 +1497,35 @@ namespace cl
                                     children);
         }
 
-        int32_t try_stmt() { return not_implemented("try statement"); }
+        int32_t try_stmt()
+        {
+            AstChildren children;
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::TRY);
+            consume(Token::COLON);
+            children.push_back(block());
+
+            if(peek() != Token::EXCEPT)
+            {
+                return not_implemented("try statement without except");
+            }
+
+            consume(Token::EXCEPT);
+            consume(Token::COLON);
+            children.push_back(block());
+
+            if(peek() == Token::EXCEPT)
+            {
+                return not_implemented("multiple except clauses");
+            }
+            if(peek() == Token::ELSE || peek() == Token::FINALLY)
+            {
+                return not_implemented("try else/finally");
+            }
+
+            return ast.emplace_back(AstNodeKind::STATEMENT_TRY, source_pos,
+                                    children);
+        }
 
         int32_t while_stmt()
         {

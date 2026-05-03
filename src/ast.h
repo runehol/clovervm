@@ -20,7 +20,7 @@ namespace cl
         STATEMENT_CLASS_DEF,
         // STATEMENT_WITH,
         STATEMENT_FOR,
-        // STATEMENT_TRY,
+        STATEMENT_TRY,
         STATEMENT_WHILE,
         // STATEMENT_MATCH,
         STATEMENT_RETURN,
@@ -68,6 +68,7 @@ namespace cl
             case AstNodeKind::STATEMENT_IF:
             case AstNodeKind::STATEMENT_CLASS_DEF:
             case AstNodeKind::STATEMENT_FOR:
+            case AstNodeKind::STATEMENT_TRY:
             case AstNodeKind::STATEMENT_WHILE:
             case AstNodeKind::STATEMENT_RETURN:
             case AstNodeKind::STATEMENT_RAISE:

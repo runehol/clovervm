@@ -415,6 +415,17 @@ template <> struct fmt::formatter<cl::AstVector>
                 }
                 break;
 
+            case cl::AstNodeKind::STATEMENT_TRY:
+                emit_indent(out, indent);
+                format_to(out, "try:\n");
+                render_node(av, out, children[0], indent + 1,
+                            cl::ExpressionPrecedence::Lowest);
+                emit_indent(out, indent);
+                format_to(out, "except:\n");
+                render_node(av, out, children[1], indent + 1,
+                            cl::ExpressionPrecedence::Lowest);
+                break;
+
             case cl::AstNodeKind::STATEMENT_RETURN:
                 emit_indent(out, indent);
                 format_to(out, "return");

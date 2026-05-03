@@ -1201,6 +1201,20 @@ namespace cl
                         break;
                     }
 
+                case AstNodeKind::STATEMENT_TRY:
+                    {
+                        FlowState normal_state = state;
+                        analyze_flow_node(target_code_obj, analysis,
+                                          children[0], normal_state);
+
+                        FlowState handler_state = state;
+                        analyze_flow_node(target_code_obj, analysis,
+                                          children[1], handler_state);
+
+                        state = merge_flow_states(normal_state, handler_state);
+                        break;
+                    }
+
                 case AstNodeKind::STATEMENT_FUNCTION_DEF:
                     {
                         AstChildren param_children = av.children[children[0]];
@@ -1773,6 +1787,30 @@ namespace cl
             loop_targets.pop_back();
         }
 
+        void codegen_try_statement(int32_t node_idx)
+        {
+            AstChildren children = av.children[node_idx];
+            assert(children.size() == 2);
+            uint32_t source_offset = av.source_offsets[node_idx];
+            int32_t body_idx = children[0];
+            int32_t handler_body_idx = children[1];
+
+            JumpTarget handler_target(code_obj);
+            JumpTarget done_target(code_obj);
+            {
+                ExceptionTableRangeBuilder range(code_obj, handler_target);
+                codegen_node(body_idx);
+                range.close();
+            }
+            code_obj->emit_jump(source_offset, done_target);
+
+            handler_target.resolve();
+            code_obj->emit_clear_active_exception(source_offset);
+            codegen_node(handler_body_idx);
+
+            done_target.resolve();
+        }
+
         void codegen_iterator_driven_for_loop(uint32_t source_offset,
                                               int32_t target_idx,
                                               int32_t body_idx,
@@ -2281,6 +2319,10 @@ namespace cl
                         break_target.resolve();
                         break;
                     }
+
+                case AstNodeKind::STATEMENT_TRY:
+                    codegen_try_statement(node_idx);
+                    break;
 
                 case AstNodeKind::STATEMENT_BREAK:
                     if(loop_targets.empty())

@@ -281,8 +281,8 @@ Deliverable: stop-returning protocol completion can become an ordinary Python
 
 - [x] Add exception table metadata to `CodeObject` as bytecode-local interpreted
       pc triples: protected start pc, protected end pc, and handler pc.
-- [ ] Add compiler tracking for protected bytecode ranges.
-- [ ] Emit exception table entries in priority order. Entries may overlap, and
+- [x] Add compiler tracking for protected bytecode ranges.
+- [x] Emit exception table entries in priority order. Entries may overlap, and
       lookup returns the first covering entry, so innermost handlers must come
       before enclosing handlers.
 - [x] Teach exceptional frame exit to look for a local handler before popping the
@@ -314,6 +314,10 @@ Design notes:
   frames may exit/deopt to the interpreter for exceptional unwind; compiled
   landing pads and specialization-local JIT unwind tables are future
   optimizations.
+- Compiler-emitted ranges use `ExceptionTableRangeBuilder`: construction marks
+  the protected start, explicit `close()` marks the end and appends the entry.
+  Nested source generation therefore closes inner ranges before enclosing
+  ranges, producing lookup priority order naturally.
 
 Deliverable: managed frames can catch their own exceptions through structural
 exception-table metadata; ordinary frame popping remains the fallback when no
@@ -321,13 +325,13 @@ local table entry applies.
 
 ## Stage 10: Local Handlers And Caught Exception Objects
 
-- [ ] Extend handler entry beyond synthetic/internal handlers to user-authored
+- [x] Extend handler entry beyond synthetic/internal handlers to user-authored
       exception handlers.
 - [ ] Add stack/register trimming and any handler-local setup not needed by
       simple landing pads.
-- [ ] Add parser, AST, codegen, and interpreter support for a first useful
-      `try` / `except` slice.
-- [ ] Arrange the pending exception state expected by handlers.
+- [x] Add parser, AST, codegen, and interpreter support for a first useful
+      bare `try` / `except` slice.
+- [x] Arrange the pending exception state expected by handlers.
 - [ ] Support `except SomeError as e` for object-backed pending exceptions.
 - [ ] Support `except StopIteration as e` and `e.value` by materializing compact
       `StopIteration` when the exception object becomes observable.
@@ -338,6 +342,12 @@ local table entry applies.
 
 Deliverable: pending exceptions can be caught in the current frame and observed
 as Python exception objects.
+
+Current first slice: `try: ... except: ...` parses and emits a real
+exception-table protected range. The handler clears the active pending exception
+before running its body. Typed matching such as `except Exception`, `as e`,
+multiple handlers, `else`, and `finally` remain follow-up work and will need
+explicit handler-match bytecode rather than pretending a catch-all is typed.
 
 ## Stage 11: Generic For-Loop Exception Fallback
 

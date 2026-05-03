@@ -300,6 +300,28 @@ TEST(Codegen, raise_statement_evaluates_expression_and_unwinds)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, try_bare_except_emits_exception_table)
+{
+    std::string expected = "Code object:\n"
+                           "    0 LdaGlobal [0]\n"
+                           "    5 RaiseUnwind\n"
+                           "    6 Jump 17\n"
+                           "    9 ClearActiveException\n"
+                           "   10 LdaSmi 7\n"
+                           "   12 StaGlobal [1]\n"
+                           "   17 LdaGlobal [1]\n"
+                           "   22 Return\n"
+                           "Exception table:\n"
+                           "    0..6 -> 9\n";
+    std::string actual = bytecode_str_from_file(L"try:\n"
+                                                L"    raise ValueError\n"
+                                                L"except:\n"
+                                                L"    result = 7\n"
+                                                L"result\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, startup_wrapper_uses_exception_table_for_unhandled_exception)
 {
     test::VmTestContext test_context;
