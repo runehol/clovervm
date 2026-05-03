@@ -305,9 +305,9 @@ Design notes:
 - Handler entry unwinds `fp` to the handler's frame and jumps to the handler pc
   in the handler's `CodeObject`, as if executing ordinary code in that function.
   Matching bytecode sees the pending exception while choosing a handler. Once a
-  handler wins, compiler-emitted bytecode drains the pending exception into a
-  hidden frame register and clears pending state so the handler body can raise a
-  new exception without colliding with the caught one.
+  handler wins, compiler-emitted bytecode either clears pending state directly
+  or drains the pending exception into a hidden frame register if the handler
+  body needs to observe it.
 - The synthetic startup-wrapper catch-all should have the same shape as
   compiler-emitted Python handlers. It materializes/reports unhandled exceptions
   and executes the final error `Halt`; normal module return executes the success
@@ -320,9 +320,10 @@ Design notes:
   the protected start, explicit `close()` marks the end and appends the entry.
   Nested source generation therefore closes inner ranges before enclosing
   ranges, producing lookup priority order naturally.
-- Source-level handler bodies get their own cleanup ranges. If the handler body
-  raises, cleanup clears the hidden caught-exception register and then reraises
-  the new pending exception.
+- Source-level handler bodies only get cleanup ranges when they save the caught
+  exception in a hidden register. If such a handler body raises, cleanup clears
+  the hidden caught-exception register and then reraises the new pending
+  exception.
 
 Deliverable: managed frames can catch their own exceptions through structural
 exception-table metadata; ordinary frame popping remains the fallback when no
@@ -355,12 +356,12 @@ as Python exception objects.
 Current handler slices: `try: ... except: ...` catches unconditionally, while
 `try: ... except SomeError: ...` evaluates the handler class, checks the active
 pending exception with `ActiveExceptionIsInstance`, and falls through to the
-next handler or reraises on mismatch. After a match,
-`DrainActiveExceptionInto` materializes the active exception into a hidden
-handler register and clears pending exception state; normal and exceptional
-handler exits clear that register. The match opcode does not materialize compact
-`StopIteration`. `as e`, bare `raise`, `else`, and `finally` remain follow-up
-work.
+next handler or reraises on mismatch. After a match, handlers that do not need
+the caught exception use `ClearActiveException`; handlers that do need it use
+`DrainActiveExceptionInto` to materialize the active exception into a hidden
+handler register and clear pending exception state. The match opcode does not
+materialize compact `StopIteration`. `as e`, bare `raise`, `else`, and
+`finally` remain follow-up work.
 
 ## Stage 11: Generic For-Loop Exception Fallback
 

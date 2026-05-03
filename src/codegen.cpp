@@ -1804,6 +1804,61 @@ namespace cl
             loop_targets.pop_back();
         }
 
+        bool node_needs_enclosing_caught_exception(int32_t node_idx) const
+        {
+            AstKind kind = av.kinds[node_idx];
+            AstChildren children = av.children[node_idx];
+
+            switch(kind.node_kind)
+            {
+                case AstNodeKind::STATEMENT_RAISE:
+                    return children.empty();
+
+                case AstNodeKind::STATEMENT_FUNCTION_DEF:
+                case AstNodeKind::STATEMENT_CLASS_DEF:
+                    return false;
+
+                case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
+                    return false;
+
+                case AstNodeKind::STATEMENT_TRY:
+                    if(node_needs_enclosing_caught_exception(children[0]))
+                    {
+                        return true;
+                    }
+                    for(size_t i = 1; i < children.size(); ++i)
+                    {
+                        int32_t handler_idx = children[i];
+                        assert(av.kinds[handler_idx].node_kind ==
+                               AstNodeKind::STATEMENT_EXCEPT_HANDLER);
+                        AstChildren handler_children = av.children[handler_idx];
+                        if(handler_children.size() == 2 &&
+                           node_needs_enclosing_caught_exception(
+                               handler_children[0]))
+                        {
+                            return true;
+                        }
+                    }
+                    return false;
+
+                default:
+                    for(int32_t child_idx: children)
+                    {
+                        if(node_needs_enclosing_caught_exception(child_idx))
+                        {
+                            return true;
+                        }
+                    }
+                    return false;
+            }
+        }
+
+        bool handler_needs_caught_exception(int32_t handler_idx) const
+        {
+            AstChildren children = av.children[handler_idx];
+            return node_needs_enclosing_caught_exception(children.back());
+        }
+
         void codegen_try_statement(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
@@ -1834,15 +1889,55 @@ namespace cl
 
                 int32_t handler_body_idx = handler_children.back();
                 uint32_t handler_source_offset = av.source_offsets[handler_idx];
+                bool needs_caught_exception =
+                    handler_needs_caught_exception(handler_idx);
                 if(handler_children.size() == 2)
                 {
                     JumpTarget no_match_target(code_obj);
-                    JumpTarget cleanup_target(code_obj);
                     codegen_node(handler_children[0]);
                     code_obj->emit_active_exception_is_instance(
                         handler_source_offset);
                     code_obj->emit_jump_if_false(handler_source_offset,
                                                  no_match_target);
+                    if(needs_caught_exception)
+                    {
+                        JumpTarget cleanup_target(code_obj);
+                        TemporaryReg saved_exception(*code_obj);
+                        code_obj->emit_drain_active_exception_into(
+                            handler_source_offset, saved_exception);
+                        {
+                            ExceptionTableRangeBuilder range(code_obj,
+                                                             cleanup_target);
+                            codegen_node(handler_body_idx);
+                            range.close();
+                        }
+                        code_obj->emit_clear_local(handler_source_offset,
+                                                   saved_exception);
+                        code_obj->emit_jump(handler_source_offset, done_target);
+
+                        cleanup_target.resolve();
+                        code_obj->emit_clear_local(handler_source_offset,
+                                                   saved_exception);
+                        code_obj->emit_reraise_active_exception(
+                            handler_source_offset);
+                    }
+                    else
+                    {
+                        code_obj->emit_clear_active_exception(
+                            handler_source_offset);
+                        codegen_node(handler_body_idx);
+                        code_obj->emit_jump(handler_source_offset, done_target);
+                    }
+
+                    no_match_target.resolve();
+                    continue;
+                }
+
+                assert(child_offset == children.size() - 1);
+                has_bare_handler = true;
+                if(needs_caught_exception)
+                {
+                    JumpTarget cleanup_target(code_obj);
                     TemporaryReg saved_exception(*code_obj);
                     code_obj->emit_drain_active_exception_into(
                         handler_source_offset, saved_exception);
@@ -1861,30 +1956,14 @@ namespace cl
                                                saved_exception);
                     code_obj->emit_reraise_active_exception(
                         handler_source_offset);
-
-                    no_match_target.resolve();
-                    continue;
                 }
-
-                assert(child_offset == children.size() - 1);
-                has_bare_handler = true;
-                JumpTarget cleanup_target(code_obj);
-                TemporaryReg saved_exception(*code_obj);
-                code_obj->emit_drain_active_exception_into(
-                    handler_source_offset, saved_exception);
+                else
                 {
-                    ExceptionTableRangeBuilder range(code_obj, cleanup_target);
+                    code_obj->emit_clear_active_exception(
+                        handler_source_offset);
                     codegen_node(handler_body_idx);
-                    range.close();
+                    code_obj->emit_jump(handler_source_offset, done_target);
                 }
-                code_obj->emit_clear_local(handler_source_offset,
-                                           saved_exception);
-                code_obj->emit_jump(handler_source_offset, done_target);
-
-                cleanup_target.resolve();
-                code_obj->emit_clear_local(handler_source_offset,
-                                           saved_exception);
-                code_obj->emit_reraise_active_exception(handler_source_offset);
                 break;
             }
 

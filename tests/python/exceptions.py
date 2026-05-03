@@ -58,3 +58,13 @@ except NameError:
 except:
     result = 7
 assert result == 7
+
+result = 0
+try:
+    try:
+        raise ValueError
+    except:
+        raise TypeError
+except TypeError:
+    result = 7
+assert result == 7
