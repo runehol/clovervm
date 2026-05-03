@@ -98,6 +98,31 @@ namespace cl
         unresolved_relocations.clear();
     }
 
+    ExceptionTableRangeBuilder::ExceptionTableRangeBuilder(
+        CodeObjectBuilder *_builder, JumpTarget &_handler_target)
+        : builder(_builder), start_target(_builder), end_target(_builder),
+          handler_target(_handler_target)
+    {
+        start_target.resolve();
+    }
+
+    ExceptionTableRangeBuilder::~ExceptionTableRangeBuilder()
+    {
+        assert(closed);
+    }
+
+    void ExceptionTableRangeBuilder::close()
+    {
+        assert(!closed);
+        end_target.resolve();
+        // Ranges are appended at close time. With depth-first AST codegen,
+        // inner protected ranges close before outer ranges, which puts
+        // overlapping entries in exception-table priority order.
+        builder->add_exception_table_entry(start_target, end_target,
+                                           handler_target);
+        closed = true;
+    }
+
     CodeObjectBuilder::TemporaryReg::TemporaryReg(CodeObjectBuilder &_builder,
                                                   uint32_t _n_regs)
         : builder(&_builder), n_regs(_n_regs),

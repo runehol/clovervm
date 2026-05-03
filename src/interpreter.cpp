@@ -337,15 +337,6 @@ namespace cl
                     nullptr};
             }
 
-            const uint8_t *code_end =
-                code_object->code.data() + code_object->code.size();
-            if(continuation_pc < code_end &&
-               static_cast<Bytecode>(*continuation_pc) ==
-                   Bytecode::RaiseIfUnhandledException)
-            {
-                return {fp, code_object, continuation_pc, nullptr};
-            }
-
             restore_frame_header(fp, continuation_pc, code_object);
         }
     }

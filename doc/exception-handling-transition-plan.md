@@ -287,7 +287,7 @@ Deliverable: stop-returning protocol completion can become an ordinary Python
       before enclosing handlers.
 - [x] Teach exceptional frame exit to look for a local handler before popping the
       frame.
-- [ ] Give the synthetic startup wrapper a real catch-all table entry, or an
+- [x] Give the synthetic startup wrapper a real catch-all table entry, or an
       equivalent final handler.
 - [ ] Add opcodes to read/materialize the active exception, clear the active
       exception when a handler takes ownership, and reraise the active exception

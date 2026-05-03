@@ -56,6 +56,28 @@ namespace cl
         std::vector<JumpRelocation> unresolved_relocations;
     };
 
+    class ExceptionTableRangeBuilder
+    {
+    public:
+        ExceptionTableRangeBuilder(CodeObjectBuilder *_builder,
+                                   JumpTarget &_handler_target);
+
+        ExceptionTableRangeBuilder(const ExceptionTableRangeBuilder &) = delete;
+        ExceptionTableRangeBuilder &
+        operator=(const ExceptionTableRangeBuilder &) = delete;
+
+        ~ExceptionTableRangeBuilder();
+
+        void close();
+
+    private:
+        CodeObjectBuilder *builder;
+        JumpTarget start_target;
+        JumpTarget end_target;
+        JumpTarget &handler_target;
+        bool closed = false;
+    };
+
     class CodeObjectBuilder
     {
     public:

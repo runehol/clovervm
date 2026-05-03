@@ -226,6 +226,11 @@ TEST(Interpreter, raise_statement_unwinds_nested_frames)
                         L"ValueError");
 }
 
+TEST(Interpreter, startup_wrapper_handles_unhandled_exception_through_table)
+{
+    expect_python_error(L"raise ValueError\n", L"ValueError");
+}
+
 TEST(Interpreter, del_global_removes_binding)
 {
     expect_python_error(L"value = 7\n"
