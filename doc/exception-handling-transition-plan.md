@@ -348,10 +348,6 @@ local table entry applies.
       observable. Compact no-value `StopIteration` still preserves
       `not_present` so `yield from` can distinguish no return value from a real
       `None` return value.
-- [ ] Replace remaining placeholder VM-originated exceptions with specific
-      exception object construction.
-- [ ] Normalize constructor, descriptor, arithmetic, and other slow-path errors
-      into specific VM exceptions as their call paths become marker-aware.
 
 Deliverable: pending exceptions can be caught in the current frame and observed
 as Python exception objects.
@@ -491,6 +487,11 @@ Deliverable: Python-compatible reraising and the first machinery that makes
   - [ ] benchmark/tooling-only helper
   - [ ] fatal internal panic
 - [ ] Convert Python-visible runtime failures to pending VM exceptions.
+  - [ ] Replace remaining placeholder VM-originated exceptions with specific
+        exception object construction.
+  - [ ] Normalize constructor, descriptor, arithmetic, and other slow-path
+        errors into specific VM exceptions as their call paths become
+        marker-aware.
 - [ ] Add outer C API sentinel conversion only at actual external C API
       boundaries.
 - [ ] Convert fatal internal failures to explicit abort/panic helpers that do not
