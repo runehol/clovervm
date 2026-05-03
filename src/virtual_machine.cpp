@@ -2,6 +2,7 @@
 #include "code_object.h"
 #include "dict.h"
 #include "exception_object.h"
+#include "exception_propagation.h"
 #include "function.h"
 #include "instance.h"
 #include "list.h"
@@ -28,14 +29,16 @@ namespace cl
         return Value::from_oop(tuple);
     }
 
-    static TValue<CLInt> require_range_integer_arg(Value arg)
+    [[nodiscard]] static Value require_range_integer_arg(Value arg,
+                                                         Value &arg_out)
     {
         if(!arg.is_integer())
         {
-            throw std::runtime_error(
-                "TypeError: range() arguments must be integers");
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"range() arguments must be integers");
         }
-        return TValue<CLInt>::from_value_unchecked(arg);
+        arg_out = arg;
+        return Value::None();
     }
 
     static Value builtin_range(Value start_arg, Value end_arg, Value step_arg)
@@ -62,13 +65,13 @@ namespace cl
             step = step_arg;
         }
 
-        start = require_range_integer_arg(start);
-        stop = require_range_integer_arg(stop);
-        step = require_range_integer_arg(step);
+        CL_PROPAGATE_EXCEPTION(require_range_integer_arg(start, start));
+        CL_PROPAGATE_EXCEPTION(require_range_integer_arg(stop, stop));
+        CL_PROPAGATE_EXCEPTION(require_range_integer_arg(step, step));
         if(step.get_smi() == 0)
         {
-            throw std::runtime_error(
-                "ValueError: range() arg 3 must not be zero");
+            return active_thread()->set_pending_builtin_exception_string(
+                L"ValueError", L"range() arg 3 must not be zero");
         }
 
         return make_object_value<RangeIterator>(
@@ -219,6 +222,8 @@ namespace cl
             make_exception_subclass(this, L"TypeError", exception));
         register_builtin_class(
             make_exception_subclass(this, L"ValueError", exception));
+        register_builtin_class(
+            make_exception_subclass(this, L"UnimplementedError", exception));
         register_builtin_class(
             make_exception_subclass(this, L"AssertionError", exception));
         register_builtin_class(

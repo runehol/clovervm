@@ -4,7 +4,6 @@
 #include "thread_state.h"
 #include "virtual_machine.h"
 #include <iterator>
-#include <stdexcept>
 
 namespace cl
 {
@@ -25,8 +24,8 @@ namespace cl
     {
         if(!can_convert_to<String>(self))
         {
-            throw std::runtime_error(
-                "TypeError: str.__str__ expects a str receiver");
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"str.__str__ expects a str receiver");
         }
         return self;
     }
@@ -36,7 +35,8 @@ namespace cl
         if(!can_convert_to<String>(left_value) ||
            !can_convert_to<String>(right_value))
         {
-            throw std::runtime_error("UnimplementedError");
+            return active_thread()->set_pending_builtin_exception_none(
+                L"UnimplementedError");
         }
 
         String *left = left_value.get_ptr<String>();

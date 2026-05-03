@@ -81,8 +81,9 @@ namespace cl
         }
         if(object->native_layout_id() == NativeLayoutId::Tuple)
         {
-            throw std::runtime_error(
-                "TypeError: 'tuple' object does not support item assignment");
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError",
+                L"'tuple' object does not support item assignment");
         }
         if(object->native_layout_id() == NativeLayoutId::Dict)
         {
@@ -110,8 +111,8 @@ namespace cl
         }
         if(object->native_layout_id() == NativeLayoutId::Tuple)
         {
-            throw std::runtime_error(
-                "TypeError: 'tuple' object does not support item deletion");
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"'tuple' object does not support item deletion");
         }
         if(object->native_layout_id() == NativeLayoutId::Dict)
         {

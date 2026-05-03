@@ -450,7 +450,14 @@ namespace cl
 
     NOINLINE Value range_zero_step_error(PARAMS)
     {
-        throw std::runtime_error("ValueError: range() arg 3 must not be zero");
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            fp, pc, code_object, L"ValueError",
+            L"range() arg 3 must not be zero");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE Value init_returned_non_none_error(PARAMS)

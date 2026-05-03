@@ -421,6 +421,14 @@ TEST(Interpreter, string_dunder_add_wrong_type_reports_unimplemented)
     expect_runtime_error(L"\"ab\".__add__(3)\n", "UnimplementedError");
 }
 
+TEST(Interpreter, string_dunder_add_wrong_type_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def fail():\n"
+                         L"    return \"ab\".__add__(3)\n"
+                         L"fail()\n",
+                         "UnimplementedError");
+}
+
 TEST(Interpreter, list_literal_returns_list_object)
 {
     test::FileRunner file_runner(L"[1, 2, 4]\n");
@@ -629,12 +637,34 @@ TEST(Interpreter, subscript_store_rejects_tuple_item_assignment)
         "TypeError: 'tuple' object does not support item assignment");
 }
 
+TEST(Interpreter, subscript_store_tuple_item_assignment_unwinds_nested_frames)
+{
+    expect_runtime_error(
+        L"def fail():\n"
+        L"    class Cls:\n"
+        L"        pass\n"
+        L"    Cls.__mro__[0] = 1\n"
+        L"fail()\n",
+        "TypeError: 'tuple' object does not support item assignment");
+}
+
 TEST(Interpreter, subscript_delete_rejects_tuple_item_deletion)
 {
     expect_runtime_error(
         L"class Cls:\n"
         L"    pass\n"
         L"del Cls.__mro__[0]\n",
+        "TypeError: 'tuple' object does not support item deletion");
+}
+
+TEST(Interpreter, subscript_delete_tuple_item_deletion_unwinds_nested_frames)
+{
+    expect_runtime_error(
+        L"def fail():\n"
+        L"    class Cls:\n"
+        L"        pass\n"
+        L"    del Cls.__mro__[0]\n"
+        L"fail()\n",
         "TypeError: 'tuple' object does not support item deletion");
 }
 
@@ -1692,6 +1722,15 @@ TEST(Interpreter, range_integer_argument_error_unwinds_nested_frames)
 TEST(Interpreter, range_builtin_rejects_zero_step)
 {
     expect_runtime_error(L"range(1, 2, 0)\n",
+                         "ValueError: range() arg 3 must not be zero");
+}
+
+TEST(Interpreter, range_zero_step_error_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def fail():\n"
+                         L"    range(1, 2, 0)\n"
+                         L"    return 99\n"
+                         L"fail()\n",
                          "ValueError: range() arg 3 must not be zero");
 }
 
