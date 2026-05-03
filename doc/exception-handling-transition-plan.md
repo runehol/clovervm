@@ -332,8 +332,6 @@ local table entry applies.
 
 - [x] Extend handler entry beyond synthetic/internal handlers to user-authored
       exception handlers.
-- [ ] Add stack/register trimming and any handler-local setup not needed by
-      simple landing pads.
 - [x] Add parser, AST, codegen, and interpreter support for a first useful
       bare `try` / `except` slice.
 - [x] Arrange the pending exception state expected by handlers.
@@ -345,8 +343,11 @@ local table entry applies.
       caught-exception register. Bare `raise` outside a handler is currently a
       `SyntaxError`.
 - [x] Support `except SomeError as e` for object-backed pending exceptions.
-- [ ] Support `except StopIteration as e` and `e.value` by materializing compact
-      `StopIteration` when the exception object becomes observable.
+- [x] Support `except StopIteration as e` and explicit `e.value` payloads by
+      materializing compact `StopIteration` when the exception object becomes
+      observable. Compact no-value `StopIteration` still preserves
+      `not_present` so `yield from` can distinguish no return value from a real
+      `None` return value.
 - [ ] Replace remaining placeholder VM-originated exceptions with specific
       exception object construction.
 - [ ] Normalize constructor, descriptor, arithmetic, and other slow-path errors

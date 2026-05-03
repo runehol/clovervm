@@ -1529,6 +1529,27 @@ TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
     EXPECT_EQ(Value::from_smi(123), exception.extract()->value.as_value());
 }
 
+TEST(Interpreter, catch_stop_iteration_as_exposes_value)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj =
+        test_context.compile_file(L"result = 0\n"
+                                  L"try:\n"
+                                  L"    native_stop()\n"
+                                  L"except StopIteration as e:\n"
+                                  L"    result = e.value\n"
+                                  L"result\n");
+
+    bind_global(test_context, code_obj, L"native_stop",
+                make_native_function(&test_context.vm(),
+                                     native_stop_iteration_with_value));
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(123), actual);
+    EXPECT_FALSE(test_context.thread()->has_pending_exception());
+}
+
 TEST(Interpreter, unhandled_python_exception_reports_class_and_message)
 {
     test::VmTestContext test_context;

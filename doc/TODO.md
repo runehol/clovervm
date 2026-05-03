@@ -51,6 +51,12 @@ model and first attribute inline-cache slices.
   iterator. This is exception-gated because real iterator exhaustion must be
   represented as Python `StopIteration`.
 
+  Note: compact no-value `StopIteration` currently preserves `not_present` so
+  `yield from` can distinguish no return value from a real `None` return value.
+  Python-facing `StopIteration.value` may need a descriptor or accessor later
+  so ordinary user code sees `None` for the no-value case without losing that
+  internal distinction.
+
 - [ ] Expand call syntax and remaining statements.
 
   Useful next increments include keyword arguments, `**kwargs`, richer call
