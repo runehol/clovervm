@@ -24,7 +24,7 @@ namespace cl
             context.vm().class_for_native_layout(NativeLayoutId::Exception);
         ThreadState::ActivationScope active_thread(thread);
         TValue<ExceptionObject> exception = make_exception_object(
-            TValue<ClassObject>::from_oop(base_exception), "boom");
+            TValue<ClassObject>::from_oop(base_exception), L"boom");
 
         thread->set_pending_exception_object(exception);
 
@@ -82,7 +82,7 @@ namespace cl
         ThreadState::ActivationScope active_thread(thread);
 
         thread->set_pending_exception_string(
-            TValue<ClassObject>::from_oop(base_exception), "boom");
+            TValue<ClassObject>::from_oop(base_exception), L"boom");
 
         EXPECT_TRUE(thread->has_pending_exception());
         EXPECT_EQ(PendingExceptionKind::Object,

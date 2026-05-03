@@ -97,7 +97,7 @@ static Value native_base_exception_with_message()
     ClassObject *cls =
         active_thread()->class_for_native_layout(NativeLayoutId::Exception);
     active_thread()->set_pending_exception_string(
-        TValue<ClassObject>::from_oop(cls), "boom");
+        TValue<ClassObject>::from_oop(cls), L"boom");
     return Value::exception_marker();
 }
 

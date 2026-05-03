@@ -65,19 +65,25 @@ namespace cl
     }
 
     void ThreadState::set_pending_exception_string(TValue<ClassObject> type,
-                                                   const char *message)
+                                                   TValue<String> message)
     {
         set_pending_exception_object(make_exception_object(type, message));
     }
 
+    void ThreadState::set_pending_exception_string(TValue<ClassObject> type,
+                                                   const wchar_t *message)
+    {
+        set_pending_exception_string(type, interned_string(message));
+    }
+
     void ThreadState::set_pending_exception_none(TValue<ClassObject> type)
     {
-        set_pending_exception_string(type, "");
+        set_pending_exception_string(type, L"");
     }
 
     void
     ThreadState::set_pending_builtin_exception_string(const wchar_t *type_name,
-                                                      const char *message)
+                                                      TValue<String> message)
     {
         set_pending_exception_string(
             TValue<ClassObject>::from_oop(class_for_builtin_name(type_name)),
@@ -85,9 +91,17 @@ namespace cl
     }
 
     void
+    ThreadState::set_pending_builtin_exception_string(const wchar_t *type_name,
+                                                      const wchar_t *message)
+    {
+        set_pending_builtin_exception_string(type_name,
+                                             interned_string(message));
+    }
+
+    void
     ThreadState::set_pending_builtin_exception_none(const wchar_t *type_name)
     {
-        set_pending_builtin_exception_string(type_name, "");
+        set_pending_builtin_exception_string(type_name, L"");
     }
 
     void ThreadState::set_pending_stop_iteration_no_value()

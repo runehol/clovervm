@@ -134,15 +134,9 @@ namespace cl
     }
 
     TValue<ExceptionObject> make_exception_object(TValue<ClassObject> type,
-                                                  const char *message)
+                                                  const wchar_t *message)
     {
-        std::wstring wide_message;
-        while(*message != '\0')
-        {
-            wide_message.push_back(static_cast<unsigned char>(*message++));
-        }
-        TValue<String> interned = interned_string(wide_message);
-        return make_exception_object(type, interned);
+        return make_exception_object(type, interned_string(message));
     }
 
     TValue<StopIterationObject>

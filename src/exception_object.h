@@ -95,7 +95,7 @@ namespace cl
     TValue<ExceptionObject> make_exception_object(TValue<ClassObject> type,
                                                   TValue<String> message);
     TValue<ExceptionObject> make_exception_object(TValue<ClassObject> type,
-                                                  const char *message);
+                                                  const wchar_t *message);
     TValue<StopIterationObject>
     make_stop_iteration_object(TValue<ClassObject> type,
                                Value value = Value::not_present());

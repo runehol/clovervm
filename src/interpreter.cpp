@@ -134,11 +134,13 @@ namespace cl
         return result;
     }
 
-    static std::string format_name_error_message(TValue<String> name)
+    static std::wstring format_name_error_message(TValue<String> name)
     {
-        std::string result = "name '";
-        result += narrow_cl_string(name);
-        result += "' is not defined";
+        String *str = name.extract();
+        size_t n_chars = size_t(str->count.extract());
+        std::wstring result = L"name '";
+        result.append(str->data, n_chars);
+        result += L"' is not defined";
         return result;
     }
 
@@ -156,7 +158,7 @@ namespace cl
     set_builtin_exception_and_resolve_frame_exit(Value *fp, const uint8_t *pc,
                                                  CodeObject *code_object,
                                                  const wchar_t *type_name,
-                                                 const char *message)
+                                                 const wchar_t *message)
     {
         active_thread()->set_pending_builtin_exception_string(type_name,
                                                               message);
@@ -167,7 +169,7 @@ namespace cl
         Value *fp, const uint8_t *pc, CodeObject *code_object,
         TValue<String> name)
     {
-        std::string message = format_name_error_message(name);
+        std::wstring message = format_name_error_message(name);
         active_thread()->set_pending_builtin_exception_string(L"NameError",
                                                               message.c_str());
         return resolve_exceptional_frame_exit(fp, pc, code_object);
@@ -176,7 +178,7 @@ namespace cl
     NOINLINE Value raise_value_error_negative_shift_count(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"ValueError", "negative shift count");
+            fp, pc, code_object, L"ValueError", L"negative shift count");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -217,7 +219,7 @@ namespace cl
     NOINLINE Value not_callable_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"TypeError", "object is not callable");
+            fp, pc, code_object, L"TypeError", L"object is not callable");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -238,7 +240,7 @@ namespace cl
     NOINLINE Value subscript_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"TypeError", "object is not subscriptable");
+            fp, pc, code_object, L"TypeError", L"object is not subscriptable");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -260,7 +262,7 @@ namespace cl
     NOINLINE Value wrong_arity_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"TypeError", "wrong number of arguments");
+            fp, pc, code_object, L"TypeError", L"wrong number of arguments");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -403,7 +405,7 @@ namespace cl
     NOINLINE Value not_iterable_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"TypeError", "object is not iterable");
+            fp, pc, code_object, L"TypeError", L"object is not iterable");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -414,7 +416,7 @@ namespace cl
     NOINLINE Value not_iterator_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"TypeError", "object is not an iterator");
+            fp, pc, code_object, L"TypeError", L"object is not an iterator");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -426,7 +428,7 @@ namespace cl
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             fp, pc, code_object, L"TypeError",
-            "range() arguments must be integers");
+            L"range() arguments must be integers");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -443,7 +445,7 @@ namespace cl
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             fp, pc, code_object, L"TypeError",
-            "__init__ should return None, not a value");
+            L"__init__ should return None, not a value");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
