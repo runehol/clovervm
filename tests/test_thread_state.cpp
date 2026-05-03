@@ -96,4 +96,38 @@ namespace cl
         EXPECT_STREQ(L"boom", message.extract()->data);
     }
 
+    TEST(ThreadState, StopIterationObjectStoresValueSlot)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ClassObject *stop_iteration =
+            context.vm().class_for_native_layout(NativeLayoutId::StopIteration);
+        ThreadState::ActivationScope active_thread(thread);
+
+        TValue<StopIterationObject> exception = make_stop_iteration_object(
+            TValue<ClassObject>::from_oop(stop_iteration), Value::from_smi(42));
+
+        EXPECT_EQ(Value::from_smi(42), exception.extract()->value.as_value());
+        TValue<String> message =
+            TValue<String>::from_value_checked(exception.extract()->message);
+        EXPECT_STREQ(L"", message.extract()->data);
+        TValue<ExceptionObject> base_exception =
+            TValue<ExceptionObject>::from_value_checked(exception.as_value());
+        EXPECT_EQ(exception.as_value(), base_exception.as_value());
+    }
+
+    TEST(ThreadState, StopIterationObjectDefaultsValueToNotPresent)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ClassObject *stop_iteration =
+            context.vm().class_for_native_layout(NativeLayoutId::StopIteration);
+        ThreadState::ActivationScope active_thread(thread);
+
+        TValue<StopIterationObject> exception = make_stop_iteration_object(
+            TValue<ClassObject>::from_oop(stop_iteration));
+
+        EXPECT_TRUE(exception.extract()->value.as_value().is_not_present());
+    }
+
 }  // namespace cl

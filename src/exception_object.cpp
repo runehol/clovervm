@@ -10,6 +10,13 @@
 
 namespace cl
 {
+    StopIterationObject::StopIterationObject(ClassObject *cls, Value value)
+        : ExceptionObject(cls, native_layout_id, compact_layout(),
+                          interned_string(L"")),
+          value(value)
+    {
+    }
+
     static void install_exception_instance_root_shape(ClassObject *cls)
     {
         TValue<String> dunder_class_name = interned_string(L"__class__");
@@ -34,6 +41,43 @@ namespace cl
         cls->install_builtin_instance_root_shape(
             descriptors, ExceptionObject::kInlineSlotCount,
             ExceptionObject::kInlineSlotCount, mutable_attribute_shape_flags());
+    }
+
+    static void install_stop_iteration_instance_root_shape(ClassObject *cls)
+    {
+        TValue<String> dunder_class_name = interned_string(L"__class__");
+        TValue<String> message_name = interned_string(L"message");
+        TValue<String> value_name = interned_string(L"value");
+        DescriptorFlags class_flags =
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+            descriptor_flag(DescriptorFlag::StableSlot);
+        DescriptorFlags attribute_flags =
+            descriptor_flag(DescriptorFlag::StableSlot);
+        ShapeRootDescriptor descriptors[StopIterationObject::kInlineSlotCount] =
+            {
+                ShapeRootDescriptor{
+                    dunder_class_name,
+                    DescriptorInfo::make(
+                        StorageLocation{ExceptionObject::kClassSlot,
+                                        StorageKind::Inline},
+                        class_flags)},
+                ShapeRootDescriptor{
+                    message_name,
+                    DescriptorInfo::make(
+                        StorageLocation{ExceptionObject::kMessageSlot,
+                                        StorageKind::Inline},
+                        attribute_flags)},
+                ShapeRootDescriptor{
+                    value_name,
+                    DescriptorInfo::make(
+                        StorageLocation{StopIterationObject::kValueSlot,
+                                        StorageKind::Inline},
+                        attribute_flags)},
+            };
+        cls->install_builtin_instance_root_shape(
+            descriptors, StopIterationObject::kInlineSlotCount,
+            StopIterationObject::kInlineSlotCount,
+            mutable_attribute_shape_flags());
     }
 
     static ClassObject *make_exception_class_raw(VirtualMachine *vm,
@@ -71,6 +115,18 @@ namespace cl
             make_exception_class_raw(vm, name, base));
     }
 
+    BuiltinClassDefinition make_stop_iteration_class(VirtualMachine *vm,
+                                                     ClassObject *base)
+    {
+        static constexpr NativeLayoutId native_layout_ids[] = {
+            NativeLayoutId::StopIteration};
+        ClassObject *cls = ClassObject::make_builtin_class(
+            vm->get_or_create_interned_string_value(L"StopIteration"),
+            StopIterationObject::kInlineSlotCount, nullptr, 0, base);
+        install_stop_iteration_instance_root_shape(cls);
+        return builtin_class_definition(cls, native_layout_ids);
+    }
+
     TValue<ExceptionObject> make_exception_object(TValue<ClassObject> type,
                                                   TValue<String> message)
     {
@@ -87,6 +143,12 @@ namespace cl
         }
         TValue<String> interned = interned_string(wide_message);
         return make_exception_object(type, interned);
+    }
+
+    TValue<StopIterationObject>
+    make_stop_iteration_object(TValue<ClassObject> type, Value value)
+    {
+        return make_internal_value<StopIterationObject>(type.extract(), value);
     }
 
 }  // namespace cl

@@ -18,6 +18,7 @@ namespace cl
         CodeObject,
         ClassObject,
         Exception,
+        StopIteration,
         Instance,
 
         Count,
