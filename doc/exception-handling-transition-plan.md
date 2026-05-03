@@ -277,7 +277,78 @@ the no-local-handler case.
 Deliverable: stop-returning protocol completion can become an ordinary Python
 `StopIteration` exception when it escapes a protocol continuation.
 
-## Stage 9: Stop-Returning Iterator Protocol For `range`
+## Stage 9: Exception Tables And Local Unwind Metadata
+
+- [ ] Add exception table metadata to `CodeObject` as bytecode-local interpreted
+      pc triples: protected start pc, protected end pc, and handler pc.
+- [ ] Add compiler tracking for protected bytecode ranges.
+- [ ] Emit exception table entries in priority order. Entries may overlap, and
+      lookup returns the first covering entry, so innermost handlers must come
+      before enclosing handlers.
+- [ ] Teach exceptional frame exit to look for a local handler before popping the
+      frame.
+- [ ] Give the synthetic startup wrapper a real catch-all table entry, or an
+      equivalent final handler, that materializes/reports unhandled exceptions
+      and executes the final error `Halt`; normal module return executes the
+      success `Halt`.
+- [ ] Use the raising instruction's pc for local raises, and the interpreted
+      caller's saved return pc minus one when an exception escapes a callee into
+      its caller, so lookup targets the protected call instruction rather than
+      the following instruction.
+- [ ] Enter handlers with the active exception object in the accumulator. Keep
+      pending exception state active until a matching handler clears it. Keep
+      traceback materialization lazy and driven by handler code/observation.
+- [x] Use existing `RaiseUnwind` for raise sites that may be covered by a local
+      handler.
+- [ ] Add `RaiseFast` later, valid only outside all protected regions.
+
+Deliverable: managed frames can catch their own exceptions through structural
+exception-table metadata; ordinary frame popping remains the fallback when no
+local table entry applies.
+
+## Stage 10: Local Handlers And Caught Exception Objects
+
+- [ ] Extend handler entry beyond synthetic/internal handlers to user-authored
+      exception handlers.
+- [ ] Add stack/register trimming and any handler-local setup not needed by
+      simple landing pads.
+- [ ] Add parser, AST, codegen, and interpreter support for a first useful
+      `try` / `except` slice.
+- [ ] Arrange the pending exception state expected by handlers.
+- [ ] Support `except SomeError as e` for object-backed pending exceptions.
+- [ ] Support `except StopIteration as e` and `e.value` by materializing compact
+      `StopIteration` when the exception object becomes observable.
+- [ ] Replace remaining placeholder VM-originated exceptions with specific
+      exception object construction.
+- [ ] Normalize constructor, descriptor, arithmetic, and other slow-path errors
+      into specific VM exceptions as their call paths become marker-aware.
+
+Deliverable: pending exceptions can be caught in the current frame and observed
+as Python exception objects.
+
+## Stage 11: Generic For-Loop Exception Fallback
+
+- [ ] Add synthetic exception-table handlers for `for` loops so real
+      `StopIteration` from generic `__next__` exits the loop through ordinary
+      exception handling.
+- [ ] Keep ordinary `for` loops payload-discarding.
+- [ ] Preserve the distinction between protocol `StopIteration` completion and
+      ordinary exceptions: future stop-returning participants may still use
+      exception tables, and exceptions leaking from callees must stay on the
+      managed exceptional path.
+- [ ] Keep any future stop-returning `FOR_ITER` continuation and the
+      real-exception handler targeting the same loop exit/else block.
+
+Deliverable: correctness for generic iterators comes from ordinary exception
+tables. Stop-returning completion remains an optional optimization, not the
+source of `for` loop correctness.
+
+## Stage 12: Stop-Returning Iterator Protocol Experiment
+
+This stage is deliberately delayed until the straight exception-table path is
+solid. Compact `StopIteration` is a protocol bridge for iterator/generator
+completion, not the main loop optimization mechanism. Direct cursor-style plans
+for known iterables may supersede parts of this stage.
 
 - [ ] Define the local stop-returning convention:
 
@@ -290,7 +361,9 @@ completion:
   accumulator contains Value::exception_marker()
 ```
 
-- [ ] Split generic `FOR_ITER` into a protocol call and continuation shape.
+- [ ] Split generic `FOR_ITER` into a protocol call and continuation shape, if
+      the design still calls for it after exception tables and generic fallback
+      exist.
 - [ ] Teach the continuation to consume marker + pending `StopIteration` by
       clearing it and jumping to the loop exit/else target.
 - [ ] Treat marker + any other pending exception as managed exceptional unwind.
@@ -298,7 +371,8 @@ completion:
       stop-returning next code; `iter(range_obj)` still returns the same
       `RangeIterator` object in both modes.
 - [ ] Replace the current single `Function::code_object` member with mandatory
-      `ordinary_code_object` and optional `stop_returning_code_object`.
+      `ordinary_code_object` and optional `stop_returning_code_object`, if
+      stop-returning code objects remain the chosen representation.
 - [ ] Keep arity checks, defaults, and call-window layout independent of code
       selection because both code objects use the same argument calling
       convention.
@@ -324,74 +398,18 @@ completion:
 - [ ] Decide where VM-internal `stop_returning_code_object` is stored for
       shape-based objects: builtin-class metadata, shape metadata, side dispatch
       table, or another internal descriptor.
-- [ ] Make only `RangeIterator` advertise `stop_returning_code_object` at first.
+- [ ] Make only `RangeIterator` advertise `stop_returning_code_object` at first,
+      unless iterator-plan work has made that the wrong first experiment.
 - [ ] Decide the iterator plan during loop setup where possible, not on every
       iteration.
 - [ ] Do not generate traceback segments for stop-returning completion
       signals. Stop-returning managed frames still contribute traceback segments
       for ordinary exceptions.
 
-Deliverable: the existing `range` iterator can use pending `StopIteration` plus
-`Value::exception_marker()` as a local stop-returning completion result, without
-making ordinary opcodes marker-aware.
+Deliverable: a measured, optional stop-returning protocol experiment exists for
+iterator/generator completion paths that still need a Python protocol bridge.
 
-## Stage 10: Exception Tables And Generic For-Loop Fallback
-
-- [ ] Add exception table metadata to `CodeObject` as bytecode-local interpreted
-      pc triples: protected start pc, protected end pc, and handler pc.
-- [ ] Add compiler tracking for protected bytecode ranges.
-- [ ] Give the synthetic startup wrapper a catch-all exception handler that
-      materializes/reports unhandled exceptions and executes the final error
-      `Halt`; normal module return executes the success `Halt`.
-- [ ] Emit exception table entries in priority order. Entries may overlap, and
-      lookup returns the first covering entry, so innermost handlers must come
-      before enclosing handlers.
-- [ ] Teach exceptional frame exit to look for a local handler before popping the
-      frame.
-- [ ] Use the raising instruction's pc for local raises, and the interpreted
-      caller's saved return pc minus one when an exception escapes a callee into
-      its caller, so lookup targets the protected call instruction rather than
-      the following instruction.
-- [ ] Enter handlers with the active exception object in the accumulator. Keep
-      pending exception state active until a matching handler clears it. Keep
-      traceback materialization lazy and driven by handler code/observation.
-- [ ] Add synthetic exception-table handlers for `for` loops so real
-      `StopIteration` from generic `__next__` exits the loop through ordinary
-      exception handling.
-- [ ] Keep the stop-returning `FOR_ITER` continuation and the real-exception handler
-      targeting the same loop exit/else block.
-- [x] Use existing `RaiseUnwind` for raise sites that may be covered by a local
-      handler.
-- [ ] Add `RaiseFast` later, valid only outside all protected regions.
-- [ ] Preserve the distinction between protocol `StopIteration` completion and
-      ordinary exceptions: stop-returning participants may still use exception
-      tables, and exceptions leaking from callees must stay on the managed
-      exceptional path.
-
-Deliverable: stop-returning completion is an optimization; correctness for
-generic iterators comes from ordinary exception tables.
-
-## Stage 11: Local Handlers And Caught Exception Objects
-
-- [ ] Extend handler entry beyond synthetic `for` handlers to user-authored
-      exception handlers.
-- [ ] Add stack/register trimming and any handler-local setup not needed by the
-      synthetic `for` fallback.
-- [ ] Add parser, AST, codegen, and interpreter support for a first useful
-      `try` / `except` slice.
-- [ ] Arrange the pending exception state expected by handlers.
-- [ ] Support `except SomeError as e` for object-backed pending exceptions.
-- [ ] Support `except StopIteration as e` and `e.value` by materializing compact
-      `StopIteration` when the exception object becomes observable.
-- [ ] Replace remaining placeholder VM-originated exceptions with specific
-      exception object construction.
-- [ ] Normalize constructor, descriptor, arithmetic, and other slow-path errors
-      into specific VM exceptions as their call paths become marker-aware.
-
-Deliverable: pending exceptions can be caught in the current frame and observed
-as Python exception objects.
-
-## Stage 12: Lazy Tracebacks
+## Stage 13: Lazy Tracebacks
 
 - [ ] Add lazy traceback metadata to pending exception state.
 - [ ] Record raise-site code object, pc, frame pointer or preserved frame
@@ -410,7 +428,7 @@ as Python exception objects.
 Deliverable: exception propagation can produce Python-compatible tracebacks
 without eagerly allocating traceback objects on every hot failure path.
 
-## Stage 13: Reraise And Delegating Iteration
+## Stage 14: Reraise And Delegating Iteration
 
 - [ ] Add bare `raise` support.
 - [ ] Preserve the current logical exception and traceback chain on reraise.
@@ -422,7 +440,7 @@ without eagerly allocating traceback objects on every hot failure path.
 Deliverable: Python-compatible reraising and the first machinery that makes
 `StopIteration.value` semantically observable without manual iterator driving.
 
-## Stage 14: Remove C++ Exception Dependency
+## Stage 15: Remove C++ Exception Dependency
 
 - [ ] Audit all remaining `throw`, `try`, and `catch` uses in runtime code.
 - [ ] Classify each use as:
@@ -464,12 +482,18 @@ That milestone gives the VM an exception transport backbone for real runtime
 errors without also taking on `try`, tracebacks, `yield from`, or the fast
 iterator protocol.
 
-The second milestone is stages 7 through 10:
+The second milestone is stages 7 through 11:
 
 1. add no-local-handler `raise`
 2. add compact `StopIteration` materialization for managed adapters
-3. add the stop-returning `RangeIterator` protocol path
-4. add exception tables and generic `for` fallback
+3. add exception tables and local unwind metadata
+4. add local `try` / `except` handlers
+5. add the generic `for` fallback through ordinary exception tables
 
-That milestone makes iterator completion cheap while preserving the ordinary
-exception path for generic iterators.
+That milestone makes the straight Python exception path solid before committing
+to additional iterator-specific optimization machinery.
+
+The stop-returning iterator protocol is deliberately later and experimental. It
+may remain useful for generator/protocol completion, but direct loop performance
+may instead come from iterator-plan specialization for ranges, containers, and
+other known iterable shapes.

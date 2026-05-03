@@ -704,15 +704,17 @@ Recommended implementation order:
    `RaiseUnwind`.
 7. Promote compact pending `StopIteration` to a real `StopIterationObject` in
    managed adapters that expose completion as an ordinary exception.
-8. Add a stop-returning path for `RangeIterator`.
-9. Split `FOR_ITER` into a stop-returning call/continuation shape that consumes
-   marker + pending `StopIteration`.
-10. Add exception tables and synthetic `for` loop handlers so real
-   `StopIteration` from generic `__next__` exits the loop through the ordinary
-   exception path.
+8. Add exception tables and local handler metadata, then user-visible
+   `try` / `except` support.
+9. Add synthetic `for` loop handlers so real `StopIteration` from generic
+   `__next__` exits the loop through the ordinary exception path.
+10. Treat stop-returning iterator work as an optional later experiment: it may
+    add a stop-returning path for `RangeIterator`, split `FOR_ITER` into a
+    protocol call/continuation shape, or be superseded in hot paths by
+    iterator-plan specialization.
 11. Add Python generators and mark eligible generator code objects as
-    stop-returning participants when codegen can distinguish their own protocol
-    completion from ordinary exceptions and callee failures.
+    stop-returning participants only when codegen can distinguish their own
+    protocol completion from ordinary exceptions and callee failures.
 12. Add reraise support that preserves the existing traceback chain and starts a
     fresh lazy traceback segment.
 
