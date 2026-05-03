@@ -1207,16 +1207,28 @@ namespace cl
                         analyze_flow_node(target_code_obj, analysis,
                                           children[0], normal_state);
 
-                        FlowState handler_state = state;
-                        if(children.size() == 3)
+                        FlowState merged_state = normal_state;
+                        for(size_t child_offset = 1;
+                            child_offset < children.size(); ++child_offset)
                         {
+                            int32_t handler_idx = children[child_offset];
+                            AstChildren handler_children =
+                                av.children[handler_idx];
+                            FlowState handler_state = state;
+                            if(handler_children.size() == 2)
+                            {
+                                analyze_flow_node(target_code_obj, analysis,
+                                                  handler_children[0],
+                                                  handler_state);
+                            }
                             analyze_flow_node(target_code_obj, analysis,
-                                              children[1], handler_state);
+                                              handler_children.back(),
+                                              handler_state);
+                            merged_state =
+                                merge_flow_states(merged_state, handler_state);
                         }
-                        analyze_flow_node(target_code_obj, analysis,
-                                          children.back(), handler_state);
 
-                        state = merge_flow_states(normal_state, handler_state);
+                        state = merged_state;
                         break;
                     }
 
@@ -1795,11 +1807,9 @@ namespace cl
         void codegen_try_statement(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
-            assert(children.size() == 2 || children.size() == 3);
+            assert(children.size() >= 2);
             uint32_t source_offset = av.source_offsets[node_idx];
             int32_t body_idx = children[0];
-            int32_t handler_type_idx = children.size() == 3 ? children[1] : -1;
-            int32_t handler_body_idx = children.back();
 
             JumpTarget handler_target(code_obj);
             JumpTarget done_target(code_obj);
@@ -1811,24 +1821,47 @@ namespace cl
             code_obj->emit_jump(source_offset, done_target);
 
             handler_target.resolve();
-            if(handler_type_idx >= 0)
+            bool has_bare_handler = false;
+            for(size_t child_offset = 1; child_offset < children.size();
+                ++child_offset)
             {
-                JumpTarget no_match_target(code_obj);
-                codegen_node(handler_type_idx);
-                code_obj->emit_active_exception_is_instance(source_offset);
-                code_obj->emit_jump_if_false(source_offset, no_match_target);
-                code_obj->emit_clear_active_exception(source_offset);
-                codegen_node(handler_body_idx);
-                code_obj->emit_jump(source_offset, done_target);
+                int32_t handler_idx = children[child_offset];
+                AstChildren handler_children = av.children[handler_idx];
+                assert(av.kinds[handler_idx].node_kind ==
+                       AstNodeKind::STATEMENT_EXCEPT_HANDLER);
+                assert(handler_children.size() == 1 ||
+                       handler_children.size() == 2);
 
-                no_match_target.resolve();
-                code_obj->emit_reraise_active_exception(source_offset);
-                done_target.resolve();
-                return;
+                int32_t handler_body_idx = handler_children.back();
+                uint32_t handler_source_offset = av.source_offsets[handler_idx];
+                if(handler_children.size() == 2)
+                {
+                    JumpTarget no_match_target(code_obj);
+                    codegen_node(handler_children[0]);
+                    code_obj->emit_active_exception_is_instance(
+                        handler_source_offset);
+                    code_obj->emit_jump_if_false(handler_source_offset,
+                                                 no_match_target);
+                    code_obj->emit_clear_active_exception(
+                        handler_source_offset);
+                    codegen_node(handler_body_idx);
+                    code_obj->emit_jump(handler_source_offset, done_target);
+
+                    no_match_target.resolve();
+                    continue;
+                }
+
+                assert(child_offset == children.size() - 1);
+                has_bare_handler = true;
+                code_obj->emit_clear_active_exception(handler_source_offset);
+                codegen_node(handler_body_idx);
+                break;
             }
 
-            code_obj->emit_clear_active_exception(source_offset);
-            codegen_node(handler_body_idx);
+            if(!has_bare_handler)
+            {
+                code_obj->emit_reraise_active_exception(source_offset);
+            }
 
             done_target.resolve();
         }
@@ -2419,6 +2452,11 @@ namespace cl
                     throw std::runtime_error(
                         "should not end here - this is handled by "
                         "EXPRESSION_COMPARISON");
+
+                case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
+                    throw std::runtime_error(
+                        "should not end here - this is handled by "
+                        "STATEMENT_TRY");
 
                 case AstNodeKind::PARAMETER_SEQUENCE:
                 case AstNodeKind::PARAMETER:

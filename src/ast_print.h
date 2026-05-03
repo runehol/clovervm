@@ -420,12 +420,21 @@ template <> struct fmt::formatter<cl::AstVector>
                 format_to(out, "try:\n");
                 render_node(av, out, children[0], indent + 1,
                             cl::ExpressionPrecedence::Lowest);
+                for(size_t child_offset = 1; child_offset < children.size();
+                    ++child_offset)
+                {
+                    render_node(av, out, children[child_offset], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                }
+                break;
+
+            case cl::AstNodeKind::STATEMENT_EXCEPT_HANDLER:
                 emit_indent(out, indent);
                 format_to(out, "except");
-                if(children.size() == 3)
+                if(children.size() == 2)
                 {
                     format_to(out, " ");
-                    render_node(av, out, children[1], indent,
+                    render_node(av, out, children[0], indent,
                                 cl::ExpressionPrecedence::Lowest);
                 }
                 format_to(out, ":\n");

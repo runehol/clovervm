@@ -36,3 +36,25 @@ try:
 except:
     result = 7
 assert result == 7
+
+result = 0
+try:
+    raise NameError
+except ValueError:
+    result = 1
+except NameError:
+    result = 7
+except:
+    result = 2
+assert result == 7
+
+result = 0
+try:
+    raise TypeError
+except ValueError:
+    result = 1
+except NameError:
+    result = 2
+except:
+    result = 7
+assert result == 7

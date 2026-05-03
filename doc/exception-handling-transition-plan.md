@@ -334,6 +334,8 @@ local table entry applies.
 - [x] Arrange the pending exception state expected by handlers.
 - [x] Support typed `except SomeError:` handlers with
       `ActiveExceptionIsInstance` and reraising on mismatch.
+- [x] Support multiple regular `except` handlers with an optional bare fallback
+      as the last handler.
 - [ ] Support `except SomeError as e` for object-backed pending exceptions.
 - [ ] Support `except StopIteration as e` and `e.value` by materializing compact
       `StopIteration` when the exception object becomes observable.
@@ -347,9 +349,9 @@ as Python exception objects.
 
 Current handler slices: `try: ... except: ...` catches unconditionally, while
 `try: ... except SomeError: ...` evaluates the handler class, checks the active
-pending exception with `ActiveExceptionIsInstance`, and reraises on mismatch.
-The match opcode does not materialize compact `StopIteration`. `as e`, multiple
-handlers, `else`, and `finally` remain follow-up work.
+pending exception with `ActiveExceptionIsInstance`, and falls through to the
+next handler or reraises on mismatch. The match opcode does not materialize
+compact `StopIteration`. `as e`, `else`, and `finally` remain follow-up work.
 
 ## Stage 11: Generic For-Loop Exception Fallback
 

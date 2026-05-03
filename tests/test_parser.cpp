@@ -134,6 +134,28 @@ TEST(Parser, try_typed_except_stmt)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, try_multiple_except_stmt)
+{
+    std::string expected = ("try:\n"
+                            "    risky()\n"
+                            "except ValueError:\n"
+                            "    value_recovered()\n"
+                            "except NameError:\n"
+                            "    name_recovered()\n"
+                            "except:\n"
+                            "    fallback()\n");
+    std::string actual = parse(L"try:\n"
+                               "    risky()\n"
+                               "except ValueError:\n"
+                               "    value_recovered()\n"
+                               "except NameError:\n"
+                               "    name_recovered()\n"
+                               "except:\n"
+                               "    fallback()\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, for_stmt)
 {
     std::string expected = ("for x in y:\n"

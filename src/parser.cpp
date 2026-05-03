@@ -1510,17 +1510,29 @@ namespace cl
                 return not_implemented("try statement without except");
             }
 
-            consume(Token::EXCEPT);
-            if(peek() != Token::COLON)
+            bool saw_bare_except = false;
+            while(peek() == Token::EXCEPT)
             {
-                children.push_back(expression());
-            }
-            consume(Token::COLON);
-            children.push_back(block());
-
-            if(peek() == Token::EXCEPT)
-            {
-                return not_implemented("multiple except clauses");
+                if(saw_bare_except)
+                {
+                    return not_implemented("except after bare except");
+                }
+                int32_t handler_source_pos = source_pos_for_token();
+                consume(Token::EXCEPT);
+                AstChildren handler_children;
+                if(peek() != Token::COLON)
+                {
+                    handler_children.push_back(expression());
+                }
+                else
+                {
+                    saw_bare_except = true;
+                }
+                consume(Token::COLON);
+                handler_children.push_back(block());
+                children.push_back(
+                    ast.emplace_back(AstNodeKind::STATEMENT_EXCEPT_HANDLER,
+                                     handler_source_pos, handler_children));
             }
             if(peek() == Token::ELSE || peek() == Token::FINALLY)
             {
