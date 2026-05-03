@@ -8,7 +8,9 @@ performance shape and keeping ordinary `for` loops cheap.
 
 The target design is described in
 [doc/exception-transport-and-protocols.md](./exception-transport-and-protocols.md).
-This file tracks the implementation sequence we can check off as it lands.
+This file tracks an implementation sequence that can be checked off as it lands.
+When this plan and the target design disagree, update the plan; the target design
+is the source of truth for semantics.
 
 ## Current State
 
@@ -18,31 +20,34 @@ This file tracks the implementation sequence we can check off as it lands.
   `ThreadState` exist, but no opcode or adapter uses them as the managed
   exception transport yet.
 - Frames currently keep caller metadata at and above `fp`: `fp[0]` is the
-  previous frame pointer, `fp[2]` is the return `CodeObject`, and `fp[3]` is
+  previous frame pointer, `fp[1]` is reserved for native pc / future
+  compiled-frame metadata, `fp[2]` is the return `CodeObject`, and `fp[3]` is
   the return pc.
 - Native function thunks return through ordinary bytecode `Return`; native
   failures may still throw C++ exceptions.
 - `for` loops use internal iterator exhaustion for builtin `RangeIterator`
   paths, not user-visible `StopIteration`.
-- `raise`, `try`, `except`, reraise, exception objects, and tracebacks are not
-  implemented.
+- `raise`, `try`, `except`, reraise, Python-visible exception objects, and
+  tracebacks are not implemented.
 
 ## Guiding Constraints
 
 - Keep the frame-layout work separate from exception semantics where possible.
-  The frame move should be behavior-preserving and easy to bisect.
-- Keep ordinary successful returns separate from exceptional frame exit.
-  Normal return should continue to carry the result in the accumulator.
+  Frame moves should be behavior-preserving and easy to bisect.
+- Keep ordinary successful returns separate from exceptional frame exit. Normal
+  return should continue to carry the result in the accumulator.
 - Use pending exception state on `ThreadState` as the single source of truth for
   Python exceptions in flight.
+- Keep general user exception construction eager. Compact pending representation
+  is special to `StopIteration` until there is a measured and safe reason to
+  widen it.
 - Preserve Python's `StopIteration` semantics: ordinary `for` loops discard
-  `StopIteration.value`, while future delegation machinery such as `yield from`
-  may inspect it.
-- Keep general user exception construction eager. Compact pending
-  representation is special to `StopIteration` until there is a measured and
-  safe reason to widen it.
-- Keep C++ exceptions available as temporary outer panic plumbing only while the
-  VM exception transport is being migrated.
+  `StopIteration.value`, while delegation machinery such as `yield from` may
+  inspect it later.
+- Use managed thunks/adapters rather than frame return-mode tagging. Do not use
+  `fp[1]` or tagged return `CodeObject` pointers for exception transport.
+- Keep C++ exceptions available as temporary outer panic plumbing only while VM
+  exception transport is being migrated.
 - Treat eventual `-fno-exceptions` support as a design constraint. New runtime
   error paths should move toward explicit VM exception transport or explicit
   fatal-abort/panic paths, not new C++ exception dependencies.
@@ -72,8 +77,6 @@ semantic changes.
       stops open-coding magic indices.
 - [x] Route frame setup and normal return restoration through those constants or
       accessors.
-- [ ] Make the GC/root-scanning contract consume the documented slot meanings
-      directly.
 - [x] Do not use `fp[1]` for exception transport. It is reserved for future
       native pc state.
 - [x] Do not introduce pointer tagging or opaque encoded return-target objects
@@ -111,7 +114,8 @@ Deliverable: the VM has one canonical location for a Python exception in flight.
 - [ ] Make the helper restore or pop the current frame using the frame-layout
       helpers.
 - [ ] Consult managed unwind metadata when it exists, and otherwise continue
-      unwinding to the caller frame.
+      unwinding to the caller frame. At this stage there may be no metadata, so
+      the no-local-handler path is the only exercised path.
 - [ ] At top-level or native test-harness boundaries, temporarily convert
       unhandled pending exceptions back into the current C++ error mechanism.
 - [ ] Keep normal `Return` unchanged and free of exception-marker checks.
@@ -119,7 +123,26 @@ Deliverable: the VM has one canonical location for a Python exception in flight.
 Deliverable: pending exceptions can cross Clover/Python frame boundaries without
 using C++ unwinding through the interpreter dispatch loop.
 
-## Stage 4: Managed Return Adapters
+## Stage 4: Minimal Exception Objects
+
+- [ ] Add enough Python-visible exception class/object support to eagerly create
+      simple exception instances for VM-originated errors.
+- [ ] Support at least the initial builtin exception classes needed by the first
+      converted slow paths: `Exception`, `NameError`, `TypeError`, `ValueError`,
+      `AssertionError`, and `StopIteration`.
+- [ ] Make `set_pending_exception_string` construct and store an exception object
+      instead of throwing its unsupported placeholder.
+- [ ] Keep construction deliberately narrow: message-only VM exceptions are
+      enough for this stage; traceback objects, handler binding, and rich
+      exception attributes can land later.
+- [ ] Preserve the compact `StopIteration` representation as separate pending
+      state. Do not force all `StopIteration` completion through object
+      allocation.
+
+Deliverable: ordinary VM exceptions have a real pending object representation
+before runtime helpers start depending on VM exception transport.
+
+## Stage 5: Managed Return Adapters And Native Normalization
 
 - [ ] Add a `ReturnOrRaiseException` opcode or equivalent thunk return adapter.
 - [ ] Keep its contract local:
@@ -133,22 +156,29 @@ accumulator == Value::exception_marker():
   enter managed exceptional unwind
 ```
 
+- [ ] Add a `Value::is_exception_marker()` predicate and use it instead of
+      spelling marker comparisons at call sites.
 - [ ] Use managed thunks/adapters rather than frame return-mode tagging.
 - [ ] Do not use `fp[1]` or tagged return `CodeObject` pointers for exception
       transport.
-- [ ] Add a code-object flag such as `HideFromTraceback` later if thunk frames
-      should be hidden from user-visible tracebacks.
-- [ ] Add the non-participant adapter shape for fast-convention callees:
-      `LoadConst fast_protocol_code_object`, `CallCodeObject`, then
-      `ReturnOrRaiseException`.
 - [x] Prefer `CallCodeObject` as a small shared primitive: it calls an explicit
       `CodeObject` with an already-prepared argument/frame window, bypassing
       normal `Function` entry selection.
+- [ ] Add the adapter shape for ordinary callers of stop-returning code:
+      `LoadConst stop_returning_code_object`, `CallCodeObject`, then
+      `ReturnOrRaiseException`.
+- [ ] Convert fixed-arity native thunk bodies to end in `ReturnOrRaiseException`.
+- [ ] Make native failure set pending exception state and place
+      `Value::exception_marker()` in the accumulator.
+- [ ] Keep native/C calling conventions inside managed thunks; do not make
+      native boundaries a first-order unwinder frame kind.
+- [ ] Add outer C API sentinel conversion only at actual external C API
+      boundaries.
 
 Deliverable: native and protocol implementation details can return marker plus
 pending exception to managed adapter code, while ordinary return stays fast.
 
-## Stage 5: Convert Selected VM Slow Errors
+## Stage 6: Convert Selected VM Slow Errors
 
 - [ ] Convert a small set of cold interpreter helpers from direct
       `std::runtime_error` throws to pending-exception setup plus exceptional
@@ -159,7 +189,7 @@ pending exception to managed adapter code, while ordinary return stays fast.
   - [ ] `ValueError: negative shift count`
   - [ ] `AssertionError`
 - [ ] Keep complex runtime failures and construction-time failures on the old
-      path until object materialization and native normalization are ready.
+      path until their dependencies are normalized.
 - [ ] Add interpreter tests for propagation across nested calls.
 
 Helper-layer transition convention:
@@ -168,8 +198,6 @@ Helper-layer transition convention:
       success returns the natural result, or `Value::None()` for operations with
       no natural result; failure sets pending exception state and returns
       `Value::exception_marker()`.
-- [ ] Add a `Value::is_exception_marker()` predicate and use it instead of
-      spelling marker comparisons at call sites.
 - [ ] Mark fallible `Value` helpers `[[nodiscard]]` where practical so ignored
       results become compiler-visible during the migration.
 - [ ] Add a small propagation macro, tentatively
@@ -191,11 +219,13 @@ CL_PROPAGATE_EXCEPTION(item);
       prove validity before using them.
 - [ ] Add debug assertions on container/register writes where useful so
       `Value::exception_marker()` does not accidentally become ordinary VM data.
+- [ ] Add a stricter debug assertion for value-flow locations that must reject
+      both `Value::exception_marker()` and `Value::not_present()`.
 
 Deliverable: real VM exception propagation exists for selected existing failure
-paths, even before `raise` or `try`.
+paths, backed by real exception objects, even before `raise` or `try`.
 
-## Stage 6: `raise` Without Local Handlers
+## Stage 7: `raise` Without Local Handlers
 
 - [ ] Add AST and parser support for a narrow first slice of `raise`.
 - [ ] Add bytecode and codegen for unprotected raise sites, initially
@@ -207,11 +237,29 @@ paths, even before `raise` or `try`.
 - [ ] Add interpreter tests for Python-authored raises propagating out through
       nested calls.
 
-Deliverable: Python-authored `raise` exists and uses VM exception transport.
+Deliverable: Python-authored `raise` exists and uses VM exception transport for
+the no-local-handler case.
 
-## Stage 7: Fast Iterator Protocol For `range`
+## Stage 8: Compact `StopIteration` Materialization
 
-- [ ] Define the local fast protocol convention:
+- [ ] Add helpers to materialize compact pending `StopIteration` into a real
+      `StopIteration` exception object.
+- [ ] Preserve `StopIteration()` as `Value::not_present()`, distinct from
+      `StopIteration(None)`.
+- [ ] Make adapters that expose stop-returning completion to ordinary callers
+      promote compact `StopIteration` before entering managed exceptional unwind.
+- [ ] Keep ordinary `for` loops payload-discarding.
+- [ ] Add tests for unhandled/user-visible `next(it)` exhaustion once ordinary
+      next paths use this machinery.
+- [ ] Keep traceback handling minimal for now: this stage may use the current
+      top-level error conversion and should not promise full traceback objects.
+
+Deliverable: stop-returning protocol completion can become an ordinary Python
+`StopIteration` exception when it escapes a protocol continuation.
+
+## Stage 9: Stop-Returning Iterator Protocol For `range`
+
+- [ ] Define the local stop-returning convention:
 
 ```text
 value:
@@ -226,85 +274,74 @@ completion:
 - [ ] Teach the continuation to consume marker + pending `StopIteration` by
       clearing it and jumping to the loop exit/else target.
 - [ ] Treat marker + any other pending exception as managed exceptional unwind.
-- [ ] Give `RangeIterator` both an ordinary next entry and a VM-internal fast
-      next entry; `iter(range_obj)` still returns the same `RangeIterator`
-      object in both modes.
-- [ ] Represent the fast entry as an optional second entry point on the
-      `Function` used for iteration, preferably as a separate `CodeObject` for
-      the fast convention.
-- [ ] For native next functions, build two managed thunks: a fast-protocol thunk
-      and a normal adapter thunk that can call the fast convention's
-      `CodeObject` with `CallCodeObject` and then `ReturnOrRaiseException`.
-- [ ] Teach the `FOR_ITER` inline cache to store the decision to use the fast
-      protocol entry, including the selected `CodeObject` and the guards that
-      make that decision valid.
-- [ ] Decide where the VM-internal fast next entry is stored for shape-based
-      objects: builtin-class metadata, shape metadata, side dispatch table, or
-      another internal descriptor.
-- [ ] Make only `RangeIterator` advertise the fast entry at first.
+- [ ] Give `RangeIterator` both ordinary next code and VM-internal
+      stop-returning next code; `iter(range_obj)` still returns the same
+      `RangeIterator` object in both modes.
+- [ ] Represent the stop-returning body as an optional `stop_returning_code`
+      `CodeObject` on the `Function` used for iteration. The ordinary
+      `CodeObject` remains mandatory.
+- [ ] For native next functions, build two sibling managed thunks that both call
+      the native implementation directly: an ordinary thunk that normalizes
+      marker results through `ReturnOrRaiseException`, and a stop-returning thunk
+      that returns marker plus pending `StopIteration` to the protocol
+      continuation while raising other pending exceptions.
+- [ ] Teach the `FOR_ITER` inline cache to store the decision to use the
+      stop-returning protocol path, including the selected `stop_returning_code`
+      `CodeObject` and the guards that make that decision valid.
+- [ ] Decide where the VM-internal stop-returning `CodeObject` is stored for
+      shape-based objects: builtin-class metadata, shape metadata, side dispatch
+      table, or another internal descriptor.
+- [ ] Make only `RangeIterator` advertise `stop_returning_code` at first.
 - [ ] Decide the iterator plan during loop setup where possible, not on every
       iteration.
-- [ ] Ensure ordinary `for` discards `StopIteration.value`.
-- [ ] Do not generate traceback segments for the fast protocol frame itself.
+- [ ] Do not generate traceback segments for stop-returning completion
+      signals. Stop-returning managed frames still contribute traceback segments
+      for ordinary exceptions.
 
 Deliverable: the existing `range` iterator can use pending `StopIteration` plus
-`Value::exception_marker()` as a local fast completion result, without making
-ordinary opcodes marker-aware.
+`Value::exception_marker()` as a local stop-returning completion result, without
+making ordinary opcodes marker-aware.
 
-## Stage 8: Exception Tables And For-Loop Fallback
+## Stage 10: Exception Tables And Generic For-Loop Fallback
 
 - [ ] Add exception table metadata to `CodeObject`.
 - [ ] Add compiler tracking for protected bytecode ranges.
+- [ ] Teach exceptional frame exit to look for a local handler before popping the
+      frame.
 - [ ] Add synthetic exception-table handlers for `for` loops so real
       `StopIteration` from generic `__next__` exits the loop through ordinary
       exception handling.
-- [ ] Keep the fast `FOR_ITER` continuation and the real-exception handler
+- [ ] Keep the stop-returning `FOR_ITER` continuation and the real-exception handler
       targeting the same loop exit/else block.
 - [ ] Add `RAISE_UNWIND` for raise sites that may be covered by a local handler.
 - [ ] Keep `RAISE_FAST` valid only outside all protected regions.
 - [ ] Preserve the distinction between protocol `StopIteration` completion and
-      ordinary exceptions: fast-protocol participants may still use exception
+      ordinary exceptions: stop-returning participants may still use exception
       tables, and exceptions leaking from callees must stay on the managed
       exceptional path.
 
-Deliverable: fast protocol completion is an optimization; correctness for
+Deliverable: stop-returning completion is an optimization; correctness for
 generic iterators comes from ordinary exception tables.
 
-## Stage 9: Native Exception Normalization
+## Stage 11: Local Handlers And Caught Exception Objects
 
-- [ ] Convert fixed-arity native thunk bodies to end in
-      `ReturnOrRaiseException`.
-- [ ] Make native failure set pending exception state and place
-      `Value::exception_marker()` in the accumulator.
-- [ ] Keep native/C calling conventions inside managed thunks; do not make
-      native boundaries a first-order unwinder frame kind.
-- [ ] Add outer C API sentinel conversion only at actual external C API
-      boundaries.
-
-Deliverable: native failures no longer need to unwind C++ exceptions through
-the VM call stack, and managed unwinding still sees ordinary Clover frames.
-
-## Stage 10: Local Handlers
-
-- [ ] Add table lookup and stack/register trimming for local handler entry.
+- [ ] Extend handler entry beyond synthetic `for` handlers to user-authored
+      exception handlers.
+- [ ] Add stack/register trimming and any handler-local setup not needed by the
+      synthetic `for` fallback.
 - [ ] Add parser, AST, codegen, and interpreter support for a first useful
       `try` / `except` slice.
-
-Deliverable: pending exceptions can be caught by handlers in the current frame.
-
-## Stage 11: Exception Objects And Materialization
-
-- [ ] Add enough Python-visible exception object support for caught exceptions.
-- [ ] Materialize compact `StopIteration` when the exception object becomes
-      observable.
-- [ ] Support `except StopIteration as e` and `e.value`.
-- [ ] Replace placeholder VM-originated exceptions with specific exception
-      object construction.
+- [ ] Arrange the pending exception state expected by handlers.
+- [ ] Support `except SomeError as e` for object-backed pending exceptions.
+- [ ] Support `except StopIteration as e` and `e.value` by materializing compact
+      `StopIteration` when the exception object becomes observable.
+- [ ] Replace remaining placeholder VM-originated exceptions with specific
+      exception object construction.
 - [ ] Normalize constructor, descriptor, arithmetic, and other slow-path errors
-      into specific VM exceptions.
+      into specific VM exceptions as their call paths become marker-aware.
 
-Deliverable: caught exceptions are inspectable Python objects rather than only
-transport state.
+Deliverable: pending exceptions can be caught in the current frame and observed
+as Python exception objects.
 
 ## Stage 12: Lazy Tracebacks
 
@@ -315,12 +352,12 @@ transport state.
       must be copied or materialized.
 - [ ] Materialize traceback objects for observation boundaries such as
       `e.__traceback__`, formatting, debugging, and APIs exposing frames.
-- [ ] Preserve the fast protocol rule: marker-based iterator protocol
+- [ ] Preserve the stop-returning rule: marker-based iterator protocol
       completion does not synthesize traceback frames, even if later promoted at
       an adapter or continuation.
-- [ ] Hide adapter/thunk code objects from user-visible tracebacks so promoted
-      fast completions do not expose implementation frames as the visible raise
-      point.
+- [ ] Add a code-object flag such as `HideFromTraceback` for adapter/thunk code
+      objects so promoted stop-returning completions and native adapter failures
+      do not expose implementation frames as the visible raise point.
 
 Deliverable: exception propagation can produce Python-compatible tracebacks
 without eagerly allocating traceback objects on every hot failure path.
@@ -330,8 +367,8 @@ without eagerly allocating traceback objects on every hot failure path.
 - [ ] Add bare `raise` support.
 - [ ] Preserve the current logical exception and traceback chain on reraise.
 - [ ] Start a fresh lazy traceback segment at the reraise site.
-- [ ] Add `yield from` or equivalent delegating-iteration machinery that
-      consumes `StopIteration.value` as the delegation result.
+- [ ] Add `yield from` or equivalent delegating-iteration machinery that consumes
+      `StopIteration.value` as the delegation result.
 - [ ] Keep ordinary `for` loops payload-discarding.
 
 Deliverable: Python-compatible reraising and the first machinery that makes
@@ -347,8 +384,8 @@ Deliverable: Python-compatible reraising and the first machinery that makes
   - [ ] benchmark/tooling-only helper
   - [ ] fatal internal panic
 - [ ] Convert Python-visible runtime failures to pending VM exceptions.
-- [ ] Convert fatal internal failures to explicit abort/panic helpers that do
-      not require C++ exception unwinding.
+- [ ] Convert fatal internal failures to explicit abort/panic helpers that do not
+      require C++ exception unwinding.
 - [ ] Keep parser/compiler diagnostics separate from the interpreter runtime
       decision; they may continue using host-side error mechanisms until there
       is a separate reason to change them.
@@ -361,17 +398,28 @@ Deliverable: Python-compatible reraising and the first machinery that makes
 Deliverable: the VM runtime can be built without C++ exception support; Python
 exceptions are represented by CloverVM state, not host-language unwinding.
 
-## First Milestone
+## Milestones
 
-The first coherent milestone is stages 0 through 5:
+The first coherent milestone is stages 0 through 6:
 
 1. finish the call-frame layout refactor
 2. document frame-header slots and route access through named constants/helpers
 3. add pending exception state
 4. add exceptional frame exit
-5. add managed return adapters
-6. convert a few selected interpreter slow errors
+5. add minimal exception object support
+6. add managed return adapters and native normalization
+7. convert a few selected interpreter slow errors
 
-That milestone gives the VM an exception transport backbone without also taking
-on `try`, exception object materialization, tracebacks, `yield from`, or full
-native normalization in the same step.
+That milestone gives the VM an exception transport backbone for real runtime
+errors without also taking on `try`, tracebacks, `yield from`, or the fast
+iterator protocol.
+
+The second milestone is stages 7 through 10:
+
+1. add no-local-handler `raise`
+2. add compact `StopIteration` materialization
+3. add the stop-returning `RangeIterator` protocol path
+4. add exception tables and generic `for` fallback
+
+That milestone makes iterator completion cheap while preserving the ordinary
+exception path for generic iterators.
