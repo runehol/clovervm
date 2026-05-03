@@ -151,12 +151,13 @@ TEST(Interpreter, del_global_removes_binding)
     expect_runtime_error(L"value = 7\n"
                          L"del value\n"
                          L"value\n",
-                         "NameError");
+                         "NameError: name 'value' is not defined");
 }
 
 TEST(Interpreter, del_missing_global_raises_name_error)
 {
-    expect_runtime_error(L"del missing\n", "NameError");
+    expect_runtime_error(L"del missing\n",
+                         "NameError: name 'missing' is not defined");
 }
 
 TEST(Interpreter, del_local_variable_removes_binding)
@@ -165,7 +166,7 @@ TEST(Interpreter, del_local_variable_removes_binding)
                          L"    del value\n"
                          L"    return value\n"
                          L"clear(7)\n",
-                         "NameError");
+                         "NameError: name 'value' is not defined");
 }
 
 TEST(Interpreter, del_missing_local_raises_name_error)
@@ -173,7 +174,7 @@ TEST(Interpreter, del_missing_local_raises_name_error)
     expect_runtime_error(L"def clear():\n"
                          L"    del value\n"
                          L"clear()\n",
-                         "NameError");
+                         "NameError: name 'value' is not defined");
 }
 
 TEST(Interpreter, local_read_before_assignment_raises_name_error)
@@ -182,7 +183,7 @@ TEST(Interpreter, local_read_before_assignment_raises_name_error)
                          L"    value\n"
                          L"    value = 7\n"
                          L"read_before_write()\n",
-                         "NameError");
+                         "NameError: name 'value' is not defined");
 }
 
 TEST(Interpreter, conditional_local_assignment_raises_on_missing_path)
@@ -192,7 +193,7 @@ TEST(Interpreter, conditional_local_assignment_raises_on_missing_path)
                          L"        value = 7\n"
                          L"    return value\n"
                          L"maybe_write(False)\n",
-                         "NameError");
+                         "NameError: name 'value' is not defined");
 }
 
 TEST(Interpreter, function_wrong_arity)
@@ -1165,7 +1166,7 @@ TEST(Interpreter, global_statement_makes_function_delete_global)
                          L"    del a\n"
                          L"f()\n"
                          L"a\n",
-                         "NameError");
+                         "NameError: name 'a' is not defined");
 }
 
 TEST(Interpreter, global_statement_rejects_parameter_conflict)
@@ -1228,7 +1229,8 @@ TEST(Interpreter, global_statement_rejects_annotated_name)
 
 TEST(Interpreter, name_error)
 {
-    expect_runtime_error(L"missing_name\n", "NameError");
+    expect_runtime_error(L"missing_name\n",
+                         "NameError: name 'missing_name' is not defined");
 }
 
 TEST(Interpreter, call_non_callable)
@@ -1587,7 +1589,7 @@ TEST(Interpreter, global_delete_does_not_delete_builtin_fallback)
 {
     expect_runtime_error(L"range\n"
                          L"del range\n",
-                         "NameError");
+                         "NameError: name 'range' is not defined");
 }
 
 TEST(Interpreter, global_delete_reveals_builtin_after_shadow_delete)

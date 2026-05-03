@@ -189,7 +189,7 @@ pending exception to managed adapter code, while ordinary return stays fast.
       `std::runtime_error` throws to pending-exception setup plus exceptional
       frame exit.
 - [ ] Good first candidates:
-  - [ ] `NameError`
+  - [x] `NameError`
   - [x] simple `TypeError`
   - [x] `ValueError: negative shift count`
   - [x] `AssertionError`

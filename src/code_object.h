@@ -185,6 +185,18 @@ namespace cl
             return get_padded_n_parameters() - 1 + FrameHeaderSizeAboveFp - reg;
         }
 
+        uint32_t decode_reg(int8_t encoded_reg) const
+        {
+            int32_t reg = int32_t(get_padded_n_parameters()) - 1 +
+                          FrameHeaderSizeAboveFp - encoded_reg;
+            assert(reg >= 0);
+            assert(uint32_t(reg) <
+                   get_padded_n_parameters() + FrameHeaderSize +
+                       get_padded_n_ordinary_below_frame_slots() +
+                       n_outgoing_call_slots);
+            return uint32_t(reg);
+        }
+
         int32_t get_highest_occupied_frame_offset() const
         {
             if(n_parameters == 0)

@@ -134,6 +134,14 @@ namespace cl
         return result;
     }
 
+    static std::string format_name_error_message(TValue<String> name)
+    {
+        std::string result = "name '";
+        result += narrow_cl_string(name);
+        result += "' is not defined";
+        return result;
+    }
+
     NOINLINE Value raise_generic_exception(PARAMS)
     {
         throw std::runtime_error("Clovervm exception");
@@ -155,6 +163,16 @@ namespace cl
         return resolve_exceptional_frame_exit(fp, pc, code_object);
     }
 
+    static NOINLINE ExceptionalTarget set_name_error_and_resolve_frame_exit(
+        Value *fp, const uint8_t *pc, CodeObject *code_object,
+        TValue<String> name)
+    {
+        std::string message = format_name_error_message(name);
+        active_thread()->set_pending_builtin_exception_string(L"NameError",
+                                                              message.c_str());
+        return resolve_exceptional_frame_exit(fp, pc, code_object);
+    }
+
     NOINLINE Value raise_value_error_negative_shift_count(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
@@ -166,7 +184,35 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value name_error(PARAMS) { throw std::runtime_error("NameError"); }
+    NOINLINE Value local_name_error(PARAMS)
+    {
+        int8_t reg = pc[1];
+        uint32_t slot_idx = code_object->decode_reg(reg);
+        assert(slot_idx < code_object->local_scope.extract()->size());
+        ExceptionalTarget target = set_name_error_and_resolve_frame_exit(
+            fp, pc, code_object,
+            code_object->local_scope.extract()->get_name_by_slot_index(
+                slot_idx));
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE Value global_name_error(PARAMS)
+    {
+        int32_t slot_idx = read_uint32_le(&pc[1]);
+        ExceptionalTarget target = set_name_error_and_resolve_frame_exit(
+            fp, pc, code_object,
+            code_object->module_scope.extract()->get_name_by_slot_index(
+                slot_idx));
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
 
     NOINLINE Value not_callable_error(PARAMS)
     {
@@ -1055,7 +1101,7 @@ namespace cl
         accumulator = fp[reg];
         if(unlikely(accumulator.is_not_present()))
         {
-            MUSTTAIL return name_error(ARGS);
+            MUSTTAIL return local_name_error(ARGS);
         }
         COMPLETE();
     }
@@ -1083,7 +1129,7 @@ namespace cl
         int8_t reg = pc[1];
         if(unlikely(fp[reg].is_not_present()))
         {
-            MUSTTAIL return name_error(ARGS);
+            MUSTTAIL return local_name_error(ARGS);
         }
         fp[reg] = Value::not_present();
         COMPLETE();
@@ -1131,7 +1177,7 @@ namespace cl
             code_object->module_scope.extract()->get_by_slot_index(slot_idx);
         if(unlikely(v.is_not_present()))
         {
-            MUSTTAIL return name_error(ARGS);
+            MUSTTAIL return global_name_error(ARGS);
         }
         accumulator = v;
         COMPLETE();
@@ -1186,7 +1232,7 @@ namespace cl
         Scope *module_scope = code_object->module_scope.extract();
         if(unlikely(!module_scope->slot_is_live(slot_idx)))
         {
-            MUSTTAIL return name_error(ARGS);
+            MUSTTAIL return global_name_error(ARGS);
         }
         module_scope->set_by_slot_index(slot_idx, Value::not_present());
         COMPLETE();
