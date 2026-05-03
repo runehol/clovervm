@@ -74,6 +74,9 @@ namespace cl
         void set_pending_exception_string(TValue<ClassObject> type,
                                           const char *message);
         void set_pending_exception_none(TValue<ClassObject> type);
+        void set_pending_builtin_exception_string(const wchar_t *type_name,
+                                                  const char *message);
+        void set_pending_builtin_exception_none(const wchar_t *type_name);
         void set_pending_stop_iteration_no_value();
         void set_pending_stop_iteration_value(Value value);
         Value pending_exception_object() const;

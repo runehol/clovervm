@@ -1608,6 +1608,15 @@ TEST(Interpreter, right_shift_negative_count)
                          "ValueError: negative shift count");
 }
 
+TEST(Interpreter, negative_shift_count_unwinds_nested_frames)
+{
+    expect_runtime_error(L"def fail():\n"
+                         L"    1 << -1\n"
+                         L"    return 99\n"
+                         L"fail()\n",
+                         "ValueError: negative shift count");
+}
+
 TEST(Interpreter, left_shift_overflow_smi)
 {
     expect_runtime_error(L"1 << 58\n", "Clovervm exception");

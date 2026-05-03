@@ -75,6 +75,21 @@ namespace cl
         set_pending_exception_string(type, "");
     }
 
+    void
+    ThreadState::set_pending_builtin_exception_string(const wchar_t *type_name,
+                                                      const char *message)
+    {
+        set_pending_exception_string(
+            TValue<ClassObject>::from_oop(class_for_builtin_name(type_name)),
+            message);
+    }
+
+    void
+    ThreadState::set_pending_builtin_exception_none(const wchar_t *type_name)
+    {
+        set_pending_builtin_exception_string(type_name, "");
+    }
+
     void ThreadState::set_pending_stop_iteration_no_value()
     {
         pending_exception.object.clear();

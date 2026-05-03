@@ -90,6 +90,10 @@ namespace cl
 #endif
     }
 
+    [[maybe_unused]] static NOINLINE ExceptionalTarget
+    resolve_exceptional_frame_exit(Value *fp, const uint8_t *pc,
+                                   CodeObject *code_object);
+
     static std::string narrow_cl_string(TValue<String> string)
     {
         String *str = string.extract();
@@ -142,7 +146,17 @@ namespace cl
 
     NOINLINE Value raise_value_error_negative_shift_count(PARAMS)
     {
-        throw std::runtime_error("ValueError: negative shift count");
+        ThreadState *thread = active_thread();
+        thread->set_pending_builtin_exception_string(L"ValueError",
+                                                     "negative shift count");
+        accumulator = Value::exception_marker();
+        ExceptionalTarget target =
+            resolve_exceptional_frame_exit(fp, pc, code_object);
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE Value name_error(PARAMS) { throw std::runtime_error("NameError"); }
@@ -345,8 +359,7 @@ namespace cl
     NOINLINE Value assertion_error(PARAMS)
     {
         ThreadState *thread = active_thread();
-        thread->set_pending_exception_none(TValue<ClassObject>::from_oop(
-            thread->class_for_builtin_name(L"AssertionError")));
+        thread->set_pending_builtin_exception_none(L"AssertionError");
         accumulator = Value::exception_marker();
         ExceptionalTarget target =
             resolve_exceptional_frame_exit(fp, pc, code_object);
