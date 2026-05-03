@@ -26,6 +26,8 @@ This repository contains clovervm, a Python VM.
 - Avoid adding broad generic dispatch layers in front of common opcodes unless there is a measured reason or the change is part of an explicit interpreter/JIT design step. Prefer explicit branches in the opcode handler when that keeps the hot path obvious.
 - Be careful with helper calls from opcode handlers: anything that may run Python bytecode, allocate observably, invoke descriptors, or raise should happen through an explicit opcode slow path or a clearly cold helper, not from lookup/classification code that is meant to be inlineable.
 - Keep instruction length handling explicit when an opcode has custom control flow. If a handler cannot use `START(len)` directly, use a clearly named local such as `call_instr_len`; avoid names that collide with `START`'s internal declarations.
+- `tools/check_opcode_frames.py` checks that release-build hot-path opcode handlers enter without setting up stack frames. It is wired into `benchmark/check_opcode_frames` and `benchmark/run_benchmark` through CMake; when debugging it directly, pass the release `clovervm` binary and `benchmark/hot_path_opcode_handlers.txt` as the required list.
+- If you add an opcode, consider whether its handler is on the interpreter hot path. Add hot-path handlers to `benchmark/hot_path_opcode_handlers.txt` so the stack checker protects them. If you rename an opcode handler, update the same list in the same change.
 - After touching `src/interpreter.cpp`, build with Clang through `build-debug/` and run `ninja -C build-debug all check`. For performance-sensitive refactors, also consider `cmake --build build-release --target run_benchmark`.
 
 # Code style
