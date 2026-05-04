@@ -22,6 +22,7 @@ namespace cl
         STATEMENT_FOR,
         STATEMENT_TRY,
         STATEMENT_EXCEPT_HANDLER,
+        STATEMENT_FINALLY_HANDLER,
         STATEMENT_WHILE,
         // STATEMENT_MATCH,
         STATEMENT_RETURN,
@@ -71,6 +72,7 @@ namespace cl
             case AstNodeKind::STATEMENT_FOR:
             case AstNodeKind::STATEMENT_TRY:
             case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
+            case AstNodeKind::STATEMENT_FINALLY_HANDLER:
             case AstNodeKind::STATEMENT_WHILE:
             case AstNodeKind::STATEMENT_RETURN:
             case AstNodeKind::STATEMENT_RAISE:

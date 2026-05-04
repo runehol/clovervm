@@ -1915,8 +1915,16 @@ namespace cl
                     for(size_t i = 1; i < children.size(); ++i)
                     {
                         int32_t handler_idx = children[i];
-                        assert(av.kinds[handler_idx].node_kind ==
-                               AstNodeKind::STATEMENT_EXCEPT_HANDLER);
+                        if(av.kinds[handler_idx].node_kind ==
+                           AstNodeKind::STATEMENT_FINALLY_HANDLER)
+                        {
+                            if(node_has_raise_in_current_exception_context(
+                                   av.children[handler_idx][0]))
+                            {
+                                return true;
+                            }
+                            continue;
+                        }
                         AstChildren handler_children = av.children[handler_idx];
                         if(handler_has_type(handler_children) &&
                            node_has_raise_in_current_exception_context(
@@ -1947,6 +1955,49 @@ namespace cl
                 handler_body_idx(children));
         }
 
+        bool try_has_finally(AstChildren try_children) const
+        {
+            return try_children.size() >= 2 &&
+                   av.kinds[try_children.back()].node_kind ==
+                       AstNodeKind::STATEMENT_FINALLY_HANDLER;
+        }
+
+        int32_t try_finally_body_idx(AstChildren try_children) const
+        {
+            assert(try_has_finally(try_children));
+            AstChildren finally_children = av.children[try_children.back()];
+            assert(finally_children.size() == 1);
+            return finally_children[0];
+        }
+
+        bool node_has_finally_unsupported_control_flow(int32_t node_idx) const
+        {
+            AstKind kind = av.kinds[node_idx];
+            AstChildren children = av.children[node_idx];
+
+            switch(kind.node_kind)
+            {
+                case AstNodeKind::STATEMENT_RETURN:
+                case AstNodeKind::STATEMENT_BREAK:
+                case AstNodeKind::STATEMENT_CONTINUE:
+                    return true;
+
+                case AstNodeKind::STATEMENT_FUNCTION_DEF:
+                case AstNodeKind::STATEMENT_CLASS_DEF:
+                    return false;
+
+                default:
+                    for(int32_t child_idx: children)
+                    {
+                        if(node_has_finally_unsupported_control_flow(child_idx))
+                        {
+                            return true;
+                        }
+                    }
+                    return false;
+            }
+        }
+
         void emit_drain_active_exception_to_binding(uint32_t source_offset,
                                                     int32_t name_idx)
         {
@@ -1965,10 +2016,58 @@ namespace cl
             emit_variable_store(source_offset, name_idx);
         }
 
+        void codegen_try_finally_statement(int32_t node_idx)
+        {
+            AstChildren children = av.children[node_idx];
+            assert(children.size() == 2);
+            uint32_t source_offset = av.source_offsets[node_idx];
+            int32_t body_idx = children[0];
+            int32_t finally_body_idx = try_finally_body_idx(children);
+
+            if(node_has_finally_unsupported_control_flow(body_idx) ||
+               node_has_finally_unsupported_control_flow(finally_body_idx))
+            {
+                throw std::runtime_error(
+                    "try/finally with return, break, or continue is not "
+                    "implemented yet");
+            }
+
+            JumpTarget exceptional_target(code_obj);
+            JumpTarget done_target(code_obj);
+            {
+                ExceptionTableRangeBuilder range(code_obj, exceptional_target);
+                codegen_node(body_idx);
+                range.close();
+            }
+
+            codegen_node(finally_body_idx);
+            code_obj->emit_jump(source_offset, done_target);
+
+            exceptional_target.resolve();
+            {
+                TemporaryReg saved_exception(*code_obj);
+                code_obj->emit_drain_active_exception_into(source_offset,
+                                                           saved_exception);
+                caught_exception_regs.push_back(RegisterIndex(saved_exception));
+                codegen_node(finally_body_idx);
+                caught_exception_regs.pop_back();
+                code_obj->emit_ldar(source_offset, saved_exception);
+                code_obj->emit_raise_unwind(source_offset);
+            }
+
+            done_target.resolve();
+        }
+
         void codegen_try_statement(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             assert(children.size() >= 2);
+            if(try_has_finally(children))
+            {
+                codegen_try_finally_statement(node_idx);
+                return;
+            }
+
             uint32_t source_offset = av.source_offsets[node_idx];
             int32_t body_idx = children[0];
 
@@ -2356,9 +2455,8 @@ namespace cl
                     {
                         if(caught_exception_regs.empty())
                         {
-                            throw std::runtime_error(
-                                "SyntaxError: bare raise outside exception "
-                                "handler");
+                            code_obj->emit_raise_bare(source_offset);
+                            break;
                         }
                         code_obj->emit_ldar(source_offset,
                                             caught_exception_regs.back());
@@ -2702,6 +2800,7 @@ namespace cl
                         "EXPRESSION_COMPARISON");
 
                 case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
+                case AstNodeKind::STATEMENT_FINALLY_HANDLER:
                     throw std::runtime_error(
                         "should not end here - this is handled by "
                         "STATEMENT_TRY");

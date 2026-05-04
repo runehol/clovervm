@@ -19,21 +19,6 @@ std::string bytecode_str_from_file(const wchar_t *expr)
     return actual;
 }
 
-static void expect_codegen_error(const wchar_t *source,
-                                 const char *expected_message)
-{
-    try
-    {
-        (void)bytecode_str_from_file(source);
-        FAIL() << "Expected std::runtime_error with message: "
-               << expected_message;
-    }
-    catch(const std::runtime_error &err)
-    {
-        EXPECT_STREQ(expected_message, err.what());
-    }
-}
-
 // Keep this file intentionally small and structural. Interpreter tests own
 // most semantic coverage; codegen tests should pin down bytecode shapes that
 // matter for lowering strategy or calling conventions.
@@ -415,6 +400,32 @@ TEST(Codegen, non_bare_raise_in_handler_uses_saved_context_register)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, try_finally_emits_normal_and_exceptional_cleanup_paths)
+{
+    std::string expected = "Code object:\n"
+                           "    0 LdaSmi 1\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 LdaSmi 2\n"
+                           "    9 StaGlobal [0]\n"
+                           "   14 Jump 28\n"
+                           "   17 DrainActiveExceptionInto r0\n"
+                           "   19 LdaSmi 2\n"
+                           "   21 StaGlobal [0]\n"
+                           "   26 Ldar0\n"
+                           "   27 RaiseUnwind\n"
+                           "   28 LdaGlobal [0]\n"
+                           "   33 Return\n"
+                           "Exception table:\n"
+                           "    0..7 -> 17\n";
+    std::string actual = bytecode_str_from_file(L"try:\n"
+                                                L"    result = 1\n"
+                                                L"finally:\n"
+                                                L"    result = 2\n"
+                                                L"result\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, except_as_without_bare_raise_drains_directly_to_local)
 {
     std::string actual = bytecode_str_from_file(L"def f():\n"
@@ -443,10 +454,14 @@ TEST(Codegen, except_as_with_bare_raise_keeps_hidden_original)
                                              "   29 RaiseUnwind"));
 }
 
-TEST(Codegen, bare_raise_outside_handler_is_syntax_error)
+TEST(Codegen, bare_raise_outside_handler_is_runtime_reraise)
 {
-    expect_codegen_error(L"raise\n",
-                         "SyntaxError: bare raise outside exception handler");
+    std::string expected = "Code object:\n"
+                           "    0 RaiseBare\n"
+                           "    1 Return\n";
+    std::string actual = bytecode_str_from_file(L"raise\n");
+
+    EXPECT_EQ(expected, actual);
 }
 
 TEST(Codegen, startup_wrapper_uses_exception_table_for_unhandled_exception)

@@ -1508,6 +1508,20 @@ namespace cl
             consume(Token::COLON);
             children.push_back(block());
 
+            if(peek() == Token::FINALLY)
+            {
+                int32_t finally_source_pos = source_pos_for_token();
+                consume(Token::FINALLY);
+                consume(Token::COLON);
+                AstChildren finally_children;
+                finally_children.push_back(block());
+                children.push_back(
+                    ast.emplace_back(AstNodeKind::STATEMENT_FINALLY_HANDLER,
+                                     finally_source_pos, finally_children));
+                return ast.emplace_back(AstNodeKind::STATEMENT_TRY, source_pos,
+                                        children);
+            }
+
             if(peek() != Token::EXCEPT)
             {
                 return not_implemented("try statement without except");
@@ -1551,7 +1565,7 @@ namespace cl
             }
             if(peek() == Token::ELSE || peek() == Token::FINALLY)
             {
-                return not_implemented("try else/finally");
+                return not_implemented("try except else/finally");
             }
 
             return ast.emplace_back(AstNodeKind::STATEMENT_TRY, source_pos,

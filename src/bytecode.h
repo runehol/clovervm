@@ -154,6 +154,7 @@ namespace cl
         RaiseAssertionErrorWithMessage,
         RaiseUnwind,
         RaiseUnwindWithContext,
+        RaiseBare,
 
         // control flow
         Return,

@@ -367,7 +367,8 @@ the caught exception use `ClearActiveException`; `except ... as e` without bare
 that need to preserve the original for bare `raise` use
 `DrainActiveExceptionInto` to materialize the active exception into a hidden
 handler register and clear pending exception state. The match opcode does not
-materialize compact `StopIteration`. `else` and `finally` remain follow-up work.
+materialize compact `StopIteration`. `else`, combined `except`/`finally`, and
+nonlocal control flow through `finally` remain follow-up work.
 
 ## Stage 11: Generic For-Loop Exception Fallback
 
@@ -474,8 +475,12 @@ without eagerly allocating traceback objects on every hot failure path.
 ## Stage 14: Reraise And Delegating Iteration
 
 - [x] Add initial bare `raise` support for active source handlers.
+- [x] Make bare `raise` outside an active handler a runtime `RuntimeError`
+      rather than a codegen-time syntax error.
 - [x] Preserve the current logical exception as `__context__` when a handler
       raises a new exception.
+- [x] Add a first pure `try` / `finally` lowering with duplicated normal and
+      exceptional cleanup paths.
 - [ ] Preserve the traceback chain on reraise.
 - [ ] Start a fresh lazy traceback segment at the reraise site.
 - [ ] Add `yield from` or equivalent delegating-iteration machinery that consumes

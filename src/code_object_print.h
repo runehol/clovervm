@@ -260,6 +260,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "RaiseUnwind");
             case cl::Bytecode::RaiseUnwindWithContext:
                 return format_to(out, "RaiseUnwindWithContext");
+            case cl::Bytecode::RaiseBare:
+                return format_to(out, "RaiseBare");
 
             case cl::Bytecode::Jump:
                 return format_to(out, "Jump");
@@ -685,6 +687,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::RaiseAssertionError:
             case cl::Bytecode::RaiseAssertionErrorWithMessage:
             case cl::Bytecode::RaiseUnwind:
+            case cl::Bytecode::RaiseBare:
                 break;
             case cl::Bytecode::RaiseUnwindWithContext:
                 format_to(out, " ");

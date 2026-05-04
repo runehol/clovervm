@@ -348,6 +348,11 @@ namespace cl
                                context_reg);
     }
 
+    uint32_t CodeObjectBuilder::emit_raise_bare(uint32_t source_offset)
+    {
+        return emit_opcode(source_offset, Bytecode::RaiseBare);
+    }
+
     uint32_t
     CodeObjectBuilder::emit_create_instance_known_class(uint32_t source_offset,
                                                         uint8_t class_idx)

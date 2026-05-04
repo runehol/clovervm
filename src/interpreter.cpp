@@ -717,6 +717,21 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE Value raise_bare(PARAMS)
+    {
+        ThreadState *thread = active_thread();
+        (void)thread->set_pending_builtin_exception_string(
+            L"RuntimeError", L"No active exception to reraise");
+
+        ExceptionalTarget target =
+            resolve_exceptional_frame_exit(fp, pc, code_object);
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE static Value slow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
@@ -2131,6 +2146,8 @@ namespace cl
         MUSTTAIL return raise_unwind_with_context(ARGS);
     }
 
+    static Value op_raise_bare(PARAMS) { MUSTTAIL return raise_bare(ARGS); }
+
     NOINLINE static Value op_call_simple_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 5;
@@ -2855,6 +2872,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::RaiseUnwind, op_raise_unwind);
         SET_TABLE_ENTRY(Bytecode::RaiseUnwindWithContext,
                         op_raise_unwind_with_context);
+        SET_TABLE_ENTRY(Bytecode::RaiseBare, op_raise_bare);
 
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
         SET_TABLE_ENTRY(Bytecode::CallNative0, op_call_native0);

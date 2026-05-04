@@ -223,6 +223,8 @@ namespace cl
         register_builtin_class(
             make_exception_subclass(this, L"ValueError", exception));
         register_builtin_class(
+            make_exception_subclass(this, L"RuntimeError", exception));
+        register_builtin_class(
             make_exception_subclass(this, L"UnimplementedError", exception));
         register_builtin_class(
             make_exception_subclass(this, L"AssertionError", exception));
