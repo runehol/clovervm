@@ -50,6 +50,9 @@ but CPython compatibility is not yet a project guarantee.
   Python C API compatibility for extension support, and fast multithreading
   without a GIL.
 
+For the broader architecture map and links to the detailed design notes, see
+[`doc/architecture.md`](doc/architecture.md).
+
 ## Benchmarking
 
 The repository includes Google Benchmark-based microbenchmarks that run

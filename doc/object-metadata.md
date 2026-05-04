@@ -10,9 +10,10 @@ still supporting:
 - exact overall object size for allocation and teardown
 - very large objects when compact metadata is not enough
 
-All object pointers already need 16-byte alignment because of the tagged
-pointer scheme in `Value`, so both the fixed object header and the expanded
-metadata header should be designed around 16-byte allocation units.
+Heap object pointers currently need 32-byte granularity because of the 5-bit
+tagged pointer scheme in `Value`. The metadata format still measures object
+sizes in 16-byte units so the fixed object header and expanded metadata header
+stay compact and naturally aligned.
 
 ## Fixed Object Header
 
@@ -62,8 +63,9 @@ The offset is measured in 64-bit words because the start of the scanned
 non-`Object` records that have native fields before their scanned values.
 Python-visible `Object` subclasses share inherited static layout declarations
 so their value regions compose from the `Object` base. The object size is
-measured in 16-byte units because all heap objects are already allocated at
-16-byte granularity.
+measured in 16-byte units. Current allocations are rounded to the wider
+`Value` pointer granularity, but 16-byte units keep layout metadata compact and
+are sufficient for object size and expanded-header placement.
 
 For expanded objects, the 16-byte `ExpandedHeader` prefix is allocator
 overhead and is not included in `object_size_in_16byte_units`.
