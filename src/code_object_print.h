@@ -2,8 +2,51 @@
 #define CL_CODE_OBJECT_PRINT_H
 
 #include "code_object.h"
+#include "str.h"
 #include <fmt/format.h>
 #include <fmt/xchar.h>
+
+namespace cl
+{
+    template <typename Out> Out format_string_constant(Out out, String *str)
+    {
+        out = format_to(out, "\"");
+        for(uint32_t idx = 0; idx < str->count.extract(); ++idx)
+        {
+            wchar_t ch = str->data[idx];
+            switch(ch)
+            {
+                case L'\\':
+                    out = format_to(out, "\\\\");
+                    break;
+                case L'"':
+                    out = format_to(out, "\\\"");
+                    break;
+                case L'\n':
+                    out = format_to(out, "\\n");
+                    break;
+                case L'\r':
+                    out = format_to(out, "\\r");
+                    break;
+                case L'\t':
+                    out = format_to(out, "\\t");
+                    break;
+                default:
+                    if(ch >= 0x20 && ch <= 0x7e)
+                    {
+                        out = format_to(out, "{}", static_cast<char>(ch));
+                    }
+                    else
+                    {
+                        out = format_to(out, "\\u{:04x}",
+                                        static_cast<uint32_t>(ch));
+                    }
+                    break;
+            }
+        }
+        return format_to(out, "\"");
+    }
+}  // namespace cl
 
 template <> struct fmt::formatter<cl::Bytecode>
 {
@@ -764,6 +807,11 @@ template <> struct fmt::formatter<cl::CodeObject>
                                       cl::NativeLayoutId::CodeObject)
             {
                 format_to(out, "{}", *c.get_ptr<cl::CodeObject>());
+            }
+            else if(c.is_ptr() && c.get_ptr<cl::Object>()->native_layout_id() ==
+                                      cl::NativeLayoutId::String)
+            {
+                out = cl::format_string_constant(out, c.get_ptr<cl::String>());
             }
             format_to(out, "\n");
         }

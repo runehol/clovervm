@@ -283,7 +283,7 @@ TEST(Codegen, assert_statement_message_is_only_evaluated_on_failure)
                            "    4 LdaConstant c[0]\n"
                            "    6 RaiseAssertionErrorWithMessage\n"
                            "    7 Return\n"
-                           "Constant 0: \n";
+                           "Constant 0: \"lol\"\n";
     std::string actual = bytecode_str_from_file(L"assert False, \"lol\"\n");
 
     EXPECT_EQ(expected, actual);
@@ -533,7 +533,7 @@ TEST(Codegen, class_definition_passes_hidden_name_and_bases_to_create_class)
                            "Constant 0: Code object:\n"
                            "    0 BuildClass\n"
                            "\n"
-                           "Constant 1: \n"
+                           "Constant 1: \"Cls\"\n"
                            "Constant 2: \n";
     std::string actual = bytecode_str_from_file(test_case);
 
@@ -548,6 +548,12 @@ TEST(Codegen, string_literal_constant_value)
     ASSERT_EQ(size_t(1), code_obj->constant_table.size());
     EXPECT_STREQ(L"abc", string_as_wchar_t(TValue<String>::from_value_checked(
                              code_obj->constant_table[0].as_value())));
+
+    std::string expected = "Code object:\n"
+                           "    0 LdaConstant c[0]\n"
+                           "    2 Return\n"
+                           "Constant 0: \"abc\"\n";
+    EXPECT_EQ(expected, fmt::to_string(*code_obj));
 }
 
 TEST(Codegen, attribute_load_uses_register_receiver)
@@ -564,7 +570,7 @@ TEST(Codegen, attribute_load_uses_register_receiver)
                            "    4 Return\n"
                            "    5 LdaNone\n"
                            "    6 Return\n"
-                           "Constant 0: \n"
+                           "Constant 0: \"value\"\n"
                            "\n";
     std::string actual = bytecode_str_from_file(test_case);
 
@@ -585,7 +591,7 @@ TEST(Codegen, attribute_store_uses_register_receiver_and_accumulator_value)
                            "    2 StoreAttr p0, c[0], mutation_ic[0]\n"
                            "    6 LdaNone\n"
                            "    7 Return\n"
-                           "Constant 0: \n"
+                           "Constant 0: \"value\"\n"
                            "\n";
     std::string actual = bytecode_str_from_file(test_case);
 
@@ -605,7 +611,7 @@ TEST(Codegen, attribute_delete_uses_register_receiver_and_mutation_cache)
                            "    0 DelAttr p0, c[0], mutation_ic[0]\n"
                            "    4 LdaNone\n"
                            "    5 Return\n"
-                           "Constant 0: \n"
+                           "Constant 0: \"value\"\n"
                            "\n";
     std::string actual = bytecode_str_from_file(test_case);
 
@@ -646,7 +652,7 @@ TEST(Codegen, direct_method_call_uses_callmethodattr)
                            "   14 Return\n"
                            "   15 LdaNone\n"
                            "   16 Return\n"
-                           "Constant 0: \n"
+                           "Constant 0: \"method\"\n"
                            "\n";
     std::string actual = bytecode_str_from_file(test_case);
 
@@ -868,8 +874,8 @@ TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
                            "  119 Return\n"
                            "Exception table:\n"
                            "    71..77 -> 103\n"
-                           "Constant 0: \n"
-                           "Constant 1: \n"
+                           "Constant 0: \"__iter__\"\n"
+                           "Constant 1: \"__next__\"\n"
                            "Constant 2: \n";
     std::string actual = bytecode_str_from_file(L"total = 0\n"
                                                 "for x in range(3):\n"
@@ -910,8 +916,8 @@ TEST(Codegen, non_direct_for_loop_still_uses_generic_iterator_bytecodes)
                            "   68 Return\n"
                            "Exception table:\n"
                            "    38..44 -> 57\n"
-                           "Constant 0: \n"
-                           "Constant 1: \n"
+                           "Constant 0: \"__iter__\"\n"
+                           "Constant 1: \"__next__\"\n"
                            "Constant 2: \n";
     std::string actual = bytecode_str_from_file(L"it = range(3)\n"
                                                 "for x in it:\n"
