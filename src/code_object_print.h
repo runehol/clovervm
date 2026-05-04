@@ -1,6 +1,7 @@
 #ifndef CL_CODE_OBJECT_PRINT_H
 #define CL_CODE_OBJECT_PRINT_H
 
+#include "class_object.h"
 #include "code_object.h"
 #include "str.h"
 #include <fmt/format.h>
@@ -8,9 +9,8 @@
 
 namespace cl
 {
-    template <typename Out> Out format_string_constant(Out out, String *str)
+    template <typename Out> Out format_string_contents(Out out, String *str)
     {
-        out = format_to(out, "\"");
         for(uint32_t idx = 0; idx < str->count.extract(); ++idx)
         {
             wchar_t ch = str->data[idx];
@@ -44,7 +44,21 @@ namespace cl
                     break;
             }
         }
+        return out;
+    }
+
+    template <typename Out> Out format_string_constant(Out out, String *str)
+    {
+        out = format_to(out, "\"");
+        out = format_string_contents(out, str);
         return format_to(out, "\"");
+    }
+
+    template <typename Out> Out format_class_constant(Out out, ClassObject *cls)
+    {
+        out = format_to(out, "<class ");
+        out = format_string_contents(out, cls->get_name().extract());
+        return format_to(out, ">");
     }
 }  // namespace cl
 
@@ -812,6 +826,12 @@ template <> struct fmt::formatter<cl::CodeObject>
                                       cl::NativeLayoutId::String)
             {
                 out = cl::format_string_constant(out, c.get_ptr<cl::String>());
+            }
+            else if(c.is_ptr() && c.get_ptr<cl::Object>()->native_layout_id() ==
+                                      cl::NativeLayoutId::ClassObject)
+            {
+                out = cl::format_class_constant(out,
+                                                c.get_ptr<cl::ClassObject>());
             }
             format_to(out, "\n");
         }

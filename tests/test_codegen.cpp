@@ -534,7 +534,7 @@ TEST(Codegen, class_definition_passes_hidden_name_and_bases_to_create_class)
                            "    0 BuildClass\n"
                            "\n"
                            "Constant 1: \"Cls\"\n"
-                           "Constant 2: \n";
+                           "Constant 2: <class object>\n";
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
@@ -876,7 +876,7 @@ TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
                            "    71..77 -> 103\n"
                            "Constant 0: \"__iter__\"\n"
                            "Constant 1: \"__next__\"\n"
-                           "Constant 2: \n";
+                           "Constant 2: <class StopIteration>\n";
     std::string actual = bytecode_str_from_file(L"total = 0\n"
                                                 "for x in range(3):\n"
                                                 "    total += x\n"
@@ -918,7 +918,7 @@ TEST(Codegen, non_direct_for_loop_still_uses_generic_iterator_bytecodes)
                            "    38..44 -> 57\n"
                            "Constant 0: \"__iter__\"\n"
                            "Constant 1: \"__next__\"\n"
-                           "Constant 2: \n";
+                           "Constant 2: <class StopIteration>\n";
     std::string actual = bytecode_str_from_file(L"it = range(3)\n"
                                                 "for x in it:\n"
                                                 "    x\n");
