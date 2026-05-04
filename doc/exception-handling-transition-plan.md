@@ -28,12 +28,17 @@ is the source of truth for semantics.
   native VM failures set pending exception state and return
   `Value::exception_marker()`.
 - `for` loops use internal iterator exhaustion for builtin `RangeIterator`
-  paths, not user-visible `StopIteration`.
+  paths, not user-visible `StopIteration`. Generic iterator-protocol
+  `StopIteration` handling is still planned.
 - Python-visible builtin exception classes and minimal exception objects exist.
-  Python-authored `raise <expr>` exists for the no-local-handler case and lowers
-  to the cold `RaiseUnwind` opcode.
-- `try`, `except`, reraise, full traceback objects, and the stop-returning
-  iterator protocol are not implemented.
+  Python-authored `raise <expr>` lowers to the cold `RaiseUnwind` opcode and can
+  be handled by local exception tables.
+- `try` / `except` is implemented for the current useful slice: bare handlers,
+  typed handlers, multiple handlers with optional bare fallback,
+  `except ... as e`, and bare reraise from active handlers.
+- Full traceback objects, `else`, `finally`, `with`, generic iterator
+  `StopIteration` fallback, and the stop-returning iterator protocol are not
+  implemented.
 
 ## Guiding Constraints
 
@@ -236,7 +241,7 @@ CL_PROPAGATE_EXCEPTION(item);
 Deliverable: real VM exception propagation exists for selected existing failure
 paths, backed by real exception objects, even before `raise` or `try`.
 
-## Stage 7: `raise` Without Local Handlers
+## Stage 7: Expression `raise` And Managed Unwind
 
 - [x] Add AST and parser support for a narrow first slice of `raise`.
 - [x] Add cold `RaiseUnwind` bytecode for raise sites that may need local
@@ -249,14 +254,15 @@ paths, backed by real exception objects, even before `raise` or `try`.
 - [x] Implement `RaiseUnwind` by setting pending exception state and entering
       exceptional frame exit from the raising instruction.
 - [x] Keep the first version outside `try`, `with`, `finally`, and other
-      protected regions.
+      protected regions. Later stages enabled `raise` inside `try` / `except`
+      through exception-table unwinding; `with` and `finally` remain future work.
 - [x] Add direct interpreter tests for `RaiseUnwind` exception classes,
       exception objects, and invalid raise targets.
 - [x] Add interpreter tests for Python-authored raises propagating out through
       nested calls.
 
-Deliverable: Python-authored `raise` exists and uses VM exception transport for
-the no-local-handler case.
+Deliverable: Python-authored `raise <expr>` exists and uses VM exception
+transport to propagate out of the current frame when no local handler catches it.
 
 ## Stage 8: Compact `StopIteration` Materialization
 
@@ -520,13 +526,14 @@ The first coherent milestone is stages 0 through 6:
 6. add managed return adapters and native normalization
 7. convert a few selected interpreter slow errors
 
-That milestone gives the VM an exception transport backbone for real runtime
-errors without also taking on `try`, tracebacks, `yield from`, or the fast
-iterator protocol.
+That milestone gave the VM an exception transport backbone for real runtime
+errors without also taking on local handlers, tracebacks, `yield from`, or the
+fast iterator protocol.
 
-The second milestone is stages 7 through 11:
+The second milestone is stages 7 through 11. Stages 7 through 10 are now in
+place; Stage 11 remains the missing piece:
 
-1. add no-local-handler `raise`
+1. add expression `raise` and managed unwind
 2. add compact `StopIteration` materialization for managed adapters
 3. add exception tables and local unwind metadata
 4. add local `try` / `except` handlers

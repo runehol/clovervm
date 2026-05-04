@@ -14,20 +14,23 @@ shape-based object layouts and inline caches for common dynamic operations.
 
 The implemented subset is enough to run small Python programs with functions,
 classes, inheritance, loops, conditionals, integer arithmetic, assertions,
-basic exceptions, and native string/list/tuple/dict values. Function calls
-support defaults and `*args`; classes support ordinary `__init__`, explicit
-bases, `__bases__`, `__mro__`, and C3 method resolution order. Attribute,
-method-call, function-call, constructor-call, and common subscript operations
-are all exercised by the interpreter tests and benchmarks.
+`raise`, `try`/`except`, and native string/list/tuple/dict values. Exception
+handlers support bare handlers, typed handlers, `except ... as e`, and bare
+reraise within active handlers. Function calls support defaults and `*args`;
+classes support ordinary `__init__`, explicit bases, `__bases__`, `__mro__`,
+and C3 method resolution order. Attribute, method-call, function-call,
+constructor-call, and common subscript operations are all exercised by the
+interpreter tests and benchmarks.
 
 ## Known limitations
 
 This is still a deliberately small Python subset. Large parts of the language
-and standard library are absent, including imports, `try`/`with`, generators,
-comprehensions, broad descriptor and metaclass semantics, custom `__new__`,
-complex assignment targets, richer string syntax, and arbitrary-precision
-integer arithmetic. Error messages and runtime semantics are improving, but
-CPython compatibility is not yet a project guarantee.
+and standard library are absent, including imports, `with`, `finally`,
+generators, comprehensions, broad descriptor and metaclass semantics, custom
+`__new__`, complex assignment targets, richer string syntax, arbitrary-precision
+integer arithmetic, full tracebacks, and generic iterator-protocol
+`StopIteration` handling. Error messages and runtime semantics are improving,
+but CPython compatibility is not yet a project guarantee.
 
 ## Runtime design
 
