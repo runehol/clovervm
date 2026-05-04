@@ -1998,7 +1998,7 @@ namespace cl
             return else_children[0];
         }
 
-        bool node_has_finally_unsupported_control_flow(int32_t node_idx) const
+        bool node_has_control_flow_through_finally(int32_t node_idx) const
         {
             AstKind kind = av.kinds[node_idx];
             AstChildren children = av.children[node_idx];
@@ -2017,7 +2017,7 @@ namespace cl
                 default:
                     for(int32_t child_idx: children)
                     {
-                        if(node_has_finally_unsupported_control_flow(child_idx))
+                        if(node_has_control_flow_through_finally(child_idx))
                         {
                             return true;
                         }
@@ -2053,18 +2053,14 @@ namespace cl
             int32_t body_idx = children[0];
             int32_t finally_body_idx = try_finally_body_idx(children);
 
-            for(size_t child_offset = 0; child_offset < children.size();
+            for(size_t child_offset = 0; child_offset + 1 < children.size();
                 ++child_offset)
             {
                 int32_t child_idx = children[child_offset];
-                if(child_offset == children.size() - 1)
-                {
-                    child_idx = finally_body_idx;
-                }
-                if(node_has_finally_unsupported_control_flow(child_idx))
+                if(node_has_control_flow_through_finally(child_idx))
                 {
                     throw std::runtime_error(
-                        "try/finally with return, break, or continue is not "
+                        "return, break, or continue through finally is not "
                         "implemented yet");
                 }
             }

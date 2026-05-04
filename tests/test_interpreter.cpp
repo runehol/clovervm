@@ -1711,6 +1711,50 @@ TEST(Interpreter, bare_raise_in_exceptional_finally_reraises_body_exception)
               exception.get_ptr<ExceptionObject>()->get_class().extract());
 }
 
+TEST(Interpreter, return_in_finally_overrides_body_exception)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"def f():\n"
+                                         L"    try:\n"
+                                         L"        raise ValueError\n"
+                                         L"    finally:\n"
+                                         L"        return 7\n"
+                                         L"f()\n");
+
+    EXPECT_EQ(Value::from_smi(7), actual);
+}
+
+TEST(Interpreter, break_in_finally_overrides_body_exception)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"result = 0\n"
+                                         L"for x in range(3):\n"
+                                         L"    try:\n"
+                                         L"        raise ValueError\n"
+                                         L"    finally:\n"
+                                         L"        result = 9\n"
+                                         L"        break\n"
+                                         L"result + x\n");
+
+    EXPECT_EQ(Value::from_smi(9), actual);
+}
+
+TEST(Interpreter, continue_in_finally_overrides_body_exception)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"result = 0\n"
+                                         L"for x in range(3):\n"
+                                         L"    result = result + 1\n"
+                                         L"    try:\n"
+                                         L"        raise ValueError\n"
+                                         L"    finally:\n"
+                                         L"        continue\n"
+                                         L"    result = 99\n"
+                                         L"result\n");
+
+    EXPECT_EQ(Value::from_smi(3), actual);
+}
+
 TEST(Interpreter, try_except_finally_runs_cleanup_after_matched_handler)
 {
     test::VmTestContext test_context;
