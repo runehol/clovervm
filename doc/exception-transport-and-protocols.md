@@ -464,6 +464,22 @@ specialization; compact `StopIteration` remains the protocol-correctness bridge
 for producer/generator/fallback paths that can expose completion as an ordinary
 Python exception.
 
+Profiling the generic for-loop slow path supports this priority. With a long
+single loop, `StopIteration` handling is essentially amortized away: the hot
+cost is repeated generic `__next__` dispatch through attribute lookup, method
+binding, call-cache checks, native-call thunking, and frame return. Even when
+the benchmark is reshaped to use very short inner iterators so loop exhaustion
+occurs frequently, the exception path becomes visible but still does not
+dominate. Iterator allocation and the generic iterator protocol machinery remain
+larger costs.
+
+The practical implication is that CloverVM should pursue a fast iterator
+protocol or loop-site iterator plan before spending much effort on further
+micro-optimizing `StopIteration` delivery. Compact or stop-returning
+`StopIteration` is still important as the semantic bridge between Python's
+public protocol and internal loop completion, but it should not be treated as the
+primary performance mechanism for `for` loops.
+
 Open concerns before implementing this direction:
 
 - Shared loop-site inline cache state cannot contain active iterator state.
