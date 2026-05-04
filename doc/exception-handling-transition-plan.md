@@ -234,9 +234,9 @@ CL_PROPAGATE_EXCEPTION(item);
 - [x] Keep unchecked primitives such as `item_unchecked` and
       `set_item_unchecked` free of pending-exception semantics; callers must
       prove validity before using them.
-- [ ] Add debug assertions on container/register writes where useful so
+- [x] Add debug assertions on ordinary storage writes where useful so
       `Value::exception_marker()` does not accidentally become ordinary VM data.
-- [ ] Add a stricter debug assertion for value-flow locations that must reject
+- [x] Add a stricter debug assertion for value-flow locations that must reject
       both `Value::exception_marker()` and `Value::not_present()`.
 
 Deliverable: real VM exception propagation exists for selected existing failure

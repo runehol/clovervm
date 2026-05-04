@@ -33,6 +33,7 @@ namespace cl
     void Tuple::initialize_item_unchecked(size_t idx, Value value)
     {
         assert(idx < size());
+        value.assert_not_vm_sentinel();
         Value old_value = elements[idx];
         elements[idx] = incref(value);
         decref(old_value);

@@ -65,6 +65,8 @@ namespace cl
 
     Value store_subscript(Value obj, Value key, Value value)
     {
+        value.assert_not_vm_sentinel();
+
         if(!obj.is_ptr())
         {
             return Value::not_present();

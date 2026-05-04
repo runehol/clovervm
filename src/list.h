@@ -29,6 +29,7 @@ namespace cl
         Value item_unchecked(size_t idx) const { return items[idx]; }
         void set_item_unchecked(size_t idx, Value value)
         {
+            value.assert_not_vm_sentinel();
             items.set(idx, value);
         }
         void insert_item_unchecked(size_t idx, Value value);
@@ -36,7 +37,11 @@ namespace cl
         // result on the stack/accumulator, which keeps it rooted after the list
         // releases its slot ownership.
         Value pop_item_unchecked(size_t idx);
-        void append(Value value) { items.push_back(value); }
+        void append(Value value)
+        {
+            value.assert_not_vm_sentinel();
+            items.push_back(value);
+        }
 
         [[nodiscard]] Value get_item(int64_t py_idx) const;
         [[nodiscard]] Value set_item(int64_t py_idx, Value value);

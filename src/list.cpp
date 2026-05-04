@@ -26,6 +26,7 @@ namespace cl
     void List::insert_item_unchecked(size_t idx, Value value)
     {
         assert(idx <= size());
+        value.assert_not_vm_sentinel();
 
         size_t old_size = size();
         items.resize(old_size + 1, Value::None());

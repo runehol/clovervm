@@ -186,6 +186,8 @@ namespace cl
 
     bool Object::add_own_property(TValue<String> name, Value value)
     {
+        value.assert_not_vm_sentinel();
+
         Shape *current_shape = get_shape();
         int32_t descriptor_idx = current_shape->lookup_descriptor_index(name);
         if(descriptor_idx >= 0)
@@ -212,6 +214,8 @@ namespace cl
     bool Object::define_own_property(TValue<String> name, Value value,
                                      DescriptorFlags descriptor_flags)
     {
+        value.assert_not_vm_sentinel();
+
         Shape *current_shape = get_shape();
         int32_t descriptor_idx = current_shape->lookup_descriptor_index(name);
         if(descriptor_idx >= 0)
@@ -236,6 +240,8 @@ namespace cl
 
     bool Object::set_existing_own_property(TValue<String> name, Value value)
     {
+        value.assert_not_vm_sentinel();
+
         AttributeWriteDescriptor descriptor =
             lookup_existing_own_property_write_descriptor(this, name);
         if(!descriptor.is_found())
@@ -248,6 +254,8 @@ namespace cl
 
     bool Object::set_own_property(TValue<String> name, Value value)
     {
+        value.assert_not_vm_sentinel();
+
         AttributeWriteDescriptor descriptor =
             lookup_own_attribute_write_descriptor(name);
         if(descriptor.is_found())

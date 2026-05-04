@@ -138,6 +138,9 @@ namespace cl
 
     void Dict::set_item(Value key, Value value)
     {
+        key.assert_not_vm_sentinel();
+        value.assert_not_vm_sentinel();
+
         if(entries.size() > hash_table.size() * max_load_nom / max_load_denom)
         {
             grow();

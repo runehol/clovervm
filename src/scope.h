@@ -86,6 +86,7 @@ namespace cl
 
         ALWAYSINLINE void set_by_slot_index(int32_t slot_idx, Value val)
         {
+            val.assert_not_exception_marker();
             if(unlikely(!slot_is_live(slot_idx) && !val.is_not_present() &&
                         slot_names[slot_idx] != Value::None()))
             {
@@ -98,12 +99,14 @@ namespace cl
                                                             Value val) const
         {
             assert(slot_idx >= 0);
+            val.assert_not_exception_marker();
             return !slot_is_live(slot_idx) && !val.is_not_present() &&
                    slot_names[slot_idx] != Value::None();
         }
 
         ALWAYSINLINE HeapObject *swap_by_slot_index(int32_t slot_idx, Value val)
         {
+            val.assert_not_vm_sentinel();
             assert(!set_by_slot_index_needs_slow_path(slot_idx, val));
             return slot_values.swap_slot(slot_idx, val);
         }

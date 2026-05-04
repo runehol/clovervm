@@ -513,6 +513,8 @@ namespace cl
     bool store_attr_from_plan(Value receiver, const AttributeMutationPlan &plan,
                               Value value)
     {
+        value.assert_not_vm_sentinel();
+
         if(likely(!plan.is_add_own_property()))
         {
             Object *storage_owner = plan.storage_owner;
@@ -553,6 +555,8 @@ namespace cl
 
     bool store_attr(Value obj, TValue<String> name, Value value)
     {
+        value.assert_not_vm_sentinel();
+
         AttributeWriteDescriptor descriptor =
             resolve_attr_write_descriptor(obj, name);
         if(descriptor.is_found())

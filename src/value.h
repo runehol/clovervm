@@ -138,6 +138,18 @@ namespace cl
             return v == value_not_present;
         }
 
+        bool is_vm_sentinel() const
+        {
+            return is_exception_marker() || is_not_present();
+        }
+
+        void assert_not_exception_marker() const
+        {
+            assert(!is_exception_marker());
+        }
+
+        void assert_not_vm_sentinel() const { assert(!is_vm_sentinel()); }
+
         int32_t get_not_present_index() const
         {
             assert(is_not_present());
