@@ -6,6 +6,10 @@ add_executable(bench_clovervm
     class_attribute_write.cpp
     class_instantiation.cpp
     class_instantiation_with_init.cpp
+    exception_bare_handler_no_raise.cpp
+    exception_bare_handler_raise.cpp
+    exception_typed_handler_no_raise.cpp
+    exception_typed_handler_raise.cpp
     for_loop.cpp
     for_loop_slow_path.cpp
     function_default_varargs.cpp

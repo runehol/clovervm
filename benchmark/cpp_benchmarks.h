@@ -20,6 +20,18 @@ namespace benchmark_cpp
     int64_t nested_for_loop_run(int64_t n);
     int64_t nested_for_loop_items(int64_t n);
 
+    int64_t exception_bare_handler_no_raise_run(int64_t n);
+    int64_t exception_bare_handler_no_raise_items(int64_t n);
+
+    int64_t exception_typed_handler_no_raise_run(int64_t n);
+    int64_t exception_typed_handler_no_raise_items(int64_t n);
+
+    int64_t exception_bare_handler_raise_run(int64_t n);
+    int64_t exception_bare_handler_raise_items(int64_t n);
+
+    int64_t exception_typed_handler_raise_run(int64_t n);
+    int64_t exception_typed_handler_raise_items(int64_t n);
+
     int64_t class_instantiation_run(int64_t n);
     int64_t class_instantiation_items(int64_t n);
 

@@ -47,6 +47,18 @@ namespace
             {"benchmark/nested_for_loop.py",
              {benchmark_cpp::nested_for_loop_run,
               benchmark_cpp::nested_for_loop_items}},
+            {"benchmark/exception_bare_handler_no_raise.py",
+             {benchmark_cpp::exception_bare_handler_no_raise_run,
+              benchmark_cpp::exception_bare_handler_no_raise_items}},
+            {"benchmark/exception_typed_handler_no_raise.py",
+             {benchmark_cpp::exception_typed_handler_no_raise_run,
+              benchmark_cpp::exception_typed_handler_no_raise_items}},
+            {"benchmark/exception_bare_handler_raise.py",
+             {benchmark_cpp::exception_bare_handler_raise_run,
+              benchmark_cpp::exception_bare_handler_raise_items}},
+            {"benchmark/exception_typed_handler_raise.py",
+             {benchmark_cpp::exception_typed_handler_raise_run,
+              benchmark_cpp::exception_typed_handler_raise_items}},
             {"benchmark/class_instantiation.py",
              {benchmark_cpp::class_instantiation_run,
               benchmark_cpp::class_instantiation_items}},
@@ -450,8 +462,7 @@ namespace
             std::unique_ptr<Program> program;
             program = make_program<Program>(relative_path, n);
 
-            verify_benchmark_result(relative_path, n, expected,
-                                    program->run());
+            verify_benchmark_result(relative_path, n, expected, program->run());
 
             for(auto _: state)
             {
@@ -517,6 +528,46 @@ static void BM_NestedForLoop(benchmark::State &state)
 BENCHMARK_TEMPLATE(BM_NestedForLoop, CloverProgram)
     ->Name("BM_NestedForLoop")
     ->Arg(100000);
+
+template <typename Program>
+static void BM_ExceptionBareHandlerNoRaise(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/exception_bare_handler_no_raise.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExceptionBareHandlerNoRaise, CloverProgram)
+    ->Name("BM_ExceptionBareHandlerNoRaise")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExceptionTypedHandlerNoRaise(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/exception_typed_handler_no_raise.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExceptionTypedHandlerNoRaise, CloverProgram)
+    ->Name("BM_ExceptionTypedHandlerNoRaise")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_ExceptionBareHandlerRaise(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/exception_bare_handler_raise.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExceptionBareHandlerRaise, CloverProgram)
+    ->Name("BM_ExceptionBareHandlerRaise")
+    ->Arg(10000);
+
+template <typename Program>
+static void BM_ExceptionTypedHandlerRaise(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/exception_typed_handler_raise.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_ExceptionTypedHandlerRaise, CloverProgram)
+    ->Name("BM_ExceptionTypedHandlerRaise")
+    ->Arg(10000);
 
 template <typename Program>
 static void BM_ClassInstantiationNoInit(benchmark::State &state)
