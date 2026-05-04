@@ -1565,7 +1565,14 @@ namespace cl
             }
             if(peek() == Token::ELSE)
             {
-                return not_implemented("try except else");
+                int32_t else_source_pos = source_pos_for_token();
+                consume(Token::ELSE);
+                consume(Token::COLON);
+                AstChildren else_children;
+                else_children.push_back(block());
+                children.push_back(
+                    ast.emplace_back(AstNodeKind::STATEMENT_ELSE_HANDLER,
+                                     else_source_pos, else_children));
             }
             if(peek() == Token::FINALLY)
             {

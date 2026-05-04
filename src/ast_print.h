@@ -448,6 +448,13 @@ template <> struct fmt::formatter<cl::AstVector>
                             cl::ExpressionPrecedence::Lowest);
                 break;
 
+            case cl::AstNodeKind::STATEMENT_ELSE_HANDLER:
+                emit_indent(out, indent);
+                format_to(out, "else:\n");
+                render_node(av, out, children[0], indent + 1,
+                            cl::ExpressionPrecedence::Lowest);
+                break;
+
             case cl::AstNodeKind::STATEMENT_FINALLY_HANDLER:
                 emit_indent(out, indent);
                 format_to(out, "finally:\n");

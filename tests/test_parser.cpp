@@ -210,6 +210,46 @@ TEST(Parser, try_except_finally_stmt)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, try_except_else_stmt)
+{
+    std::string expected = ("try:\n"
+                            "    risky()\n"
+                            "except NameError:\n"
+                            "    recovered()\n"
+                            "else:\n"
+                            "    succeeded()\n");
+    std::string actual = parse(L"try:\n"
+                               "    risky()\n"
+                               "except NameError:\n"
+                               "    recovered()\n"
+                               "else:\n"
+                               "    succeeded()\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, try_except_else_finally_stmt)
+{
+    std::string expected = ("try:\n"
+                            "    risky()\n"
+                            "except NameError:\n"
+                            "    recovered()\n"
+                            "else:\n"
+                            "    succeeded()\n"
+                            "finally:\n"
+                            "    cleanup()\n");
+    std::string actual = parse(L"try:\n"
+                               "    risky()\n"
+                               "except NameError:\n"
+                               "    recovered()\n"
+                               "else:\n"
+                               "    succeeded()\n"
+                               "finally:\n"
+                               "    cleanup()\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, for_stmt)
 {
     std::string expected = ("for x in y:\n"

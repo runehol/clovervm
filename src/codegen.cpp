@@ -1925,6 +1925,16 @@ namespace cl
                             }
                             continue;
                         }
+                        if(av.kinds[handler_idx].node_kind ==
+                           AstNodeKind::STATEMENT_ELSE_HANDLER)
+                        {
+                            if(node_has_raise_in_current_exception_context(
+                                   av.children[handler_idx][0]))
+                            {
+                                return true;
+                            }
+                            continue;
+                        }
                         AstChildren handler_children = av.children[handler_idx];
                         if(handler_has_type(handler_children) &&
                            node_has_raise_in_current_exception_context(
@@ -1968,6 +1978,24 @@ namespace cl
             AstChildren finally_children = av.children[try_children.back()];
             assert(finally_children.size() == 1);
             return finally_children[0];
+        }
+
+        bool try_has_else(AstChildren try_children,
+                          size_t end_child_offset) const
+        {
+            return end_child_offset >= 2 &&
+                   av.kinds[try_children[end_child_offset - 1]].node_kind ==
+                       AstNodeKind::STATEMENT_ELSE_HANDLER;
+        }
+
+        int32_t try_else_body_idx(AstChildren try_children,
+                                  size_t end_child_offset) const
+        {
+            assert(try_has_else(try_children, end_child_offset));
+            AstChildren else_children =
+                av.children[try_children[end_child_offset - 1]];
+            assert(else_children.size() == 1);
+            return else_children[0];
         }
 
         bool node_has_finally_unsupported_control_flow(int32_t node_idx) const
@@ -2086,6 +2114,14 @@ namespace cl
             assert(end_child_offset >= 2);
             assert(end_child_offset <= children.size());
             int32_t body_idx = children[0];
+            int32_t else_body_idx = -1;
+            size_t handler_end_child_offset = end_child_offset;
+            if(try_has_else(children, end_child_offset))
+            {
+                else_body_idx = try_else_body_idx(children, end_child_offset);
+                --handler_end_child_offset;
+            }
+            assert(handler_end_child_offset >= 2);
 
             JumpTarget handler_target(code_obj);
             JumpTarget done_target(code_obj);
@@ -2094,12 +2130,16 @@ namespace cl
                 codegen_node(body_idx);
                 range.close();
             }
+            if(else_body_idx >= 0)
+            {
+                codegen_node(else_body_idx);
+            }
             code_obj->emit_jump(source_offset, done_target);
 
             handler_target.resolve();
             bool has_bare_handler = false;
-            for(size_t child_offset = 1; child_offset < end_child_offset;
-                ++child_offset)
+            for(size_t child_offset = 1;
+                child_offset < handler_end_child_offset; ++child_offset)
             {
                 int32_t handler_idx = children[child_offset];
                 AstChildren handler_children = av.children[handler_idx];
@@ -2160,7 +2200,7 @@ namespace cl
                     continue;
                 }
 
-                assert(child_offset == end_child_offset - 1);
+                assert(child_offset == handler_end_child_offset - 1);
                 has_bare_handler = true;
                 if(needs_original_exception)
                 {
@@ -2830,6 +2870,7 @@ namespace cl
                         "EXPRESSION_COMPARISON");
 
                 case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
+                case AstNodeKind::STATEMENT_ELSE_HANDLER:
                 case AstNodeKind::STATEMENT_FINALLY_HANDLER:
                     throw std::runtime_error(
                         "should not end here - this is handled by "
