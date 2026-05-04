@@ -390,6 +390,31 @@ TEST(Codegen, bare_raise_in_handler_uses_saved_exception_register)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, non_bare_raise_in_handler_uses_saved_context_register)
+{
+    std::string expected = "Code object:\n"
+                           "    0 LdaGlobal [0]\n"
+                           "    5 RaiseUnwind\n"
+                           "    6 Jump 31\n"
+                           "    9 LdaGlobal [1]\n"
+                           "   14 ActiveExceptionIsInstance\n"
+                           "   15 JumpIfFalse 30\n"
+                           "   18 DrainActiveExceptionInto r0\n"
+                           "   20 LdaGlobal [2]\n"
+                           "   25 RaiseUnwindWithContext r0\n"
+                           "   27 Jump 31\n"
+                           "   30 ReraiseActiveException\n"
+                           "   31 Return\n"
+                           "Exception table:\n"
+                           "    0..6 -> 9\n";
+    std::string actual = bytecode_str_from_file(L"try:\n"
+                                                L"    raise NameError\n"
+                                                L"except Exception:\n"
+                                                L"    raise ValueError\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, except_as_without_bare_raise_drains_directly_to_local)
 {
     std::string actual = bytecode_str_from_file(L"def f():\n"

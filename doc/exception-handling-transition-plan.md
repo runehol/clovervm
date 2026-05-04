@@ -474,7 +474,9 @@ without eagerly allocating traceback objects on every hot failure path.
 ## Stage 14: Reraise And Delegating Iteration
 
 - [x] Add initial bare `raise` support for active source handlers.
-- [ ] Preserve the current logical exception and traceback chain on reraise.
+- [x] Preserve the current logical exception as `__context__` when a handler
+      raises a new exception.
+- [ ] Preserve the traceback chain on reraise.
 - [ ] Start a fresh lazy traceback segment at the reraise site.
 - [ ] Add `yield from` or equivalent delegating-iteration machinery that consumes
       `StopIteration.value` as the delegation result.

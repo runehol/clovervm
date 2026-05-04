@@ -341,6 +341,14 @@ namespace cl
     }
 
     uint32_t
+    CodeObjectBuilder::emit_raise_unwind_with_context(uint32_t source_offset,
+                                                      uint32_t context_reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::RaiseUnwindWithContext,
+                               context_reg);
+    }
+
+    uint32_t
     CodeObjectBuilder::emit_create_instance_known_class(uint32_t source_offset,
                                                         uint8_t class_idx)
     {

@@ -639,44 +639,74 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value raise_unwind(PARAMS)
+    NOINLINE static TValue<ExceptionObject>
+    make_raise_exception_object(ThreadState *thread, Value raised)
     {
-        ThreadState *thread = active_thread();
-        if(can_convert_to<ExceptionObject>(accumulator))
+        if(can_convert_to<ExceptionObject>(raised))
         {
-            (void)thread->set_pending_exception_object(
-                TValue<ExceptionObject>::from_value_checked(accumulator));
+            return TValue<ExceptionObject>::from_value_checked(raised);
         }
-        else if(can_convert_to<ClassObject>(accumulator))
+        if(can_convert_to<ClassObject>(raised))
         {
-            ClassObject *cls = accumulator.get_ptr<ClassObject>();
+            ClassObject *cls = raised.get_ptr<ClassObject>();
             if(!is_subclass_of(cls, thread->class_for_native_layout(
                                         NativeLayoutId::Exception)))
             {
-                (void)thread->set_pending_builtin_exception_string(
-                    L"TypeError", L"exceptions must derive from BaseException");
+                return make_exception_object(
+                    TValue<ClassObject>::from_oop(
+                        thread->class_for_builtin_name(L"TypeError")),
+                    L"exceptions must derive from BaseException");
             }
-            else if(cls == thread->class_for_native_layout(
-                               NativeLayoutId::StopIteration))
+            if(cls ==
+               thread->class_for_native_layout(NativeLayoutId::StopIteration))
             {
-                (void)thread->set_pending_exception_object(
-                    TValue<ExceptionObject>::from_value_checked(
-                        make_stop_iteration_object(
-                            TValue<ClassObject>::from_oop(cls))
-                            .as_value()));
+                return TValue<ExceptionObject>::from_value_checked(
+                    make_stop_iteration_object(
+                        TValue<ClassObject>::from_oop(cls))
+                        .as_value());
             }
-            else
-            {
-                (void)thread->set_pending_exception_object(
-                    make_exception_object(TValue<ClassObject>::from_oop(cls),
-                                          L""));
-            }
+
+            return make_exception_object(TValue<ClassObject>::from_oop(cls),
+                                         L"");
         }
-        else
-        {
-            (void)thread->set_pending_builtin_exception_string(
-                L"TypeError", L"exceptions must derive from BaseException");
-        }
+
+        return make_exception_object(
+            TValue<ClassObject>::from_oop(
+                thread->class_for_builtin_name(L"TypeError")),
+            L"exceptions must derive from BaseException");
+    }
+
+    NOINLINE static void set_exception_context(TValue<ExceptionObject> raised,
+                                               Value context)
+    {
+        bool ok = raised.extract()->set_own_property(
+            interned_string(L"__context__"), context);
+        assert(ok);
+    }
+
+    NOINLINE Value raise_unwind(PARAMS)
+    {
+        ThreadState *thread = active_thread();
+        (void)thread->set_pending_exception_object(
+            make_raise_exception_object(thread, accumulator));
+
+        ExceptionalTarget target =
+            resolve_exceptional_frame_exit(fp, pc, code_object);
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE Value raise_unwind_with_context(PARAMS)
+    {
+        ThreadState *thread = active_thread();
+        int8_t context_reg = pc[1];
+        TValue<ExceptionObject> raised =
+            make_raise_exception_object(thread, accumulator);
+        set_exception_context(raised, fp[context_reg]);
+        (void)thread->set_pending_exception_object(raised);
 
         ExceptionalTarget target =
             resolve_exceptional_frame_exit(fp, pc, code_object);
@@ -2096,6 +2126,11 @@ namespace cl
 
     static Value op_raise_unwind(PARAMS) { MUSTTAIL return raise_unwind(ARGS); }
 
+    static Value op_raise_unwind_with_context(PARAMS)
+    {
+        MUSTTAIL return raise_unwind_with_context(ARGS);
+    }
+
     NOINLINE static Value op_call_simple_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 5;
@@ -2818,6 +2853,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::RaiseAssertionErrorWithMessage,
                         op_raise_assertion_error_with_message);
         SET_TABLE_ENTRY(Bytecode::RaiseUnwind, op_raise_unwind);
+        SET_TABLE_ENTRY(Bytecode::RaiseUnwindWithContext,
+                        op_raise_unwind_with_context);
 
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
         SET_TABLE_ENTRY(Bytecode::CallNative0, op_call_native0);

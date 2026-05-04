@@ -258,6 +258,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "RaiseAssertionErrorWithMessage");
             case cl::Bytecode::RaiseUnwind:
                 return format_to(out, "RaiseUnwind");
+            case cl::Bytecode::RaiseUnwindWithContext:
+                return format_to(out, "RaiseUnwindWithContext");
 
             case cl::Bytecode::Jump:
                 return format_to(out, "Jump");
@@ -683,6 +685,10 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::RaiseAssertionError:
             case cl::Bytecode::RaiseAssertionErrorWithMessage:
             case cl::Bytecode::RaiseUnwind:
+                break;
+            case cl::Bytecode::RaiseUnwindWithContext:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::Jump:

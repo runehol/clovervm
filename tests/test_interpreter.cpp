@@ -1550,6 +1550,41 @@ TEST(Interpreter, catch_stop_iteration_as_exposes_value)
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }
 
+TEST(Interpreter, raise_from_handler_sets_exception_context)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj = test_context.compile_file(L"try:\n"
+                                                     L"    raise NameError\n"
+                                                     L"except Exception:\n"
+                                                     L"    raise ValueError\n");
+
+    try
+    {
+        (void)test_context.thread()->run(code_obj);
+        FAIL() << "Expected unhandled pending exception";
+    }
+    catch(const PythonException &err)
+    {
+        EXPECT_STREQ(L"ValueError", err.wide_what().c_str());
+    }
+
+    ASSERT_EQ(PendingExceptionKind::Object,
+              test_context.thread()->pending_exception_kind());
+    TValue<ExceptionObject> exception =
+        TValue<ExceptionObject>::from_value_checked(
+            test_context.thread()->pending_exception_object());
+    EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"ValueError"),
+              exception.extract()->get_class().extract());
+
+    TValue<String> context_name =
+        test_context.vm().get_or_create_interned_string_value(L"__context__");
+    Value context = exception.extract()->get_own_property(context_name);
+    ASSERT_TRUE(can_convert_to<ExceptionObject>(context));
+    EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"NameError"),
+              context.get_ptr<ExceptionObject>()->get_class().extract());
+}
+
 TEST(Interpreter, unhandled_python_exception_reports_class_and_message)
 {
     test::VmTestContext test_context;

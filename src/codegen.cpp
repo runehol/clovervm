@@ -1890,7 +1890,7 @@ namespace cl
             loop_targets.pop_back();
         }
 
-        bool node_needs_enclosing_caught_exception(int32_t node_idx) const
+        bool node_has_raise_in_current_exception_context(int32_t node_idx) const
         {
             AstKind kind = av.kinds[node_idx];
             AstChildren children = av.children[node_idx];
@@ -1898,7 +1898,7 @@ namespace cl
             switch(kind.node_kind)
             {
                 case AstNodeKind::STATEMENT_RAISE:
-                    return children.empty();
+                    return true;
 
                 case AstNodeKind::STATEMENT_FUNCTION_DEF:
                 case AstNodeKind::STATEMENT_CLASS_DEF:
@@ -1908,7 +1908,7 @@ namespace cl
                     return false;
 
                 case AstNodeKind::STATEMENT_TRY:
-                    if(node_needs_enclosing_caught_exception(children[0]))
+                    if(node_has_raise_in_current_exception_context(children[0]))
                     {
                         return true;
                     }
@@ -1919,7 +1919,7 @@ namespace cl
                                AstNodeKind::STATEMENT_EXCEPT_HANDLER);
                         AstChildren handler_children = av.children[handler_idx];
                         if(handler_has_type(handler_children) &&
-                           node_needs_enclosing_caught_exception(
+                           node_has_raise_in_current_exception_context(
                                handler_type_idx(handler_children)))
                         {
                             return true;
@@ -1930,7 +1930,8 @@ namespace cl
                 default:
                     for(int32_t child_idx: children)
                     {
-                        if(node_needs_enclosing_caught_exception(child_idx))
+                        if(node_has_raise_in_current_exception_context(
+                               child_idx))
                         {
                             return true;
                         }
@@ -1942,7 +1943,7 @@ namespace cl
         bool handler_needs_caught_exception(int32_t handler_idx) const
         {
             AstChildren children = av.children[handler_idx];
-            return node_needs_enclosing_caught_exception(
+            return node_has_raise_in_current_exception_context(
                 handler_body_idx(children));
         }
 
@@ -2361,12 +2362,21 @@ namespace cl
                         }
                         code_obj->emit_ldar(source_offset,
                                             caught_exception_regs.back());
+                        code_obj->emit_raise_unwind(source_offset);
                     }
                     else
                     {
                         codegen_node(children[0]);
+                        if(caught_exception_regs.empty())
+                        {
+                            code_obj->emit_raise_unwind(source_offset);
+                        }
+                        else
+                        {
+                            code_obj->emit_raise_unwind_with_context(
+                                source_offset, caught_exception_regs.back());
+                        }
                     }
-                    code_obj->emit_raise_unwind(source_offset);
                     break;
 
                 case AstNodeKind::EXPRESSION_BINARY:
