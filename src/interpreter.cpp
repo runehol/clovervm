@@ -679,7 +679,7 @@ namespace cl
     NOINLINE static void set_exception_context(TValue<ExceptionObject> raised,
                                                Value context)
     {
-        bool ok = raised.extract()->set_own_property(
+        [[maybe_unused]] bool ok = raised.extract()->set_own_property(
             interned_string(L"__context__"), context);
         assert(ok);
     }
