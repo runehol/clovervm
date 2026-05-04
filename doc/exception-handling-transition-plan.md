@@ -373,15 +373,15 @@ materialize compact `StopIteration`.
 
 ## Stage 11: Generic For-Loop Exception Fallback
 
-- [ ] Add synthetic exception-table handlers for `for` loops so real
+- [x] Add synthetic exception-table handlers for `for` loops so real
       `StopIteration` from generic `__next__` exits the loop through ordinary
       exception handling.
-- [ ] Keep ordinary `for` loops payload-discarding.
-- [ ] Preserve the distinction between protocol `StopIteration` completion and
+- [x] Keep ordinary `for` loops payload-discarding.
+- [x] Preserve the distinction between protocol `StopIteration` completion and
       ordinary exceptions: future stop-returning participants may still use
       exception tables, and exceptions leaking from callees must stay on the
       managed exceptional path.
-- [ ] Keep any future stop-returning `FOR_ITER` continuation and the
+- [x] Keep any future stop-returning `FOR_ITER` continuation and the
       real-exception handler targeting the same loop exit/else block.
 
 Deliverable: correctness for generic iterators comes from ordinary exception
@@ -547,8 +547,7 @@ That milestone gave the VM an exception transport backbone for real runtime
 errors without also taking on local handlers, tracebacks, `yield from`, or the
 fast iterator protocol.
 
-The second milestone is stages 7 through 11. Stages 7 through 10 are now in
-place; Stage 11 remains the missing piece:
+The second milestone is stages 7 through 11:
 
 1. add expression `raise` and managed unwind
 2. add compact `StopIteration` materialization for managed adapters
@@ -556,7 +555,7 @@ place; Stage 11 remains the missing piece:
 4. add local `try` / `except` handlers
 5. add the generic `for` fallback through ordinary exception tables
 
-That milestone makes the straight Python exception path solid before committing
+That milestone made the straight Python exception path solid before committing
 to additional iterator-specific optimization machinery.
 
 The stop-returning iterator protocol is deliberately later and experimental. It

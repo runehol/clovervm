@@ -2501,9 +2501,12 @@ namespace cl
             MUSTTAIL return not_iterable_error(ARGS);
         }
 
-        Object *iterator_object = accumulator.get_ptr();
-        if(unlikely(iterator_object->native_layout_id() !=
-                    NativeLayoutId::RangeIterator))
+        TValue<String> iter_name =
+            thread->get_machine()->get_or_create_interned_string_value(
+                L"__iter__");
+        AttributeReadDescriptor descriptor =
+            resolve_attr_read_descriptor(accumulator, iter_name);
+        if(unlikely(!descriptor.is_found()))
         {
             MUSTTAIL return not_iterable_error(ARGS);
         }

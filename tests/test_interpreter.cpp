@@ -2418,6 +2418,64 @@ TEST(Interpreter, for_loop_non_iterable_unwinds_nested_frames)
                         L"TypeError: object is not iterable");
 }
 
+TEST(Interpreter, generic_for_loop_uses_iter_and_next_until_stop_iteration)
+{
+    test::FileRunner file_runner(L"class Counter:\n"
+                                 L"    def __init__(self):\n"
+                                 L"        self.i = 0\n"
+                                 L"    def __iter__(self):\n"
+                                 L"        return self\n"
+                                 L"    def __next__(self):\n"
+                                 L"        if self.i == 3:\n"
+                                 L"            raise StopIteration\n"
+                                 L"        value = self.i\n"
+                                 L"        self.i += 1\n"
+                                 L"        return value\n"
+                                 L"total = 0\n"
+                                 L"for x in Counter():\n"
+                                 L"    total += x\n"
+                                 L"total\n");
+    EXPECT_EQ(Value::from_smi(3), file_runner.return_value);
+}
+
+TEST(Interpreter, generic_for_loop_discards_stop_iteration_value)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj =
+        test_context.compile_file(L"class Iterator:\n"
+                                  L"    def __iter__(self):\n"
+                                  L"        return self\n"
+                                  L"    def __next__(self):\n"
+                                  L"        native_stop()\n"
+                                  L"result = 0\n"
+                                  L"for x in Iterator():\n"
+                                  L"    result = 99\n"
+                                  L"else:\n"
+                                  L"    result = 7\n"
+                                  L"result\n");
+
+    bind_global(test_context, code_obj, L"native_stop",
+                make_native_function(&test_context.vm(),
+                                     native_stop_iteration_with_value));
+
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(7), actual);
+    EXPECT_FALSE(test_context.thread()->has_pending_exception());
+}
+
+TEST(Interpreter, generic_for_loop_propagates_non_stop_iteration)
+{
+    expect_python_error(L"class Iterator:\n"
+                        L"    def __iter__(self):\n"
+                        L"        return self\n"
+                        L"    def __next__(self):\n"
+                        L"        raise ValueError\n"
+                        L"for x in Iterator():\n"
+                        L"    x\n",
+                        L"ValueError");
+}
+
 TEST(Interpreter, left_shift_negative_count)
 {
     expect_python_error(L"a = 1\n"
