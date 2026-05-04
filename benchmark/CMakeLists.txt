@@ -16,9 +16,11 @@ add_executable(bench_clovervm
     function_default_parameter.cpp
     function_varargs.cpp
     function_varargs_with_positional.cpp
+    global_refcounted_write.cpp
     instance_attribute_add_after_construction.cpp
     instance_attribute_add_member.cpp
     instance_attribute_read.cpp
+    instance_attribute_refcounted_write.cpp
     instance_attribute_write.cpp
     method_call.cpp
     method_call_class_attribute_write.cpp

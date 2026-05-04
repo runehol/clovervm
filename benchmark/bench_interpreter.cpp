@@ -95,9 +95,15 @@ namespace
             {"benchmark/function_varargs_with_positional.py",
              {benchmark_cpp::function_varargs_with_positional_run,
               benchmark_cpp::function_varargs_with_positional_items}},
+            {"benchmark/global_refcounted_write.py",
+             {benchmark_cpp::global_refcounted_write_run,
+              benchmark_cpp::global_refcounted_write_items}},
             {"benchmark/function_default_varargs.py",
              {benchmark_cpp::function_default_varargs_run,
               benchmark_cpp::function_default_varargs_items}},
+            {"benchmark/instance_attribute_refcounted_write.py",
+             {benchmark_cpp::instance_attribute_refcounted_write_run,
+              benchmark_cpp::instance_attribute_refcounted_write_items}},
             {"benchmark/method_call_class_attribute_write.py",
              {benchmark_cpp::method_call_class_attribute_write_run,
               benchmark_cpp::method_call_class_attribute_write_items}},
@@ -690,6 +696,16 @@ BENCHMARK_TEMPLATE(BM_FunctionVarargsWithPositional, CloverProgram)
     ->Arg(100000);
 
 template <typename Program>
+static void BM_GlobalRefcountedWrite(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/global_refcounted_write.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GlobalRefcountedWrite, CloverProgram)
+    ->Name("BM_GlobalRefcountedWrite")
+    ->Arg(100000);
+
+template <typename Program>
 static void BM_FunctionDefaultVarargs(benchmark::State &state)
 {
     run_benchmark_case<Program>(state, "benchmark/function_default_varargs.py",
@@ -697,6 +713,17 @@ static void BM_FunctionDefaultVarargs(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_FunctionDefaultVarargs, CloverProgram)
     ->Name("BM_FunctionDefaultVarargs")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_InstanceAttributeRefcountedWrite(benchmark::State &state)
+{
+    run_benchmark_case<Program>(
+        state, "benchmark/instance_attribute_refcounted_write.py",
+        state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_InstanceAttributeRefcountedWrite, CloverProgram)
+    ->Name("BM_InstanceAttributeRefcountedWrite")
     ->Arg(100000);
 
 template <typename Program>

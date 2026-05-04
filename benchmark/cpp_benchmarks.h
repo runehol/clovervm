@@ -68,8 +68,14 @@ namespace benchmark_cpp
     int64_t function_varargs_with_positional_run(int64_t n);
     int64_t function_varargs_with_positional_items(int64_t n);
 
+    int64_t global_refcounted_write_run(int64_t n);
+    int64_t global_refcounted_write_items(int64_t n);
+
     int64_t function_default_varargs_run(int64_t n);
     int64_t function_default_varargs_items(int64_t n);
+
+    int64_t instance_attribute_refcounted_write_run(int64_t n);
+    int64_t instance_attribute_refcounted_write_items(int64_t n);
 
     int64_t method_call_class_attribute_write_run(int64_t n);
     int64_t method_call_class_attribute_write_items(int64_t n);
