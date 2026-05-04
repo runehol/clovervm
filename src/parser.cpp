@@ -1563,9 +1563,20 @@ namespace cl
                     ast.emplace_back(AstNodeKind::STATEMENT_EXCEPT_HANDLER,
                                      handler_source_pos, handler_children));
             }
-            if(peek() == Token::ELSE || peek() == Token::FINALLY)
+            if(peek() == Token::ELSE)
             {
-                return not_implemented("try except else/finally");
+                return not_implemented("try except else");
+            }
+            if(peek() == Token::FINALLY)
+            {
+                int32_t finally_source_pos = source_pos_for_token();
+                consume(Token::FINALLY);
+                consume(Token::COLON);
+                AstChildren finally_children;
+                finally_children.push_back(block());
+                children.push_back(
+                    ast.emplace_back(AstNodeKind::STATEMENT_FINALLY_HANDLER,
+                                     finally_source_pos, finally_children));
             }
 
             return ast.emplace_back(AstNodeKind::STATEMENT_TRY, source_pos,

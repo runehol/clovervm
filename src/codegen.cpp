@@ -2019,24 +2019,45 @@ namespace cl
         void codegen_try_finally_statement(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
-            assert(children.size() == 2);
+            assert(children.size() >= 2);
+            assert(try_has_finally(children));
             uint32_t source_offset = av.source_offsets[node_idx];
             int32_t body_idx = children[0];
             int32_t finally_body_idx = try_finally_body_idx(children);
 
-            if(node_has_finally_unsupported_control_flow(body_idx) ||
-               node_has_finally_unsupported_control_flow(finally_body_idx))
+            for(size_t child_offset = 0; child_offset < children.size();
+                ++child_offset)
             {
-                throw std::runtime_error(
-                    "try/finally with return, break, or continue is not "
-                    "implemented yet");
+                int32_t child_idx = children[child_offset];
+                if(child_offset == children.size() - 1)
+                {
+                    child_idx = finally_body_idx;
+                }
+                if(node_has_finally_unsupported_control_flow(child_idx))
+                {
+                    throw std::runtime_error(
+                        "try/finally with return, break, or continue is not "
+                        "implemented yet");
+                }
             }
+
+            auto codegen_protected_body = [&]() {
+                if(children.size() == 2)
+                {
+                    codegen_node(body_idx);
+                }
+                else
+                {
+                    codegen_try_except_statement(source_offset, children,
+                                                 children.size() - 1);
+                }
+            };
 
             JumpTarget exceptional_target(code_obj);
             JumpTarget done_target(code_obj);
             {
                 ExceptionTableRangeBuilder range(code_obj, exceptional_target);
-                codegen_node(body_idx);
+                codegen_protected_body();
                 range.close();
             }
 
@@ -2058,17 +2079,12 @@ namespace cl
             done_target.resolve();
         }
 
-        void codegen_try_statement(int32_t node_idx)
+        void codegen_try_except_statement(uint32_t source_offset,
+                                          AstChildren children,
+                                          size_t end_child_offset)
         {
-            AstChildren children = av.children[node_idx];
-            assert(children.size() >= 2);
-            if(try_has_finally(children))
-            {
-                codegen_try_finally_statement(node_idx);
-                return;
-            }
-
-            uint32_t source_offset = av.source_offsets[node_idx];
+            assert(end_child_offset >= 2);
+            assert(end_child_offset <= children.size());
             int32_t body_idx = children[0];
 
             JumpTarget handler_target(code_obj);
@@ -2082,7 +2098,7 @@ namespace cl
 
             handler_target.resolve();
             bool has_bare_handler = false;
-            for(size_t child_offset = 1; child_offset < children.size();
+            for(size_t child_offset = 1; child_offset < end_child_offset;
                 ++child_offset)
             {
                 int32_t handler_idx = children[child_offset];
@@ -2144,7 +2160,7 @@ namespace cl
                     continue;
                 }
 
-                assert(child_offset == children.size() - 1);
+                assert(child_offset == end_child_offset - 1);
                 has_bare_handler = true;
                 if(needs_original_exception)
                 {
@@ -2188,6 +2204,20 @@ namespace cl
             }
 
             done_target.resolve();
+        }
+
+        void codegen_try_statement(int32_t node_idx)
+        {
+            AstChildren children = av.children[node_idx];
+            assert(children.size() >= 2);
+            if(try_has_finally(children))
+            {
+                codegen_try_finally_statement(node_idx);
+                return;
+            }
+
+            codegen_try_except_statement(av.source_offsets[node_idx], children,
+                                         children.size());
         }
 
         void codegen_iterator_driven_for_loop(uint32_t source_offset,

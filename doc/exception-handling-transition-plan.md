@@ -367,8 +367,8 @@ the caught exception use `ClearActiveException`; `except ... as e` without bare
 that need to preserve the original for bare `raise` use
 `DrainActiveExceptionInto` to materialize the active exception into a hidden
 handler register and clear pending exception state. The match opcode does not
-materialize compact `StopIteration`. `else`, combined `except`/`finally`, and
-nonlocal control flow through `finally` remain follow-up work.
+materialize compact `StopIteration`. `else` and nonlocal control flow through
+`finally` remain follow-up work.
 
 ## Stage 11: Generic For-Loop Exception Fallback
 
@@ -481,6 +481,8 @@ without eagerly allocating traceback objects on every hot failure path.
       raises a new exception.
 - [x] Add a first pure `try` / `finally` lowering with duplicated normal and
       exceptional cleanup paths.
+- [x] Support combined `try` / `except` / `finally` by wrapping the existing
+      handler core in the duplicated normal/exceptional cleanup lanes.
 - [ ] Preserve the traceback chain on reraise.
 - [ ] Start a fresh lazy traceback segment at the reraise site.
 - [ ] Add `yield from` or equivalent delegating-iteration machinery that consumes

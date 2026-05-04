@@ -1711,6 +1711,77 @@ TEST(Interpreter, bare_raise_in_exceptional_finally_reraises_body_exception)
               exception.get_ptr<ExceptionObject>()->get_class().extract());
 }
 
+TEST(Interpreter, try_except_finally_runs_cleanup_after_matched_handler)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"result = 0\n"
+                                         L"try:\n"
+                                         L"    raise NameError\n"
+                                         L"except NameError:\n"
+                                         L"    result = 1\n"
+                                         L"finally:\n"
+                                         L"    result = result + 2\n"
+                                         L"result\n");
+
+    EXPECT_EQ(Value::from_smi(3), actual);
+}
+
+TEST(Interpreter, try_except_finally_runs_cleanup_before_unmatched_reraise)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj = test_context.compile_file(L"result = 0\n"
+                                                     L"try:\n"
+                                                     L"    raise ValueError\n"
+                                                     L"except NameError:\n"
+                                                     L"    result = 1\n"
+                                                     L"finally:\n"
+                                                     L"    result = 2\n");
+
+    try
+    {
+        (void)test_context.thread()->run(code_obj);
+        FAIL() << "Expected unhandled pending exception";
+    }
+    catch(const PythonException &err)
+    {
+        EXPECT_STREQ(L"ValueError", err.wide_what().c_str());
+    }
+
+    TValue<String> result_name =
+        test_context.vm().get_or_create_interned_string_value(L"result");
+    EXPECT_EQ(Value::from_smi(2),
+              code_obj->module_scope.extract()->get_by_name(result_name));
+}
+
+TEST(Interpreter, try_except_finally_runs_cleanup_before_handler_reraise)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj = test_context.compile_file(L"result = 0\n"
+                                                     L"try:\n"
+                                                     L"    raise NameError\n"
+                                                     L"except NameError:\n"
+                                                     L"    raise ValueError\n"
+                                                     L"finally:\n"
+                                                     L"    result = 2\n");
+
+    try
+    {
+        (void)test_context.thread()->run(code_obj);
+        FAIL() << "Expected unhandled pending exception";
+    }
+    catch(const PythonException &err)
+    {
+        EXPECT_STREQ(L"ValueError", err.wide_what().c_str());
+    }
+
+    TValue<String> result_name =
+        test_context.vm().get_or_create_interned_string_value(L"result");
+    EXPECT_EQ(Value::from_smi(2),
+              code_obj->module_scope.extract()->get_by_name(result_name));
+}
+
 TEST(Interpreter, unhandled_python_exception_reports_class_and_message)
 {
     test::VmTestContext test_context;
