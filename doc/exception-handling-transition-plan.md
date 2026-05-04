@@ -35,10 +35,11 @@ is the source of truth for semantics.
   be handled by local exception tables.
 - `try` / `except` is implemented for the current useful slice: bare handlers,
   typed handlers, multiple handlers with optional bare fallback,
-  `except ... as e`, and bare reraise from active handlers.
-- Full traceback objects, `else`, `finally`, `with`, generic iterator
-  `StopIteration` fallback, and the stop-returning iterator protocol are not
-  implemented.
+  `except ... as e`, bare reraise from active handlers, `else`, and `finally`.
+  Nonlocal `return`, `break`, and `continue` through `finally` replay active
+  cleanup bodies at the exit site.
+- Full traceback objects, `with`, generic iterator `StopIteration` fallback,
+  and the stop-returning iterator protocol are not implemented.
 
 ## Guiding Constraints
 
@@ -255,7 +256,8 @@ paths, backed by real exception objects, even before `raise` or `try`.
       exceptional frame exit from the raising instruction.
 - [x] Keep the first version outside `try`, `with`, `finally`, and other
       protected regions. Later stages enabled `raise` inside `try` / `except`
-      through exception-table unwinding; `with` and `finally` remain future work.
+      through exception-table unwinding and `finally`; `with` remains future
+      work.
 - [x] Add direct interpreter tests for `RaiseUnwind` exception classes,
       exception objects, and invalid raise targets.
 - [x] Add interpreter tests for Python-authored raises propagating out through
@@ -347,7 +349,7 @@ local table entry applies.
       as the last handler.
 - [x] Support bare `raise` inside handlers by reraising the nearest hidden
       caught-exception register. Bare `raise` outside a handler is currently a
-      `SyntaxError`.
+      runtime `RuntimeError`.
 - [x] Support `except SomeError as e` for object-backed pending exceptions.
 - [x] Support `except StopIteration as e` and explicit `e.value` payloads by
       materializing compact `StopIteration` when the exception object becomes
@@ -367,8 +369,7 @@ the caught exception use `ClearActiveException`; `except ... as e` without bare
 that need to preserve the original for bare `raise` use
 `DrainActiveExceptionInto` to materialize the active exception into a hidden
 handler register and clear pending exception state. The match opcode does not
-materialize compact `StopIteration`. Nonlocal control flow through `finally`
-remains follow-up work.
+materialize compact `StopIteration`.
 
 ## Stage 11: Generic For-Loop Exception Fallback
 
@@ -486,6 +487,10 @@ without eagerly allocating traceback objects on every hot failure path.
 - [x] Support `try` / `except` / `else`, including the `finally` combination:
       `else` runs on the body-success lane, outside the handler protected range
       and before any normal cleanup lane.
+- [x] Support nonlocal `return`, `break`, and `continue` through `finally` by
+      replaying active cleanup bodies at the exit site. Loop targets record the
+      active finally depth so `break` / `continue` only run cleanup bodies inside
+      the loop being exited.
 - [ ] Preserve the traceback chain on reraise.
 - [ ] Start a fresh lazy traceback segment at the reraise site.
 - [ ] Add `yield from` or equivalent delegating-iteration machinery that consumes
