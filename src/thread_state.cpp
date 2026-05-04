@@ -36,7 +36,7 @@ namespace cl
         OwnedTValue<CodeObject> startup_wrapper(
             make_startup_wrapper_code_object(obj));
         return run_interpreter(&stack[stack.size() - 1024],
-                               startup_wrapper.extract(), 0);
+                               startup_wrapper.extract(), 0, this);
     }
 
     bool ThreadState::has_pending_exception() const
@@ -69,13 +69,14 @@ namespace cl
                                                     TValue<String> message)
     {
         return set_pending_exception_object(
-            make_exception_object(type, message));
+            make_internal_value<ExceptionObject>(type.extract(), message));
     }
 
     Value ThreadState::set_pending_exception_string(TValue<ClassObject> type,
                                                     const wchar_t *message)
     {
-        return set_pending_exception_string(type, interned_string(message));
+        return set_pending_exception_string(
+            type, machine->get_or_create_interned_string_value(message));
     }
 
     Value ThreadState::set_pending_exception_none(TValue<ClassObject> type)
@@ -165,7 +166,7 @@ namespace cl
     void ThreadState::add_to_active_zero_count_table(HeapObject *obj)
     {
         ThreadState *ts = ThreadState::get_active();
-        ts->zero_count_table.push_back(obj);
+        ts->add_to_zero_count_table(obj);
     }
 
 }  // namespace cl

@@ -29,8 +29,8 @@ namespace cl
 
 #define PARAMS                                                                 \
     Value accumulator, Value *fp, const uint8_t *pc, void *dispatch,           \
-        CodeObject *code_object
-#define ARGS accumulator, fp, pc, dispatch, code_object
+        CodeObject *code_object, ThreadState *thread
+#define ARGS accumulator, fp, pc, dispatch, code_object, thread
 
     using DispatchTableEntry = Value (*)(PARAMS);
 
@@ -92,8 +92,8 @@ namespace cl
     }
 
     [[maybe_unused]] static NOINLINE ExceptionalTarget
-    resolve_exceptional_frame_exit(Value *fp, const uint8_t *pc,
-                                   CodeObject *code_object);
+    resolve_exceptional_frame_exit(ThreadState *thread, Value *fp,
+                                   const uint8_t *pc, CodeObject *code_object);
 
     static std::wstring cl_string_to_wstring(TValue<String> string)
     {
@@ -147,30 +147,31 @@ namespace cl
     }
 
     static NOINLINE ExceptionalTarget
-    set_builtin_exception_and_resolve_frame_exit(Value *fp, const uint8_t *pc,
+    set_builtin_exception_and_resolve_frame_exit(ThreadState *thread, Value *fp,
+                                                 const uint8_t *pc,
                                                  CodeObject *code_object,
                                                  const wchar_t *type_name,
                                                  const wchar_t *message)
     {
-        (void)active_thread()->set_pending_builtin_exception_string(type_name,
-                                                                    message);
-        return resolve_exceptional_frame_exit(fp, pc, code_object);
+        (void)thread->set_pending_builtin_exception_string(type_name, message);
+        return resolve_exceptional_frame_exit(thread, fp, pc, code_object);
     }
 
     static NOINLINE ExceptionalTarget set_name_error_and_resolve_frame_exit(
-        Value *fp, const uint8_t *pc, CodeObject *code_object,
-        TValue<String> name)
+        ThreadState *thread, Value *fp, const uint8_t *pc,
+        CodeObject *code_object, TValue<String> name)
     {
         std::wstring message = format_name_error_message(name);
-        (void)active_thread()->set_pending_builtin_exception_string(
-            L"NameError", message.c_str());
-        return resolve_exceptional_frame_exit(fp, pc, code_object);
+        (void)thread->set_pending_builtin_exception_string(L"NameError",
+                                                           message.c_str());
+        return resolve_exceptional_frame_exit(thread, fp, pc, code_object);
     }
 
     NOINLINE Value raise_value_error_negative_shift_count(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"ValueError", L"negative shift count");
+            thread, fp, pc, code_object, L"ValueError",
+            L"negative shift count");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -184,7 +185,7 @@ namespace cl
         uint32_t slot_idx = code_object->decode_reg(reg);
         assert(slot_idx < code_object->local_scope.extract()->size());
         ExceptionalTarget target = set_name_error_and_resolve_frame_exit(
-            fp, pc, code_object,
+            thread, fp, pc, code_object,
             code_object->local_scope.extract()->get_name_by_slot_index(
                 slot_idx));
         fp = target.fp;
@@ -198,7 +199,7 @@ namespace cl
     {
         int32_t slot_idx = read_uint32_le(&pc[1]);
         ExceptionalTarget target = set_name_error_and_resolve_frame_exit(
-            fp, pc, code_object,
+            thread, fp, pc, code_object,
             code_object->module_scope.extract()->get_name_by_slot_index(
                 slot_idx));
         fp = target.fp;
@@ -211,7 +212,8 @@ namespace cl
     NOINLINE Value not_callable_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"TypeError", L"object is not callable");
+            thread, fp, pc, code_object, L"TypeError",
+            L"object is not callable");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -232,7 +234,8 @@ namespace cl
     NOINLINE Value subscript_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"TypeError", L"object is not subscriptable");
+            thread, fp, pc, code_object, L"TypeError",
+            L"object is not subscriptable");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -242,9 +245,9 @@ namespace cl
 
     NOINLINE Value propagate_pending_exception(PARAMS)
     {
-        assert(active_thread()->has_pending_exception());
+        assert(thread->has_pending_exception());
         ExceptionalTarget target =
-            resolve_exceptional_frame_exit(fp, pc, code_object);
+            resolve_exceptional_frame_exit(thread, fp, pc, code_object);
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -266,7 +269,8 @@ namespace cl
     NOINLINE Value wrong_arity_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"TypeError", L"wrong number of arguments");
+            thread, fp, pc, code_object, L"TypeError",
+            L"wrong number of arguments");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -308,10 +312,10 @@ namespace cl
     }
 
     [[maybe_unused]] static NOINLINE ExceptionalTarget
-    resolve_exceptional_frame_exit(Value *fp, const uint8_t *pc,
-                                   CodeObject *code_object)
+    resolve_exceptional_frame_exit(ThreadState *thread, Value *fp,
+                                   const uint8_t *pc, CodeObject *code_object)
     {
-        assert(active_thread()->has_pending_exception());
+        assert(thread->has_pending_exception());
 
         const uint8_t *continuation_pc = pc + 1;
         for(;;)
@@ -390,15 +394,16 @@ namespace cl
     static constexpr uint32_t ClassBodyBasesParameter = 1;
     static constexpr uint32_t ClassBodyParameterCount = 2;
 
-    static Value build_class_from_frame(Value *fp, CodeObject *body_code)
+    static Value build_class_from_frame(ThreadState *thread, Value *fp,
+                                        CodeObject *body_code)
     {
         TValue<String> class_name = TValue<String>::from_value_assumed(
             fp[body_code->encode_reg(ClassBodyNameParameter)]);
         TValue<Tuple> bases = TValue<Tuple>::from_value_assumed(
             fp[body_code->encode_reg(ClassBodyBasesParameter)]);
 
-        TValue<ClassObject> cls = make_internal_value<ClassObject>(
-            active_vm()->type_class(), class_name,
+        TValue<ClassObject> cls = thread->make_internal_value<ClassObject>(
+            thread->get_machine()->type_class(), class_name,
             kDefaultFactoryInlineSlotCount, bases);
         Scope *local_scope = body_code->get_local_scope_ptr();
         for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
@@ -427,7 +432,8 @@ namespace cl
     NOINLINE Value not_iterable_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"TypeError", L"object is not iterable");
+            thread, fp, pc, code_object, L"TypeError",
+            L"object is not iterable");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -438,7 +444,8 @@ namespace cl
     NOINLINE Value not_iterator_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"TypeError", L"object is not an iterator");
+            thread, fp, pc, code_object, L"TypeError",
+            L"object is not an iterator");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -449,7 +456,7 @@ namespace cl
     NOINLINE Value range_integer_argument_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"TypeError",
+            thread, fp, pc, code_object, L"TypeError",
             L"range() arguments must be integers");
         fp = target.fp;
         code_object = target.code_object;
@@ -461,7 +468,7 @@ namespace cl
     NOINLINE Value range_zero_step_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"ValueError",
+            thread, fp, pc, code_object, L"ValueError",
             L"range() arg 3 must not be zero");
         fp = target.fp;
         code_object = target.code_object;
@@ -473,7 +480,7 @@ namespace cl
     NOINLINE Value init_returned_non_none_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            fp, pc, code_object, L"TypeError",
+            thread, fp, pc, code_object, L"TypeError",
             L"__init__ should return None, not a value");
         fp = target.fp;
         code_object = target.code_object;
@@ -484,10 +491,9 @@ namespace cl
 
     NOINLINE Value assertion_error(PARAMS)
     {
-        ThreadState *thread = active_thread();
         (void)thread->set_pending_builtin_exception_none(L"AssertionError");
         ExceptionalTarget target =
-            resolve_exceptional_frame_exit(fp, pc, code_object);
+            resolve_exceptional_frame_exit(thread, fp, pc, code_object);
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -497,13 +503,13 @@ namespace cl
 
     NOINLINE Value assertion_error_with_message(PARAMS)
     {
-        ThreadState *thread = active_thread();
         (void)thread->set_pending_exception_object(make_exception_object(
+            thread,
             TValue<ClassObject>::from_oop(
                 thread->class_for_builtin_name(L"AssertionError")),
             TValue<String>::from_value_checked(accumulator)));
         ExceptionalTarget target =
-            resolve_exceptional_frame_exit(fp, pc, code_object);
+            resolve_exceptional_frame_exit(thread, fp, pc, code_object);
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -517,14 +523,13 @@ namespace cl
         ClassObject *stop_iteration =
             thread->class_for_native_layout(NativeLayoutId::StopIteration);
         TValue<StopIterationObject> exception = make_stop_iteration_object(
-            TValue<ClassObject>::from_oop(stop_iteration), value);
+            thread, TValue<ClassObject>::from_oop(stop_iteration), value);
         (void)thread->set_pending_exception_object(
             TValue<ExceptionObject>::from_value_checked(exception.as_value()));
     }
 
     static Value op_lda_active_exception(PARAMS)
     {
-        ThreadState *thread = active_thread();
         if(!thread->has_pending_exception())
         {
             throw std::runtime_error(
@@ -549,7 +554,6 @@ namespace cl
 
     static Value op_active_exception_is_instance(PARAMS)
     {
-        ThreadState *thread = active_thread();
         if(!thread->has_pending_exception())
         {
             throw std::runtime_error(
@@ -590,7 +594,6 @@ namespace cl
 
     static Value op_drain_active_exception_into(PARAMS)
     {
-        ThreadState *thread = active_thread();
         if(!thread->has_pending_exception())
         {
             throw std::runtime_error(
@@ -617,21 +620,21 @@ namespace cl
 
     static Value op_clear_active_exception(PARAMS)
     {
-        active_thread()->clear_pending_exception();
+        thread->clear_pending_exception();
         START(1);
         COMPLETE();
     }
 
     static Value op_reraise_active_exception(PARAMS)
     {
-        if(!active_thread()->has_pending_exception())
+        if(!thread->has_pending_exception())
         {
             throw std::runtime_error(
                 "InternalError: active exception required");
         }
 
         ExceptionalTarget target =
-            resolve_exceptional_frame_exit(fp, pc, code_object);
+            resolve_exceptional_frame_exit(thread, fp, pc, code_object);
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -653,6 +656,7 @@ namespace cl
                                         NativeLayoutId::Exception)))
             {
                 return make_exception_object(
+                    thread,
                     TValue<ClassObject>::from_oop(
                         thread->class_for_builtin_name(L"TypeError")),
                     L"exceptions must derive from BaseException");
@@ -662,36 +666,39 @@ namespace cl
             {
                 return TValue<ExceptionObject>::from_value_checked(
                     make_stop_iteration_object(
-                        TValue<ClassObject>::from_oop(cls))
+                        thread, TValue<ClassObject>::from_oop(cls))
                         .as_value());
             }
 
-            return make_exception_object(TValue<ClassObject>::from_oop(cls),
-                                         L"");
+            return make_exception_object(
+                thread, TValue<ClassObject>::from_oop(cls), L"");
         }
 
         return make_exception_object(
+            thread,
             TValue<ClassObject>::from_oop(
                 thread->class_for_builtin_name(L"TypeError")),
             L"exceptions must derive from BaseException");
     }
 
-    NOINLINE static void set_exception_context(TValue<ExceptionObject> raised,
+    NOINLINE static void set_exception_context(ThreadState *thread,
+                                               TValue<ExceptionObject> raised,
                                                Value context)
     {
         [[maybe_unused]] bool ok = raised.extract()->set_own_property(
-            interned_string(L"__context__"), context);
+            thread->get_machine()->get_or_create_interned_string_value(
+                L"__context__"),
+            context);
         assert(ok);
     }
 
     NOINLINE Value raise_unwind(PARAMS)
     {
-        ThreadState *thread = active_thread();
         (void)thread->set_pending_exception_object(
             make_raise_exception_object(thread, accumulator));
 
         ExceptionalTarget target =
-            resolve_exceptional_frame_exit(fp, pc, code_object);
+            resolve_exceptional_frame_exit(thread, fp, pc, code_object);
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -701,15 +708,14 @@ namespace cl
 
     NOINLINE Value raise_unwind_with_context(PARAMS)
     {
-        ThreadState *thread = active_thread();
         int8_t context_reg = pc[1];
         TValue<ExceptionObject> raised =
             make_raise_exception_object(thread, accumulator);
-        set_exception_context(raised, fp[context_reg]);
+        set_exception_context(thread, raised, fp[context_reg]);
         (void)thread->set_pending_exception_object(raised);
 
         ExceptionalTarget target =
-            resolve_exceptional_frame_exit(fp, pc, code_object);
+            resolve_exceptional_frame_exit(thread, fp, pc, code_object);
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -719,12 +725,11 @@ namespace cl
 
     NOINLINE Value raise_bare(PARAMS)
     {
-        ThreadState *thread = active_thread();
         (void)thread->set_pending_builtin_exception_string(
             L"RuntimeError", L"No active exception to reraise");
 
         ExceptionalTarget target =
-            resolve_exceptional_frame_exit(fp, pc, code_object);
+            resolve_exceptional_frame_exit(thread, fp, pc, code_object);
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -1472,7 +1477,7 @@ namespace cl
             module_scope->swap_by_slot_index(slot_idx, accumulator);
         if(unlikely(zct_object != nullptr))
         {
-            add_to_active_zero_count_table(zct_object);
+            thread->add_to_zero_count_table(zct_object);
         }
         COMPLETE();
     }
@@ -1959,7 +1964,7 @@ namespace cl
         TValue<CodeObject> code_obj = TValue<CodeObject>::from_value_assumed(
             code_object->constant_table[const_offset].as_value());
 
-        accumulator = make_object_value<Function>(code_obj);
+        accumulator = thread->make_object_value<Function>(code_obj);
 
         COMPLETE();
     }
@@ -1974,7 +1979,7 @@ namespace cl
         TValue<Tuple> defaults =
             TValue<Tuple>::from_value_assumed(fp[defaults_reg]);
 
-        accumulator = make_object_value<Function>(code_obj, defaults);
+        accumulator = thread->make_object_value<Function>(code_obj, defaults);
 
         COMPLETE();
     }
@@ -1985,7 +1990,7 @@ namespace cl
         uint8_t const_offset = pc[1];
         ClassObject *cls = assume_convert_to<ClassObject>(
             code_object->constant_table[const_offset].as_value());
-        accumulator = Value::from_oop(make_internal_raw<Instance>(cls));
+        accumulator = Value::from_oop(thread->make_internal_raw<Instance>(cls));
 
         COMPLETE();
     }
@@ -1996,7 +2001,7 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue<List> list = make_object_value<List>(n_items);
+        TValue<List> list = thread->make_object_value<List>(n_items);
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             list.extract()->set_item_unchecked(idx, fp[reg - int8_t(idx)]);
@@ -2012,7 +2017,13 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        accumulator = Tuple::from_frame_arguments(fp, reg, n_items);
+        TValue<Tuple> tuple = thread->make_object_value<Tuple>(n_items);
+        for(uint8_t idx = 0; idx < n_items; ++idx)
+        {
+            tuple.extract()->initialize_item_unchecked(
+                idx, fp[int32_t(reg) - int32_t(idx)]);
+        }
+        accumulator = tuple;
 
         COMPLETE();
     }
@@ -2023,7 +2034,7 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue<Dict> dict = make_object_value<Dict>();
+        TValue<Dict> dict = thread->make_object_value<Dict>();
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             Value key = fp[reg - int8_t(idx * 2)];
@@ -2062,7 +2073,7 @@ namespace cl
 
     static Value op_build_class(PARAMS)
     {
-        accumulator = build_class_from_frame(fp, code_object);
+        accumulator = build_class_from_frame(thread, fp, code_object);
 
         restore_frame_header(fp, pc, code_object);
 
@@ -2566,7 +2577,7 @@ namespace cl
         int16_t rel_target = read_int16_le(&pc[2]);
         Value callable = fp[reg];
         pc += 4;
-        if(callable != active_vm()->get_range_builtin())
+        if(callable != thread->get_machine()->get_range_builtin())
         {
             pc += rel_target;
         }
@@ -2590,7 +2601,7 @@ namespace cl
         int16_t rel_target = read_int16_le(&pc[2]);
         Value callable = fp[reg];
         pc += 4;
-        if(callable != active_vm()->get_range_builtin())
+        if(callable != thread->get_machine()->get_range_builtin())
         {
             pc += rel_target;
         }
@@ -2616,7 +2627,7 @@ namespace cl
         int16_t rel_target = read_int16_le(&pc[2]);
         Value callable = fp[reg];
         pc += 4;
-        if(callable != active_vm()->get_range_builtin())
+        if(callable != thread->get_machine()->get_range_builtin())
         {
             pc += rel_target;
         }
@@ -2731,7 +2742,6 @@ namespace cl
 
     NOINLINE static Value op_return_or_raise_exception_slow(PARAMS)
     {
-        ThreadState *thread = active_thread();
         if(!thread->has_pending_exception())
         {
             throw std::runtime_error(
@@ -2751,7 +2761,7 @@ namespace cl
         }
 
         ExceptionalTarget target =
-            resolve_exceptional_frame_exit(fp, pc, code_object);
+            resolve_exceptional_frame_exit(thread, fp, pc, code_object);
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -2774,7 +2784,6 @@ namespace cl
     NOINLINE static Value op_raise_if_unhandled_exception(PARAMS)
     {
         START(1);
-        ThreadState *thread = active_thread();
         if(!thread->has_pending_exception())
         {
             COMPLETE();
@@ -2934,7 +2943,8 @@ namespace cl
 
     DispatchTable dispatch_table = make_dispatch_table();
 
-    Value run_interpreter(Value *fp, CodeObject *code_object, uint32_t start_pc)
+    Value run_interpreter(Value *fp, CodeObject *code_object, uint32_t start_pc,
+                          ThreadState *thread)
     {
         assert(is_stack_frame_aligned(fp));
         const uint8_t *pc = &code_object->code[start_pc];

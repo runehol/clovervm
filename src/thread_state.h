@@ -64,6 +64,10 @@ namespace cl
         ThreadState(VirtualMachine *_machine);
 
         static void add_to_active_zero_count_table(HeapObject *obj);
+        void add_to_zero_count_table(HeapObject *obj)
+        {
+            zero_count_table.push_back(obj);
+        }
 
         Value run(CodeObject *obj);
 

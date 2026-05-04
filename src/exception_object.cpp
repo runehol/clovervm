@@ -11,8 +11,14 @@
 namespace cl
 {
     StopIterationObject::StopIterationObject(ClassObject *cls, Value value)
-        : ExceptionObject(cls, native_layout_id, compact_layout(),
-                          interned_string(L"")),
+        : StopIterationObject(cls, interned_string(L""), value)
+    {
+    }
+
+    StopIterationObject::StopIterationObject(ClassObject *cls,
+                                             TValue<String> message,
+                                             Value value)
+        : ExceptionObject(cls, native_layout_id, compact_layout(), message),
           value(value)
     {
     }
@@ -133,16 +139,44 @@ namespace cl
         return make_internal_value<ExceptionObject>(type.extract(), message);
     }
 
+    TValue<ExceptionObject> make_exception_object(ThreadState *thread,
+                                                  TValue<ClassObject> type,
+                                                  TValue<String> message)
+    {
+        return thread->make_internal_value<ExceptionObject>(type.extract(),
+                                                            message);
+    }
+
     TValue<ExceptionObject> make_exception_object(TValue<ClassObject> type,
                                                   const wchar_t *message)
     {
         return make_exception_object(type, interned_string(message));
     }
 
+    TValue<ExceptionObject> make_exception_object(ThreadState *thread,
+                                                  TValue<ClassObject> type,
+                                                  const wchar_t *message)
+    {
+        return make_exception_object(
+            thread, type,
+            thread->get_machine()->get_or_create_interned_string_value(
+                message));
+    }
+
     TValue<StopIterationObject>
     make_stop_iteration_object(TValue<ClassObject> type, Value value)
     {
         return make_internal_value<StopIterationObject>(type.extract(), value);
+    }
+
+    TValue<StopIterationObject>
+    make_stop_iteration_object(ThreadState *thread, TValue<ClassObject> type,
+                               Value value)
+    {
+        return thread->make_internal_value<StopIterationObject>(
+            type.extract(),
+            thread->get_machine()->get_or_create_interned_string_value(L""),
+            value);
     }
 
 }  // namespace cl

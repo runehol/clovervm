@@ -8,6 +8,7 @@
 namespace cl
 {
     class ClassObject;
+    class ThreadState;
     class VirtualMachine;
 
     class ExceptionObject : public Object
@@ -52,6 +53,8 @@ namespace cl
 
         StopIterationObject(ClassObject *cls,
                             Value value = Value::not_present());
+        StopIterationObject(ClassObject *cls, TValue<String> message,
+                            Value value = Value::not_present());
 
         MemberValue value;
 
@@ -94,10 +97,19 @@ namespace cl
 
     TValue<ExceptionObject> make_exception_object(TValue<ClassObject> type,
                                                   TValue<String> message);
+    TValue<ExceptionObject> make_exception_object(ThreadState *thread,
+                                                  TValue<ClassObject> type,
+                                                  TValue<String> message);
     TValue<ExceptionObject> make_exception_object(TValue<ClassObject> type,
+                                                  const wchar_t *message);
+    TValue<ExceptionObject> make_exception_object(ThreadState *thread,
+                                                  TValue<ClassObject> type,
                                                   const wchar_t *message);
     TValue<StopIterationObject>
     make_stop_iteration_object(TValue<ClassObject> type,
+                               Value value = Value::not_present());
+    TValue<StopIterationObject>
+    make_stop_iteration_object(ThreadState *thread, TValue<ClassObject> type,
                                Value value = Value::not_present());
 
 }  // namespace cl
