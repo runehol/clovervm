@@ -138,13 +138,23 @@ namespace cl
         struct LoopTargetSet
         {
             LoopTargetSet(JumpTarget *_break_target,
-                          JumpTarget *_continue_target)
-                : break_target(_break_target), continue_target(_continue_target)
+                          JumpTarget *_continue_target, size_t _finally_depth)
+                : break_target(_break_target),
+                  continue_target(_continue_target),
+                  finally_depth(_finally_depth)
             {
             }
 
             JumpTarget *break_target;
             JumpTarget *continue_target;
+            size_t finally_depth;
+        };
+
+        struct FinallyContext
+        {
+            explicit FinallyContext(int32_t _body_idx) : body_idx(_body_idx) {}
+
+            int32_t body_idx;
         };
 
         constexpr static OpTable operator_table = make_table();
@@ -259,6 +269,7 @@ namespace cl
         ScopeAnalysis analysis;
         std::vector<LoopTargetSet> loop_targets;
         std::vector<RegisterIndex> caught_exception_regs;
+        std::vector<FinallyContext> active_finalies;
 
         static bool handler_has_type(AstChildren handler_children)
         {
@@ -1885,7 +1896,8 @@ namespace cl
         void codegen_loop_body(int32_t body_idx, JumpTarget &break_target,
                                JumpTarget &continue_target)
         {
-            loop_targets.emplace_back(&break_target, &continue_target);
+            loop_targets.emplace_back(&break_target, &continue_target,
+                                      active_finalies.size());
             codegen_node(body_idx);
             loop_targets.pop_back();
         }
@@ -1998,31 +2010,22 @@ namespace cl
             return else_children[0];
         }
 
-        bool node_has_control_flow_through_finally(int32_t node_idx) const
+        void emit_active_finalies_until(size_t target_depth)
         {
-            AstKind kind = av.kinds[node_idx];
-            AstChildren children = av.children[node_idx];
-
-            switch(kind.node_kind)
+            assert(target_depth <= active_finalies.size());
+            std::vector<FinallyContext> popped;
+            while(active_finalies.size() > target_depth)
             {
-                case AstNodeKind::STATEMENT_RETURN:
-                case AstNodeKind::STATEMENT_BREAK:
-                case AstNodeKind::STATEMENT_CONTINUE:
-                    return true;
+                FinallyContext ctx = active_finalies.back();
+                active_finalies.pop_back();
+                popped.push_back(ctx);
+                codegen_node(ctx.body_idx);
+            }
 
-                case AstNodeKind::STATEMENT_FUNCTION_DEF:
-                case AstNodeKind::STATEMENT_CLASS_DEF:
-                    return false;
-
-                default:
-                    for(int32_t child_idx: children)
-                    {
-                        if(node_has_control_flow_through_finally(child_idx))
-                        {
-                            return true;
-                        }
-                    }
-                    return false;
+            while(!popped.empty())
+            {
+                active_finalies.push_back(popped.back());
+                popped.pop_back();
             }
         }
 
@@ -2053,18 +2056,6 @@ namespace cl
             int32_t body_idx = children[0];
             int32_t finally_body_idx = try_finally_body_idx(children);
 
-            for(size_t child_offset = 0; child_offset + 1 < children.size();
-                ++child_offset)
-            {
-                int32_t child_idx = children[child_offset];
-                if(node_has_control_flow_through_finally(child_idx))
-                {
-                    throw std::runtime_error(
-                        "return, break, or continue through finally is not "
-                        "implemented yet");
-                }
-            }
-
             auto codegen_protected_body = [&]() {
                 if(children.size() == 2)
                 {
@@ -2081,7 +2072,9 @@ namespace cl
             JumpTarget done_target(code_obj);
             {
                 ExceptionTableRangeBuilder range(code_obj, exceptional_target);
+                active_finalies.emplace_back(finally_body_idx);
                 codegen_protected_body();
+                active_finalies.pop_back();
                 range.close();
             }
 
@@ -2734,7 +2727,8 @@ namespace cl
                         loop_start_target.resolve();
 
                         loop_targets.emplace_back(&break_target,
-                                                  &continue_target);
+                                                  &continue_target,
+                                                  active_finalies.size());
                         codegen_node(children[1]);  // body
                         loop_targets.pop_back();
 
@@ -2799,6 +2793,8 @@ namespace cl
                     }
                     else
                     {
+                        emit_active_finalies_until(
+                            loop_targets.back().finally_depth);
                         code_obj->emit_jump(source_offset,
                                             *loop_targets.back().break_target);
                     }
@@ -2812,6 +2808,8 @@ namespace cl
                     }
                     else
                     {
+                        emit_active_finalies_until(
+                            loop_targets.back().finally_depth);
                         code_obj->emit_jump(
                             source_offset,
                             *loop_targets.back().continue_target);
@@ -2819,21 +2817,30 @@ namespace cl
                     break;
 
                 case AstNodeKind::STATEMENT_RETURN:
-                    if(mode() != Mode::Function)
                     {
-                        throw std::runtime_error(
-                            "SyntaxError: 'return' outside function");
+                        if(mode() != Mode::Function)
+                        {
+                            throw std::runtime_error(
+                                "SyntaxError: 'return' outside function");
+                        }
+                        if(!children.empty())
+                        {
+                            codegen_node(children[0]);
+                        }
+                        else
+                        {
+                            code_obj->emit_lda_none(source_offset);
+                        }
+                        if(!active_finalies.empty())
+                        {
+                            TemporaryReg return_value(*code_obj);
+                            code_obj->emit_star(source_offset, return_value);
+                            emit_active_finalies_until(0);
+                            code_obj->emit_ldar(source_offset, return_value);
+                        }
+                        code_obj->emit_return(source_offset);
+                        break;
                     }
-                    if(!children.empty())
-                    {
-                        codegen_node(children[0]);
-                    }
-                    else
-                    {
-                        code_obj->emit_lda_none(source_offset);
-                    }
-                    code_obj->emit_return(source_offset);
-                    break;
 
                 case AstNodeKind::STATEMENT_PASS:
                 case AstNodeKind::STATEMENT_GLOBAL:

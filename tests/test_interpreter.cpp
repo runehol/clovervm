@@ -1755,6 +1755,136 @@ TEST(Interpreter, continue_in_finally_overrides_body_exception)
     EXPECT_EQ(Value::from_smi(3), actual);
 }
 
+TEST(Interpreter, return_through_finally_runs_cleanup_before_return)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"result = 0\n"
+                                         L"def f():\n"
+                                         L"    global result\n"
+                                         L"    try:\n"
+                                         L"        return 1\n"
+                                         L"    finally:\n"
+                                         L"        result = 2\n"
+                                         L"f() + result * 10\n");
+
+    EXPECT_EQ(Value::from_smi(21), actual);
+}
+
+TEST(Interpreter, return_in_finally_overrides_protected_return)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"def f():\n"
+                                         L"    try:\n"
+                                         L"        return 1\n"
+                                         L"    finally:\n"
+                                         L"        return 2\n"
+                                         L"f()\n");
+
+    EXPECT_EQ(Value::from_smi(2), actual);
+}
+
+TEST(Interpreter, break_through_finally_runs_cleanup_before_loop_exit)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"result = 0\n"
+                                         L"for x in range(3):\n"
+                                         L"    try:\n"
+                                         L"        break\n"
+                                         L"    finally:\n"
+                                         L"        result = result + 10\n"
+                                         L"result + x\n");
+
+    EXPECT_EQ(Value::from_smi(10), actual);
+}
+
+TEST(Interpreter, break_through_inner_finally_does_not_replay_outer_finally)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"result = 0\n"
+                                         L"try:\n"
+                                         L"    for x in range(3):\n"
+                                         L"        try:\n"
+                                         L"            break\n"
+                                         L"        finally:\n"
+                                         L"            result = result + 10\n"
+                                         L"    result = result + 1\n"
+                                         L"finally:\n"
+                                         L"    result = result + 100\n"
+                                         L"result\n");
+
+    EXPECT_EQ(Value::from_smi(111), actual);
+}
+
+TEST(Interpreter, continue_through_finally_runs_cleanup_before_next_iteration)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"result = 0\n"
+                                         L"for x in range(3):\n"
+                                         L"    try:\n"
+                                         L"        continue\n"
+                                         L"    finally:\n"
+                                         L"        result = result + 1\n"
+                                         L"    result = 99\n"
+                                         L"result\n");
+
+    EXPECT_EQ(Value::from_smi(3), actual);
+}
+
+TEST(Interpreter, return_from_else_through_finally_runs_cleanup)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"result = 0\n"
+                                         L"def f():\n"
+                                         L"    global result\n"
+                                         L"    try:\n"
+                                         L"        pass\n"
+                                         L"    except NameError:\n"
+                                         L"        pass\n"
+                                         L"    else:\n"
+                                         L"        return 4\n"
+                                         L"    finally:\n"
+                                         L"        result = 5\n"
+                                         L"f() + result * 10\n");
+
+    EXPECT_EQ(Value::from_smi(54), actual);
+}
+
+TEST(Interpreter, return_from_except_through_finally_runs_cleanup)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"result = 0\n"
+                                         L"def f():\n"
+                                         L"    global result\n"
+                                         L"    try:\n"
+                                         L"        raise NameError\n"
+                                         L"    except NameError:\n"
+                                         L"        return 6\n"
+                                         L"    finally:\n"
+                                         L"        result = 7\n"
+                                         L"f() + result * 10\n");
+
+    EXPECT_EQ(Value::from_smi(76), actual);
+}
+
+TEST(Interpreter, return_through_nested_finally_runs_cleanup_inside_out)
+{
+    test::VmTestContext test_context;
+    Value actual =
+        test_context.run_file(L"result = 0\n"
+                              L"def f():\n"
+                              L"    global result\n"
+                              L"    try:\n"
+                              L"        try:\n"
+                              L"            return 1\n"
+                              L"        finally:\n"
+                              L"            result = result * 10 + 2\n"
+                              L"    finally:\n"
+                              L"        result = result * 10 + 3\n"
+                              L"f() + result * 10\n");
+
+    EXPECT_EQ(Value::from_smi(231), actual);
+}
+
 TEST(Interpreter, try_except_finally_runs_cleanup_after_matched_handler)
 {
     test::VmTestContext test_context;
