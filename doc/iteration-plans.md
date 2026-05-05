@@ -150,6 +150,25 @@ or other metadata must not be stored directly in the state block. Such metadata
 belongs in bytecode operands, `CodeObject` side arrays, type-feedback storage, or
 future JIT metadata.
 
+The initial plan tag assignment should reserve zero for the generic Python
+iterator fallback:
+
+```text
+0  PythonIteratorPlan
+1  RangePlan
+2  TuplePlan
+3  ListPlan
+4  DictKeysPlan
+5  DictValuesPlan
+6  DictItemsPlan
+7  GeneratorPlan, provisional
+```
+
+`PythonIteratorPlan = 0` makes the safest plan the default-looking value, but it
+does not make uninitialized state valid. `ForIterPlan` must still require
+`state[1]` to hold a valid iterator object before falling through to the
+explicit `__next__` call.
+
 ## Plan State
 
 ### RangePlan
@@ -387,32 +406,41 @@ from the loop site to guard the profiled shape/class and inline a concrete plan.
 The generic fallback remains required for correctness and for arbitrary Python
 objects.
 
-## Python Fallback Lowering
-
-There are two plausible bytecode shapes for mixing fast internal plans with the
-ordinary Python iterator protocol.
-
-One option is to emit two loop bodies:
+The existing direct `range(...)` fast path can be represented as an optional
+producer-expression plan prefix. This is distinct from recognizing an already
+created iterable: it avoids calling `range()` and avoids allocating a range
+object when the frontend has recognized a direct builtin `range(...)` loop.
 
 ```text
-fast loop:
-  FOR_PREP_FAST
-  FOR_ITER_FAST
-  body
-  jump fast loop
+# range callable and arguments are already evaluated into temporary registers
+ForPrepRange1Plan state_base, loop_start
+# or ForPrepRange2Plan / ForPrepRange3Plan
 
-python-protocol loop:
-  cached __iter__
-  cached __next__
-  body
-  jump python-protocol loop
+# fallback when range is shadowed or arguments cannot use the producer plan:
+CallSimple range_callable, args
+Star state[1]
+
+ForPrepIterablePlan state_base, loop_start
+...
 ```
 
-That makes each loop body simpler, but duplicates loop control-flow structure
-and may complicate `break`, `continue`, `else`, and exception-table ranges.
+On success, `ForPrepRangeNPlan` initializes the ordinary `RangePlan` state:
 
-The preferred lowering shape keeps Python protocol calls explicit while letting
-the plan paths branch around them:
+```text
+state[0] = RangePlan
+state[1] = current
+state[2] = stop
+state[3] = step
+jump loop_start
+```
+
+On miss, it falls through to the ordinary call to `range(...)`, preserving
+shadowing and normal Python call behavior.
+
+## Python Fallback Lowering
+
+The lowering should keep one loop body, keep Python protocol calls explicit, and
+let the plan paths branch around those calls:
 
 ```text
 # iterable expression leaves value in accumulator
@@ -532,3 +560,71 @@ propagate_exception:
 This keeps Python-protocol loop exhaustion semantically ordinary: the
 `__next__` call raises public `StopIteration`, the synthetic loop handler
 consumes it, and the shared exit path runs with no active exception.
+
+## Transition Plan
+
+Implement this in narrow, testable slices:
+
+1. Add the plan tags and state helpers.
+
+   Keep all state as valid `Value`s. Make `PythonIteratorPlan` tag `0`.
+
+2. Add the plan opcodes and disassembly.
+
+   ```text
+   ForPrepIterablePlan state_base, loop_start
+   ForPrepIteratorPlan state_base
+   ForIterPlan state_base, exit, body
+   ```
+
+   Pin operand order, branch behavior, and the three-way `ForIterPlan` contract
+   with codegen/disassembly tests.
+
+3. Implement the first semantic slice with only `RangePlan` and
+   `PythonIteratorPlan`.
+
+   `ForPrepIteratorPlan` should validate the result of `__iter__` immediately
+   and raise `TypeError` for non-iterators.
+
+4. Lower ordinary `for` loops through the explicit protocol-call shape.
+
+   Keep `__iter__` and `__next__` as ordinary `CallMethodAttr` instructions with
+   the existing read and call ICs. Cover the explicit `__next__` call with the
+   synthetic `StopIteration` handler that clears the active exception before
+   jumping to loop exit.
+
+5. Compose in the current direct `range(...)` fast path as
+   `ForPrepRangeNPlan`.
+
+   This producer-expression plan should initialize `RangePlan` directly and
+   fall through to the ordinary `range(...)` call on miss.
+
+6. Add `TuplePlan`.
+
+   Tuple is immutable, so it is the safest container plan after range.
+
+7. Add `ListPlan`.
+
+   Use live-length semantics. Re-read `list.size()` on every `ForIterPlan`
+   execution and do not cache the loop end.
+
+8. Add dict views and `Dict*Plan` later.
+
+   Do this after `dict_keys`, `dict_values`, and `dict_items` exist. Use
+   expected iteration length as the compact mutation check.
+
+9. Leave `GeneratorPlan` provisional.
+
+   Measure the ordinary Python protocol path with good `__next__` ICs before
+   adding generator-specific interpreter machinery.
+
+Key tests for the transition:
+
+- Direct internal plans skip `__iter__`.
+- Delegating `__iter__` results can still become returned-iterator plans.
+- Invalid `__iter__` results raise immediately.
+- Internal plan and Python protocol predecessors both enter the loop body with
+  the yielded item in the accumulator.
+- Public `StopIteration` from `__next__` is cleared before loop exit.
+- Other exceptions from `__next__` propagate.
+- Re-entrant calls use separate frame-local plan state.
