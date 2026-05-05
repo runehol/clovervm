@@ -175,12 +175,41 @@ Used for exact internal `list` objects.
 state[0]: ListPlan tag
 state[1]: list object
 state[2]: current index
-state[3]: optional mutation/version snapshot
+state[3]: unused initially
 ```
 
 Do not cache length unless CloverVM deliberately chooses snapshot semantics.
 Python list iteration can observe appended elements, so the simple compatible
 plan checks `index < list.size()` on each step.
+
+The loop-exit decision must be made fresh on every `ForIterPlan` execution,
+after the previous loop body has run. `ListPlan` may cache the current index,
+but it must not cache the loop end or precompute that the next iteration will
+exit. Both of these loops should observe the appended element:
+
+```python
+xs = [1, 2]
+for x in xs:
+    if x == 1:
+        xs.append(3)
+
+xs = [1, 2]
+for x in xs:
+    if x == 2:
+        xs.append(3)
+```
+
+The list step is therefore:
+
+```text
+if index >= list.size():
+  jump exit
+
+item = list[index]
+state[2] = index + 1
+accumulator = item
+jump body
+```
 
 ### TuplePlan
 
@@ -203,13 +232,13 @@ Used for exact internal `dict` objects and `dict_keys` view objects.
 state[0]: DictKeysPlan tag
 state[1]: dict object
 state[2]: entry scan index
-state[3]: structural version snapshot
+state[3]: expected iteration length
 ```
 
 The advance operation scans to the next live entry and yields its key. The dict
-must expose a structural iteration version, or equivalent mutation state, so the
-plan can raise the correct Python error when iteration is invalidated by a size
-or structural mutation.
+plan records the expected iteration length when the plan is initialized and
+checks it while advancing so size-changing mutation during iteration raises the
+correct Python error.
 
 ### DictValuesPlan
 
@@ -219,7 +248,7 @@ Used for exact internal `dict_values` view objects.
 state[0]: DictValuesPlan tag
 state[1]: dict object
 state[2]: entry scan index
-state[3]: structural version snapshot
+state[3]: expected iteration length
 ```
 
 The scan is the same as `DictKeysPlan`, but yields values.
@@ -232,7 +261,7 @@ Used for exact internal `dict_items` view objects.
 state[0]: DictItemsPlan tag
 state[1]: dict object
 state[2]: entry scan index
-state[3]: structural version snapshot
+state[3]: expected iteration length
 ```
 
 The scan yields a freshly allocated two-tuple `(key, value)`. A later specialized
@@ -314,6 +343,13 @@ for k, v in d.items(): iterable shape = dict_items
 
 Each view stores the underlying dict. `FOR_PREP` extracts that dict into the
 state block and selects the appropriate dict plan.
+
+Dict plans should use expected iteration length as their initial invalidation
+check. CloverVM dict iteration is insertion-ordered, so a length check catches
+the size-changing mutations that invalidate active key/value/item iteration. It
+may report some mutations later than CPython does, but the main purpose is to
+catch user bugs while keeping the loop state compact. Replacing an existing
+value without changing dict length should not invalidate iteration.
 
 ## Relationship To StopIteration
 
@@ -408,16 +444,37 @@ it initializes a direct internal plan and jumps to `loop_start`, avoiding
 `__iter__` entirely. On miss it falls through to the explicit cached `__iter__`
 call.
 
+A miss means "not a recognized direct internal iterable." If the opcode
+recognizes an internal iterable shape/class but finds malformed state, that is
+an internal VM/compiler error, not a reason to fall back to `__iter__`.
+
 `ForPrepIteratorPlan` runs after `__iter__` has returned. It tries to
 recognize the returned iterator. On success it initializes a returned-iterator
-plan; on miss it stores `PythonIteratorPlan` with the returned iterator in
-`state[1]`. It does not need a success target because both outcomes continue to
-`loop_start`.
+plan. On miss, it must still validate that the returned object satisfies the
+ordinary Python iterator protocol. If it does, it stores `PythonIteratorPlan`
+with the returned iterator in `state[1]`. If it does not, it raises `TypeError`
+immediately, matching CPython's `iter() returned non-iterator` behavior. It does
+not need a success target because successful outcomes continue to `loop_start`.
 
 `ForIterPlan` advances internal plans directly. If an internal plan yields,
 it writes the item to the accumulator and jumps to `body`. If it exhausts, it
 jumps to `exit`. For `PythonIteratorPlan`, it falls through to the explicit
 cached `__next__` call.
+
+This is a custom three-way control-flow opcode:
+
+```text
+internal yield       -> accumulator = item; jump body
+internal exhaustion  -> jump exit
+PythonIteratorPlan   -> fall through to explicit __next__ call
+```
+
+Codegen must preserve the accumulator contract at `body`: every predecessor of
+`body` must arrive with the yielded item in the accumulator. Internal plans
+provide that value directly before jumping to `body`; the Python protocol path
+gets it from the explicit `CallMethodAttr "__next__"` return. This invariant is
+part of the bytecode contract and should be pinned by codegen/disassembly tests
+when implemented.
 
 This shape gives type feedback at both semantic decision points:
 
@@ -442,9 +499,12 @@ exception-table coverage, and future JIT call handling without a separate cache
 system hidden inside the `for` opcodes.
 
 The explicit `__next__` call must be covered by a synthetic exception-table
-range. Its handler should route public `StopIteration` to loop exhaustion, clear
-the active exception, and then jump to the shared loop exit/`else` target. Other
-exceptions must be reraised through the ordinary managed exception path:
+range. The range should cover the `CallMethodAttr "__next__"` instruction. It is
+also harmless if non-raising setup bytecodes such as `Ldar` / `Star` are inside
+the same protected range, but the range should not cover `ForIterPlan` or the
+loop body. Its handler should route public `StopIteration` to loop exhaustion,
+clear the active exception, and then jump to the shared loop exit/`else` target.
+Other exceptions must be reraised through the ordinary managed exception path:
 
 ```text
 ForIterPlan state_base, exit, body
