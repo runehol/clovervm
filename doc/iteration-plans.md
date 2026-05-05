@@ -347,6 +347,97 @@ those ICs are likely to matter more for the interpreter than loop-site
 shape/class feedback, because they avoid repeating generic attribute lookup,
 method binding, call-cache checks, and thunk selection on every iteration.
 
+### Iterator Adapter Plans
+
+Builtin iterator adapters such as `enumerate`, `zip`, and `map` are lazy
+iterators, but they are not Python generators. They do not need a suspended
+Python frame, live eval-stack temporaries, `send` landing slots, or generator
+`throw` / `close` behavior. Their persistent state is explicit:
+
+```text
+enumerate:
+  child iterator state
+  current index
+
+zip:
+  child iterator state[]
+
+map:
+  callable
+  child iterator state[]
+```
+
+These adapters introduce nested iteration state. The outer loop consumes the
+adapter, while the adapter itself advances one or more child iterators. That
+state should not be forced into the fixed four-slot frame-local block. Leaf
+plans such as `RangePlan`, `ListPlan`, and `TuplePlan` should stay inline in the
+frame state block when they fit, but composed adapter plans may allocate a small
+heap state object and reference it from the outer plan state:
+
+```text
+state[0]: EnumeratePlan tag
+state[1]: EnumeratePlanState object
+state[2]: unused or small cached value
+state[3]: unused or cached feedback token
+
+EnumeratePlanState:
+  index
+  child plan tag
+  child plan state
+```
+
+For `zip` and `map`, the heap state object can store a variable-length list of
+child plan states:
+
+```text
+ZipPlanState:
+  child_count
+  child[0]: plan tag + state
+  child[1]: plan tag + state
+  ...
+
+MapPlanState:
+  callable
+  child_count
+  child[0]: plan tag + state
+  child[1]: plan tag + state
+  ...
+```
+
+The dynamically allocated child state belongs to the active iteration, not to
+shared loop-site feedback or code metadata. Recursive calls, re-entrant
+execution, and multiple active iterators over the same adapter expression must
+not share cursor state.
+
+This does make type feedback for inner iterators less direct. A loop over
+`enumerate(xs)` naturally observes the outer `enumerate` shape, but the useful
+specialization may depend on whether the child is a list iterator, tuple
+iterator, range iterator, generator, or generic Python iterator. `FOR_PREP`
+should therefore record a shallow structural plan summary when it constructs an
+adapter plan:
+
+```text
+outer plan: EnumeratePlan
+child plans: [ListPlan]
+
+outer plan: ZipPlan
+child plans: [ListPlan, TuplePlan]
+
+outer plan: MapPlan
+child plans: [RangePlan]
+```
+
+The interpreter should keep this bounded: specialize common small shapes and
+fall back to a generic composed adapter state when arity or polymorphism grows.
+The JIT can later use the same summary to guard and inline through the composed
+plan tree.
+
+Adapter plans should preserve Python semantics by yielding the adapter's public
+result objects. For example, `enumerate` and `zip` yield tuples. Later codegen
+may add unpack-specialized forms for targets such as
+`for i, x in enumerate(xs):` or `for x, y in zip(xs, ys):` so the loop can assign
+targets directly without allocating an immediately unpacked tuple.
+
 ## Dict Views
 
 `dict.keys()`, `dict.values()`, and `dict.items()` should return distinct
