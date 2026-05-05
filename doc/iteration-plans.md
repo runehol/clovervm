@@ -130,7 +130,7 @@ object must not overwrite an outer activation's loop state.
 A small fixed state block is sufficient for the first tier:
 
 ```text
-state[0]: plan tag / protocol discriminator
+state[0]: plan tag / protocol discriminator, encoded as an SMI
 state[1]: primary object or current value
 state[2]: index, stop value, or scan position
 state[3]: auxiliary state such as step, length, or version
@@ -139,6 +139,16 @@ state[3]: auxiliary state such as step, length, or version
 Plans may leave slots unused. If a later plan genuinely needs more state, it can
 either store a small state object in one slot or introduce a larger state-block
 form. The default should stay compact because `for` loops are common.
+
+All state slots are ordinary frame registers and must contain valid `Value`s.
+The plan tag must be an SMI, not a raw enum byte or pointer. Indices, lengths,
+and versions should also be SMIs when they live in the state block. Heap objects
+must be stored as normal object `Value`s so the scanner can see them.
+
+Raw pointers, side-table indices that are not valid `Value`s, cache references,
+or other metadata must not be stored directly in the state block. Such metadata
+belongs in bytecode operands, `CodeObject` side arrays, type-feedback storage, or
+future JIT metadata.
 
 ## Plan State
 
@@ -365,31 +375,100 @@ python-protocol loop:
 That makes each loop body simpler, but duplicates loop control-flow structure
 and may complicate `break`, `continue`, `else`, and exception-table ranges.
 
-The other option is to keep one loop body and let `FOR_PREP` / `FOR_ITER` carry
-the protocol-specific caches they need:
+The preferred lowering shape keeps Python protocol calls explicit while letting
+the plan paths branch around them:
 
 ```text
-FOR_PREP iterable_reg, state_base, iter_cache, fallback
-FOR_ITER state_base, next_cache, exit
-body
-jump FOR_ITER
+# iterable expression leaves value in accumulator
+Star state[1]
+
+ForPrepIterablePlan state_base, loop_start
+Ldar state[1]
+Star a0
+CallMethodAttr a0, "__iter__", iter_read_ic, iter_call_ic, 0
+Star state[1]
+ForPrepIteratorPlan state_base
+
+loop_start:
+ForIterPlan state_base, exit, body
+Ldar state[1]
+Star a0
+CallMethodAttr a0, "__next__", next_read_ic, next_call_ic, 0
+
+body:
+  # accumulator contains yielded item
+  ...
+  Jump loop_start
+
+exit:
 ```
 
-In this shape, internal plans use the frame-local plan state, while
-`PythonIteratorPlan` uses the embedded `__iter__` and `__next__` method-call
-caches. This is attractive if the opcodes can be structured so successful loop
-continuation always means "advance `pc` to the next instruction." Exhaustion
-jumps to the loop exit, and real Python exceptions enter the ordinary exception
-path.
+`ForPrepIterablePlan` tries to recognize the original iterable. On success
+it initializes a direct internal plan and jumps to `loop_start`, avoiding
+`__iter__` entirely. On miss it falls through to the explicit cached `__iter__`
+call.
 
-For the Python protocol path, the ordinary exception-table mechanism can route
-`StopIteration` from `__next__` to the loop exit. That means the fallback does
-not need a separate ad hoc exit channel: normal yielded values continue to the
-next instruction, public `StopIteration` follows the existing protected-range
-handler to the loop exit, and other exceptions propagate through the same
-managed unwind machinery.
+`ForPrepIteratorPlan` runs after `__iter__` has returned. It tries to
+recognize the returned iterator. On success it initializes a returned-iterator
+plan; on miss it stores `PythonIteratorPlan` with the returned iterator in
+`state[1]`. It does not need a success target because both outcomes continue to
+`loop_start`.
 
-The unified shape is preferable if it keeps `continue` and loop-body layout
-simple without forcing the interpreter hot path through too much generic method
-cache machinery for internal plans. If that pressure becomes visible, emitting a
-separate Python-protocol loop remains a reasonable fallback design.
+`ForIterPlan` advances internal plans directly. If an internal plan yields,
+it writes the item to the accumulator and jumps to `body`. If it exhausts, it
+jumps to `exit`. For `PythonIteratorPlan`, it falls through to the explicit
+cached `__next__` call.
+
+This shape gives type feedback at both semantic decision points:
+
+- `ForPrepIterablePlan` records whether the original iterable usually has a
+  direct internal plan. The JIT needs this feedback to know whether it can skip
+  the `__iter__` call.
+- `ForPrepIteratorPlan` records whether the result of `__iter__` usually
+  has a returned-iterator plan. The JIT needs this feedback for objects that
+  delegate iteration to internal iterator types.
+- `ForIterPlan` records the active plan observed at the loop backedge. The
+  JIT can use that to inline the concrete iteration step or leave the explicit
+  `__next__` path in place.
+
+The two prep opcodes are not accidental duplication: they correspond to two
+different observations, before and after the Python-visible `__iter__` call.
+
+The main advantage of this shape is that Python protocol method and function
+calls remain explicit bytecode. `__iter__` and `__next__` use ordinary
+`CallMethodAttr` instructions, so they get the existing attribute-read and
+function-call inline caches, the existing call-window encoding, ordinary
+exception-table coverage, and future JIT call handling without a separate cache
+system hidden inside the `for` opcodes.
+
+The explicit `__next__` call must be covered by a synthetic exception-table
+range. Its handler should route public `StopIteration` to loop exhaustion, clear
+the active exception, and then jump to the shared loop exit/`else` target. Other
+exceptions must be reraised through the ordinary managed exception path:
+
+```text
+ForIterPlan state_base, exit, body
+Ldar state[1]
+Star a0
+protected_start:
+CallMethodAttr a0, "__next__", next_read_ic, next_call_ic, 0
+protected_end:
+
+body:
+  ...
+  Jump loop_start
+
+stop_iteration_handler:
+  LdaConstant StopIteration
+  ActiveExceptionIsInstance
+  JumpIfFalse propagate_exception
+  ClearActiveException
+  Jump exit
+
+propagate_exception:
+  ReraiseActiveException
+```
+
+This keeps Python-protocol loop exhaustion semantically ordinary: the
+`__next__` call raises public `StopIteration`, the synthetic loop handler
+consumes it, and the shared exit path runs with no active exception.
