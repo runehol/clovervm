@@ -19,6 +19,8 @@ add_library(libclovervm STATIC
     constructor_thunk.h
     codegen.cpp
     codegen.h
+    codegen_scope_analysis.cpp
+    codegen_scope_analysis.h
     compilation_unit.h
     dict.cpp
     dict.h
