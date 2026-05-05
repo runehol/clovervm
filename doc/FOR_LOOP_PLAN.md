@@ -21,6 +21,10 @@ then, native callables have moved to native thunk `Function` objects. `range`
 is now implemented as a defaulted three-argument native thunk rather than a
 separate `BuiltinFunction` path.
 
+Current fast-iteration design work has moved to
+[iteration-plans.md](iteration-plans.md). This file is historical context for
+the first `for` loop implementation.
+
 ## Guiding Approach
 
 Use the original builtin-function path plus iterator-oriented bytecode.

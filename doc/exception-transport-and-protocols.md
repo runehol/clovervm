@@ -280,8 +280,9 @@ fall back to `ordinary_code_object` otherwise.
 When the conventions differ, the preferred representation is two `CodeObject`s
 attached to one logical `Function`, rather than two offsets in the same
 `CodeObject`. The existing function-call inline cache already stores the
-selected `CodeObject`, so a `FOR_ITER` cache can keep the decision to call the
-`stop_returning_code_object` without changing the logical iterator object or
+selected `CodeObject`. A later generic type-feedback mechanism can record that
+a loop site usually sees an iterator whose next operation can use the
+`stop_returning_code_object`, without changing the logical iterator object or
 function.
 
 Separate `CodeObject`s also make traceback policy cleaner. If
@@ -419,11 +420,21 @@ real Python StopIteration:
 inside their implementation, but the external stop-returning convention speaks
 in terms of pending `StopIteration` plus `Value::exception_marker()`.
 
-## Possible Iterator-Plan Direction
+## Iterator Plans And Exception Transport
 
-A possible future loop optimization direction is a loop-site iterator-plan inline
-cache rather than front-end recognition of specific producer expressions such as
-`range(...)`.
+The current loop optimization direction is a loop-site iteration plan. The
+details live in [iteration-plans.md](iteration-plans.md); this section only
+records how that direction relates to exception transport.
+
+The important point for this document is that fast internal iteration plans are
+not primarily an exception mechanism. They avoid public `StopIteration` for
+ordinary range/container exhaustion and branch directly to the loop exit.
+Compact or stop-returning `StopIteration` remains the protocol-correctness
+bridge for generators, generic `__next__` fallback, user-visible `next()`, and
+adapter boundaries.
+
+A loop-site iteration-plan selection mechanism should replace front-end
+recognition of specific producer expressions such as `range(...)`.
 
 The loop site would specialize on the iterable value it actually receives and
 select a plan with guards, behavior, and a loop-local state layout. The VM
@@ -480,17 +491,22 @@ micro-optimizing `StopIteration` delivery. Compact or stop-returning
 public protocol and internal loop completion, but it should not be treated as the
 primary performance mechanism for `for` loops.
 
+Generic Python iterator fallback should still use normal attribute/call inline
+caches for `__iter__` and `__next__`. Those ICs optimize the public protocol
+path; they are separate from the loop-site plan tag used by internal iteration
+plans.
+
 Open concerns before implementing this direction:
 
-- Shared loop-site inline cache state cannot contain active iterator state.
+- Shared loop-site type feedback cannot contain active iterator state.
   Recursive or re-entrant calls to the same code object could otherwise overwrite
   the outer activation's loop state. Any selected plan and all active cursor
   fields that affect an in-progress loop must be activation-local, most likely in
   frame registers.
-- A frame-local selected plan may push the interpreter toward a switch over plan
-  kinds. The JIT specialization story is not settled: a loop-site cache may
-  still provide profiling data and guards, but compiled code must prove or guard
-  the activation-local selected plan before inlining a concrete plan.
+- A frame-local selected plan pushes the interpreter toward a switch over plan
+  kinds. Loop-site type feedback is still useful for later JIT specialization,
+  where compiled code can guard the observed shape/class and inline a concrete
+  plan body.
 - Mutable-container plans need their own invalidation semantics. Dict iteration,
   and possibly list/set-like plans later, must track the relevant version or
   shape state and raise the correct Python error if mutation invalidates active
