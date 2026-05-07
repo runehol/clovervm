@@ -62,6 +62,12 @@ generator    -> GeneratorPlan
 fallback     -> PythonIteratorPlan
 ```
 
+Direct plans for builtin containers rely on those builtin types being immutable,
+matching Python's rule that special methods on builtin types cannot be replaced
+from Python code. For example, assigning to `list.__iter__` should raise
+`TypeError`. CloverVM should enforce the same immutability for builtin classes
+before using direct plans that skip Python-visible `__iter__` lookup.
+
 For user classes, shape may eventually participate in a guard, but only if it
 also proves the relevant `__iter__` / `__next__` lookup behavior and invalidates
 on class or descriptor mutation. That is not needed for the first implementation.
@@ -102,6 +108,47 @@ class Bag:
 `Bag` itself is not eligible for a direct internal plan, but if `__iter__`
 returns an exact internal list iterator, tuple iterator, dict view iterator, or
 generator, `FOR_PREP` may still select the corresponding returned-iterator plan.
+
+Returned-iterator plans must preserve the observable state of the returned
+iterator object. This matters for partially consumed iterators and aliases:
+
+```python
+it = iter(xs)
+next(it)
+for x in it:
+    ...
+
+class Bag:
+    def __iter__(self):
+        self.last_iterator = iter(self.items)
+        return self.last_iterator
+```
+
+It is observable if a loop copies the iterator cursor into frame-local state and
+then advances only that copy. Code in the loop body can call `next(it)`, and code
+after the loop can inspect the iterator's remaining items by continuing to call
+`next(it)`. Therefore a returned-iterator fast path must either reject internal
+iterator objects that are already partially consumed, or copy the cursor from the
+iterator object and write the advanced cursor back to that same iterator object
+in lockstep. End-of-loop synchronization is not sufficient because aliases may
+observe the iterator during the loop body.
+
+This makes direct iterable plans the primary optimization target. If the
+original iterable is an exact immutable builtin type, the loop can select a plan
+before any Python-visible `__iter__` call and keep cursor state entirely in the
+frame. User code cannot observe the missing iterator object because no iterator
+object would have been exposed by the direct plan path.
+
+Returned-iterator recognition should be narrower. Its main early use is for
+iterator objects that are themselves the right place to store cursor state, such
+as future dict-key, dict-value, and dict-item iterators returned by `__iter__` on
+dict view objects. In that form, frame-local state should hold the plan tag and
+the iterator object, while the scan cursor, expected length, and any mutation
+check state live in the iterator object and are advanced there on every
+`ForIterPlan` step. Returned-iterator plans should avoid detached frame-local
+cursor copies unless freshness/unobservability has been proven or the copied
+state is synchronized back to the iterator object before every user-observable
+point.
 
 This means the plan resolver should roughly be:
 
@@ -174,6 +221,14 @@ explicit `__next__` call.
 ### RangePlan
 
 Used for exact internal `range` iteration.
+
+CloverVM currently has a `range_iterator` object and `range()` returns that
+iterator directly. This should be fixed before `RangePlan` becomes the general
+range substrate: `range()` should return an immutable, reusable `range` object,
+and `range.__iter__()` should return a fresh `range_iterator` object initialized
+from the range's start, stop, and step. Direct `for x in range_obj` plans may
+iterate from the `range` object without allocating the public iterator, while
+public `iter(range_obj)` still produces the observable `range_iterator`.
 
 ```text
 state[0]: RangePlan tag
@@ -452,7 +507,26 @@ for k, v in d.items(): iterable shape = dict_items
 ```
 
 Each view stores the underlying dict. `FOR_PREP` extracts that dict into the
-state block and selects the appropriate dict plan.
+state block and selects the appropriate dict plan. This is the preferred direct
+plan shape for loops over exact dict view objects because no public iterator has
+been exposed yet.
+
+The corresponding dict view iterators should also be eligible for a returned
+iterator plan after a Python-visible `__iter__` call. In that case, the plan
+must advance the iterator object itself rather than an independent frame-local
+copy of the scan state:
+
+```text
+state[0]: DictItemsIteratorPlan tag
+state[1]: dict_items_iterator object
+state[2]: unused or cached feedback token
+state[3]: unused
+```
+
+The dict iterator object stores the underlying dict, scan index, expected
+iteration length, and any later mutation/version counter. This preserves alias
+semantics for code that calls `next()` on the same iterator during or after the
+loop.
 
 Dict plans should use expected iteration length as their initial invalidation
 check. CloverVM dict iteration is insertion-ordered, so a length check catches
@@ -460,6 +534,13 @@ the size-changing mutations that invalidate active key/value/item iteration. It
 may report some mutations later than CPython does, but the main purpose is to
 catch user bugs while keeping the loop state compact. Replacing an existing
 value without changing dict length should not invalidate iteration.
+
+This is an intentional near-term weakening relative to CPython's full mutation
+detection. A length-only check can miss mutations that delete and insert keys
+without changing the final size, and it may observe/report some invalidating
+mutations later than CPython. That tradeoff is acceptable for the first dict
+plan; a later dict version or iterator-mutation counter can tighten the
+semantics without changing the high-level plan shape.
 
 ## Relationship To StopIteration
 
@@ -617,6 +698,14 @@ function-call inline caches, the existing call-window encoding, ordinary
 exception-table coverage, and future JIT call handling without a separate cache
 system hidden inside the `for` opcodes.
 
+Using ordinary `CallMethodAttr` for `__iter__` and `__next__` is an intentional
+temporary deviation from Python's special-method lookup rules. It keeps the
+first lowering aligned with CloverVM's current call machinery, but the public
+iterator protocol should later move to proper special-method lookup or slot
+lookup semantics. Direct builtin plans are not a substitute for that fix; they
+are valid only for exact immutable builtin types whose iteration behavior is
+known internally.
+
 The explicit `__next__` call must be covered by a synthetic exception-table
 range. The range should cover the `CallMethodAttr "__next__"` instruction. It is
 also harmless if non-raising setup bytecodes such as `Ldar` / `Star` are inside
@@ -671,40 +760,46 @@ Implement this in narrow, testable slices:
    Pin operand order, branch behavior, and the three-way `ForIterPlan` contract
    with codegen/disassembly tests.
 
-3. Implement the first semantic slice with only `RangePlan` and
+3. Fix the public range object model.
+
+   `range()` should return a reusable
+   immutable `range` object, and `range.__iter__()` should return a fresh
+   `range_iterator`.
+
+4. Implement the first semantic slice with only `RangePlan` and
    `PythonIteratorPlan`.
 
    `ForPrepIteratorPlan` should validate the result of `__iter__` immediately
    and raise `TypeError` for non-iterators.
 
-4. Lower ordinary `for` loops through the explicit protocol-call shape.
+5. Lower ordinary `for` loops through the explicit protocol-call shape.
 
    Keep `__iter__` and `__next__` as ordinary `CallMethodAttr` instructions with
    the existing read and call ICs. Cover the explicit `__next__` call with the
    synthetic `StopIteration` handler that clears the active exception before
    jumping to loop exit.
 
-5. Compose in the current direct `range(...)` fast path as
+6. Compose in the current direct `range(...)` fast path as
    `ForPrepRangeNPlan`.
 
    This producer-expression plan should initialize `RangePlan` directly and
    fall through to the ordinary `range(...)` call on miss.
 
-6. Add `TuplePlan`.
+7. Add `TuplePlan`.
 
    Tuple is immutable, so it is the safest container plan after range.
 
-7. Add `ListPlan`.
+8. Add `ListPlan`.
 
    Use live-length semantics. Re-read `list.size()` on every `ForIterPlan`
    execution and do not cache the loop end.
 
-8. Add dict views and `Dict*Plan` later.
+9. Add dict views and `Dict*Plan` later.
 
    Do this after `dict_keys`, `dict_values`, and `dict_items` exist. Use
    expected iteration length as the compact mutation check.
 
-9. Leave `GeneratorPlan` provisional.
+10. Leave `GeneratorPlan` provisional.
 
    Measure the ordinary Python protocol path with good `__next__` ICs before
    adding generator-specific interpreter machinery.
