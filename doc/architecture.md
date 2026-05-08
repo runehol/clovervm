@@ -78,6 +78,12 @@ constructor thunks, and managed code-object entry need to preserve the same
 high-level calling contract so the interpreter and future compiled entries can
 share call paths and frame metadata.
 
+The Clover stack is managed frame storage, not a general native call stack. The
+interpreter and native C++ functions execute on the native machine stack while
+reading and writing Clover frames explicitly. Future JIT code may execute on the
+Clover stack for managed code, but must switch to the native stack before
+calling C++ runtime helpers or native functions.
+
 Detailed docs:
 
 - [CloverVM Function Calling Convention](function-calling-convention.md)
@@ -151,9 +157,10 @@ registers, temporaries, and the accumulator should avoid refcount traffic where
 possible. Active frames are roots.
 
 Safepoints define where the runtime must be able to discover all live
-references, reconcile zero-count candidates, and reclaim memory safely. The same
-root model must eventually cover interpreter frames, native helper calls,
-exception unwinding, JIT frames, and deoptimization exits.
+references, reconcile zero-count candidates, and reclaim memory safely. The
+root model covers managed Clover frames and any explicit root-publication state
+for native/helper transitions. It must not depend on scanning arbitrary native
+C++ stack frames as if they were Clover `Value` slots.
 
 Detailed docs:
 
@@ -200,8 +207,9 @@ validity cells, safepoint/root maps, and runtime helper conventions.
 Guards should be expressible in terms of the same shape and validity-cell model
 used by the interpreter. Deoptimization must reconstruct interpreter-visible
 frames, restore pending exception state when needed, and reconcile deferred
-refcount state. Runtime helper calls from generated code should obey the same
-safepoint and lifetime protocol as interpreter calls.
+refcount state. Runtime helper calls from generated code should publish roots,
+switch from the Clover stack to the native stack, and obey the same
+pending-exception/sentinel protocol as interpreter native thunks.
 
 Detailed docs:
 
@@ -219,6 +227,8 @@ Detailed docs:
   cells.
 - Heap-to-heap references obey lifetime barriers; frame temporaries may use the
   deferred refcounting model.
+- The Clover stack contains only VM-managed frame/register state; native C++
+  frames live on the native stack.
 - At every safepoint, all live roots must be discoverable.
 - Bytecode and frame metadata must remain sufficient for exceptions, debugging,
   and future deoptimization.

@@ -8,13 +8,13 @@ This is safe, because there's no way for the heap to point at the stack.
 
 We'll also have immutable and interned values. These are marked in the value so you don't have to dereference them, and the refcount itself will be `-1`. The `INCREF` and `DECREF` operations will be performed using atomic operations.
 
-Whenever we `DECREF` an object and it reaches zero, we do not delete it immediately, simply put it on a zero-count table to delete later. One array per thread to avoid threading issues. When we run out of slab memory or the zero count table overflows, it's time to free unused memory. At that point, we bring the threads to a safe point, where the Python stacks are no longer being changed, and we look at the zero count tables, scan for references on the stack and remove them from the zero count tables, and delete and `DECREF` or delete members of these objects. Note that children themselves can be pointed-to from the stacks.
+Whenever we `DECREF` an object and it reaches zero, we do not delete it immediately, simply put it on a zero-count table to delete later. One array per thread to avoid threading issues. When we run out of slab memory or the zero count table overflows, it's time to free unused memory. At that point, we bring the threads to a safe point, where the managed Clover stacks are no longer being changed, and we look at the zero count tables, scan for references on the managed stacks and remove them from the zero count tables, and delete and `DECREF` or delete members of these objects. Note that children themselves can be pointed-to from the managed stacks.
 
 Maybe we build a bloom filter from the stacks to achieve this quickly. No, this doesn't work, we cannot forget to decref some objects due to lossiness, because these objects will never show up again on the ZCT and therefore leak. They can also hold on to large graphs of stuff transitively.
 
 This scheme would naturally place all newly allocated objects on the zero count tables, which is wasteful. Maybe we can have a scheme where bump-allocated objects from slabs don't go on the list, but we have a way to traverse objects on bump-allocated slabs and note what slabs we've allocated from.
 
-Finally, we have to stop mutation of the Python stacks and zero count tables when we do the scan. We can do this with JVM-style safepoints that are tested on loop iterations and either function calls or returns. Long-running C calls pose a bit of a problem. However, the only guarantee we need is that we stop mutating the Python stacks and zero count tables, that is, stop `DECREF`. There is already a system for this in CPython:
+Finally, we have to stop mutation of the managed Clover stacks and zero count tables when we do the scan. We can do this with JVM-style safepoints that are tested on loop iterations and either function calls or returns. Long-running C calls pose a bit of a problem. However, the only guarantee we need is that we stop mutating the managed stacks and zero count tables, that is, stop `DECREF`. There is already a system for this in CPython:
 
 ```c
 Py_BEGIN_ALLOW_THREADS
@@ -25,6 +25,14 @@ Py_END_ALLOW_THREADS
 The original purpose is to release the GIL so that other Python threads can do their thing, but we could repurpose it to declare that this thread won't touch Python objects, and does not need to participate in safepoint coordination. This is in fact what [PEP 703 - Making the Global Interpreter Lock Optional in CPython](https://peps.python.org/pep-0703/) does - a thread gets a PyThreadState of Attached, Detached and GC, Py_BEGIN_ALLOW_THREADS detaches the thread, Py_END_ALLOW_THREADS attaches the thread, and safepointing blocks only until there are no more attached threads.
 
 clovervm will only implement the limited API.
+
+The native machine stack is not part of the managed stack-scanning contract.
+The interpreter and native C++ functions run on the native stack; future JIT code
+may run on the Clover stack for managed execution, but must switch to the native
+stack before calling C++/native code. Any live `Value` that must survive such a
+transition has to be present in a managed frame slot, retained by a heap object,
+or published through explicit transition/root metadata. We should not rely on
+finding roots by treating arbitrary native stack words as managed `Value` slots.
 
 It's important to remember the accumulator as well when we do an allocation, store, safepoint or function call, as these can lead to decref or to-delete overflow that triggers garbage collection. Reserve a spot on the stack frame for the accumulator, and eagerly save it in these cases. Same goes for when we exit jitted code and place registers back on the frame.
 

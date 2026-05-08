@@ -21,9 +21,8 @@ is the source of truth for semantics.
   `ThreadState` are active VM exception transport. Managed native thunks
   normalize marker results through `ReturnOrRaiseException`.
 - Frames currently keep caller metadata at and above `fp`: `fp[0]` is the
-  previous frame pointer, `fp[1]` is reserved for native pc / future
-  compiled-frame metadata, `fp[2]` is the return `CodeObject`, and `fp[3]` is
-  the return pc.
+  previous frame pointer, `fp[1]` is the return pc slot for future JITed code,
+  `fp[2]` is the return `CodeObject`, and `fp[3]` is the return pc.
 - Native function thunks return through `ReturnOrRaiseException`; explicit
   native VM failures set pending exception state and return
   `Value::exception_marker()`.
@@ -81,15 +80,14 @@ semantic changes.
 ## Stage 1: Frame Header Contract And Accessors
 
 - [x] Document the current frame header slots as part of the runtime contract:
-      `fp[0]` is previous `fp`, `fp[1]` is reserved for native pc / future
-      compiled-frame metadata, `fp[2]` is the return `CodeObject`, and `fp[3]`
-      is the return pc.
+      `fp[0]` is previous `fp`, `fp[1]` is the return pc slot for future JITed
+      code, `fp[2]` is the return `CodeObject`, and `fp[3]` is the return pc.
 - [x] Add named constants or small accessors for these slots so interpreter code
       stops open-coding magic indices.
 - [x] Route frame setup and normal return restoration through those constants or
       accessors.
-- [x] Do not use `fp[1]` for exception transport. It is reserved for future
-      native pc state.
+- [x] Do not use `fp[1]` for exception transport. It is reserved as the return
+      pc slot for future JITed code.
 - [x] Do not introduce pointer tagging or opaque encoded return-target objects
       in this stage.
 

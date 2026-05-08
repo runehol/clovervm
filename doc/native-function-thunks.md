@@ -6,14 +6,16 @@ Native C++ functions should be callable through the normal `Function` object and
 interpreter frame path. The call site should not need a broad "is this a
 BuiltinFunction?" branch for every native implementation detail.
 
-The transition is incremental:
+The current direction is:
 
 - native functions are represented as ordinary `Function` objects with tiny
-  thunk `CodeObject`s
+  managed thunk `CodeObject`s
 - call sites perform arity/default/varargs adaptation at the `Function`
   boundary before entering the thunk frame
-- exception normalization, packed `*args` conventions, and lower-level native
-  stack calling are later steps
+- native functions execute on the native machine stack, not on the Clover stack
+- managed thunks normalize native pending-exception results back into managed
+  exceptional unwind
+- packed `*args` conventions and JIT/native transition stubs are later steps
 
 ## Current Implementation
 
@@ -40,11 +42,12 @@ Value native_str_add(Value left, Value right);
 make_native_function(vm, native_str_add);
 ```
 
-Each generated function owns an immortal thunk `CodeObject` with this shape:
+Each generated function owns an immortal managed thunk `CodeObject` with this
+shape:
 
 ```text
 CallNativeN 0
-Return
+ReturnOrRaiseException
 ```
 
 where `N` is currently `0`, `1`, `2`, or `3`. The operand indexes into the code
@@ -78,21 +81,62 @@ For fixed-arity native functions, the generic call path sees a normal
 
 ```text
 caller
-  CallSimple sets up a callee frame
+  CallSimple sets up a managed callee frame on the Clover stack
 
 native thunk frame
   CallNative0/1/2/3 reads p0, p1, ...
-  calls the C++ target
+  calls the C++ target on the native stack
   stores the returned Value in the accumulator
-  Return leaves the thunk like an ordinary bytecode function
+  ReturnOrRaiseException either returns normally or enters managed unwind
 ```
 
-The thunk reads arguments directly from the interpreter frame. No argument array
-or tuple is allocated for fixed arity.
+The thunk reads arguments directly from the managed frame. No argument array or
+tuple is allocated for fixed arity.
 
 Native callbacks no longer receive `ThreadState *`. Code that needs thread
 state should use the TLS-backed helpers such as `active_thread()` or wrappers
 like `make_object_value<T>(...)`.
+
+## Stack Ownership
+
+CloverVM has two different stack roles:
+
+- the Clover stack stores VM-managed frames, registers, call windows, and future
+  JIT frames
+- the native machine stack stores the C++ interpreter implementation, C++
+  runtime helpers, native builtin calls, and arbitrary host/native spills
+
+Only VM-controlled frame contents belong on the Clover stack. The GC and
+deferred-refcounting design rely on being able to understand Clover stack
+contents as managed `Value` slots and frame metadata. Native C++ code is not
+under that control: the compiler may spill non-`Value` data, stale pointers,
+temporary integers, return addresses, and ABI bookkeeping into its stack frame.
+Running native functions with machine `sp` on the Clover stack would make that
+memory either imprecise to scan or unsafe to scan as managed slots.
+
+Therefore native function thunks deliberately call C++ targets from the native
+stack. The interpreter already has this shape: it runs on the native stack while
+mutating Clover frames through explicit `fp` accesses. Future JIT code may use
+the Clover stack as its active managed stack, but it must switch to the native
+stack before calling C++ runtime helpers or native functions.
+
+The boundary rule is:
+
+```text
+managed-to-managed:
+  may stay on the Clover stack
+
+managed-to-native:
+  publish/materialize managed roots as needed
+  switch to the native stack
+  call C++/native code
+  return Value, or exception_marker with pending exception state
+  switch back to managed execution
+```
+
+Interpreted bytecode is already on the native stack, so interpreted
+`CallNativeN` does not need a machine-stack switch. It just reads the managed
+frame slots and calls the target.
 
 ## Variable Arity
 
@@ -120,29 +164,32 @@ opcodes are intentionally concrete: `CallNative0`, `CallNative1`,
 
 ## Exception Normalization
 
-The current fixed-arity thunks use ordinary `Return`. Native functions may still
-raise through the current C++ exception strategy.
-
-The later exception plan needs native thunk frames because the thunk is the
-natural boundary where native sentinel conventions can become VM exception
-delivery:
+Fixed-arity thunks end in `ReturnOrRaiseException`. Native functions report
+ordinary success by returning a normal `Value`. They report explicit VM failure
+by setting pending exception state on `ThreadState` and returning
+`Value::exception_marker()`.
 
 ```text
 native success:
   store normal Value in accumulator
-  return to caller
+  ReturnOrRaiseException performs normal Return
 
 native failure:
-  leave pending exception on ThreadState / PyErr state
+  leave pending exception on ThreadState
   store Value::exception_marker() in accumulator
-  return through a managed adapter
+  ReturnOrRaiseException enters managed exceptional unwind
 ```
 
-That normalization should be a `ReturnOrRaiseException` opcode or equivalent
-managed thunk return adapter. The adapter keeps ordinary bytecode callers on
-normal exception unwinding while still letting native implementations report
-failure as pending exception plus `Value::exception_marker()` locally inside the
-thunk. Native boundaries do not need to become a first-order unwinder frame kind.
+The adapter keeps ordinary bytecode callers on normal exception unwinding while
+still letting native implementations report failure as pending exception plus
+`Value::exception_marker()` locally inside the thunk. Native boundaries do not
+become a first-order unwinder frame kind.
+
+C++ exceptions are still temporary outer panic plumbing in some old paths, but
+they must not become the native-call convention. In particular, future
+handwritten stack-switch bridges must not allow C++ exceptions to unwind across
+the bridge. Native functions used from those paths must return through the
+pending-exception/sentinel convention.
 
 For native functions that also expose a stop-returning convention, the ordinary
 and stop-returning `CodeObject`s are sibling thunks. Both thunks call the same
@@ -184,167 +231,44 @@ The first migrated methods and builtins are:
 Passing a non-string currently raises `UnimplementedError`, which is the desired
 shape for later binary-operator fallback work.
 
-Tests cover direct native thunk calls for arities 0, 1, 2, and 3, plus the string
-method cases and `range`'s defaulted three-argument native thunk.
+Tests cover direct native thunk calls for arities 0, 1, 2, and 3, the
+`ReturnOrRaiseException` thunk shape, native marker-to-exception unwinding, the
+string method cases, and `range`'s defaulted three-argument native thunk.
 
-## Remaining Work
+## JIT Transition Direction
 
-1. Design and implement the packed tuple/vector native convention for true
-   variadic native callables.
-2. Add native exception normalization through thunk return adapters.
-3. Add specialized interpreter or JIT fast paths for trivial native thunk code
-   objects when measurements justify it.
-4. Move function and native-function entry to the Clover/Python stack on
-   AArch64, using assembly transition stubs to save interpreter state, switch
-   the machine stack pointer, enter the target, and return through an
-   interpreter-resume thunk.
+The existing bytecode native thunk model is a good interpreter scaffold, but it
+is not the long-term optimized JIT ABI.
 
-## Invariants
-
-- Fixed-arity native callables are ordinary `Function` objects with thunk
-  `CodeObject`s.
-- Native target pointers live in `CodeObject::native_function_targets`, not in
-  `constant_values`.
-- `NativeFunctionTarget` is untagged; the opcode determines the calling
-  convention.
-- Native callbacks do not receive `ThreadState *`; thread state is available
-  through TLS.
-- Public arity is owned by `Function`, including native functions with default
-  parameters.
-
-## AArch64 Python-Stack Entry Plan
-
-The current native thunk path is semantically shaped like a normal Python
-function call, but it still executes native targets from inside an interpreter
-opcode handler. The handler frame, caller-save registers, and C++ return path
-therefore live on the interpreter's native stack, not on Clover's Python stack.
-
-For JIT-compatible execution, function entry should instead make the Clover
-frame the active machine frame. Interpreted calls, native thunk calls, and later
-JIT-to-JIT calls can then share one frame model. The interpreter only needs a
-transition at the interpreted/native boundary.
-
-The proposed split is:
-
-- `ThreadState` owns durable transition state:
-  - saved interpreter machine stack pointer
-  - saved interpreter frame pointer
-  - any machine stack spill area the transition stubs need
-- AArch64 entry stubs enter Python code:
-  - save the interpreter machine `sp`/`x29` in `ThreadState`
-  - perform any required stack/register saves for the transition itself
-  - partially enter the callee's Clover frame by computing the same `new_fp`
-    that the interpreted call path would use
-  - move the machine `sp` to the callee's Clover frame-record location, the
-    address that will be the interpreted `fp`, preserving 16-byte ABI alignment
-  - enter with `x29` still carrying the previous Clover frame pointer
-  - place arguments in the ABI argument registers from `p0`, `p1`, ...
-  - put an interpreter-resume thunk in `x30`/LR
-  - branch to the target's native entry point
-- AArch64 return thunks resume interpreted mode:
-  - receive the native return value in the normal ABI return register
-  - use that return value as the interpreter accumulator
-  - restore the interpreter machine `sp`/`fp`
-  - reload the Python `fp`, bytecode `pc`, and `code_object` from the frame
-    header
-  - reload `dispatch` from the global dispatch table
-  - tail-enter the interpreter dispatch loop at the saved return PC
-
-The frame header already reserves `fp[1]` as a compiled return PC and
-`fp[0]` as the previous Python frame pointer. Interpreted returns use `fp[2]`
-and `fp[3]` to restore the bytecode `code_object` and `pc`. JIT/native entry
-should preserve that dual use:
-
-- compiled/native returns use `fp[1]` as the LR-compatible continuation
-- interpreter returns use `fp[2]` and `fp[3]` as the resume metadata
-- mixed-mode calls write both when crossing from interpreted code into
-  native/JIT code, so either return path has enough state
-
-For a call from interpreted code into a native function, the caller-side
-transition partially enters the frame instead of completing it. It computes
-`new_fp`, writes the interpreter-only resume metadata, then enters native code
-with `sp == new_fp`, `x29 == previous Clover fp`, and `x30 == thunk-back
-converter`.
-
-The native prologue can then finish the AArch64-shaped frame record in the same
-slots Clover already reserves:
-
-- `new_fp[1]`: native/compiled return PC, populated from LR, which holds the
-  thunk-back converter
-- `new_fp[0]`: previous Clover frame pointer, populated from incoming `x29`
-- `new_fp[2]`: interpreter return code object, written by the caller-side
-  transition
-- `new_fp[3]`: interpreter return PC, written by the caller-side transition
-
-The native target can then follow the same frame convention as JIT code. Its LR
-points at the thunk-back converter, and the converter can restore interpreted
-mode from the ordinary frame metadata instead of from a separate logical
-register save area.
-
-For today's fixed native thunk bytecode shape, the back-transition should not
-tail-enter the interpreter dispatch loop. A thunk body is still:
+When future JIT code runs on the Clover stack, it should call native functions
+through managed-to-native transition stubs:
 
 ```text
-CallNativeN target
-Return
+JIT/managed code on Clover stack
+  save managed continuation state
+  publish or materialize live Value roots not already in managed slots
+  switch machine sp/fp to the native stack
+  call the native target with the platform ABI
+  receive Value in the normal ABI return location
+  restore the managed stack and continuation state
+  resume with the returned Value as the managed accumulator/result
 ```
 
-So the C++ native call must have zero net machine-stack effect: enter the
-AArch64 bridge, run the C++ target, restore the interpreter machine stack, and
-return to the `CallNativeN` opcode handler with the returned `Value`. The
-ordinary bytecode `Return` that follows then unwinds the Clover/Python frame.
-Jumping directly to dispatch from the native return path would conflate "return
-from the C++ target" with "return from the Python callable" and skip the
-bytecode thunk protocol. Direct dispatch resume only belongs to a later
-compiled/JIT return path that is deliberately replacing the bytecode `Return`.
+If the native target returns `Value::exception_marker()`, the transition resumes
+managed code at an adapter/continuation that enters the same
+`ReturnOrRaiseException`-style exceptional path. The pending exception state on
+`ThreadState` remains the source of truth.
 
-That means the transition does not need to copy the interpreter's logical
-register state into `ThreadState`. On return, the accumulator is the native ABI
-return value, `dispatch` is process-global state, and the caller's Python
-`fp`/`pc`/`code_object` are already in the Clover frame header.
+The transition record belongs to the managed-to-native boundary, not to the
+native target's Clover frame. Native code must not create Clover frames by using
+the Clover stack as its machine stack. Any native-visible `Value` arguments are
+loaded from managed frame slots or passed through ABI registers before the stack
+switch.
 
-This suggests a staged implementation:
+## Frame Layout Implications
 
-0. Finish Python/VM exception normalization for native calls. C++ exceptions
-   must not unwind across a handwritten stack-switch bridge; native failures
-   should return through the VM's pending-exception/sentinel convention before
-   this path becomes generally usable.
-1. Add explicit `ThreadState` fields for the saved interpreter machine
-   `sp`/`x29` and any transition spill slots. Keep `run_interpreter()`
-   source-compatible at first by initializing those fields in
-   `ThreadState::run()`.
-2. Add a small platform layer, for example `native_entry_aarch64.S`, with one
-   bridge for each fixed native calling convention:
-   - `cl_enter_native0_aarch64`
-   - `cl_enter_native1_aarch64`
-   - `cl_enter_native2_aarch64`
-   - `cl_enter_native3_aarch64`
-
-   Each bridge can load exactly the ABI argument registers it needs from the
-   Clover parameter slots and then call the fixed-arity native target. A
-   portable C++ fallback should preserve the existing behavior on non-AArch64.
-3. Give `CodeObject` or `Function` an optional native entry pointer. Native
-   thunk `CodeObject`s can initially point at generated fixed-arity entry stubs
-   that load the target from `native_function_targets` and use the ABI call.
-4. Teach `op_call_simple` and `op_call_method_attr` to enter through the native
-   entry pointer when present, after they have already performed the existing
-   arity/default/varargs frame adaptation.
-5. Keep `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` as the portable
-   interpreter fallback until the AArch64 path is stable, then decide whether
-   native-only thunk code objects still need bytecode bodies.
-
-### Current Frame Layout
-
-The interpreted frame layout now matches the AArch64/V8-style shape the bridge
-needs. The whole fixed header lives above or at `fp`, leaving the first slots
-below incoming `sp` available for a normal native frame record:
-
-```asm
-stp x29, x30, [sp, #-16]!
-mov x29, sp
-```
-
-The fixed header is:
+The interpreted frame layout remains useful for interpreter calls, constructor
+thunks, native thunk frames, exception unwinding, and future JIT materialization:
 
 ```text
 higher addresses
@@ -354,8 +278,8 @@ higher addresses
     fp[4]                                      last param / padding
     fp[3]                                      interpreter return PC
     fp[2]                                      interpreter return code object
-    fp[1]                                      compiled/native return PC
-fp->fp[0]                                      previous frame pointer
+    fp[1]                                      return pc for JITed code
+fp->fp[0]                                      previous Clover frame pointer
     fp[-1]                                     r0
     fp[-2]                                     r1
     ...
@@ -372,65 +296,44 @@ new_fp[2] = return_code_object;
 new_fp[3] = return_pc;
 ```
 
-`fp[1]` remains the LR-compatible compiled/native return PC slot. Interpreted
-bytecode calls do not currently need to populate it, but mixed-mode entry can
-write it when crossing into native/JIT code.
+`fp[1]` remains the return pc slot for JITed code, but it
+should not be treated as a native LR slot for arbitrary C++ code. Native
+continuations and stack-switch records should live in explicit transition
+metadata owned by the managed-to-native bridge.
 
-With this layout, native/JIT entry can use ordinary AArch64 incoming state:
+## Remaining Work
 
-```text
-entry sp = new_fp + 16
-x29      = old_fp
-lr       = native/interpreter continuation
-```
+1. Design and implement the packed tuple/vector native convention for true
+   variadic native callables.
+2. Continue converting old C++ exception paths to pending-exception/sentinel
+   results where they may be reached by native functions or future transition
+   stubs.
+3. Add specialized interpreter or JIT fast paths for trivial native thunk code
+   objects when measurements justify it.
+4. Design the JIT managed-to-native transition ABI:
+   - where managed continuation state lives
+   - how live roots are published when they are not already materialized in
+     Clover frame slots
+   - how the transition switches from the Clover stack to the native stack
+   - how `Value::exception_marker()` returns resume managed exceptional unwind
+5. Keep `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` as the portable
+   interpreter path. A JIT fast path may bypass the bytecode thunk, but it must
+   preserve the same arity, root, and exception contracts.
 
-and a standard prologue naturally creates:
+## Invariants
 
-```text
-new_fp[0] = old_fp
-new_fp[1] = continuation
-x29       = new_fp
-sp        = new_fp or lower
-```
-
-This also prepares the runtime to track a real frame `sp` separately from
-`fp`. `fp` is the stable metadata/register anchor, while `sp` gives the lower
-bound for frame-local storage. That lower bound will matter for precise stack
-root scanning once JIT/native frames can allocate spills, scratch space, and
-outgoing call areas dynamically.
-
-### ThreadState Access From Assembly
-
-The current active thread pointer is a private C++ `thread_local`:
-
-```cpp
-thread_local ThreadState *ThreadState::current_thread = nullptr;
-```
-
-Raw AArch64 assembly should not reach into that compiler-managed TLS symbol
-directly.
-
-On the call side, the bridge signatures can receive `ThreadState *` from the
-C++ caller, which can obtain it through `active_thread()` before crossing into
-assembly.
-
-On the return side, the interpreter-back-transition thunk has no caller help:
-it is reached through LR from native code. The first implementation should call
-an exported C ABI helper such as:
-
-```cpp
-extern "C" ThreadState *cl_active_thread_for_asm();
-```
-
-implemented in C++ as a thin wrapper around `ThreadState::get_active()`. The
-return thunk can call this helper before restoring the interpreter machine
-`sp`/`x29`. This adds one ordinary helper call on mixed-mode return, but keeps
-compiler/platform TLS details out of handwritten assembly.
-
-If bridge overhead later matters, expose a stable assembly-facing TLS cell or
-fast accessor as a separate step. Good options are:
-
-- add an exported `extern "C" thread_local ThreadState *cl_current_thread` with
-  a documented ABI and use platform-specific TLS access sequences in `.S`
-- reserve a platform register only if the target platform ABI permits it; do
-  not use `x18` casually because AAPCS64 leaves it platform-specific
+- Fixed-arity native callables are ordinary `Function` objects with managed
+  thunk `CodeObject`s.
+- Native target pointers live in `CodeObject::native_function_targets`, not in
+  `constant_values`.
+- `NativeFunctionTarget` is untagged; the opcode determines the calling
+  convention.
+- Native callbacks do not receive `ThreadState *`; thread state is available
+  through TLS.
+- Public arity is owned by `Function`, including native functions with default
+  parameters.
+- Native C++ functions execute on the native stack.
+- Only VM-managed frame/register state belongs on the Clover stack.
+- Native/C boundaries are not first-order managed unwinder frames; managed
+  thunks and transition continuations adapt native results back into the VM
+  exception model.

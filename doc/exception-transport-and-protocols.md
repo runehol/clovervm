@@ -773,7 +773,7 @@ Recommended implementation order:
 - Real Python exceptions live as pending exception state on `ThreadState`.
 - Managed exception propagation is table-driven and slow.
 - The frame header is not tagged for exception return modes.
-- `fp[1]` remains reserved for native pc / future compiled-frame metadata.
+- `fp[1]` remains the return pc slot for future JITed code.
 - Managed thunks adapt native/protocol result conventions into normal return or
   managed exceptional unwind.
 - A compact pending `StopIteration` may be consumed only by protocol

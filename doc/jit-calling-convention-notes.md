@@ -80,17 +80,20 @@ an adapter path.
 
 ## Clover Stack and Native Stack
 
-If compiled Python uses the Clover stack as the active native stack pointer, the
-scanner can rely on ordinary frame extent information in the same spirit as a
-native ABI:
+Compiled Python may use the Clover stack as its active managed machine stack.
+That stack is only for VM-controlled frames and spills. If the JIT owns every
+slot in a frame, the scanner can rely on ordinary frame extent information in
+the same spirit as a native ABI:
 
 ```text
 fp anchors the frame
 sp marks the lowest active frame-local extent
 ```
 
-That only works if arbitrary native/C++ frames are not interleaved into the
-Clover stack. Runtime/native calls therefore need transition stubs:
+That only works if arbitrary native/C++ frames are never interleaved into the
+Clover stack. Native compilers can spill non-`Value` data, stale pointers,
+return addresses, ABI scratch data, and other words that the VM cannot interpret
+as managed frame slots. Runtime/native calls therefore need transition stubs:
 
 ```text
 publish live Value roots
@@ -101,8 +104,16 @@ switch back to the Clover stack
 return Value in x0, or exception_marker in x0 with pending exception state
 ```
 
+Interpreted bytecode already follows the split in a different way: the
+interpreter executes on the native stack while explicitly reading and writing
+Clover frame slots through `fp`. Native function thunks called by the
+interpreter also execute their C++ targets on the native stack.
+
 The existing bytecode native thunk model can remain useful as interpreter
 scaffolding, but it should not be assumed to be the long-term optimized JIT ABI.
+A JIT fast path may bypass the bytecode thunk body, but it must preserve the
+same arity, root-publication, and pending-exception/`exception_marker`
+contracts.
 
 ## Exit and Safepoint State
 
@@ -125,7 +136,8 @@ code, but every interpreter-visible value must be materializable as a normal
 
 - exact overflow argument layout after `x0` through `x7`;
 - whether `x29` is always the Clover frame pointer in compiled Python;
-- how much native unwindability compiled frames should preserve;
+- how much native unwindability compiled managed frames should preserve;
 - eager frame materialization versus lazy frame maps;
 - exact runtime transition record format;
+- exact native-stack switching ABI for managed-to-native calls;
 - cross-architecture register mapping, especially x86-64.

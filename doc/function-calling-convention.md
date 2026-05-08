@@ -10,22 +10,28 @@ This note documents the calling convention currently implemented by CloverVM's b
 - Entering a function does not copy arguments into a separate argument array. Instead, the interpreter moves `fp` so the existing call window becomes the callee's frame.
 - Internal forwarding thunks can enter an explicit `CodeObject` with
   `CallCodeObject` after preparing the call window themselves.
-- Fixed-arity native functions use the same frame path: a native thunk `CodeObject` reads `p0`, `p1`, ... directly and calls a C++ target.
+- Fixed-arity native functions use the same managed frame path: a native thunk
+  `CodeObject` reads `p0`, `p1`, ... directly and calls a C++ target on the
+  native stack.
 - The stack grows toward lower addresses.
 - Parameters live at positive offsets from `fp`.
 - Locals and temporaries live at negative offsets from `fp`.
 - A small frame header is kept around `fp`; current call paths store:
   - interpreter return program counter at `fp[3]`
   - interpreter return code object at `fp[2]`
-  - compiled return PC at `fp[1]`
+  - return pc for JITed code at `fp[1]`
   - previous frame pointer at `fp[0]`
 
-This matches the Native AArch64 calling convention for compiled code, while still having enough metadata to jump back to the interpreter when needed.
+This layout is intended to be friendly to future compiled managed code while
+still having enough metadata to jump back to the interpreter when needed. It is
+not a native C++ frame layout: arbitrary native frames must not be placed on the
+Clover stack.
 
 Native function thunks build on the same layout. A `CallNative0`,
-`CallNative1`, or `CallNative2` opcode runs inside an ordinary function frame,
-reads fixed positional parameters from the `p` registers, calls the native C++
-target, and returns through the normal bytecode `Return` path. See
+`CallNative1`, `CallNative2`, or `CallNative3` opcode runs inside an ordinary
+managed function frame, reads fixed positional parameters from the `p`
+registers, calls the native C++ target on the native stack, and returns through
+`ReturnOrRaiseException`. See
 [native-function-thunks.md](native-function-thunks.md) for the native thunk
 staging plan.
 
@@ -135,7 +141,7 @@ higher addresses
     fp[4]                         p(n-1) if n is odd, otherwise last param
     fp[3]                  interpreter return program counter
     fp[2]                  interpreter return code object
-    fp[1]                  compiled return PC (when JITed)
+    fp[1]                  return pc for JITed code
 fp->fp[0]                  previous frame pointer
     fp[-1]                 r0
     fp[-2]                 r1
@@ -288,7 +294,7 @@ stack grows downward
     fp[4]   p1   last parameter
     fp[3]        interpreter return PC
     fp[2]        interpreter return code object
-    fp[1]        compiled return PC (when jitted)
+    fp[1]        return pc for JITed code
 fp  fp[0]        previous frame pointer
     fp[-1]  r0   first local/temporary
     fp[-2]  r1
@@ -313,7 +319,7 @@ stack grows downward
     fp[4]        parameter padding
     fp[3]        interpreter return PC
     fp[2]        interpreter return code object
-    fp[1]        compiled return PC (when jitted)
+    fp[1]        return pc for JITed code
 fp  fp[0]        previous frame pointer
     fp[-1]  r0   first local/temporary
     fp[-2]  r1
@@ -338,7 +344,7 @@ After `new_fp = fp + first_arg_reg - round_up_to_abi_alignment(n_args) + 1 - 4`:
     new_fp[4]  p1 = y
     new_fp[3]      interpreter return PC
     new_fp[2]      interpreter return code object
-    new_fp[1]      compiled return PC
+    new_fp[1]      return pc for JITed code
     new_fp[0]      previous fp
     new_fp[-1]     r0
     ...
@@ -372,7 +378,31 @@ return run_interpreter(&stack[stack.size() - 1024], obj, 0);
 
 from [src/thread_state.cpp](../src/thread_state.cpp).
 
+`ThreadState::run` passes a Clover frame pointer into the interpreter. It does
+not switch the machine stack pointer. The interpreter itself runs on the native
+C++ stack and mutates Clover frames explicitly through `fp`.
+
 Top-level module code is not expected to execute `Return`; the parser/codegen reject `return` outside a function. So the normal saved-caller metadata contract applies to nested function/class execution, not to the initial module entry frame.
+
+## Stack Ownership
+
+The calling convention describes managed Clover frames, not arbitrary native
+stack frames.
+
+```text
+Clover stack:
+  VM-managed frame headers, parameters, locals, temporaries, outgoing call
+  windows, interpreted frame materialization, and future JIT frames
+
+native stack:
+  threaded interpreter implementation frames, C++ runtime helpers, native
+  builtin functions, host ABI spills, and return-address bookkeeping
+```
+
+Native functions may receive `Value` arguments loaded from Clover frame slots,
+but their own machine stack activity must remain on the native stack. This keeps
+the Clover stack understandable to root scanning, exception unwinding, and
+future deoptimization metadata.
 
 ## Practical Rules
 
@@ -384,6 +414,8 @@ If you are reasoning about CloverVM calls, the safest mental model is:
 4. `fp[0]`, `fp[2]`, and `fp[3]` hold the caller state needed by `Return`.
 5. Locals/temporaries for the callee start at `r0 = fp[-1]`.
 6. The accumulator carries the return value across the `Return` instruction.
+7. Native C++ callees run on the native stack; the Clover stack contains only
+   VM-managed frame/register state.
 
 ## Source Pointers
 
