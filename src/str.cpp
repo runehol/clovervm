@@ -57,23 +57,14 @@ namespace cl
 
     void install_str_class_methods(VirtualMachine *vm)
     {
-        DescriptorFlags method_flags =
-            descriptor_flag(DescriptorFlag::ReadOnly) |
-            descriptor_flag(DescriptorFlag::StableSlot);
-        ClassObject *cls = vm->str_class();
-        ShapeFlags class_shape_flags = cls->get_shape()->flags();
-        cls->set_shape(cls->get_shape()->clone_with_flags(
-            class_shape_flags & ~fixed_attribute_shape_flags()));
-        bool stored = cls->define_own_property(
-            vm->get_or_create_interned_string_value(L"__str__"),
-            make_native_function(vm, native_str_str), method_flags);
-        assert(stored);
-        stored = cls->define_own_property(
-            vm->get_or_create_interned_string_value(L"__add__"),
-            make_native_function(vm, native_str_add), method_flags);
-        assert(stored);
-        (void)stored;
-        cls->set_shape(cls->get_shape()->clone_with_flags(class_shape_flags));
+        BuiltinNativeMethod methods[] = {
+            builtin_native_method(L"__str__", native_str_str,
+                                  L"Return str(self)."),
+            builtin_native_method(L"__add__", native_str_add,
+                                  L"Return self + value."),
+        };
+        install_builtin_native_methods(vm, vm->str_class(), methods,
+                                       std::size(methods));
     }
 
     uint64_t string_hash(TValue<String> s)
