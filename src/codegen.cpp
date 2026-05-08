@@ -1781,6 +1781,38 @@ namespace cl
         return false;
     }
 
+    Value docstring_for_body(const AstVector &av, int32_t body_idx)
+    {
+        AstChildren body_children = av.children[body_idx];
+        if(body_children.empty())
+        {
+            return Value::None();
+        }
+
+        int32_t first_statement_idx = body_children[0];
+        if(av.kinds[first_statement_idx].node_kind !=
+           AstNodeKind::STATEMENT_EXPRESSION)
+        {
+            return Value::None();
+        }
+
+        AstChildren statement_children = av.children[first_statement_idx];
+        if(statement_children.size() != 1)
+        {
+            return Value::None();
+        }
+
+        int32_t expression_idx = statement_children[0];
+        AstKind expression_kind = av.kinds[expression_idx];
+        if(expression_kind.node_kind != AstNodeKind::EXPRESSION_LITERAL ||
+           expression_kind.operator_kind != AstOperatorKind::STRING)
+        {
+            return Value::None();
+        }
+
+        return av.constants[expression_idx].as_value();
+    }
+
     CodeObject *codegen_function(const AstVector &av, Scope *module_scope,
                                  CodeObjectBuilder *parent_code_obj,
                                  int32_t node_idx)
@@ -1794,6 +1826,7 @@ namespace cl
                                   local_scope, Value::None());
 
         fun_obj.set_name(av.constants[node_idx]);
+        fun_obj.set_docstring(docstring_for_body(av, children[1]));
         fun_obj.n_parameters() = param_children.size();
         fun_obj.n_positional_parameters() =
             count_positional_parameters(av, param_children);

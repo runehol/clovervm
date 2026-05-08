@@ -46,6 +46,18 @@ def implicit_none():
 
 assert implicit_none() is None
 
+def fun_w_str():
+    "hello world"
+    pass
+
+def fun_wo_str():
+    pass
+
+assert fun_w_str.__doc__ == "hello world"
+assert fun_wo_str.__doc__ is None
+fun_wo_str.__doc__ = "later"
+assert fun_wo_str.__doc__ == "later"
+
 def pick(n):
     if n:
         while n:

@@ -131,13 +131,15 @@ namespace cl
                    Scope *_module_scope, Scope *_local_scope, Value _name)
             : Object(cls, native_layout_id, compact_layout()),
               module_scope(_module_scope), local_scope(_local_scope),
-              name(_name), compilation_unit(_compilation_unit)
+              name(_name), docstring(Value::None()),
+              compilation_unit(_compilation_unit)
         {
         }
 
         MemberHeapPtr<Scope> module_scope;
         MemberHeapPtr<Scope> local_scope;
         MemberValue name;
+        MemberValue docstring;
         const CompilationUnit *compilation_unit;
 
         uint32_t n_parameters = 0;
@@ -249,7 +251,7 @@ namespace cl
             return nullptr;
         }
 
-        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(CodeObject, Object, 3);
+        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(CodeObject, Object, 4);
     };
 
     BuiltinClassDefinition make_code_object_class(VirtualMachine *vm);

@@ -154,6 +154,12 @@ namespace cl
             code_obj->name = name;
         }
 
+        void set_docstring(Value docstring)
+        {
+            assert_not_finalized();
+            code_obj->docstring = docstring;
+        }
+
         uint32_t &n_parameters()
         {
             assert_not_finalized();

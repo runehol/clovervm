@@ -1964,7 +1964,8 @@ namespace cl
         TValue<CodeObject> code_obj = TValue<CodeObject>::from_value_assumed(
             code_object->constant_table[const_offset].as_value());
 
-        accumulator = thread->make_object_value<Function>(code_obj);
+        accumulator = thread->make_object_value<Function>(
+            code_obj, code_obj.extract()->docstring.as_value());
 
         COMPLETE();
     }
@@ -1979,7 +1980,8 @@ namespace cl
         TValue<Tuple> defaults =
             TValue<Tuple>::from_value_assumed(fp[defaults_reg]);
 
-        accumulator = thread->make_object_value<Function>(code_obj, defaults);
+        accumulator = thread->make_object_value<Function>(
+            code_obj, defaults, code_obj.extract()->docstring.as_value());
 
         COMPLETE();
     }
