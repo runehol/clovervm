@@ -32,8 +32,8 @@ Native function thunks build on the same layout. A `CallNative0`,
 managed function frame, reads fixed positional parameters from the `p`
 registers, calls the native C++ target on the native stack, and returns through
 `ReturnOrRaiseException`. See
-[native-function-thunks.md](native-function-thunks.md) for the native thunk
-staging plan.
+[native-managed-boundaries.md](native-managed-boundaries.md) for native thunk
+and native-to-managed call boundary planning.
 
 ## Native Interpreter State
 

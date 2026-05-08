@@ -140,4 +140,5 @@ code, but every interpreter-visible value must be materializable as a normal
 - eager frame materialization versus lazy frame maps;
 - exact runtime transition record format;
 - exact native-stack switching ABI for managed-to-native calls;
+- exact native-to-managed wrapper entry ABI;
 - cross-architecture register mapping, especially x86-64.

@@ -152,6 +152,10 @@ Native functions participate through thunks. A native success writes a normal
 `Value` to the accumulator. An explicit native VM-exception result sets pending
 exception state and writes `Value::exception_marker()`. The thunk's
 `ReturnOrRaiseException` converts that marker into managed exceptional unwind.
+Native-to-managed call wrappers perform the reverse conversion at native
+boundaries: managed exceptions remain pending on `ThreadState` and return
+`Value::exception_marker()` to native code. See
+[Native/Managed Boundaries](native-managed-boundaries.md).
 
 The same shape adapts `stop_returning_code_object` back into ordinary calls. If
 a caller is not participating in the stop-returning convention but the
