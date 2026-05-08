@@ -2293,12 +2293,26 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         test_context.vm().get_or_create_interned_string_value(L"__str__");
     TValue<String> dunder_add_name =
         test_context.vm().get_or_create_interned_string_value(L"__add__");
+    TValue<String> dunder_doc_name =
+        test_context.vm().get_or_create_interned_string_value(L"__doc__");
     Value str_method = str_class->get_own_property(dunder_str_name);
     Value add_method = str_class->get_own_property(dunder_add_name);
     ASSERT_TRUE(can_convert_to<Function>(str_method));
     ASSERT_TRUE(can_convert_to<Function>(add_method));
     EXPECT_EQ(-1, str_method.get_ptr<Object>()->refcount);
     EXPECT_EQ(-1, add_method.get_ptr<Object>()->refcount);
+    EXPECT_EQ(test_context.vm()
+                  .get_or_create_interned_string_value(L"Return str(self).")
+                  .as_value(),
+              assume_convert_to<Function>(str_method)->docstring.as_value());
+    EXPECT_EQ(test_context.vm()
+                  .get_or_create_interned_string_value(L"Return self + value.")
+                  .as_value(),
+              assume_convert_to<Function>(add_method)->docstring.as_value());
+    EXPECT_EQ(assume_convert_to<Function>(str_method)->docstring.as_value(),
+              load_attr(str_method, dunder_doc_name));
+    EXPECT_EQ(assume_convert_to<Function>(add_method)->docstring.as_value(),
+              load_attr(add_method, dunder_doc_name));
     EXPECT_FALSE(
         str_class->set_own_property(dunder_str_name, Value::from_smi(99)));
 }

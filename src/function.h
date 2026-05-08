@@ -22,10 +22,31 @@ namespace cl
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::Function;
         static constexpr uint32_t VarArgs = UINT32_MAX;
+        static constexpr uint32_t kClassSlot = 0;
+        static constexpr uint32_t kCodeObjectSlot = 1;
+        static constexpr uint32_t kDefaultParametersSlot = 2;
+        static constexpr uint32_t kDocstringSlot = 3;
+        static constexpr uint32_t kInlineSlotCount = 4;
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object)
             : Object(cls, native_layout_id, compact_layout()),
               code_object(_code_object), default_parameters(Value::None()),
+              docstring(Value::None()),
+              min_positional_arity(
+                  _code_object.extract()->n_positional_parameters),
+              max_positional_arity(max_arity_for_code(_code_object)),
+              n_positional_parameters(
+                  _code_object.extract()->n_positional_parameters),
+              parameter_flags(_code_object.extract()->parameter_flags)
+        {
+            assert_parameter_layout(_code_object);
+        }
+
+        Function(ClassObject *cls, TValue<CodeObject> _code_object,
+                 Value _docstring)
+            : Object(cls, native_layout_id, compact_layout()),
+              code_object(_code_object), default_parameters(Value::None()),
+              docstring(_docstring),
               min_positional_arity(
                   _code_object.extract()->n_positional_parameters),
               max_positional_arity(max_arity_for_code(_code_object)),
@@ -40,7 +61,25 @@ namespace cl
                  TValue<Tuple> _default_parameters)
             : Object(cls, native_layout_id, compact_layout()),
               code_object(_code_object),
-              default_parameters(_default_parameters),
+              default_parameters(_default_parameters), docstring(Value::None()),
+              min_positional_arity(
+                  min_arity_for_code(_code_object, _default_parameters)),
+              max_positional_arity(max_arity_for_code(_code_object)),
+              n_positional_parameters(
+                  _code_object.extract()->n_positional_parameters),
+              parameter_flags(_code_object.extract()->parameter_flags)
+        {
+            assert_parameter_layout(_code_object);
+            assert(min_positional_arity <= n_positional_parameters);
+            assert(_default_parameters.extract()->size() ==
+                   n_positional_parameters - min_positional_arity);
+        }
+
+        Function(ClassObject *cls, TValue<CodeObject> _code_object,
+                 TValue<Tuple> _default_parameters, Value _docstring)
+            : Object(cls, native_layout_id, compact_layout()),
+              code_object(_code_object),
+              default_parameters(_default_parameters), docstring(_docstring),
               min_positional_arity(
                   min_arity_for_code(_code_object, _default_parameters)),
               max_positional_arity(max_arity_for_code(_code_object)),
@@ -68,12 +107,13 @@ namespace cl
 
         MemberTValue<CodeObject> code_object;
         MemberValue default_parameters;
+        MemberValue docstring;
         uint32_t min_positional_arity;
         uint32_t max_positional_arity;
         uint32_t n_positional_parameters;
         FunctionParameterFlags parameter_flags;
 
-        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(Function, Object, 2);
+        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(Function, Object, 3);
 
     private:
         static uint32_t min_arity_for_code(TValue<CodeObject> code_object,

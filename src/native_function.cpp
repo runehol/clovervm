@@ -12,7 +12,7 @@ namespace cl
 {
     static TValue<Function> make_native_function_with_target(
         VirtualMachine *vm, TValue<String> name, NativeFunctionTarget target,
-        Bytecode call_opcode, uint32_t n_parameters,
+        Bytecode call_opcode, uint32_t n_parameters, Value docstring,
         TValue<Tuple> default_parameters =
             TValue<Tuple>::from_value_unchecked(Value::None()))
     {
@@ -26,10 +26,10 @@ namespace cl
             TValue<CodeObject>::from_oop(builder.finalize());
         if(default_parameters.as_value() != Value::None())
         {
-            return vm->make_immortal_object_value<Function>(code,
-                                                            default_parameters);
+            return vm->make_immortal_object_value<Function>(
+                code, default_parameters, docstring);
         }
-        return vm->make_immortal_object_value<Function>(code);
+        return vm->make_immortal_object_value<Function>(code, docstring);
     }
 
     static TValue<Function> make_native_function_with_target(
@@ -40,7 +40,7 @@ namespace cl
     {
         return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(L"<native>"), target,
-            call_opcode, n_parameters, default_parameters);
+            call_opcode, n_parameters, Value::None(), default_parameters);
     }
 
     static Bytecode call_native_opcode_for_arity(uint32_t n_parameters)
@@ -140,10 +140,15 @@ namespace cl
     TValue<Function> make_native_function(VirtualMachine *vm,
                                           const BuiltinNativeMethod &method)
     {
+        Value docstring =
+            method.doc == nullptr
+                ? Value::None()
+                : vm->get_or_create_interned_string_value(method.doc)
+                      .as_value();
         return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(method.name),
             method.target, call_native_opcode_for_arity(method.n_parameters),
-            method.n_parameters);
+            method.n_parameters, docstring);
     }
 
     void install_builtin_native_methods(VirtualMachine *vm, ClassObject *cls,
