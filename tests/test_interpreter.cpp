@@ -21,6 +21,7 @@
 #include "token_print.h"
 #include "tokenizer.h"
 #include "tuple.h"
+#include "tuple_iterator.h"
 #include "value_string.h"
 #include "virtual_machine.h"
 #include <fmt/xchar.h>
@@ -138,6 +139,18 @@ static void expect_range_iterator(Value actual, int64_t expected_current,
     EXPECT_EQ(Value::from_smi(expected_current), iterator->current);
     EXPECT_EQ(Value::from_smi(expected_stop), iterator->stop);
     EXPECT_EQ(Value::from_smi(expected_step), iterator->step);
+}
+
+static void expect_tuple_iterator(Value actual, Tuple *expected_tuple,
+                                  int64_t expected_index)
+{
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::TupleIterator,
+              actual.get_ptr<Object>()->native_layout_id());
+
+    TupleIterator *iterator = actual.get_ptr<TupleIterator>();
+    EXPECT_EQ(Value::from_oop(expected_tuple), iterator->tuple.as_value());
+    EXPECT_EQ(Value::from_smi(expected_index), iterator->index);
 }
 
 static int64_t g_next_counter = 0;
@@ -2951,6 +2964,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         {NativeLayoutId::Function, L"function"},
         {NativeLayoutId::CodeObject, L"code"},
         {NativeLayoutId::RangeIterator, L"range_iterator"},
+        {NativeLayoutId::TupleIterator, L"tuple_iterator"},
         {NativeLayoutId::Instance, L"object"},
     };
 
@@ -3176,12 +3190,70 @@ TEST(Interpreter, python_defined_iter_builtin_calls_dunder_iter)
     expect_range_iterator(actual, 0, 3, 1);
 }
 
+TEST(Interpreter, tuple_iter_returns_tuple_iterator)
+{
+    test::VmTestContext test_context;
+    Value tuple_value = test_context.run_file(L"(1, 2, 3)\n");
+    ASSERT_TRUE(can_convert_to<Tuple>(tuple_value));
+
+    Value iterator_value = test_context.run_file(L"iter((1, 2, 3))\n");
+    ASSERT_TRUE(can_convert_to<TupleIterator>(iterator_value));
+    EXPECT_EQ(Value::from_smi(0),
+              iterator_value.get_ptr<TupleIterator>()->index);
+    ASSERT_TRUE(can_convert_to<Tuple>(
+        iterator_value.get_ptr<TupleIterator>()->tuple.as_value()));
+    Tuple *tuple = iterator_value.get_ptr<TupleIterator>()->tuple.extract();
+    ASSERT_EQ(size_t(3), tuple->size());
+    EXPECT_EQ(Value::from_smi(1), tuple->item_unchecked(0));
+    EXPECT_EQ(Value::from_smi(2), tuple->item_unchecked(1));
+    EXPECT_EQ(Value::from_smi(3), tuple->item_unchecked(2));
+}
+
 TEST(Interpreter, python_defined_next_builtin_calls_dunder_next)
 {
     test::VmTestContext test_context;
     Value actual = test_context.run_file(L"next(range(3))\n");
 
     EXPECT_EQ(Value::from_smi(0), actual);
+}
+
+TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value iterator_value = test_context.run_file(L"iter((4, 5))\n");
+    ASSERT_TRUE(can_convert_to<TupleIterator>(iterator_value));
+    TupleIterator *iterator = iterator_value.get_ptr<TupleIterator>();
+    Tuple *tuple = iterator->tuple.extract();
+    expect_tuple_iterator(iterator_value, tuple, 0);
+
+    Value first = test_context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_checked(
+            test_context.vm().builtin_scope_ptr()->get_by_name(
+                test_context.vm().get_or_create_interned_string_value(
+                    L"next"))),
+        iterator_value);
+    EXPECT_EQ(Value::from_smi(4), first);
+    expect_tuple_iterator(iterator_value, tuple, 1);
+
+    Value second = test_context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_checked(
+            test_context.vm().builtin_scope_ptr()->get_by_name(
+                test_context.vm().get_or_create_interned_string_value(
+                    L"next"))),
+        iterator_value);
+    EXPECT_EQ(Value::from_smi(5), second);
+    expect_tuple_iterator(iterator_value, tuple, 2);
+
+    Value exhausted = test_context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_checked(
+            test_context.vm().builtin_scope_ptr()->get_by_name(
+                test_context.vm().get_or_create_interned_string_value(
+                    L"next"))),
+        iterator_value);
+    EXPECT_TRUE(exhausted.is_exception_marker());
+    EXPECT_TRUE(test_context.thread()->has_pending_exception());
+    test_context.thread()->clear_pending_exception();
 }
 
 TEST(Interpreter, python_defined_repr_builtin_calls_dunder_repr)
@@ -3235,6 +3307,16 @@ TEST(Interpreter, generic_for_loop_uses_iter_and_next_until_stop_iteration)
                                  L"    total += x\n"
                                  L"total\n");
     EXPECT_EQ(Value::from_smi(3), file_runner.return_value);
+}
+
+TEST(Interpreter, for_loop_iterates_over_tuple)
+{
+    test::FileRunner file_runner(L"total = 0\n"
+                                 L"for x in (1, 2, 3):\n"
+                                 L"    total += x\n"
+                                 L"total\n");
+
+    EXPECT_EQ(Value::from_smi(6), file_runner.return_value);
 }
 
 TEST(Interpreter, generic_for_loop_discards_stop_iteration_value)

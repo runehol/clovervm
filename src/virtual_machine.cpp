@@ -18,6 +18,7 @@
 #include "shape.h"
 #include "thread_state.h"
 #include "tuple.h"
+#include "tuple_iterator.h"
 #include <cassert>
 #include <initializer_list>
 #include <stdexcept>
@@ -277,6 +278,7 @@ namespace cl
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));
+        register_builtin_class(make_tuple_iterator_class(this));
         BuiltinClassDefinition base_exception_definition =
             make_base_exception_class(this);
         ClassObject *base_exception = base_exception_definition.cls;

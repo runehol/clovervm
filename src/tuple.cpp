@@ -5,6 +5,7 @@
 #include "refcount.h"
 #include "string_builder.h"
 #include "thread_state.h"
+#include "tuple_iterator.h"
 #include "virtual_machine.h"
 #include <iterator>
 
@@ -38,6 +39,18 @@ namespace cl
         return builder.finish();
     }
 
+    static Value native_tuple_iter(Value self)
+    {
+        if(!can_convert_to<Tuple>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"tuple.__iter__ expects a tuple receiver");
+        }
+
+        return make_object_value<TupleIterator>(
+            TValue<Tuple>::from_value_checked(self));
+    }
+
     Tuple::Tuple(HeapLayout layout, BootstrapObjectTag, size_t size)
         : Object(BootstrapObjectTag{}, native_layout_id, layout),
           size_value(Value::from_smi(static_cast<int64_t>(size)))
@@ -68,6 +81,8 @@ namespace cl
                                   L"Return str(self)."),
             builtin_native_method(L"__repr__", native_tuple_repr,
                                   L"Return repr(self)."),
+            builtin_native_method(L"__iter__", native_tuple_iter,
+                                  L"Implement iter(self)."),
         };
         install_builtin_native_methods(vm, vm->tuple_class(), methods,
                                        std::size(methods));

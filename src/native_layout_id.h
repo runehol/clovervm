@@ -15,6 +15,7 @@ namespace cl
         Dict,
         Function,
         RangeIterator,
+        TupleIterator,
         CodeObject,
         ClassObject,
         Exception,
