@@ -18,6 +18,7 @@
 #include <fmt/xchar.h>
 #include <fstream>
 #include <iostream>
+#include <locale>
 #include <stdexcept>
 #include <string>
 
@@ -101,6 +102,9 @@ std::wstring format_pending_python_exception(ThreadState *thread)
 int main(int argc, const char *argv[])
 {
     std::setlocale(LC_CTYPE, "");
+    std::locale::global(std::locale(""));
+    std::wcout.imbue(std::locale());
+    std::wcerr.imbue(std::locale());
 
     using namespace std::literals;
     bool print_bytecode = false;
