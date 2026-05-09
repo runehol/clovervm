@@ -100,6 +100,16 @@ namespace cl
         return descriptor;
     }
 
+    static AttributeReadDescriptor
+    inline_receiver_dunder_class_descriptor(Value receiver)
+    {
+        ClassObject *class_object = active_thread()->class_of_value(receiver);
+        Value class_value = Value::from_oop(class_object);
+        return uncacheable_inline_receiver_descriptor(
+            AttributeReadDescriptor::found(
+                AttributeReadPlan::constant(class_value), class_value));
+    }
+
     static AttributeCacheBlockers
     superseded_class_read_descriptor_cache_blockers(
         const AttributeReadDescriptor &descriptor)
@@ -377,6 +387,10 @@ namespace cl
                 class_descriptor, class_object);
         }
 
+        if(string_eq(name, active_vm()->dunder_class_name()))
+        {
+            return inline_receiver_dunder_class_descriptor(obj);
+        }
         ClassObject *class_object = active_thread()->class_of_value(obj);
         return uncacheable_inline_receiver_descriptor(
             classify_class_read_descriptor(
@@ -386,6 +400,11 @@ namespace cl
 
     Value load_attr_from_plan(Value receiver, const AttributeReadPlan &plan)
     {
+        if(plan.kind == AttributeReadPlanKind::ConstantValue)
+        {
+            return plan.binding.self;
+        }
+
         const Object *storage_owner = plan.storage_owner;
         if(storage_owner == nullptr)
         {
@@ -412,6 +431,11 @@ namespace cl
                                Value &callable_out, Value &self_out)
     {
         callable_out = load_attr_from_plan(receiver, plan);
+        if(plan.kind == AttributeReadPlanKind::ConstantValue)
+        {
+            self_out = Value::not_present();
+            return true;
+        }
         if(plan.kind == AttributeReadPlanKind::BindFunctionReceiver &&
            can_convert_to<Function>(callable_out))
         {

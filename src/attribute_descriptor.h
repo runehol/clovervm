@@ -66,6 +66,7 @@ namespace cl
     enum class AttributeReadPlanKind : uint8_t
     {
         ReceiverSlot,
+        ConstantValue,
         BindFunctionReceiver,
         DataDescriptorGet,
         NonDataDescriptorGet,
@@ -130,6 +131,16 @@ namespace cl
         {
             return AttributeReadPlan{path,     kind,    storage_owner,
                                      location, binding, lookup_validity_cell};
+        }
+
+        static AttributeReadPlan constant(Value value)
+        {
+            return AttributeReadPlan{AttributeReadPlanPath::ReceiverOwnProperty,
+                                     AttributeReadPlanKind::ConstantValue,
+                                     nullptr,
+                                     StorageLocation::not_found(),
+                                     AttributeBindingContext{value, nullptr},
+                                     nullptr};
         }
     };
 

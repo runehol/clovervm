@@ -983,6 +983,10 @@ namespace cl
     {
         switch(plan.kind)
         {
+            case AttributeReadPlanKind::ConstantValue:
+                value_out = plan.binding.self;
+                return AttributeLoadPlanStatus::Ready;
+
             case AttributeReadPlanKind::ReceiverSlot:
                 if(unlikely(plan.storage_location.kind != StorageKind::Inline))
                 {
@@ -1068,6 +1072,10 @@ namespace cl
         self_out = Value::not_present();
         switch(plan.kind)
         {
+            case AttributeReadPlanKind::ConstantValue:
+                callable_out = plan.binding.self;
+                return MethodCallTargetStatus::Ready;
+
             case AttributeReadPlanKind::ReceiverSlot:
                 callable_out =
                     read_plan_storage_owner(receiver, plan)
@@ -1108,6 +1116,10 @@ namespace cl
         self_out = Value::not_present();
         switch(plan.kind)
         {
+            case AttributeReadPlanKind::ConstantValue:
+                callable_out = Value::not_present();
+                return MethodCallFastTargetStatus::Slow;
+
             case AttributeReadPlanKind::BindFunctionReceiver:
                 callable_out =
                     read_plan_storage_owner(receiver, plan)

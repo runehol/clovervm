@@ -610,6 +610,43 @@ TEST(Attr, BuiltinInstancesExposeDunderClassThroughAttributeLookup)
     }
 }
 
+TEST(Attr, InlineValuesExposeDunderClassThroughAttributeLookup)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> dunder_class_name =
+        context.thread()->make_object_value<String>(L"__class__");
+
+    struct InlineInstance
+    {
+        Value value;
+        ClassObject *expected_class;
+    };
+
+    InlineInstance instances[] = {
+        {Value::from_smi(1), context.vm().int_class()},
+        {Value::True(), context.vm().bool_class()},
+        {Value::False(), context.vm().bool_class()},
+        {Value::None(), context.vm().none_type_class()},
+    };
+
+    for(const InlineInstance &instance: instances)
+    {
+        AttributeReadDescriptor descriptor =
+            resolve_attr_read_descriptor(instance.value, dunder_class_name);
+        ASSERT_TRUE(descriptor.is_found());
+        EXPECT_FALSE(descriptor.is_cacheable());
+        EXPECT_EQ(
+            attribute_cache_blocker(AttributeCacheBlocker::InlineReceiver),
+            descriptor.cache_blockers);
+        EXPECT_EQ(Value::from_oop(instance.expected_class),
+                  load_attr_from_plan(instance.value, descriptor.plan));
+        EXPECT_EQ(Value::from_oop(instance.expected_class),
+                  load_attr(instance.value, dunder_class_name));
+    }
+}
+
 TEST(Attr, BuiltinInstancesRejectUnsupportedAttributeWrites)
 {
     test::VmTestContext context;

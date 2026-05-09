@@ -195,6 +195,7 @@ namespace cl
 
     void VirtualMachine::initialize_builtin_types()
     {
+        dunder_class_name_ = get_or_create_interned_string_raw(L"__class__");
         BuiltinClassDefinition type_definition = make_type_class(this);
         type_class_ = type_definition.cls;
         register_builtin_class(type_definition);

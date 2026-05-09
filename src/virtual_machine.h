@@ -110,6 +110,11 @@ namespace cl
         ClassObject *int_class() const { return int_class_; }
         ClassObject *bool_class() const { return bool_class_; }
         ClassObject *none_type_class() const { return none_type_class_; }
+        TValue<String> dunder_class_name() const
+        {
+            assert(dunder_class_name_ != nullptr);
+            return TValue<String>::from_oop(dunder_class_name_);
+        }
         CodeObject *clover_function_entry_adapter(uint32_t n_args);
 
         template <typename T, typename... Args>
@@ -167,6 +172,7 @@ namespace cl
         ClassObject *int_class_ = nullptr;
         ClassObject *bool_class_ = nullptr;
         ClassObject *none_type_class_ = nullptr;
+        String *dunder_class_name_ = nullptr;
         Shape *str_instance_root_shape_ = nullptr;
         std::array<ClassObject *, NativeLayoutCount> class_for_native_layouts =
             {};
