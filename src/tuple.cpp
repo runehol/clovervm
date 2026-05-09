@@ -1,12 +1,43 @@
 #include "tuple.h"
 #include "class_object.h"
 #include "exception_propagation.h"
+#include "native_function.h"
 #include "refcount.h"
 #include "thread_state.h"
+#include "value_repr.h"
 #include "virtual_machine.h"
+#include <iterator>
+#include <string>
 
 namespace cl
 {
+    static Value native_tuple_repr(Value self)
+    {
+        if(!can_convert_to<Tuple>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"tuple.__repr__ expects a tuple receiver");
+        }
+
+        Tuple *tuple = self.get_ptr<Tuple>();
+        std::wstring result = L"(";
+        for(size_t idx = 0; idx < tuple->size(); ++idx)
+        {
+            if(idx != 0)
+            {
+                result += L", ";
+            }
+            CL_PROPAGATE_EXCEPTION(
+                append_value_repr(result, tuple->item_unchecked(idx)));
+        }
+        if(tuple->size() == 1)
+        {
+            result += L",";
+        }
+        result += L")";
+        return active_thread()->make_object_value<String>(result);
+    }
+
     Tuple::Tuple(HeapLayout layout, BootstrapObjectTag, size_t size)
         : Object(BootstrapObjectTag{}, native_layout_id, layout),
           size_value(Value::from_smi(static_cast<int64_t>(size)))
@@ -28,6 +59,18 @@ namespace cl
         ClassObject *cls = ClassObject::make_bootstrap_builtin_class(
             vm->get_or_create_interned_string_value(L"tuple"), 1, nullptr, 0);
         return builtin_class_definition(cls, native_layout_ids);
+    }
+
+    void install_tuple_class_methods(VirtualMachine *vm)
+    {
+        BuiltinNativeMethod methods[] = {
+            builtin_native_method(L"__str__", native_tuple_repr,
+                                  L"Return str(self)."),
+            builtin_native_method(L"__repr__", native_tuple_repr,
+                                  L"Return repr(self)."),
+        };
+        install_builtin_native_methods(vm, vm->tuple_class(), methods,
+                                       std::size(methods));
     }
 
     void Tuple::initialize_item_unchecked(size_t idx, Value value)

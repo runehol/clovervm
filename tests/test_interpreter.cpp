@@ -2041,6 +2041,67 @@ TEST(Interpreter, call_clovervm_method_calls_inline_value_native_methods)
     expect_method_string(Value::None(), dunder_repr_name, L"None");
 }
 
+TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<String> dunder_str_name(
+        test_context.vm().get_or_create_interned_string_value(L"__str__"));
+    TValue<String> dunder_repr_name(
+        test_context.vm().get_or_create_interned_string_value(L"__repr__"));
+
+    auto expect_method_string = [&](Value receiver, TValue<String> name,
+                                    const wchar_t *expected) {
+        Value actual =
+            test_context.thread()->call_clovervm_method(receiver, name);
+
+        ASSERT_FALSE(actual.is_exception_marker());
+        ASSERT_TRUE(can_convert_to<String>(actual));
+        EXPECT_STREQ(expected, string_as_wchar_t(
+                                   TValue<String>::from_value_checked(actual)));
+        EXPECT_FALSE(test_context.thread()->has_pending_exception());
+    };
+
+    TValue<String> string =
+        test_context.vm().get_or_create_interned_string_value(L"a'b\n");
+    expect_method_string(string.as_value(), dunder_repr_name, L"'a\\'b\\n'");
+
+    List *list = test_context.thread()->make_object_raw<List>();
+    list->append(Value::from_smi(42));
+    list->append(Value::True());
+    list->append(Value::None());
+    list->append(string.as_value());
+    expect_method_string(Value::from_oop(list), dunder_repr_name,
+                         L"[42, True, None, 'a\\'b\\n']");
+    expect_method_string(Value::from_oop(list), dunder_str_name,
+                         L"[42, True, None, 'a\\'b\\n']");
+
+    Tuple *empty_tuple = test_context.thread()->make_object_raw<Tuple>(0);
+    expect_method_string(Value::from_oop(empty_tuple), dunder_repr_name, L"()");
+
+    Tuple *singleton_tuple = test_context.thread()->make_object_raw<Tuple>(1);
+    singleton_tuple->initialize_item_unchecked(0, Value::from_smi(42));
+    expect_method_string(Value::from_oop(singleton_tuple), dunder_repr_name,
+                         L"(42,)");
+
+    Tuple *tuple = test_context.thread()->make_object_raw<Tuple>(2);
+    tuple->initialize_item_unchecked(0, Value::from_smi(42));
+    tuple->initialize_item_unchecked(1, string.as_value());
+    expect_method_string(Value::from_oop(tuple), dunder_str_name,
+                         L"(42, 'a\\'b\\n')");
+
+    TValue<String> class_name(
+        test_context.vm().get_or_create_interned_string_value(L"Plain"));
+    ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
+        class_name, 2, test_context.vm().object_class());
+    Instance *instance =
+        test_context.thread()->make_internal_raw<Instance>(cls);
+    expect_method_string(Value::from_oop(instance), dunder_repr_name,
+                         L"<Plain object>");
+    expect_method_string(Value::from_oop(instance), dunder_str_name,
+                         L"<Plain object>");
+}
+
 TEST(Interpreter, call_clovervm_method_reports_missing_method)
 {
     test::VmTestContext test_context;

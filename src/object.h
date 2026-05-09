@@ -147,6 +147,7 @@ namespace cl
     static_assert(std::is_trivially_destructible_v<Object>);
 
     BuiltinClassDefinition make_object_class(VirtualMachine *vm);
+    void install_object_class_methods(VirtualMachine *vm);
 }  // namespace cl
 
 #endif  // CL_OBJECT_H

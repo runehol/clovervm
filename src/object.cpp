@@ -2,14 +2,19 @@
 #include "attr.h"
 #include "attribute_descriptor.h"
 #include "class_object.h"
+#include "native_function.h"
 #include "overflow_slots.h"
 #include "refcount.h"
 #include "shape.h"
+#include "str.h"
 #include "thread_state.h"
 #include "typed_value.h"
 #include "value.h"
+#include "value_repr.h"
 #include "virtual_machine.h"
 #include <algorithm>
+#include <iterator>
+#include <string>
 
 namespace cl
 {
@@ -92,6 +97,45 @@ namespace cl
         ClassObject *cls = ClassObject::make_bootstrap_builtin_class(
             vm->get_or_create_interned_string_value(L"object"), 1, nullptr, 0);
         return builtin_class_definition(cls, native_layout_ids);
+    }
+
+    static Value native_object_repr(Value self)
+    {
+        if(self.is_vm_sentinel())
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"object.__repr__ expects an object receiver");
+        }
+
+        TValue<String> class_name =
+            active_thread()->class_of_value(self)->get_name();
+        std::wstring result = L"<";
+        result.append(class_name.extract()->data,
+                      size_t(class_name.extract()->count.extract()));
+        result += L" object>";
+        return active_thread()->make_object_value<String>(result);
+    }
+
+    static Value native_object_str(Value self)
+    {
+        if(self.is_vm_sentinel())
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"object.__str__ expects an object receiver");
+        }
+        return value_repr(self);
+    }
+
+    void install_object_class_methods(VirtualMachine *vm)
+    {
+        BuiltinNativeMethod methods[] = {
+            builtin_native_method(L"__str__", native_object_str,
+                                  L"Return str(self)."),
+            builtin_native_method(L"__repr__", native_object_repr,
+                                  L"Return repr(self)."),
+        };
+        install_builtin_native_methods(vm, vm->object_class(), methods,
+                                       std::size(methods));
     }
 
     void Object::install_class(ClassObject *new_cls)

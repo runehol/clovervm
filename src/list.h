@@ -65,6 +65,7 @@ namespace cl
 
     class VirtualMachine;
     BuiltinClassDefinition make_list_class(VirtualMachine *vm);
+    void install_list_class_methods(VirtualMachine *vm);
 
 }  // namespace cl
 

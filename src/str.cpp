@@ -30,6 +30,45 @@ namespace cl
         return self;
     }
 
+    static Value native_str_repr(Value self)
+    {
+        if(!can_convert_to<String>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"str.__repr__ expects a str receiver");
+        }
+
+        String *str = self.get_ptr<String>();
+        std::wstring result = L"'";
+        size_t n_chars = size_t(str->count.extract());
+        for(size_t idx = 0; idx < n_chars; ++idx)
+        {
+            switch(str->data[idx])
+            {
+                case L'\\':
+                    result += L"\\\\";
+                    break;
+                case L'\'':
+                    result += L"\\'";
+                    break;
+                case L'\n':
+                    result += L"\\n";
+                    break;
+                case L'\r':
+                    result += L"\\r";
+                    break;
+                case L'\t':
+                    result += L"\\t";
+                    break;
+                default:
+                    result += str->data[idx];
+                    break;
+            }
+        }
+        result += L"'";
+        return active_thread()->make_object_value<String>(result);
+    }
+
     static Value native_str_add(Value left_value, Value right_value)
     {
         if(!can_convert_to<String>(left_value) ||
@@ -60,6 +99,8 @@ namespace cl
         BuiltinNativeMethod methods[] = {
             builtin_native_method(L"__str__", native_str_str,
                                   L"Return str(self)."),
+            builtin_native_method(L"__repr__", native_str_repr,
+                                  L"Return repr(self)."),
             builtin_native_method(L"__add__", native_str_add,
                                   L"Return self + value."),
         };

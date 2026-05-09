@@ -1,12 +1,39 @@
 #include "list.h"
 #include "class_object.h"
 #include "exception_propagation.h"
+#include "native_function.h"
 #include "thread_state.h"
+#include "value_repr.h"
 #include "virtual_machine.h"
 #include <algorithm>
+#include <iterator>
+#include <string>
 
 namespace cl
 {
+    static Value native_list_repr(Value self)
+    {
+        if(!can_convert_to<List>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"list.__repr__ expects a list receiver");
+        }
+
+        List *list = self.get_ptr<List>();
+        std::wstring result = L"[";
+        for(size_t idx = 0; idx < list->size(); ++idx)
+        {
+            if(idx != 0)
+            {
+                result += L", ";
+            }
+            CL_PROPAGATE_EXCEPTION(
+                append_value_repr(result, list->item_unchecked(idx)));
+        }
+        result += L"]";
+        return active_thread()->make_object_value<String>(result);
+    }
+
     List::List(ClassObject *cls, size_t size)
         : Object(cls, native_layout_id, compact_layout())
     {
@@ -21,6 +48,18 @@ namespace cl
             vm->get_or_create_interned_string_value(L"list"), 1, nullptr, 0,
             vm->object_class());
         return builtin_class_definition(cls, native_layout_ids);
+    }
+
+    void install_list_class_methods(VirtualMachine *vm)
+    {
+        BuiltinNativeMethod methods[] = {
+            builtin_native_method(L"__str__", native_list_repr,
+                                  L"Return str(self)."),
+            builtin_native_method(L"__repr__", native_list_repr,
+                                  L"Return repr(self)."),
+        };
+        install_builtin_native_methods(vm, vm->list_class(), methods,
+                                       std::size(methods));
     }
 
     void List::insert_item_unchecked(size_t idx, Value value)

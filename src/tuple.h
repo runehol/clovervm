@@ -117,6 +117,7 @@ namespace cl
     }
 
     BuiltinClassDefinition make_tuple_class(VirtualMachine *vm);
+    void install_tuple_class_methods(VirtualMachine *vm);
 
 }  // namespace cl
 
