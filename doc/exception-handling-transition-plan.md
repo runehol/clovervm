@@ -26,9 +26,10 @@ is the source of truth for semantics.
 - Native function thunks return through `ReturnOrRaiseException`; explicit
   native VM failures set pending exception state and return
   `Value::exception_marker()`.
-- `for` loops use internal iterator exhaustion for builtin `RangeIterator`
-  paths, not user-visible `StopIteration`. Generic iterator-protocol
-  `StopIteration` handling is still planned.
+- Direct builtin `range(...)` `for` loops use internal iterator exhaustion for
+  range fast paths. Generic `for` loops now call `iter()` / `__next__` and
+  consume user-visible `StopIteration` through exception-table handlers.
+  Stop-returning iterator code remains a later optimization experiment.
 - Python-visible builtin exception classes and minimal exception objects exist.
   Python-authored `raise <expr>` lowers to the cold `RaiseUnwind` opcode and can
   be handled by local exception tables.
@@ -37,8 +38,8 @@ is the source of truth for semantics.
   `except ... as e`, bare reraise from active handlers, `else`, and `finally`.
   Nonlocal `return`, `break`, and `continue` through `finally` replay active
   cleanup bodies at the exit site.
-- Full traceback objects, `with`, generic iterator `StopIteration` fallback,
-  and the stop-returning iterator protocol are not implemented.
+- Full traceback objects, `with`, generators / `yield from`, true range-object
+  semantics, and the stop-returning iterator protocol are not implemented.
 
 ## Guiding Constraints
 
@@ -556,6 +557,20 @@ The second milestone is stages 7 through 11:
 
 That milestone made the straight Python exception path solid before committing
 to additional iterator-specific optimization machinery.
+
+The third coherent milestone is the completed parts of stage 14:
+
+1. support bare reraise from active handlers
+2. convert bare `raise` outside handlers to runtime `RuntimeError`
+3. preserve `__context__` when handlers or exceptional `finally` blocks raise
+4. lower `try` / `finally`, `try` / `except` / `else`, and combinations with
+   `finally`
+5. replay active `finally` bodies for nonlocal `return`, `break`, and
+   `continue`
+
+The remaining stage-14 work is tied to stage 13 tracebacks and future
+delegating iteration: preserving traceback chains on reraise and making
+`StopIteration.value` observable through `yield from`.
 
 The stop-returning iterator protocol is deliberately later and experimental. It
 may remain useful for generator/protocol completion, but direct loop performance

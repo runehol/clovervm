@@ -46,10 +46,11 @@ model and first attribute inline-cache slices.
 
 - [ ] Finish the iterator protocol.
 
-  `range()` currently returns a `RangeIterator` directly. Python semantics want
-  `range()` to return a range object and `iter(range_obj)` to produce the
-  iterator. This is exception-gated because real iterator exhaustion must be
-  represented as Python `StopIteration`.
+  `iter()` and `next()` now drive range, tuple, list, and user-defined
+  `__iter__` / `__next__` paths, and generic `for` loops consume
+  `StopIteration` through ordinary exception-table handlers. `range()` still
+  returns a `RangeIterator` directly. Python semantics want `range()` to return
+  a reusable range object and `iter(range_obj)` to produce a fresh iterator.
 
   Note: compact no-value `StopIteration` currently preserves `not_present` so
   `yield from` can distinguish no return value from a real `None` return value.
@@ -60,13 +61,14 @@ model and first attribute inline-cache slices.
 - [ ] Expand call syntax and remaining statements.
 
   Useful next increments include keyword arguments, `**kwargs`, richer call
-  forms, `nonlocal` declarations, `import`, `with`, `try`, and `yield`.
+  forms, `nonlocal` declarations, `import`, `with`, and `yield`.
   Positional defaults, `*args`, and `global` declarations are already
   implemented for ordinary functions and tier-1 constructor calls. `del` is no
   longer in this bucket for the implemented simple targets: variables,
   attributes, and list/dictionary subscripts now parse, lower, and execute.
-  Keyword calls for ordinary functions are the main non-exception-gated slice
-  in this bucket.
+  The current `try` / `except` / `else` / `finally` slice is implemented,
+  including nonlocal control flow through `finally`. Keyword calls for ordinary
+  functions are the main non-exception-gated slice in this bucket.
 
 ## Object Model Follow-Ups
 

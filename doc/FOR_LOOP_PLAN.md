@@ -1,503 +1,128 @@
-# For Loop Support Plan
+# For Loop Support
 
-## Goal
+This note records the current `for` loop implementation.
 
-Add pragmatic Python-style `for` loop support without first building full
-Python generators, method dispatch, or exception handling. The initial target is
-to support code like:
+Current fast-iteration design work lives in
+[iteration-plans.md](iteration-plans.md). Exception transport details live in
+[exception-handling-transition-plan.md](exception-handling-transition-plan.md).
 
-```python
-total = 0
-for x in range(5):
-    total += x
-total
-```
+## Supported Surface
 
-The design should also set us up to add builtins such as `print` later through
-the runtime callable mechanisms.
+Implemented `for` loop behavior includes:
 
-Status note: this plan records the first `for`/`range` implementation. Since
-then, native callables have moved to native thunk `Function` objects. `range`
-is now implemented as a defaulted three-argument native thunk rather than a
-separate `BuiltinFunction` path.
+- `for <name> in <iterable>: ...`
+- optional loop `else`
+- `break` and `continue`
+- nonlocal `return`, `break`, and `continue` through active `finally` blocks
+- generic iterator protocol calls through `iter()` and `__next__`
+- `StopIteration` consumption for generic loops through exception-table
+  handlers
+- optimized direct builtin `range(...)` loops
 
-Current fast-iteration design work has moved to
-[iteration-plans.md](iteration-plans.md). This file is historical context for
-the first `for` loop implementation.
+Loop targets are still intentionally narrow: the parser accepts simple variable
+targets, while tuple and other complex targets remain future work.
 
-## Guiding Approach
+## Generic Lowering
 
-Use the original builtin-function path plus iterator-oriented bytecode.
+Generic `for` loops lower through the normal managed call machinery:
 
-Instead of modeling the first version as a real Python generator whose `next()`
-raises `StopIteration`, keep exhaustion as an internal iterator result handled
-directly by the interpreter. This avoids blocking on method calls, `raise`,
-`try`, and user-visible exception objects.
-
-## Why Builtin Functions Were Used First
-
-Adding a `BuiltinFunction` runtime object is the cleanest way to support
-`range`, and later `print`, without special-casing individual names all over
-the VM.
-
-Benefits:
-
-- `range` becomes a normal callable value in the builtin scope.
-- `print` can reuse the same mechanism later.
-- `CallSimple` grows into a dispatch point for bytecode functions and native
-  builtins.
-- The scope model already has parent-scope hooks that fit builtin lookup well.
-
-## Scope Of The First Version
-
-Keep the first implementation intentionally narrow:
-
-- Support `for <name> in range(<int>):`
-- Support loop `else`
-- Support `break`
-- Support `continue`
-- Support only simple variable targets
-- Support only `range(stop)` with implicit `start=0`, `step=1`
-
-This gives end-to-end `for` loop semantics with minimal surface area.
-
-## Implementation Plan
-
-### 1. Add AST and parser support for `for` [done]
-
-Files:
-
-- [src/ast.h](../src/ast.h)
-- [src/parser.cpp](../src/parser.cpp)
-- [src/ast_print.h](../src/ast_print.h)
-
-Changes:
-
-- Add `STATEMENT_FOR` to the AST node kinds.
-- Treat it as a statement in `is_expression()`.
-- Replace the current `for_stmt()` placeholder with real parsing for:
-
-```python
-for <target> in <expression>:
-    <block>
-else:
-    <block>
-```
-
-- Reuse existing assignment-target validation and keep the first version strict:
-  the loop target must be a simple variable.
-- Teach the AST printer to render `for` statements and optional loop `else`
-  blocks.
-
-Suggested child layout:
-
-- child 0: target
-- child 1: iterable expression
-- child 2: body
-- child 3: optional else block
-
-Status:
-
-- Implemented in [src/ast.h](../src/ast.h),
-  [src/parser.cpp](../src/parser.cpp), and
-  [src/ast_print.h](../src/ast_print.h)
-- Parser tests added in
-  [tests/test_parser.cpp](../tests/test_parser.cpp)
-- Current behavior intentionally remains limited to simple variable targets
-
-### 2. Introduce builtin-function runtime support [done, later retired]
-
-Files:
-
-- new runtime object header/source, likely alongside [src/function.h](../src/function.h)
-- [src/interpreter.cpp](../src/interpreter.cpp)
-- builtin-scope setup code, likely in thread or VM initialization
-
-Changes:
-
-- Add a `BuiltinFunction` object type that stores a native C++ callback and
-  optional metadata such as arity.
-- Extend `CallSimple` so it can dispatch to:
-  - bytecode `Function`
-  - native `BuiltinFunction`
-- Keep the first builtin API small and purpose-built for the current call
-  convention.
-
-Suggested direction:
-
-- Native callback accepts a lightweight `CallArguments` view over the current
-  interpreter call slots.
-- Builtins can advertise fixed arity, bounded multi-arity, or varargs.
-- Callback returns a `Value` directly.
-- Runtime errors can still use the current C++ exception strategy for now.
-
-Retirement status:
-
-- This was the initial implementation path for `range`, but it has since been
-  retired.
-- Native callables now use ordinary `Function` objects backed by native thunk
-  `CodeObject`s.
-- `CallSimple` dispatches to `Function` and constructor thunks; native targets
-  run through `CallNativeN` opcodes inside the ordinary function frame path.
-- Public arity is checked by `Function::accepts_arity()`, including native
-  thunks with default parameters such as `range`.
-
-### 3. Add a builtin scope [done]
-
-Files:
-
-- scope setup path used by code generation/runtime startup
-- [src/scope.h](../src/scope.h)
-- [src/scope.cpp](../src/scope.cpp)
-- potentially [src/codegen.cpp](../src/codegen.cpp) depending on where root scopes are created
-
-Changes:
-
-- Introduce a builtin parent scope beneath module globals.
-- Register `range` in that builtin scope.
-- Preserve the existing fast-path-friendly parent lookup design.
-
-Why this fits well:
-
-- `Scope::register_slot_index_for_read()` already anticipates parent scopes and
-  builtin-style fallback.
-- This avoids hard-coding `range` as a special global name.
-
-Status:
-
-- Implemented.
-
-
-### 4. Implement `range` as a builtin returning a `RangeIterator` [done]
-
-Files:
-
-- new runtime object file for range iterator
-- builtin registration site
-- [src/interpreter.cpp](../src/interpreter.cpp)
-
-Changes:
-
-- Keep `range` as a normal builtin callable in the builtin scope.
-- Add a `RangeIterator` runtime object type.
-- For the first cut, support `range(stop)` with implicit `start=0`, `step=1`.
-- Have the builtin `range` return a `RangeIterator` as the runtime value
-  consumed by generic `for` iteration.
-
-Note:
-
-This stage intentionally establishes the generic loop semantics first. A later
-fast path for direct builtin `range(...)` loops can then be validated against
-the already-working `RangeIterator` behavior in `for` loops.
-
-Status:
-
-- Implemented in [src/range_iterator.h](../src/range_iterator.h)
-  and [src/virtual_machine.cpp](../src/virtual_machine.cpp)
-- `range` is registered in the builtin scope as a normal builtin callable
-- `RangeIterator` stores `current`, `stop`, and `step`
-- The builtin currently supports `range(stop)`, `range(start, stop)`, and
-  `range(start, stop, step)`
-- Interpreter tests added in
-  [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
-
-### 5. Add generic iterator bytecodes [done]
-
-Files:
-
-- [src/bytecode.h](../src/bytecode.h)
-- [src/code_object_print.h](../src/code_object_print.h)
-- [src/interpreter.cpp](../src/interpreter.cpp)
-
-Changes:
-
-- Add `GetIter`
-- Add `ForIter`
-
-Suggested semantics:
-
-- `GetIter`
-  - input: iterable in accumulator
-  - output: iterator in accumulator
-- `ForIter <iter-reg>, <jump-target>`
-  - advances the iterator stored in `iter-reg`
-  - on success, leaves the next value in the accumulator
-  - on exhaustion, jumps to the target
-
-This establishes the canonical generic `for`-loop shape. Optimized bytecodes
-for direct builtin `range(...)` loops can be layered on later without changing
-the baseline semantics.
-
-Status:
-
-- Implemented in [src/bytecode.h](../src/bytecode.h),
-  [src/code_object.h](../src/code_object.h),
-  [src/code_object_print.h](../src/code_object_print.h),
-  and [src/interpreter.cpp](../src/interpreter.cpp)
-- Added `GetIter` and `ForIter` bytecodes plus code-object emission support for
-  iterator register + jump-target operands
-- The interpreter now advances `RangeIterator` instances directly and jumps on
-  exhaustion
-- Focused temporary tests were added in
-  [tests/test_codegen.cpp](../tests/test_codegen.cpp)
-  and [tests/test_interpreter.cpp](../tests/test_interpreter.cpp);
-  these should be removed once step 6 adds end-to-end `for`-loop lowering
-
-### 6. Lower `for` loops in codegen [done]
-
-Files:
-
-- [src/codegen.cpp](../src/codegen.cpp)
-
-Changes:
-
-- Add a `STATEMENT_FOR` codegen path that mirrors the existing `while` lowering.
-- Reuse the existing `loop_targets` stack so `break` and `continue` keep working
-  uniformly across loop kinds.
-- Lower all first-cut `for` loops through the generic iterable path.
-
-Suggested lowering shape:
-
-1. Evaluate iterable expression.
-2. Emit `GetIter`.
+1. Evaluate the iterable.
+2. Call `iter(iterable)` once.
 3. Store the iterator in a temporary register.
-4. Emit `ForIter <iter-reg>, <else-target>`.
-5. Assign the yielded value to the loop target and run the body.
-6. Jump back to the `ForIter` site on `continue`/fallthrough.
-7. Resolve `break` past the optional `else`.
+4. At the loop header, call `iterator.__next__()`.
+5. Protect the `__next__` call with an exception-table range.
+6. If `StopIteration` is caught, clear it and jump to the loop `else` / exit
+   target.
+7. If any other exception is caught, reraise it.
+8. Assign the yielded value to the loop target and run the body.
+9. Route fallthrough and `continue` back to the loop header.
+10. Route `break` past the optional `else` block.
 
-Status:
+This keeps ordinary iterator semantics in one path: user-defined iterators,
+tuple/list iterators, and fallback range iteration all use the same
+`iter()` / `__next__` protocol shape.
 
-- Implemented in [src/codegen.cpp](../src/codegen.cpp)
-- `STATEMENT_FOR` now lowers through the generic `GetIter`/`ForIter` path
-- `break`, `continue`, and loop `else` reuse the existing `loop_targets`
-  mechanism, matching `while` loop control-flow behavior
-- Temporary manual iterator-bytecode tests were removed and replaced with
-  end-to-end `for` loop coverage in
-  [tests/test_codegen.cpp](../tests/test_codegen.cpp)
-  and [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
-3. Store iterator in a temporary register.
-4. Mark loop-head target.
-5. Emit `ForIter`, jumping to the loop-else or done target on exhaustion.
-6. Assign accumulator to the loop variable.
-7. Emit loop body.
-8. Resolve `continue` back to the loop head.
-9. Jump back to loop head.
-10. Resolve exhaustion target.
-11. Emit optional `else` block.
-12. Resolve `break` target after the `else`.
+## Range Fast Path
 
-Desired behavior:
-
-- Normal exhaustion runs loop `else`.
-- `break` skips loop `else`.
-- `continue` resumes through the same iterator-driven loop header.
-
-### 7. Implement loop execution in the interpreter [done]
-
-Files:
-
-- [src/interpreter.cpp](../src/interpreter.cpp)
-
-Changes:
-
-- Add dispatch-table entries for `GetIter` and `ForIter`.
-- Add runtime logic for `RangeIterator`.
-- Add runtime logic for generic iterator execution.
-
-Suggested behavior:
-
-- `GetIter` verifies that the accumulator is an iterable value the runtime
-  knows how to iterate and produces its iterator state.
-- `ForIter` advances iterator state in place.
-- When a next value exists, place it in the accumulator and continue.
-- When exhausted, branch without throwing.
-
-This is the key place where we deliberately keep `StopIteration` internal and
-implicit for now.
-
-Status:
-
-- Implemented in [src/interpreter.cpp](../src/interpreter.cpp)
-- The dispatch table now includes `GetIter` and `ForIter`
-- `GetIter` validates that the accumulator holds an iterable runtime value the
-  VM knows how to drive
-- `ForIter` advances `RangeIterator` state in place, leaves the next value in
-  the accumulator, and jumps on exhaustion without exposing `StopIteration`
-- Interpreter coverage lives in
-  [tests/test_interpreter.cpp](../tests/test_interpreter.cpp),
-  including exhaustion, `else`, `break`, `continue`, negative-step iteration,
-  non-iterable rejection, and nested-loop sanity
-
-### 8. Add a specialized fast path for direct builtin `range(...)` loops [done]
-
-Files:
-
-- [src/bytecode.h](../src/bytecode.h)
-- [src/code_object_print.h](../src/code_object_print.h)
-- [src/codegen.cpp](../src/codegen.cpp)
-- [src/interpreter.cpp](../src/interpreter.cpp)
-
-Changes:
-
-- Add specialized prep opcodes for direct `range(...)` loop shapes:
-  - `ForPrepRange1`
-  - `ForPrepRange2`
-  - `ForPrepRange3`
-- Add specialized macro-style iteration opcodes such as:
-  - `ForIterRange1`
-  - `ForIterRangeStep`
-- Guard the fast path on the resolved callable being the exact builtin `range`
-  object so shadowing remains correct.
-- Use duplicated control flow for the fast path and generic fallback path
-  rather than a shared oversized loop-state representation.
-
-Suggested semantics:
+Direct calls to the exact builtin `range` object can lower to specialized
+bytecodes:
 
 - `ForPrepRange1`
-  - guards builtin identity
-  - on success, initializes `current = 0` and `stop = arg0`
-  - on failure, branches to the generic iterable fallback block
 - `ForPrepRange2`
-  - guards builtin identity
-  - on success, initializes `current = arg0`, `stop = arg1`
-  - on failure, branches to the generic iterable fallback block
 - `ForPrepRange3`
-  - guards builtin identity
-  - on success, initializes `current = arg0`, `stop = arg1`, `step = arg2`
-  - validates `step != 0`
-  - on failure, branches to the generic iterable fallback block
-- `ForIterRange1 <curr-reg>, <stop-reg>, <jump-target>`
-  - if `curr >= stop`, jump to target
-  - otherwise leave `curr` in the accumulator and increment it by `1`
-- `ForIterRangeStep <curr-reg>, <stop-reg>, <step-reg>, <jump-target>`
-  - if `step > 0` and `curr >= stop`, jump to target
-  - if `step < 0` and `curr <= stop`, jump to target
-  - otherwise leave `curr` in the accumulator and increment by `step`
+- `ForIterRange1`
+- `ForIterRangeStep`
 
-Why stage this later:
+The prep opcodes guard that the resolved callable is still the builtin `range`.
+If the guard fails, codegen falls back to the generic iterator-protocol path so
+shadowing `range` preserves Python lookup behavior.
 
-- Generic `RangeIterator` semantics come first and act as the correctness
-  oracle.
-- The optimized path is then purely a performance/bytecode-shape improvement,
-  not part of the semantic foundation.
+On the fast path, iteration state lives in registers instead of a public
+iterator object. Exhaustion is an internal branch to the loop exit / `else`
+target, not a Python-visible `StopIteration`.
 
-Status:
+The runtime still exposes `range()` as returning a `RangeIterator` directly.
+That is not final Python semantics; a real reusable range object remains future
+work.
 
-- Implemented in [src/bytecode.h](../src/bytecode.h),
-  [src/code_object_print.h](../src/code_object_print.h),
-  [src/codegen.cpp](../src/codegen.cpp), and
-  [src/interpreter.cpp](../src/interpreter.cpp)
-- Direct builtin `range(...)` `for` loops now lower through guarded
-  `ForPrepRange1` / `ForPrepRange2` / `ForPrepRange3` and
-  `ForIterRange1` / `ForIterRangeStep` bytecodes
-- The optimization checks for the exact builtin `range` object and falls back
-  to the shared generic iterator lowering when `range` is shadowed
-- Codegen coverage added in
-  [tests/test_codegen.cpp](../tests/test_codegen.cpp)
-- Interpreter coverage added in
-  [tests/test_interpreter.cpp](../tests/test_interpreter.cpp),
-  including one-, two-, and three-argument direct `range(...)` loops plus the
-  generic fallback path
+## Runtime Pieces
 
-### 9. Defer full Python iterator protocol and exceptions
+The implementation is spread across:
 
-Not part of the first implementation:
+- [src/parser.cpp](../src/parser.cpp) and [src/ast.h](../src/ast.h) for `for`
+  syntax and AST shape
+- [src/codegen.cpp](../src/codegen.cpp) for generic loop lowering, range fast
+  paths, loop `else`, `break`, `continue`, and `finally` replay
+- [src/bytecode.h](../src/bytecode.h) and
+  [src/code_object_print.h](../src/code_object_print.h) for range-loop
+  bytecodes and printing
+- [src/interpreter.cpp](../src/interpreter.cpp) for range fast-path execution
+  and managed exception-table unwinding
+- [src/range_iterator.h](../src/range_iterator.h) and related runtime setup for
+  the current public `range()` result
 
-- method-call parsing such as `obj.next()`
-- attribute lookup
-- `raise`
-- `try`
-- Python exception objects
-- `yield`
-- user-visible `StopIteration`
+Native builtins, including `range`, are ordinary `Function` objects backed by
+native thunk `CodeObject`s.
 
-These can be layered on later without invalidating the `for`-loop bytecode
-shape. If we eventually expose `next()`, the runtime can wrap the same internal
-iteration state machine in a Python-visible exception path.
+## Test Coverage
 
-## Test Plan
+Parser coverage lives in [tests/test_parser.cpp](../tests/test_parser.cpp) and
+covers basic `for`, loop `else`, simple variable targets, and rejection of
+unsupported target shapes.
 
-### Parser tests
+Codegen coverage lives in [tests/test_codegen.cpp](../tests/test_codegen.cpp)
+and pins down:
 
-File:
+- direct `range(...)` fast-path lowering
+- generic fallback CFG from the specialized range path
+- generic iterator-protocol calls for non-direct loops
+- loop `else` and `break` layout
 
-- [tests/test_parser.cpp](../tests/test_parser.cpp)
+Interpreter coverage lives in
+[tests/test_interpreter.cpp](../tests/test_interpreter.cpp) and the
+self-checking Python files under [tests/python](../tests/python). It covers:
 
-Add coverage for:
+- summing ranges
+- loop `else`
+- `break` and `continue`
+- nested loops
+- one-, two-, and three-argument `range`
+- negative-step ranges
+- shadowed `range` fallback
+- tuple and list iteration
+- user-defined `__iter__` / `__next__`
+- generic `for` discarding `StopIteration.value`
+- propagation of non-`StopIteration` exceptions from `__next__`
 
-- simple `for x in range(3): pass`
-- `for ... else`
-- simple variable target accepted
-- tuple or other complex targets rejected for now
+## Remaining Work
 
-### Codegen tests
+Relevant follow-ups are now broader language/runtime work rather than
+first-implementation `for` tasks:
 
-File:
-
-- [tests/test_codegen.cpp](../tests/test_codegen.cpp)
-
-Add structural coverage for:
-
-- simple generic `for` lowering using `GetIter` / `ForIter`
-- loop `else` layout
-- `break` path skipping `else`
-
-Later add structural coverage for:
-
-- direct `range(...)` lowering using specialized prep and range-iter opcodes
-- generic fallback CFG from specialized `range(...)` lowering
-
-Keep these tests structural and focused on lowering shape rather than full
-semantics.
-
-### Interpreter tests
-
-File:
-
-- [tests/test_interpreter.cpp](../tests/test_interpreter.cpp)
-
-Add semantic coverage for:
-
-- summing values from `range(5)`
-- loop `else` runs after normal exhaustion
-- `break` suppresses loop `else`
-- `continue` skips to the next iteration correctly
-- nested loop sanity case
-- shadowing `range` falls back to the generic path correctly
-
-Later add:
-
-- `range(start, stop)` and `range(start, stop, step)` once enabled
-- fast-path `range(...)` loops match generic `RangeIterator` behavior
-
-
-## Main Risks
-
-- The biggest architectural seam is extending `CallSimple` beyond bytecode
-  `Function` objects.
-- Builtin-scope creation needs to be done carefully so module/global lookup
-  still behaves as expected.
-- Generic iterator support should be kept simple enough that later fast paths
-  still have a clear baseline to compare against.
-- The later `range` fast path must be guarded on resolved builtin identity at
-  runtime so shadowing remains correct.
-- Duplicated fast-path and fallback CFG needs to be kept readable when the
-  optimization layer is added, especially around `continue`, `break`, and loop
-  `else`.
-- If the implementation expands to include method calls or Python exceptions too
-  early, the scope will grow quickly.
-
-## Recommendation
-
-Start with the narrowest useful slice:
-
-- `for`
-- builtin `range(stop)`
-- `RangeIterator`
-- generic iterator bytecodes
-- loop control-flow correctness
-
-Once that is in place, a specialized `range(...)` fast path can be added as an
-optimization, and the same builtin-function mechanism can naturally grow to
-cover `print` and other small native helpers.
+- real range objects distinct from range iterators
+- tuple and other destructuring loop targets
+- generators and `yield`
+- `yield from` and delegation over `StopIteration.value`
+- full descriptor and metaclass behavior for arbitrary iterator methods
+- iterator-plan specialization for ranges, containers, and other known iterable
+  shapes

@@ -904,7 +904,7 @@ TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Codegen, non_direct_for_loop_still_uses_generic_iterator_bytecodes)
+TEST(Codegen, non_direct_for_loop_uses_generic_iterator_protocol_calls)
 {
     std::string expected = "Code object:\n"
                            "    0 LdaGlobal [0]\n"
