@@ -71,26 +71,24 @@ namespace cl
         void write_existing_storage_location(StorageLocation location,
                                              Value value);
         void write_storage_location(StorageLocation location, Value value);
+        __attribute__((always_inline)) Value *inline_slot_base()
+        {
+            return reinterpret_cast<Value *>(
+                reinterpret_cast<uint64_t *>(this) +
+                static_value_offset_in_words());
+        }
+        __attribute__((always_inline)) const Value *inline_slot_base() const
+        {
+            return reinterpret_cast<const Value *>(
+                reinterpret_cast<const uint64_t *>(this) +
+                static_value_offset_in_words());
+        }
         static void validate_inline_slot_layout();
         NativeLayoutId native_layout;
         Shape *shape;
         OverflowSlots *overflow_storage;
 
         CL_DECLARE_STATIC_LAYOUT_BASE_NO_VALUES(Object);
-
-    protected:
-        Value *inline_slot_base()
-        {
-            return reinterpret_cast<Value *>(
-                reinterpret_cast<uint64_t *>(this) +
-                layout_value_offset_in_words(layout));
-        }
-        const Value *inline_slot_base() const
-        {
-            return reinterpret_cast<const Value *>(
-                reinterpret_cast<const uint64_t *>(this) +
-                layout_value_offset_in_words(layout));
-        }
 
     private:
         void initialize_shape_for_class(ClassObject *class_object);

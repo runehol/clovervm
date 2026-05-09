@@ -245,12 +245,14 @@ namespace cl
 
     static constexpr size_t kObjectCacheLineBytes = 128;
     static constexpr size_t kObjectCacheLineStartOffset = 16;
-    static constexpr uint32_t kDefaultFactoryInlineSlotCount =
+    static constexpr uint32_t kMaxFactoryInlineSlotCount =
         (kObjectCacheLineBytes - kObjectCacheLineStartOffset -
          sizeof(Instance)) /
         sizeof(Value);
+    static constexpr uint32_t kDefaultFactoryInlineSlotCount =
+        kMaxFactoryInlineSlotCount - 1;
     static_assert(sizeof(Instance) +
-                      sizeof(Value) * kDefaultFactoryInlineSlotCount ==
+                      sizeof(Value) * kDefaultFactoryInlineSlotCount <=
                   kObjectCacheLineBytes - kObjectCacheLineStartOffset);
 
     static ALWAYSINLINE void
@@ -945,14 +947,6 @@ namespace cl
         RequiresDescriptorDispatch,
     };
 
-    static ALWAYSINLINE const Value *
-    object_inline_slot_base(const Object *object)
-    {
-        return reinterpret_cast<const Value *>(
-            reinterpret_cast<const uint64_t *>(object) +
-            layout_value_offset_in_words(object->layout));
-    }
-
     static ALWAYSINLINE const Object *
     read_plan_storage_owner(Value receiver, const AttributeReadPlan &plan)
     {
@@ -988,28 +982,40 @@ namespace cl
                 return AttributeLoadPlanStatus::Ready;
 
             case AttributeReadPlanKind::ReceiverSlot:
-                if(unlikely(plan.storage_location.kind != StorageKind::Inline))
                 {
+                    if(unlikely(plan.storage_location.kind !=
+                                StorageKind::Inline))
+                    {
+                        value_out =
+                            read_plan_storage_owner(receiver, plan)
+                                ->read_storage_location(plan.storage_location);
+                        return AttributeLoadPlanStatus::Ready;
+                    }
+                    const Object *storage_owner =
+                        read_plan_storage_owner(receiver, plan);
                     value_out =
-                        read_plan_storage_owner(receiver, plan)
-                            ->read_storage_location(plan.storage_location);
+                        storage_owner->inline_slot_base()[plan.storage_location
+                                                              .physical_idx];
                     return AttributeLoadPlanStatus::Ready;
                 }
-                value_out = object_inline_slot_base(read_plan_storage_owner(
-                    receiver, plan))[plan.storage_location.physical_idx];
-                return AttributeLoadPlanStatus::Ready;
 
             case AttributeReadPlanKind::BindFunctionReceiver:
-                if(unlikely(plan.storage_location.kind != StorageKind::Inline))
                 {
+                    if(unlikely(plan.storage_location.kind !=
+                                StorageKind::Inline))
+                    {
+                        value_out =
+                            read_plan_storage_owner(receiver, plan)
+                                ->read_storage_location(plan.storage_location);
+                        return AttributeLoadPlanStatus::Ready;
+                    }
+                    const Object *storage_owner =
+                        read_plan_storage_owner(receiver, plan);
                     value_out =
-                        read_plan_storage_owner(receiver, plan)
-                            ->read_storage_location(plan.storage_location);
+                        storage_owner->inline_slot_base()[plan.storage_location
+                                                              .physical_idx];
                     return AttributeLoadPlanStatus::Ready;
                 }
-                value_out = object_inline_slot_base(read_plan_storage_owner(
-                    receiver, plan))[plan.storage_location.physical_idx];
-                return AttributeLoadPlanStatus::Ready;
 
             case AttributeReadPlanKind::DataDescriptorGet:
             case AttributeReadPlanKind::NonDataDescriptorGet:
