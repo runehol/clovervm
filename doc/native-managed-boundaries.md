@@ -263,8 +263,8 @@ The first contract is intentionally narrow:
 - the primary C++ API uses fixed-arity overloads rather than a materialized
   argument span
 - keyword arguments and arbitrary callable protocol dispatch are later steps
-- method lookup, including special-method lookup such as `obj.__str__()`, is a
-  separate later API because lookup and binding semantics are different
+- method lookup is handled by a separate native method-call API because lookup
+  and binding semantics are different
 
 ### Wrapper Shape
 
@@ -373,10 +373,9 @@ Value ThreadState::call_clovervm_function_array(TValue<Function> function,
 That fallback should not replace the fixed-arity overloads as the preferred API.
 
 Do not fold method lookup into `call_clovervm_function`. That API assumes the
-caller already has a `TValue<Function>` and exact positional arguments. A later
-special-method API, for example for `obj.__str__()`, should encode its own
-lookup and binding semantics deliberately before forwarding to the function-call
-overloads.
+caller already has a `TValue<Function>` and exact positional arguments.
+`call_clovervm_method` performs method lookup and binding deliberately, then
+forwards to the function-call overloads.
 
 ## Native To Managed: Startup Code-Object Entry
 
@@ -605,8 +604,8 @@ opcodes.
 3. [x] Switch startup code-object entry to the native boundary return
    convention. Do not add a general raw `CodeObject` native-call API until there
    is a concrete runtime entry point that needs it.
-6. [ ] Add a separate special-method native-call API once lookup and binding
-   semantics are ready.
+6. [x] Add a separate method-call native API that performs lookup and binding
+   before delegating to function entry.
 7. [x] Design the JIT managed-to-native transition ABI:
    - where managed continuation state lives
    - how live roots are published when they are not already materialized in
@@ -631,8 +630,9 @@ opcodes.
 - The primary native-to-managed function API is fixed-arity overloads. A
   pointer-plus-count fallback may exist later, but should not force common call
   sites to materialize an argument array.
-- Method lookup is not part of `call_clovervm_function`; special-method calls
-  get a separate API.
+- Method lookup is not part of `call_clovervm_function`; native method calls
+  use `call_clovervm_method`, which performs lookup and binding before
+  delegating to function entry.
 - Startup code-object entry wraps the module `CodeObject` in a temporary
   internal nullary `Function` and delegates to `call_clovervm_function`.
 - Native target pointers live in `CodeObject::native_function_targets`, not in

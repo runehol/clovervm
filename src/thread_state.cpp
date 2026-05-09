@@ -1,5 +1,7 @@
 #include "thread_state.h"
+#include "attr.h"
 #include "class_object.h"
+#include "clover_entry.h"
 #include "code_object.h"
 #include "codegen.h"
 #include "compilation_unit.h"
@@ -137,6 +139,73 @@ namespace cl
     {
         Value args[] = {arg0, arg1, arg2};
         return call_clovervm_function_with_args(function, args, 3);
+    }
+
+    Value ThreadState::call_clovervm_method_with_args(Value receiver,
+                                                      TValue<String> name,
+                                                      const Value *args,
+                                                      uint32_t n_args)
+    {
+        Value callable;
+        Value self;
+        if(!load_method(receiver, name, callable, self))
+        {
+            return set_pending_builtin_exception_none(L"AttributeError");
+        }
+        if(!can_convert_to<Function>(callable))
+        {
+            return set_pending_builtin_exception_string(
+                L"TypeError", L"object is not callable");
+        }
+
+        bool has_self = !self.is_not_present();
+        uint32_t total_args = n_args + (has_self ? 1 : 0);
+        if(total_args > MaxCloverFunctionEntryAdapterArgs)
+        {
+            throw std::runtime_error(
+                "unsupported Clover method call adapter arity");
+        }
+
+        Value method_args[MaxCloverFunctionEntryAdapterArgs];
+        uint32_t out_idx = 0;
+        if(has_self)
+        {
+            method_args[out_idx++] = self;
+        }
+        for(uint32_t arg_idx = 0; arg_idx < n_args; ++arg_idx)
+        {
+            method_args[out_idx++] = args[arg_idx];
+        }
+
+        return call_clovervm_function_with_args(
+            TValue<Function>::from_value_checked(callable), method_args,
+            total_args);
+    }
+
+    Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name)
+    {
+        return call_clovervm_method_with_args(receiver, name, nullptr, 0);
+    }
+
+    Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name,
+                                            Value arg0)
+    {
+        Value args[] = {arg0};
+        return call_clovervm_method_with_args(receiver, name, args, 1);
+    }
+
+    Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name,
+                                            Value arg0, Value arg1)
+    {
+        Value args[] = {arg0, arg1};
+        return call_clovervm_method_with_args(receiver, name, args, 2);
+    }
+
+    Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name,
+                                            Value arg0, Value arg1, Value arg2)
+    {
+        Value args[] = {arg0, arg1, arg2};
+        return call_clovervm_method_with_args(receiver, name, args, 3);
     }
 
     bool ThreadState::has_pending_exception() const

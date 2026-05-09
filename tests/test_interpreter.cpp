@@ -1934,6 +1934,132 @@ TEST(Interpreter, call_clovervm_function_uses_function_call_adaptation)
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }
 
+TEST(Interpreter, call_clovervm_method_binds_class_function_receiver)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<String> class_name(
+        test_context.vm().get_or_create_interned_string_value(L"MethodSource"));
+    TValue<String> method_name(
+        test_context.vm().get_or_create_interned_string_value(L"method"));
+    ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
+        class_name, 2, test_context.vm().object_class());
+    Instance *instance =
+        test_context.thread()->make_internal_raw<Instance>(cls);
+    Value method = make_test_function(test_context, L"method",
+                                      L"def method(self, value):\n"
+                                      L"    return value + 5\n");
+    ASSERT_TRUE(cls->set_own_property(method_name, method));
+    Value *caller_fp = test_context.thread()->clover_frame_frontier();
+
+    Value actual = test_context.thread()->call_clovervm_method(
+        Value::from_oop(instance), method_name, Value::from_smi(37));
+
+    EXPECT_EQ(Value::from_smi(42), actual);
+    EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
+    EXPECT_FALSE(test_context.thread()->has_pending_exception());
+}
+
+TEST(Interpreter, call_clovervm_method_calls_unbound_own_function)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<String> class_name(
+        test_context.vm().get_or_create_interned_string_value(L"MethodSource"));
+    TValue<String> method_name(
+        test_context.vm().get_or_create_interned_string_value(L"method"));
+    ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
+        class_name, 2, test_context.vm().object_class());
+    Instance *instance =
+        test_context.thread()->make_internal_raw<Instance>(cls);
+    Value method = make_test_function(test_context, L"method",
+                                      L"def method():\n"
+                                      L"    return 42\n");
+    ASSERT_TRUE(instance->set_own_property(method_name, method));
+    Value *caller_fp = test_context.thread()->clover_frame_frontier();
+
+    Value actual = test_context.thread()->call_clovervm_method(
+        Value::from_oop(instance), method_name);
+
+    EXPECT_EQ(Value::from_smi(42), actual);
+    EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
+    EXPECT_FALSE(test_context.thread()->has_pending_exception());
+}
+
+TEST(Interpreter, call_clovervm_method_uses_function_call_adaptation)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<String> class_name(
+        test_context.vm().get_or_create_interned_string_value(L"MethodSource"));
+    TValue<String> method_name(
+        test_context.vm().get_or_create_interned_string_value(L"method"));
+    ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
+        class_name, 2, test_context.vm().object_class());
+    Instance *instance =
+        test_context.thread()->make_internal_raw<Instance>(cls);
+    Value method = make_test_function(test_context, L"method",
+                                      L"def method(self, value=32):\n"
+                                      L"    return value + 10\n");
+    ASSERT_TRUE(cls->set_own_property(method_name, method));
+    Value *caller_fp = test_context.thread()->clover_frame_frontier();
+
+    Value actual = test_context.thread()->call_clovervm_method(
+        Value::from_oop(instance), method_name);
+
+    EXPECT_EQ(Value::from_smi(42), actual);
+    EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
+    EXPECT_FALSE(test_context.thread()->has_pending_exception());
+}
+
+TEST(Interpreter, call_clovervm_method_reports_missing_method)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<String> class_name(
+        test_context.vm().get_or_create_interned_string_value(L"MethodSource"));
+    TValue<String> method_name(
+        test_context.vm().get_or_create_interned_string_value(L"method"));
+    ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
+        class_name, 2, test_context.vm().object_class());
+    Instance *instance =
+        test_context.thread()->make_internal_raw<Instance>(cls);
+    Value *caller_fp = test_context.thread()->clover_frame_frontier();
+
+    Value actual = test_context.thread()->call_clovervm_method(
+        Value::from_oop(instance), method_name);
+
+    EXPECT_TRUE(actual.is_exception_marker());
+    EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
+    expect_thread_python_error(test_context.thread(), L"AttributeError");
+    test_context.thread()->clear_pending_exception();
+}
+
+TEST(Interpreter, call_clovervm_method_reports_non_callable_method)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<String> class_name(
+        test_context.vm().get_or_create_interned_string_value(L"MethodSource"));
+    TValue<String> method_name(
+        test_context.vm().get_or_create_interned_string_value(L"method"));
+    ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
+        class_name, 2, test_context.vm().object_class());
+    Instance *instance =
+        test_context.thread()->make_internal_raw<Instance>(cls);
+    ASSERT_TRUE(cls->set_own_property(method_name, Value::from_smi(7)));
+    Value *caller_fp = test_context.thread()->clover_frame_frontier();
+
+    Value actual = test_context.thread()->call_clovervm_method(
+        Value::from_oop(instance), method_name);
+
+    EXPECT_TRUE(actual.is_exception_marker());
+    EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
+    expect_thread_python_error(test_context.thread(),
+                               L"TypeError: object is not callable");
+    test_context.thread()->clear_pending_exception();
+}
+
 TEST(Interpreter, call_native_one_arg_function)
 {
     test::VmTestContext test_context;

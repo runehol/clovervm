@@ -246,6 +246,8 @@ namespace cl
         register_builtin_class(
             make_exception_subclass(this, L"AssertionError", exception));
         register_builtin_class(
+            make_exception_subclass(this, L"AttributeError", exception));
+        register_builtin_class(
             make_exception_subclass(this, L"IndexError", exception));
         register_builtin_class(
             make_exception_subclass(this, L"KeyError", exception));

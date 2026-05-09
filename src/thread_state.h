@@ -79,6 +79,17 @@ namespace cl
         [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
                                                    Value arg0, Value arg1,
                                                    Value arg2);
+        [[nodiscard]] Value call_clovervm_method(Value receiver,
+                                                 TValue<String> name);
+        [[nodiscard]] Value
+        call_clovervm_method(Value receiver, TValue<String> name, Value arg0);
+        [[nodiscard]] Value call_clovervm_method(Value receiver,
+                                                 TValue<String> name,
+                                                 Value arg0, Value arg1);
+        [[nodiscard]] Value call_clovervm_method(Value receiver,
+                                                 TValue<String> name,
+                                                 Value arg0, Value arg1,
+                                                 Value arg2);
         void set_clover_frame_frontier(Value *fp)
         {
             clover_frame_frontier_ptr = fp;
@@ -172,6 +183,10 @@ namespace cl
         [[nodiscard]] Value
         call_clovervm_function_with_args(TValue<Function> function,
                                          const Value *args, uint32_t n_args);
+        [[nodiscard]] Value call_clovervm_method_with_args(Value receiver,
+                                                           TValue<String> name,
+                                                           const Value *args,
+                                                           uint32_t n_args);
 
         VirtualMachine *machine;
 
