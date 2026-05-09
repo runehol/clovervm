@@ -10,6 +10,7 @@ namespace cl
 
     BuiltinClassDefinition make_bool_class(VirtualMachine *vm,
                                            ClassObject *int_class);
+    void install_bool_class_methods(VirtualMachine *vm);
 
 }  // namespace cl
 

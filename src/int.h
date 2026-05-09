@@ -8,6 +8,7 @@ namespace cl
     class VirtualMachine;
 
     BuiltinClassDefinition make_int_class(VirtualMachine *vm);
+    void install_int_class_methods(VirtualMachine *vm);
 
 }  // namespace cl
 

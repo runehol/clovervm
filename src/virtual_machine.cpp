@@ -267,6 +267,9 @@ namespace cl
             make_exception_subclass(this, L"KeyError", exception));
         register_builtin_class(make_stop_iteration_class(this, exception));
         install_str_class_methods(this);
+        install_int_class_methods(this);
+        install_bool_class_methods(this);
+        install_none_type_class_methods(this);
 
         for(ClassObject *cls: builtin_classes)
         {

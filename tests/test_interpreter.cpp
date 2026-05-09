@@ -2012,6 +2012,35 @@ TEST(Interpreter, call_clovervm_method_uses_function_call_adaptation)
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }
 
+TEST(Interpreter, call_clovervm_method_calls_inline_value_native_methods)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<String> dunder_str_name(
+        test_context.vm().get_or_create_interned_string_value(L"__str__"));
+    TValue<String> dunder_repr_name(
+        test_context.vm().get_or_create_interned_string_value(L"__repr__"));
+
+    auto expect_method_string = [&](Value receiver, TValue<String> name,
+                                    const wchar_t *expected) {
+        Value actual =
+            test_context.thread()->call_clovervm_method(receiver, name);
+
+        ASSERT_FALSE(actual.is_exception_marker());
+        ASSERT_TRUE(can_convert_to<String>(actual));
+        EXPECT_STREQ(expected, string_as_wchar_t(
+                                   TValue<String>::from_value_checked(actual)));
+        EXPECT_FALSE(test_context.thread()->has_pending_exception());
+    };
+
+    expect_method_string(Value::from_smi(42), dunder_str_name, L"42");
+    expect_method_string(Value::from_smi(-7), dunder_repr_name, L"-7");
+    expect_method_string(Value::True(), dunder_str_name, L"True");
+    expect_method_string(Value::False(), dunder_repr_name, L"False");
+    expect_method_string(Value::None(), dunder_str_name, L"None");
+    expect_method_string(Value::None(), dunder_repr_name, L"None");
+}
+
 TEST(Interpreter, call_clovervm_method_reports_missing_method)
 {
     test::VmTestContext test_context;
