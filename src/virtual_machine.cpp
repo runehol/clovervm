@@ -13,6 +13,7 @@
 #include "none_type.h"
 #include "range_iterator.h"
 #include "scope.h"
+#include "shape.h"
 #include "thread_state.h"
 #include "tuple.h"
 #include <cassert>
@@ -173,6 +174,10 @@ namespace cl
         {
             object->install_bootstrap_class(tuple_class);
         }
+        if(object->get_shape() == nullptr)
+        {
+            object->set_shape(tuple_class->get_instance_root_shape());
+        }
     }
 
     void VirtualMachine::install_bootstrap_tuple_class()
@@ -227,14 +232,23 @@ namespace cl
         BuiltinClassDefinition int_definition = make_int_class(this);
         int_class_ = int_definition.cls;
         register_builtin_class(int_definition);
+        smi_shape_ = make_immortal_internal_raw<Shape>(
+            Value::from_oop(int_class_), nullptr, 0, 0,
+            fixed_attribute_shape_flags(), 0);
         BuiltinClassDefinition bool_definition =
             make_bool_class(this, int_class_);
         bool_class_ = bool_definition.cls;
         register_builtin_class(bool_definition);
+        bool_shape_ = make_immortal_internal_raw<Shape>(
+            Value::from_oop(bool_class_), nullptr, 0, 0,
+            fixed_attribute_shape_flags(), 0);
         BuiltinClassDefinition none_type_definition =
             make_none_type_class(this);
         none_type_class_ = none_type_definition.cls;
         register_builtin_class(none_type_definition);
+        none_shape_ = make_immortal_internal_raw<Shape>(
+            Value::from_oop(none_type_class_), nullptr, 0, 0,
+            fixed_attribute_shape_flags(), 0);
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_function_class(this));

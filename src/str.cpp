@@ -19,6 +19,10 @@ namespace cl
         {
             assert(Object::get_class().extract() == new_cls);
         }
+        if(Object::get_shape() == nullptr)
+        {
+            Object::set_shape(new_cls->get_instance_root_shape());
+        }
     }
 
     static Value native_str_str(Value self)

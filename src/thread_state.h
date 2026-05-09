@@ -8,6 +8,7 @@
 #include "heap.h"
 #include "owned.h"
 #include "owned_typed_value.h"
+#include "shape.h"
 #include "typed_value.h"
 #include "value.h"
 #include <type_traits>
@@ -154,16 +155,20 @@ namespace cl
         {
             return cl::class_for_native_layout(machine, id);
         }
-        ALWAYSINLINE ClassObject *class_of_value(Value value) const
+        ALWAYSINLINE Shape *shape_of_value(Value value) const
         {
             value.assert_not_vm_sentinel();
             if(likely(value.is_ptr()))
             {
-                Value cls = value.get_ptr<Object>()->get_class().as_value();
-                assert(cls.is_ptr());
-                return reinterpret_cast<ClassObject *>(cls.as.ptr);
+                Shape *shape = value.get_ptr<Object>()->get_shape();
+                assert(shape != nullptr);
+                return shape;
             }
-            return class_of_inline_value(value);
+            return shape_of_inline_value(value);
+        }
+        ALWAYSINLINE ClassObject *class_of_value(Value value) const
+        {
+            return shape_of_value(value)->get_class();
         }
         ClassObject *class_for_builtin_name(const wchar_t *name) const;
 
@@ -198,7 +203,7 @@ namespace cl
                                                            TValue<String> name,
                                                            const Value *args,
                                                            uint32_t n_args);
-        NOINLINE ClassObject *class_of_inline_value(Value value) const;
+        NOINLINE Shape *shape_of_inline_value(Value value) const;
 
         VirtualMachine *machine;
 

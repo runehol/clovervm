@@ -110,6 +110,26 @@ namespace cl
         ClassObject *int_class() const { return int_class_; }
         ClassObject *bool_class() const { return bool_class_; }
         ClassObject *none_type_class() const { return none_type_class_; }
+        Shape *smi_shape() const { return smi_shape_; }
+        Shape *bool_shape() const { return bool_shape_; }
+        Shape *none_shape() const { return none_shape_; }
+        ALWAYSINLINE Shape *shape_for_inline_value(Value value) const
+        {
+            value.assert_not_vm_sentinel();
+            if(value.is_smi())
+            {
+                return smi_shape_;
+            }
+            if(value.is_bool())
+            {
+                return bool_shape_;
+            }
+            if(value.is_none())
+            {
+                return none_shape_;
+            }
+            __builtin_unreachable();
+        }
         TValue<String> dunder_class_name() const
         {
             assert(dunder_class_name_ != nullptr);
@@ -173,6 +193,9 @@ namespace cl
         ClassObject *bool_class_ = nullptr;
         ClassObject *none_type_class_ = nullptr;
         String *dunder_class_name_ = nullptr;
+        Shape *smi_shape_ = nullptr;
+        Shape *bool_shape_ = nullptr;
+        Shape *none_shape_ = nullptr;
         Shape *str_instance_root_shape_ = nullptr;
         std::array<ClassObject *, NativeLayoutCount> class_for_native_layouts =
             {};

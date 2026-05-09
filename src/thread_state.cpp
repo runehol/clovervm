@@ -304,22 +304,9 @@ namespace cl
         return pending_exception.stop_iteration_value;
     }
 
-    ClassObject *ThreadState::class_of_inline_value(Value value) const
+    Shape *ThreadState::shape_of_inline_value(Value value) const
     {
-        value.assert_not_vm_sentinel();
-        if(value.is_smi())
-        {
-            return machine->int_class();
-        }
-        if(value.is_bool())
-        {
-            return machine->bool_class();
-        }
-        if(value.is_none())
-        {
-            return machine->none_type_class();
-        }
-        __builtin_unreachable();
+        return machine->shape_for_inline_value(value);
     }
 
     ClassObject *ThreadState::class_for_builtin_name(const wchar_t *name) const
