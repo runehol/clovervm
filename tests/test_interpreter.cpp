@@ -3310,6 +3310,19 @@ TEST(Interpreter, python_defined_next_builtin_calls_dunder_next)
     EXPECT_EQ(Value::from_smi(0), actual);
 }
 
+TEST(Interpreter, python_defined_next_builtin_returns_default_when_exhausted)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"next(iter(()), 42)\n");
+
+    EXPECT_EQ(Value::from_smi(42), actual);
+}
+
+TEST(Interpreter, python_defined_next_builtin_rejects_multiple_defaults)
+{
+    expect_python_error(L"next(iter(()), 42, 43)\n", L"TypeError");
+}
+
 TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
 {
     test::VmTestContext test_context;

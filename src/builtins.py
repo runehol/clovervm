@@ -10,14 +10,21 @@ In the second form, the callable is called until it returns the sentinel."""
     )
 
 
-def next(obj):
+def next(obj, *default):
     """next(iterator[, default])
 
 Return the next item from the iterator. If default is given and the iterator
 is exhausted, it is returned instead of raising StopIteration."""
-    return __clover_call_special__(
-        obj, "__next__", TypeError, "object is not an iterator"
-    )
+    if len(default) > 1:
+        raise TypeError
+    try:
+        return __clover_call_special__(
+            obj, "__next__", TypeError, "object is not an iterator"
+        )
+    except StopIteration:
+        if len(default) == 0:
+            raise
+        return default[0]
 
 
 def repr(obj):
