@@ -19,6 +19,14 @@ std::string bytecode_str_from_file(const wchar_t *expr)
     return actual;
 }
 
+std::string bytecode_str_from_interactive(const wchar_t *expr)
+{
+    test::VmTestContext test_context;
+    CodeObject *code_obj =
+        test_context.thread()->compile(expr, StartRule::Interactive);
+    return fmt::to_string(*code_obj);
+}
+
 std::string trusted_builtin_bytecode_str_from_file(const wchar_t *expr)
 {
     test::VmTestContext test_context;
@@ -56,6 +64,29 @@ TEST(Codegen, assignment2)
                            "   19 Return\n";
     std::string actual = bytecode_str_from_file(L"a = 4\n"
                                                 "a += 7\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, interactive_expression_returns_value)
+{
+    std::string expected = "Code object:\n"
+                           "    0 LdaSmi 1\n"
+                           "    2 AddSmi 2\n"
+                           "    4 Return\n";
+    std::string actual = bytecode_str_from_interactive(L"1 + 2\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, interactive_assignment_returns_none)
+{
+    std::string expected = "Code object:\n"
+                           "    0 LdaSmi 4\n"
+                           "    2 StaGlobal [0]\n"
+                           "    7 LdaNone\n"
+                           "    8 Return\n";
+    std::string actual = bytecode_str_from_interactive(L"a = 4\n");
 
     EXPECT_EQ(expected, actual);
 }

@@ -116,10 +116,11 @@ namespace cl
         AstCodegen(const AstVector &_av, Scope *_module_scope,
                    CodeObjectBuilder *_code_obj, CodegenMode _mode,
                    LanguageMode _language_mode, int32_t _body_idx,
-                   AstChildren param_children)
+                   AstChildren param_children,
+                   ModuleResultMode _result_mode = ModuleResultMode::File)
             : av(_av), module_scope(_module_scope), code_obj(_code_obj),
               body_idx(_body_idx), analysis(_mode, _av.size()),
-              language_mode(_language_mode)
+              language_mode(_language_mode), result_mode(_result_mode)
         {
             analysis = analyze_code_object_scope(av, code_obj, _body_idx, _mode,
                                                  param_children);
@@ -195,6 +196,7 @@ namespace cl
         int32_t body_idx;
         ScopeAnalysis analysis;
         LanguageMode language_mode;
+        ModuleResultMode result_mode;
         std::vector<LoopTargetSet> loop_targets;
         std::vector<RegisterIndex> caught_exception_regs;
         std::vector<FinallyContext> active_finalies;
@@ -1905,6 +1907,39 @@ namespace cl
 
     CodeObject *AstCodegen::run_module()
     {
+        if(body_idx < 0)
+        {
+            code_obj->emit_lda_none(0);
+            code_obj->emit_return(0);
+            CodeObject *result = code_obj->finalize();
+            return incref(result);
+        }
+
+        if(result_mode == ModuleResultMode::Interactive)
+        {
+            AstChildren body_children = av.children[body_idx];
+            if(body_children.size() == 1 &&
+               av.kinds[body_children[0]].node_kind ==
+                   AstNodeKind::STATEMENT_EXPRESSION)
+            {
+                AstChildren statement_children = av.children[body_children[0]];
+                if(statement_children.size() == 1)
+                {
+                    codegen_node(statement_children[0]);
+                    code_obj->emit_return(
+                        av.source_offsets[statement_children[0]]);
+                    CodeObject *result = code_obj->finalize();
+                    return incref(result);
+                }
+            }
+
+            codegen_node(body_idx);
+            code_obj->emit_lda_none(0);
+            code_obj->emit_return(0);
+            CodeObject *result = code_obj->finalize();
+            return incref(result);
+        }
+
         codegen_node(body_idx);
         code_obj->emit_return(0);
         CodeObject *result = code_obj->finalize();
@@ -2060,7 +2095,8 @@ namespace cl
     CodeObject *codegen_module_in_scope(const AstVector &av,
                                         Scope *module_scope,
                                         TValue<String> module_name,
-                                        LanguageMode language_mode)
+                                        LanguageMode language_mode,
+                                        ModuleResultMode result_mode)
     {
         CodeObjectBuilder module_obj(av.compilation_unit, module_scope, nullptr,
                                      module_name);
@@ -2070,7 +2106,8 @@ namespace cl
                            CodegenMode::Module,
                            language_mode,
                            av.root_node,
-                           {}};
+                           {},
+                           result_mode};
         return builder.run_module();
     }
 

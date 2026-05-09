@@ -333,7 +333,14 @@ namespace cl
         CompilationUnit input(str);
         TokenVector tv = tokenize(input);
         AstVector av = parse(*machine, tv, start_rule);
-        return codegen_module(av, interned_string(module_name));
+        ModuleResultMode result_mode = start_rule == StartRule::Interactive
+                                           ? ModuleResultMode::Interactive
+                                           : ModuleResultMode::File;
+        Scope *module_scope =
+            make_internal_raw<Scope>(machine->builtin_scope_ptr());
+        return codegen_module_in_scope(
+            av, module_scope, interned_string(module_name),
+            LanguageMode::StandardsCompliant, result_mode);
     }
 
     CodeObject *ThreadState::compile_in_scope(const wchar_t *str,
@@ -347,8 +354,12 @@ namespace cl
         CompilationUnit input(str);
         TokenVector tv = tokenize(input);
         AstVector av = parse(*machine, tv, start_rule);
-        return codegen_module_in_scope(
-            av, module_scope, interned_string(module_name), language_mode);
+        ModuleResultMode result_mode = start_rule == StartRule::Interactive
+                                           ? ModuleResultMode::Interactive
+                                           : ModuleResultMode::File;
+        return codegen_module_in_scope(av, module_scope,
+                                       interned_string(module_name),
+                                       language_mode, result_mode);
     }
 
     void ThreadState::add_to_active_zero_count_table(HeapObject *obj)

@@ -217,6 +217,7 @@ namespace cl
                     ast.root_node = file();
                     break;
                 case StartRule::Interactive:
+                    ast.root_node = interactive();
                     break;
                 case StartRule::Eval:
                     ast.root_node = eval();
@@ -1695,6 +1696,25 @@ namespace cl
             }
             consume(Token::ENDMARKER);
             return idx;
+        }
+
+        int32_t interactive()
+        {
+            while(match(Token::NEWLINE))
+            {
+            }
+            int32_t source_pos = source_pos_for_token();
+            AstChildren children;
+            if(!is_at_end())
+            {
+                children.push_back(statement());
+            }
+            while(match(Token::NEWLINE))
+            {
+            }
+            consume(Token::ENDMARKER);
+            return ast.emplace_back(AstNodeKind::STATEMENT_SEQUENCE, source_pos,
+                                    children);
         }
 
         int32_t eval()

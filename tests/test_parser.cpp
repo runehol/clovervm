@@ -19,6 +19,17 @@ static std::string parse(const wchar_t *in_str)
     return actual;
 }
 
+static std::string parse_with_start_rule(const wchar_t *in_str,
+                                         StartRule start_rule)
+{
+    VirtualMachine vm;
+    ThreadState::ActivationScope active_thread(vm.get_default_thread());
+    CompilationUnit compilation_unit(in_str);
+    TokenVector tokens(tokenize(compilation_unit));
+    AstVector ast = cl::parse(vm, tokens, start_rule);
+    return fmt::to_string(ast);
+}
+
 static void expect_parse_error(const wchar_t *source,
                                const char *expected_message)
 {
@@ -46,6 +57,22 @@ TEST(Parser, simple2)
 {
     std::string expected = "(1 << 4) + 3\n";
     std::string actual = parse(L"(1 << 4) + 3");
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, interactive_expression)
+{
+    std::string expected = "1 + 2\n";
+    std::string actual =
+        parse_with_start_rule(L"1 + 2\n", StartRule::Interactive);
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, interactive_statement)
+{
+    std::string expected = "a = 4\n";
+    std::string actual =
+        parse_with_start_rule(L"a = 4\n", StartRule::Interactive);
     EXPECT_EQ(expected, actual);
 }
 

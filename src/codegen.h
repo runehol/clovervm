@@ -11,6 +11,12 @@ namespace cl
         TrustedCloverExtensions
     };
 
+    enum class ModuleResultMode
+    {
+        File,
+        Interactive
+    };
+
     struct AstVector;
     class Scope;
     struct String;
@@ -21,7 +27,8 @@ namespace cl
         LanguageMode language_mode = LanguageMode::StandardsCompliant);
     CodeObject *codegen_module_in_scope(
         const AstVector &av, Scope *module_scope, TValue<String> module_name,
-        LanguageMode language_mode = LanguageMode::StandardsCompliant);
+        LanguageMode language_mode = LanguageMode::StandardsCompliant,
+        ModuleResultMode result_mode = ModuleResultMode::File);
 
 }  // namespace cl
 

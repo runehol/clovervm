@@ -3442,6 +3442,37 @@ TEST(Interpreter, python_defined_print_builtin_writes_blank_line_for_no_args)
     EXPECT_EQ(L"\n", run.stdout_text);
 }
 
+TEST(Interpreter, interactive_expression_returns_value)
+{
+    test::VmTestContext test_context;
+
+    CodeObject *code_obj =
+        test_context.thread()->compile(L"1 + 2\n", StartRule::Interactive);
+    Value result = test_context.thread()->run_clovervm_code_object(code_obj);
+
+    EXPECT_EQ(Value::from_smi(3), result);
+}
+
+TEST(Interpreter, interactive_assignment_returns_none_and_persists_scope)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope active_thread(test_context.thread());
+    Scope *module_scope = test_context.thread()->make_internal_raw<Scope>(
+        test_context.vm().builtin_scope_ptr());
+
+    CodeObject *assignment = test_context.thread()->compile_in_scope(
+        L"x = 4\n", StartRule::Interactive, L"<interactive>", module_scope,
+        LanguageMode::StandardsCompliant);
+    EXPECT_EQ(Value::None(),
+              test_context.thread()->run_clovervm_code_object(assignment));
+
+    CodeObject *expression = test_context.thread()->compile_in_scope(
+        L"x + 1\n", StartRule::Interactive, L"<interactive>", module_scope,
+        LanguageMode::StandardsCompliant);
+    EXPECT_EQ(Value::from_smi(5),
+              test_context.thread()->run_clovervm_code_object(expression));
+}
+
 TEST(Interpreter, python_defined_print_builtin_propagates_str_errors)
 {
     expect_python_error(L"class Bad:\n"
