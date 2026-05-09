@@ -75,6 +75,16 @@ namespace cl
         return builder.finish();
     }
 
+    static Value native_str_len(Value self)
+    {
+        if(!can_convert_to<String>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"str.__len__ expects a str receiver");
+        }
+        return self.get_ptr<String>()->count.as_value();
+    }
+
     static Value native_str_add(Value left_value, Value right_value)
     {
         if(!can_convert_to<String>(left_value) ||
@@ -107,6 +117,8 @@ namespace cl
                                   L"Return str(self)."),
             builtin_native_method(L"__repr__", native_str_repr,
                                   L"Return repr(self)."),
+            builtin_native_method(L"__len__", native_str_len,
+                                  L"Return len(self)."),
             builtin_native_method(L"__add__", native_str_add,
                                   L"Return self + value."),
         };

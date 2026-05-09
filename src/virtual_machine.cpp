@@ -10,6 +10,7 @@
 #include "instance.h"
 #include "int.h"
 #include "list.h"
+#include "list_iterator.h"
 #include "native_function.h"
 #include "none_type.h"
 #include "parser.h"
@@ -290,6 +291,7 @@ namespace cl
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));
         register_builtin_class(make_tuple_iterator_class(this));
+        register_builtin_class(make_list_iterator_class(this));
         BuiltinClassDefinition base_exception_definition =
             make_base_exception_class(this);
         ClassObject *base_exception = base_exception_definition.cls;

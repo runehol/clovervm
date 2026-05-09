@@ -51,6 +51,18 @@ namespace cl
             TValue<Tuple>::from_value_checked(self));
     }
 
+    static Value native_tuple_len(Value self)
+    {
+        if(!can_convert_to<Tuple>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"tuple.__len__ expects a tuple receiver");
+        }
+
+        return Value::from_smi(
+            static_cast<int64_t>(self.get_ptr<Tuple>()->size()));
+    }
+
     Tuple::Tuple(HeapLayout layout, BootstrapObjectTag, size_t size)
         : Object(BootstrapObjectTag{}, native_layout_id, layout),
           size_value(Value::from_smi(static_cast<int64_t>(size)))
@@ -81,6 +93,8 @@ namespace cl
                                   L"Return str(self)."),
             builtin_native_method(L"__repr__", native_tuple_repr,
                                   L"Return repr(self)."),
+            builtin_native_method(L"__len__", native_tuple_len,
+                                  L"Return len(self)."),
             builtin_native_method(L"__iter__", native_tuple_iter,
                                   L"Implement iter(self)."),
         };

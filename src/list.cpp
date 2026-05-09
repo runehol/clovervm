@@ -1,6 +1,7 @@
 #include "list.h"
 #include "class_object.h"
 #include "exception_propagation.h"
+#include "list_iterator.h"
 #include "native_function.h"
 #include "string_builder.h"
 #include "thread_state.h"
@@ -34,6 +35,30 @@ namespace cl
         return builder.finish();
     }
 
+    static Value native_list_len(Value self)
+    {
+        if(!can_convert_to<List>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"list.__len__ expects a list receiver");
+        }
+
+        return Value::from_smi(
+            static_cast<int64_t>(self.get_ptr<List>()->size()));
+    }
+
+    static Value native_list_iter(Value self)
+    {
+        if(!can_convert_to<List>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"list.__iter__ expects a list receiver");
+        }
+
+        return make_object_value<ListIterator>(
+            TValue<List>::from_value_checked(self));
+    }
+
     List::List(ClassObject *cls, size_t size)
         : Object(cls, native_layout_id, compact_layout())
     {
@@ -57,6 +82,10 @@ namespace cl
                                   L"Return str(self)."),
             builtin_native_method(L"__repr__", native_list_repr,
                                   L"Return repr(self)."),
+            builtin_native_method(L"__len__", native_list_len,
+                                  L"Return len(self)."),
+            builtin_native_method(L"__iter__", native_list_iter,
+                                  L"Implement iter(self)."),
         };
         install_builtin_native_methods(vm, vm->list_class(), methods,
                                        std::size(methods));

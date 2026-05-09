@@ -10,6 +10,7 @@
 #include "instance.h"
 #include "interpreter.h"
 #include "list.h"
+#include "list_iterator.h"
 #include "native_function.h"
 #include "parser.h"
 #include "range_iterator.h"
@@ -181,6 +182,18 @@ static void expect_tuple_iterator(Value actual, Tuple *expected_tuple,
 
     TupleIterator *iterator = actual.get_ptr<TupleIterator>();
     EXPECT_EQ(Value::from_oop(expected_tuple), iterator->tuple.as_value());
+    EXPECT_EQ(Value::from_smi(expected_index), iterator->index);
+}
+
+static void expect_list_iterator(Value actual, List *expected_list,
+                                 int64_t expected_index)
+{
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::ListIterator,
+              actual.get_ptr<Object>()->native_layout_id());
+
+    ListIterator *iterator = actual.get_ptr<ListIterator>();
+    EXPECT_EQ(Value::from_oop(expected_list), iterator->list.as_value());
     EXPECT_EQ(Value::from_smi(expected_index), iterator->index);
 }
 
@@ -2938,6 +2951,7 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
          L"\n"
          L"For many object types, including most builtins, eval(repr(obj)) "
          L"== obj."},
+        {L"len", L"Return the number of items in a container."},
         {L"print",
          L"print(*args)\n"
          L"\n"
@@ -3020,6 +3034,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         {NativeLayoutId::CodeObject, L"code"},
         {NativeLayoutId::RangeIterator, L"range_iterator"},
         {NativeLayoutId::TupleIterator, L"tuple_iterator"},
+        {NativeLayoutId::ListIterator, L"list_iterator"},
         {NativeLayoutId::Instance, L"object"},
     };
 
@@ -3311,6 +3326,53 @@ TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
     test_context.thread()->clear_pending_exception();
 }
 
+TEST(Interpreter, list_iter_returns_list_iterator)
+{
+    test::VmTestContext test_context;
+    Value iterator_value = test_context.run_file(L"iter([1, 2, 3])\n");
+    ASSERT_TRUE(can_convert_to<ListIterator>(iterator_value));
+    EXPECT_EQ(Value::from_smi(0),
+              iterator_value.get_ptr<ListIterator>()->index);
+    ASSERT_TRUE(can_convert_to<List>(
+        iterator_value.get_ptr<ListIterator>()->list.as_value()));
+    List *list = iterator_value.get_ptr<ListIterator>()->list.extract();
+    ASSERT_EQ(size_t(3), list->size());
+    EXPECT_EQ(Value::from_smi(1), list->item_unchecked(0));
+    EXPECT_EQ(Value::from_smi(2), list->item_unchecked(1));
+    EXPECT_EQ(Value::from_smi(3), list->item_unchecked(2));
+}
+
+TEST(Interpreter, list_iterator_next_returns_items_until_stop_iteration)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value iterator_value = test_context.run_file(L"iter([4, 5])\n");
+    ASSERT_TRUE(can_convert_to<ListIterator>(iterator_value));
+    ListIterator *iterator = iterator_value.get_ptr<ListIterator>();
+    List *list = iterator->list.extract();
+    expect_list_iterator(iterator_value, list, 0);
+
+    TValue<Function> next_function = TValue<Function>::from_value_checked(
+        test_context.vm().builtin_scope_ptr()->get_by_name(
+            test_context.vm().get_or_create_interned_string_value(L"next")));
+
+    Value first = test_context.thread()->call_clovervm_function(next_function,
+                                                                iterator_value);
+    EXPECT_EQ(Value::from_smi(4), first);
+    expect_list_iterator(iterator_value, list, 1);
+
+    Value second = test_context.thread()->call_clovervm_function(
+        next_function, iterator_value);
+    EXPECT_EQ(Value::from_smi(5), second);
+    expect_list_iterator(iterator_value, list, 2);
+
+    Value exhausted = test_context.thread()->call_clovervm_function(
+        next_function, iterator_value);
+    EXPECT_TRUE(exhausted.is_exception_marker());
+    EXPECT_TRUE(test_context.thread()->has_pending_exception());
+    test_context.thread()->clear_pending_exception();
+}
+
 TEST(Interpreter, python_defined_repr_builtin_calls_dunder_repr)
 {
     test::VmTestContext test_context;
@@ -3319,6 +3381,25 @@ TEST(Interpreter, python_defined_repr_builtin_calls_dunder_repr)
     ASSERT_TRUE(can_convert_to<String>(actual));
     EXPECT_STREQ(L"42",
                  string_as_wchar_t(TValue<String>::from_value_checked(actual)));
+}
+
+TEST(Interpreter, python_defined_len_builtin_calls_dunder_len)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"len(())\n"));
+    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"len((1, 2, 3))\n"));
+    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"len([])\n"));
+    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"len([1, 2])\n"));
+    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"len({})\n"));
+    EXPECT_EQ(Value::from_smi(2),
+              test_context.run_file(L"len({'a': 1, 'b': 2})\n"));
+    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"len('abc')\n"));
+}
+
+TEST(Interpreter, python_defined_len_builtin_missing_method_error)
+{
+    expect_python_error(L"len(1)\n", L"TypeError: object has no len()");
 }
 
 TEST(Interpreter, python_defined_print_builtin_writes_values_to_stdout)
@@ -3394,6 +3475,16 @@ TEST(Interpreter, for_loop_iterates_over_tuple)
 {
     test::FileRunner file_runner(L"total = 0\n"
                                  L"for x in (1, 2, 3):\n"
+                                 L"    total += x\n"
+                                 L"total\n");
+
+    EXPECT_EQ(Value::from_smi(6), file_runner.return_value);
+}
+
+TEST(Interpreter, for_loop_iterates_over_list)
+{
+    test::FileRunner file_runner(L"total = 0\n"
+                                 L"for x in [1, 2, 3]:\n"
                                  L"    total += x\n"
                                  L"total\n");
 

@@ -91,6 +91,10 @@ namespace cl
         {
             return class_for_native_layout(NativeLayoutId::List);
         }
+        ClassObject *list_iterator_class() const
+        {
+            return class_for_native_layout(NativeLayoutId::ListIterator);
+        }
         ClassObject *tuple_class() const
         {
             return class_for_native_layout(NativeLayoutId::Tuple);

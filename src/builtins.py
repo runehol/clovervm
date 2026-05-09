@@ -29,6 +29,13 @@ For many object types, including most builtins, eval(repr(obj)) == obj."""
     )
 
 
+def len(obj):
+    """Return the number of items in a container."""
+    return __clover_call_special__(
+        obj, "__len__", TypeError, "object has no len()"
+    )
+
+
 def print(*args):
     """print(*args)
 

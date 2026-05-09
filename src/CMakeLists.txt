@@ -69,6 +69,8 @@ add_library(libclovervm STATIC
     virtual_machine.h
     list.cpp
     list.h
+    list_iterator.cpp
+    list_iterator.h
     native_function.cpp
     native_function.h
     native_layout_id.h

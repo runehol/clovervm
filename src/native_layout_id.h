@@ -16,6 +16,7 @@ namespace cl
         Function,
         RangeIterator,
         TupleIterator,
+        ListIterator,
         CodeObject,
         ClassObject,
         Exception,

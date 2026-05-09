@@ -84,6 +84,18 @@ namespace cl
         return builder.finish();
     }
 
+    static Value native_dict_len(Value self)
+    {
+        if(!can_convert_to<Dict>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"dict.__len__ expects a dict receiver");
+        }
+
+        return Value::from_smi(
+            static_cast<int64_t>(self.get_ptr<Dict>()->size()));
+    }
+
     void install_dict_class_methods(VirtualMachine *vm)
     {
         BuiltinNativeMethod methods[] = {
@@ -91,6 +103,8 @@ namespace cl
                                   L"Return str(self)."),
             builtin_native_method(L"__repr__", native_dict_repr,
                                   L"Return repr(self)."),
+            builtin_native_method(L"__len__", native_dict_len,
+                                  L"Return len(self)."),
         };
         install_builtin_native_methods(vm, vm->dict_class(), methods,
                                        std::size(methods));
