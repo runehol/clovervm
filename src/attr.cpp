@@ -103,11 +103,31 @@ namespace cl
     static AttributeReadDescriptor
     inline_receiver_dunder_class_descriptor(Value receiver)
     {
-        ClassObject *class_object = active_thread()->class_of_value(receiver);
-        Value class_value = Value::from_oop(class_object);
+        Value class_value = Value::from_oop(
+            active_thread()->shape_of_value(receiver)->get_class());
         return uncacheable_inline_receiver_descriptor(
             AttributeReadDescriptor::found(
                 AttributeReadPlan::constant(class_value), class_value));
+    }
+
+    static AttributeReadDescriptor shape_class_value_descriptor(Value receiver)
+    {
+        Value class_value = Value::from_oop(
+            active_thread()->shape_of_value(receiver)->get_class());
+        return AttributeReadDescriptor::found(
+            AttributeReadPlan::constant(class_value), class_value);
+    }
+
+    static Value
+    class_chain_shape_class_receiver(const ClassObject *class_object,
+                                     AttributeReadPlanPath path,
+                                     AttributeBindingContext binding)
+    {
+        if(path == AttributeReadPlanPath::ClassObjectChain)
+        {
+            return Value::from_oop(const_cast<ClassObject *>(class_object));
+        }
+        return binding.self;
     }
 
     static AttributeCacheBlockers
@@ -191,18 +211,27 @@ namespace cl
         Value mro_value = class_object->get_mro_value();
         if(!can_convert_to<Tuple>(mro_value))
         {
-            StorageLocation own_location =
-                class_object->get_shape()->resolve_present_property(name);
-            if(!own_location.is_found())
+            DescriptorLookup lookup =
+                class_object->get_shape()->lookup_descriptor_including_latent(
+                    name);
+            if(!lookup.is_present())
             {
                 return AttributeReadDescriptor::not_found();
             }
 
-            Value own_value = class_object->read_storage_location(own_location);
+            if(lookup.info.has_flag(DescriptorFlag::ShapeClassValue))
+            {
+                return shape_class_value_descriptor(
+                    class_chain_shape_class_receiver(class_object, path,
+                                                     binding));
+            }
+
+            Value own_value =
+                class_object->read_storage_location(lookup.storage_location());
             return AttributeReadDescriptor::found(
                 AttributeReadPlan::from_storage(
                     path, attribute_read_plan_kind_for_path(path, own_value),
-                    class_object, own_location, binding),
+                    class_object, lookup.storage_location(), binding),
                 own_value);
         }
 
@@ -221,6 +250,13 @@ namespace cl
             if(!lookup.is_present())
             {
                 continue;
+            }
+
+            if(lookup.info.has_flag(DescriptorFlag::ShapeClassValue))
+            {
+                return shape_class_value_descriptor(
+                    class_chain_shape_class_receiver(class_object, path,
+                                                     binding));
             }
 
             Value value = cls->read_storage_location(lookup.storage_location());
@@ -364,6 +400,19 @@ namespace cl
             {
                 return with_mro_shape_and_contents_validity_cell_if_unblocked(
                     class_descriptor, class_object);
+            }
+
+            DescriptorLookup own_lookup =
+                object->get_shape()->lookup_descriptor_including_latent(name);
+            if(own_lookup.is_present() &&
+               own_lookup.info.has_flag(DescriptorFlag::ShapeClassValue))
+            {
+                return with_mro_shape_and_contents_validity_cell_if_unblocked(
+                    with_cache_blockers(
+                        shape_class_value_descriptor(obj),
+                        superseded_class_read_descriptor_cache_blockers(
+                            class_descriptor)),
+                    class_object);
             }
 
             AttributeReadDescriptor own_descriptor =

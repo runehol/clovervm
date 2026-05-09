@@ -14,7 +14,8 @@ namespace cl
         TValue<String> dunder_doc_name = interned_string(L"__doc__");
         DescriptorFlags class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
-            descriptor_flag(DescriptorFlag::StableSlot);
+            descriptor_flag(DescriptorFlag::StableSlot) |
+            descriptor_flag(DescriptorFlag::ShapeClassValue);
         DescriptorFlags docstring_flags =
             descriptor_flag(DescriptorFlag::StableSlot);
         ShapeRootDescriptor descriptors[] = {

@@ -29,6 +29,7 @@ namespace cl
         None = 0,
         ReadOnly = 1 << 0,
         StableSlot = 1 << 1,
+        ShapeClassValue = 1 << 2,
     };
 
     using DescriptorFlags = uint16_t;

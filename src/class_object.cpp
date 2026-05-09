@@ -188,6 +188,8 @@ namespace cl
         DescriptorFlags instance_class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly);
         instance_class_flags |= descriptor_flag(DescriptorFlag::StableSlot);
+        instance_class_flags |=
+            descriptor_flag(DescriptorFlag::ShapeClassValue);
         instance_root_shape = Shape::make_root_with_single_descriptor(
             Value::from_oop(this), dunder_class_name,
             DescriptorInfo::make(StorageLocation{0, StorageKind::Inline},
@@ -202,6 +204,9 @@ namespace cl
         DescriptorFlags class_metadata_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot);
+        DescriptorFlags class_value_flags =
+            class_metadata_flags |
+            descriptor_flag(DescriptorFlag::ShapeClassValue);
         DescriptorFlags class_predefined_flags =
             descriptor_flag(DescriptorFlag::StableSlot);
         ShapeRootDescriptor descriptors[kClassPredefinedSlotCount] = {
@@ -209,7 +214,7 @@ namespace cl
                 dunder_class_name,
                 DescriptorInfo::make(StorageLocation{kClassMetadataSlotClass,
                                                      StorageKind::Inline},
-                                     class_metadata_flags)},
+                                     class_value_flags)},
             ShapeRootDescriptor{
                 dunder_name_name,
                 DescriptorInfo::make(StorageLocation{kClassMetadataSlotName,

@@ -29,7 +29,8 @@ namespace cl
         TValue<String> message_name = interned_string(L"message");
         DescriptorFlags class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
-            descriptor_flag(DescriptorFlag::StableSlot);
+            descriptor_flag(DescriptorFlag::StableSlot) |
+            descriptor_flag(DescriptorFlag::ShapeClassValue);
         DescriptorFlags message_flags =
             descriptor_flag(DescriptorFlag::StableSlot);
         ShapeRootDescriptor descriptors[ExceptionObject::kInlineSlotCount] = {
@@ -56,7 +57,8 @@ namespace cl
         TValue<String> value_name = interned_string(L"value");
         DescriptorFlags class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
-            descriptor_flag(DescriptorFlag::StableSlot);
+            descriptor_flag(DescriptorFlag::StableSlot) |
+            descriptor_flag(DescriptorFlag::ShapeClassValue);
         DescriptorFlags attribute_flags =
             descriptor_flag(DescriptorFlag::StableSlot);
         ShapeRootDescriptor descriptors[StopIterationObject::kInlineSlotCount] =

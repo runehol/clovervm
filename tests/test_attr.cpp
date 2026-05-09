@@ -554,6 +554,21 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
               instance->get_own_property(dunder_class_name));
     EXPECT_EQ(Value::from_oop(cls),
               load_attr(Value::from_oop(instance), dunder_class_name));
+
+    TValue<String> other_cls_name(
+        context.vm().get_or_create_interned_string_value(L"Other"));
+    ClassObject *other_cls = context.thread()->make_internal_raw<ClassObject>(
+        other_cls_name, 2, context.vm().object_class());
+    StorageLocation class_location =
+        instance->get_shape()->resolve_present_property(dunder_class_name);
+    ASSERT_TRUE(class_location.is_found());
+    instance->write_storage_location(class_location,
+                                     Value::from_oop(other_cls));
+    EXPECT_EQ(Value::from_oop(other_cls),
+              instance->get_own_property(dunder_class_name));
+    EXPECT_EQ(Value::from_oop(cls),
+              load_attr(Value::from_oop(instance), dunder_class_name));
+
     EXPECT_EQ(Value::from_oop(context.vm().type_class()),
               load_attr(Value::from_oop(cls), dunder_class_name));
 

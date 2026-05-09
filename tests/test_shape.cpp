@@ -60,6 +60,8 @@ TEST(Shape, InstanceRootShapeCarriesPresentedClass)
         root_shape->get_descriptor_info(0).has_flag(DescriptorFlag::ReadOnly));
     EXPECT_TRUE(root_shape->get_descriptor_info(0).has_flag(
         DescriptorFlag::StableSlot));
+    EXPECT_TRUE(root_shape->get_descriptor_info(0).has_flag(
+        DescriptorFlag::ShapeClassValue));
     EXPECT_EQ(1, root_shape->get_next_slot_index());
     EXPECT_EQ(2u, root_shape->get_instance_default_inline_slot_count());
 }
@@ -397,6 +399,8 @@ TEST(Shape, InstanceStoresDunderClassInPredefinedReadonlySlot)
         shape->get_descriptor_info(0).has_flag(DescriptorFlag::ReadOnly));
     EXPECT_TRUE(
         shape->get_descriptor_info(0).has_flag(DescriptorFlag::StableSlot));
+    EXPECT_TRUE(shape->get_descriptor_info(0).has_flag(
+        DescriptorFlag::ShapeClassValue));
     EXPECT_EQ(Value::from_oop(cls),
               instance->get_own_property(dunder_class_name));
 
@@ -659,6 +663,16 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
             shape->get_descriptor_info(idx).has_flag(DescriptorFlag::ReadOnly));
         EXPECT_TRUE(shape->get_descriptor_info(idx).has_flag(
             DescriptorFlag::StableSlot));
+        if(idx == 0)
+        {
+            EXPECT_TRUE(shape->get_descriptor_info(idx).has_flag(
+                DescriptorFlag::ShapeClassValue));
+        }
+        else
+        {
+            EXPECT_FALSE(shape->get_descriptor_info(idx).has_flag(
+                DescriptorFlag::ShapeClassValue));
+        }
     }
 
     DescriptorLookup new_lookup =
