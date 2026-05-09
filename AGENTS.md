@@ -7,6 +7,7 @@ This repository contains clovervm, a Python VM.
 - Treat collaboration as engineering review, not automatic agreement. Challenge assumptions when they seem wrong or under-supported.
 - If the user states a preference that conflicts with maintainability, performance evidence, Python semantics, or the existing codebase, push back clearly and explain the specific risk.
 - When uncertain, say what would change your mind instead of agreeing provisionally.
+- When implementing an agreed-upon plan, if you encounter a case the plan did not call out or anticipate, stop and ask for clarification before inventing or implementing a new design.
 
 # Changing code
 
