@@ -128,10 +128,11 @@ Deliverable: the VM has one canonical location for a Python exception in flight.
 - [x] Introduce a synthetic startup wrapper `CodeObject` that calls the requested
       module entry point and owns final process/thread termination.
 - [x] Change module entry `CodeObject`s to return normally to their caller rather
-      than ending in `Halt`. This also matches future import behavior, where a
+      than using a VM-terminating opcode. This also matches future import behavior, where a
       module body returns to its importer instead of terminating the VM.
-- [x] At top-level or native test-harness boundaries, temporarily convert
-      unhandled pending exceptions back into the current C++ error mechanism.
+- [x] At top-level or native test-harness boundaries, return
+      `Value::exception_marker()` and leave the pending exception on
+      `ThreadState`.
 - [x] Keep normal `Return` unchanged and free of exception-marker checks.
 
 Deliverable: pending exceptions can cross Clover/Python frame boundaries without
@@ -314,10 +315,9 @@ Design notes:
   handler wins, compiler-emitted bytecode either clears pending state directly
   or drains the pending exception into a hidden frame register if the handler
   body needs to observe it.
-- The synthetic startup-wrapper catch-all should have the same shape as
-  compiler-emitted Python handlers. It materializes/reports unhandled exceptions
-  and executes the final error `Halt`; normal module return executes the success
-  `Halt`.
+- The synthetic startup-wrapper catch-all should have the same shape as other
+  native boundary adapters: normal module return executes `ReturnToNative`, and
+  unhandled pending exceptions execute `ReturnPendingExceptionToNative`.
 - Initial exception tables are interpreted-only `CodeObject` metadata. JIT
   frames may exit/deopt to the interpreter for exceptional unwind; compiled
   landing pads and specialization-local JIT unwind tables are future

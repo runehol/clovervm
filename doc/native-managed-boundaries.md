@@ -396,8 +396,8 @@ handler:
 
 On success, `ThreadState::run()` returns the accumulator. On failure, it returns
 `Value::exception_marker()` and leaves the pending exception on `ThreadState`.
-The host layer can choose whether to format that pending exception as a
-`PythonException`, propagate the marker, or handle it locally.
+The host layer can choose whether to format that pending exception, propagate
+the marker, or handle it locally.
 
 This direct startup path is intentionally separate from function call wrappers.
 It bypasses `Function` arity/default/varargs behavior because module code
@@ -405,25 +405,9 @@ objects do not have that public call contract. There is no general raw
 `CodeObject` native-call API yet; add one only when there is a concrete runtime
 entry point that needs it.
 
-### Halt
-
-`Halt` is the legacy low-level interpreter exit. It returns the accumulator from
-the current interpreter invocation without restoring a caller frame from the
-current Clover frame header.
-
-Before returning to native C++ code, `Halt` sets the Clover frame frontier to
-the current `fp`. It is useful for hand-built test code and other deliberately
-unlinked interpreter invocations, not for ordinary native-to-Clover entry.
-
-`Halt` should not be used for reusable native-to-managed call wrappers that are
-linked into an existing Clover frame chain. Those wrappers need `ReturnToNative`
-or `ReturnPendingExceptionToNative` so they pop themselves and set the Clover
-frame frontier to the restored live fp.
-
 ### ReturnToNative
 
-`ReturnToNative` is a native boundary return. It intentionally diverges from
-`Halt`.
+`ReturnToNative` is a native boundary return.
 
 Contract:
 
@@ -487,10 +471,6 @@ ReturnPendingExceptionToNative:
   pop the wrapper frame
   thread->clover_frame_frontier = restored caller fp
   return Value::exception_marker()
-
-Halt:
-  thread->clover_frame_frontier = fp
-  return accumulator
 ```
 
 `pc` and `code_object` do not need to be saved as durable cross-boundary
@@ -609,7 +589,7 @@ wrappers, and startup boundary returns.
 Clover function entry adapter wrappers are generated and cached by positional
 arity. `ReturnToNative` and `ReturnPendingExceptionToNative` are implemented for
 boundary wrappers. The Clover frame frontier is initialized to a terminated
-sentinel frame and set by `Halt`, by native boundary returns, and by the
+sentinel frame and set by native boundary returns and by the
 fixed-arity `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` interpreter
 opcodes.
 
@@ -667,10 +647,8 @@ opcodes.
   parameters.
 - Native C++ functions execute on the native stack.
 - Only VM-managed frame/register state belongs on the Clover stack.
-- `Halt` and `ReturnToNative` intentionally diverge: `Halt` exits the current
-  interpreter invocation without popping a caller frame, while `ReturnToNative`
-  pops a linked native-call wrapper and saves the restored live managed fp.
-  Startup entry uses `ReturnToNative`, not `Halt`.
+- `ReturnToNative` pops a linked native-call wrapper and saves the restored live
+  managed fp. Startup entry uses the same native boundary return convention.
 - Native/C boundaries are not first-order managed unwinder frames; managed
   thunks and transition continuations adapt native results back into the VM
   exception model.

@@ -37,8 +37,6 @@ add_library(libclovervm STATIC
     interpreter.cpp
     parser.cpp
     parser.h
-    python_exception.cpp
-    python_exception.h
     range_iterator.cpp
     range_iterator.h
     runtime_helpers.h

@@ -12,7 +12,6 @@
 #include "list.h"
 #include "native_function.h"
 #include "parser.h"
-#include "python_exception.h"
 #include "range_iterator.h"
 #include "scope.h"
 #include "shape.h"
@@ -282,7 +281,7 @@ static CodeObject *make_raise_unwind_code(test::VmTestContext &test_context,
     uint32_t constant_idx = builder.allocate_constant(raised);
     builder.emit_lda_constant(0, uint8_t(constant_idx));
     builder.emit_raise_unwind(0);
-    builder.emit_halt(0);
+    builder.emit_return(0);
     return builder.finalize();
 }
 
@@ -2448,7 +2447,7 @@ TEST(Interpreter, try_except_else_finally_cleans_up_else_exception)
               code_obj->module_scope.extract()->get_by_name(result_name));
 }
 
-TEST(Interpreter, unhandled_python_exception_reports_class_and_message)
+TEST(Interpreter, unhandled_pending_exception_reports_class_and_message)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());

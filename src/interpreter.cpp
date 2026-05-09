@@ -10,7 +10,6 @@
 #include "function.h"
 #include "instance.h"
 #include "list.h"
-#include "python_exception.h"
 #include "range_iterator.h"
 #include "refcount.h"
 #include "runtime_helpers.h"
@@ -91,37 +90,6 @@ namespace cl
     [[maybe_unused]] static NOINLINE ExceptionalTarget
     resolve_exceptional_frame_exit(ThreadState *thread, Value *fp,
                                    const uint8_t *pc, CodeObject *code_object);
-
-    static std::wstring cl_string_to_wstring(TValue<String> string)
-    {
-        String *str = string.extract();
-        return std::wstring(str->data, size_t(str->count.extract()));
-    }
-
-    static std::wstring format_unhandled_python_exception(ThreadState *thread)
-    {
-        if(thread->pending_exception_kind() ==
-           PendingExceptionKind::StopIteration)
-        {
-            return L"StopIteration";
-        }
-
-        assert(thread->pending_exception_kind() ==
-               PendingExceptionKind::Object);
-        TValue<ExceptionObject> exception =
-            TValue<ExceptionObject>::from_value_checked(
-                thread->pending_exception_object());
-        std::wstring result = cl_string_to_wstring(
-            exception.extract()->get_class().extract()->get_name());
-        std::wstring message = cl_string_to_wstring(
-            static_cast<TValue<String>>(exception.extract()->message));
-        if(!message.empty())
-        {
-            result += L": ";
-            result += message;
-        }
-        return result;
-    }
 
     static std::wstring format_name_error_message(TValue<String> name)
     {
@@ -2817,35 +2785,6 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_raise_if_unhandled_exception(PARAMS)
-    {
-        START(1);
-        if(!thread->has_pending_exception())
-        {
-            COMPLETE();
-        }
-
-        switch(thread->pending_exception_kind())
-        {
-            case PendingExceptionKind::StopIteration:
-            case PendingExceptionKind::Object:
-                throw PythonException(
-                    format_unhandled_python_exception(thread));
-            case PendingExceptionKind::None:
-                break;
-        }
-        throw std::runtime_error(
-            "InternalError: pending exception state without exception");
-    }
-
-    static Value op_halt(PARAMS)
-    {
-        START(1);
-        thread->set_clover_frame_frontier(fp);
-        return accumulator;
-        COMPLETE();
-    }
-
     DispatchTable make_dispatch_table()
     {
         DispatchTable tbl;
@@ -2943,8 +2882,6 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::ReturnToNative, op_return_to_native);
         SET_TABLE_ENTRY(Bytecode::ReturnPendingExceptionToNative,
                         op_return_pending_exception_to_native);
-        SET_TABLE_ENTRY(Bytecode::RaiseIfUnhandledException,
-                        op_raise_if_unhandled_exception);
         SET_TABLE_ENTRY(Bytecode::LdaActiveException, op_lda_active_exception);
         SET_TABLE_ENTRY(Bytecode::ActiveExceptionIsInstance,
                         op_active_exception_is_instance);
@@ -2954,7 +2891,6 @@ namespace cl
                         op_clear_active_exception);
         SET_TABLE_ENTRY(Bytecode::ReraiseActiveException,
                         op_reraise_active_exception);
-        SET_TABLE_ENTRY(Bytecode::Halt, op_halt);
 
 #define REGISTER_LDAR_STAR_FASTPATH(idx)                                       \
     SET_TABLE_ENTRY(Bytecode::Ldar##idx, op_ldar##idx);                        \

@@ -28,7 +28,7 @@ make_lda_active_exception_handler_code(test::VmTestContext &test_context,
 
     handler.resolve();
     builder.emit_lda_active_exception(0);
-    builder.emit_halt(0);
+    builder.emit_return(0);
     return builder.finalize();
 }
 
@@ -53,7 +53,7 @@ make_clear_active_exception_handler_code(test::VmTestContext &test_context,
     handler.resolve();
     builder.emit_clear_active_exception(0);
     builder.emit_lda_smi(0, 42);
-    builder.emit_halt(0);
+    builder.emit_return(0);
     return builder.finalize();
 }
 
@@ -81,7 +81,7 @@ make_drain_active_exception_handler_code(test::VmTestContext &test_context,
         builder.emit_drain_active_exception_into(0, saved_exception);
         builder.emit_ldar(0, saved_exception);
     }
-    builder.emit_halt(0);
+    builder.emit_return(0);
     return builder.finalize();
 }
 
@@ -114,7 +114,7 @@ make_reraise_active_exception_handler_code(test::VmTestContext &test_context,
     outer_handler.resolve();
     builder.emit_clear_active_exception(0);
     builder.emit_lda_smi(0, 99);
-    builder.emit_halt(0);
+    builder.emit_return(0);
     return builder.finalize();
 }
 
@@ -126,7 +126,7 @@ make_lda_active_exception_code(test::VmTestContext &test_context)
     CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
                               name);
     builder.emit_lda_active_exception(0);
-    builder.emit_halt(0);
+    builder.emit_return(0);
     return builder.finalize();
 }
 
@@ -141,7 +141,7 @@ make_active_exception_is_instance_code(test::VmTestContext &test_context,
     uint32_t constant_idx = builder.allocate_constant(handler_class);
     builder.emit_lda_constant(0, uint8_t(constant_idx));
     builder.emit_active_exception_is_instance(0);
-    builder.emit_halt(0);
+    builder.emit_return(0);
     return builder.finalize();
 }
 
