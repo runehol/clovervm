@@ -2090,6 +2090,39 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
     expect_method_string(Value::from_oop(tuple), dunder_str_name,
                          L"(42, 'a\\'b\\n')");
 
+    Dict *dict = test_context.thread()->make_object_raw<Dict>();
+    TValue<String> alpha =
+        test_context.vm().get_or_create_interned_string_value(L"alpha");
+    TValue<String> beta =
+        test_context.vm().get_or_create_interned_string_value(L"beta");
+    TValue<String> removed =
+        test_context.vm().get_or_create_interned_string_value(L"removed");
+    dict->set_item(alpha.as_value(), Value::from_smi(1));
+    dict->set_item(removed.as_value(), Value::from_smi(99));
+    dict->set_item(beta.as_value(), Value::True());
+    ASSERT_EQ(Value::None(), dict->del_item(removed.as_value()));
+    expect_method_string(Value::from_oop(dict), dunder_repr_name,
+                         L"{'alpha': 1, 'beta': True}");
+    expect_method_string(Value::from_oop(dict), dunder_str_name,
+                         L"{'alpha': 1, 'beta': True}");
+
+    Dict *reordered_dict = test_context.thread()->make_object_raw<Dict>();
+    reordered_dict->set_item(beta.as_value(), Value::True());
+    reordered_dict->set_item(alpha.as_value(), Value::from_smi(1));
+    Value dict_str = test_context.thread()->call_clovervm_method(
+        Value::from_oop(dict), dunder_str_name);
+    Value reordered_dict_str = test_context.thread()->call_clovervm_method(
+        Value::from_oop(reordered_dict), dunder_str_name);
+    ASSERT_FALSE(dict_str.is_exception_marker());
+    ASSERT_FALSE(reordered_dict_str.is_exception_marker());
+    ASSERT_TRUE(can_convert_to<String>(dict_str));
+    ASSERT_TRUE(can_convert_to<String>(reordered_dict_str));
+    EXPECT_NE(dict_str, reordered_dict_str);
+    EXPECT_STREQ(L"{'beta': True, 'alpha': 1}",
+                 string_as_wchar_t(
+                     TValue<String>::from_value_checked(reordered_dict_str)));
+    EXPECT_FALSE(test_context.thread()->has_pending_exception());
+
     TValue<String> class_name(
         test_context.vm().get_or_create_interned_string_value(L"Plain"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(

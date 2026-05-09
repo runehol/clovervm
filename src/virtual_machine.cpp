@@ -273,6 +273,7 @@ namespace cl
         install_none_type_class_methods(this);
         install_list_class_methods(this);
         install_tuple_class_methods(this);
+        install_dict_class_methods(this);
 
         for(ClassObject *cls: builtin_classes)
         {

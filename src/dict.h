@@ -105,6 +105,7 @@ namespace cl
 
     class VirtualMachine;
     BuiltinClassDefinition make_dict_class(VirtualMachine *vm);
+    void install_dict_class_methods(VirtualMachine *vm);
 
 };  // namespace cl
 

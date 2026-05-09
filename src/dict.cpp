@@ -1,9 +1,13 @@
 #include "dict.h"
 #include "class_object.h"
+#include "exception_propagation.h"
+#include "native_function.h"
 #include "refcount.h"
 #include "str.h"
+#include "string_builder.h"
 #include "thread_state.h"
 #include "virtual_machine.h"
+#include <iterator>
 
 namespace cl
 {
@@ -51,6 +55,45 @@ namespace cl
             vm->get_or_create_interned_string_value(L"dict"), 1, nullptr, 0,
             vm->object_class());
         return builtin_class_definition(cls, native_layout_ids);
+    }
+
+    static Value native_dict_repr(Value self)
+    {
+        if(!can_convert_to<Dict>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"dict.__repr__ expects a dict receiver");
+        }
+
+        Dict *dict = self.get_ptr<Dict>();
+        StringBuilder builder;
+        builder.append_char(L'{');
+        bool first = true;
+        for(Dict::EntryView entry: *dict)
+        {
+            if(!first)
+            {
+                builder.append_c_str(L", ");
+            }
+            first = false;
+            CL_PROPAGATE_EXCEPTION(builder.append_repr(entry.key));
+            builder.append_c_str(L": ");
+            CL_PROPAGATE_EXCEPTION(builder.append_repr(entry.value));
+        }
+        builder.append_char(L'}');
+        return builder.finish();
+    }
+
+    void install_dict_class_methods(VirtualMachine *vm)
+    {
+        BuiltinNativeMethod methods[] = {
+            builtin_native_method(L"__str__", native_dict_repr,
+                                  L"Return str(self)."),
+            builtin_native_method(L"__repr__", native_dict_repr,
+                                  L"Return repr(self)."),
+        };
+        install_builtin_native_methods(vm, vm->dict_class(), methods,
+                                       std::size(methods));
     }
 
     Dict::Iterator::Iterator(const Dict *dict, size_t idx)
