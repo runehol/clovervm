@@ -17,7 +17,7 @@ namespace cl
         }
         else
         {
-            assert(Object::get_class().extract() == new_cls);
+            assert(Object::cls == new_cls);
         }
         if(Object::get_shape() == nullptr)
         {

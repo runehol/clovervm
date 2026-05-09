@@ -59,7 +59,7 @@ namespace cl
         }
 
         Object *object = value.get_ptr<Object>();
-        Shape *type_shape = object->get_class().extract()->get_shape();
+        Shape *type_shape = object->get_shape()->get_class()->get_shape();
         if(type_shape->has_flag(ShapeFlag::IsImmutableType))
         {
             return attribute_cache_blocker(AttributeCacheBlocker::None);
@@ -370,7 +370,7 @@ namespace cl
                 class_descriptor, cls);
         }
 
-        ClassObject *metaclass = cls->get_class().extract();
+        ClassObject *metaclass = cls->get_shape()->get_class();
         if(metaclass == cls)
         {
             return AttributeReadDescriptor::not_found();
@@ -398,7 +398,7 @@ namespace cl
                     static_cast<ClassObject *>(object), name);
             }
 
-            ClassObject *class_object = object->get_class().extract();
+            ClassObject *class_object = object->get_shape()->get_class();
             AttributeReadDescriptor class_descriptor =
                 classify_class_read_descriptor(
                     lookup_instance_attribute_read_descriptor(class_object,
@@ -574,7 +574,7 @@ namespace cl
         }
 
         Object *object = obj.get_ptr<Object>();
-        ClassObject *lookup_class = object->get_class().extract();
+        ClassObject *lookup_class = object->get_shape()->get_class();
         AttributeReadDescriptor class_descriptor =
             lookup_class_attribute_read_descriptor(lookup_class, name);
         if(class_read_descriptor_is_mutating_descriptor(class_descriptor))
@@ -604,7 +604,7 @@ namespace cl
         }
 
         Object *object = obj.get_ptr<Object>();
-        ClassObject *lookup_class = object->get_class().extract();
+        ClassObject *lookup_class = object->get_shape()->get_class();
         AttributeReadDescriptor class_descriptor =
             lookup_class_attribute_read_descriptor(lookup_class, name);
         if(class_read_descriptor_is_mutating_descriptor(class_descriptor))

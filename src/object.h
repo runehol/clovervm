@@ -56,7 +56,6 @@ namespace cl
         }
 
         NativeLayoutId native_layout_id() const { return native_layout; }
-        TValue<ClassObject> get_class() const;
         bool is_class_bootstrapped() const { return cls != nullptr; }
         Shape *get_shape() const { return shape; }
         void set_shape(Shape *new_shape);

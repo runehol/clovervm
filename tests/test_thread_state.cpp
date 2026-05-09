@@ -98,7 +98,8 @@ namespace cl
         TValue<ExceptionObject> exception =
             TValue<ExceptionObject>::from_value_checked(
                 thread->pending_exception_object());
-        EXPECT_EQ(base_exception, exception.extract()->get_class().extract());
+        EXPECT_EQ(base_exception,
+                  exception.extract()->get_shape()->get_class());
         TValue<String> message =
             TValue<String>::from_value_checked(exception.extract()->message);
         EXPECT_STREQ(L"boom", message.extract()->data);

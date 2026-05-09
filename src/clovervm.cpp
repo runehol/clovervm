@@ -84,7 +84,7 @@ std::wstring format_pending_python_exception(ThreadState *thread)
         TValue<ExceptionObject>::from_value_checked(
             thread->pending_exception_object());
     std::wstring result = cl_string_to_wstring(
-        exception.extract()->get_class().extract()->get_name());
+        exception.extract()->get_shape()->get_class()->get_name());
     std::wstring message = cl_string_to_wstring(
         static_cast<TValue<String>>(exception.extract()->message));
     if(!message.empty())

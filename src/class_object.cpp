@@ -102,7 +102,7 @@ namespace cl
 
     bool is_instance_of(Object *obj, ClassObject *cls)
     {
-        return is_subclass_of(obj->get_class().extract(), cls);
+        return is_subclass_of(obj->get_shape()->get_class(), cls);
     }
 
     static Value compute_mro(ClassObject *cls, const Tuple *bases)
@@ -192,7 +192,7 @@ namespace cl
             descriptor_flag(DescriptorFlag::ShapeClassValue);
         instance_root_shape = Shape::make_root_with_single_descriptor(
             Value::from_oop(this), dunder_class_name,
-            DescriptorInfo::make(StorageLocation{0, StorageKind::Inline},
+            DescriptorInfo::make(StorageLocation::not_found(),
                                  instance_class_flags),
             1, instance_shape_flags);
 
@@ -483,7 +483,7 @@ namespace cl
                                         MroValidityCellInstallMode::SkipSelf,
                                         MroValidityCellDependency::ShapeOnly);
 
-        ClassObject *metaclass = get_class().extract();
+        ClassObject *metaclass = get_shape()->get_class();
         if(metaclass != this)
         {
             metaclass->install_validity_cell_along_mro(
@@ -578,7 +578,7 @@ namespace cl
     ConstructorThunkLookup ClassObject::create_constructor_thunk_slow() const
     {
         ClassObject *self = const_cast<ClassObject *>(this);
-        if(get_class().extract() != active_vm()->type_class())
+        if(get_shape()->get_class() != active_vm()->type_class())
         {
             return ConstructorThunkLookup{nullptr, nullptr};
         }

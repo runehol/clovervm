@@ -97,7 +97,7 @@ static std::wstring format_pending_python_error(ThreadState *thread)
         TValue<ExceptionObject>::from_value_checked(
             thread->pending_exception_object());
     std::wstring result = cl_test_string_to_wstring(
-        exception.extract()->get_class().extract()->get_name());
+        exception.extract()->get_shape()->get_class()->get_name());
     std::wstring message = cl_test_string_to_wstring(
         static_cast<TValue<String>>(exception.extract()->message));
     if(!message.empty())
@@ -616,12 +616,11 @@ TEST(Interpreter, class_call_allocates_instance)
     ASSERT_TRUE(actual.is_ptr());
     ASSERT_EQ(NativeLayoutId::Instance,
               actual.get_ptr<Object>()->native_layout_id());
-    ASSERT_TRUE(actual.get_ptr<Instance>()->get_class().as_value().is_ptr());
-    EXPECT_EQ(NativeLayoutId::ClassObject, actual.get_ptr<Instance>()
-                                               ->get_class()
-                                               .as_value()
-                                               .get_ptr<Object>()
-                                               ->native_layout_id());
+    ClassObject *actual_class =
+        actual.get_ptr<Instance>()->get_shape()->get_class();
+    ASSERT_NE(nullptr, actual_class);
+    EXPECT_EQ(NativeLayoutId::ClassObject,
+              actual_class->Object::native_layout_id());
 }
 
 TEST(Interpreter, class_constructor_rejects_non_none_init_return)
@@ -2327,14 +2326,14 @@ TEST(Interpreter, raise_from_handler_sets_exception_context)
         TValue<ExceptionObject>::from_value_checked(
             test_context.thread()->pending_exception_object());
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"ValueError"),
-              exception.extract()->get_class().extract());
+              exception.extract()->get_shape()->get_class());
 
     TValue<String> context_name =
         test_context.vm().get_or_create_interned_string_value(L"__context__");
     Value context = exception.extract()->get_own_property(context_name);
     ASSERT_TRUE(can_convert_to<ExceptionObject>(context));
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"NameError"),
-              context.get_ptr<ExceptionObject>()->get_class().extract());
+              context.get_ptr<ExceptionObject>()->get_shape()->get_class());
 }
 
 TEST(Interpreter, bare_raise_without_active_exception_raises_runtime_error)
@@ -2354,7 +2353,7 @@ TEST(Interpreter, bare_raise_without_active_exception_raises_runtime_error)
         TValue<ExceptionObject>::from_value_checked(
             test_context.thread()->pending_exception_object());
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"RuntimeError"),
-              exception.extract()->get_class().extract());
+              exception.extract()->get_shape()->get_class());
 }
 
 TEST(Interpreter, try_finally_runs_cleanup_on_normal_completion)
@@ -2409,14 +2408,14 @@ TEST(Interpreter, try_finally_raise_chains_body_exception_as_context)
         TValue<ExceptionObject>::from_value_checked(
             test_context.thread()->pending_exception_object());
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"ValueError"),
-              exception.extract()->get_class().extract());
+              exception.extract()->get_shape()->get_class());
 
     TValue<String> context_name =
         test_context.vm().get_or_create_interned_string_value(L"__context__");
     Value context = exception.extract()->get_own_property(context_name);
     ASSERT_TRUE(can_convert_to<ExceptionObject>(context));
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"NameError"),
-              context.get_ptr<ExceptionObject>()->get_class().extract());
+              context.get_ptr<ExceptionObject>()->get_shape()->get_class());
 }
 
 TEST(Interpreter, bare_raise_in_exceptional_finally_reraises_body_exception)
@@ -2436,7 +2435,7 @@ TEST(Interpreter, bare_raise_in_exceptional_finally_reraises_body_exception)
               test_context.thread()->pending_exception_kind());
     Value exception = test_context.thread()->pending_exception_object();
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"NameError"),
-              exception.get_ptr<ExceptionObject>()->get_class().extract());
+              exception.get_ptr<ExceptionObject>()->get_shape()->get_class());
 }
 
 TEST(Interpreter, return_in_finally_overrides_body_exception)
@@ -2890,7 +2889,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         ClassObject *cls = test_context.vm().class_for_native_layout(
             expected.native_layout_id);
         ASSERT_NE(nullptr, cls);
-        EXPECT_EQ(type_class, cls->Object::get_class().extract());
+        EXPECT_EQ(type_class, cls->get_shape()->get_class());
         EXPECT_EQ(-1, cls->refcount);
         EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsClassObject));
         EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsImmutableType));
@@ -2904,11 +2903,11 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
                 expected.name);
         EXPECT_EQ(name, cls->get_name());
         EXPECT_EQ(test_context.vm().str_class(),
-                  name.extract()->Object::get_class().extract());
+                  name.extract()->get_shape()->get_class());
         EXPECT_EQ(test_context.vm().str_instance_root_shape(),
                   name.extract()
-                      ->Object::get_class()
-                      .extract()
+                      ->get_shape()
+                      ->get_class()
                       ->get_instance_root_shape());
 
         TValue<String> dunder_bases_name =
@@ -2920,9 +2919,9 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         ASSERT_TRUE(can_convert_to<Tuple>(bases_value));
         ASSERT_TRUE(can_convert_to<Tuple>(mro_value));
         EXPECT_EQ(test_context.vm().tuple_class(),
-                  bases_value.get_ptr<Object>()->get_class().extract());
+                  bases_value.get_ptr<Object>()->get_shape()->get_class());
         EXPECT_EQ(test_context.vm().tuple_class(),
-                  mro_value.get_ptr<Object>()->get_class().extract());
+                  mro_value.get_ptr<Object>()->get_shape()->get_class());
         Tuple *bases = bases_value.get_ptr<Tuple>();
         Tuple *mro = mro_value.get_ptr<Tuple>();
         if(expected.native_layout_id == NativeLayoutId::Instance)
@@ -2956,11 +2955,11 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         test_context.vm().get_or_create_interned_string_value(
             L"post_bootstrap_name");
     EXPECT_EQ(test_context.vm().str_class(),
-              post_bootstrap_name.extract()->Object::get_class().extract());
+              post_bootstrap_name.extract()->get_shape()->get_class());
     EXPECT_EQ(test_context.vm().str_instance_root_shape(),
               post_bootstrap_name.extract()
-                  ->Object::get_class()
-                  .extract()
+                  ->get_shape()
+                  ->get_class()
                   ->get_instance_root_shape());
 
     EXPECT_EQ(Value::from_oop(type_class),

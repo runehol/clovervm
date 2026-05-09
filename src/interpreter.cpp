@@ -538,8 +538,8 @@ namespace cl
             case PendingExceptionKind::Object:
                 exception_class = thread->pending_exception_object()
                                       .get_ptr<ExceptionObject>()
-                                      ->get_class()
-                                      .extract();
+                                      ->get_shape()
+                                      ->get_class();
                 break;
             case PendingExceptionKind::StopIteration:
                 exception_class = thread->class_for_native_layout(
@@ -1240,8 +1240,8 @@ namespace cl
                 {
                     AttributeMutationPlan plan = AttributeMutationPlan::add_own_property(
                         next_shape, storage_location,
-                        receiver_object->get_class()
-                            .extract()
+                        receiver_object->get_shape()
+                            ->get_class()
                             ->get_or_create_mro_shape_and_contents_validity_cell());
                     cache.populate(receiver, plan);
                     store_attr_add_own_property_inline_fast(

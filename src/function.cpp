@@ -19,11 +19,9 @@ namespace cl
         DescriptorFlags docstring_flags =
             descriptor_flag(DescriptorFlag::StableSlot);
         ShapeRootDescriptor descriptors[] = {
-            ShapeRootDescriptor{
-                dunder_class_name,
-                DescriptorInfo::make(
-                    StorageLocation{Function::kClassSlot, StorageKind::Inline},
-                    class_flags)},
+            ShapeRootDescriptor{dunder_class_name,
+                                DescriptorInfo::make(
+                                    StorageLocation::not_found(), class_flags)},
             ShapeRootDescriptor{
                 dunder_doc_name,
                 DescriptorInfo::make(StorageLocation{Function::kDocstringSlot,

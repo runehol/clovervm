@@ -53,9 +53,7 @@ TEST(Shape, InstanceRootShapeCarriesPresentedClass)
     EXPECT_FALSE(root_shape->has_flag(ShapeFlag::IsClassObject));
     EXPECT_STREQ(L"__class__",
                  root_shape->get_property_name(0).extract()->data);
-    EXPECT_EQ(StorageKind::Inline,
-              root_shape->get_property_storage_location(0).kind);
-    EXPECT_EQ(0, root_shape->get_property_storage_location(0).physical_idx);
+    EXPECT_FALSE(root_shape->get_property_storage_location(0).is_found());
     EXPECT_TRUE(
         root_shape->get_descriptor_info(0).has_flag(DescriptorFlag::ReadOnly));
     EXPECT_TRUE(root_shape->get_descriptor_info(0).has_flag(
@@ -372,11 +370,11 @@ TEST(Shape, InstanceStoresClassAndShapeSeparately)
         cls_name, 2, context.vm().object_class());
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
-    EXPECT_EQ(cls, instance->get_class().extract());
+    EXPECT_EQ(cls, instance->get_shape()->get_class());
     EXPECT_EQ(cls->get_instance_root_shape(), instance->get_shape());
 }
 
-TEST(Shape, InstanceStoresDunderClassInPredefinedReadonlySlot)
+TEST(Shape, InstanceShapeDescribesDunderClassWithoutStorageSlot)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -392,21 +390,19 @@ TEST(Shape, InstanceStoresDunderClassInPredefinedReadonlySlot)
     Shape *shape = instance->get_shape();
     StorageLocation class_location =
         shape->resolve_present_property(dunder_class_name);
-    ASSERT_TRUE(class_location.is_found());
-    EXPECT_EQ(StorageKind::Inline, class_location.kind);
-    EXPECT_EQ(0, class_location.physical_idx);
+    EXPECT_FALSE(class_location.is_found());
     EXPECT_TRUE(
         shape->get_descriptor_info(0).has_flag(DescriptorFlag::ReadOnly));
     EXPECT_TRUE(
         shape->get_descriptor_info(0).has_flag(DescriptorFlag::StableSlot));
     EXPECT_TRUE(shape->get_descriptor_info(0).has_flag(
         DescriptorFlag::ShapeClassValue));
-    EXPECT_EQ(Value::from_oop(cls),
+    EXPECT_EQ(Value::not_present(),
               instance->get_own_property(dunder_class_name));
 
     EXPECT_FALSE(
         instance->set_own_property(dunder_class_name, Value::from_oop(cls)));
-    EXPECT_EQ(Value::from_oop(cls),
+    EXPECT_EQ(Value::not_present(),
               instance->get_own_property(dunder_class_name));
 }
 

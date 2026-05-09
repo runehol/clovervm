@@ -144,12 +144,6 @@ namespace cl
         cls = incref(new_cls);
     }
 
-    TValue<ClassObject> Object::get_class() const
-    {
-        assert(cls != nullptr);
-        return TValue<ClassObject>::from_oop(cls);
-    }
-
     void Object::set_shape(Shape *new_shape)
     {
         Shape *old_shape = shape;

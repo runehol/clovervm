@@ -26,8 +26,8 @@ namespace
             TValue<ExceptionObject>::from_value_checked(
                 thread->pending_exception_object());
         EXPECT_STREQ(class_name, exception.extract()
+                                     ->get_shape()
                                      ->get_class()
-                                     .extract()
                                      ->get_name()
                                      .extract()
                                      ->data);
@@ -58,7 +58,7 @@ TEST(Tuple, ObjectAllocationUsesTupleClass)
     Tuple *tuple = context.thread()->make_object_raw<Tuple>(2);
 
     ASSERT_NE(nullptr, context.vm().tuple_class());
-    EXPECT_EQ(context.vm().tuple_class(), tuple->Object::get_class().extract());
+    EXPECT_EQ(context.vm().tuple_class(), tuple->get_shape()->get_class());
     EXPECT_EQ(2u, tuple->size());
 }
 

@@ -36,9 +36,7 @@ namespace cl
         ShapeRootDescriptor descriptors[ExceptionObject::kInlineSlotCount] = {
             ShapeRootDescriptor{dunder_class_name,
                                 DescriptorInfo::make(
-                                    StorageLocation{ExceptionObject::kClassSlot,
-                                                    StorageKind::Inline},
-                                    class_flags)},
+                                    StorageLocation::not_found(), class_flags)},
             ShapeRootDescriptor{
                 message_name, DescriptorInfo::make(
                                   StorageLocation{ExceptionObject::kMessageSlot,
@@ -65,10 +63,8 @@ namespace cl
             {
                 ShapeRootDescriptor{
                     dunder_class_name,
-                    DescriptorInfo::make(
-                        StorageLocation{ExceptionObject::kClassSlot,
-                                        StorageKind::Inline},
-                        class_flags)},
+                    DescriptorInfo::make(StorageLocation::not_found(),
+                                         class_flags)},
                 ShapeRootDescriptor{
                     message_name,
                     DescriptorInfo::make(

@@ -24,8 +24,8 @@ namespace
             TValue<ExceptionObject>::from_value_checked(
                 thread->pending_exception_object());
         EXPECT_STREQ(class_name, exception.extract()
+                                     ->get_shape()
                                      ->get_class()
-                                     .extract()
                                      ->get_name()
                                      .extract()
                                      ->data);
