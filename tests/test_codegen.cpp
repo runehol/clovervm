@@ -1,4 +1,3 @@
-#include "clover_entry.h"
 #include "code_object.h"
 #include "code_object_print.h"
 #include "parser.h"
@@ -461,30 +460,6 @@ TEST(Codegen, bare_raise_outside_handler_is_runtime_reraise)
                            "    1 Return\n";
     std::string actual = bytecode_str_from_file(L"raise\n");
 
-    EXPECT_EQ(expected, actual);
-}
-
-TEST(Codegen, startup_wrapper_uses_exception_table_for_unhandled_exception)
-{
-    test::VmTestContext test_context;
-    ThreadState::ActivationScope activation_scope(test_context.thread());
-    CodeObject *entry_code_object =
-        test_context.compile_file(L"raise ValueError\n");
-    TValue<CodeObject> wrapper =
-        make_startup_wrapper_code_object(entry_code_object);
-
-    std::string actual = fmt::to_string(*wrapper.extract());
-    std::string expected = "Code object:\n"
-                           "    0 CallCodeObject c[0], a0, 0\n"
-                           "    4 ReturnToNative\n"
-                           "    5 ReturnPendingExceptionToNative\n"
-                           "Exception table:\n"
-                           "    0..4 -> 5\n"
-                           "Constant 0: Code object:\n"
-                           "    0 LdaGlobal [0]\n"
-                           "    5 RaiseUnwind\n"
-                           "    6 Return\n"
-                           "\n";
     EXPECT_EQ(expected, actual);
 }
 

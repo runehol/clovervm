@@ -1201,7 +1201,7 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
     CodeObject *method_code = context.thread()->compile(L"def method(self):\n"
                                                         L"    return self\n",
                                                         StartRule::File);
-    (void)context.thread()->run(method_code);
+    (void)context.thread()->run_clovervm_code_object(method_code);
     Value method_value =
         method_code->module_scope.extract()->get_by_name(method_name);
 
@@ -1251,7 +1251,7 @@ TEST(Attr, ClassFunctionMethodPlanSurvivesClassContentsWriteAndReloadsSlot)
                                                         L"def second(self):\n"
                                                         L"    return self\n",
                                                         StartRule::File);
-    (void)context.thread()->run(method_code);
+    (void)context.thread()->run_clovervm_code_object(method_code);
     Value first_method =
         method_code->module_scope.extract()->get_by_name(first_method_name);
     Value second_method =

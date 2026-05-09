@@ -1,6 +1,5 @@
 #include "thread_state.h"
 #include "class_object.h"
-#include "clover_entry.h"
 #include "code_object.h"
 #include "codegen.h"
 #include "compilation_unit.h"
@@ -75,18 +74,12 @@ namespace cl
         return caller_fp - slots_above_entry_fp;
     }
 
-    Value ThreadState::run(CodeObject *obj)
+    Value ThreadState::run_clovervm_code_object(CodeObject *obj)
     {
         ActivationScope activation_scope(this);
-        OwnedTValue<CodeObject> startup_wrapper(
-            make_startup_wrapper_code_object(obj));
-        Value *caller_fp = clover_frame_frontier();
-        Value *entry_fp =
-            entry_frame_pointer(caller_fp, startup_wrapper.extract());
-        entry_fp[FrameHeaderPreviousFpOffset].as.ptr =
-            reinterpret_cast<Object *>(caller_fp);
-        set_clover_frame_frontier(entry_fp);
-        return run_interpreter(entry_fp, startup_wrapper.extract(), 0, this);
+        OwnedTValue<Function> function(this->make_object_value<Function>(
+            TValue<CodeObject>::from_oop(obj)));
+        return call_clovervm_function_with_args(function, nullptr, 0);
     }
 
     static void set_clover_entry_adapter_parameter(CodeObject *adapter,

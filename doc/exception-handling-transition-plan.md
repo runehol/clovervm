@@ -125,8 +125,9 @@ Deliverable: the VM has one canonical location for a Python exception in flight.
       nullptr`.
 - [x] Make the helper restore or pop the current frame using the frame-layout
       helpers.
-- [x] Introduce a synthetic startup wrapper `CodeObject` that calls the requested
-      module entry point and owns final process/thread termination.
+- [x] Enter startup code by wrapping the requested module `CodeObject` in a
+      temporary nullary `Function` and delegating through the native-to-Clover
+      function entry path.
 - [x] Change module entry `CodeObject`s to return normally to their caller rather
       than using a VM-terminating opcode. This also matches future import behavior, where a
       module body returns to its importer instead of terminating the VM.
@@ -294,8 +295,8 @@ Deliverable: stop-returning protocol completion can become an ordinary Python
       before enclosing handlers.
 - [x] Teach exceptional frame exit to look for a local handler before popping the
       frame.
-- [x] Give the synthetic startup wrapper a real catch-all table entry, or an
-      equivalent final handler.
+- [x] Give native-to-Clover function entry adapters a real catch-all table entry
+      that returns `Value::exception_marker()` to native code.
 - [x] Add opcodes to read/materialize the active exception, drain the active
       exception into a frame register when a handler takes ownership, and
       reraise the active exception without clearing it.
@@ -315,9 +316,9 @@ Design notes:
   handler wins, compiler-emitted bytecode either clears pending state directly
   or drains the pending exception into a hidden frame register if the handler
   body needs to observe it.
-- The synthetic startup-wrapper catch-all should have the same shape as other
-  native boundary adapters: normal module return executes `ReturnToNative`, and
-  unhandled pending exceptions execute `ReturnPendingExceptionToNative`.
+- Startup code uses the same native boundary adapter as other nullary
+  `Function` calls: normal module return reaches `ReturnToNative`, and
+  unhandled pending exceptions reach `ReturnPendingExceptionToNative`.
 - Initial exception tables are interpreted-only `CodeObject` metadata. JIT
   frames may exit/deopt to the interpreter for exceptional unwind; compiled
   landing pads and specialization-local JIT unwind tables are future

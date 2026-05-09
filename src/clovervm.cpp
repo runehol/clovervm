@@ -96,7 +96,7 @@ int main(int argc, const char *argv[])
         {
             fmt::print("{}\n", *code_obj);
         }
-        Value v = thr->run(code_obj);
+        Value v = thr->run_clovervm_code_object(code_obj);
         if(v.is_smi())
         {
             std::cout << v.get_smi() << "\n";

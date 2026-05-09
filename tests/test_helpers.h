@@ -25,7 +25,7 @@ namespace cl::test
 
         Value run_file(const wchar_t *source)
         {
-            return thread()->run(compile_file(source));
+            return thread()->run_clovervm_code_object(compile_file(source));
         }
 
     private:

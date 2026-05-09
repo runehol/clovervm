@@ -154,7 +154,7 @@ TEST(ExceptionHandling, lda_active_exception_reads_pending_exception_object)
     CodeObject *code_obj =
         make_lda_active_exception_handler_code(test_context, exception_class);
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(can_convert_to<ExceptionObject>(actual));
     EXPECT_TRUE(test_context.thread()->has_pending_exception());
     test_context.thread()->clear_pending_exception();
@@ -169,7 +169,7 @@ TEST(ExceptionHandling,
 
     (void)test_context.thread()->set_pending_stop_iteration_value(
         Value::from_smi(7));
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
 
     TValue<StopIterationObject> exception =
         TValue<StopIterationObject>::from_value_checked(actual);
@@ -187,7 +187,7 @@ TEST(ExceptionHandling, clear_active_exception_swallows_pending_exception)
     CodeObject *code_obj =
         make_clear_active_exception_handler_code(test_context, exception_class);
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(42), actual);
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }
@@ -202,7 +202,7 @@ TEST(ExceptionHandling,
     CodeObject *code_obj =
         make_drain_active_exception_handler_code(test_context, exception_class);
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(can_convert_to<ExceptionObject>(actual));
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }
@@ -219,7 +219,7 @@ TEST(ExceptionHandling,
 
     (void)test_context.thread()->set_pending_stop_iteration_value(
         Value::from_smi(7));
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
 
     EXPECT_EQ(Value::True(), actual);
     EXPECT_EQ(PendingExceptionKind::StopIteration,
@@ -236,7 +236,7 @@ TEST(ExceptionHandling, reraise_active_exception_reenters_exception_unwind)
     CodeObject *code_obj = make_reraise_active_exception_handler_code(
         test_context, exception_class);
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(99), actual);
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }

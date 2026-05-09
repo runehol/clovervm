@@ -223,16 +223,18 @@ stop-returning native thunk:
 
 ## Native To Managed Entry Shapes
 
-Native-to-managed entry has two different call shapes:
+Native-to-managed entry uses the managed `Function` call path:
 
 - function entry, where native code calls a `TValue<Function>` and wants normal
   Python function-call semantics
-- raw code-object entry, where host/runtime code enters a `CodeObject` that is
-  explicitly not a `Function`
+- startup code-object entry, where host/runtime code temporarily wraps a
+  nullary `CodeObject` in a `Function` and then delegates to the same function
+  entry path
 
-The distinction matters. Module code objects are not functions. They have arity
-0, do not own `Function` defaults or varargs policy, and should continue to use
-the prepared direct-code path.
+The distinction is now at API construction time, not at the native boundary
+frame protocol. Raw module code objects are not public Python callables, but the
+VM can still use a temporary internal `Function` wrapper so startup follows the
+same arity, exception, and frontier rules as other native-to-Clover entries.
 
 ## Native To Managed: Function Call Wrappers
 
@@ -379,31 +381,30 @@ overloads.
 ## Native To Managed: Startup Code-Object Entry
 
 Module startup enters a `CodeObject` that is explicitly not a `Function`. A
-module body has arity 0, does not own `Function` defaults or varargs policy, and
-should not be wrapped in a `Function` just to reuse function-call machinery.
+module body has arity 0 and does not own a public `Function` object.
 
-The startup wrapper is a real native boundary frame linked to the current Clover
-frame frontier. It uses the same local result convention as native-to-Clover
-function entry:
+`ThreadState::run_clovervm_code_object()` creates a temporary nullary
+`Function` around the module `CodeObject` and delegates to
+`call_clovervm_function`. The resulting call uses the ordinary cached Clover
+function entry adapter:
 
 ```text
-CallCodeObject c[target_code_object], a0, 0
+clover_function_entry_adapter_0(function)
+  CallSimple function, a0, 0
 ReturnToNative
 
 handler:
   ReturnPendingExceptionToNative
 ```
 
-On success, `ThreadState::run()` returns the accumulator. On failure, it returns
-`Value::exception_marker()` and leaves the pending exception on `ThreadState`.
-The host layer can choose whether to format that pending exception, propagate
-the marker, or handle it locally.
+On success, `ThreadState::run_clovervm_code_object()` returns the accumulator.
+On failure, it returns `Value::exception_marker()` and leaves the pending
+exception on `ThreadState`. The host layer can choose whether to format that
+pending exception, propagate the marker, or handle it locally.
 
-This direct startup path is intentionally separate from function call wrappers.
-It bypasses `Function` arity/default/varargs behavior because module code
-objects do not have that public call contract. There is no general raw
-`CodeObject` native-call API yet; add one only when there is a concrete runtime
-entry point that needs it.
+This does not make module code objects user-visible functions. The temporary
+wrapper is an internal entry adapter, and there is still no general raw
+`CodeObject` native-call API.
 
 ### ReturnToNative
 
@@ -438,9 +439,10 @@ The opcode must not clear, format, materialize, or throw the pending exception.
 The native caller decides whether to propagate it outward, convert it through
 another boundary, or handle and clear it explicitly.
 
-The startup wrapper now uses this opcode in its exception-table handler, so
-startup failure has the same native boundary result convention as function
-entry: exception marker return plus pending exception state on `ThreadState`.
+The function entry adapters use this opcode in their exception-table handlers,
+so startup failure and ordinary native-to-Clover function failure share the
+same result convention: exception marker return plus pending exception state on
+`ThreadState`.
 
 ### Clover Frame Frontier
 
@@ -451,7 +453,7 @@ frame-chain anchor, not the full stack extent.
 
 `ThreadState` initializes the frontier to a permanent sentinel Clover frame. The
 sentinel frame terminates the frame chain with `previous_fp == nullptr`.
-`ThreadState::run()` pushes a startup boundary frame whose previous fp is the
+Native-to-Clover entry adapters push boundary frames whose previous fp is the
 current frontier. While the interpreter is actively running, its local `fp` is
 the newest live Clover frame. Any opcode that crosses from interpreted
 execution into native C++ must set the frontier before control leaves
@@ -584,7 +586,7 @@ Tests cover direct native thunk calls for arities 0, 1, 2, and 3, the
 `ReturnOrRaiseException` thunk shape, native marker-to-exception unwinding, the
 string method cases, `range`'s defaulted three-argument native thunk, Clover
 frame frontier updates, native boundary returns, Clover function entry adapter
-wrappers, and startup boundary returns.
+wrappers, and startup entry through a temporary function wrapper.
 
 Clover function entry adapter wrappers are generated and cached by positional
 arity. `ReturnToNative` and `ReturnPendingExceptionToNative` are implemented for
@@ -596,8 +598,8 @@ opcodes.
 ## Remaining Work
 
 1. [x] Build/cache Clover function entry adapters by positional arity.
-   Keep raw code-object entry as a separate prepared `CallCodeObject` wrapper
-   path for module startup and similar non-`Function` code.
+   Startup code-object entry now delegates through a temporary nullary
+   `Function`, so it uses the same cached adapter path.
 2. [x] Add fixed-arity `ThreadState::call_clovervm_function` overloads backed by the
    matching arity wrappers.
 3. [x] Switch startup code-object entry to the native boundary return
@@ -635,8 +637,8 @@ opcodes.
   sites to materialize an argument array.
 - Method lookup is not part of `call_clovervm_function`; special-method calls
   get a separate API.
-- Startup code-object entry is separate from native-to-`Function` calls. Module
-  code objects are not `Function`s and use prepared `CallCodeObject` entry.
+- Startup code-object entry wraps the module `CodeObject` in a temporary
+  internal nullary `Function` and delegates to `call_clovervm_function`.
 - Native target pointers live in `CodeObject::native_function_targets`, not in
   `constant_values`.
 - `NativeFunctionTarget` is untagged; the opcode determines the calling

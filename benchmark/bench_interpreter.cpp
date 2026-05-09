@@ -156,7 +156,7 @@ namespace
 
         int64_t run()
         {
-            Value actual = thread_->run(code_);
+            Value actual = thread_->run_clovervm_code_object(code_);
             if(!actual.is_smi())
             {
                 throw std::runtime_error(

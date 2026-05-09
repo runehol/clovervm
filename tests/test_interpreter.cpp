@@ -259,7 +259,7 @@ static Value make_test_function(test::VmTestContext &test_context,
                                 const wchar_t *name, const wchar_t *source)
 {
     CodeObject *code_object = test_context.compile_file(source);
-    (void)test_context.thread()->run(code_object);
+    (void)test_context.thread()->run_clovervm_code_object(code_object);
 
     TValue<String> name_value(
         test_context.vm().get_or_create_interned_string_value(name));
@@ -378,7 +378,7 @@ TEST(Interpreter, raise_statement_unwinds_nested_frames)
                         L"ValueError");
 }
 
-TEST(Interpreter, startup_wrapper_handles_unhandled_exception_through_table)
+TEST(Interpreter, run_clovervm_code_object_returns_pending_exception)
 {
     expect_python_error(L"raise ValueError\n", L"ValueError");
 }
@@ -495,7 +495,7 @@ TEST(Interpreter, class_definition_binds_class_object)
                                                      L"    pass\n"
                                                      L"Cls\n");
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(actual.is_ptr());
     ASSERT_EQ(NativeLayoutId::ClassObject,
               actual.get_ptr<Object>()->native_layout_id());
@@ -515,7 +515,7 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
 
     CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
                                                      L"    value = 7\n");
-    (void)test_context.thread()->run(code_obj);
+    (void)test_context.thread()->run_clovervm_code_object(code_obj);
 
     Value cls_value = code_obj->module_scope.extract()->get_by_name(cls_name);
     ASSERT_TRUE(cls_value.is_ptr());
@@ -558,7 +558,7 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
                                                      L"    first = 1\n"
                                                      L"    second = 2\n"
                                                      L"    third = 3\n");
-    (void)test_context.thread()->run(code_obj);
+    (void)test_context.thread()->run_clovervm_code_object(code_obj);
 
     Value cls_value = code_obj->module_scope.extract()->get_by_name(cls_name);
     ASSERT_TRUE(cls_value.is_ptr());
@@ -611,7 +611,7 @@ TEST(Interpreter, class_call_allocates_instance)
                                                      L"    pass\n"
                                                      L"Cls()\n");
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(actual.is_ptr());
     ASSERT_EQ(NativeLayoutId::Instance,
               actual.get_ptr<Object>()->native_layout_id());
@@ -719,7 +719,7 @@ TEST(Interpreter, list_literal_evaluates_elements_left_to_right)
         make_native_function(&test_context.vm(), native_next_counter);
     code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(actual.is_ptr());
     ASSERT_EQ(NativeLayoutId::List,
               actual.get_ptr<Object>()->native_layout_id());
@@ -787,7 +787,7 @@ TEST(Interpreter, tuple_literal_evaluates_elements_left_to_right)
         make_native_function(&test_context.vm(), native_next_counter);
     code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(actual.is_ptr());
     ASSERT_EQ(NativeLayoutId::Tuple,
               actual.get_ptr<Object>()->native_layout_id());
@@ -870,7 +870,7 @@ TEST(Interpreter,
         make_native_function(&test_context.vm(), native_next_counter);
     code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
     EXPECT_EQ(1, g_next_counter);
 }
@@ -935,7 +935,7 @@ TEST(Interpreter,
         make_native_function(&test_context.vm(), native_next_counter);
     code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
     EXPECT_EQ(1, g_next_counter);
 }
@@ -1064,7 +1064,7 @@ TEST(Interpreter, attribute_load_and_store_syntax)
                                                      L"obj = Cls()\n"
                                                      L"obj.value = 7\n"
                                                      L"obj.value\n");
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(7), actual);
     Scope *module_scope = code_obj->module_scope.extract();
     Value obj_value = module_scope->get_by_name(obj_name);
@@ -1091,7 +1091,7 @@ TEST(Interpreter, store_attr_caches_instance_add_transition)
                                                      L"make(1)\n"
                                                      L"make(2)\n");
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(2), actual);
 
     Value function_value =
@@ -1125,7 +1125,7 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
     CodeObject *definition_code =
         test_context.compile_file(L"def clear(obj):\n"
                                   L"    del obj.value\n");
-    (void)test_context.thread()->run(definition_code);
+    (void)test_context.thread()->run_clovervm_code_object(definition_code);
     Value function_value =
         definition_code->module_scope.extract()->get_by_name(clear_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
@@ -1144,7 +1144,8 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
                                                       L"42\n");
     bind_global(test_context, call_code, L"clear", function_value);
     bind_global(test_context, call_code, L"obj", Value::from_oop(first));
-    EXPECT_EQ(Value::from_smi(42), test_context.thread()->run(call_code));
+    EXPECT_EQ(Value::from_smi(42),
+              test_context.thread()->run_clovervm_code_object(call_code));
     EXPECT_TRUE(first->get_own_property(value_name).is_not_present());
 
     ASSERT_EQ(1u, function_code->attribute_mutation_caches.size());
@@ -1160,7 +1161,8 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
     Instance *second = test_context.thread()->make_internal_raw<Instance>(cls);
     ASSERT_TRUE(second->set_own_property(value_name, Value::from_smi(8)));
     bind_global(test_context, call_code, L"obj", Value::from_oop(second));
-    EXPECT_EQ(Value::from_smi(42), test_context.thread()->run(call_code));
+    EXPECT_EQ(Value::from_smi(42),
+              test_context.thread()->run_clovervm_code_object(call_code));
     EXPECT_TRUE(second->get_own_property(value_name).is_not_present());
 }
 
@@ -1177,7 +1179,7 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
     CodeObject *definition_code =
         test_context.compile_file(L"def clear(obj):\n"
                                   L"    del obj.value\n");
-    (void)test_context.thread()->run(definition_code);
+    (void)test_context.thread()->run_clovervm_code_object(definition_code);
     Value function_value =
         definition_code->module_scope.extract()->get_by_name(clear_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
@@ -1191,7 +1193,7 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
 
     try
     {
-        (void)test_context.thread()->run(call_code);
+        (void)test_context.thread()->run_clovervm_code_object(call_code);
         FAIL() << "Expected AttributeError";
     }
     catch(const std::runtime_error &err)
@@ -1242,31 +1244,40 @@ TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)
     CodeObject *read_code = test_context.compile_file(L"obj.value\n");
     bind_global(test_context, read_code, L"obj", Value::from_oop(obj));
 
-    EXPECT_EQ(Value::from_smi(1), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(1),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     EXPECT_TRUE(base->set_own_property(value_name, Value::from_smi(2)));
-    EXPECT_EQ(Value::from_smi(2), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(2),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     EXPECT_TRUE(mid->set_own_property(value_name, Value::from_smi(3)));
-    EXPECT_EQ(Value::from_smi(3), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(3),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     EXPECT_TRUE(leaf->set_own_property(value_name, Value::from_smi(4)));
-    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(4),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     EXPECT_TRUE(obj->set_own_property(value_name, Value::from_smi(5)));
-    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(5),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     EXPECT_TRUE(base->set_own_property(value_name, Value::from_smi(6)));
-    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(5),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     EXPECT_TRUE(obj->delete_own_property(value_name));
-    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(4),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     EXPECT_TRUE(leaf->delete_own_property(value_name));
-    EXPECT_EQ(Value::from_smi(3), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(3),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     EXPECT_TRUE(mid->delete_own_property(value_name));
-    EXPECT_EQ(Value::from_smi(6), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(6),
+              test_context.thread()->run_clovervm_code_object(read_code));
 }
 
 TEST(Interpreter, cached_class_chain_attribute_read_observes_secondary_base)
@@ -1331,31 +1342,40 @@ TEST(Interpreter, cached_direct_method_call_observes_mro_mutations)
     CodeObject *call_code = test_context.compile_file(L"obj.method()\n");
     bind_global(test_context, call_code, L"obj", Value::from_oop(obj));
 
-    EXPECT_EQ(Value::from_smi(1), test_context.thread()->run(call_code));
+    EXPECT_EQ(Value::from_smi(1),
+              test_context.thread()->run_clovervm_code_object(call_code));
 
     EXPECT_TRUE(base->set_own_property(method_name, base_method_2));
-    EXPECT_EQ(Value::from_smi(2), test_context.thread()->run(call_code));
+    EXPECT_EQ(Value::from_smi(2),
+              test_context.thread()->run_clovervm_code_object(call_code));
 
     EXPECT_TRUE(mid->set_own_property(method_name, mid_method));
-    EXPECT_EQ(Value::from_smi(3), test_context.thread()->run(call_code));
+    EXPECT_EQ(Value::from_smi(3),
+              test_context.thread()->run_clovervm_code_object(call_code));
 
     EXPECT_TRUE(leaf->set_own_property(method_name, leaf_method));
-    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(call_code));
+    EXPECT_EQ(Value::from_smi(4),
+              test_context.thread()->run_clovervm_code_object(call_code));
 
     EXPECT_TRUE(obj->set_own_property(method_name, own_method));
-    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(call_code));
+    EXPECT_EQ(Value::from_smi(5),
+              test_context.thread()->run_clovervm_code_object(call_code));
 
     EXPECT_TRUE(base->set_own_property(method_name, base_method_1));
-    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(call_code));
+    EXPECT_EQ(Value::from_smi(5),
+              test_context.thread()->run_clovervm_code_object(call_code));
 
     EXPECT_TRUE(obj->delete_own_property(method_name));
-    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(call_code));
+    EXPECT_EQ(Value::from_smi(4),
+              test_context.thread()->run_clovervm_code_object(call_code));
 
     EXPECT_TRUE(leaf->delete_own_property(method_name));
-    EXPECT_EQ(Value::from_smi(3), test_context.thread()->run(call_code));
+    EXPECT_EQ(Value::from_smi(3),
+              test_context.thread()->run_clovervm_code_object(call_code));
 
     EXPECT_TRUE(mid->delete_own_property(method_name));
-    EXPECT_EQ(Value::from_smi(1), test_context.thread()->run(call_code));
+    EXPECT_EQ(Value::from_smi(1),
+              test_context.thread()->run_clovervm_code_object(call_code));
 }
 
 TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
@@ -1384,7 +1404,8 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
 
     CodeObject *read_code = test_context.compile_file(L"obj.value\n");
     bind_global(test_context, read_code, L"obj", Value::from_oop(obj));
-    EXPECT_EQ(Value::from_smi(1), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(1),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     CodeObject *base_store_code =
         test_context.compile_file(L"Base.value = new_value\n"
@@ -1394,8 +1415,10 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
 
     bind_global(test_context, base_store_code, L"new_value",
                 Value::from_smi(2));
-    EXPECT_EQ(Value::from_smi(2), test_context.thread()->run(base_store_code));
-    EXPECT_EQ(Value::from_smi(2), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(2),
+              test_context.thread()->run_clovervm_code_object(base_store_code));
+    EXPECT_EQ(Value::from_smi(2),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     CodeObject *mid_store_code =
         test_context.compile_file(L"Mid.value = new_value\n"
@@ -1404,8 +1427,10 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
     bind_global(test_context, mid_store_code, L"obj", Value::from_oop(obj));
 
     bind_global(test_context, mid_store_code, L"new_value", Value::from_smi(3));
-    EXPECT_EQ(Value::from_smi(3), test_context.thread()->run(mid_store_code));
-    EXPECT_EQ(Value::from_smi(3), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(3),
+              test_context.thread()->run_clovervm_code_object(mid_store_code));
+    EXPECT_EQ(Value::from_smi(3),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     CodeObject *leaf_store_code =
         test_context.compile_file(L"Leaf.value = new_value\n"
@@ -1415,8 +1440,10 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
 
     bind_global(test_context, leaf_store_code, L"new_value",
                 Value::from_smi(4));
-    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(leaf_store_code));
-    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(4),
+              test_context.thread()->run_clovervm_code_object(leaf_store_code));
+    EXPECT_EQ(Value::from_smi(4),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     CodeObject *self_store_code =
         test_context.compile_file(L"obj.value = new_value\n"
@@ -1425,16 +1452,21 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
 
     bind_global(test_context, self_store_code, L"new_value",
                 Value::from_smi(5));
-    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(self_store_code));
-    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(5),
+              test_context.thread()->run_clovervm_code_object(self_store_code));
+    EXPECT_EQ(Value::from_smi(5),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     bind_global(test_context, base_store_code, L"new_value",
                 Value::from_smi(6));
-    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(base_store_code));
-    EXPECT_EQ(Value::from_smi(5), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(5),
+              test_context.thread()->run_clovervm_code_object(base_store_code));
+    EXPECT_EQ(Value::from_smi(5),
+              test_context.thread()->run_clovervm_code_object(read_code));
 
     EXPECT_TRUE(obj->delete_own_property(value_name));
-    EXPECT_EQ(Value::from_smi(4), test_context.thread()->run(read_code));
+    EXPECT_EQ(Value::from_smi(4),
+              test_context.thread()->run_clovervm_code_object(read_code));
 }
 
 TEST(Interpreter, object_class_has_empty_bases_tuple)
@@ -1599,7 +1631,7 @@ TEST(Interpreter, call_native_zero_arg_function)
     bind_global(test_context, code_obj, L"native_zero",
                 make_native_function(&test_context.vm(), native_zero));
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
 }
 
@@ -1643,7 +1675,7 @@ TEST(Interpreter, call_native_sets_clover_frame_frontier)
     Value *sentinel_fp = test_context.thread()->clover_frame_sentinel();
     EXPECT_NE(nullptr, sentinel_fp);
     EXPECT_EQ(sentinel_fp, test_context.thread()->clover_frame_frontier());
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(15), actual);
     EXPECT_NE(nullptr, g_native_frame_frontier_seen);
     EXPECT_EQ(sentinel_fp, test_context.thread()->clover_frame_frontier());
@@ -1659,7 +1691,7 @@ TEST(Interpreter, thread_state_starts_with_terminated_clover_frame_sentinel)
     EXPECT_EQ(sentinel_fp, test_context.thread()->clover_frame_frontier());
     CodeObject *code_obj = test_context.compile_file(L"42\n");
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
 
     EXPECT_EQ(Value::from_smi(42), actual);
     EXPECT_EQ(sentinel_fp, test_context.thread()->clover_frame_frontier());
@@ -1688,7 +1720,7 @@ TEST(Interpreter, clover_frame_frontier_chain_survives_nested_native_reentry)
     bind_global(test_context, code_obj, L"native_outer",
                 make_native_function(&test_context.vm(), native_weave_outer));
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
 
     EXPECT_EQ(Value::from_smi(42), actual);
     EXPECT_EQ(3u, g_weave_frontier_checks);
@@ -1911,7 +1943,7 @@ TEST(Interpreter, call_native_one_arg_function)
     bind_global(test_context, code_obj, L"native_increment",
                 make_native_function(&test_context.vm(), native_increment));
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(42), actual);
 }
 
@@ -1924,7 +1956,7 @@ TEST(Interpreter, call_native_two_arg_function)
     bind_global(test_context, code_obj, L"native_add",
                 make_native_function(&test_context.vm(), native_add));
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(42), actual);
 }
 
@@ -1938,7 +1970,7 @@ TEST(Interpreter, native_exception_marker_materializes_stop_iteration)
                 make_native_function(&test_context.vm(),
                                      native_stop_iteration_with_value));
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"StopIteration");
 
@@ -1963,7 +1995,7 @@ TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
                 make_native_function(&test_context.vm(),
                                      native_stop_iteration_with_value));
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"StopIteration");
 
@@ -1991,7 +2023,7 @@ TEST(Interpreter, catch_stop_iteration_as_exposes_value)
                 make_native_function(&test_context.vm(),
                                      native_stop_iteration_with_value));
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(123), actual);
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }
@@ -2005,7 +2037,7 @@ TEST(Interpreter, raise_from_handler_sets_exception_context)
                                                      L"except Exception:\n"
                                                      L"    raise ValueError\n");
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 
@@ -2031,7 +2063,7 @@ TEST(Interpreter, bare_raise_without_active_exception_raises_runtime_error)
     ThreadState::ActivationScope activation_scope(test_context.thread());
     CodeObject *code_obj = test_context.compile_file(L"raise\n");
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(),
                                L"RuntimeError: No active exception to reraise");
@@ -2068,7 +2100,7 @@ TEST(Interpreter, try_finally_runs_cleanup_before_reraising)
                                                      L"finally:\n"
                                                      L"    result = 2\n");
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 
@@ -2087,7 +2119,7 @@ TEST(Interpreter, try_finally_raise_chains_body_exception_as_context)
                                                      L"finally:\n"
                                                      L"    raise ValueError\n");
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 
@@ -2116,7 +2148,7 @@ TEST(Interpreter, bare_raise_in_exceptional_finally_reraises_body_exception)
                                                      L"finally:\n"
                                                      L"    raise\n");
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"NameError");
 
@@ -2328,7 +2360,7 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_unmatched_reraise)
                                                      L"finally:\n"
                                                      L"    result = 2\n");
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 
@@ -2350,7 +2382,7 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_handler_reraise)
                                                      L"finally:\n"
                                                      L"    result = 2\n");
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 
@@ -2401,7 +2433,7 @@ TEST(Interpreter, try_except_else_exception_is_not_caught_by_handlers)
                                                      L"else:\n"
                                                      L"    raise ValueError\n");
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 }
@@ -2437,7 +2469,7 @@ TEST(Interpreter, try_except_else_finally_cleans_up_else_exception)
                                                      L"finally:\n"
                                                      L"    result = 2\n");
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 
@@ -2457,7 +2489,7 @@ TEST(Interpreter, unhandled_pending_exception_reports_class_and_message)
                 make_native_function(&test_context.vm(),
                                      native_base_exception_with_message));
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"BaseException: boom");
 }
@@ -2474,7 +2506,7 @@ TEST(Interpreter, native_exception_marker_requires_pending_exception)
 
     try
     {
-        (void)test_context.thread()->run(code_obj);
+        (void)test_context.thread()->run_clovervm_code_object(code_obj);
         FAIL() << "Expected internal exception-marker error";
     }
     catch(const std::runtime_error &err)
@@ -2494,7 +2526,7 @@ TEST(Interpreter, raise_unwind_raises_exception_class)
     CodeObject *code_obj =
         make_raise_unwind_code(test_context, exception_class);
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"Exception");
 }
@@ -2510,7 +2542,7 @@ TEST(Interpreter, raise_unwind_raises_exception_object)
     CodeObject *code_obj =
         make_raise_unwind_code(test_context, exception.as_value());
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError: boom");
 }
@@ -2522,7 +2554,7 @@ TEST(Interpreter, raise_unwind_rejects_non_exception)
     CodeObject *code_obj =
         make_raise_unwind_code(test_context, Value::from_smi(1));
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(),
                                L"TypeError: exceptions must derive from "
@@ -2540,7 +2572,7 @@ TEST(Interpreter, builtin_scope_lookup)
     int32_t slot_idx = module_scope->lookup_slot_index_local(name);
     ASSERT_GE(slot_idx, 0);
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(NativeLayoutId::Function,
               actual.get_ptr<Object>()->native_layout_id());
     EXPECT_EQ(actual, module_scope->get_by_slot_index_fastpath_only(slot_idx));
@@ -2841,7 +2873,7 @@ TEST(Interpreter, generic_for_loop_discards_stop_iteration_value)
                 make_native_function(&test_context.vm(),
                                      native_stop_iteration_with_value));
 
-    Value actual = test_context.thread()->run(code_obj);
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(7), actual);
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }

@@ -70,7 +70,7 @@ namespace cl
             zero_count_table.push_back(obj);
         }
 
-        Value run(CodeObject *obj);
+        [[nodiscard]] Value run_clovervm_code_object(CodeObject *obj);
         [[nodiscard]] Value call_clovervm_function(TValue<Function> function);
         [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
                                                    Value arg0);
