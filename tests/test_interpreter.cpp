@@ -3432,6 +3432,53 @@ TEST(Interpreter, python_defined_print_builtin_propagates_str_errors)
                         L"TypeError: __clover_write_stdout__ expects str");
 }
 
+TEST(Interpreter, python_defined_sum_builtin_accumulates_iterable)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"sum(())\n"));
+    EXPECT_EQ(Value::from_smi(6), test_context.run_file(L"sum((1, 2, 3))\n"));
+    EXPECT_EQ(Value::from_smi(16),
+              test_context.run_file(L"sum([1, 2, 3], 10)\n"));
+}
+
+TEST(Interpreter, python_defined_any_builtin_tests_iterable_truthiness)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::False(), test_context.run_file(L"any(())\n"));
+    EXPECT_EQ(Value::False(),
+              test_context.run_file(L"any((0, False, None))\n"));
+    EXPECT_EQ(Value::True(), test_context.run_file(L"any((0, 4, False))\n"));
+}
+
+TEST(Interpreter, python_defined_all_builtin_tests_iterable_truthiness)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(), test_context.run_file(L"all(())\n"));
+    EXPECT_EQ(Value::True(), test_context.run_file(L"all((1, True, 2))\n"));
+    EXPECT_EQ(Value::False(), test_context.run_file(L"all((1, 0, True))\n"));
+}
+
+TEST(Interpreter, python_defined_min_and_max_builtins_compare_items)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"min((3, 1, 2))\n"));
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"min(3, 1, 2)\n"));
+    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"max([3, 1, 2])\n"));
+    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"max(3, 1, 2)\n"));
+}
+
+TEST(Interpreter, python_defined_min_and_max_builtins_report_empty_input)
+{
+    expect_python_error(L"min()\n", L"TypeError");
+    expect_python_error(L"max()\n", L"TypeError");
+    expect_python_error(L"min(())\n", L"ValueError");
+    expect_python_error(L"max([])\n", L"ValueError");
+}
+
 TEST(Interpreter, python_defined_iter_and_next_builtin_missing_method_errors)
 {
     expect_python_error(L"iter(1)\n", L"TypeError: object is not iterable");

@@ -53,3 +53,81 @@ newline."""
             )
         )
     __clover_write_stdout__("\n")
+
+
+def sum(iterable, start=0):
+    """Return the sum of a 'start' value (default: 0) plus an iterable of numbers.
+
+When the iterable is empty, return the start value.
+This function is intended specifically for use with numeric values and may
+reject non-numeric types."""
+    total = start
+    for item in iterable:
+        total = total + item
+    return total
+
+
+def any(iterable):
+    """Return True if bool(x) is True for any x in the iterable.
+
+If the iterable is empty, return False."""
+    for item in iterable:
+        if item:
+            return True
+    return False
+
+
+def all(iterable):
+    """Return True if bool(x) is True for all values x in the iterable.
+
+If the iterable is empty, return True."""
+    for item in iterable:
+        if not item:
+            return False
+    return True
+
+
+def min(*args):
+    """With a single iterable argument, return its smallest item.
+
+With two or more arguments, return the smallest argument."""
+    if len(args) == 0:
+        raise TypeError
+    if len(args) == 1:
+        iterable = args[0]
+    else:
+        iterable = args
+
+    first = True
+    for item in iterable:
+        if first:
+            best = item
+            first = False
+        elif item < best:
+            best = item
+    if first:
+        raise ValueError
+    return best
+
+
+def max(*args):
+    """With a single iterable argument, return its biggest item.
+
+With two or more arguments, return the largest argument."""
+    if len(args) == 0:
+        raise TypeError
+    if len(args) == 1:
+        iterable = args[0]
+    else:
+        iterable = args
+
+    first = True
+    for item in iterable:
+        if first:
+            best = item
+            first = False
+        elif item > best:
+            best = item
+    if first:
+        raise ValueError
+    return best
