@@ -1,4 +1,5 @@
 #include "virtual_machine.h"
+#include "clover_entry.h"
 #include "code_object.h"
 #include "dict.h"
 #include "exception_object.h"
@@ -109,6 +110,22 @@ namespace cl
     ClassObject *class_for_native_layout(VirtualMachine *vm, NativeLayoutId id)
     {
         return vm->class_for_native_layout(id);
+    }
+
+    CodeObject *VirtualMachine::clover_function_entry_adapter(uint32_t n_args)
+    {
+        if(n_args >= clover_function_entry_adapters.size())
+        {
+            throw std::runtime_error(
+                "unsupported Clover function entry adapter arity");
+        }
+        CodeObject *&adapter = clover_function_entry_adapters[n_args];
+        if(adapter == nullptr)
+        {
+            adapter =
+                make_clover_function_entry_adapter_code_object(this, n_args);
+        }
+        return adapter;
     }
 
     void VirtualMachine::register_builtin_class(

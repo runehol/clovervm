@@ -615,40 +615,42 @@ The first migrated native methods and builtins are:
 Tests cover direct native thunk calls for arities 0, 1, 2, and 3, the
 `ReturnOrRaiseException` thunk shape, native marker-to-exception unwinding, the
 string method cases, `range`'s defaulted three-argument native thunk, Clover
-frame frontier updates, and native boundary returns.
+frame frontier updates, native boundary returns, and Clover function entry
+adapter wrappers.
 
-Native-to-managed wrappers are planned, not yet implemented. `ReturnToNative`
-and `ReturnPendingExceptionToNative` are implemented for hand-built boundary
-wrappers. The Clover frame frontier is initialized for initial interpreter entry
-and set by `Halt`, by native boundary returns, and by the fixed-arity
-`CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` interpreter opcodes.
+Clover function entry adapter wrappers are generated and cached by positional
+arity. `ReturnToNative` and `ReturnPendingExceptionToNative` are implemented for
+boundary wrappers. The Clover frame frontier is initialized for initial
+interpreter entry and set by `Halt`, by native boundary returns, and by the
+fixed-arity `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` interpreter
+opcodes.
 
 ## Remaining Work
 
-1. Build/cache native-to-managed function call wrappers by positional arity.
+1. [x] Build/cache Clover function entry adapters by positional arity.
    Keep raw code-object entry as a separate prepared `CallCodeObject` wrapper
    path for module startup and similar non-`Function` code.
-2. Add fixed-arity `ThreadState::call_clovervm_function` overloads backed by the
+2. [ ] Add fixed-arity `ThreadState::call_clovervm_function` overloads backed by the
    matching arity wrappers.
-3. Add raw code-object boundary-return wrappers when native code needs local
+3. [ ] Add raw code-object boundary-return wrappers when native code needs local
    pending-exception conversion for non-`Function` code entry.
-4. Design and implement the packed tuple/vector native convention for true
+4. [ ] Design and implement the packed tuple/vector native convention for true
    variadic native callables.
-5. Add specialized interpreter or JIT fast paths for trivial native thunk code
+5. [ ] Add specialized interpreter or JIT fast paths for trivial native thunk code
    objects when measurements justify it.
-6. Add a separate special-method native-call API once lookup and binding
+6. [ ] Add a separate special-method native-call API once lookup and binding
    semantics are ready.
-7. Design the JIT managed-to-native transition ABI:
+7. [ ] Design the JIT managed-to-native transition ABI:
    - where managed continuation state lives
    - how live roots are published when they are not already materialized in
      Clover frame slots
    - how the transition switches from the Clover stack to the native stack
    - how `Value::exception_marker()` returns resume managed exceptional unwind
-8. Continue converting old C++ exception paths to pending-exception/sentinel
+8. [ ] Continue converting old C++ exception paths to pending-exception/sentinel
    results before JIT/native stack-switch bridges or any other boundary where
    C++ unwinding would cross manually switched stack state. Until then, those
    old throws are panic plumbing, not the native boundary contract.
-9. Keep `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` as the portable
+9. [ ] Keep `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` as the portable
    interpreter path. A JIT fast path may bypass the bytecode thunk, but it must
    preserve the same arity, root, and exception contracts.
 

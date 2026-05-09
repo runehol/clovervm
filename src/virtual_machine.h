@@ -3,11 +3,13 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
 
 #include "class_object.h"
+#include "clover_entry.h"
 #include "heap.h"
 #include "intern_store.h"
 #include "owned_typed_value.h"
@@ -18,6 +20,7 @@
 namespace cl
 {
     class ThreadState;
+    struct CodeObject;
 
     class VirtualMachine
     {
@@ -104,6 +107,7 @@ namespace cl
         {
             return class_for_native_layout(NativeLayoutId::Instance);
         }
+        CodeObject *clover_function_entry_adapter(uint32_t n_args);
 
         template <typename T, typename... Args>
         T *make_immortal_internal_raw(Args &&...args)
@@ -160,6 +164,8 @@ namespace cl
         Shape *str_instance_root_shape_ = nullptr;
         std::array<ClassObject *, NativeLayoutCount> class_for_native_layouts =
             {};
+        std::array<CodeObject *, MaxCloverFunctionEntryAdapterArgs + 1>
+            clover_function_entry_adapters = {};
         std::vector<ClassObject *> builtin_classes;
         OwnedHeapPtr<Scope> builtin_scope;
         OwnedValue range_builtin;

@@ -1,7 +1,7 @@
+#include "clover_entry.h"
 #include "code_object.h"
 #include "code_object_print.h"
 #include "parser.h"
-#include "startup_wrapper.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"

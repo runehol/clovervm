@@ -1,5 +1,6 @@
 #include "thread_state.h"
 #include "class_object.h"
+#include "clover_entry.h"
 #include "codegen.h"
 #include "compilation_unit.h"
 #include "exception_object.h"
@@ -7,7 +8,6 @@
 #include "owned_typed_value.h"
 #include "parser.h"
 #include "runtime_helpers.h"
-#include "startup_wrapper.h"
 #include "tokenizer.h"
 #include "virtual_machine.h"
 #include <stdexcept>

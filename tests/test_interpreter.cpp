@@ -210,6 +210,33 @@ static Value *prepare_native_return_wrapper_frame(ThreadState *thread)
     return wrapper_fp;
 }
 
+static Value *prepare_clover_function_entry_adapter_frame(ThreadState *thread,
+                                                          CodeObject *adapter,
+                                                          Value callable,
+                                                          const Value *args,
+                                                          uint32_t n_args)
+{
+    Value *caller_fp = thread->clover_frame_frontier();
+    Value *adapter_fp = caller_fp - 64;
+    adapter_fp[FrameHeaderPreviousFpOffset].as.ptr =
+        reinterpret_cast<Object *>(caller_fp);
+
+    auto set_parameter = [adapter_fp, adapter](uint32_t parameter_idx,
+                                               Value value) {
+        int32_t fp_offset = int32_t(adapter->get_padded_n_parameters()) - 1 +
+                            FrameHeaderSizeAboveFp - int32_t(parameter_idx);
+        adapter_fp[fp_offset] = value;
+    };
+    set_parameter(0, callable);
+    for(uint32_t arg_idx = 0; arg_idx < n_args; ++arg_idx)
+    {
+        set_parameter(arg_idx + 1, args[arg_idx]);
+    }
+
+    thread->set_clover_frame_frontier(adapter_fp);
+    return adapter_fp;
+}
+
 static CodeObject *make_return_to_native_code(test::VmTestContext &test_context)
 {
     TValue<String> name = test_context.vm().get_or_create_interned_string_value(
@@ -1599,6 +1626,73 @@ TEST(Interpreter, return_pending_exception_to_native_requires_pending_exception)
             "exception",
             err.what());
     }
+}
+
+TEST(Interpreter, clover_function_entry_adapter_bytecode_shape)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    CodeObject *adapter = test_context.vm().clover_function_entry_adapter(2);
+
+    std::string actual = fmt::to_string(*adapter);
+    std::string expected = "Code object:\n"
+                           "    0 Ldar p0\n"
+                           "    2 Star0\n"
+                           "    3 Ldar p1\n"
+                           "    5 Star a0\n"
+                           "    7 Ldar p2\n"
+                           "    9 Star a1\n"
+                           "   11 CallSimple r0, {a0..a1}, call_ic[0]\n"
+                           "   16 ReturnToNative\n"
+                           "   17 ReturnPendingExceptionToNative\n"
+                           "Exception table:\n"
+                           "    11..16 -> 17\n";
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, clover_function_entry_adapter_calls_managed_function)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value function = make_test_function(test_context, L"f",
+                                        L"def f(a, b):\n"
+                                        L"    return a + b\n");
+    CodeObject *adapter = test_context.vm().clover_function_entry_adapter(2);
+    Value args[] = {Value::from_smi(20), Value::from_smi(22)};
+    Value *caller_fp = test_context.thread()->clover_frame_frontier();
+    Value *adapter_fp = prepare_clover_function_entry_adapter_frame(
+        test_context.thread(), adapter, function, args, 2);
+
+    Value actual =
+        run_interpreter(adapter_fp, adapter, 0, test_context.thread());
+
+    EXPECT_EQ(Value::from_smi(42), actual);
+    EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
+    EXPECT_FALSE(test_context.thread()->has_pending_exception());
+}
+
+TEST(Interpreter, clover_function_entry_adapter_returns_pending_exception)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value function = make_test_function(test_context, L"f",
+                                        L"def f():\n"
+                                        L"    raise ValueError\n");
+    CodeObject *adapter = test_context.vm().clover_function_entry_adapter(0);
+    Value *caller_fp = test_context.thread()->clover_frame_frontier();
+    Value *adapter_fp = prepare_clover_function_entry_adapter_frame(
+        test_context.thread(), adapter, function, nullptr, 0);
+
+    Value actual =
+        run_interpreter(adapter_fp, adapter, 0, test_context.thread());
+
+    EXPECT_TRUE(actual.is_exception_marker());
+    EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
+    EXPECT_TRUE(test_context.thread()->has_pending_exception());
+    EXPECT_EQ(PendingExceptionKind::Object,
+              test_context.thread()->pending_exception_kind());
+    test_context.thread()->clear_pending_exception();
 }
 
 TEST(Interpreter, call_native_one_arg_function)
