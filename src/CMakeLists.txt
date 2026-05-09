@@ -128,6 +128,8 @@ target_link_libraries(libclovervm PUBLIC fmt::fmt)
 
 add_executable(clovervm
     clovervm.cpp
+    repl.cpp
+    repl.h
 )
 
 set_target_properties(clovervm PROPERTIES

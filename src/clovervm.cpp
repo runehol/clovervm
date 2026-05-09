@@ -6,6 +6,8 @@
 #include "object.h"
 #include "parser.h"
 #include "refcount.h"
+#include "repl.h"
+#include "str.h"
 #include "string.h"
 #include "thread_state.h"
 #include "value.h"
@@ -121,9 +123,11 @@ int main(int argc, const char *argv[])
         source_file = argv[i++];
     }
 
-    // read the file and execute it
-
-    if(source_file != nullptr)
+    if(source_file == nullptr)
+    {
+        return run_repl(print_bytecode);
+    }
+    else
     {
         VirtualMachine vm;
         std::wstring file_contents = read_file(source_file);

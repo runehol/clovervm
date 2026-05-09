@@ -1,0 +1,161 @@
+#include "repl.h"
+
+#include "code_object.h"
+#include "code_object_print.h"
+#include "codegen.h"
+#include "exception_object.h"
+#include "parser.h"
+#include "scope.h"
+#include "str.h"
+#include "thread_state.h"
+#include "value.h"
+#include "value_string.h"
+#include "virtual_machine.h"
+#include <cerrno>
+#include <cwchar>
+#include <fmt/core.h>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+
+namespace cl
+{
+    static std::wstring decode_stdin_line(const std::string &bytes)
+    {
+        const char *src = bytes.c_str();
+        std::mbstate_t state = std::mbstate_t();
+        errno = 0;
+        size_t size = std::mbsrtowcs(nullptr, &src, 0, &state);
+        if(size == static_cast<size_t>(-1))
+        {
+            throw std::runtime_error("failed to decode stdin");
+        }
+
+        std::wstring result(size, L'\0');
+        src = bytes.c_str();
+        state = std::mbstate_t();
+        errno = 0;
+        if(std::mbsrtowcs(result.data(), &src, result.size(), &state) ==
+           static_cast<size_t>(-1))
+        {
+            throw std::runtime_error("failed to decode stdin");
+        }
+        return result;
+    }
+
+    static std::wstring cl_string_to_wstring(TValue<String> string)
+    {
+        String *str = string.extract();
+        return std::wstring(str->data, size_t(str->count.extract()));
+    }
+
+    static std::wstring format_pending_python_exception(ThreadState *thread)
+    {
+        if(thread->pending_exception_kind() ==
+           PendingExceptionKind::StopIteration)
+        {
+            return L"StopIteration";
+        }
+
+        if(thread->pending_exception_kind() != PendingExceptionKind::Object)
+        {
+            return L"InternalError: exception marker without pending exception";
+        }
+
+        TValue<ExceptionObject> exception =
+            TValue<ExceptionObject>::from_value_checked(
+                thread->pending_exception_object());
+        std::wstring result = cl_string_to_wstring(
+            exception.extract()->get_shape()->get_class()->get_name());
+        std::wstring message = cl_string_to_wstring(
+            static_cast<TValue<String>>(exception.extract()->message));
+        if(!message.empty())
+        {
+            result += L": ";
+            result += message;
+        }
+        return result;
+    }
+
+    static void print_pending_exception_and_clear(ThreadState *thread)
+    {
+        std::wcerr << format_pending_python_exception(thread) << L"\n";
+        thread->clear_pending_exception();
+    }
+
+    static void print_value_repr(Value value, ThreadState *thread)
+    {
+        if(value == Value::None())
+        {
+            return;
+        }
+
+        Value repr = value_to_repr_string(value);
+        if(repr.is_exception_marker())
+        {
+            print_pending_exception_and_clear(thread);
+            return;
+        }
+
+        std::wcout << cl_string_to_wstring(
+                          TValue<String>::from_value_checked(repr))
+                   << L"\n";
+    }
+
+    int run_repl(bool print_bytecode)
+    {
+        VirtualMachine vm;
+        ThreadState *thr = vm.get_default_thread();
+        ThreadState::ActivationScope active_thread(thr);
+        Scope *module_scope =
+            thr->make_internal_raw<Scope>(vm.builtin_scope_ptr());
+
+        std::string line;
+        while(true)
+        {
+            std::cout << ">>> " << std::flush;
+            if(!std::getline(std::cin, line))
+            {
+                std::cout << "\n";
+                return 0;
+            }
+
+            std::wstring source;
+            try
+            {
+                source = decode_stdin_line(line);
+            }
+            catch(const std::runtime_error &err)
+            {
+                std::cerr << err.what() << "\n";
+                continue;
+            }
+            source += L"\n";
+
+            try
+            {
+                CodeObject *code_obj = thr->compile_in_scope(
+                    source.c_str(), StartRule::Interactive, L"<stdin>",
+                    module_scope, LanguageMode::StandardsCompliant);
+                if(print_bytecode)
+                {
+                    fmt::print("{}\n", *code_obj);
+                }
+
+                Value result = thr->run_clovervm_code_object(code_obj);
+                if(result.is_exception_marker())
+                {
+                    print_pending_exception_and_clear(thr);
+                    continue;
+                }
+
+                print_value_repr(result, thr);
+            }
+            catch(const std::runtime_error &err)
+            {
+                std::cerr << err.what() << "\n";
+            }
+        }
+    }
+
+}  // namespace cl
