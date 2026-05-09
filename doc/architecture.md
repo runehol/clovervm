@@ -9,6 +9,9 @@ clovervm is a Python VM experiment with a register/accumulator bytecode
 interpreter, tagged values, shape-based objects, inline caches, deferred
 refcounting, and runtime machinery intended to support future JIT compilation.
 
+For current major-work sequencing, see
+[Development Priorities](development-priorities.md).
+
 ## Design Goals
 
 - Execute a growing Python subset with semantics close to CPython where that is
