@@ -1,0 +1,3 @@
+static constexpr const wchar_t *trusted_builtin_source = LR"CL_BUILTINS(
+@CL_TRUSTED_BUILTIN_SOURCE@
+)CL_BUILTINS";

@@ -1,5 +1,14 @@
 find_package(Threads)
 
+set(CL_TRUSTED_BUILTINS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/builtins.py")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CL_TRUSTED_BUILTINS_FILE}")
+file(READ "${CL_TRUSTED_BUILTINS_FILE}" CL_TRUSTED_BUILTIN_SOURCE)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/builtins.inc.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/builtins.inc"
+    @ONLY)
+
 add_library(libclovervm STATIC
     attr.cpp
     attr.h
@@ -39,6 +48,8 @@ add_library(libclovervm STATIC
     interpreter.cpp
     bool.cpp
     bool.h
+    builtins.py
+    builtins.inc.in
     parser.cpp
     parser.h
     range_iterator.cpp
@@ -101,6 +112,7 @@ set_target_properties(libclovervm PROPERTIES
 
 # add project sources to include path
 target_include_directories(libclovervm PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
+target_include_directories(libclovervm PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/")
 target_include_directories(
     libclovervm PRIVATE "${PROJECT_BINARY_DIR}/_deps/ctre-src/include")
 
