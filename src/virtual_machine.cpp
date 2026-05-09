@@ -1,4 +1,5 @@
 #include "virtual_machine.h"
+#include "bool.h"
 #include "clover_entry.h"
 #include "code_object.h"
 #include "dict.h"
@@ -6,8 +7,10 @@
 #include "exception_propagation.h"
 #include "function.h"
 #include "instance.h"
+#include "int.h"
 #include "list.h"
 #include "native_function.h"
+#include "none_type.h"
 #include "range_iterator.h"
 #include "scope.h"
 #include "thread_state.h"
@@ -220,6 +223,17 @@ namespace cl
                                              make_class_tuple({tuple, object}));
 
         install_bootstrap_tuple_class();
+        BuiltinClassDefinition int_definition = make_int_class(this);
+        int_class_ = int_definition.cls;
+        register_builtin_class(int_definition);
+        BuiltinClassDefinition bool_definition =
+            make_bool_class(this, int_class_);
+        bool_class_ = bool_definition.cls;
+        register_builtin_class(bool_definition);
+        BuiltinClassDefinition none_type_definition =
+            make_none_type_class(this);
+        none_type_class_ = none_type_definition.cls;
+        register_builtin_class(none_type_definition);
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_function_class(this));

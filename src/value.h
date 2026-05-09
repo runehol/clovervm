@@ -169,6 +169,13 @@ namespace cl
 
         bool is_integer() const { return is_smi(); }
 
+        bool is_bool() const
+        {
+            return (as.integer & value_tag_mask) == value_boolean_tag;
+        }
+
+        bool is_none() const { return as.integer == value_none; }
+
         ValueStorageClass storage_class() const
         {
             switch(as.integer & value_ptr_mask)

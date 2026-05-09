@@ -138,4 +138,23 @@ namespace cl
         EXPECT_TRUE(exception.extract()->value.as_value().is_not_present());
     }
 
+    TEST(ThreadState, ClassOfValueMapsPointerAndInlineValues)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        TValue<String> string =
+            context.vm().get_or_create_interned_string_value(L"value");
+
+        EXPECT_EQ(context.vm().str_class(),
+                  thread->class_of_value(string.as_value()));
+        EXPECT_EQ(context.vm().int_class(),
+                  thread->class_of_value(Value::from_smi(42)));
+        EXPECT_EQ(context.vm().bool_class(),
+                  thread->class_of_value(Value::True()));
+        EXPECT_EQ(context.vm().bool_class(),
+                  thread->class_of_value(Value::False()));
+        EXPECT_EQ(context.vm().none_type_class(),
+                  thread->class_of_value(Value::None()));
+    }
+
 }  // namespace cl

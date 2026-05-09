@@ -107,6 +107,9 @@ namespace cl
         {
             return class_for_native_layout(NativeLayoutId::Instance);
         }
+        ClassObject *int_class() const { return int_class_; }
+        ClassObject *bool_class() const { return bool_class_; }
+        ClassObject *none_type_class() const { return none_type_class_; }
         CodeObject *clover_function_entry_adapter(uint32_t n_args);
 
         template <typename T, typename... Args>
@@ -161,6 +164,9 @@ namespace cl
         InternStore<std::wstring, String> interned_strings;
         ClassObject *type_class_ = nullptr;
         ClassObject *str_class_ = nullptr;
+        ClassObject *int_class_ = nullptr;
+        ClassObject *bool_class_ = nullptr;
+        ClassObject *none_type_class_ = nullptr;
         Shape *str_instance_root_shape_ = nullptr;
         std::array<ClassObject *, NativeLayoutCount> class_for_native_layouts =
             {};

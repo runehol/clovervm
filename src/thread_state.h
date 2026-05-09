@@ -154,6 +154,17 @@ namespace cl
         {
             return cl::class_for_native_layout(machine, id);
         }
+        ALWAYSINLINE ClassObject *class_of_value(Value value) const
+        {
+            value.assert_not_vm_sentinel();
+            if(likely(value.is_ptr()))
+            {
+                Value cls = value.get_ptr<Object>()->get_class().as_value();
+                assert(cls.is_ptr());
+                return reinterpret_cast<ClassObject *>(cls.as.ptr);
+            }
+            return class_of_inline_value(value);
+        }
         ClassObject *class_for_builtin_name(const wchar_t *name) const;
 
         template <typename T, typename... Args>
@@ -187,6 +198,7 @@ namespace cl
                                                            TValue<String> name,
                                                            const Value *args,
                                                            uint32_t n_args);
+        NOINLINE ClassObject *class_of_inline_value(Value value) const;
 
         VirtualMachine *machine;
 

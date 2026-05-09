@@ -126,6 +126,25 @@ TEST(TValue, ClIntAcceptsCurrentIntegerRepresentation)
     EXPECT_EQ(Value::from_smi(42), integer.as_value());
 }
 
+TEST(Value, InlineTypePredicatesDistinguishSmiBoolAndNone)
+{
+    EXPECT_TRUE(Value::from_smi(0).is_smi());
+    EXPECT_TRUE(Value::from_smi(0).is_integer());
+    EXPECT_FALSE(Value::from_smi(0).is_bool());
+    EXPECT_FALSE(Value::from_smi(0).is_none());
+
+    EXPECT_TRUE(Value::True().is_bool());
+    EXPECT_TRUE(Value::False().is_bool());
+    EXPECT_FALSE(Value::True().is_smi());
+    EXPECT_FALSE(Value::False().is_smi());
+    EXPECT_FALSE(Value::True().is_none());
+    EXPECT_FALSE(Value::False().is_none());
+
+    EXPECT_TRUE(Value::None().is_none());
+    EXPECT_FALSE(Value::None().is_smi());
+    EXPECT_FALSE(Value::None().is_bool());
+}
+
 TEST(OwnedTValue, RetainsAndExposesTypedPointers)
 {
     test::VmTestContext context;

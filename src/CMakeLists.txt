@@ -34,7 +34,11 @@ add_library(libclovervm STATIC
     heap_object.h
     instance.cpp
     instance.h
+    int.cpp
+    int.h
     interpreter.cpp
+    bool.cpp
+    bool.h
     parser.cpp
     parser.h
     range_iterator.cpp
@@ -55,6 +59,8 @@ add_library(libclovervm STATIC
     native_function.cpp
     native_function.h
     native_layout_id.h
+    none_type.cpp
+    none_type.h
     object.cpp
     object.h
     overflow_slots.cpp
