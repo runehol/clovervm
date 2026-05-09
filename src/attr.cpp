@@ -254,15 +254,7 @@ namespace cl
 
     static DescriptorProtocol lookup_descriptor_protocol(Value value)
     {
-        if(!value.is_ptr())
-        {
-            return DescriptorProtocol{Value::not_present(),
-                                      Value::not_present(),
-                                      Value::not_present()};
-        }
-
-        Object *object = value.get_ptr<Object>();
-        ClassObject *type = object->get_class().extract();
+        ClassObject *type = active_thread()->class_of_value(value);
         TValue<String> get_name(interned_string(L"__get__"));
         TValue<String> set_name(interned_string(L"__set__"));
         TValue<String> delete_name(interned_string(L"__delete__"));
