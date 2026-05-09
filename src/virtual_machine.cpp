@@ -299,15 +299,6 @@ namespace cl
         install_list_class_methods(this);
         install_tuple_class_methods(this);
         install_dict_class_methods(this);
-
-        for(ClassObject *cls: builtin_classes)
-        {
-            assert(cls != nullptr);
-            cls->write_storage_location(
-                StorageLocation{ClassObject::kClassMetadataSlotClass,
-                                StorageKind::Inline},
-                Value::from_oop(type));
-        }
     }
 
     void VirtualMachine::initialize_builtin_scope()

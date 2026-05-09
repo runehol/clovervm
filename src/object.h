@@ -36,27 +36,22 @@ namespace cl
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id,
                HeapLayout _layout)
             : HeapObject(_layout), native_layout(_native_layout_id),
-              shape(nullptr), overflow_storage(nullptr), cls(nullptr)
+              shape(nullptr), overflow_storage(nullptr)
         {
-            install_class(_cls);
             initialize_shape_for_class(_cls);
         }
 
         Object(BootstrapObjectTag, NativeLayoutId _native_layout_id,
                HeapLayout _layout)
             : HeapObject(_layout), native_layout(_native_layout_id),
-              shape(nullptr), overflow_storage(nullptr), cls(nullptr)
+              shape(nullptr), overflow_storage(nullptr)
         {
         }
 
-        void install_bootstrap_class(ClassObject *new_cls)
-        {
-            assert(cls == nullptr);
-            install_class(new_cls);
-        }
+        void install_bootstrap_class(ClassObject *new_cls);
 
         NativeLayoutId native_layout_id() const { return native_layout; }
-        bool is_class_bootstrapped() const { return cls != nullptr; }
+        bool is_class_bootstrapped() const { return shape != nullptr; }
         Shape *get_shape() const { return shape; }
         void set_shape(Shape *new_shape);
         Value get_own_property(TValue<String> name) const;
@@ -80,19 +75,24 @@ namespace cl
         NativeLayoutId native_layout;
         Shape *shape;
         OverflowSlots *overflow_storage;
-        ClassObject *cls;
 
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Object, cls, 1);
+        CL_DECLARE_STATIC_LAYOUT_BASE_NO_VALUES(Object);
 
     protected:
-        Value *inline_slot_base() { return reinterpret_cast<Value *>(&cls); }
+        Value *inline_slot_base()
+        {
+            return reinterpret_cast<Value *>(
+                reinterpret_cast<uint64_t *>(this) +
+                layout_value_offset_in_words(layout));
+        }
         const Value *inline_slot_base() const
         {
-            return reinterpret_cast<const Value *>(&cls);
+            return reinterpret_cast<const Value *>(
+                reinterpret_cast<const uint64_t *>(this) +
+                layout_value_offset_in_words(layout));
         }
 
     private:
-        void install_class(ClassObject *new_cls);
         void initialize_shape_for_class(ClassObject *class_object);
         void initialize_shape(Shape *instance_root_shape);
         OverflowSlots *get_overflow_slots() const { return overflow_storage; }
@@ -142,7 +142,7 @@ namespace cl
         return static_cast<const T *>(object);
     }
 
-    static_assert(sizeof(Object) == 40);
+    static_assert(sizeof(Object) == 32);
     static_assert(std::is_trivially_destructible_v<Object>);
 
     BuiltinClassDefinition make_object_class(VirtualMachine *vm);

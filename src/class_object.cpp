@@ -209,11 +209,10 @@ namespace cl
             descriptor_flag(DescriptorFlag::ShapeClassValue);
         DescriptorFlags class_predefined_flags =
             descriptor_flag(DescriptorFlag::StableSlot);
-        ShapeRootDescriptor descriptors[kClassPredefinedSlotCount] = {
+        ShapeRootDescriptor descriptors[kClassPredefinedDescriptorCount] = {
             ShapeRootDescriptor{
                 dunder_class_name,
-                DescriptorInfo::make(StorageLocation{kClassMetadataSlotClass,
-                                                     StorageKind::Inline},
+                DescriptorInfo::make(StorageLocation::not_found(),
                                      class_value_flags)},
             ShapeRootDescriptor{
                 dunder_name_name,
@@ -242,8 +241,8 @@ namespace cl
                                      class_predefined_flags)},
         };
         set_shape(Shape::make_root_with_descriptors(
-            Value::from_oop(this), descriptors, kClassPredefinedSlotCount,
-            kClassPredefinedSlotCount, kClassMetadataSlotCount,
+            Value::from_oop(this), descriptors, kClassPredefinedDescriptorCount,
+            kClassPredefinedSlotCount, kClassMetadataSlotCount + 1,
             class_shape_flags));
 
         for(uint32_t slot_idx = 0;
@@ -274,7 +273,6 @@ namespace cl
                       class_shape_flags, instance_shape_flags)
     {
         install_bootstrap_class(metaclass);
-        set_shape(get_shape()->clone_with_class(Value::from_oop(metaclass)));
     }
 
     ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
@@ -286,7 +284,6 @@ namespace cl
                       class_shape_flags, instance_shape_flags)
     {
         install_bootstrap_class(metaclass);
-        set_shape(get_shape()->clone_with_class(Value::from_oop(metaclass)));
         validate_bases(_bases);
         bases = _bases;
         mro = compute_mro(this, _bases.extract());
@@ -315,8 +312,6 @@ namespace cl
             BootstrapObjectTag{}, name, instance_default_inline_slot_count,
             nullptr, class_shape_flags, fixed_attribute_shape_flags());
         cls->install_bootstrap_class(type);
-        cls->set_shape(
-            cls->get_shape()->clone_with_class(Value::from_oop(type)));
 
         DescriptorFlags method_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
@@ -369,52 +364,49 @@ namespace cl
     {
         static_assert(sizeof(MemberTValue<String>) == sizeof(Value));
         static_assert(sizeof(MemberValue) == sizeof(Value));
-        static_assert(CL_OFFSETOF(ClassObject, cls) ==
+        static_assert(CL_OFFSETOF(ClassObject, name) ==
                       ClassObject::static_value_offset_in_words() *
                           sizeof(Value));
-        static_assert(CL_OFFSETOF(ClassObject, name) ==
-                      CL_OFFSETOF(ClassObject, cls) +
-                          kClassMetadataSlotName * sizeof(Value));
         static_assert(CL_OFFSETOF(ClassObject, bases) ==
-                      CL_OFFSETOF(ClassObject, cls) +
+                      CL_OFFSETOF(ClassObject, name) +
                           kClassMetadataSlotBases * sizeof(Value));
         static_assert(CL_OFFSETOF(ClassObject, mro) ==
-                      CL_OFFSETOF(ClassObject, cls) +
+                      CL_OFFSETOF(ClassObject, name) +
                           kClassMetadataSlotMro * sizeof(Value));
         static_assert(
             CL_OFFSETOF(ClassObject, class_extra_inline_attribute_slots) ==
-            CL_OFFSETOF(ClassObject, cls) +
+            CL_OFFSETOF(ClassObject, name) +
                 kClassMetadataSlotCount * sizeof(Value));
         static_assert(
             CL_OFFSETOF(ClassObject, mro_shape_and_contents_validity_cell) ==
-            CL_OFFSETOF(ClassObject, cls) +
+            CL_OFFSETOF(ClassObject, name) +
                 kClassInlineStorageSlotCount * sizeof(Value));
         static_assert(
             CL_OFFSETOF(
                 ClassObject,
                 mro_shape_and_metaclass_mro_shape_and_contents_validity_cell) ==
-            CL_OFFSETOF(ClassObject, cls) +
+            CL_OFFSETOF(ClassObject, name) +
                 (kClassInlineStorageSlotCount + 1) * sizeof(Value));
         static_assert(
             CL_OFFSETOF(ClassObject, attached_mro_shape_validity_cells) ==
-            CL_OFFSETOF(ClassObject, cls) +
+            CL_OFFSETOF(ClassObject, name) +
                 (kClassInlineStorageSlotCount + 2) * sizeof(Value));
         static_assert(
             CL_OFFSETOF(ClassObject,
                         attached_mro_shape_and_contents_validity_cells) ==
-            CL_OFFSETOF(ClassObject, cls) +
+            CL_OFFSETOF(ClassObject, name) +
                 (kClassInlineStorageSlotCount + 2 +
                  HeapPtrArray<ValidityCell>::embedded_value_count) *
                     sizeof(Value));
         static_assert(
             CL_OFFSETOF(ClassObject, instance_root_shape) ==
-            CL_OFFSETOF(ClassObject, cls) +
+            CL_OFFSETOF(ClassObject, name) +
                 (kClassInlineStorageSlotCount + 2 +
                  2 * HeapPtrArray<ValidityCell>::embedded_value_count) *
                     sizeof(Value));
         static_assert(
             CL_OFFSETOF(ClassObject, constructor_thunk) ==
-            CL_OFFSETOF(ClassObject, cls) +
+            CL_OFFSETOF(ClassObject, name) +
                 (kClassInlineStorageSlotCount + 2 +
                  2 * HeapPtrArray<ValidityCell>::embedded_value_count + 1) *
                     sizeof(Value));

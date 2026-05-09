@@ -22,7 +22,7 @@ namespace cl
     BuiltinClassDefinition make_none_type_class(VirtualMachine *vm)
     {
         ClassObject *cls = ClassObject::make_builtin_class(
-            vm->get_or_create_interned_string_value(L"NoneType"), 1, nullptr, 0,
+            vm->get_or_create_interned_string_value(L"NoneType"), 0, nullptr, 0,
             vm->object_class());
         return builtin_class_definition(cls);
     }

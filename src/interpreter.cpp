@@ -246,11 +246,11 @@ namespace cl
     static constexpr size_t kObjectCacheLineBytes = 128;
     static constexpr size_t kObjectCacheLineStartOffset = 16;
     static constexpr uint32_t kDefaultFactoryInlineSlotCount =
-        1 + (kObjectCacheLineBytes - kObjectCacheLineStartOffset -
-             sizeof(Instance)) /
-                sizeof(Value);
+        (kObjectCacheLineBytes - kObjectCacheLineStartOffset -
+         sizeof(Instance)) /
+        sizeof(Value);
     static_assert(sizeof(Instance) +
-                      sizeof(Value) * (kDefaultFactoryInlineSlotCount - 1) ==
+                      sizeof(Value) * kDefaultFactoryInlineSlotCount ==
                   kObjectCacheLineBytes - kObjectCacheLineStartOffset);
 
     static ALWAYSINLINE void
@@ -950,7 +950,7 @@ namespace cl
     {
         return reinterpret_cast<const Value *>(
             reinterpret_cast<const uint64_t *>(object) +
-            Object::static_value_offset_in_words());
+            layout_value_offset_in_words(object->layout));
     }
 
     static ALWAYSINLINE const Object *

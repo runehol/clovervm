@@ -534,9 +534,11 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
     EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotCount),
               value_location.physical_idx);
     EXPECT_EQ(Value::from_smi(7), cls->read_storage_location(value_location));
-    ASSERT_EQ(ClassObject::kClassMetadataSlotCount + 1, shape->present_count());
+    constexpr uint32_t class_metadata_descriptor_count =
+        ClassObject::kClassMetadataSlotCount + 1;
+    ASSERT_EQ(class_metadata_descriptor_count + 1, shape->present_count());
     EXPECT_STREQ(L"value",
-                 shape->get_property_name(ClassObject::kClassMetadataSlotCount)
+                 shape->get_property_name(class_metadata_descriptor_count)
                      .extract()
                      ->data);
 }
@@ -568,11 +570,13 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
     ClassObject *cls = cls_value.get_ptr<ClassObject>();
 
     TValue<String> names[] = {first_name, second_name, third_name};
+    constexpr uint32_t class_metadata_descriptor_count =
+        ClassObject::kClassMetadataSlotCount + 1;
     for(uint32_t idx = 0; idx < 3; ++idx)
     {
         EXPECT_STREQ(string_as_wchar_t(names[idx]),
                      string_as_wchar_t(cls->get_shape()->get_property_name(
-                         ClassObject::kClassMetadataSlotCount + idx)));
+                         class_metadata_descriptor_count + idx)));
 
         StorageLocation location =
             cls->get_shape()->resolve_present_property(names[idx]);
@@ -2893,7 +2897,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         EXPECT_EQ(-1, cls->refcount);
         EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsClassObject));
         EXPECT_TRUE(cls->get_shape()->has_flag(ShapeFlag::IsImmutableType));
-        EXPECT_EQ(Value::from_oop(type_class),
+        EXPECT_EQ(Value::not_present(),
                   cls->get_own_property(
                       test_context.vm().get_or_create_interned_string_value(
                           L"__class__")));
@@ -2962,7 +2966,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
                   ->get_class()
                   ->get_instance_root_shape());
 
-    EXPECT_EQ(Value::from_oop(type_class),
+    EXPECT_EQ(Value::not_present(),
               type_class->get_own_property(
                   test_context.vm().get_or_create_interned_string_value(
                       L"__class__")));

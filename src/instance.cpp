@@ -16,9 +16,7 @@ namespace cl
         Shape *shape = cls->get_instance_root_shape();
         uint32_t instance_default_inline_slot_count =
             shape->get_instance_default_inline_slot_count();
-        assert(instance_default_inline_slot_count >= 1);
-        uint32_t dynamic_inline_slot_count =
-            instance_default_inline_slot_count - 1;
+        uint32_t dynamic_inline_slot_count = instance_default_inline_slot_count;
         return DynamicLayoutSpec{
             round_up_to_16byte_units(size_for(dynamic_inline_slot_count)),
             instance_default_inline_slot_count};

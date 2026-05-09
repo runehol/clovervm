@@ -8,6 +8,7 @@
 #include "tuple.h"
 #include <cassert>
 #include <gtest/gtest.h>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -15,21 +16,27 @@ using namespace cl;
 
 static uint32_t class_property_count(ClassObject *cls)
 {
+    constexpr uint32_t class_metadata_descriptor_count =
+        ClassObject::kClassMetadataSlotCount + 1;
     Shape *shape = cls->get_shape();
-    assert(shape->present_count() >= ClassObject::kClassMetadataSlotCount);
-    return shape->present_count() - ClassObject::kClassMetadataSlotCount;
+    assert(shape->present_count() >= class_metadata_descriptor_count);
+    return shape->present_count() - class_metadata_descriptor_count;
 }
 
 static TValue<String> class_property_name(ClassObject *cls, uint32_t idx)
 {
-    return cls->get_shape()->get_property_name(
-        ClassObject::kClassMetadataSlotCount + idx);
+    constexpr uint32_t class_metadata_descriptor_count =
+        ClassObject::kClassMetadataSlotCount + 1;
+    return cls->get_shape()->get_property_name(class_metadata_descriptor_count +
+                                               idx);
 }
 
 static Value class_property_value(ClassObject *cls, uint32_t idx)
 {
+    constexpr uint32_t class_metadata_descriptor_count =
+        ClassObject::kClassMetadataSlotCount + 1;
     DescriptorInfo info = cls->get_shape()->get_descriptor_info(
-        ClassObject::kClassMetadataSlotCount + idx);
+        class_metadata_descriptor_count + idx);
     return cls->read_storage_location(info.storage_location());
 }
 
@@ -576,12 +583,14 @@ TEST(ClassObject, ClassPropertiesUseShapeBackedInlineAndOverflowStorage)
     }
 
     Shape *shape = cls->get_shape();
-    ASSERT_EQ(ClassObject::kClassInlineStorageSlotCount + 1,
+    constexpr uint32_t class_metadata_descriptor_count =
+        ClassObject::kClassMetadataSlotCount + 1;
+    ASSERT_EQ(ClassObject::kClassPredefinedDescriptorCount + property_count,
               shape->property_count());
-    EXPECT_EQ(ClassObject::kClassMetadataSlotCount + property_count,
+    EXPECT_EQ(class_metadata_descriptor_count + property_count,
               shape->present_count());
-    EXPECT_EQ(ClassObject::kClassPredefinedSlotCount -
-                  ClassObject::kClassMetadataSlotCount,
+    EXPECT_EQ(ClassObject::kClassPredefinedDescriptorCount -
+                  class_metadata_descriptor_count,
               shape->latent_count());
     EXPECT_EQ(int32_t(ClassObject::kClassInlineStorageSlotCount + 1),
               shape->get_next_slot_index());
@@ -637,24 +646,30 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     ASSERT_EQ(6u, shape->property_count());
     EXPECT_EQ(4u, shape->present_count());
     EXPECT_EQ(2u, shape->latent_count());
-    EXPECT_EQ(6, shape->get_next_slot_index());
+    EXPECT_EQ(5, shape->get_next_slot_index());
     EXPECT_EQ(ClassObject::kClassInlineStorageSlotCount,
               shape->get_inline_slot_count());
 
     const cl_wchar *expected_names[] = {L"__class__", L"__name__", L"__bases__",
                                         L"__mro__"};
-    const uint32_t expected_slots[] = {ClassObject::kClassMetadataSlotClass,
-                                       ClassObject::kClassMetadataSlotName,
-                                       ClassObject::kClassMetadataSlotBases,
-                                       ClassObject::kClassMetadataSlotMro};
-    for(uint32_t idx = 0; idx < ClassObject::kClassMetadataSlotCount; ++idx)
+    const int32_t expected_slots[] = {-1, ClassObject::kClassMetadataSlotName,
+                                      ClassObject::kClassMetadataSlotBases,
+                                      ClassObject::kClassMetadataSlotMro};
+    for(uint32_t idx = 0; idx < std::size(expected_names); ++idx)
     {
         EXPECT_STREQ(expected_names[idx],
                      shape->get_property_name(idx).extract()->data);
-        EXPECT_EQ(StorageKind::Inline,
-                  shape->get_property_storage_location(idx).kind);
-        EXPECT_EQ(int32_t(expected_slots[idx]),
-                  shape->get_property_storage_location(idx).physical_idx);
+        if(expected_slots[idx] < 0)
+        {
+            EXPECT_FALSE(shape->get_property_storage_location(idx).is_found());
+        }
+        else
+        {
+            EXPECT_EQ(StorageKind::Inline,
+                      shape->get_property_storage_location(idx).kind);
+            EXPECT_EQ(expected_slots[idx],
+                      shape->get_property_storage_location(idx).physical_idx);
+        }
         EXPECT_TRUE(
             shape->get_descriptor_info(idx).has_flag(DescriptorFlag::ReadOnly));
         EXPECT_TRUE(shape->get_descriptor_info(idx).has_flag(
@@ -693,8 +708,7 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     EXPECT_EQ(Value::not_present(),
               cls->read_storage_location(init_lookup.info.storage_location()));
 
-    EXPECT_EQ(Value::from_oop(context.vm().type_class()),
-              cls->get_own_property(dunder_class_name));
+    EXPECT_EQ(Value::not_present(), cls->get_own_property(dunder_class_name));
     EXPECT_EQ(cls_name.as_value(), cls->get_own_property(dunder_name_name));
 
     Value bases_value = cls->get_own_property(dunder_bases_name);
@@ -717,9 +731,9 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
 
     TValue<String> readonly_names[] = {dunder_class_name, dunder_name_name,
                                        dunder_bases_name, dunder_mro_name};
-    Value readonly_values[] = {Value::from_oop(context.vm().type_class()),
-                               cls_name.as_value(), bases_value, mro_value};
-    for(uint32_t idx = 0; idx < ClassObject::kClassMetadataSlotCount; ++idx)
+    Value readonly_values[] = {Value::not_present(), cls_name.as_value(),
+                               bases_value, mro_value};
+    for(uint32_t idx = 0; idx < std::size(readonly_names); ++idx)
     {
         Shape *before_shape = cls->get_shape();
         EXPECT_FALSE(

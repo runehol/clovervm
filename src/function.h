@@ -22,9 +22,8 @@ namespace cl
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::Function;
         static constexpr uint32_t VarArgs = UINT32_MAX;
-        static constexpr uint32_t kClassSlot = 0;
-        static constexpr uint32_t kDocstringSlot = 3;
-        static constexpr uint32_t kInlineSlotCount = 4;
+        static constexpr uint32_t kDocstringSlot = 2;
+        static constexpr uint32_t kInlineSlotCount = 3;
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object)
             : Object(cls, native_layout_id, compact_layout()),

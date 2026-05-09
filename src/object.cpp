@@ -84,8 +84,7 @@ namespace cl
 
     void Object::validate_inline_slot_layout()
     {
-        static_assert(sizeof(cls) == sizeof(Value));
-        static_assert(CL_OFFSETOF(Object, cls) ==
+        static_assert(sizeof(Object) ==
                       Object::static_value_offset_in_words() * sizeof(Value));
     }
 
@@ -95,7 +94,7 @@ namespace cl
             NativeLayoutId::Instance};
         Object::validate_inline_slot_layout();
         ClassObject *cls = ClassObject::make_bootstrap_builtin_class(
-            vm->get_or_create_interned_string_value(L"object"), 1, nullptr, 0);
+            vm->get_or_create_interned_string_value(L"object"), 0, nullptr, 0);
         return builtin_class_definition(cls, native_layout_ids);
     }
 
@@ -138,10 +137,15 @@ namespace cl
                                        std::size(methods));
     }
 
-    void Object::install_class(ClassObject *new_cls)
+    void Object::install_bootstrap_class(ClassObject *new_cls)
     {
         assert(new_cls != nullptr);
-        cls = incref(new_cls);
+        if(shape == nullptr)
+        {
+            set_shape(new_cls->get_instance_root_shape());
+            return;
+        }
+        set_shape(shape->clone_with_class(Value::from_oop(new_cls)));
     }
 
     void Object::set_shape(Shape *new_shape)
@@ -173,9 +177,8 @@ namespace cl
 
         uint32_t instance_default_inline_slot_count =
             get_shape()->get_instance_default_inline_slot_count();
-        assert(instance_default_inline_slot_count >= 1);
 
-        for(uint32_t slot_idx = 1;
+        for(uint32_t slot_idx = 0;
             slot_idx < instance_default_inline_slot_count; ++slot_idx)
         {
             inline_slot_base()[slot_idx] = Value::not_present();

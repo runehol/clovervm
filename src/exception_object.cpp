@@ -6,6 +6,7 @@
 #include "str.h"
 #include "thread_state.h"
 #include "virtual_machine.h"
+#include <iterator>
 #include <string>
 
 namespace cl
@@ -33,7 +34,7 @@ namespace cl
             descriptor_flag(DescriptorFlag::ShapeClassValue);
         DescriptorFlags message_flags =
             descriptor_flag(DescriptorFlag::StableSlot);
-        ShapeRootDescriptor descriptors[ExceptionObject::kInlineSlotCount] = {
+        ShapeRootDescriptor descriptors[] = {
             ShapeRootDescriptor{dunder_class_name,
                                 DescriptorInfo::make(
                                     StorageLocation::not_found(), class_flags)},
@@ -44,7 +45,7 @@ namespace cl
                                   message_flags)},
         };
         cls->install_builtin_instance_root_shape(
-            descriptors, ExceptionObject::kInlineSlotCount,
+            descriptors, std::size(descriptors),
             ExceptionObject::kInlineSlotCount, mutable_attribute_shape_flags());
     }
 
@@ -59,27 +60,23 @@ namespace cl
             descriptor_flag(DescriptorFlag::ShapeClassValue);
         DescriptorFlags attribute_flags =
             descriptor_flag(DescriptorFlag::StableSlot);
-        ShapeRootDescriptor descriptors[StopIterationObject::kInlineSlotCount] =
-            {
-                ShapeRootDescriptor{
-                    dunder_class_name,
-                    DescriptorInfo::make(StorageLocation::not_found(),
-                                         class_flags)},
-                ShapeRootDescriptor{
-                    message_name,
-                    DescriptorInfo::make(
-                        StorageLocation{ExceptionObject::kMessageSlot,
-                                        StorageKind::Inline},
-                        attribute_flags)},
-                ShapeRootDescriptor{
-                    value_name,
-                    DescriptorInfo::make(
-                        StorageLocation{StopIterationObject::kValueSlot,
-                                        StorageKind::Inline},
-                        attribute_flags)},
-            };
+        ShapeRootDescriptor descriptors[] = {
+            ShapeRootDescriptor{dunder_class_name,
+                                DescriptorInfo::make(
+                                    StorageLocation::not_found(), class_flags)},
+            ShapeRootDescriptor{
+                message_name, DescriptorInfo::make(
+                                  StorageLocation{ExceptionObject::kMessageSlot,
+                                                  StorageKind::Inline},
+                                  attribute_flags)},
+            ShapeRootDescriptor{
+                value_name, DescriptorInfo::make(
+                                StorageLocation{StopIterationObject::kValueSlot,
+                                                StorageKind::Inline},
+                                attribute_flags)},
+        };
         cls->install_builtin_instance_root_shape(
-            descriptors, StopIterationObject::kInlineSlotCount,
+            descriptors, std::size(descriptors),
             StopIterationObject::kInlineSlotCount,
             mutable_attribute_shape_flags());
     }

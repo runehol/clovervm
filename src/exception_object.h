@@ -16,9 +16,8 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::Exception;
-        static constexpr uint32_t kClassSlot = 0;
-        static constexpr uint32_t kMessageSlot = 1;
-        static constexpr uint32_t kInlineSlotCount = 2;
+        static constexpr uint32_t kMessageSlot = 0;
+        static constexpr uint32_t kInlineSlotCount = 1;
 
         ExceptionObject(ClassObject *cls, TValue<String> message)
             : ExceptionObject(cls, native_layout_id, compact_layout(), message)
@@ -39,7 +38,7 @@ namespace cl
     };
 
     static_assert(CL_OFFSETOF(ExceptionObject, message) ==
-                  CL_OFFSETOF(Object, cls) +
+                  Object::static_value_offset_in_words() * sizeof(Value) +
                       ExceptionObject::kMessageSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<ExceptionObject>);
 
@@ -48,8 +47,8 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::StopIteration;
-        static constexpr uint32_t kValueSlot = 2;
-        static constexpr uint32_t kInlineSlotCount = 3;
+        static constexpr uint32_t kValueSlot = 1;
+        static constexpr uint32_t kInlineSlotCount = 2;
 
         StopIterationObject(ClassObject *cls,
                             Value value = Value::not_present());
@@ -63,7 +62,7 @@ namespace cl
     };
 
     static_assert(CL_OFFSETOF(StopIterationObject, value) ==
-                  CL_OFFSETOF(Object, cls) +
+                  Object::static_value_offset_in_words() * sizeof(Value) +
                       StopIterationObject::kValueSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<StopIterationObject>);
 

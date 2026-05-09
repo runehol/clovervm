@@ -50,14 +50,14 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::ClassObject;
-        static constexpr uint32_t kClassMetadataSlotClass = 0;
-        static constexpr uint32_t kClassMetadataSlotName = 1;
-        static constexpr uint32_t kClassMetadataSlotBases = 2;
-        static constexpr uint32_t kClassMetadataSlotMro = 3;
-        static constexpr uint32_t kClassMetadataSlotCount = 4;
-        static constexpr uint32_t kClassPredefinedSlotNew = 4;
-        static constexpr uint32_t kClassPredefinedSlotInit = 5;
-        static constexpr uint32_t kClassPredefinedSlotCount = 6;
+        static constexpr uint32_t kClassMetadataSlotName = 0;
+        static constexpr uint32_t kClassMetadataSlotBases = 1;
+        static constexpr uint32_t kClassMetadataSlotMro = 2;
+        static constexpr uint32_t kClassMetadataSlotCount = 3;
+        static constexpr uint32_t kClassPredefinedSlotNew = 3;
+        static constexpr uint32_t kClassPredefinedSlotInit = 4;
+        static constexpr uint32_t kClassPredefinedSlotCount = 5;
+        static constexpr uint32_t kClassPredefinedDescriptorCount = 6;
         static constexpr uint32_t kClassInlineStorageSlotCount = 48;
 
         ClassObject(

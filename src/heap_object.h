@@ -86,6 +86,19 @@ namespace cl
         return (layout >> object_layout_count_shift) & object_layout_count_mask;
     }
 
+    constexpr uint32_t compact_layout_value_offset_in_words(HeapLayout layout)
+    {
+        return (layout >> object_layout_offset_shift) &
+               object_layout_offset_mask;
+    }
+
+    constexpr uint32_t layout_value_offset_in_words(HeapLayout layout)
+    {
+        return layout_is_expanded(layout)
+                   ? layout & ~object_layout_expanded_bit
+                   : compact_layout_value_offset_in_words(layout);
+    }
+
     constexpr HeapLayout compact_layout_without_value_count(HeapLayout layout)
     {
         return layout &
@@ -125,6 +138,32 @@ namespace cl
 #define CL_DECLARE_STATIC_LAYOUT_NO_VALUES(type)                               \
     static constexpr bool has_dynamic_layout = false;                          \
     static constexpr uint32_t static_value_offset_in_words() { return 0; }     \
+    static constexpr uint64_t static_value_count() { return 0; }               \
+    static constexpr uint64_t static_size_in_16byte_units()                    \
+    {                                                                          \
+        return round_up_to_16byte_units(sizeof(type));                         \
+    }                                                                          \
+    static constexpr HeapLayout compact_layout()                               \
+    {                                                                          \
+        static_assert(compact_layout_fits(static_size_in_16byte_units(),       \
+                                          static_value_offset_in_words(),      \
+                                          static_value_count()),               \
+                      "Compact object layout does not fit in the compact "     \
+                      "header");                                               \
+        return encode_compact_layout_unchecked(static_size_in_16byte_units(),  \
+                                               static_value_offset_in_words(), \
+                                               static_value_count());          \
+    }
+
+#define CL_DECLARE_STATIC_LAYOUT_BASE_NO_VALUES(type)                          \
+    static constexpr bool has_dynamic_layout = false;                          \
+    static constexpr uint32_t static_value_offset_in_words()                   \
+    {                                                                          \
+        static_assert(sizeof(type) % sizeof(uint64_t) == 0,                    \
+                      "Extended value region must start on a 64-bit word "     \
+                      "boundary");                                             \
+        return sizeof(type) / sizeof(uint64_t);                                \
+    }                                                                          \
     static constexpr uint64_t static_value_count() { return 0; }               \
     static constexpr uint64_t static_size_in_16byte_units()                    \
     {                                                                          \
