@@ -269,6 +269,7 @@ namespace cl
                       class_shape_flags, instance_shape_flags)
     {
         install_bootstrap_class(metaclass);
+        set_shape(get_shape()->clone_with_class(Value::from_oop(metaclass)));
     }
 
     ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
@@ -280,6 +281,7 @@ namespace cl
                       class_shape_flags, instance_shape_flags)
     {
         install_bootstrap_class(metaclass);
+        set_shape(get_shape()->clone_with_class(Value::from_oop(metaclass)));
         validate_bases(_bases);
         bases = _bases;
         mro = compute_mro(this, _bases.extract());
@@ -308,6 +310,8 @@ namespace cl
             BootstrapObjectTag{}, name, instance_default_inline_slot_count,
             nullptr, class_shape_flags, fixed_attribute_shape_flags());
         cls->install_bootstrap_class(type);
+        cls->set_shape(
+            cls->get_shape()->clone_with_class(Value::from_oop(type)));
 
         DescriptorFlags method_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |

@@ -33,7 +33,7 @@ static Value class_property_value(ClassObject *cls, uint32_t idx)
     return cls->read_storage_location(info.storage_location());
 }
 
-TEST(Shape, ClassOwnsRootShape)
+TEST(Shape, InstanceRootShapeCarriesPresentedClass)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -45,7 +45,7 @@ TEST(Shape, ClassOwnsRootShape)
 
     Shape *root_shape = cls->get_instance_root_shape();
     ASSERT_NE(nullptr, root_shape);
-    EXPECT_EQ(cls, root_shape->get_owner_class());
+    EXPECT_EQ(cls, root_shape->get_class());
     EXPECT_EQ(nullptr, root_shape->get_previous_shape());
     ASSERT_EQ(1u, root_shape->property_count());
     EXPECT_EQ(1u, root_shape->present_count());
@@ -62,6 +62,19 @@ TEST(Shape, ClassOwnsRootShape)
         DescriptorFlag::StableSlot));
     EXPECT_EQ(1, root_shape->get_next_slot_index());
     EXPECT_EQ(2u, root_shape->get_instance_default_inline_slot_count());
+}
+
+TEST(Shape, ClassObjectShapeCarriesMetaclass)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> name(
+        context.vm().get_or_create_interned_string_value(L"Cls"));
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        name, 2, context.vm().object_class());
+
+    EXPECT_EQ(context.vm().type_class(), cls->get_shape()->get_class());
 }
 
 TEST(Shape, ShapeFlagsAreStoredOnShape)

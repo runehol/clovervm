@@ -15,28 +15,28 @@ namespace cl
     {
     }
 
-    Shape::Shape(HeapLayout layout, Value _owner_class, Shape *_previous_shape,
+    Shape::Shape(HeapLayout layout, Value _class_value, Shape *_previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count)
-        : Shape(layout, _owner_class, _previous_shape, _next_slot_index,
+        : Shape(layout, _class_value, _previous_shape, _next_slot_index,
                 _property_count, shape_flag(ShapeFlag::None))
     {
     }
 
-    Shape::Shape(HeapLayout layout, Value _owner_class, Shape *_previous_shape,
+    Shape::Shape(HeapLayout layout, Value _class_value, Shape *_previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count,
                  ShapeFlags _shape_flags)
-        : Shape(layout, _owner_class, _previous_shape, _next_slot_index,
+        : Shape(layout, _class_value, _previous_shape, _next_slot_index,
                 _property_count, _shape_flags, _property_count)
     {
     }
 
-    Shape::Shape(HeapLayout layout, Value _owner_class, Shape *_previous_shape,
+    Shape::Shape(HeapLayout layout, Value _class_value, Shape *_previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count,
                  ShapeFlags _shape_flags, uint32_t _present_count)
         : HeapObject(layout), previous_shape(_previous_shape),
           next_slot_index(_next_slot_index), property_count_(_property_count),
           present_count_(_present_count), shape_flags(_shape_flags),
-          transitions(), owner_class(_owner_class)
+          transitions(), class_value(_class_value)
     {
         assert(valid_shape_flags(shape_flags));
         assert(present_count_ <= property_count_);
@@ -47,34 +47,34 @@ namespace cl
         }
     }
 
-    Shape *Shape::make_root_with_single_descriptor(Value owner_class,
+    Shape *Shape::make_root_with_single_descriptor(Value class_value,
                                                    TValue<String> name,
                                                    DescriptorInfo info,
                                                    int32_t next_slot_index,
                                                    ShapeFlags shape_flags)
     {
         ShapeRootDescriptor descriptor{name, info};
-        return make_root_with_descriptors(owner_class, &descriptor, 1,
+        return make_root_with_descriptors(class_value, &descriptor, 1,
                                           next_slot_index, shape_flags);
     }
 
     Shape *Shape::make_root_with_descriptors(
-        Value owner_class, const ShapeRootDescriptor *descriptors,
+        Value class_value, const ShapeRootDescriptor *descriptors,
         uint32_t descriptor_count, int32_t next_slot_index,
         ShapeFlags shape_flags)
     {
-        return make_root_with_descriptors(owner_class, descriptors,
+        return make_root_with_descriptors(class_value, descriptors,
                                           descriptor_count, next_slot_index,
                                           descriptor_count, shape_flags);
     }
 
     Shape *Shape::make_root_with_descriptors(
-        Value owner_class, const ShapeRootDescriptor *descriptors,
+        Value class_value, const ShapeRootDescriptor *descriptors,
         uint32_t descriptor_count, int32_t next_slot_index,
         uint32_t present_count, ShapeFlags shape_flags)
     {
         Shape *shape = make_internal_raw<Shape>(
-            owner_class, nullptr, next_slot_index, descriptor_count,
+            class_value, nullptr, next_slot_index, descriptor_count,
             shape_flags, present_count);
         for(uint32_t descriptor_idx = 0; descriptor_idx < descriptor_count;
             ++descriptor_idx)
@@ -87,9 +87,9 @@ namespace cl
         return shape;
     }
 
-    ClassObject *Shape::get_owner_class() const
+    ClassObject *Shape::get_class() const
     {
-        return owner_class.as_value().get_ptr<ClassObject>();
+        return class_value.as_value().get_ptr<ClassObject>();
     }
 
     Shape *Shape::get_previous_shape() const { return previous_shape; }
@@ -98,7 +98,7 @@ namespace cl
     {
         if(has_flag(ShapeFlag::IsClassObject))
         {
-            return get_owner_class()->get_class_inline_storage_slot_count();
+            return get_class()->get_class_inline_storage_slot_count();
         }
 
         return get_instance_default_inline_slot_count();
@@ -106,7 +106,7 @@ namespace cl
 
     uint32_t Shape::get_instance_default_inline_slot_count() const
     {
-        return get_owner_class()->get_instance_default_inline_slot_count();
+        return get_class()->get_instance_default_inline_slot_count();
     }
 
     int32_t Shape::lookup_descriptor_index(TValue<String> name) const
@@ -235,7 +235,7 @@ namespace cl
         }
 
         Shape *next_shape = make_internal_raw<Shape>(
-            owner_class.as_value(), this, next_slot_index_for_shape,
+            class_value.as_value(), this, next_slot_index_for_shape,
             next_property_count, shape_flags, present_count_ + 1);
         uint32_t next_property_idx = 0;
         for(uint32_t property_idx = 0; property_idx < present_count_;
@@ -281,7 +281,7 @@ namespace cl
         uint32_t next_property_count =
             keep_latent ? property_count_ : property_count_ - 1;
         Shape *next_shape = make_internal_raw<Shape>(
-            owner_class.as_value(), this, next_slot_index, next_property_count,
+            class_value.as_value(), this, next_slot_index, next_property_count,
             shape_flags, present_count_ - 1);
         uint32_t next_property_idx = 0;
         for(uint32_t property_idx = 0; property_idx < present_count_;
@@ -322,8 +322,24 @@ namespace cl
     {
         assert(valid_shape_flags(new_shape_flags));
         Shape *cloned_shape = make_internal_raw<Shape>(
-            owner_class.as_value(), previous_shape, next_slot_index,
+            class_value.as_value(), previous_shape, next_slot_index,
             property_count_, new_shape_flags, present_count_);
+        for(uint32_t property_idx = 0; property_idx < property_count_;
+            ++property_idx)
+        {
+            cloned_shape->descriptor_names[property_idx] =
+                incref(get_property_name(property_idx).as_value());
+            cloned_shape->descriptor_infos()[property_idx] =
+                get_descriptor_info(property_idx);
+        }
+        return cloned_shape;
+    }
+
+    Shape *Shape::clone_with_class(Value new_class) const
+    {
+        Shape *cloned_shape = make_internal_raw<Shape>(
+            new_class, previous_shape, next_slot_index, property_count_,
+            shape_flags, present_count_);
         for(uint32_t property_idx = 0; property_idx < property_count_;
             ++property_idx)
         {

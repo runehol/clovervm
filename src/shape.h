@@ -92,25 +92,25 @@ namespace cl
             OwnedHeapPtr<Shape> next_shape;
         };
 
-        Shape(HeapLayout layout, Value owner_class, Shape *previous_shape,
+        Shape(HeapLayout layout, Value class_value, Shape *previous_shape,
               int32_t next_slot_index, uint32_t property_count);
-        Shape(HeapLayout layout, Value owner_class, Shape *previous_shape,
+        Shape(HeapLayout layout, Value class_value, Shape *previous_shape,
               int32_t next_slot_index, uint32_t property_count,
               ShapeFlags shape_flags);
-        Shape(HeapLayout layout, Value owner_class, Shape *previous_shape,
+        Shape(HeapLayout layout, Value class_value, Shape *previous_shape,
               int32_t next_slot_index, uint32_t property_count,
               ShapeFlags shape_flags, uint32_t present_count);
 
         static Shape *make_root_with_single_descriptor(
-            Value owner_class, TValue<String> name, DescriptorInfo info,
+            Value class_value, TValue<String> name, DescriptorInfo info,
             int32_t next_slot_index,
             ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
         static Shape *make_root_with_descriptors(
-            Value owner_class, const ShapeRootDescriptor *descriptors,
+            Value class_value, const ShapeRootDescriptor *descriptors,
             uint32_t descriptor_count, int32_t next_slot_index,
             ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
         static Shape *make_root_with_descriptors(
-            Value owner_class, const ShapeRootDescriptor *descriptors,
+            Value class_value, const ShapeRootDescriptor *descriptors,
             uint32_t descriptor_count, int32_t next_slot_index,
             uint32_t present_count,
             ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
@@ -121,27 +121,27 @@ namespace cl
                    sizeof(Value) + sizeof(DescriptorInfo) * property_count;
         }
 
-        static DynamicLayoutSpec layout_spec_for(Value owner_class,
+        static DynamicLayoutSpec layout_spec_for(Value class_value,
                                                  Shape *previous_shape,
                                                  int32_t next_slot_index,
                                                  uint32_t property_count)
         {
-            return layout_spec_for(owner_class, previous_shape, next_slot_index,
+            return layout_spec_for(class_value, previous_shape, next_slot_index,
                                    property_count, shape_flag(ShapeFlag::None));
         }
 
-        static DynamicLayoutSpec layout_spec_for(Value owner_class,
+        static DynamicLayoutSpec layout_spec_for(Value class_value,
                                                  Shape *previous_shape,
                                                  int32_t next_slot_index,
                                                  uint32_t property_count,
                                                  ShapeFlags shape_flags)
         {
-            return layout_spec_for(owner_class, previous_shape, next_slot_index,
+            return layout_spec_for(class_value, previous_shape, next_slot_index,
                                    property_count, shape_flags, property_count);
         }
 
         static DynamicLayoutSpec
-        layout_spec_for(Value owner_class, Shape *previous_shape,
+        layout_spec_for(Value class_value, Shape *previous_shape,
                         int32_t next_slot_index, uint32_t property_count,
                         ShapeFlags shape_flags, uint32_t present_count)
         {
@@ -152,7 +152,7 @@ namespace cl
                 uint64_t(1 + property_count)};
         }
 
-        ClassObject *get_owner_class() const;
+        ClassObject *get_class() const;
         Shape *get_previous_shape() const;
         int32_t get_next_slot_index() const { return next_slot_index; }
         uint32_t get_inline_slot_count() const;
@@ -211,6 +211,7 @@ namespace cl
                                  DescriptorFlags descriptor_flags =
                                      descriptor_flag(DescriptorFlag::None));
         Shape *clone_with_flags(ShapeFlags new_shape_flags) const;
+        Shape *clone_with_class(Value new_class) const;
 
     private:
         Shape *derive_add_transition(TValue<String> name,
@@ -233,11 +234,11 @@ namespace cl
         uint32_t present_count_;
         ShapeFlags shape_flags;
         std::vector<Transition> transitions;
-        MemberValue owner_class;
+        MemberValue class_value;
         Value descriptor_names[1];
 
     public:
-        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(Shape, owner_class);
+        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(Shape, class_value);
     };
 
 }  // namespace cl
