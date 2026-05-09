@@ -1,6 +1,8 @@
 #include <fmt/core.h>
 
+#include "class_object.h"
 #include "code_object_print.h"
+#include "exception_object.h"
 #include "object.h"
 #include "parser.h"
 #include "refcount.h"
@@ -12,6 +14,7 @@
 #include <cwchar>
 #include <fmt/xchar.h>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 
@@ -59,6 +62,39 @@ std::wstring widen_string(const char *str)
     return decode_string(str, "failed to decode string");
 }
 
+std::wstring cl_string_to_wstring(TValue<String> string)
+{
+    String *str = string.extract();
+    return std::wstring(str->data, size_t(str->count.extract()));
+}
+
+std::wstring format_pending_python_exception(ThreadState *thread)
+{
+    if(thread->pending_exception_kind() == PendingExceptionKind::StopIteration)
+    {
+        return L"StopIteration";
+    }
+
+    if(thread->pending_exception_kind() != PendingExceptionKind::Object)
+    {
+        return L"InternalError: exception marker without pending exception";
+    }
+
+    TValue<ExceptionObject> exception =
+        TValue<ExceptionObject>::from_value_checked(
+            thread->pending_exception_object());
+    std::wstring result = cl_string_to_wstring(
+        exception.extract()->get_class().extract()->get_name());
+    std::wstring message = cl_string_to_wstring(
+        static_cast<TValue<String>>(exception.extract()->message));
+    if(!message.empty())
+    {
+        result += L": ";
+        result += message;
+    }
+    return result;
+}
+
 int main(int argc, const char *argv[])
 {
     using namespace std::literals;
@@ -97,7 +133,12 @@ int main(int argc, const char *argv[])
             fmt::print("{}\n", *code_obj);
         }
         Value v = thr->run_clovervm_code_object(code_obj);
-        if(v.is_smi())
+        if(v.is_exception_marker())
+        {
+            std::wcerr << format_pending_python_exception(thr) << L"\n";
+            return 1;
+        }
+        else if(v.is_smi())
         {
             std::cout << v.get_smi() << "\n";
         }
