@@ -586,6 +586,33 @@ namespace cl
             return true;
         }
 
+        bool try_codegen_trusted_clover_write_stdout(int32_t node_idx)
+        {
+            if(language_mode != LanguageMode::TrustedCloverExtensions)
+            {
+                return false;
+            }
+
+            AstChildren children = av.children[node_idx];
+            if(!is_variable_reference_named(children[0],
+                                            L"__clover_write_stdout__"))
+            {
+                return false;
+            }
+
+            AstChildren args = av.children[children[1]];
+            if(args.size() != 1)
+            {
+                throw std::runtime_error(
+                    "__clover_write_stdout__ expects exactly 1 argument");
+            }
+
+            uint32_t source_offset = av.source_offsets[node_idx];
+            codegen_node(args[0]);
+            code_obj->emit_write_stdout(source_offset);
+            return true;
+        }
+
         void codegen_function_call(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
@@ -593,6 +620,10 @@ namespace cl
             AstChildren args = av.children[children[1]];
 
             if(try_codegen_trusted_clover_call_special(node_idx))
+            {
+                return;
+            }
+            if(try_codegen_trusted_clover_write_stdout(node_idx))
             {
                 return;
             }

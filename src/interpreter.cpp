@@ -18,6 +18,7 @@
 #include "tuple.h"
 #include "validity_cell.h"
 #include "value.h"
+#include "virtual_machine.h"
 #include <cstdint>
 #include <fmt/core.h>
 #include <stdexcept>
@@ -1906,6 +1907,22 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_write_stdout(PARAMS)
+    {
+        START(1);
+        if(!can_convert_to<String>(accumulator))
+        {
+            accumulator = thread->set_pending_builtin_exception_string(
+                L"TypeError", L"__clover_write_stdout__ expects str");
+            MUSTTAIL return propagate_pending_exception(ARGS);
+        }
+
+        thread->get_machine()->write_stdout(
+            TValue<String>::from_value_checked(accumulator));
+        accumulator = Value::None();
+        COMPLETE();
+    }
+
     static Value op_not(PARAMS)
     {
         START_UNARY_ACC();
@@ -2999,6 +3016,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::BuildClass, op_build_class);
         SET_TABLE_ENTRY(Bytecode::CheckInitReturnedNone,
                         op_check_init_returned_none);
+        SET_TABLE_ENTRY(Bytecode::WriteStdout, op_write_stdout);
         SET_TABLE_ENTRY(Bytecode::RaiseAssertionError,
                         op_raise_assertion_error);
         SET_TABLE_ENTRY(Bytecode::RaiseAssertionErrorWithMessage,

@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -66,6 +67,12 @@ namespace cl
         HeapPtr<Scope> get_builtin_scope() const { return builtin_scope; }
         Scope *builtin_scope_ptr() const { return builtin_scope.extract(); }
         Value get_range_builtin() const { return range_builtin; }
+        void write_stdout(TValue<String> value);
+        void set_stdout_file(FILE *file)
+        {
+            assert(file != nullptr);
+            stdout_file_ = file;
+        }
 
         ClassObject *class_for_native_layout(NativeLayoutId id) const
         {
@@ -209,6 +216,7 @@ namespace cl
         std::vector<ClassObject *> builtin_classes;
         OwnedHeapPtr<Scope> builtin_scope;
         OwnedValue range_builtin;
+        FILE *stdout_file_ = stdout;
     };
 
 }  // namespace cl

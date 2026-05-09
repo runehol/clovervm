@@ -11,6 +11,7 @@
 #include "value.h"
 #include "virtual_machine.h"
 #include <cerrno>
+#include <clocale>
 #include <cwchar>
 #include <fmt/xchar.h>
 #include <fstream>
@@ -97,6 +98,8 @@ std::wstring format_pending_python_exception(ThreadState *thread)
 
 int main(int argc, const char *argv[])
 {
+    std::setlocale(LC_CTYPE, "");
+
     using namespace std::literals;
     bool print_bytecode = false;
     const char *source_file = nullptr;

@@ -24,9 +24,12 @@
 #include "tuple_iterator.h"
 #include "value_string.h"
 #include "virtual_machine.h"
+#include <cstdio>
+#include <cwchar>
 #include <fmt/xchar.h>
 #include <gtest/gtest.h>
 #include <stdexcept>
+#include <string>
 
 using namespace cl;
 
@@ -52,6 +55,34 @@ static bool clover_frame_chain_reaches_terminated_root(Value *frontier,
         fp = reinterpret_cast<Value *>(fp[FrameHeaderPreviousFpOffset].as.ptr);
     }
     return false;
+}
+
+struct CapturedStdoutRun
+{
+    Value return_value;
+    std::wstring stdout_text;
+};
+
+static CapturedStdoutRun run_file_with_captured_stdout(const wchar_t *source)
+{
+    test::VmTestContext test_context;
+    FILE *output = std::tmpfile();
+    assert(output != nullptr);
+    test_context.vm().set_stdout_file(output);
+
+    Value return_value = test_context.run_file(source);
+    std::fflush(output);
+    std::rewind(output);
+
+    std::wstring stdout_text;
+    wint_t ch = 0;
+    while((ch = std::fgetwc(output)) != WEOF)
+    {
+        stdout_text.push_back(static_cast<wchar_t>(ch));
+    }
+    std::fclose(output);
+
+    return CapturedStdoutRun{return_value, stdout_text};
 }
 
 static void expect_runtime_error(const wchar_t *source,
@@ -2907,6 +2938,12 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
          L"\n"
          L"For many object types, including most builtins, eval(repr(obj)) "
          L"== obj."},
+        {L"print",
+         L"print(*args)\n"
+         L"\n"
+         L"Print the values to standard output, separated by spaces and "
+         L"followed by a\n"
+         L"newline."},
     };
 
     for(const ExpectedBuiltin &expected: expected_builtins)
@@ -2942,6 +2979,24 @@ TEST(Interpreter, user_defined_clover_call_special_name_is_ordinary_function)
         L"__clover_call_special__(1, \"__repr__\", TypeError, \"missing\")\n");
 
     EXPECT_EQ(Value::from_smi(123), file_runner.return_value);
+}
+
+TEST(Interpreter, user_code_cannot_use_clover_write_stdout_as_intrinsic)
+{
+    expect_python_error(L"__clover_write_stdout__(\"hello\")\n",
+                        L"NameError: name '__clover_write_stdout__' is not "
+                        L"defined");
+}
+
+TEST(Interpreter, user_defined_clover_write_stdout_name_is_ordinary_function)
+{
+    CapturedStdoutRun run =
+        run_file_with_captured_stdout(L"def __clover_write_stdout__(value):\n"
+                                      L"    return 456\n"
+                                      L"__clover_write_stdout__(\"hello\")\n");
+
+    EXPECT_EQ(Value::from_smi(456), run.return_value);
+    EXPECT_TRUE(run.stdout_text.empty());
 }
 
 TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
@@ -3264,6 +3319,32 @@ TEST(Interpreter, python_defined_repr_builtin_calls_dunder_repr)
     ASSERT_TRUE(can_convert_to<String>(actual));
     EXPECT_STREQ(L"42",
                  string_as_wchar_t(TValue<String>::from_value_checked(actual)));
+}
+
+TEST(Interpreter, python_defined_print_builtin_writes_values_to_stdout)
+{
+    CapturedStdoutRun run =
+        run_file_with_captured_stdout(L"print(1, True, None, \"ok\")\n");
+
+    EXPECT_EQ(Value::None(), run.return_value);
+    EXPECT_EQ(L"1 True None ok\n", run.stdout_text);
+}
+
+TEST(Interpreter, python_defined_print_builtin_writes_blank_line_for_no_args)
+{
+    CapturedStdoutRun run = run_file_with_captured_stdout(L"print()\n");
+
+    EXPECT_EQ(Value::None(), run.return_value);
+    EXPECT_EQ(L"\n", run.stdout_text);
+}
+
+TEST(Interpreter, python_defined_print_builtin_propagates_str_errors)
+{
+    expect_python_error(L"class Bad:\n"
+                        L"    def __str__(self):\n"
+                        L"        return 1\n"
+                        L"print(Bad())\n",
+                        L"TypeError: __clover_write_stdout__ expects str");
 }
 
 TEST(Interpreter, python_defined_iter_and_next_builtin_missing_method_errors)

@@ -27,3 +27,22 @@ For many object types, including most builtins, eval(repr(obj)) == obj."""
     return __clover_call_special__(
         obj, "__repr__", TypeError, "object has no __repr__"
     )
+
+
+def print(*args):
+    """print(*args)
+
+Print the values to standard output, separated by spaces and followed by a
+newline."""
+    first = True
+    for obj in args:
+        if first:
+            first = False
+        else:
+            __clover_write_stdout__(" ")
+        __clover_write_stdout__(
+            __clover_call_special__(
+                obj, "__str__", TypeError, "object has no __str__"
+            )
+        )
+    __clover_write_stdout__("\n")

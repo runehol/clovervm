@@ -940,3 +940,23 @@ TEST(Codegen, user_clover_call_special_name_is_ordinary_call)
     EXPECT_EQ(std::string::npos, actual.find("CallSpecialMethod"));
     EXPECT_NE(std::string::npos, actual.find("CallSimple"));
 }
+
+TEST(Codegen, trusted_clover_write_stdout_lowers_to_opcode)
+{
+    std::string actual = trusted_builtin_bytecode_str_from_file(
+        L"def write(value):\n"
+        L"    return __clover_write_stdout__(value)\n");
+
+    EXPECT_NE(std::string::npos, actual.find("WriteStdout"));
+    EXPECT_EQ(std::string::npos, actual.find("CallSimple"));
+}
+
+TEST(Codegen, user_clover_write_stdout_name_is_ordinary_call)
+{
+    std::string actual =
+        bytecode_str_from_file(L"def write(value):\n"
+                               L"    return __clover_write_stdout__(value)\n");
+
+    EXPECT_EQ(std::string::npos, actual.find("WriteStdout"));
+    EXPECT_NE(std::string::npos, actual.find("CallSimple"));
+}

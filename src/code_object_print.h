@@ -309,6 +309,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "BuildClass");
             case cl::Bytecode::CheckInitReturnedNone:
                 return format_to(out, "CheckInitReturnedNone");
+            case cl::Bytecode::WriteStdout:
+                return format_to(out, "WriteStdout");
             case cl::Bytecode::RaiseAssertionError:
                 return format_to(out, "RaiseAssertionError");
             case cl::Bytecode::RaiseAssertionErrorWithMessage:
@@ -755,6 +757,7 @@ template <> struct fmt::formatter<cl::CodeObject>
 
             case cl::Bytecode::BuildClass:
             case cl::Bytecode::CheckInitReturnedNone:
+            case cl::Bytecode::WriteStdout:
             case cl::Bytecode::RaiseAssertionError:
             case cl::Bytecode::RaiseAssertionErrorWithMessage:
             case cl::Bytecode::RaiseUnwind:

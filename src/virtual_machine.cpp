@@ -20,6 +20,7 @@
 #include "tuple.h"
 #include "tuple_iterator.h"
 #include <cassert>
+#include <cwchar>
 #include <initializer_list>
 #include <stdexcept>
 
@@ -128,6 +129,16 @@ namespace cl
     ClassObject *class_for_native_layout(VirtualMachine *vm, NativeLayoutId id)
     {
         return vm->class_for_native_layout(id);
+    }
+
+    void VirtualMachine::write_stdout(TValue<String> value)
+    {
+        String *string = value.extract();
+        size_t count = static_cast<size_t>(string->count.extract());
+        for(size_t idx = 0; idx < count; ++idx)
+        {
+            std::fputwc(string->data[idx], stdout_file_);
+        }
     }
 
     CodeObject *VirtualMachine::clover_function_entry_adapter(uint32_t n_args)

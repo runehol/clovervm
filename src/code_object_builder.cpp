@@ -349,6 +349,11 @@ namespace cl
         return emit_opcode(source_offset, Bytecode::RaiseBare);
     }
 
+    uint32_t CodeObjectBuilder::emit_write_stdout(uint32_t source_offset)
+    {
+        return emit_opcode(source_offset, Bytecode::WriteStdout);
+    }
+
     uint32_t
     CodeObjectBuilder::emit_create_instance_known_class(uint32_t source_offset,
                                                         uint8_t class_idx)
