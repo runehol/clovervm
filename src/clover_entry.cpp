@@ -35,11 +35,10 @@ namespace cl
 
         code.emit_call_code_object(0, entry_const_idx, OutgoingArgReg(0), 0);
         range.close();
-        code.emit_halt(0);
+        code.emit_return_to_native(0);
 
         handler.resolve();
-        code.emit_raise_if_unhandled_exception(0);
-        code.emit_halt(0);
+        code.emit_return_pending_exception_to_native(0);
         return TValue<CodeObject>::from_oop(code.finalize());
     }
 

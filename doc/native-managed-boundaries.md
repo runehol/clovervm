@@ -376,57 +376,44 @@ special-method API, for example for `obj.__str__()`, should encode its own
 lookup and binding semantics deliberately before forwarding to the function-call
 overloads.
 
-## Native To Managed: Raw Code-Object Entry
+## Native To Managed: Startup Code-Object Entry
 
-Some host/runtime entry points need to enter a `CodeObject` that is explicitly
-not a `Function`. The main current example is module startup. A module body is a
-raw code object with arity 0; it should not be wrapped in a `Function` just to
-reuse function-call machinery.
+Module startup enters a `CodeObject` that is explicitly not a `Function`. A
+module body has arity 0, does not own `Function` defaults or varargs policy, and
+should not be wrapped in a `Function` just to reuse function-call machinery.
 
-Those entry points should use the prepared direct-code path. The terminal opcode
-depends on whether the wrapper is a real native-call boundary frame that must be
-popped, or a startup/test-style interpreter entry with no caller frame to
-restore.
-
-Startup-style entry can continue to use `Halt`:
+The startup wrapper is a real native boundary frame linked to the current Clover
+frame frontier. It uses the same local result convention as native-to-Clover
+function entry:
 
 ```text
 CallCodeObject c[target_code_object], a0, 0
-Halt
-
-handler:
-  RaiseIfUnhandledException
-  Halt
-```
-
-For a native API that wants raw-code-object entry with local exception
-conversion, use a real boundary-return wrapper instead:
-
-```text
-CallCodeObject c[target_code_object], a0, argc
 ReturnToNative
 
 handler:
   ReturnPendingExceptionToNative
 ```
 
-This direct path is intentionally separate from function call wrappers. It
-bypasses `Function` arity/default/varargs behavior because raw code objects do
-not have that public call contract.
+On success, `ThreadState::run()` returns the accumulator. On failure, it returns
+`Value::exception_marker()` and leaves the pending exception on `ThreadState`.
+The host layer can choose whether to format that pending exception as a
+`PythonException`, propagate the marker, or handle it locally.
+
+This direct startup path is intentionally separate from function call wrappers.
+It bypasses `Function` arity/default/varargs behavior because module code
+objects do not have that public call contract. There is no general raw
+`CodeObject` native-call API yet; add one only when there is a concrete runtime
+entry point that needs it.
 
 ### Halt
 
-`Halt` is the legacy/top-level interpreter exit. It returns the accumulator from
+`Halt` is the legacy low-level interpreter exit. It returns the accumulator from
 the current interpreter invocation without restoring a caller frame from the
 current Clover frame header.
 
-That behavior is still useful for startup/test wrappers whose root wrapper is
-the initial code object passed to `run_interpreter()`. Those wrappers do not
-have an ordinary managed caller frame to pop.
-
 Before returning to native C++ code, `Halt` sets the Clover frame frontier to
-the current `fp`. This prevents the frontier from retaining a stale native thunk
-frame after a top-level interpreter run exits.
+the current `fp`. It is useful for hand-built test code and other deliberately
+unlinked interpreter invocations, not for ordinary native-to-Clover entry.
 
 `Halt` should not be used for reusable native-to-managed call wrappers that are
 linked into an existing Clover frame chain. Those wrappers need `ReturnToNative`
@@ -467,10 +454,9 @@ The opcode must not clear, format, materialize, or throw the pending exception.
 The native caller decides whether to propagate it outward, convert it through
 another boundary, or handle and clear it explicitly.
 
-The current startup wrapper has a similar exception-table shape, but a different
-policy: its handler runs `RaiseIfUnhandledException`, which converts the pending
-VM exception into the current C++ outer error mechanism. Native-to-managed call
-wrappers should not use that policy.
+The startup wrapper now uses this opcode in its exception-table handler, so
+startup failure has the same native boundary result convention as function
+entry: exception marker return plus pending exception state on `ThreadState`.
 
 ### Clover Frame Frontier
 
@@ -479,20 +465,18 @@ is the newest live Clover frame available to native C++ code while the
 interpreter is not actively carrying `fp` in its dispatch state. It is a
 frame-chain anchor, not the full stack extent.
 
-`ThreadState` initializes the frontier to the initial interpreter entry frame.
-`ThreadState::run()` enters the startup wrapper from that frame. While the
-interpreter is actively running, its local `fp` is the newest live Clover frame.
-Any opcode that crosses from interpreted execution into native C++ must set the
-frontier before control leaves interpreted execution:
+`ThreadState` initializes the frontier to a permanent sentinel Clover frame. The
+sentinel frame terminates the frame chain with `previous_fp == nullptr`.
+`ThreadState::run()` pushes a startup boundary frame whose previous fp is the
+current frontier. While the interpreter is actively running, its local `fp` is
+the newest live Clover frame. Any opcode that crosses from interpreted
+execution into native C++ must set the frontier before control leaves
+interpreted execution:
 
 ```text
 CallNative0/1/2/3:
   thread->clover_frame_frontier = fp
   call native target on the native stack
-
-Halt:
-  thread->clover_frame_frontier = fp
-  return accumulator
 
 ReturnToNative:
   pop the wrapper frame
@@ -503,6 +487,10 @@ ReturnPendingExceptionToNative:
   pop the wrapper frame
   thread->clover_frame_frontier = restored caller fp
   return Value::exception_marker()
+
+Halt:
+  thread->clover_frame_frontier = fp
+  return accumulator
 ```
 
 `pc` and `code_object` do not need to be saved as durable cross-boundary
@@ -615,13 +603,13 @@ The first migrated native methods and builtins are:
 Tests cover direct native thunk calls for arities 0, 1, 2, and 3, the
 `ReturnOrRaiseException` thunk shape, native marker-to-exception unwinding, the
 string method cases, `range`'s defaulted three-argument native thunk, Clover
-frame frontier updates, native boundary returns, and Clover function entry
-adapter wrappers.
+frame frontier updates, native boundary returns, Clover function entry adapter
+wrappers, and startup boundary returns.
 
 Clover function entry adapter wrappers are generated and cached by positional
 arity. `ReturnToNative` and `ReturnPendingExceptionToNative` are implemented for
-boundary wrappers. The Clover frame frontier is initialized for initial
-interpreter entry and set by `Halt`, by native boundary returns, and by the
+boundary wrappers. The Clover frame frontier is initialized to a terminated
+sentinel frame and set by `Halt`, by native boundary returns, and by the
 fixed-arity `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` interpreter
 opcodes.
 
@@ -632,8 +620,9 @@ opcodes.
    path for module startup and similar non-`Function` code.
 2. [x] Add fixed-arity `ThreadState::call_clovervm_function` overloads backed by the
    matching arity wrappers.
-3. [ ] Add raw code-object boundary-return wrappers when native code needs local
-   pending-exception conversion for non-`Function` code entry.
+3. [x] Switch startup code-object entry to the native boundary return
+   convention. Do not add a general raw `CodeObject` native-call API until there
+   is a concrete runtime entry point that needs it.
 4. [ ] Design and implement the packed tuple/vector native convention for true
    variadic native callables.
 5. [ ] Add specialized interpreter or JIT fast paths for trivial native thunk code
@@ -666,8 +655,8 @@ opcodes.
   sites to materialize an argument array.
 - Method lookup is not part of `call_clovervm_function`; special-method calls
   get a separate API.
-- Raw code-object entry is separate from native-to-`Function` calls. Module code
-  objects are not `Function`s and should use prepared `CallCodeObject` entry.
+- Startup code-object entry is separate from native-to-`Function` calls. Module
+  code objects are not `Function`s and use prepared `CallCodeObject` entry.
 - Native target pointers live in `CodeObject::native_function_targets`, not in
   `constant_values`.
 - `NativeFunctionTarget` is untagged; the opcode determines the calling
@@ -681,6 +670,7 @@ opcodes.
 - `Halt` and `ReturnToNative` intentionally diverge: `Halt` exits the current
   interpreter invocation without popping a caller frame, while `ReturnToNative`
   pops a linked native-call wrapper and saves the restored live managed fp.
+  Startup entry uses `ReturnToNative`, not `Halt`.
 - Native/C boundaries are not first-order managed unwinder frames; managed
   thunks and transition continuations adapt native results back into the VM
   exception model.

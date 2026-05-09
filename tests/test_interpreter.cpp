@@ -79,19 +79,52 @@ static std::string narrow_test_wstring(const wchar_t *message)
     return result;
 }
 
+static std::wstring cl_test_string_to_wstring(TValue<String> string)
+{
+    String *str = string.extract();
+    return std::wstring(str->data, size_t(str->count.extract()));
+}
+
+static std::wstring format_pending_python_error(ThreadState *thread)
+{
+    if(thread->pending_exception_kind() == PendingExceptionKind::StopIteration)
+    {
+        return L"StopIteration";
+    }
+
+    EXPECT_EQ(PendingExceptionKind::Object, thread->pending_exception_kind());
+    TValue<ExceptionObject> exception =
+        TValue<ExceptionObject>::from_value_checked(
+            thread->pending_exception_object());
+    std::wstring result = cl_test_string_to_wstring(
+        exception.extract()->get_class().extract()->get_name());
+    std::wstring message = cl_test_string_to_wstring(
+        static_cast<TValue<String>>(exception.extract()->message));
+    if(!message.empty())
+    {
+        result += L": ";
+        result += message;
+    }
+    return result;
+}
+
+static void expect_thread_python_error(ThreadState *thread,
+                                       const wchar_t *expected_message)
+{
+    ASSERT_TRUE(thread->has_pending_exception());
+    std::wstring actual_message = format_pending_python_error(thread);
+    EXPECT_STREQ(expected_message, actual_message.c_str());
+    EXPECT_STREQ(narrow_test_wstring(expected_message).c_str(),
+                 narrow_test_wstring(actual_message.c_str()).c_str());
+}
+
 static void expect_python_error(const wchar_t *source,
                                 const wchar_t *expected_message)
 {
-    try
-    {
-        (void)test::FileRunner(source);
-        FAIL() << "Expected PythonException";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(expected_message, err.wide_what().c_str());
-        EXPECT_STREQ(narrow_test_wstring(expected_message).c_str(), err.what());
-    }
+    test::FileRunner file_runner(source);
+    EXPECT_TRUE(file_runner.return_value.is_exception_marker());
+    expect_thread_python_error(file_runner.test_context().thread(),
+                               expected_message);
 }
 
 static void expect_range_iterator(Value actual, int64_t expected_current,
@@ -109,7 +142,7 @@ static void expect_range_iterator(Value actual, int64_t expected_current,
 
 static int64_t g_next_counter = 0;
 static Value *g_native_frame_frontier_seen = nullptr;
-static Value *g_expected_initial_clover_fp = nullptr;
+static Value *g_expected_clover_frame_sentinel = nullptr;
 static uint32_t g_weave_frontier_checks = 0;
 
 static Value native_next_counter() { return Value::from_smi(g_next_counter++); }
@@ -154,22 +187,22 @@ static void expect_current_frontier_reaches_initial(uint32_t expected_count)
     Value *frontier = thread->clover_frame_frontier();
     EXPECT_NE(nullptr, frontier);
     EXPECT_TRUE(clover_frame_chain_reaches_terminated_root(
-        frontier, g_expected_initial_clover_fp, expected_count));
+        frontier, g_expected_clover_frame_sentinel, expected_count));
     ++g_weave_frontier_checks;
 }
 
 static Value native_weave_inner()
 {
-    expect_current_frontier_reaches_initial(7);
+    expect_current_frontier_reaches_initial(8);
     return Value::from_smi(23);
 }
 
 static Value native_weave_outer(Value inner_function)
 {
-    expect_current_frontier_reaches_initial(4);
+    expect_current_frontier_reaches_initial(5);
     Value result = active_thread()->call_clovervm_function(
         TValue<Function>::from_value_checked(inner_function));
-    expect_current_frontier_reaches_initial(4);
+    expect_current_frontier_reaches_initial(5);
     if(result.is_exception_marker())
     {
         return result;
@@ -1608,37 +1641,41 @@ TEST(Interpreter, call_native_sets_clover_frame_frontier)
         test_context, code_obj, L"native_frame3",
         make_native_function(&test_context.vm(), native_frame_frontier3));
 
-    Value *initial_frontier = test_context.thread()->clover_frame_frontier();
-    EXPECT_NE(nullptr, initial_frontier);
+    Value *sentinel_fp = test_context.thread()->clover_frame_sentinel();
+    EXPECT_NE(nullptr, sentinel_fp);
+    EXPECT_EQ(sentinel_fp, test_context.thread()->clover_frame_frontier());
     Value actual = test_context.thread()->run(code_obj);
     EXPECT_EQ(Value::from_smi(15), actual);
     EXPECT_NE(nullptr, g_native_frame_frontier_seen);
-    EXPECT_EQ(initial_frontier, test_context.thread()->clover_frame_frontier());
+    EXPECT_EQ(sentinel_fp, test_context.thread()->clover_frame_frontier());
     EXPECT_NE(g_native_frame_frontier_seen,
               test_context.thread()->clover_frame_frontier());
 }
 
-TEST(Interpreter, run_initializes_terminated_clover_frame_frontier)
+TEST(Interpreter, thread_state_starts_with_terminated_clover_frame_sentinel)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    Value *initial_fp = test_context.thread()->clover_frame_frontier();
+    Value *sentinel_fp = test_context.thread()->clover_frame_sentinel();
+    EXPECT_EQ(sentinel_fp, test_context.thread()->clover_frame_frontier());
     CodeObject *code_obj = test_context.compile_file(L"42\n");
 
     Value actual = test_context.thread()->run(code_obj);
 
     EXPECT_EQ(Value::from_smi(42), actual);
-    EXPECT_EQ(initial_fp, test_context.thread()->clover_frame_frontier());
-    EXPECT_TRUE(
-        clover_frame_chain_reaches_terminated_root(initial_fp, initial_fp, 1));
+    EXPECT_EQ(sentinel_fp, test_context.thread()->clover_frame_frontier());
+    EXPECT_TRUE(clover_frame_chain_reaches_terminated_root(sentinel_fp,
+                                                           sentinel_fp, 1));
 }
 
 TEST(Interpreter, clover_frame_frontier_chain_survives_nested_native_reentry)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    g_expected_initial_clover_fp =
-        test_context.thread()->clover_frame_frontier();
+    g_expected_clover_frame_sentinel =
+        test_context.thread()->clover_frame_sentinel();
+    EXPECT_EQ(g_expected_clover_frame_sentinel,
+              test_context.thread()->clover_frame_frontier());
     g_weave_frontier_checks = 0;
 
     CodeObject *code_obj =
@@ -1656,9 +1693,9 @@ TEST(Interpreter, clover_frame_frontier_chain_survives_nested_native_reentry)
 
     EXPECT_EQ(Value::from_smi(42), actual);
     EXPECT_EQ(3u, g_weave_frontier_checks);
-    EXPECT_EQ(g_expected_initial_clover_fp,
+    EXPECT_EQ(g_expected_clover_frame_sentinel,
               test_context.thread()->clover_frame_frontier());
-    g_expected_initial_clover_fp = nullptr;
+    g_expected_clover_frame_sentinel = nullptr;
 }
 
 TEST(Interpreter, return_to_native_restores_clover_frame_frontier)
@@ -1902,16 +1939,9 @@ TEST(Interpreter, native_exception_marker_materializes_stop_iteration)
                 make_native_function(&test_context.vm(),
                                      native_stop_iteration_with_value));
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected unhandled pending exception";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"StopIteration", err.wide_what().c_str());
-        EXPECT_STREQ("StopIteration", err.what());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"StopIteration");
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -1934,16 +1964,9 @@ TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
                 make_native_function(&test_context.vm(),
                                      native_stop_iteration_with_value));
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected unhandled pending exception";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"StopIteration", err.wide_what().c_str());
-        EXPECT_STREQ("StopIteration", err.what());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"StopIteration");
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -1983,15 +2006,9 @@ TEST(Interpreter, raise_from_handler_sets_exception_context)
                                                      L"except Exception:\n"
                                                      L"    raise ValueError\n");
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected unhandled pending exception";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"ValueError", err.wide_what().c_str());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError");
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -2015,16 +2032,10 @@ TEST(Interpreter, bare_raise_without_active_exception_raises_runtime_error)
     ThreadState::ActivationScope activation_scope(test_context.thread());
     CodeObject *code_obj = test_context.compile_file(L"raise\n");
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected unhandled pending exception";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"RuntimeError: No active exception to reraise",
-                     err.wide_what().c_str());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(),
+                               L"RuntimeError: No active exception to reraise");
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -2058,15 +2069,9 @@ TEST(Interpreter, try_finally_runs_cleanup_before_reraising)
                                                      L"finally:\n"
                                                      L"    result = 2\n");
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected unhandled pending exception";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"ValueError", err.wide_what().c_str());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError");
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
@@ -2083,15 +2088,9 @@ TEST(Interpreter, try_finally_raise_chains_body_exception_as_context)
                                                      L"finally:\n"
                                                      L"    raise ValueError\n");
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected unhandled pending exception";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"ValueError", err.wide_what().c_str());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError");
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -2118,15 +2117,9 @@ TEST(Interpreter, bare_raise_in_exceptional_finally_reraises_body_exception)
                                                      L"finally:\n"
                                                      L"    raise\n");
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected unhandled pending exception";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"NameError", err.wide_what().c_str());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"NameError");
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -2336,15 +2329,9 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_unmatched_reraise)
                                                      L"finally:\n"
                                                      L"    result = 2\n");
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected unhandled pending exception";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"ValueError", err.wide_what().c_str());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError");
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
@@ -2364,15 +2351,9 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_handler_reraise)
                                                      L"finally:\n"
                                                      L"    result = 2\n");
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected unhandled pending exception";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"ValueError", err.wide_what().c_str());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError");
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
@@ -2421,15 +2402,9 @@ TEST(Interpreter, try_except_else_exception_is_not_caught_by_handlers)
                                                      L"else:\n"
                                                      L"    raise ValueError\n");
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected unhandled pending exception";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"ValueError", err.wide_what().c_str());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError");
 }
 
 TEST(Interpreter, try_except_else_finally_runs_cleanup_after_else)
@@ -2463,15 +2438,9 @@ TEST(Interpreter, try_except_else_finally_cleans_up_else_exception)
                                                      L"finally:\n"
                                                      L"    result = 2\n");
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected unhandled pending exception";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"ValueError", err.wide_what().c_str());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError");
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
@@ -2489,16 +2458,9 @@ TEST(Interpreter, unhandled_python_exception_reports_class_and_message)
                 make_native_function(&test_context.vm(),
                                      native_base_exception_with_message));
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected unhandled pending exception";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"BaseException: boom", err.wide_what().c_str());
-        EXPECT_STREQ("BaseException: boom", err.what());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"BaseException: boom");
 }
 
 TEST(Interpreter, native_exception_marker_requires_pending_exception)
@@ -2533,15 +2495,9 @@ TEST(Interpreter, raise_unwind_raises_exception_class)
     CodeObject *code_obj =
         make_raise_unwind_code(test_context, exception_class);
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected PythonException";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"Exception", err.wide_what().c_str());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"Exception");
 }
 
 TEST(Interpreter, raise_unwind_raises_exception_object)
@@ -2555,15 +2511,9 @@ TEST(Interpreter, raise_unwind_raises_exception_object)
     CodeObject *code_obj =
         make_raise_unwind_code(test_context, exception.as_value());
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected PythonException";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"ValueError: boom", err.wide_what().c_str());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError: boom");
 }
 
 TEST(Interpreter, raise_unwind_rejects_non_exception)
@@ -2573,16 +2523,11 @@ TEST(Interpreter, raise_unwind_rejects_non_exception)
     CodeObject *code_obj =
         make_raise_unwind_code(test_context, Value::from_smi(1));
 
-    try
-    {
-        (void)test_context.thread()->run(code_obj);
-        FAIL() << "Expected PythonException";
-    }
-    catch(const PythonException &err)
-    {
-        EXPECT_STREQ(L"TypeError: exceptions must derive from BaseException",
-                     err.wide_what().c_str());
-    }
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(),
+                               L"TypeError: exceptions must derive from "
+                               L"BaseException");
 }
 
 TEST(Interpreter, builtin_scope_lookup)

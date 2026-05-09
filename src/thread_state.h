@@ -87,6 +87,10 @@ namespace cl
         {
             return clover_frame_frontier_ptr;
         }
+        Value *clover_frame_sentinel() const
+        {
+            return clover_frame_sentinel_ptr;
+        }
 
         bool has_pending_exception() const;
         PendingExceptionKind pending_exception_kind() const;
@@ -181,6 +185,8 @@ namespace cl
         // interpreter is not actively carrying fp in its dispatch state. This
         // is a frame-chain anchor, not the full stack extent.
         Value *clover_frame_frontier_ptr = nullptr;
+        // Permanent root frame for this thread's Clover frame chain.
+        Value *clover_frame_sentinel_ptr = nullptr;
 
         static thread_local ThreadState *current_thread;
     };

@@ -476,9 +476,8 @@ TEST(Codegen, startup_wrapper_uses_exception_table_for_unhandled_exception)
     std::string actual = fmt::to_string(*wrapper.extract());
     std::string expected = "Code object:\n"
                            "    0 CallCodeObject c[0], a0, 0\n"
-                           "    4 Halt\n"
-                           "    5 RaiseIfUnhandledException\n"
-                           "    6 Halt\n"
+                           "    4 ReturnToNative\n"
+                           "    5 ReturnPendingExceptionToNative\n"
                            "Exception table:\n"
                            "    0..4 -> 5\n"
                            "Constant 0: Code object:\n"

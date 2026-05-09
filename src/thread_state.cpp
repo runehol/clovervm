@@ -12,6 +12,7 @@
 #include "runtime_helpers.h"
 #include "tokenizer.h"
 #include "virtual_machine.h"
+#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -24,6 +25,7 @@ namespace cl
     static_assert((FrameHeaderSizeAboveFp * sizeof(Value)) %
                       FrameAlignmentBytes ==
                   0);
+    static_assert((FrameAlignmentBytes & (FrameAlignmentBytes - 1)) == 0);
 
     thread_local ThreadState *ThreadState::current_thread = nullptr;
 
@@ -39,11 +41,19 @@ namespace cl
         return reinterpret_cast<Value *>(address);
     }
 
-    static Value *initial_clover_frame_frontier(std::vector<Value> &stack)
+    static Value *compute_clover_frame_sentinel(std::vector<Value> &stack)
     {
         Value *highest_fp_with_header =
             stack.data() + stack.size() - FrameHeaderSizeAboveFp;
         return align_clover_frame_pointer_down(highest_fp_with_header);
+    }
+
+    static void initialize_clover_frame_sentinel(Value *sentinel_fp)
+    {
+        sentinel_fp[FrameHeaderPreviousFpOffset].as.ptr = nullptr;
+        sentinel_fp[FrameHeaderCompiledReturnPcOffset].as.ptr = nullptr;
+        sentinel_fp[FrameHeaderReturnCodeObjectOffset].as.ptr = nullptr;
+        sentinel_fp[FrameHeaderReturnPcOffset].as.ptr = nullptr;
     }
 
     ThreadState::ThreadState(VirtualMachine *_machine)
@@ -51,25 +61,32 @@ namespace cl
           refcounted_heap(&machine->get_refcounted_global_heap()),
           stack(1024 * 1024)
     {
-        set_clover_frame_frontier(initial_clover_frame_frontier(stack));
+        Value *sentinel_fp = compute_clover_frame_sentinel(stack);
+        clover_frame_sentinel_ptr = sentinel_fp;
+        initialize_clover_frame_sentinel(sentinel_fp);
+        set_clover_frame_frontier(sentinel_fp);
     }
 
-    static void initialize_initial_clover_frame(Value *initial_fp)
+    static Value *entry_frame_pointer(Value *caller_fp, CodeObject *code_object)
     {
-        initial_fp[FrameHeaderPreviousFpOffset].as.ptr = nullptr;
-        initial_fp[FrameHeaderCompiledReturnPcOffset].as.ptr = nullptr;
-        initial_fp[FrameHeaderReturnCodeObjectOffset].as.ptr = nullptr;
-        initial_fp[FrameHeaderReturnPcOffset].as.ptr = nullptr;
+        int32_t slots_above_entry_fp =
+            std::max(FrameHeaderSizeAboveFp,
+                     code_object->get_highest_occupied_frame_offset() + 1);
+        return caller_fp - slots_above_entry_fp;
     }
 
     Value ThreadState::run(CodeObject *obj)
     {
         ActivationScope activation_scope(this);
-        initialize_initial_clover_frame(clover_frame_frontier());
         OwnedTValue<CodeObject> startup_wrapper(
             make_startup_wrapper_code_object(obj));
-        return run_interpreter(clover_frame_frontier(),
-                               startup_wrapper.extract(), 0, this);
+        Value *caller_fp = clover_frame_frontier();
+        Value *entry_fp =
+            entry_frame_pointer(caller_fp, startup_wrapper.extract());
+        entry_fp[FrameHeaderPreviousFpOffset].as.ptr =
+            reinterpret_cast<Object *>(caller_fp);
+        set_clover_frame_frontier(entry_fp);
+        return run_interpreter(entry_fp, startup_wrapper.extract(), 0, this);
     }
 
     static void set_clover_entry_adapter_parameter(CodeObject *adapter,
@@ -86,8 +103,7 @@ namespace cl
         ActivationScope activation_scope(this);
         CodeObject *adapter = machine->clover_function_entry_adapter(n_args);
         Value *caller_fp = clover_frame_frontier();
-        Value *adapter_fp =
-            caller_fp - adapter->get_highest_occupied_frame_offset() - 1;
+        Value *adapter_fp = entry_frame_pointer(caller_fp, adapter);
         adapter_fp[FrameHeaderPreviousFpOffset].as.ptr =
             reinterpret_cast<Object *>(caller_fp);
 
