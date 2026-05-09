@@ -2,12 +2,11 @@
 #include "class_object.h"
 #include "exception_propagation.h"
 #include "native_function.h"
+#include "string_builder.h"
 #include "thread_state.h"
-#include "value_repr.h"
 #include "virtual_machine.h"
 #include <algorithm>
 #include <iterator>
-#include <string>
 
 namespace cl
 {
@@ -20,18 +19,19 @@ namespace cl
         }
 
         List *list = self.get_ptr<List>();
-        std::wstring result = L"[";
+        StringBuilder builder;
+        builder.append_char(L'[');
         for(size_t idx = 0; idx < list->size(); ++idx)
         {
             if(idx != 0)
             {
-                result += L", ";
+                builder.append_c_str(L", ");
             }
             CL_PROPAGATE_EXCEPTION(
-                append_value_repr(result, list->item_unchecked(idx)));
+                builder.append_repr(list->item_unchecked(idx)));
         }
-        result += L"]";
-        return active_thread()->make_object_value<String>(result);
+        builder.append_char(L']');
+        return builder.finish();
     }
 
     List::List(ClassObject *cls, size_t size)

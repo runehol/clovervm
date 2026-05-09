@@ -7,14 +7,14 @@
 #include "refcount.h"
 #include "shape.h"
 #include "str.h"
+#include "string_builder.h"
 #include "thread_state.h"
 #include "typed_value.h"
 #include "value.h"
-#include "value_repr.h"
+#include "value_string.h"
 #include "virtual_machine.h"
 #include <algorithm>
 #include <iterator>
-#include <string>
 
 namespace cl
 {
@@ -109,11 +109,11 @@ namespace cl
 
         TValue<String> class_name =
             active_thread()->class_of_value(self)->get_name();
-        std::wstring result = L"<";
-        result.append(class_name.extract()->data,
-                      size_t(class_name.extract()->count.extract()));
-        result += L" object>";
-        return active_thread()->make_object_value<String>(result);
+        StringBuilder builder;
+        builder.append_char(L'<');
+        builder.append_string(class_name);
+        builder.append_c_str(L" object>");
+        return builder.finish();
     }
 
     static Value native_object_str(Value self)
@@ -123,7 +123,7 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"object.__str__ expects an object receiver");
         }
-        return value_repr(self);
+        return value_to_repr_string(self);
     }
 
     void install_object_class_methods(VirtualMachine *vm)

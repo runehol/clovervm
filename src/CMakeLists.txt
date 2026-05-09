@@ -86,8 +86,10 @@ add_library(libclovervm STATIC
     tokenizer.cpp
     validity_cell.h
     value.h
-    value_repr.cpp
-    value_repr.h
+    value_string.cpp
+    value_string.h
+    string_builder.cpp
+    string_builder.h
     vm_array.h
 )
 

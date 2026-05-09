@@ -1,6 +1,7 @@
 #include "str.h"
 #include "class_object.h"
 #include "native_function.h"
+#include "string_builder.h"
 #include "thread_state.h"
 #include "virtual_machine.h"
 #include <iterator>
@@ -39,34 +40,35 @@ namespace cl
         }
 
         String *str = self.get_ptr<String>();
-        std::wstring result = L"'";
+        StringBuilder builder;
+        builder.append_char(L'\'');
         size_t n_chars = size_t(str->count.extract());
         for(size_t idx = 0; idx < n_chars; ++idx)
         {
             switch(str->data[idx])
             {
                 case L'\\':
-                    result += L"\\\\";
+                    builder.append_c_str(L"\\\\");
                     break;
                 case L'\'':
-                    result += L"\\'";
+                    builder.append_c_str(L"\\'");
                     break;
                 case L'\n':
-                    result += L"\\n";
+                    builder.append_c_str(L"\\n");
                     break;
                 case L'\r':
-                    result += L"\\r";
+                    builder.append_c_str(L"\\r");
                     break;
                 case L'\t':
-                    result += L"\\t";
+                    builder.append_c_str(L"\\t");
                     break;
                 default:
-                    result += str->data[idx];
+                    builder.append_char(str->data[idx]);
                     break;
             }
         }
-        result += L"'";
-        return active_thread()->make_object_value<String>(result);
+        builder.append_char(L'\'');
+        return builder.finish();
     }
 
     static Value native_str_add(Value left_value, Value right_value)

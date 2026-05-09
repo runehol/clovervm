@@ -3,11 +3,10 @@
 #include "exception_propagation.h"
 #include "native_function.h"
 #include "refcount.h"
+#include "string_builder.h"
 #include "thread_state.h"
-#include "value_repr.h"
 #include "virtual_machine.h"
 #include <iterator>
-#include <string>
 
 namespace cl
 {
@@ -20,22 +19,23 @@ namespace cl
         }
 
         Tuple *tuple = self.get_ptr<Tuple>();
-        std::wstring result = L"(";
+        StringBuilder builder;
+        builder.append_char(L'(');
         for(size_t idx = 0; idx < tuple->size(); ++idx)
         {
             if(idx != 0)
             {
-                result += L", ";
+                builder.append_c_str(L", ");
             }
             CL_PROPAGATE_EXCEPTION(
-                append_value_repr(result, tuple->item_unchecked(idx)));
+                builder.append_repr(tuple->item_unchecked(idx)));
         }
         if(tuple->size() == 1)
         {
-            result += L",";
+            builder.append_char(L',');
         }
-        result += L")";
-        return active_thread()->make_object_value<String>(result);
+        builder.append_char(L')');
+        return builder.finish();
     }
 
     Tuple::Tuple(HeapLayout layout, BootstrapObjectTag, size_t size)
