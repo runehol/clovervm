@@ -95,11 +95,18 @@ namespace cl
             return 0;
         }
 
+        size_t quote_len = 1;
+        if(prefix_len + 2 < s.size() && s[prefix_len + 1] == quote &&
+           s[prefix_len + 2] == quote)
+        {
+            quote_len = 3;
+        }
+
         bool escaped = false;
-        for(size_t i = prefix_len + 1; i < s.size(); ++i)
+        for(size_t i = prefix_len + quote_len; i < s.size(); ++i)
         {
             wchar_t c = s[i];
-            if(c == L'\n' || c == L'\r')
+            if(quote_len == 1 && (c == L'\n' || c == L'\r'))
             {
                 return 0;
             }
@@ -118,7 +125,14 @@ namespace cl
 
             if(c == quote)
             {
-                return i + 1;
+                if(quote_len == 1)
+                {
+                    return i + 1;
+                }
+                if(i + 2 < s.size() && s[i + 1] == quote && s[i + 2] == quote)
+                {
+                    return i + 3;
+                }
             }
         }
 

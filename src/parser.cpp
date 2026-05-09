@@ -62,13 +62,26 @@ namespace cl
         {
             throw std::runtime_error("Invalid string literal");
         }
-        if(token.size() < prefix_len + 2 || token.back() != quote)
+        size_t quote_len = 1;
+        if(prefix_len + 2 < token.size() && token[prefix_len + 1] == quote &&
+           token[prefix_len + 2] == quote)
+        {
+            quote_len = 3;
+        }
+        if(token.size() < prefix_len + quote_len * 2)
         {
             throw std::runtime_error("Invalid string literal");
         }
+        for(size_t i = 0; i < quote_len; ++i)
+        {
+            if(token[token.size() - quote_len + i] != quote)
+            {
+                throw std::runtime_error("Invalid string literal");
+            }
+        }
 
-        std::wstring body = std::wstring(
-            token.substr(prefix_len + 1, token.size() - prefix_len - 2));
+        std::wstring body = std::wstring(token.substr(
+            prefix_len + quote_len, token.size() - prefix_len - quote_len * 2));
         if(is_raw)
         {
             return body;

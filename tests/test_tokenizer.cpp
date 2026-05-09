@@ -162,6 +162,33 @@ TEST(Tokenizer, strings_support_prefixes_single_quotes_and_escapes)
     EXPECT_EQ(expected_spellings, actual_spellings);
 }
 
+TEST(Tokenizer, triple_quoted_strings_may_span_lines)
+{
+    CompilationUnit input(L"\"\"\"first\n"
+                          L"second\"\"\"\n"
+                          L"r'''raw\n"
+                          L"text'''\n");
+    std::vector<Token> expected_tokens = {Token::STRING, Token::NEWLINE,
+                                          Token::STRING, Token::NEWLINE,
+                                          Token::ENDMARKER};
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+
+    std::vector<std::wstring> expected_spellings = {
+        L"\"\"\"first\nsecond\"\"\"", L"r'''raw\ntext'''"};
+    std::vector<std::wstring> actual_spellings;
+    for(size_t i = 0; i < tv.tokens.size(); ++i)
+    {
+        if(tv.tokens[i] == Token::STRING)
+        {
+            actual_spellings.emplace_back(
+                string_for_string_token(input, tv.source_offsets[i]));
+        }
+    }
+    EXPECT_EQ(expected_spellings, actual_spellings);
+}
+
 TEST(Tokenizer, comment_issue)
 {
     std::wstring source =

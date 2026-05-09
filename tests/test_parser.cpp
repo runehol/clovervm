@@ -327,6 +327,26 @@ TEST(Parser, string_literal_decodes_escapes_and_prefixes)
                            raw.ast.constants[unicode_literal])));
 }
 
+TEST(Parser, triple_quoted_string_literals_decode_multiline_body)
+{
+    test::ParsedFile parsed(L"\"\"\"first\n"
+                            L"second\\n\"\"\"\n"
+                            L"r'''raw\\n\n"
+                            L"text'''\n");
+
+    int32_t escaped_stmt = parsed.ast.children[parsed.ast.root_node][0];
+    int32_t escaped_literal = parsed.ast.children[escaped_stmt][0];
+    EXPECT_STREQ(L"first\nsecond\n",
+                 string_as_wchar_t(TValue<String>::from_value_checked(
+                     parsed.ast.constants[escaped_literal])));
+
+    int32_t raw_stmt = parsed.ast.children[parsed.ast.root_node][1];
+    int32_t raw_literal = parsed.ast.children[raw_stmt][0];
+    EXPECT_STREQ(L"raw\\n\ntext",
+                 string_as_wchar_t(TValue<String>::from_value_checked(
+                     parsed.ast.constants[raw_literal])));
+}
+
 TEST(Parser, def_stmt)
 {
     std::string expected = (""
