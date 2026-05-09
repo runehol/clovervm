@@ -200,6 +200,38 @@ static CodeObject *make_raise_unwind_code(test::VmTestContext &test_context,
     return builder.finalize();
 }
 
+static Value *prepare_native_return_wrapper_frame(ThreadState *thread)
+{
+    Value *caller_fp = thread->clover_frame_frontier();
+    Value *wrapper_fp = caller_fp - FrameHeaderSizeAboveFp;
+    wrapper_fp[FrameHeaderPreviousFpOffset].as.ptr =
+        reinterpret_cast<Object *>(caller_fp);
+    thread->set_clover_frame_frontier(wrapper_fp);
+    return wrapper_fp;
+}
+
+static CodeObject *make_return_to_native_code(test::VmTestContext &test_context)
+{
+    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
+        L"<return-to-native-test>");
+    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
+                              name);
+    builder.emit_lda_smi(0, 42);
+    builder.emit_return_to_native(0);
+    return builder.finalize();
+}
+
+static CodeObject *
+make_return_pending_exception_to_native_code(test::VmTestContext &test_context)
+{
+    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
+        L"<return-pending-exception-to-native-test>");
+    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
+                              name);
+    builder.emit_return_pending_exception_to_native(0);
+    return builder.finalize();
+}
+
 TEST(Interpreter, assert_statement_raises_assertion_error)
 {
     expect_python_error(L"assert False\n", L"AssertionError");
@@ -1504,6 +1536,69 @@ TEST(Interpreter, call_native_sets_clover_frame_frontier)
     EXPECT_EQ(initial_frontier, test_context.thread()->clover_frame_frontier());
     EXPECT_NE(g_native_frame_frontier_seen,
               test_context.thread()->clover_frame_frontier());
+}
+
+TEST(Interpreter, return_to_native_restores_clover_frame_frontier)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_object = make_return_to_native_code(test_context);
+    Value *caller_fp = test_context.thread()->clover_frame_frontier();
+    Value *wrapper_fp =
+        prepare_native_return_wrapper_frame(test_context.thread());
+
+    Value actual =
+        run_interpreter(wrapper_fp, code_object, 0, test_context.thread());
+
+    EXPECT_EQ(Value::from_smi(42), actual);
+    EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
+}
+
+TEST(Interpreter,
+     return_pending_exception_to_native_restores_clover_frame_frontier)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_object =
+        make_return_pending_exception_to_native_code(test_context);
+    Value *caller_fp = test_context.thread()->clover_frame_frontier();
+    Value *wrapper_fp =
+        prepare_native_return_wrapper_frame(test_context.thread());
+    (void)test_context.thread()->set_pending_stop_iteration_no_value();
+
+    Value actual =
+        run_interpreter(wrapper_fp, code_object, 0, test_context.thread());
+
+    EXPECT_TRUE(actual.is_exception_marker());
+    EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
+    EXPECT_TRUE(test_context.thread()->has_pending_exception());
+    EXPECT_EQ(PendingExceptionKind::StopIteration,
+              test_context.thread()->pending_exception_kind());
+    test_context.thread()->clear_pending_exception();
+}
+
+TEST(Interpreter, return_pending_exception_to_native_requires_pending_exception)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_object =
+        make_return_pending_exception_to_native_code(test_context);
+    Value *wrapper_fp =
+        prepare_native_return_wrapper_frame(test_context.thread());
+
+    try
+    {
+        (void)run_interpreter(wrapper_fp, code_object, 0,
+                              test_context.thread());
+        FAIL() << "Expected std::runtime_error";
+    }
+    catch(const std::runtime_error &err)
+    {
+        EXPECT_STREQ(
+            "InternalError: pending exception native return without pending "
+            "exception",
+            err.what());
+    }
 }
 
 TEST(Interpreter, call_native_one_arg_function)

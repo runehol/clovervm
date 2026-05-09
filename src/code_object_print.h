@@ -330,6 +330,10 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "Return");
             case cl::Bytecode::ReturnOrRaiseException:
                 return format_to(out, "ReturnOrRaiseException");
+            case cl::Bytecode::ReturnToNative:
+                return format_to(out, "ReturnToNative");
+            case cl::Bytecode::ReturnPendingExceptionToNative:
+                return format_to(out, "ReturnPendingExceptionToNative");
             case cl::Bytecode::RaiseIfUnhandledException:
                 return format_to(out, "RaiseIfUnhandledException");
             case cl::Bytecode::LdaActiveException:
@@ -761,6 +765,8 @@ template <> struct fmt::formatter<cl::CodeObject>
 
             case cl::Bytecode::Return:
             case cl::Bytecode::ReturnOrRaiseException:
+            case cl::Bytecode::ReturnToNative:
+            case cl::Bytecode::ReturnPendingExceptionToNative:
                 break;
 
             case cl::Bytecode::RaiseIfUnhandledException:

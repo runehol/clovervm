@@ -159,6 +159,8 @@ namespace cl
         // control flow
         Return,
         ReturnOrRaiseException,
+        ReturnToNative,
+        ReturnPendingExceptionToNative,
         RaiseIfUnhandledException,
         LdaActiveException,
         ActiveExceptionIsInstance,

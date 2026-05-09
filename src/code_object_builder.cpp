@@ -263,6 +263,18 @@ namespace cl
         return emit_opcode(source_offset, Bytecode::ReturnOrRaiseException);
     }
 
+    uint32_t CodeObjectBuilder::emit_return_to_native(uint32_t source_offset)
+    {
+        return emit_opcode(source_offset, Bytecode::ReturnToNative);
+    }
+
+    uint32_t CodeObjectBuilder::emit_return_pending_exception_to_native(
+        uint32_t source_offset)
+    {
+        return emit_opcode(source_offset,
+                           Bytecode::ReturnPendingExceptionToNative);
+    }
+
     uint32_t
     CodeObjectBuilder::emit_raise_if_unhandled_exception(uint32_t source_offset)
     {

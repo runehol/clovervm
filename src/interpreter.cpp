@@ -2790,6 +2790,36 @@ namespace cl
         COMPLETE();
     }
 
+    static Value op_return_to_native(PARAMS)
+    {
+        START(1);
+        Value *restored_fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
+        thread->set_clover_frame_frontier(restored_fp);
+        return accumulator;
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_return_pending_exception_to_native_slow(PARAMS)
+    {
+        throw std::runtime_error(
+            "InternalError: pending exception native return without pending "
+            "exception");
+    }
+
+    static Value op_return_pending_exception_to_native(PARAMS)
+    {
+        START(1);
+        if(unlikely(!thread->has_pending_exception()))
+        {
+            MUSTTAIL return op_return_pending_exception_to_native_slow(ARGS);
+        }
+
+        Value *restored_fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
+        thread->set_clover_frame_frontier(restored_fp);
+        return Value::exception_marker();
+        COMPLETE();
+    }
+
     NOINLINE static Value op_raise_if_unhandled_exception(PARAMS)
     {
         START(1);
@@ -2913,6 +2943,9 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::Return, op_return);
         SET_TABLE_ENTRY(Bytecode::ReturnOrRaiseException,
                         op_return_or_raise_exception);
+        SET_TABLE_ENTRY(Bytecode::ReturnToNative, op_return_to_native);
+        SET_TABLE_ENTRY(Bytecode::ReturnPendingExceptionToNative,
+                        op_return_pending_exception_to_native);
         SET_TABLE_ENTRY(Bytecode::RaiseIfUnhandledException,
                         op_raise_if_unhandled_exception);
         SET_TABLE_ENTRY(Bytecode::LdaActiveException, op_lda_active_exception);
