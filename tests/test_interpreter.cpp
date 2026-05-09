@@ -2980,6 +2980,25 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
     }
 }
 
+TEST(Interpreter, builtin_scope_exposes_singleton_values)
+{
+    test::VmTestContext test_context;
+    Scope *builtins = test_context.vm().builtin_scope_ptr();
+
+    EXPECT_EQ(
+        Value::True(),
+        builtins->get_by_name(
+            test_context.vm().get_or_create_interned_string_value(L"True")));
+    EXPECT_EQ(
+        Value::False(),
+        builtins->get_by_name(
+            test_context.vm().get_or_create_interned_string_value(L"False")));
+    EXPECT_EQ(
+        Value::None(),
+        builtins->get_by_name(
+            test_context.vm().get_or_create_interned_string_value(L"None")));
+}
+
 TEST(Interpreter, user_code_cannot_use_clover_call_special_as_intrinsic)
 {
     expect_python_error(

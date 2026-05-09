@@ -346,6 +346,13 @@ namespace cl
                                                  Value::from_oop(cls));
         }
 
+        builtin_scope.extract()->set_by_name(
+            get_or_create_interned_string_value(L"True"), Value::True());
+        builtin_scope.extract()->set_by_name(
+            get_or_create_interned_string_value(L"False"), Value::False());
+        builtin_scope.extract()->set_by_name(
+            get_or_create_interned_string_value(L"None"), Value::None());
+
         TValue<String> range_name =
             get_or_create_interned_string_value(L"range");
         TValue<Tuple> range_defaults = make_object_value<Tuple>(2);
