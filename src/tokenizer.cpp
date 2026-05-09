@@ -223,6 +223,7 @@ namespace cl
         }
         uint32_t pos = 0;
         uint32_t end = source_code.size();
+        uint32_t bracket_depth = 0;
         static constexpr uint32_t tabsize = 8;
 
         enum
@@ -311,15 +312,25 @@ namespace cl
                         switch(c)
                         {
                             case '(':
+                                ++bracket_depth;
                                 tokens.emplace_back(Token::LPAR, pos++);
                                 break;
                             case ')':
+                                if(bracket_depth > 0)
+                                {
+                                    --bracket_depth;
+                                }
                                 tokens.emplace_back(Token::RPAR, pos++);
                                 break;
                             case '[':
+                                ++bracket_depth;
                                 tokens.emplace_back(Token::LSQB, pos++);
                                 break;
                             case ']':
+                                if(bracket_depth > 0)
+                                {
+                                    --bracket_depth;
+                                }
                                 tokens.emplace_back(Token::RSQB, pos++);
                                 break;
 
@@ -536,9 +547,14 @@ namespace cl
                                 break;
 
                             case '{':
+                                ++bracket_depth;
                                 tokens.emplace_back(Token::LBRACE, pos++);
                                 break;
                             case '}':
+                                if(bracket_depth > 0)
+                                {
+                                    --bracket_depth;
+                                }
                                 tokens.emplace_back(Token::RBRACE, pos++);
                                 break;
 
@@ -587,13 +603,29 @@ namespace cl
                                 break;
                             case '\n':
                             case '\r':
+                                if(bracket_depth > 0)
+                                {
+                                    uint32_t newline_pos = pos;
+                                    while(pos < end &&
+                                          (source_code[pos] == '\n' ||
+                                           source_code[pos] == '\r'))
+                                    {
+                                        ++pos;
+                                    }
+                                    if(pos == end)
+                                    {
+                                        tokens.emplace_back(Token::NEWLINE,
+                                                            newline_pos);
+                                    }
+                                    break;
+                                }
                                 if(tokens.size() == 0 ||
                                    tokens.tokens.back() != Token::NEWLINE)
                                 {
                                     tokens.emplace_back(Token::NEWLINE, pos);
                                 }
-                                while(source_code[pos] == '\n' ||
-                                      source_code[pos] == '\r')
+                                while(pos < end && (source_code[pos] == '\n' ||
+                                                    source_code[pos] == '\r'))
                                 {
                                     ++pos;
                                 }
@@ -613,7 +645,7 @@ namespace cl
                                 {
                                     ++pos;
                                 }
-                                while(source_code[pos] != '\n' &&
+                                while(pos < end && source_code[pos] != '\n' &&
                                       source_code[pos] != '\r');
                                 break;
 

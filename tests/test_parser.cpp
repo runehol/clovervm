@@ -370,6 +370,17 @@ TEST(Parser, calls_accept_trailing_comma)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, calls_accept_newlines_inside_parentheses)
+{
+    std::string expected = "f(1, 2)\n";
+    std::string actual = parse(L"f(\n"
+                               L"    1,\n"
+                               L"    2,\n"
+                               L")\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, parameters_accept_trailing_comma)
 {
     std::string expected = (""

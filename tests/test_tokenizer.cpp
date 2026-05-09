@@ -235,6 +235,39 @@ TEST(Tokenizer, blank_line_inside_block_emits_newline_without_indent_changes)
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
+TEST(Tokenizer, newlines_inside_brackets_do_not_emit_newline_or_indent_tokens)
+{
+    CompilationUnit input(L"value = f(\n"
+                          L"    [1,\n"
+                          L"     2],\n"
+                          L"    {3: 4}\n"
+                          L")\n");
+    std::vector<Token> expected_tokens = {
+        Token::NAME,    Token::EQUAL,    Token::NAME,   Token::LPAR,
+        Token::LSQB,    Token::NUMBER,   Token::COMMA,  Token::NUMBER,
+        Token::RSQB,    Token::COMMA,    Token::LBRACE, Token::NUMBER,
+        Token::COLON,   Token::NUMBER,   Token::RBRACE, Token::RPAR,
+        Token::NEWLINE, Token::ENDMARKER};
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+}
+
+TEST(Tokenizer, comments_inside_brackets_do_not_end_statement)
+{
+    CompilationUnit input(L"value = (\n"
+                          L"    1,  # first\n"
+                          L"    2\n"
+                          L")\n");
+    std::vector<Token> expected_tokens = {
+        Token::NAME,   Token::EQUAL,   Token::LPAR,
+        Token::NUMBER, Token::COMMA,   Token::NUMBER,
+        Token::RPAR,   Token::NEWLINE, Token::ENDMARKER};
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+}
+
 TEST(Tokenizer, bad_indentation)
 {
     expect_tokenize_error(L"if True:\n"
