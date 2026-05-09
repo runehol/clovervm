@@ -78,6 +78,7 @@ namespace cl
         CustomGetAttribute = 1 << 1,
         MissingLookupCell = 1 << 2,
         UnsupportedDescriptorKind = 1 << 3,
+        InlineReceiver = 1 << 4,
     };
 
     using AttributeCacheBlockers = uint16_t;

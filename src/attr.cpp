@@ -91,6 +91,15 @@ namespace cl
         return descriptor;
     }
 
+    static AttributeReadDescriptor
+    uncacheable_inline_receiver_descriptor(AttributeReadDescriptor descriptor)
+    {
+        descriptor.plan.lookup_validity_cell = nullptr;
+        descriptor.cache_blockers = attribute_cache_blockers(
+            descriptor.cache_blockers, AttributeCacheBlocker::InlineReceiver);
+        return descriptor;
+    }
+
     static AttributeCacheBlockers
     superseded_class_read_descriptor_cache_blockers(
         const AttributeReadDescriptor &descriptor)
@@ -331,50 +340,56 @@ namespace cl
     AttributeReadDescriptor resolve_attr_read_descriptor(Value obj,
                                                          TValue<String> name)
     {
-        if(!obj.is_ptr())
+        if(likely(obj.is_ptr()))
         {
-            return AttributeReadDescriptor::non_object_receiver();
-        }
+            Object *object = obj.get_ptr<Object>();
+            if(object->get_shape()->has_flag(ShapeFlag::IsClassObject))
+            {
+                assert(object->native_layout_id() ==
+                       NativeLayoutId::ClassObject);
+                return resolve_class_attr_read_descriptor(
+                    static_cast<ClassObject *>(object), name);
+            }
 
-        Object *object = obj.get_ptr<Object>();
-        if(object->get_shape()->has_flag(ShapeFlag::IsClassObject))
-        {
-            assert(object->native_layout_id() == NativeLayoutId::ClassObject);
-            return resolve_class_attr_read_descriptor(
-                static_cast<ClassObject *>(object), name);
-        }
+            ClassObject *class_object = object->get_class().extract();
+            AttributeReadDescriptor class_descriptor =
+                classify_class_read_descriptor(
+                    lookup_instance_attribute_read_descriptor(class_object,
+                                                              name, obj));
+            if(class_descriptor.is_found() &&
+               class_descriptor.plan.kind ==
+                   AttributeReadPlanKind::DataDescriptorGet)
+            {
+                return with_mro_shape_and_contents_validity_cell_if_unblocked(
+                    class_descriptor, class_object);
+            }
 
-        ClassObject *class_object = object->get_class().extract();
-        AttributeReadDescriptor class_descriptor =
-            classify_class_read_descriptor(
-                lookup_instance_attribute_read_descriptor(class_object, name,
-                                                          obj));
-        if(class_descriptor.is_found() &&
-           class_descriptor.plan.kind ==
-               AttributeReadPlanKind::DataDescriptorGet)
-        {
-            return with_mro_shape_and_contents_validity_cell_if_unblocked(
+            AttributeReadDescriptor own_descriptor =
+                object->lookup_own_attribute_descriptor(name);
+            if(own_descriptor.is_found())
+            {
+                return with_mro_shape_and_contents_validity_cell_if_unblocked(
+                    with_cache_blockers(
+                        own_descriptor,
+                        superseded_class_read_descriptor_cache_blockers(
+                            class_descriptor)),
+                    class_object);
+            }
+
+            // A class-chain hit only needs the receiver class MRO shape. Reuse
+            // the combined class-read cell instead of adding a third owned
+            // cell: it is shape-only along this MRO and merely over-invalidates
+            // on metaclass changes, which are much colder than class contents
+            // writes.
+            return with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
                 class_descriptor, class_object);
         }
 
-        AttributeReadDescriptor own_descriptor =
-            object->lookup_own_attribute_descriptor(name);
-        if(own_descriptor.is_found())
-        {
-            return with_mro_shape_and_contents_validity_cell_if_unblocked(
-                with_cache_blockers(
-                    own_descriptor,
-                    superseded_class_read_descriptor_cache_blockers(
-                        class_descriptor)),
-                class_object);
-        }
-
-        // A class-chain hit only needs the receiver class MRO shape. Reuse the
-        // combined class-read cell instead of adding a third owned cell: it is
-        // shape-only along this MRO and merely over-invalidates on metaclass
-        // changes, which are much colder than class contents writes.
-        return with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
-            class_descriptor, class_object);
+        ClassObject *class_object = active_thread()->class_of_value(obj);
+        return uncacheable_inline_receiver_descriptor(
+            classify_class_read_descriptor(
+                lookup_instance_attribute_read_descriptor(class_object, name,
+                                                          obj)));
     }
 
     Value load_attr_from_plan(Value receiver, const AttributeReadPlan &plan)
@@ -420,13 +435,6 @@ namespace cl
     bool load_method(Value obj, TValue<String> name, Value &callable_out,
                      Value &self_out)
     {
-        if(!obj.is_ptr())
-        {
-            callable_out = Value::not_present();
-            self_out = Value::not_present();
-            return false;
-        }
-
         AttributeReadDescriptor descriptor =
             resolve_attr_read_descriptor(obj, name);
         if(!descriptor.is_found())

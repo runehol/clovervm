@@ -678,19 +678,18 @@ TEST(Attr, BuiltinTypeObjectsRejectUnsupportedAttributeWrites)
     }
 }
 
-TEST(Attr, LoadAttrMissesOnUnsupportedInlineValues)
+TEST(Attr, InlineValueReadDescriptorsAreNotCacheable)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> dunder_class_name(
-        context.vm().get_or_create_interned_string_value(L"__class__"));
     TValue<String> missing_name(
         context.vm().get_or_create_interned_string_value(L"missing"));
 
-    EXPECT_EQ(Value::not_present(),
-              load_attr(Value::from_smi(3), dunder_class_name));
-    EXPECT_EQ(Value::not_present(), load_attr(Value::None(), missing_name));
+    AttributeReadDescriptor missing_descriptor =
+        resolve_attr_read_descriptor(Value::None(), missing_name);
+    EXPECT_FALSE(missing_descriptor.is_found());
+    EXPECT_FALSE(missing_descriptor.is_cacheable());
 }
 
 TEST(Attr, StoreAttrWritesInstanceOwnProperty)
