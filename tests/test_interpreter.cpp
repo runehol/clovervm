@@ -2865,16 +2865,52 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    Scope *builtins = test_context.vm().get_builtin_scope().extract();
+    Scope *builtins = test_context.vm().builtin_scope_ptr();
 
-    for(const wchar_t *name: {L"iter", L"next", L"repr"})
+    struct ExpectedBuiltin
+    {
+        const wchar_t *name;
+        const wchar_t *docstring;
+    };
+
+    constexpr ExpectedBuiltin expected_builtins[] = {
+        {L"iter",
+         L"iter(iterable) -> iterator\n"
+         L"iter(callable, sentinel) -> iterator\n"
+         L"\n"
+         L"Get an iterator from an object.  In the first form, the argument "
+         L"must\n"
+         L"supply its own iterator, or be a sequence.\n"
+         L"In the second form, the callable is called until it returns the "
+         L"sentinel."},
+        {L"next",
+         L"next(iterator[, default])\n"
+         L"\n"
+         L"Return the next item from the iterator. If default is given and "
+         L"the iterator\n"
+         L"is exhausted, it is returned instead of raising StopIteration."},
+        {L"repr",
+         L"Return the canonical string representation of the object.\n"
+         L"\n"
+         L"For many object types, including most builtins, eval(repr(obj)) "
+         L"== obj."},
+    };
+
+    for(const ExpectedBuiltin &expected: expected_builtins)
     {
         TValue<String> name_value =
-            test_context.vm().get_or_create_interned_string_value(name);
+            test_context.vm().get_or_create_interned_string_value(
+                expected.name);
         Value value = builtins->get_by_name(name_value);
         ASSERT_TRUE(value.is_ptr());
         EXPECT_EQ(NativeLayoutId::Function,
                   value.get_ptr<Object>()->native_layout_id());
+        TValue<Function> function = TValue<Function>::from_value_checked(value);
+        EXPECT_STREQ(expected.docstring,
+                     cl_test_string_to_wstring(
+                         TValue<String>::from_value_checked(
+                             function.extract()->docstring.as_value()))
+                         .c_str());
     }
 }
 
