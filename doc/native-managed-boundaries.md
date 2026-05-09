@@ -2,22 +2,21 @@
 
 ## Goal
 
-CloverVM needs two explicit boundary directions:
+CloverVM has two explicit boundary directions:
 
 - managed code calls native C++ functions
 - native C++ code calls managed `Function` objects
 
-Both directions should preserve one managed frame model, one pending-exception
-model, and one root-scanning story. Native C++ code runs on the native machine
-stack. Managed interpreter/JIT state lives on the Clover stack and is reached
-through explicit frame pointers and transition metadata.
+Both directions preserve one managed frame model, one pending-exception model,
+and one root-scanning story. Native C++ code runs on the native machine stack.
+Managed interpreter state lives on the Clover stack and is reached through
+explicit frame pointers.
 
 ## Stack Ownership
 
 CloverVM has two different stack roles:
 
-- the Clover stack stores VM-managed frames, registers, call windows, and future
-  JIT frames
+- the Clover stack stores VM-managed frames, registers, and call windows
 - the native machine stack stores the C++ interpreter implementation, C++
   runtime helpers, native builtin calls, and arbitrary host/native spills
 
@@ -37,10 +36,8 @@ managed-to-managed:
 
 managed-to-native:
   publish/materialize managed roots as needed
-  switch to the native stack when coming from JIT/managed machine code
   call C++/native code
   return Value, or exception_marker with pending exception state
-  switch back to managed execution
 
 native-to-managed:
   build a managed wrapper frame linked to the saved Clover fp
@@ -57,10 +54,10 @@ interpreter also execute their C++ targets on the native stack.
 ## Managed To Native: Native Function Thunks
 
 Native C++ functions are callable through the normal `Function` object and
-interpreter frame path. The call site should not need a broad "is this a
+interpreter frame path. The call site does not need a broad "is this a
 BuiltinFunction?" branch for every native implementation detail.
 
-The current direction is:
+The implemented representation is:
 
 - native functions are represented as ordinary `Function` objects with tiny
   managed thunk `CodeObject`s
@@ -69,9 +66,8 @@ The current direction is:
 - native functions execute on the native machine stack, not on the Clover stack
 - managed thunks normalize native pending-exception results back into managed
   exceptional unwind
-- packed `*args` conventions and JIT/native transition stubs are later steps
 
-### Current Implementation
+### Implementation
 
 Fixed-arity native functions are built with overloads of
 `make_native_function()` from [src/native_function.h](../src/native_function.h):
@@ -146,33 +142,20 @@ native thunk frame
 The thunk reads arguments directly from the managed frame. No argument array or
 tuple is allocated for fixed arity.
 
-Native callbacks no longer receive `ThreadState *`. Code that needs thread
-state should use the TLS-backed helpers such as `active_thread()` or wrappers
-like `make_object_value<T>(...)`.
+Native callbacks do not receive `ThreadState *`. Code that needs thread state
+uses the TLS-backed helpers such as `active_thread()` or wrappers like
+`make_object_value<T>(...)`.
 
-### Variable Arity
+### Variable Arity Status
 
 There is no residual `BuiltinFunction` representation. `range` is an ordinary
 native thunk `Function`: its C++ target is a three-argument native function, and
 the `Function` object supplies two `None` defaults so the public arity is
 `range(stop)`, `range(start, stop)`, or `range(start, stop, step)`.
 
-True variadic native callables should still avoid receiving a raw `argc`.
-Python functions normalize variable positional arguments into an object-level
-representation such as a tuple. The native equivalent should follow that shape
-when we add the next convention.
-
-Likely next conventions:
-
-```text
-CallNativeTuple     native(args_tuple)
-CallNativeVector    native(args_tuple_or_span) after the representation is clear
-CallNativeSlot      native slot shapes such as nb_add, tp_iternext, sq_length
-```
-
-The exact opcode names are still open for the variable-arity work. The fixed
-opcodes are intentionally concrete: `CallNative0`, `CallNative1`,
-`CallNative2`, and `CallNative3`.
+There is no true variadic native convention yet. Fixed native thunks are
+intentionally concrete: `CallNative0`, `CallNative1`, `CallNative2`, and
+`CallNative3`.
 
 ### Managed-To-Native Exception Normalization
 
@@ -197,14 +180,12 @@ still letting native implementations report failure as pending exception plus
 `Value::exception_marker()` locally inside the thunk. Native boundaries do not
 become a first-order unwinder frame kind.
 
-C++ exceptions are still temporary outer panic plumbing in some old paths. In
+C++ exceptions are still outer panic plumbing in some old paths. In
 the current interpreter-only runtime they unwind the native C++ interpreter
 stack to the outer harness cleanly enough for fatal/unhandled cases, but they
 must not become the native-call convention. Expected VM failures at native
 boundaries use pending exception state plus `Value::exception_marker()`.
-Future handwritten stack-switch bridges must not allow C++ exceptions to unwind
-across the bridge. Native functions used from those paths must return through
-the pending-exception/sentinel convention.
+There are no handwritten stack-switch bridges in the current runtime.
 
 For native functions that also expose a stop-returning convention, the ordinary
 and stop-returning `CodeObject`s are sibling thunks. Both thunks call the same
@@ -238,8 +219,8 @@ same arity, exception, and frontier rules as other native-to-Clover entries.
 
 ## Native To Managed: Function Call Wrappers
 
-Native code should be able to call a managed `Function` and receive the same
-local result convention native functions use:
+Native code can call a managed `Function` and receive the same local result
+convention native functions use:
 
 ```text
 success:
@@ -251,18 +232,19 @@ failure:
   pending exception remains on ThreadState
 ```
 
-The native caller should not handle defaults, varargs, constructor thunk
-selection, or other `Function` entry policy. The wrapper should call the target
+The native caller does not handle defaults, varargs, constructor thunk
+selection, or other `Function` entry policy. The wrapper calls the target
 through `CallSimple` so the existing managed call path handles those semantics.
 
-The first contract is intentionally narrow:
+The contract is intentionally narrow:
 
 - the callable is a `TValue<Function>`
 - the native caller supplies only actual positional arguments
 - `self`, when needed, is already included as argument `0`
 - the primary C++ API uses fixed-arity overloads rather than a materialized
   argument span
-- keyword arguments and arbitrary callable protocol dispatch are later steps
+- keyword arguments and arbitrary callable protocol dispatch are not part of
+  this API
 - method lookup is handled by a separate native method-call API because lookup
   and binding semantics are different
 
@@ -271,9 +253,9 @@ The first contract is intentionally narrow:
 Build and cache one native-call wrapper per positional arity:
 
 ```text
-native_call_wrapper_0(callable)
-native_call_wrapper_1(callable, arg0)
-native_call_wrapper_2(callable, arg0, arg1)
+clover_function_entry_adapter_0(callable)
+clover_function_entry_adapter_1(callable, arg0)
+clover_function_entry_adapter_2(callable, arg0, arg1)
 ...
 ```
 
@@ -305,7 +287,7 @@ Exception table:
   CallSimple range -> handler
 ```
 
-The copying is intentionally explicit in the first design. `CallSimple` expects
+The copying is intentionally explicit. `CallSimple` expects
 the callable separately from the outgoing argument span, while parameters and
 outgoing call slots live in different parts of the frame. With the current
 bytecode set, each copy is a two-step accumulator move:
@@ -318,17 +300,17 @@ Star a1
 ...
 ```
 
-That is acceptable for the first wrapper implementation. The wrapper can later
-grow specialized construction if measurements justify avoiding those moves.
+That is the implemented wrapper construction. It is intentionally simple and
+can be specialized if measurements justify avoiding those moves.
 
 ### Native C++ API
 
-The native-facing API should make the fixed-arity path the normal path. CloverVM
-is currently a C++17 code base, and the common native call sites know their
-arity statically. Avoid making `std::span` or another materialized contiguous
-argument view the primary interface.
+The native-facing API makes the fixed-arity path the normal path. CloverVM is a
+C++17 code base, and the common native call sites know their arity statically.
+There is no primary `std::span` or other materialized contiguous argument-view
+interface.
 
-Initial overloads:
+Implemented overloads:
 
 ```cpp
 Value ThreadState::call_clovervm_function(TValue<Function> function);
@@ -347,7 +329,7 @@ Each overload enters the matching arity wrapper:
 
 ```text
 call_clovervm_function(function, arg0, arg1)
-  -> native_call_wrapper_2(function, arg0, arg1)
+  -> clover_function_entry_adapter_2(function, arg0, arg1)
 ```
 
 The contract mirrors native function result conventions:
@@ -362,20 +344,40 @@ failure:
   pending exception remains on ThreadState
 ```
 
-If arbitrary arity becomes necessary, add it as an explicit fallback such as:
-
-```cpp
-Value ThreadState::call_clovervm_function_array(TValue<Function> function,
-                                                const Value *args,
-                                                uint32_t argc);
-```
-
-That fallback should not replace the fixed-arity overloads as the preferred API.
+There is no arbitrary-arity function entry API.
 
 Do not fold method lookup into `call_clovervm_function`. That API assumes the
 caller already has a `TValue<Function>` and exact positional arguments.
 `call_clovervm_method` performs method lookup and binding deliberately, then
 forwards to the function-call overloads.
+
+## Native To Managed: Method Calls
+
+Native method calls use fixed-arity `ThreadState::call_clovervm_method`
+overloads:
+
+```cpp
+Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name);
+Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name,
+                                        Value arg0);
+Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name,
+                                        Value arg0,
+                                        Value arg1);
+Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name,
+                                        Value arg0,
+                                        Value arg1,
+                                        Value arg2);
+```
+
+The method API loads the named method with the same binding rules used by
+interpreted method calls. If lookup returns a class function, the receiver is
+prepended as `self`; if lookup returns an own function or another callable, no
+receiver is inserted. The resulting callable and argument list are then passed
+to the ordinary Clover function entry path.
+
+Missing methods return `Value::exception_marker()` with pending
+`AttributeError`. Non-callable method values return `Value::exception_marker()`
+with pending `TypeError`.
 
 ## Native To Managed: Startup Code-Object Entry
 
@@ -487,7 +489,7 @@ Native and managed code may weave in and out repeatedly:
 managed A -> native f -> managed B -> native g -> managed C
 ```
 
-While `C` is active, the Clover frame chain should still be walkable:
+While `C` is active, the Clover frame chain is still walkable:
 
 ```text
 C frames
@@ -504,43 +506,12 @@ frame. When `B` returns to `f`, the frontier points back to the live `A` frame.
 
 This keeps GC scanning focused on currently live managed frames. Completed
 boundary wrappers are not retained as stack roots. Traceback/history concerns
-should be handled by traceback state, not by preserving dead stack frames.
-
-## JIT Transition Direction
-
-The existing bytecode native thunk model is a good interpreter scaffold, but it
-is not the long-term optimized JIT ABI.
-
-When future JIT code runs on the Clover stack, it should call native functions
-through managed-to-native transition stubs:
-
-```text
-JIT/managed code on Clover stack
-  save managed continuation state
-  publish or materialize live Value roots not already in managed slots
-  switch machine sp/fp to the native stack
-  call the native target with the platform ABI
-  receive Value in the normal ABI return location
-  restore the managed stack and continuation state
-  resume with the returned Value as the managed accumulator/result
-```
-
-If the native target returns `Value::exception_marker()`, the transition resumes
-managed code at an adapter/continuation that enters the same
-`ReturnOrRaiseException`-style exceptional path. The pending exception state on
-`ThreadState` remains the source of truth.
-
-The transition record belongs to the managed-to-native boundary, not to the
-native target's Clover frame. Native code must not create Clover frames by using
-the Clover stack as its machine stack. Any native-visible `Value` arguments are
-loaded from managed frame slots or passed through ABI registers before the stack
-switch.
+belong in traceback state, not in preserved dead stack frames.
 
 ## Frame Layout Implications
 
-The interpreted frame layout remains useful for interpreter calls, constructor
-thunks, native thunk frames, native-to-managed wrappers, exception unwinding,
-and future JIT materialization:
+The interpreted frame layout is used for interpreter calls, constructor thunks,
+native thunk frames, native-to-managed wrappers, and exception unwinding:
 
 ```text
 higher addresses
@@ -550,7 +521,7 @@ higher addresses
     fp[4]                                      last param / padding
     fp[3]                                      interpreter return PC
     fp[2]                                      interpreter return code object
-    fp[1]                                      return pc for JITed code
+    fp[1]                                      compiled return pc slot
 fp->fp[0]                                      previous Clover frame pointer
     fp[-1]                                     r0
     fp[-2]                                     r1
@@ -568,14 +539,12 @@ new_fp[2] = return_code_object;
 new_fp[3] = return_pc;
 ```
 
-`fp[1]` remains the return pc slot for JITed code, but it should not be treated
-as a native LR slot for arbitrary C++ code. Native continuations and
-stack-switch records should live in explicit transition metadata owned by the
-native/managed boundary.
+`fp[1]` is reserved for compiled-code return state. It is not a native LR slot
+for arbitrary C++ code.
 
 ## Implemented Uses
 
-The first migrated native methods and builtins are:
+Migrated native methods and builtins include:
 
 - `str.__str__`
 - `str.__add__`
@@ -585,7 +554,8 @@ Tests cover direct native thunk calls for arities 0, 1, 2, and 3, the
 `ReturnOrRaiseException` thunk shape, native marker-to-exception unwinding, the
 string method cases, `range`'s defaulted three-argument native thunk, Clover
 frame frontier updates, native boundary returns, Clover function entry adapter
-wrappers, and startup entry through a temporary function wrapper.
+wrappers, native method-call lookup/binding, and startup entry through a
+temporary function wrapper.
 
 Clover function entry adapter wrappers are generated and cached by positional
 arity. `ReturnToNative` and `ReturnPendingExceptionToNative` are implemented for
@@ -594,42 +564,15 @@ sentinel frame and set by native boundary returns and by the
 fixed-arity `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` interpreter
 opcodes.
 
-## Remaining Work
-
-1. [x] Build/cache Clover function entry adapters by positional arity.
-   Startup code-object entry now delegates through a temporary nullary
-   `Function`, so it uses the same cached adapter path.
-2. [x] Add fixed-arity `ThreadState::call_clovervm_function` overloads backed by the
-   matching arity wrappers.
-3. [x] Switch startup code-object entry to the native boundary return
-   convention. Do not add a general raw `CodeObject` native-call API until there
-   is a concrete runtime entry point that needs it.
-6. [x] Add a separate method-call native API that performs lookup and binding
-   before delegating to function entry.
-7. [x] Design the JIT managed-to-native transition ABI:
-   - where managed continuation state lives
-   - how live roots are published when they are not already materialized in
-     Clover frame slots
-   - how the transition switches from the Clover stack to the native stack
-   - how `Value::exception_marker()` returns resume managed exceptional unwind
-8. [ ] Continue converting old C++ exception paths to pending-exception/sentinel
-   results before JIT/native stack-switch bridges or any other boundary where
-   C++ unwinding would cross manually switched stack state. Until then, those
-   old throws are panic plumbing, not the native boundary contract.
-9. [x] Keep `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` as the portable
-   interpreter path. A JIT fast path may bypass the bytecode thunk, but it must
-   preserve the same arity, root, and exception contracts.
-
 ## Invariants
 
 - Fixed-arity native callables are ordinary `Function` objects with managed
   thunk `CodeObject`s.
-- Native-to-managed calls initially target `TValue<Function>` and use
-  `CallSimple` so defaults, varargs, arity checks, and constructor thunks remain
-  in the managed call path.
-- The primary native-to-managed function API is fixed-arity overloads. A
-  pointer-plus-count fallback may exist later, but should not force common call
-  sites to materialize an argument array.
+- Native-to-managed calls target `TValue<Function>` and use `CallSimple` so
+  defaults, varargs, arity checks, and constructor thunks remain in the managed
+  call path.
+- The native-to-managed function API is fixed-arity overloads. Common call
+  sites do not materialize an argument array.
 - Method lookup is not part of `call_clovervm_function`; native method calls
   use `call_clovervm_method`, which performs lookup and binding before
   delegating to function entry.
@@ -648,7 +591,7 @@ opcodes.
 - `ReturnToNative` pops a linked native-call wrapper and saves the restored live
   managed fp. Startup entry uses the same native boundary return convention.
 - Native/C boundaries are not first-order managed unwinder frames; managed
-  thunks and transition continuations adapt native results back into the VM
-  exception model.
+  thunks and entry adapters adapt native results back into the VM exception
+  model.
 - Completed native-to-managed wrapper frames are popped before returning to
   native and must not remain live as GC roots.
