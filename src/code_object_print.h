@@ -433,13 +433,6 @@ template <> struct fmt::formatter<cl::CodeObject>
     }
 
     template <typename Out>
-    void disassemble_special_method_cache(const cl::CodeObject &code_obj,
-                                          Out &out, uint32_t pc) const
-    {
-        format_to(out, "special_ic[{}]", code_obj.code[pc]);
-    }
-
-    template <typename Out>
     void disassemble_mutation_cache(const cl::CodeObject &code_obj, Out &out,
                                     uint32_t pc) const
     {
@@ -617,7 +610,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 format_to(out, ", ");
                 disassemble_constant(code_obj, out, pc++);
                 format_to(out, ", ");
-                disassemble_special_method_cache(code_obj, out, pc++);
+                disassemble_read_cache(code_obj, out, pc++);
                 format_to(out, ", ");
                 disassemble_function_call_cache(code_obj, out, pc++);
                 format_to(out, ", ");

@@ -2431,15 +2431,15 @@ namespace cl
         static constexpr uint32_t call_instr_len = 6;
         int32_t receiver_reg = int8_t(pc[1]);
         uint8_t const_offset = pc[2];
-        uint8_t special_cache_idx = pc[3];
+        uint8_t read_cache_idx = pc[3];
         uint8_t call_cache_idx = pc[4];
         uint32_t n_user_args = uint8_t(pc[5]);
         Value receiver = fp[receiver_reg];
         TValue<String> method_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].as_value());
 
-        SpecialMethodInlineCache &cache =
-            code_object->special_method_caches[special_cache_idx];
+        AttributeReadInlineCache &cache =
+            code_object->attribute_read_caches[read_cache_idx];
         Value callable;
         Value self;
         MethodCallTargetStatus target_status;
@@ -2524,12 +2524,12 @@ namespace cl
     {
         static constexpr uint32_t call_instr_len = 6;
         int32_t receiver_reg = int8_t(pc[1]);
-        uint8_t special_cache_idx = pc[3];
+        uint8_t read_cache_idx = pc[3];
         uint8_t call_cache_idx = pc[4];
         uint32_t n_user_args = uint8_t(pc[5]);
         Value receiver = fp[receiver_reg];
-        SpecialMethodInlineCache &cache =
-            code_object->special_method_caches[special_cache_idx];
+        AttributeReadInlineCache &cache =
+            code_object->attribute_read_caches[read_cache_idx];
         if(unlikely(!cache.matches(receiver)))
         {
             MUSTTAIL return op_call_special_method_slow(ARGS);

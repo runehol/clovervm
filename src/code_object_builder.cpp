@@ -465,11 +465,11 @@ namespace cl
                                                 OutgoingArgReg first_arg_reg,
                                                 uint8_t name_idx, uint8_t argc)
     {
-        uint8_t special_cache_idx = allocate_special_method_cache();
+        uint8_t read_cache_idx = allocate_attribute_read_cache();
         uint8_t call_cache_idx = allocate_function_call_cache();
         return emit_opcode_reg_constant_idx_cache_idx_argc(
             source_offset, Bytecode::CallSpecialMethod, first_arg_reg, name_idx,
-            special_cache_idx, call_cache_idx, argc);
+            read_cache_idx, call_cache_idx, argc);
     }
 
     uint32_t CodeObjectBuilder::emit_load_subscript(uint32_t source_offset,
@@ -656,14 +656,6 @@ namespace cl
     {
         uint32_t idx = code_obj->attribute_read_caches.size();
         code_obj->attribute_read_caches.emplace_back();
-        assert(idx < 256);
-        return idx;
-    }
-
-    uint32_t CodeObjectBuilder::allocate_special_method_cache()
-    {
-        uint32_t idx = code_obj->special_method_caches.size();
-        code_obj->special_method_caches.emplace_back();
         assert(idx < 256);
         return idx;
     }

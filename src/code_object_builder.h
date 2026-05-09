@@ -321,7 +321,6 @@ namespace cl
         friend class JumpTarget;
 
         uint32_t allocate_attribute_read_cache();
-        uint32_t allocate_special_method_cache();
         uint32_t allocate_attribute_mutation_cache();
         uint32_t allocate_function_call_cache();
         uint32_t emplace_back(uint32_t source_offset, uint8_t c);

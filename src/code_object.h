@@ -164,7 +164,6 @@ namespace cl
         std::vector<uint32_t> source_offsets;
         std::vector<OwnedValue> constant_table;
         std::vector<AttributeReadInlineCache> attribute_read_caches;
-        std::vector<SpecialMethodInlineCache> special_method_caches;
         std::vector<AttributeMutationInlineCache> attribute_mutation_caches;
         std::vector<FunctionCallInlineCache> function_call_caches;
         std::vector<NativeFunctionTarget> native_function_targets;
