@@ -605,13 +605,9 @@ opcodes.
 3. [x] Switch startup code-object entry to the native boundary return
    convention. Do not add a general raw `CodeObject` native-call API until there
    is a concrete runtime entry point that needs it.
-4. [ ] Design and implement the packed tuple/vector native convention for true
-   variadic native callables.
-5. [ ] Add specialized interpreter or JIT fast paths for trivial native thunk code
-   objects when measurements justify it.
 6. [ ] Add a separate special-method native-call API once lookup and binding
    semantics are ready.
-7. [ ] Design the JIT managed-to-native transition ABI:
+7. [x] Design the JIT managed-to-native transition ABI:
    - where managed continuation state lives
    - how live roots are published when they are not already materialized in
      Clover frame slots
@@ -621,7 +617,7 @@ opcodes.
    results before JIT/native stack-switch bridges or any other boundary where
    C++ unwinding would cross manually switched stack state. Until then, those
    old throws are panic plumbing, not the native boundary contract.
-9. [ ] Keep `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` as the portable
+9. [x] Keep `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` as the portable
    interpreter path. A JIT fast path may bypass the bytecode thunk, but it must
    preserve the same arity, root, and exception contracts.
 
