@@ -55,8 +55,7 @@ namespace cl
         }
         else
         {
-            code_storage.emplace(nullptr,
-                                 active_vm()->get_builtin_scope().extract(),
+            code_storage.emplace(nullptr, active_vm()->builtin_scope_ptr(),
                                  local_scope, thunk_name);
             CodeObjectBuilder &code = *code_storage;
             code.n_parameters() = 0;

@@ -91,10 +91,10 @@ namespace cl
 
     CodeObject *codegen_function(const AstVector &av, Scope *module_scope,
                                  CodeObjectBuilder *parent_code_obj,
-                                 int32_t node_idx);
+                                 int32_t node_idx, LanguageMode language_mode);
     CodeObject *codegen_class(const AstVector &av, Scope *module_scope,
                               CodeObjectBuilder *parent_code_obj,
-                              int32_t node_idx);
+                              int32_t node_idx, LanguageMode language_mode);
 
     void reserve_parameter_padding_and_frame_header(
         CodeObjectBuilder *target_code_obj)
@@ -115,9 +115,11 @@ namespace cl
 
         AstCodegen(const AstVector &_av, Scope *_module_scope,
                    CodeObjectBuilder *_code_obj, CodegenMode _mode,
-                   int32_t _body_idx, AstChildren param_children)
+                   LanguageMode _language_mode, int32_t _body_idx,
+                   AstChildren param_children)
             : av(_av), module_scope(_module_scope), code_obj(_code_obj),
-              body_idx(_body_idx), analysis(_mode, _av.size())
+              body_idx(_body_idx), analysis(_mode, _av.size()),
+              language_mode(_language_mode)
         {
             analysis = analyze_code_object_scope(av, code_obj, _body_idx, _mode,
                                                  param_children);
@@ -192,6 +194,7 @@ namespace cl
         CodeObjectBuilder *code_obj;
         int32_t body_idx;
         ScopeAnalysis analysis;
+        LanguageMode language_mode;
         std::vector<LoopTargetSet> loop_targets;
         std::vector<RegisterIndex> caught_exception_regs;
         std::vector<FinallyContext> active_finalies;
@@ -390,8 +393,8 @@ namespace cl
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             AstChildren param_children = av.children[children[0]];
-            CodeObject *fun_obj =
-                codegen_function(av, module_scope, code_obj, node_idx);
+            CodeObject *fun_obj = codegen_function(av, module_scope, code_obj,
+                                                   node_idx, language_mode);
 
             // stick this code object into the constant table, load it, and call
             // the
@@ -449,8 +452,8 @@ namespace cl
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             int32_t bases_idx = children[0];
-            CodeObject *class_obj =
-                codegen_class(av, module_scope, code_obj, node_idx);
+            CodeObject *class_obj = codegen_class(av, module_scope, code_obj,
+                                                  node_idx, language_mode);
 
             uint32_t body_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(class_obj));
@@ -487,11 +490,112 @@ namespace cl
             emit_variable_store(source_offset, node_idx);
         }
 
+        bool is_variable_reference_named(int32_t node_idx,
+                                         const wchar_t *name) const
+        {
+            if(av.kinds[node_idx].node_kind !=
+               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+            {
+                return false;
+            }
+            return av.constants[node_idx] == Value(interned_string(name));
+        }
+
+        Value literal_string_constant(int32_t node_idx,
+                                      const char *error_message) const
+        {
+            AstKind kind = av.kinds[node_idx];
+            if(kind.node_kind != AstNodeKind::EXPRESSION_LITERAL ||
+               kind.operator_kind != AstOperatorKind::STRING)
+            {
+                throw std::runtime_error(error_message);
+            }
+            return av.constants[node_idx].as_value();
+        }
+
+        Value builtin_class_constant_from_name_reference(
+            int32_t node_idx, const char *error_message) const
+        {
+            if(av.kinds[node_idx].node_kind !=
+               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+            {
+                throw std::runtime_error(error_message);
+            }
+
+            TValue<String> name =
+                TValue<String>::from_value_checked(av.constants[node_idx]);
+            Value value = active_vm()->builtin_scope_ptr()->get_by_name(name);
+            if(!value.is_ptr() || value.get_ptr<Object>()->native_layout_id() !=
+                                      NativeLayoutId::ClassObject)
+            {
+                throw std::runtime_error(error_message);
+            }
+            return value;
+        }
+
+        bool try_codegen_trusted_clover_call_special(int32_t node_idx)
+        {
+            if(language_mode != LanguageMode::TrustedCloverExtensions)
+            {
+                return false;
+            }
+
+            AstChildren children = av.children[node_idx];
+            if(!is_variable_reference_named(children[0],
+                                            L"__clover_call_special__"))
+            {
+                return false;
+            }
+
+            uint32_t source_offset = av.source_offsets[node_idx];
+            AstChildren args = av.children[children[1]];
+            if(args.size() < 4)
+            {
+                throw std::runtime_error(
+                    "__clover_call_special__ expects at least 4 arguments");
+            }
+
+            Value method_name = literal_string_constant(
+                args[1], "__clover_call_special__ method name must be a "
+                         "string literal");
+            Value missing_exception_type =
+                builtin_class_constant_from_name_reference(
+                    args[2], "__clover_call_special__ exception type must be a "
+                             "builtin class name");
+            Value missing_exception_message = literal_string_constant(
+                args[3], "__clover_call_special__ missing-method message must "
+                         "be a string literal");
+            uint8_t method_name_idx = code_obj->allocate_constant(method_name);
+            uint8_t missing_exception_type_idx =
+                code_obj->allocate_constant(missing_exception_type);
+            uint8_t missing_exception_message_idx =
+                code_obj->allocate_constant(missing_exception_message);
+
+            codegen_node(args[0]);
+            code_obj->emit_star(source_offset, OutgoingArgReg(0));
+            for(size_t i = 4; i < args.size(); ++i)
+            {
+                codegen_node(args[i]);
+                code_obj->emit_star(source_offset, OutgoingArgReg(i - 3));
+            }
+
+            code_obj->emit_call_special_method(
+                source_offset, OutgoingArgReg(0), method_name_idx,
+                uint8_t(args.size() - 4), missing_exception_type_idx,
+                missing_exception_message_idx);
+            return true;
+        }
+
         void codegen_function_call(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             AstChildren args = av.children[children[1]];
+
+            if(try_codegen_trusted_clover_call_special(node_idx))
+            {
+                return;
+            }
 
             if(av.kinds[children[0]].node_kind ==
                AstNodeKind::EXPRESSION_ATTRIBUTE)
@@ -1837,7 +1941,7 @@ namespace cl
 
     CodeObject *codegen_function(const AstVector &av, Scope *module_scope,
                                  CodeObjectBuilder *parent_code_obj,
-                                 int32_t node_idx)
+                                 int32_t node_idx, LanguageMode language_mode)
     {
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
@@ -1865,15 +1969,19 @@ namespace cl
         }
         reserve_parameter_padding_and_frame_header(&fun_obj);
 
-        AstCodegen fun_builder{av,          module_scope,
-                               &fun_obj,    CodegenMode::Function,
-                               children[1], param_children};
+        AstCodegen fun_builder{av,
+                               module_scope,
+                               &fun_obj,
+                               CodegenMode::Function,
+                               language_mode,
+                               children[1],
+                               param_children};
         return fun_builder.run_function_body(source_offset, children[1]);
     }
 
     CodeObject *codegen_class(const AstVector &av, Scope *module_scope,
                               CodeObjectBuilder *parent_code_obj,
-                              int32_t node_idx)
+                              int32_t node_idx, LanguageMode language_mode)
     {
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
@@ -1887,8 +1995,13 @@ namespace cl
         class_obj.get_local_scope_ptr()->reserve_empty_slots(2);
         reserve_parameter_padding_and_frame_header(&class_obj);
 
-        AstCodegen class_builder{
-            av, module_scope, &class_obj, CodegenMode::Class, body_idx, {}};
+        AstCodegen class_builder{av,
+                                 module_scope,
+                                 &class_obj,
+                                 CodegenMode::Class,
+                                 language_mode,
+                                 body_idx,
+                                 {}};
         return class_builder.run_class_body(source_offset, body_idx);
     }
 
@@ -1913,16 +2026,30 @@ namespace cl
         return code_obj->finalize();
     }
 
-    CodeObject *codegen_module(const AstVector &av, TValue<String> module_name)
+    CodeObject *codegen_module_in_scope(const AstVector &av,
+                                        Scope *module_scope,
+                                        TValue<String> module_name,
+                                        LanguageMode language_mode)
     {
-        Scope *module_scope = make_internal_raw<Scope>(
-            active_vm()->get_builtin_scope().extract());
         CodeObjectBuilder module_obj(av.compilation_unit, module_scope, nullptr,
                                      module_name);
-        AstCodegen builder{av,           module_scope,
-                           &module_obj,  CodegenMode::Module,
-                           av.root_node, {}};
+        AstCodegen builder{av,
+                           module_scope,
+                           &module_obj,
+                           CodegenMode::Module,
+                           language_mode,
+                           av.root_node,
+                           {}};
         return builder.run_module();
+    }
+
+    CodeObject *codegen_module(const AstVector &av, TValue<String> module_name,
+                               LanguageMode language_mode)
+    {
+        Scope *module_scope =
+            make_internal_raw<Scope>(active_vm()->builtin_scope_ptr());
+        return codegen_module_in_scope(av, module_scope, module_name,
+                                       language_mode);
     }
 
 }  // namespace cl

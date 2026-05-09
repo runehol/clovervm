@@ -313,8 +313,7 @@ namespace cl
     {
         TValue<String> name_value =
             machine->get_or_create_interned_string_value(std::wstring(name));
-        Value value =
-            machine->get_builtin_scope().extract()->get_by_name(name_value);
+        Value value = machine->builtin_scope_ptr()->get_by_name(name_value);
         assert(value.is_ptr());
         assert(value.get_ptr<Object>()->native_layout_id() ==
                NativeLayoutId::ClassObject);
@@ -335,6 +334,21 @@ namespace cl
         TokenVector tv = tokenize(input);
         AstVector av = parse(*machine, tv, start_rule);
         return codegen_module(av, interned_string(module_name));
+    }
+
+    CodeObject *ThreadState::compile_in_scope(const wchar_t *str,
+                                              StartRule start_rule,
+                                              const wchar_t *module_name,
+                                              Scope *module_scope,
+                                              LanguageMode language_mode)
+    {
+        ActivationScope activation_scope(this);
+
+        CompilationUnit input(str);
+        TokenVector tv = tokenize(input);
+        AstVector av = parse(*machine, tv, start_rule);
+        return codegen_module_in_scope(
+            av, module_scope, interned_string(module_name), language_mode);
     }
 
     void ThreadState::add_to_active_zero_count_table(HeapObject *obj)

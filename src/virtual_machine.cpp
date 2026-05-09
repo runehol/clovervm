@@ -2,6 +2,7 @@
 #include "bool.h"
 #include "clover_entry.h"
 #include "code_object.h"
+#include "codegen.h"
 #include "dict.h"
 #include "exception_object.h"
 #include "exception_propagation.h"
@@ -11,6 +12,7 @@
 #include "list.h"
 #include "native_function.h"
 #include "none_type.h"
+#include "parser.h"
 #include "range_iterator.h"
 #include "scope.h"
 #include "shape.h"
@@ -85,6 +87,17 @@ namespace cl
             TValue<CLInt>::from_value_unchecked(step));
     }
 
+    static constexpr const wchar_t *trusted_builtin_source = LR"(
+def iter(obj):
+    return __clover_call_special__(obj, "__iter__", TypeError, "object is not iterable")
+
+def next(obj):
+    return __clover_call_special__(obj, "__next__", TypeError, "object is not an iterator")
+
+def repr(obj):
+    return __clover_call_special__(obj, "__repr__", TypeError, "object has no __repr__")
+)";
+
     VirtualMachine::VirtualMachine()
         : refcounted_global_heap(GlobalHeap::refcounted_heap()),
           interned_global_heap(GlobalHeap::interned_heap()),
@@ -93,7 +106,16 @@ namespace cl
         // make the main thread
         ThreadState *default_thread = make_new_thread();
         ThreadState::ActivationScope activation_scope(default_thread);
-        initialize_builtin_scope();
+        try
+        {
+            initialize_builtin_scope();
+        }
+        catch(...)
+        {
+            range_builtin.clear();
+            builtin_scope.clear();
+            throw;
+        }
     }
 
     VirtualMachine::~VirtualMachine()
@@ -326,6 +348,17 @@ namespace cl
         range_builtin =
             make_native_function(this, builtin_range, range_defaults);
         builtin_scope.extract()->set_by_name(range_name, range_builtin);
+
+        ThreadState *thread = get_default_thread();
+        CodeObject *builtins_code = thread->compile_in_scope(
+            trusted_builtin_source, StartRule::File, L"<builtins>",
+            builtin_scope.extract(), LanguageMode::TrustedCloverExtensions);
+        Value result = thread->run_clovervm_code_object(builtins_code);
+        if(result.is_exception_marker())
+        {
+            throw std::runtime_error(
+                "failed to initialize trusted builtins.py");
+        }
     }
 
 }  // namespace cl

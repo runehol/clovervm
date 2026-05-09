@@ -1,5 +1,6 @@
 #include "code_object.h"
 #include "code_object_print.h"
+#include "codegen.h"
 #include "parser.h"
 #include "str.h"
 #include "test_helpers.h"
@@ -16,6 +17,16 @@ std::string bytecode_str_from_file(const wchar_t *expr)
     CodeObject *code_obj = test_context.compile_file(expr);
     std::string actual = fmt::to_string(*code_obj);
     return actual;
+}
+
+std::string trusted_builtin_bytecode_str_from_file(const wchar_t *expr)
+{
+    test::VmTestContext test_context;
+    CodeObject *code_obj = test_context.thread()->compile_in_scope(
+        expr, StartRule::File, L"<test-builtin>",
+        test_context.vm().builtin_scope_ptr(),
+        LanguageMode::TrustedCloverExtensions);
+    return fmt::to_string(*code_obj);
 }
 
 // Keep this file intentionally small and structural. Interpreter tests own
@@ -904,4 +915,28 @@ TEST(Codegen, non_direct_for_loop_still_uses_generic_iterator_bytecodes)
                                                 "    x\n");
 
     EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, trusted_clover_call_special_lowers_to_special_method_call)
+{
+    std::string actual = trusted_builtin_bytecode_str_from_file(
+        L"def call_repr(obj):\n"
+        L"    return __clover_call_special__(obj, \"__repr__\", TypeError, "
+        L"\"missing repr\")\n");
+
+    EXPECT_NE(std::string::npos, actual.find("CallSpecialMethod"));
+    EXPECT_NE(std::string::npos, actual.find("\"__repr__\""));
+    EXPECT_NE(std::string::npos, actual.find("<class TypeError>"));
+    EXPECT_NE(std::string::npos, actual.find("\"missing repr\""));
+}
+
+TEST(Codegen, user_clover_call_special_name_is_ordinary_call)
+{
+    std::string actual = bytecode_str_from_file(
+        L"def call_repr(obj):\n"
+        L"    return __clover_call_special__(obj, \"__repr__\", TypeError, "
+        L"\"missing repr\")\n");
+
+    EXPECT_EQ(std::string::npos, actual.find("CallSpecialMethod"));
+    EXPECT_NE(std::string::npos, actual.find("CallSimple"));
 }

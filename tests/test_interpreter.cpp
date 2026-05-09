@@ -2861,6 +2861,40 @@ TEST(Interpreter, builtin_scope_lookup)
     EXPECT_EQ(actual, module_scope->get_by_slot_index_fastpath_only(slot_idx));
 }
 
+TEST(Interpreter, trusted_python_builtins_are_installed)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Scope *builtins = test_context.vm().get_builtin_scope().extract();
+
+    for(const wchar_t *name: {L"iter", L"next", L"repr"})
+    {
+        TValue<String> name_value =
+            test_context.vm().get_or_create_interned_string_value(name);
+        Value value = builtins->get_by_name(name_value);
+        ASSERT_TRUE(value.is_ptr());
+        EXPECT_EQ(NativeLayoutId::Function,
+                  value.get_ptr<Object>()->native_layout_id());
+    }
+}
+
+TEST(Interpreter, user_code_cannot_use_clover_call_special_as_intrinsic)
+{
+    expect_python_error(
+        L"__clover_call_special__(1, \"__repr__\", TypeError, \"missing\")\n",
+        L"NameError: name '__clover_call_special__' is not defined");
+}
+
+TEST(Interpreter, user_defined_clover_call_special_name_is_ordinary_function)
+{
+    test::FileRunner file_runner(
+        L"def __clover_call_special__(obj, name, exc_type, message):\n"
+        L"    return 123\n"
+        L"__clover_call_special__(1, \"__repr__\", TypeError, \"missing\")\n");
+
+    EXPECT_EQ(Value::from_smi(123), file_runner.return_value);
+}
+
 TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
 {
     test::VmTestContext test_context;
@@ -3096,6 +3130,38 @@ TEST(Interpreter, range_builtin_rejects_wrong_arity_at_function_boundary)
     expect_python_error(L"range()\n", L"TypeError: wrong number of arguments");
     expect_python_error(L"range(1, 2, 3, 4)\n",
                         L"TypeError: wrong number of arguments");
+}
+
+TEST(Interpreter, python_defined_iter_builtin_calls_dunder_iter)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"iter(range(3))\n");
+
+    expect_range_iterator(actual, 0, 3, 1);
+}
+
+TEST(Interpreter, python_defined_next_builtin_calls_dunder_next)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"next(range(3))\n");
+
+    EXPECT_EQ(Value::from_smi(0), actual);
+}
+
+TEST(Interpreter, python_defined_repr_builtin_calls_dunder_repr)
+{
+    test::VmTestContext test_context;
+    Value actual = test_context.run_file(L"repr(42)\n");
+
+    ASSERT_TRUE(can_convert_to<String>(actual));
+    EXPECT_STREQ(L"42",
+                 string_as_wchar_t(TValue<String>::from_value_checked(actual)));
+}
+
+TEST(Interpreter, python_defined_iter_and_next_builtin_missing_method_errors)
+{
+    expect_python_error(L"iter(1)\n", L"TypeError: object is not iterable");
+    expect_python_error(L"next(1)\n", L"TypeError: object is not an iterator");
 }
 
 TEST(Interpreter, for_loop_rejects_non_iterable)

@@ -17,10 +17,12 @@
 namespace cl
 {
     enum class StartRule;
+    enum class LanguageMode;
 
     class ClassObject;
     class ExceptionObject;
     class Function;
+    class Scope;
     class VirtualMachine;
     struct CodeObject;
 
@@ -192,6 +194,10 @@ namespace cl
         CodeObject *compile(const wchar_t *str, StartRule start_rule);
         CodeObject *compile(const wchar_t *str, StartRule start_rule,
                             const wchar_t *module_name);
+        CodeObject *compile_in_scope(const wchar_t *str, StartRule start_rule,
+                                     const wchar_t *module_name,
+                                     Scope *module_scope,
+                                     LanguageMode language_mode);
 
         VirtualMachine *get_machine() const { return machine; }
 

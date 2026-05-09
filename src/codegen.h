@@ -5,11 +5,23 @@
 #include "code_object.h"
 namespace cl
 {
+    enum class LanguageMode
+    {
+        StandardsCompliant,
+        TrustedCloverExtensions
+    };
+
     struct AstVector;
+    class Scope;
     struct String;
     template <typename T> class TValue;
 
-    CodeObject *codegen_module(const AstVector &av, TValue<String> module_name);
+    CodeObject *codegen_module(
+        const AstVector &av, TValue<String> module_name,
+        LanguageMode language_mode = LanguageMode::StandardsCompliant);
+    CodeObject *codegen_module_in_scope(
+        const AstVector &av, Scope *module_scope, TValue<String> module_name,
+        LanguageMode language_mode = LanguageMode::StandardsCompliant);
 
 }  // namespace cl
 
