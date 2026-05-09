@@ -76,6 +76,93 @@ TEST(Parser, interactive_statement)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, incomplete_interactive_suite_reports_next_indentation_level)
+{
+    try
+    {
+        (void)parse_with_start_rule(L"if True:\n", StartRule::Interactive);
+        FAIL() << "Expected ParseError";
+    }
+    catch(const ParseError &err)
+    {
+        EXPECT_TRUE(err.incomplete_input());
+        EXPECT_EQ(1u, err.next_indentation_level());
+    }
+}
+
+TEST(Parser, nested_incomplete_interactive_suite_reports_next_indentation_level)
+{
+    try
+    {
+        (void)parse_with_start_rule(L"if True:\n"
+                                    L"    if True:\n",
+                                    StartRule::Interactive);
+        FAIL() << "Expected ParseError";
+    }
+    catch(const ParseError &err)
+    {
+        EXPECT_TRUE(err.incomplete_input());
+        EXPECT_EQ(2u, err.next_indentation_level());
+    }
+}
+
+TEST(Parser, unterminated_single_string_is_not_incomplete_input)
+{
+    try
+    {
+        (void)parse_with_start_rule(L"x = \"abc\n", StartRule::Interactive);
+        FAIL() << "Expected ParseError";
+    }
+    catch(const ParseError &err)
+    {
+        EXPECT_FALSE(err.incomplete_input());
+    }
+}
+
+TEST(Parser, unterminated_triple_string_reports_current_indentation_level)
+{
+    try
+    {
+        (void)parse_with_start_rule(L"x = \"\"\"abc\n", StartRule::Interactive);
+        FAIL() << "Expected ParseError";
+    }
+    catch(const ParseError &err)
+    {
+        EXPECT_TRUE(err.incomplete_input());
+        EXPECT_EQ(0u, err.next_indentation_level());
+    }
+}
+
+TEST(Parser, open_bracket_at_eof_reports_current_indentation_level)
+{
+    try
+    {
+        (void)parse_with_start_rule(L"x = (1 +\n", StartRule::Interactive);
+        FAIL() << "Expected ParseError";
+    }
+    catch(const ParseError &err)
+    {
+        EXPECT_TRUE(err.incomplete_input());
+        EXPECT_EQ(0u, err.next_indentation_level());
+    }
+}
+
+TEST(Parser, open_bracket_inside_suite_reports_current_indentation_level)
+{
+    try
+    {
+        (void)parse_with_start_rule(L"if True:\n"
+                                    L"    x = (1 +\n",
+                                    StartRule::Interactive);
+        FAIL() << "Expected ParseError";
+    }
+    catch(const ParseError &err)
+    {
+        EXPECT_TRUE(err.incomplete_input());
+        EXPECT_EQ(1u, err.next_indentation_level());
+    }
+}
+
 TEST(Parser, if_stmt)
 {
     std::string expected = ("if a < b:\n"
@@ -691,6 +778,6 @@ TEST(Parser, parse_error_reports_crlf_line_numbers)
 {
     expect_parse_error(L"if True:\r\n"
                        L"    return (\r\n",
-                       "Unexpected token NEWLINE at offset 22 (line 2, column "
-                       "13), near \"    return (\"");
+                       "SyntaxError: incomplete input at offset 24 (line 3, "
+                       "column 1), near \"\"");
 }

@@ -5,7 +5,6 @@
 #include "token.h"
 #include "tokenizer.h"
 #include "virtual_machine.h"
-#include <algorithm>
 #include <cstdint>
 #include <string>
 
@@ -236,6 +235,7 @@ namespace cl
         const TokenVector &token_vec;
         AstVector ast;
         size_t token_pos = 0;
+        uint32_t indentation_level = 0;
 
         Token peek()
         {
@@ -254,25 +254,43 @@ namespace cl
         Token advance()
         {
             assert(token_pos < token_vec.size());
-            return token_vec.tokens[token_pos++];
+            Token token = token_vec.tokens[token_pos++];
+            update_indentation_level(token);
+            return token;
         };
 
         uint32_t source_pos_and_advance()
         {
             assert(token_pos < token_vec.size());
-            return token_vec.source_offsets[token_pos++];
+            uint32_t source_pos = token_vec.source_offsets[token_pos];
+            update_indentation_level(token_vec.tokens[token_pos]);
+            ++token_pos;
+            return source_pos;
         }
 
         void consume(Token expected)
         {
+            uint32_t previous_indentation_level = indentation_level;
             uint32_t source_pos = source_pos_for_token();
             Token actual = advance();
             if(expected != actual)
             {
-                throw std::runtime_error(std::string("Expected token ") +
-                                         to_string(expected) + ", got " +
-                                         to_string(actual) +
-                                         format_error_context(source_pos));
+                if(is_tokenizer_error(actual))
+                {
+                    throw parse_error_for_tokenizer_error(
+                        actual, source_pos, previous_indentation_level);
+                }
+                std::string message = std::string("Expected token ") +
+                                      to_string(expected) + ", got " +
+                                      to_string(actual) +
+                                      format_error_context(source_pos);
+                if(expected == Token::INDENT &&
+                   (actual == Token::ENDMARKER || actual == Token::DEDENT))
+                {
+                    throw ParseError(message, true,
+                                     previous_indentation_level + 1);
+                }
+                throw ParseError(message);
             }
         }
 
@@ -281,7 +299,7 @@ namespace cl
             Token actual = peek();
             if(actual == expected)
             {
-                ++token_pos;
+                (void)advance();
                 return true;
             }
             return false;
@@ -298,6 +316,54 @@ namespace cl
         }
 
         bool is_at_end() { return peek() == Token::ENDMARKER; }
+
+        static bool is_tokenizer_error(Token token)
+        {
+            return token == Token::ERRORTOKEN ||
+                   token == Token::ERRORTOKEN_UNTERMINATED_STRING ||
+                   token == Token::ERRORTOKEN_UNTERMINATED_TRIPLE_STRING ||
+                   token == Token::ERRORTOKEN_OPEN_BRACKET_EOF;
+        }
+
+        ParseError
+        parse_error_for_tokenizer_error(Token token, uint32_t source_pos,
+                                        uint32_t error_indentation_level)
+        {
+            switch(token)
+            {
+                case Token::ERRORTOKEN_UNTERMINATED_STRING:
+                    return ParseError(
+                        "SyntaxError: unterminated string literal" +
+                        format_error_context(source_pos));
+                case Token::ERRORTOKEN_UNTERMINATED_TRIPLE_STRING:
+                    return ParseError(
+                        "SyntaxError: unterminated triple-quoted string "
+                        "literal" +
+                            format_error_context(source_pos),
+                        true, error_indentation_level);
+                case Token::ERRORTOKEN_OPEN_BRACKET_EOF:
+                    return ParseError("SyntaxError: incomplete input" +
+                                          format_error_context(source_pos),
+                                      true, error_indentation_level);
+                default:
+                    return ParseError(std::string("Unexpected token ") +
+                                      to_string(token) +
+                                      format_error_context(source_pos));
+            }
+        }
+
+        void update_indentation_level(Token token)
+        {
+            if(token == Token::INDENT)
+            {
+                ++indentation_level;
+            }
+            else if(token == Token::DEDENT)
+            {
+                assert(indentation_level > 0);
+                --indentation_level;
+            }
+        }
 
         static std::string narrow(std::wstring_view s)
         {
@@ -967,6 +1033,11 @@ namespace cl
 
                 default:
                     uint32_t source_pos = source_pos_for_token();
+                    if(is_tokenizer_error(peek()))
+                    {
+                        throw parse_error_for_tokenizer_error(
+                            peek(), source_pos, indentation_level);
+                    }
                     throw std::runtime_error(std::string("Unexpected token ") +
                                              to_string(peek()) +
                                              format_error_context(source_pos));

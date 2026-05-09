@@ -63,6 +63,40 @@ TEST(Tokenizer, simple2)
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
+TEST(Tokenizer, unterminated_single_string_emits_error_token)
+{
+    CompilationUnit input(L"x = \"abc\n");
+    std::vector<Token> expected_tokens = {Token::NAME, Token::EQUAL,
+                                          Token::ERRORTOKEN_UNTERMINATED_STRING,
+                                          Token::NEWLINE, Token::ENDMARKER};
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+}
+
+TEST(Tokenizer, unterminated_triple_string_emits_error_token)
+{
+    CompilationUnit input(L"x = \"\"\"abc\n");
+    std::vector<Token> expected_tokens = {
+        Token::NAME, Token::EQUAL, Token::ERRORTOKEN_UNTERMINATED_TRIPLE_STRING,
+        Token::NEWLINE, Token::ENDMARKER};
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+}
+
+TEST(Tokenizer, open_bracket_at_eof_emits_error_token)
+{
+    CompilationUnit input(L"x = (1 +\n");
+    std::vector<Token> expected_tokens = {
+        Token::NAME,     Token::EQUAL, Token::LPAR,
+        Token::NUMBER,   Token::PLUS,  Token::ERRORTOKEN_OPEN_BRACKET_EOF,
+        Token::ENDMARKER};
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+}
+
 TEST(Tokenizer, number_formats)
 {
     CompilationUnit input(L"0xff + 0b1010 + 0o77 + 1_000_000");

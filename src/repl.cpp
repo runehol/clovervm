@@ -11,6 +11,7 @@
 #include "value.h"
 #include "value_string.h"
 #include "virtual_machine.h"
+#include <algorithm>
 #include <cerrno>
 #include <cwchar>
 #include <fmt/core.h>
@@ -20,6 +21,8 @@
 
 namespace cl
 {
+    static constexpr uint32_t repl_indent_width = 4;
+
     static std::wstring decode_stdin_line(const std::string &bytes)
     {
         const char *src = bytes.c_str();
@@ -102,6 +105,13 @@ namespace cl
                    << L"\n";
     }
 
+    static bool is_blank_line(const std::wstring &line)
+    {
+        return std::all_of(line.begin(), line.end(), [](wchar_t c) {
+            return c == L' ' || c == L'\t' || c == L'\f' || c == L'\r';
+        });
+    }
+
     int run_repl(bool print_bytecode)
     {
         VirtualMachine vm;
@@ -110,10 +120,16 @@ namespace cl
         Scope *module_scope =
             thr->make_internal_raw<Scope>(vm.builtin_scope_ptr());
 
+        std::wstring source_buffer;
+        bool suite_waiting_for_blank_line = false;
+        uint32_t continuation_indentation = 0;
         std::string line;
         while(true)
         {
-            std::cout << ">>> " << std::flush;
+            uint32_t prompt_indentation_level =
+                continuation_indentation / repl_indent_width;
+            std::cout << (source_buffer.empty() ? ">>> " : "... ")
+                      << std::flush;
             if(!std::getline(std::cin, line))
             {
                 std::cout << "\n";
@@ -130,13 +146,56 @@ namespace cl
                 std::cerr << err.what() << "\n";
                 continue;
             }
-            source += L"\n";
+            bool blank_line = is_blank_line(source);
+            if(source_buffer.empty() && blank_line)
+            {
+                continue;
+            }
+            source_buffer += source;
+            source_buffer += L"\n";
+
+            if(!blank_line && suite_waiting_for_blank_line)
+            {
+                try
+                {
+                    (void)thr->compile_in_scope(
+                        source_buffer.c_str(), StartRule::Interactive,
+                        L"<stdin>", module_scope,
+                        LanguageMode::StandardsCompliant);
+                }
+                catch(const ParseError &err)
+                {
+                    if(err.incomplete_input())
+                    {
+                        continuation_indentation =
+                            err.next_indentation_level() * repl_indent_width;
+                        continue;
+                    }
+                    std::cerr << err.what() << "\n";
+                    source_buffer.clear();
+                    suite_waiting_for_blank_line = false;
+                    continuation_indentation = 0;
+                    continue;
+                }
+                catch(const std::runtime_error &err)
+                {
+                    std::cerr << err.what() << "\n";
+                    source_buffer.clear();
+                    suite_waiting_for_blank_line = false;
+                    continuation_indentation = 0;
+                    continue;
+                }
+                continue;
+            }
 
             try
             {
                 CodeObject *code_obj = thr->compile_in_scope(
-                    source.c_str(), StartRule::Interactive, L"<stdin>",
+                    source_buffer.c_str(), StartRule::Interactive, L"<stdin>",
                     module_scope, LanguageMode::StandardsCompliant);
+                source_buffer.clear();
+                suite_waiting_for_blank_line = false;
+                continuation_indentation = 0;
                 if(print_bytecode)
                 {
                     fmt::print("{}\n", *code_obj);
@@ -151,9 +210,27 @@ namespace cl
 
                 print_value_repr(result, thr);
             }
+            catch(const ParseError &err)
+            {
+                if(!blank_line && err.incomplete_input())
+                {
+                    continuation_indentation =
+                        err.next_indentation_level() * repl_indent_width;
+                    suite_waiting_for_blank_line =
+                        err.next_indentation_level() > prompt_indentation_level;
+                    continue;
+                }
+                std::cerr << err.what() << "\n";
+                source_buffer.clear();
+                suite_waiting_for_blank_line = false;
+                continuation_indentation = 0;
+            }
             catch(const std::runtime_error &err)
             {
                 std::cerr << err.what() << "\n";
+                source_buffer.clear();
+                suite_waiting_for_blank_line = false;
+                continuation_indentation = 0;
             }
         }
     }

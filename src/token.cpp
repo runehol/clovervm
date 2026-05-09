@@ -194,6 +194,12 @@ namespace cl
                 return "TYPE_COMMENT";
             case Token::ERRORTOKEN:
                 return "ERRORTOKEN";
+            case Token::ERRORTOKEN_UNTERMINATED_STRING:
+                return "ERRORTOKEN_UNTERMINATED_STRING";
+            case Token::ERRORTOKEN_UNTERMINATED_TRIPLE_STRING:
+                return "ERRORTOKEN_UNTERMINATED_TRIPLE_STRING";
+            case Token::ERRORTOKEN_OPEN_BRACKET_EOF:
+                return "ERRORTOKEN_OPEN_BRACKET_EOF";
         }
     };
 

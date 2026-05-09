@@ -118,6 +118,9 @@ namespace cl
         TYPE_IGNORE,
         TYPE_COMMENT,
         ERRORTOKEN,
+        ERRORTOKEN_UNTERMINATED_STRING,
+        ERRORTOKEN_UNTERMINATED_TRIPLE_STRING,
+        ERRORTOKEN_OPEN_BRACKET_EOF,
     };
 
     const char *to_string(Token t);

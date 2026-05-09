@@ -66,11 +66,25 @@ namespace cl
         return true;
     }
 
-    static size_t find_string_literal_length(std::wstring_view s)
+    enum class StringTokenKind
+    {
+        NotString,
+        Complete,
+        UnterminatedString,
+        UnterminatedTripleString,
+    };
+
+    struct StringTokenScan
+    {
+        StringTokenKind kind;
+        size_t length;
+    };
+
+    static StringTokenScan scan_string_literal(std::wstring_view s)
     {
         if(s.empty())
         {
-            return 0;
+            return {StringTokenKind::NotString, 0};
         }
 
         auto prefix_match = string_prefix_re.search(s);
@@ -81,18 +95,18 @@ namespace cl
         }
         if(!is_string_prefix(s.substr(0, prefix_len)))
         {
-            return 0;
+            return {StringTokenKind::NotString, 0};
         }
 
         if(prefix_len >= s.size())
         {
-            return 0;
+            return {StringTokenKind::NotString, 0};
         }
 
         wchar_t quote = s[prefix_len];
         if(quote != L'\'' && quote != L'"')
         {
-            return 0;
+            return {StringTokenKind::NotString, 0};
         }
 
         size_t quote_len = 1;
@@ -108,7 +122,7 @@ namespace cl
             wchar_t c = s[i];
             if(quote_len == 1 && (c == L'\n' || c == L'\r'))
             {
-                return 0;
+                return {StringTokenKind::UnterminatedString, i};
             }
 
             if(escaped)
@@ -127,15 +141,29 @@ namespace cl
             {
                 if(quote_len == 1)
                 {
-                    return i + 1;
+                    return {StringTokenKind::Complete, i + 1};
                 }
                 if(i + 2 < s.size() && s[i + 1] == quote && s[i + 2] == quote)
                 {
-                    return i + 3;
+                    return {StringTokenKind::Complete, i + 3};
                 }
             }
         }
 
+        if(quote_len == 3)
+        {
+            return {StringTokenKind::UnterminatedTripleString, s.size()};
+        }
+        return {StringTokenKind::UnterminatedString, s.size()};
+    }
+
+    static size_t find_string_literal_length(std::wstring_view s)
+    {
+        StringTokenScan scan = scan_string_literal(s);
+        if(scan.kind == StringTokenKind::Complete)
+        {
+            return scan.length;
+        }
         return 0;
     }
 
@@ -619,17 +647,11 @@ namespace cl
                             case '\r':
                                 if(bracket_depth > 0)
                                 {
-                                    uint32_t newline_pos = pos;
                                     while(pos < end &&
                                           (source_code[pos] == '\n' ||
                                            source_code[pos] == '\r'))
                                     {
                                         ++pos;
-                                    }
-                                    if(pos == end)
-                                    {
-                                        tokens.emplace_back(Token::NEWLINE,
-                                                            newline_pos);
                                     }
                                     break;
                                 }
@@ -663,29 +685,42 @@ namespace cl
                                       source_code[pos] != '\r');
                                 break;
 
-                            case '"':
-                            case '\'':
-                                {
-                                    std::wstring_view m =
-                                        string_for_string_token(cu, pos);
-                                    if(!m.empty())
-                                    {
-                                        tokens.emplace_back(Token::STRING, pos);
-                                        pos += m.size();
-                                        break;
-                                    }
-                                }
-
                             default:
                                 {
                                     {
-                                        std::wstring_view m =
-                                            string_for_string_token(cu, pos);
-                                        if(!m.empty())
+                                        StringTokenScan scan =
+                                            scan_string_literal(
+                                                std::wstring_view(source_code)
+                                                    .substr(pos));
+                                        if(scan.kind ==
+                                           StringTokenKind::Complete)
                                         {
                                             tokens.emplace_back(Token::STRING,
                                                                 pos);
-                                            pos += m.size();
+                                            pos += scan.length;
+                                            break;
+                                        }
+                                        if(scan.kind ==
+                                           StringTokenKind::UnterminatedString)
+                                        {
+                                            tokens.emplace_back(
+                                                Token::
+                                                    ERRORTOKEN_UNTERMINATED_STRING,
+                                                pos);
+                                            pos += std::max<size_t>(scan.length,
+                                                                    1);
+                                            break;
+                                        }
+                                        if(scan.kind ==
+                                           StringTokenKind::
+                                               UnterminatedTripleString)
+                                        {
+                                            tokens.emplace_back(
+                                                Token::
+                                                    ERRORTOKEN_UNTERMINATED_TRIPLE_STRING,
+                                                pos);
+                                            pos += std::max<size_t>(scan.length,
+                                                                    1);
                                             break;
                                         }
                                     }
@@ -728,7 +763,11 @@ namespace cl
             }
         }
 
-        if(tokens.size() == 0 || tokens.tokens.back() != Token::NEWLINE)
+        if(bracket_depth > 0)
+        {
+            tokens.emplace_back(Token::ERRORTOKEN_OPEN_BRACKET_EOF, end);
+        }
+        else if(tokens.size() == 0 || tokens.tokens.back() != Token::NEWLINE)
         {
             // terminate with a newline if not there already
             tokens.emplace_back(Token::NEWLINE, end);
