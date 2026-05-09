@@ -87,6 +87,35 @@ namespace cl
     static_assert(sizeof(AttributeMutationInlineCache) == 32,
                   "AttributeMutationInlineCache should stay compact");
 
+    struct SpecialMethodInlineCache
+    {
+        Value receiver_class = Value::not_present();
+        AttributeReadPlan plan = AttributeReadDescriptor::not_found().plan;
+
+        ALWAYSINLINE bool matches(Value receiver) const
+        {
+            return receiver.is_ptr() && !receiver_class.is_not_present() &&
+                   receiver.get_ptr<Object>()->get_class().as_value() ==
+                       receiver_class &&
+                   plan.lookup_validity_cell != nullptr &&
+                   plan.lookup_validity_cell->is_valid();
+        }
+
+        void populate(Value receiver, const AttributeReadDescriptor &descriptor)
+        {
+            assert(receiver.is_ptr());
+            assert(descriptor.is_cacheable());
+            receiver_class = receiver.get_ptr<Object>()->get_class().as_value();
+            plan = descriptor.plan;
+        }
+
+        void clear()
+        {
+            receiver_class = Value::not_present();
+            plan = AttributeReadDescriptor::not_found().plan;
+        }
+    };
+
 }  // namespace cl
 
 #endif  // CL_ATTRIBUTE_CACHE_H

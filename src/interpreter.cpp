@@ -2426,6 +2426,153 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static Value op_call_special_method_slow(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 6;
+        int32_t receiver_reg = int8_t(pc[1]);
+        uint8_t const_offset = pc[2];
+        uint8_t special_cache_idx = pc[3];
+        uint8_t call_cache_idx = pc[4];
+        uint32_t n_user_args = uint8_t(pc[5]);
+        Value receiver = fp[receiver_reg];
+        TValue<String> method_name = TValue<String>::from_value_assumed(
+            code_object->constant_table[const_offset].as_value());
+
+        SpecialMethodInlineCache &cache =
+            code_object->special_method_caches[special_cache_idx];
+        Value callable;
+        Value self;
+        MethodCallTargetStatus target_status;
+        if(cache.matches(receiver))
+        {
+            target_status = prepare_method_call_target_from_plan(
+                receiver, cache.plan, callable, self);
+        }
+        else
+        {
+            AttributeReadDescriptor descriptor =
+                resolve_special_method_read_descriptor(receiver, method_name);
+            target_status = prepare_method_call_target_from_descriptor(
+                receiver, descriptor, callable, self);
+            if(target_status == MethodCallTargetStatus::Ready &&
+               descriptor.is_cacheable())
+            {
+                cache.populate(receiver, descriptor);
+            }
+        }
+        if(unlikely(target_status == MethodCallTargetStatus::Missing))
+        {
+            MUSTTAIL return method_lookup_error(ARGS);
+        }
+        if(unlikely(target_status ==
+                    MethodCallTargetStatus::RequiresDescriptorDispatch))
+        {
+            MUSTTAIL return descriptor_dispatch_error(ARGS);
+        }
+
+        bool has_self = !self.is_not_present();
+        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
+
+        if(unlikely(!callable.is_ptr()))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        Object *fun_object = callable.get_ptr();
+        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        TValue<Function> function =
+            TValue<Function>::from_value_assumed(callable);
+        FunctionCallInlineCache &call_cache =
+            code_object->function_call_caches[call_cache_idx];
+        if(function_call_cache_matches(call_cache, callable, n_args))
+        {
+            int32_t first_arg_reg = prepare_method_call_argument_slots(
+                fp, receiver_reg, n_user_args, self);
+            TValue<Function> cached_function =
+                TValue<Function>::from_oop(call_cache.function);
+            enter_function_frame_from_positional_args(
+                fp, pc, code_object, cached_function, first_arg_reg, n_args,
+                call_instr_len, call_cache.adaptation);
+
+            START(0);
+            COMPLETE();
+        }
+        if(unlikely(!function.extract()->accepts_arity(n_args)))
+        {
+            MUSTTAIL return wrong_arity_error(ARGS);
+        }
+        int32_t first_arg_reg = prepare_method_call_argument_slots(
+            fp, receiver_reg, n_user_args, self);
+        FunctionCallAdaptation adaptation =
+            classify_function_call_adaptation(function);
+        populate_function_call_cache(call_cache, function, n_args, adaptation);
+        enter_function_frame_from_positional_args(fp, pc, code_object, function,
+                                                  first_arg_reg, n_args,
+                                                  call_instr_len, adaptation);
+
+        {
+            START(0);
+            COMPLETE();
+        }
+    }
+
+    static Value op_call_special_method(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 6;
+        int32_t receiver_reg = int8_t(pc[1]);
+        uint8_t special_cache_idx = pc[3];
+        uint8_t call_cache_idx = pc[4];
+        uint32_t n_user_args = uint8_t(pc[5]);
+        Value receiver = fp[receiver_reg];
+        SpecialMethodInlineCache &cache =
+            code_object->special_method_caches[special_cache_idx];
+        if(unlikely(!cache.matches(receiver)))
+        {
+            MUSTTAIL return op_call_special_method_slow(ARGS);
+        }
+
+        Value callable;
+        Value self;
+        MethodCallFastTargetStatus target_status =
+            prepare_method_call_target_from_plan_fast(receiver, cache.plan,
+                                                      callable, self);
+        if(unlikely(target_status == MethodCallFastTargetStatus::Slow))
+        {
+            MUSTTAIL return op_call_special_method_slow(ARGS);
+        }
+
+        bool has_self = !self.is_not_present();
+        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
+        FunctionCallInlineCache &call_cache =
+            code_object->function_call_caches[call_cache_idx];
+
+        if(unlikely(!function_call_cache_matches(call_cache, callable, n_args)))
+        {
+            MUSTTAIL return op_call_special_method_slow(ARGS);
+        }
+
+        if(unlikely(call_cache.adaptation !=
+                    FunctionCallAdaptation::FixedArity))
+        {
+            MUSTTAIL return op_call_special_method_slow(ARGS);
+        }
+
+        int32_t first_arg_reg = prepare_method_call_argument_slots(
+            fp, receiver_reg, n_user_args, self);
+        TValue<Function> function =
+            TValue<Function>::from_oop(call_cache.function);
+        enter_function_frame_from_positional_args(
+            fp, pc, code_object, function, first_arg_reg, n_args,
+            call_instr_len, FunctionCallAdaptation::FixedArity);
+
+        START(0);
+        COMPLETE();
+    }
+
     static ALWAYSINLINE Value get_native_arg(Value *fp, CodeObject *code_object,
                                              uint32_t arg_idx)
     {
@@ -2479,16 +2626,11 @@ namespace cl
     static Value op_get_iter(PARAMS)
     {
         START(1);
-        if(unlikely(!accumulator.is_ptr()))
-        {
-            MUSTTAIL return not_iterable_error(ARGS);
-        }
-
         TValue<String> iter_name =
             thread->get_machine()->get_or_create_interned_string_value(
                 L"__iter__");
         AttributeReadDescriptor descriptor =
-            resolve_attr_read_descriptor(accumulator, iter_name);
+            resolve_special_method_read_descriptor(accumulator, iter_name);
         if(unlikely(!descriptor.is_found()))
         {
             MUSTTAIL return not_iterable_error(ARGS);
@@ -2846,6 +2988,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::StoreSubscript, op_store_subscript);
         SET_TABLE_ENTRY(Bytecode::DelSubscript, op_del_subscript);
         SET_TABLE_ENTRY(Bytecode::CallMethodAttr, op_call_method_attr);
+        SET_TABLE_ENTRY(Bytecode::CallSpecialMethod, op_call_special_method);
 
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);

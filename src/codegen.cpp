@@ -1092,7 +1092,7 @@ namespace cl
             {
                 ExceptionTableRangeBuilder range(code_obj,
                                                  stop_iteration_handler_target);
-                code_obj->emit_call_method_attr(
+                code_obj->emit_call_special_method(
                     source_offset, OutgoingArgReg(0), next_constant_idx, 0);
                 range.close();
             }
@@ -1186,8 +1186,8 @@ namespace cl
                 code_obj->allocate_constant(interned_string(L"__iter__"));
             code_obj->emit_get_iter(source_offset);
             code_obj->emit_star(source_offset, OutgoingArgReg(0));
-            code_obj->emit_call_method_attr(source_offset, OutgoingArgReg(0),
-                                            iter_constant_idx, 0);
+            code_obj->emit_call_special_method(source_offset, OutgoingArgReg(0),
+                                               iter_constant_idx, 0);
             code_obj->emit_star(source_offset, iterator_reg);
             codegen_iterator_driven_for_loop(source_offset, target_idx,
                                              body_idx, iterator_reg,
@@ -1623,9 +1623,9 @@ namespace cl
                             interned_string(L"__iter__"));
                         code_obj->emit_get_iter(source_offset);
                         code_obj->emit_star(source_offset, OutgoingArgReg(0));
-                        code_obj->emit_call_method_attr(source_offset,
-                                                        OutgoingArgReg(0),
-                                                        iter_constant_idx, 0);
+                        code_obj->emit_call_special_method(
+                            source_offset, OutgoingArgReg(0), iter_constant_idx,
+                            0);
                         code_obj->emit_star(source_offset, iterator_reg);
                         codegen_iterator_driven_for_loop(
                             source_offset, target_idx, body_idx, iterator_reg,

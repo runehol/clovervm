@@ -21,6 +21,7 @@
 #include "token_print.h"
 #include "tokenizer.h"
 #include "tuple.h"
+#include "value_string.h"
 #include "virtual_machine.h"
 #include <fmt/xchar.h>
 #include <gtest/gtest.h>
@@ -2009,6 +2010,36 @@ TEST(Interpreter, call_clovervm_method_uses_function_call_adaptation)
 
     EXPECT_EQ(Value::from_smi(42), actual);
     EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
+    EXPECT_FALSE(test_context.thread()->has_pending_exception());
+}
+
+TEST(Interpreter, value_repr_uses_special_method_lookup)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<String> class_name(
+        test_context.vm().get_or_create_interned_string_value(L"ReprSource"));
+    TValue<String> dunder_repr_name(
+        test_context.vm().get_or_create_interned_string_value(L"__repr__"));
+    ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
+        class_name, 2, test_context.vm().object_class());
+    Instance *instance =
+        test_context.thread()->make_internal_raw<Instance>(cls);
+    Value class_repr = make_test_function(test_context, L"class_repr",
+                                          L"def class_repr(self):\n"
+                                          L"    return 'class repr'\n");
+    Value instance_repr = make_test_function(test_context, L"instance_repr",
+                                             L"def instance_repr():\n"
+                                             L"    return 'instance repr'\n");
+    ASSERT_TRUE(cls->set_own_property(dunder_repr_name, class_repr));
+    ASSERT_TRUE(instance->set_own_property(dunder_repr_name, instance_repr));
+
+    Value actual = value_to_repr_string(Value::from_oop(instance));
+
+    ASSERT_FALSE(actual.is_exception_marker());
+    ASSERT_TRUE(can_convert_to<String>(actual));
+    EXPECT_STREQ(L"class repr",
+                 string_as_wchar_t(TValue<String>::from_value_checked(actual)));
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }
 

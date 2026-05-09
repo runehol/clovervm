@@ -276,6 +276,9 @@ namespace cl
         uint32_t emit_call_method_attr(uint32_t source_offset,
                                        OutgoingArgReg first_arg_reg,
                                        uint8_t name_idx, uint8_t argc);
+        uint32_t emit_call_special_method(uint32_t source_offset,
+                                          OutgoingArgReg first_arg_reg,
+                                          uint8_t name_idx, uint8_t argc);
         uint32_t emit_load_subscript(uint32_t source_offset,
                                      uint32_t receiver_reg);
         uint32_t emit_store_subscript(uint32_t source_offset,
@@ -318,6 +321,7 @@ namespace cl
         friend class JumpTarget;
 
         uint32_t allocate_attribute_read_cache();
+        uint32_t allocate_special_method_cache();
         uint32_t allocate_attribute_mutation_cache();
         uint32_t allocate_function_call_cache();
         uint32_t emplace_back(uint32_t source_offset, uint8_t c);

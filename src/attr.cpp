@@ -398,6 +398,20 @@ namespace cl
                                                           obj)));
     }
 
+    AttributeReadDescriptor
+    resolve_special_method_read_descriptor(Value obj, TValue<String> name)
+    {
+        ClassObject *class_object = active_thread()->class_of_value(obj);
+        AttributeReadDescriptor descriptor = classify_class_read_descriptor(
+            lookup_instance_attribute_read_descriptor(class_object, name, obj));
+        if(!obj.is_ptr())
+        {
+            return uncacheable_inline_receiver_descriptor(descriptor);
+        }
+        return with_mro_shape_and_contents_validity_cell_if_unblocked(
+            descriptor, class_object);
+    }
+
     Value load_attr_from_plan(Value receiver, const AttributeReadPlan &plan)
     {
         if(plan.kind == AttributeReadPlanKind::ConstantValue)
@@ -453,6 +467,21 @@ namespace cl
     {
         AttributeReadDescriptor descriptor =
             resolve_attr_read_descriptor(obj, name);
+        if(!descriptor.is_found())
+        {
+            callable_out = Value::not_present();
+            self_out = Value::not_present();
+            return false;
+        }
+        return load_method_from_plan(obj, descriptor.plan, callable_out,
+                                     self_out);
+    }
+
+    bool load_special_method(Value obj, TValue<String> name,
+                             Value &callable_out, Value &self_out)
+    {
+        AttributeReadDescriptor descriptor =
+            resolve_special_method_read_descriptor(obj, name);
         if(!descriptor.is_found())
         {
             callable_out = Value::not_present();

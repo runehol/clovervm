@@ -180,6 +180,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "DelSubscript");
             case cl::Bytecode::CallMethodAttr:
                 return format_to(out, "CallMethodAttr");
+            case cl::Bytecode::CallSpecialMethod:
+                return format_to(out, "CallSpecialMethod");
 
             case cl::Bytecode::Add:
                 return format_to(out, "Add");
@@ -431,6 +433,13 @@ template <> struct fmt::formatter<cl::CodeObject>
     }
 
     template <typename Out>
+    void disassemble_special_method_cache(const cl::CodeObject &code_obj,
+                                          Out &out, uint32_t pc) const
+    {
+        format_to(out, "special_ic[{}]", code_obj.code[pc]);
+    }
+
+    template <typename Out>
     void disassemble_mutation_cache(const cl::CodeObject &code_obj, Out &out,
                                     uint32_t pc) const
     {
@@ -596,6 +605,19 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_constant(code_obj, out, pc++);
                 format_to(out, ", ");
                 disassemble_read_cache(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_function_call_cache(code_obj, out, pc++);
+                format_to(out, ", ");
+                format_to(out, "{}", code_obj.code[pc++]);
+                break;
+
+            case cl::Bytecode::CallSpecialMethod:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_constant(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_special_method_cache(code_obj, out, pc++);
                 format_to(out, ", ");
                 disassemble_function_call_cache(code_obj, out, pc++);
                 format_to(out, ", ");

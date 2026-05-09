@@ -1,6 +1,8 @@
 #include "value_string.h"
 
+#include "attr.h"
 #include "exception_propagation.h"
+#include "function.h"
 #include "runtime_helpers.h"
 #include "str.h"
 #include "thread_state.h"
@@ -12,8 +14,25 @@ namespace cl
     {
         TValue<String> method_name =
             active_vm()->get_or_create_interned_string_value(name);
+        Value callable;
+        Value self;
+        if(!load_special_method(value, method_name, callable, self))
+        {
+            return active_thread()->set_pending_builtin_exception_none(
+                L"AttributeError");
+        }
+        if(!can_convert_to<Function>(callable))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"object is not callable");
+        }
+
         Value result =
-            active_thread()->call_clovervm_method(value, method_name);
+            self.is_not_present()
+                ? active_thread()->call_clovervm_function(
+                      TValue<Function>::from_value_checked(callable))
+                : active_thread()->call_clovervm_function(
+                      TValue<Function>::from_value_checked(callable), self);
         CL_PROPAGATE_EXCEPTION(result);
         if(!can_convert_to<String>(result))
         {

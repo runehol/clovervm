@@ -9,6 +9,8 @@ namespace cl
 {
     AttributeReadDescriptor resolve_attr_read_descriptor(Value obj,
                                                          TValue<String> name);
+    AttributeReadDescriptor
+    resolve_special_method_read_descriptor(Value obj, TValue<String> name);
     Value load_attr_from_plan(Value receiver, const AttributeReadPlan &plan);
     bool load_method_from_plan(Value receiver, const AttributeReadPlan &plan,
                                Value &callable_out, Value &self_out);
@@ -25,6 +27,8 @@ namespace cl
     bool delete_attr(Value obj, TValue<String> name);
     bool load_method(Value obj, TValue<String> name, Value &callable_out,
                      Value &self_out);
+    bool load_special_method(Value obj, TValue<String> name,
+                             Value &callable_out, Value &self_out);
 }  // namespace cl
 
 #endif  // CL_ATTR_H
