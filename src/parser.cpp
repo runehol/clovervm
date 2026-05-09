@@ -6,6 +6,9 @@
 #include "tokenizer.h"
 #include "virtual_machine.h"
 #include <cstdint>
+#include <iomanip>
+#include <locale>
+#include <sstream>
 #include <string>
 
 namespace cl
@@ -319,7 +322,7 @@ namespace cl
 
         static bool is_tokenizer_error(Token token)
         {
-            return token == Token::ERRORTOKEN ||
+            return token == Token::ERRORTOKEN_INVALID_CHARACTER ||
                    token == Token::ERRORTOKEN_UNTERMINATED_STRING ||
                    token == Token::ERRORTOKEN_UNTERMINATED_TRIPLE_STRING ||
                    token == Token::ERRORTOKEN_OPEN_BRACKET_EOF;
@@ -331,6 +334,9 @@ namespace cl
         {
             switch(token)
             {
+                case Token::ERRORTOKEN_INVALID_CHARACTER:
+                    return ParseError(invalid_character_message(source_pos) +
+                                      format_error_context(source_pos));
                 case Token::ERRORTOKEN_UNTERMINATED_STRING:
                     return ParseError(
                         "SyntaxError: unterminated string literal" +
@@ -352,6 +358,52 @@ namespace cl
             }
         }
 
+        static std::string utf8_for_code_point(uint32_t code_point)
+        {
+            std::string result;
+            if(code_point <= 0x7f)
+            {
+                result.push_back(static_cast<char>(code_point));
+            }
+            else if(code_point <= 0x7ff)
+            {
+                result.push_back(static_cast<char>(0xc0 | (code_point >> 6)));
+                result.push_back(static_cast<char>(0x80 | (code_point & 0x3f)));
+            }
+            else if(code_point <= 0xffff)
+            {
+                result.push_back(static_cast<char>(0xe0 | (code_point >> 12)));
+                result.push_back(
+                    static_cast<char>(0x80 | ((code_point >> 6) & 0x3f)));
+                result.push_back(static_cast<char>(0x80 | (code_point & 0x3f)));
+            }
+            else
+            {
+                result.push_back(static_cast<char>(0xf0 | (code_point >> 18)));
+                result.push_back(
+                    static_cast<char>(0x80 | ((code_point >> 12) & 0x3f)));
+                result.push_back(
+                    static_cast<char>(0x80 | ((code_point >> 6) & 0x3f)));
+                result.push_back(static_cast<char>(0x80 | (code_point & 0x3f)));
+            }
+            return result;
+        }
+
+        std::string invalid_character_message(uint32_t source_pos)
+        {
+            const std::wstring &source = ast.compilation_unit->source_code;
+            uint32_t code_point =
+                source_pos < source.size() ? source[source_pos] : 0;
+
+            std::ostringstream out;
+            out.imbue(std::locale::classic());
+            out << "SyntaxError: invalid character '"
+                << utf8_for_code_point(code_point) << "' (U+" << std::uppercase
+                << std::hex << std::setw(4) << std::setfill('0') << code_point
+                << ")";
+            return out.str();
+        }
+
         void update_indentation_level(Token token)
         {
             if(token == Token::INDENT)
@@ -367,7 +419,12 @@ namespace cl
 
         static std::string narrow(std::wstring_view s)
         {
-            return std::string(s.begin(), s.end());
+            std::string result;
+            for(wchar_t c: s)
+            {
+                result += utf8_for_code_point(c);
+            }
+            return result;
         }
 
         std::string format_error_context(uint32_t source_pos)

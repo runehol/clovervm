@@ -192,8 +192,8 @@ namespace cl
                 return "TYPE_IGNORE";
             case Token::TYPE_COMMENT:
                 return "TYPE_COMMENT";
-            case Token::ERRORTOKEN:
-                return "ERRORTOKEN";
+            case Token::ERRORTOKEN_INVALID_CHARACTER:
+                return "ERRORTOKEN_INVALID_CHARACTER";
             case Token::ERRORTOKEN_UNTERMINATED_STRING:
                 return "ERRORTOKEN_UNTERMINATED_STRING";
             case Token::ERRORTOKEN_UNTERMINATED_TRIPLE_STRING:

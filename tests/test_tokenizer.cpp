@@ -74,6 +74,17 @@ TEST(Tokenizer, unterminated_single_string_emits_error_token)
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
+TEST(Tokenizer, invalid_character_emits_error_token)
+{
+    CompilationUnit input(L"\u2764\ufe0f\n");
+    std::vector<Token> expected_tokens = {Token::ERRORTOKEN_INVALID_CHARACTER,
+                                          Token::ERRORTOKEN_INVALID_CHARACTER,
+                                          Token::NEWLINE, Token::ENDMARKER};
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+}
+
 TEST(Tokenizer, unterminated_triple_string_emits_error_token)
 {
     CompilationUnit input(L"x = \"\"\"abc\n");

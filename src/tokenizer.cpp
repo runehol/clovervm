@@ -754,8 +754,9 @@ namespace cl
                                         }
                                     }
 
-                                    tokens.emplace_back(Token::ERRORTOKEN,
-                                                        pos++);
+                                    tokens.emplace_back(
+                                        Token::ERRORTOKEN_INVALID_CHARACTER,
+                                        pos++);
                                 }
                         }
                         break;

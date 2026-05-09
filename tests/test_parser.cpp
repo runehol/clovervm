@@ -119,6 +119,13 @@ TEST(Parser, unterminated_single_string_is_not_incomplete_input)
     }
 }
 
+TEST(Parser, invalid_character_reports_code_point)
+{
+    expect_parse_error(L"\u2764\ufe0f\n",
+                       "SyntaxError: invalid character '❤' (U+2764) at "
+                       "offset 0 (line 1, column 1), near \"❤️\"");
+}
+
 TEST(Parser, unterminated_triple_string_reports_current_indentation_level)
 {
     try
