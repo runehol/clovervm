@@ -19,6 +19,7 @@ namespace cl
 
     class ClassObject;
     class ExceptionObject;
+    class Function;
     class VirtualMachine;
     struct CodeObject;
 
@@ -70,6 +71,14 @@ namespace cl
         }
 
         Value run(CodeObject *obj);
+        [[nodiscard]] Value call_clovervm_function(TValue<Function> function);
+        [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
+                                                   Value arg0);
+        [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
+                                                   Value arg0, Value arg1);
+        [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
+                                                   Value arg0, Value arg1,
+                                                   Value arg2);
         void set_clover_frame_frontier(Value *fp)
         {
             clover_frame_frontier_ptr = fp;
@@ -156,6 +165,10 @@ namespace cl
         VirtualMachine *get_machine() const { return machine; }
 
     private:
+        [[nodiscard]] Value
+        call_clovervm_function_with_args(TValue<Function> function,
+                                         const Value *args, uint32_t n_args);
+
         VirtualMachine *machine;
 
         ThreadLocalHeap refcounted_heap;

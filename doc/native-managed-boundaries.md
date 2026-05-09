@@ -630,7 +630,7 @@ opcodes.
 1. [x] Build/cache Clover function entry adapters by positional arity.
    Keep raw code-object entry as a separate prepared `CallCodeObject` wrapper
    path for module startup and similar non-`Function` code.
-2. [ ] Add fixed-arity `ThreadState::call_clovervm_function` overloads backed by the
+2. [x] Add fixed-arity `ThreadState::call_clovervm_function` overloads backed by the
    matching arity wrappers.
 3. [ ] Add raw code-object boundary-return wrappers when native code needs local
    pending-exception conversion for non-`Function` code entry.

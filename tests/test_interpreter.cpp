@@ -31,6 +31,20 @@ using namespace cl;
 
 static constexpr int64_t kMinSmi = -288230376151711744LL;
 
+static bool clover_frame_chain_reaches(Value *frontier, Value *target)
+{
+    Value *fp = frontier;
+    for(uint32_t depth = 0; depth < 64 && fp != nullptr; ++depth)
+    {
+        if(fp == target)
+        {
+            return true;
+        }
+        fp = reinterpret_cast<Value *>(fp[FrameHeaderPreviousFpOffset].as.ptr);
+    }
+    return false;
+}
+
 static void expect_runtime_error(const wchar_t *source,
                                  const char *expected_message)
 {
@@ -87,6 +101,8 @@ static void expect_range_iterator(Value actual, int64_t expected_current,
 
 static int64_t g_next_counter = 0;
 static Value *g_native_frame_frontier_seen = nullptr;
+static Value *g_expected_initial_clover_fp = nullptr;
+static uint32_t g_weave_frontier_checks = 0;
 
 static Value native_next_counter() { return Value::from_smi(g_next_counter++); }
 
@@ -122,6 +138,35 @@ static Value native_frame_frontier3(Value arg0, Value arg1, Value arg2)
                                                 arg2 == Value::from_smi(30)
                                             ? 8
                                             : 0);
+}
+
+static void expect_current_frontier_reaches_initial()
+{
+    ThreadState *thread = active_thread();
+    Value *frontier = thread->clover_frame_frontier();
+    EXPECT_NE(nullptr, frontier);
+    EXPECT_TRUE(
+        clover_frame_chain_reaches(frontier, g_expected_initial_clover_fp));
+    ++g_weave_frontier_checks;
+}
+
+static Value native_weave_inner()
+{
+    expect_current_frontier_reaches_initial();
+    return Value::from_smi(23);
+}
+
+static Value native_weave_outer(Value inner_function)
+{
+    expect_current_frontier_reaches_initial();
+    Value result = active_thread()->call_clovervm_function(
+        TValue<Function>::from_value_checked(inner_function));
+    expect_current_frontier_reaches_initial();
+    if(result.is_exception_marker())
+    {
+        return result;
+    }
+    return Value::from_smi(result.get_smi() + 19);
 }
 
 static Value native_increment(Value value)
@@ -1565,6 +1610,34 @@ TEST(Interpreter, call_native_sets_clover_frame_frontier)
               test_context.thread()->clover_frame_frontier());
 }
 
+TEST(Interpreter, clover_frame_frontier_chain_survives_nested_native_reentry)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    g_expected_initial_clover_fp =
+        test_context.thread()->clover_frame_frontier();
+    g_weave_frontier_checks = 0;
+
+    CodeObject *code_obj =
+        test_context.compile_file(L"def inner():\n"
+                                  L"    return native_inner()\n"
+                                  L"def outer():\n"
+                                  L"    return native_outer(inner)\n"
+                                  L"outer()\n");
+    bind_global(test_context, code_obj, L"native_inner",
+                make_native_function(&test_context.vm(), native_weave_inner));
+    bind_global(test_context, code_obj, L"native_outer",
+                make_native_function(&test_context.vm(), native_weave_outer));
+
+    Value actual = test_context.thread()->run(code_obj);
+
+    EXPECT_EQ(Value::from_smi(42), actual);
+    EXPECT_EQ(3u, g_weave_frontier_checks);
+    EXPECT_EQ(g_expected_initial_clover_fp,
+              test_context.thread()->clover_frame_frontier());
+    g_expected_initial_clover_fp = nullptr;
+}
+
 TEST(Interpreter, return_to_native_restores_clover_frame_frontier)
 {
     test::VmTestContext test_context;
@@ -1693,6 +1766,81 @@ TEST(Interpreter, clover_function_entry_adapter_returns_pending_exception)
     EXPECT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
     test_context.thread()->clear_pending_exception();
+}
+
+TEST(Interpreter, call_clovervm_function_overloads_call_managed_functions)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value zero = make_test_function(test_context, L"zero",
+                                    L"def zero():\n"
+                                    L"    return 7\n");
+    Value inc = make_test_function(test_context, L"inc",
+                                   L"def inc(a):\n"
+                                   L"    return a + 1\n");
+    Value add = make_test_function(test_context, L"add",
+                                   L"def add(a, b):\n"
+                                   L"    return a + b\n");
+    Value sum3 = make_test_function(test_context, L"sum3",
+                                    L"def sum3(a, b, c):\n"
+                                    L"    return a + b + c\n");
+    Value *caller_fp = test_context.thread()->clover_frame_frontier();
+
+    EXPECT_EQ(Value::from_smi(7),
+              test_context.thread()->call_clovervm_function(
+                  TValue<Function>::from_value_checked(zero)));
+    EXPECT_EQ(
+        Value::from_smi(11),
+        test_context.thread()->call_clovervm_function(
+            TValue<Function>::from_value_checked(inc), Value::from_smi(10)));
+    EXPECT_EQ(Value::from_smi(30),
+              test_context.thread()->call_clovervm_function(
+                  TValue<Function>::from_value_checked(add),
+                  Value::from_smi(10), Value::from_smi(20)));
+    EXPECT_EQ(Value::from_smi(60),
+              test_context.thread()->call_clovervm_function(
+                  TValue<Function>::from_value_checked(sum3),
+                  Value::from_smi(10), Value::from_smi(20),
+                  Value::from_smi(30)));
+    EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
+    EXPECT_FALSE(test_context.thread()->has_pending_exception());
+}
+
+TEST(Interpreter, call_clovervm_function_returns_pending_exception)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value function = make_test_function(test_context, L"f",
+                                        L"def f(a):\n"
+                                        L"    raise ValueError\n");
+    Value *caller_fp = test_context.thread()->clover_frame_frontier();
+
+    Value actual = test_context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_checked(function), Value::from_smi(10));
+
+    EXPECT_TRUE(actual.is_exception_marker());
+    EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
+    EXPECT_TRUE(test_context.thread()->has_pending_exception());
+    EXPECT_EQ(PendingExceptionKind::Object,
+              test_context.thread()->pending_exception_kind());
+    test_context.thread()->clear_pending_exception();
+}
+
+TEST(Interpreter, call_clovervm_function_uses_function_call_adaptation)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value function = make_test_function(test_context, L"f",
+                                        L"def f(a, b=32):\n"
+                                        L"    return a + b\n");
+    Value *caller_fp = test_context.thread()->clover_frame_frontier();
+
+    Value actual = test_context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_checked(function), Value::from_smi(10));
+
+    EXPECT_EQ(Value::from_smi(42), actual);
+    EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
+    EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }
 
 TEST(Interpreter, call_native_one_arg_function)

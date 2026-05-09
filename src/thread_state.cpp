@@ -4,6 +4,7 @@
 #include "codegen.h"
 #include "compilation_unit.h"
 #include "exception_object.h"
+#include "function.h"
 #include "interpreter.h"
 #include "owned_typed_value.h"
 #include "parser.h"
@@ -38,6 +39,64 @@ namespace cl
             make_startup_wrapper_code_object(obj));
         return run_interpreter(clover_frame_frontier(),
                                startup_wrapper.extract(), 0, this);
+    }
+
+    static void set_clover_entry_adapter_parameter(CodeObject *adapter,
+                                                   Value *adapter_fp,
+                                                   uint32_t parameter_idx,
+                                                   Value value)
+    {
+        adapter_fp[adapter->encode_reg(parameter_idx)] = value;
+    }
+
+    Value ThreadState::call_clovervm_function_with_args(
+        TValue<Function> function, const Value *args, uint32_t n_args)
+    {
+        ActivationScope activation_scope(this);
+        CodeObject *adapter = machine->clover_function_entry_adapter(n_args);
+        Value *caller_fp = clover_frame_frontier();
+        Value *adapter_fp =
+            caller_fp - adapter->get_highest_occupied_frame_offset() - 1;
+        adapter_fp[FrameHeaderPreviousFpOffset].as.ptr =
+            reinterpret_cast<Object *>(caller_fp);
+
+        set_clover_entry_adapter_parameter(adapter, adapter_fp, 0,
+                                           function.as_value());
+        for(uint32_t arg_idx = 0; arg_idx < n_args; ++arg_idx)
+        {
+            set_clover_entry_adapter_parameter(adapter, adapter_fp, arg_idx + 1,
+                                               args[arg_idx]);
+        }
+
+        set_clover_frame_frontier(adapter_fp);
+        return run_interpreter(adapter_fp, adapter, 0, this);
+    }
+
+    Value ThreadState::call_clovervm_function(TValue<Function> function)
+    {
+        return call_clovervm_function_with_args(function, nullptr, 0);
+    }
+
+    Value ThreadState::call_clovervm_function(TValue<Function> function,
+                                              Value arg0)
+    {
+        Value args[] = {arg0};
+        return call_clovervm_function_with_args(function, args, 1);
+    }
+
+    Value ThreadState::call_clovervm_function(TValue<Function> function,
+                                              Value arg0, Value arg1)
+    {
+        Value args[] = {arg0, arg1};
+        return call_clovervm_function_with_args(function, args, 2);
+    }
+
+    Value ThreadState::call_clovervm_function(TValue<Function> function,
+                                              Value arg0, Value arg1,
+                                              Value arg2)
+    {
+        Value args[] = {arg0, arg1, arg2};
+        return call_clovervm_function_with_args(function, args, 3);
     }
 
     bool ThreadState::has_pending_exception() const
