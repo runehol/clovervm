@@ -34,6 +34,30 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout_id = NativeLayoutId::Dict;
 
+        struct EntryView
+        {
+            Value key;
+            Value value;
+        };
+
+        class Iterator
+        {
+        public:
+            EntryView operator*() const;
+            Iterator &operator++();
+            bool operator==(const Iterator &other) const;
+            bool operator!=(const Iterator &other) const;
+
+        private:
+            friend class Dict;
+
+            Iterator(const Dict *dict, size_t idx);
+            void skip_dead_entries();
+
+            const Dict *dict;
+            size_t idx;
+        };
+
         explicit Dict(ClassObject *cls);
 
         Dict(ClassObject *cls, const Dict &other);
@@ -47,6 +71,9 @@ namespace cl
 
         size_t size() const { return n_valid_entries; }
         bool empty() const { return n_valid_entries == 0; }
+
+        Iterator begin() const;
+        Iterator end() const;
 
         void clear();
 

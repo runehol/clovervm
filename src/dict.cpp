@@ -53,6 +53,53 @@ namespace cl
         return builtin_class_definition(cls, native_layout_ids);
     }
 
+    Dict::Iterator::Iterator(const Dict *dict, size_t idx)
+        : dict(dict), idx(idx)
+    {
+        skip_dead_entries();
+    }
+
+    Dict::EntryView Dict::Iterator::operator*() const
+    {
+        assert(idx < dict->entries.size());
+        const Entry &entry = dict->entries[idx];
+        assert(entry.valid());
+        return EntryView{entry.key, entry.value};
+    }
+
+    Dict::Iterator &Dict::Iterator::operator++()
+    {
+        assert(idx <= dict->entries.size());
+        if(idx < dict->entries.size())
+        {
+            ++idx;
+            skip_dead_entries();
+        }
+        return *this;
+    }
+
+    bool Dict::Iterator::operator==(const Iterator &other) const
+    {
+        return dict == other.dict && idx == other.idx;
+    }
+
+    bool Dict::Iterator::operator!=(const Iterator &other) const
+    {
+        return !(*this == other);
+    }
+
+    void Dict::Iterator::skip_dead_entries()
+    {
+        while(idx < dict->entries.size() && !dict->entries[idx].valid())
+        {
+            ++idx;
+        }
+    }
+
+    Dict::Iterator Dict::begin() const { return Iterator(this, 0); }
+
+    Dict::Iterator Dict::end() const { return Iterator(this, entries.size()); }
+
     const int32_t *Dict::find_entry(Value key) const
     {
         return find_entry_with_provided_hash(key, internal_hash(key));

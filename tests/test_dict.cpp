@@ -116,6 +116,52 @@ TEST(Dict, CopyConstructorPreservesLiveEntriesOnly)
     expect_pending_exception(context.thread(), L"KeyError", L"");
 }
 
+TEST(Dict, IteratorVisitsLiveEntriesInInsertionOrder)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Dict *dict = context.thread()->make_object_raw<Dict>();
+
+    Value first = make_string(context, L"first");
+    Value second = make_string(context, L"second");
+    Value third = make_string(context, L"third");
+    Value fourth = make_string(context, L"fourth");
+
+    dict->set_item(first, Value::from_smi(10));
+    dict->set_item(second, Value::from_smi(20));
+    dict->set_item(third, Value::from_smi(30));
+    EXPECT_EQ(Value::None(), dict->del_item(first));
+    EXPECT_EQ(Value::None(), dict->del_item(third));
+    dict->set_item(fourth, Value::from_smi(40));
+
+    Value expected_keys[] = {second, fourth};
+    Value expected_values[] = {Value::from_smi(20), Value::from_smi(40)};
+    size_t idx = 0;
+    for(Dict::EntryView entry: *dict)
+    {
+        ASSERT_LT(idx, 2u);
+        EXPECT_EQ(expected_keys[idx], entry.key);
+        EXPECT_EQ(expected_values[idx], entry.value);
+        ++idx;
+    }
+    EXPECT_EQ(2u, idx);
+}
+
+TEST(Dict, EmptyIteratorEqualsEnd)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Dict *dict = context.thread()->make_object_raw<Dict>();
+
+    EXPECT_EQ(dict->begin(), dict->end());
+
+    Value key = make_string(context, L"key");
+    dict->set_item(key, Value::from_smi(1));
+    EXPECT_EQ(Value::None(), dict->del_item(key));
+
+    EXPECT_EQ(dict->begin(), dict->end());
+}
+
 TEST(Dict, ClearRemovesAllEntriesAndAllowsReuse)
 {
     test::VmTestContext context;
