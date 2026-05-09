@@ -70,6 +70,14 @@ namespace cl
         }
 
         Value run(CodeObject *obj);
+        void set_clover_frame_frontier(Value *fp)
+        {
+            clover_frame_frontier_ptr = fp;
+        }
+        Value *clover_frame_frontier() const
+        {
+            return clover_frame_frontier_ptr;
+        }
 
         bool has_pending_exception() const;
         PendingExceptionKind pending_exception_kind() const;
@@ -155,6 +163,11 @@ namespace cl
         std::vector<Value> stack;
         std::deque<HeapObject *> zero_count_table;
         PendingException pending_exception;
+        // This thread's Clover frame frontier during native execution: the
+        // newest live Clover frame available to native C++ code while the
+        // interpreter is not actively carrying fp in its dispatch state. This
+        // is a frame-chain anchor, not the full stack extent.
+        Value *clover_frame_frontier_ptr = nullptr;
 
         static thread_local ThreadState *current_thread;
     };

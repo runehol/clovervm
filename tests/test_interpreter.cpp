@@ -86,10 +86,43 @@ static void expect_range_iterator(Value actual, int64_t expected_current,
 }
 
 static int64_t g_next_counter = 0;
+static Value *g_native_frame_frontier_seen = nullptr;
 
 static Value native_next_counter() { return Value::from_smi(g_next_counter++); }
 
 static Value native_zero() { return Value::from_smi(17); }
+
+static Value native_frame_frontier_result(int64_t result)
+{
+    g_native_frame_frontier_seen = active_thread()->clover_frame_frontier();
+    return Value::from_smi(g_native_frame_frontier_seen != nullptr ? result
+                                                                   : 0);
+}
+
+static Value native_frame_frontier0()
+{
+    return native_frame_frontier_result(1);
+}
+
+static Value native_frame_frontier1(Value arg0)
+{
+    return native_frame_frontier_result(arg0 == Value::from_smi(10) ? 2 : 0);
+}
+
+static Value native_frame_frontier2(Value arg0, Value arg1)
+{
+    return native_frame_frontier_result(
+        arg0 == Value::from_smi(10) && arg1 == Value::from_smi(20) ? 4 : 0);
+}
+
+static Value native_frame_frontier3(Value arg0, Value arg1, Value arg2)
+{
+    return native_frame_frontier_result(arg0 == Value::from_smi(10) &&
+                                                arg1 == Value::from_smi(20) &&
+                                                arg2 == Value::from_smi(30)
+                                            ? 8
+                                            : 0);
+}
 
 static Value native_increment(Value value)
 {
@@ -1440,6 +1473,37 @@ TEST(Interpreter, native_function_thunk_uses_return_or_raise_adapter)
                            "    0 CallNative0 0\n"
                            "    2 ReturnOrRaiseException\n";
     EXPECT_EQ(expected, actual);
+}
+
+TEST(Interpreter, call_native_sets_clover_frame_frontier)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    g_native_frame_frontier_seen = nullptr;
+    CodeObject *code_obj = test_context.compile_file(
+        L"native_frame0() + native_frame1(10) + "
+        L"native_frame2(10, 20) + native_frame3(10, 20, 30)\n");
+    bind_global(
+        test_context, code_obj, L"native_frame0",
+        make_native_function(&test_context.vm(), native_frame_frontier0));
+    bind_global(
+        test_context, code_obj, L"native_frame1",
+        make_native_function(&test_context.vm(), native_frame_frontier1));
+    bind_global(
+        test_context, code_obj, L"native_frame2",
+        make_native_function(&test_context.vm(), native_frame_frontier2));
+    bind_global(
+        test_context, code_obj, L"native_frame3",
+        make_native_function(&test_context.vm(), native_frame_frontier3));
+
+    Value *initial_frontier = test_context.thread()->clover_frame_frontier();
+    EXPECT_NE(nullptr, initial_frontier);
+    Value actual = test_context.thread()->run(code_obj);
+    EXPECT_EQ(Value::from_smi(15), actual);
+    EXPECT_NE(nullptr, g_native_frame_frontier_seen);
+    EXPECT_EQ(initial_frontier, test_context.thread()->clover_frame_frontier());
+    EXPECT_NE(g_native_frame_frontier_seen,
+              test_context.thread()->clover_frame_frontier());
 }
 
 TEST(Interpreter, call_native_one_arg_function)

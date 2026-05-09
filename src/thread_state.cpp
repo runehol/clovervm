@@ -28,6 +28,7 @@ namespace cl
           refcounted_heap(&machine->get_refcounted_global_heap()),
           stack(1024 * 1024)
     {
+        set_clover_frame_frontier(&stack[stack.size() - 1024]);
     }
 
     Value ThreadState::run(CodeObject *obj)
@@ -35,7 +36,7 @@ namespace cl
         ActivationScope activation_scope(this);
         OwnedTValue<CodeObject> startup_wrapper(
             make_startup_wrapper_code_object(obj));
-        return run_interpreter(&stack[stack.size() - 1024],
+        return run_interpreter(clover_frame_frontier(),
                                startup_wrapper.extract(), 0, this);
     }
 

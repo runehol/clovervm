@@ -137,7 +137,7 @@ caller
 
 native thunk frame
   CallNative0/1/2/3 reads p0, p1, ...
-  publishes the current Clover fp on ThreadState
+  sets ThreadState's Clover frame frontier to the current fp
   calls the C++ target on the native stack
   stores the returned Value in the accumulator
   ReturnOrRaiseException either returns normally or enters managed unwind
@@ -424,10 +424,14 @@ That behavior is still useful for startup/test wrappers whose root wrapper is
 the initial code object passed to `run_interpreter()`. Those wrappers do not
 have an ordinary managed caller frame to pop.
 
+Before returning to native C++ code, `Halt` sets the Clover frame frontier to
+the current `fp`. This prevents the frontier from retaining a stale native thunk
+frame after a top-level interpreter run exits.
+
 `Halt` should not be used for reusable native-to-managed call wrappers that are
 linked into an existing Clover frame chain. Those wrappers need `ReturnToNative`
-or `ReturnPendingExceptionToNative` so they pop themselves and publish the
-restored live managed fp.
+or `ReturnPendingExceptionToNative` so they pop themselves and set the Clover
+frame frontier to the restored live fp.
 
 ### ReturnToNative
 
@@ -438,7 +442,7 @@ Contract:
 
 ```text
 restore fp from the current frame header, as ordinary Return would
-save the restored fp as ThreadState's current/saved managed fp
+set ThreadState's Clover frame frontier to the restored fp
 return the accumulator to native C++ code
 ```
 
@@ -455,7 +459,7 @@ Contract:
 ```text
 pending exception must be set on ThreadState
 restore fp from the current frame header, as ordinary Return would
-save the restored fp as ThreadState's current/saved managed fp
+set ThreadState's Clover frame frontier to the restored fp
 return Value::exception_marker() to native C++ code
 ```
 
@@ -468,27 +472,36 @@ policy: its handler runs `RaiseIfUnhandledException`, which converts the pending
 VM exception into the current C++ outer error mechanism. Native-to-managed call
 wrappers should not use that policy.
 
-### Saved Managed Frame Pointer
+### Clover Frame Frontier
 
-`ThreadState` should keep a saved/current Clover frame pointer that names the
-newest live managed frame for the thread.
+`ThreadState` keeps a Clover frame frontier pointer for native execution. This
+is the newest live Clover frame available to native C++ code while the
+interpreter is not actively carrying `fp` in its dispatch state. It is a
+frame-chain anchor, not the full stack extent.
 
-Any opcode that crosses from managed/interpreted execution into native C++ must
-publish this anchor before control leaves managed execution:
+`ThreadState` initializes the frontier to the initial interpreter entry frame.
+`ThreadState::run()` enters the startup wrapper from that frame. While the
+interpreter is actively running, its local `fp` is the newest live Clover frame.
+Any opcode that crosses from interpreted execution into native C++ must set the
+frontier before control leaves interpreted execution:
 
 ```text
 CallNative0/1/2/3:
-  thread->saved_fp = fp
+  thread->clover_frame_frontier = fp
   call native target on the native stack
+
+Halt:
+  thread->clover_frame_frontier = fp
+  return accumulator
 
 ReturnToNative:
   pop the wrapper frame
-  thread->saved_fp = restored caller fp
+  thread->clover_frame_frontier = restored caller fp
   return accumulator
 
 ReturnPendingExceptionToNative:
   pop the wrapper frame
-  thread->saved_fp = restored caller fp
+  thread->clover_frame_frontier = restored caller fp
   return Value::exception_marker()
 ```
 
@@ -517,8 +530,8 @@ A frames
 ```
 
 When `C` returns to `g`, the `C` frames and its wrapper are popped, and
-`ThreadState::saved_fp` points back to the newest still-live `B` frame. When
-`B` returns to `f`, the saved fp points back to the live `A` frame.
+`ThreadState::clover_frame_frontier` points back to the newest still-live `B`
+frame. When `B` returns to `f`, the frontier points back to the live `A` frame.
 
 This keeps GC scanning focused on currently live managed frames. Completed
 boundary wrappers are not retained as stack roots. Traceback/history concerns
@@ -603,43 +616,41 @@ Tests cover direct native thunk calls for arities 0, 1, 2, and 3, the
 `ReturnOrRaiseException` thunk shape, native marker-to-exception unwinding, the
 string method cases, and `range`'s defaulted three-argument native thunk.
 
-Native-to-managed wrappers, `ReturnToNative`, `ReturnPendingExceptionToNative`,
-and saved-fp publication on native boundary opcodes are planned, not yet
-implemented. `Halt` is implemented today for startup/test-style interpreter
-entry.
+Native-to-managed wrappers, `ReturnToNative`, and
+`ReturnPendingExceptionToNative` are planned, not yet implemented. The Clover
+frame frontier is initialized for initial interpreter entry and set by the
+fixed-arity `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` interpreter
+opcodes. `Halt` is implemented today for startup/test-style interpreter entry.
 
 ## Remaining Work
 
-1. Add `ThreadState` storage for the newest live managed fp and publish it at
-   native boundaries, starting with `CallNative0`/`CallNative1`/`CallNative2`/
-   `CallNative3`.
-2. Keep `Halt` for startup/test-style interpreter entry, and add separate
+1. Keep `Halt` for startup/test-style interpreter entry, and add separate
    boundary-return opcodes: `ReturnToNative` and
    `ReturnPendingExceptionToNative`.
-3. Build/cache native-to-managed function call wrappers by positional arity.
+2. Build/cache native-to-managed function call wrappers by positional arity.
    Keep raw code-object entry as a separate prepared `CallCodeObject` wrapper
    path for module startup and similar non-`Function` code.
-4. Add fixed-arity `ThreadState::call_clovervm_function` overloads backed by the
+3. Add fixed-arity `ThreadState::call_clovervm_function` overloads backed by the
    matching arity wrappers.
-5. Add raw code-object boundary-return wrappers when native code needs local
+4. Add raw code-object boundary-return wrappers when native code needs local
    pending-exception conversion for non-`Function` code entry.
-6. Design and implement the packed tuple/vector native convention for true
+5. Design and implement the packed tuple/vector native convention for true
    variadic native callables.
-7. Add specialized interpreter or JIT fast paths for trivial native thunk code
+6. Add specialized interpreter or JIT fast paths for trivial native thunk code
    objects when measurements justify it.
-8. Add a separate special-method native-call API once lookup and binding
+7. Add a separate special-method native-call API once lookup and binding
    semantics are ready.
-9. Design the JIT managed-to-native transition ABI:
+8. Design the JIT managed-to-native transition ABI:
    - where managed continuation state lives
    - how live roots are published when they are not already materialized in
      Clover frame slots
    - how the transition switches from the Clover stack to the native stack
    - how `Value::exception_marker()` returns resume managed exceptional unwind
-10. Continue converting old C++ exception paths to pending-exception/sentinel
-    results before JIT/native stack-switch bridges or any other boundary where
-    C++ unwinding would cross manually switched stack state. Until then, those
-    old throws are panic plumbing, not the native boundary contract.
-11. Keep `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` as the portable
+9. Continue converting old C++ exception paths to pending-exception/sentinel
+   results before JIT/native stack-switch bridges or any other boundary where
+   C++ unwinding would cross manually switched stack state. Until then, those
+   old throws are panic plumbing, not the native boundary contract.
+10. Keep `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` as the portable
    interpreter path. A JIT fast path may bypass the bytecode thunk, but it must
    preserve the same arity, root, and exception contracts.
 

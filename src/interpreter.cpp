@@ -2461,6 +2461,7 @@ namespace cl
     {
         START(2);
         uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
         accumulator = code_object->native_function_targets[target_idx].fixed0();
         COMPLETE();
     }
@@ -2469,6 +2470,7 @@ namespace cl
     {
         START(2);
         uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
         accumulator = code_object->native_function_targets[target_idx].fixed1(
             get_native_arg(fp, code_object, 0));
         COMPLETE();
@@ -2478,6 +2480,7 @@ namespace cl
     {
         START(2);
         uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
         accumulator = code_object->native_function_targets[target_idx].fixed2(
             get_native_arg(fp, code_object, 0),
             get_native_arg(fp, code_object, 1));
@@ -2488,6 +2491,7 @@ namespace cl
     {
         START(2);
         uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
         accumulator = code_object->native_function_targets[target_idx].fixed3(
             get_native_arg(fp, code_object, 0),
             get_native_arg(fp, code_object, 1),
@@ -2810,6 +2814,7 @@ namespace cl
     static Value op_halt(PARAMS)
     {
         START(1);
+        thread->set_clover_frame_frontier(fp);
         return accumulator;
         COMPLETE();
     }
