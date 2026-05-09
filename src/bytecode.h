@@ -133,7 +133,6 @@ namespace cl
         CallCodeObject,
 
         // iteration
-        GetIter,
         ForIter,
         ForPrepRange1,
         ForPrepRange2,

@@ -240,7 +240,6 @@ namespace cl
                                                   uint32_t reg);
         uint32_t emit_clear_active_exception(uint32_t source_offset);
         uint32_t emit_reraise_active_exception(uint32_t source_offset);
-        uint32_t emit_get_iter(uint32_t source_offset);
         uint32_t emit_build_class(uint32_t source_offset);
         uint32_t emit_check_init_returned_none(uint32_t source_offset);
         uint32_t emit_raise_assertion_error(uint32_t source_offset);
@@ -276,9 +275,10 @@ namespace cl
         uint32_t emit_call_method_attr(uint32_t source_offset,
                                        OutgoingArgReg first_arg_reg,
                                        uint8_t name_idx, uint8_t argc);
-        uint32_t emit_call_special_method(uint32_t source_offset,
-                                          OutgoingArgReg first_arg_reg,
-                                          uint8_t name_idx, uint8_t argc);
+        uint32_t emit_call_special_method(
+            uint32_t source_offset, OutgoingArgReg first_arg_reg,
+            uint8_t name_idx, uint8_t argc, uint8_t missing_exception_type_idx,
+            uint8_t missing_exception_message_idx);
         uint32_t emit_load_subscript(uint32_t source_offset,
                                      uint32_t receiver_reg);
         uint32_t emit_store_subscript(uint32_t source_offset,

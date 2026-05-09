@@ -12,7 +12,6 @@ op_call_code_object
 op_for_iter
 op_for_iter_range1
 op_for_iter_range_step
-op_get_iter
 op_jump
 op_jump_if_false
 op_jump_if_true

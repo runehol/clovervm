@@ -307,11 +307,6 @@ namespace cl
         return emit_opcode(source_offset, Bytecode::ReraiseActiveException);
     }
 
-    uint32_t CodeObjectBuilder::emit_get_iter(uint32_t source_offset)
-    {
-        return emit_opcode(source_offset, Bytecode::GetIter);
-    }
-
     uint32_t CodeObjectBuilder::emit_build_class(uint32_t source_offset)
     {
         return emit_opcode(source_offset, Bytecode::BuildClass);
@@ -460,16 +455,19 @@ namespace cl
             read_cache_idx, call_cache_idx, argc);
     }
 
-    uint32_t
-    CodeObjectBuilder::emit_call_special_method(uint32_t source_offset,
-                                                OutgoingArgReg first_arg_reg,
-                                                uint8_t name_idx, uint8_t argc)
+    uint32_t CodeObjectBuilder::emit_call_special_method(
+        uint32_t source_offset, OutgoingArgReg first_arg_reg, uint8_t name_idx,
+        uint8_t argc, uint8_t missing_exception_type_idx,
+        uint8_t missing_exception_message_idx)
     {
         uint8_t read_cache_idx = allocate_attribute_read_cache();
         uint8_t call_cache_idx = allocate_function_call_cache();
-        return emit_opcode_reg_constant_idx_cache_idx_argc(
+        uint32_t result = emit_opcode_reg_constant_idx_cache_idx_argc(
             source_offset, Bytecode::CallSpecialMethod, first_arg_reg, name_idx,
             read_cache_idx, call_cache_idx, argc);
+        emplace_back(source_offset, missing_exception_type_idx);
+        emplace_back(source_offset, missing_exception_message_idx);
+        return result;
     }
 
     uint32_t CodeObjectBuilder::emit_load_subscript(uint32_t source_offset,

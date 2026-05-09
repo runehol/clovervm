@@ -278,8 +278,6 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "CallNative3");
             case cl::Bytecode::CallCodeObject:
                 return format_to(out, "CallCodeObject");
-            case cl::Bytecode::GetIter:
-                return format_to(out, "GetIter");
             case cl::Bytecode::ForIter:
                 return format_to(out, "ForIter");
             case cl::Bytecode::ForPrepRange1:
@@ -615,6 +613,10 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_function_call_cache(code_obj, out, pc++);
                 format_to(out, ", ");
                 format_to(out, "{}", code_obj.code[pc++]);
+                format_to(out, ", ");
+                disassemble_constant(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_constant(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::Add:
@@ -695,9 +697,6 @@ template <> struct fmt::formatter<cl::CodeObject>
                 format_to(out, ", ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", {}", code_obj.code[pc++]);
-                break;
-
-            case cl::Bytecode::GetIter:
                 break;
 
             case cl::Bytecode::ForIter:

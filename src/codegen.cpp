@@ -1082,6 +1082,12 @@ namespace cl
             JumpTarget propagate_exception_target(code_obj);
             uint8_t next_constant_idx =
                 code_obj->allocate_constant(interned_string(L"__next__"));
+            uint8_t not_iterator_type_constant_idx =
+                code_obj->allocate_constant(Value::from_oop(
+                    active_thread()->class_for_builtin_name(L"TypeError")));
+            uint8_t not_iterator_message_constant_idx =
+                code_obj->allocate_constant(
+                    interned_string(L"object is not an iterator"));
             uint8_t stop_iteration_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(
                     active_thread()->class_for_builtin_name(L"StopIteration")));
@@ -1093,7 +1099,9 @@ namespace cl
                 ExceptionTableRangeBuilder range(code_obj,
                                                  stop_iteration_handler_target);
                 code_obj->emit_call_special_method(
-                    source_offset, OutgoingArgReg(0), next_constant_idx, 0);
+                    source_offset, OutgoingArgReg(0), next_constant_idx, 0,
+                    not_iterator_type_constant_idx,
+                    not_iterator_message_constant_idx);
                 range.close();
             }
             emit_variable_store(source_offset, target_idx);
@@ -1184,10 +1192,17 @@ namespace cl
                                        OutgoingArgReg(0), n_args);
             uint8_t iter_constant_idx =
                 code_obj->allocate_constant(interned_string(L"__iter__"));
-            code_obj->emit_get_iter(source_offset);
+            uint8_t not_iterable_type_constant_idx =
+                code_obj->allocate_constant(Value::from_oop(
+                    active_thread()->class_for_builtin_name(L"TypeError")));
+            uint8_t not_iterable_message_constant_idx =
+                code_obj->allocate_constant(
+                    interned_string(L"object is not iterable"));
             code_obj->emit_star(source_offset, OutgoingArgReg(0));
-            code_obj->emit_call_special_method(source_offset, OutgoingArgReg(0),
-                                               iter_constant_idx, 0);
+            code_obj->emit_call_special_method(
+                source_offset, OutgoingArgReg(0), iter_constant_idx, 0,
+                not_iterable_type_constant_idx,
+                not_iterable_message_constant_idx);
             code_obj->emit_star(source_offset, iterator_reg);
             codegen_iterator_driven_for_loop(source_offset, target_idx,
                                              body_idx, iterator_reg,
@@ -1621,11 +1636,18 @@ namespace cl
                         codegen_node(iterable_idx);
                         uint8_t iter_constant_idx = code_obj->allocate_constant(
                             interned_string(L"__iter__"));
-                        code_obj->emit_get_iter(source_offset);
+                        uint8_t not_iterable_type_constant_idx =
+                            code_obj->allocate_constant(Value::from_oop(
+                                active_thread()->class_for_builtin_name(
+                                    L"TypeError")));
+                        uint8_t not_iterable_message_constant_idx =
+                            code_obj->allocate_constant(
+                                interned_string(L"object is not iterable"));
                         code_obj->emit_star(source_offset, OutgoingArgReg(0));
                         code_obj->emit_call_special_method(
                             source_offset, OutgoingArgReg(0), iter_constant_idx,
-                            0);
+                            0, not_iterable_type_constant_idx,
+                            not_iterable_message_constant_idx);
                         code_obj->emit_star(source_offset, iterator_reg);
                         codegen_iterator_driven_for_loop(
                             source_offset, target_idx, body_idx, iterator_reg,

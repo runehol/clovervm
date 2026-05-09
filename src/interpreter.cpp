@@ -396,18 +396,6 @@ namespace cl
         return Value::from_oop(cls.extract());
     }
 
-    NOINLINE Value not_iterable_error(PARAMS)
-    {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"TypeError",
-            L"object is not iterable");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
     NOINLINE Value not_iterator_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
@@ -2434,12 +2422,14 @@ namespace cl
 
     NOINLINE static Value op_call_special_method_slow(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 6;
+        static constexpr uint32_t call_instr_len = 8;
         int32_t receiver_reg = int8_t(pc[1]);
         uint8_t const_offset = pc[2];
         uint8_t read_cache_idx = pc[3];
         uint8_t call_cache_idx = pc[4];
         uint32_t n_user_args = uint8_t(pc[5]);
+        uint8_t missing_exception_type_idx = pc[6];
+        uint8_t missing_exception_message_idx = pc[7];
         Value receiver = fp[receiver_reg];
         TValue<String> method_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].as_value());
@@ -2468,7 +2458,21 @@ namespace cl
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
-            MUSTTAIL return method_lookup_error(ARGS);
+            TValue<ClassObject> exception_type =
+                TValue<ClassObject>::from_value_assumed(
+                    code_object->constant_table[missing_exception_type_idx]
+                        .as_value());
+            TValue<String> message = TValue<String>::from_value_assumed(
+                code_object->constant_table[missing_exception_message_idx]
+                    .as_value());
+            (void)thread->set_pending_exception_string(exception_type, message);
+            ExceptionalTarget target =
+                resolve_exceptional_frame_exit(thread, fp, pc, code_object);
+            fp = target.fp;
+            code_object = target.code_object;
+            pc = target.interpreted_pc;
+            START(0);
+            COMPLETE();
         }
         if(unlikely(target_status ==
                     MethodCallTargetStatus::RequiresDescriptorDispatch))
@@ -2528,7 +2532,7 @@ namespace cl
 
     static Value op_call_special_method(PARAMS)
     {
-        static constexpr uint32_t call_instr_len = 6;
+        static constexpr uint32_t call_instr_len = 8;
         int32_t receiver_reg = int8_t(pc[1]);
         uint8_t read_cache_idx = pc[3];
         uint8_t call_cache_idx = pc[4];
@@ -2626,22 +2630,6 @@ namespace cl
             get_native_arg(fp, code_object, 0),
             get_native_arg(fp, code_object, 1),
             get_native_arg(fp, code_object, 2));
-        COMPLETE();
-    }
-
-    static Value op_get_iter(PARAMS)
-    {
-        START(1);
-        TValue<String> iter_name =
-            thread->get_machine()->get_or_create_interned_string_value(
-                L"__iter__");
-        AttributeReadDescriptor descriptor =
-            resolve_special_method_read_descriptor(accumulator, iter_name);
-        if(unlikely(!descriptor.is_found()))
-        {
-            MUSTTAIL return not_iterable_error(ARGS);
-        }
-
         COMPLETE();
     }
 
@@ -3026,7 +3014,6 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CallNative2, op_call_native2);
         SET_TABLE_ENTRY(Bytecode::CallNative3, op_call_native3);
         SET_TABLE_ENTRY(Bytecode::CallCodeObject, op_call_code_object);
-        SET_TABLE_ENTRY(Bytecode::GetIter, op_get_iter);
         SET_TABLE_ENTRY(Bytecode::ForIter, op_for_iter);
         SET_TABLE_ENTRY(Bytecode::ForPrepRange1, op_for_prep_range1);
         SET_TABLE_ENTRY(Bytecode::ForPrepRange2, op_for_prep_range2);
