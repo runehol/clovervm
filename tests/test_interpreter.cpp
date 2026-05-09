@@ -31,14 +31,22 @@ using namespace cl;
 
 static constexpr int64_t kMinSmi = -288230376151711744LL;
 
-static bool clover_frame_chain_reaches(Value *frontier, Value *target)
+static bool clover_frame_chain_reaches_terminated_root(Value *frontier,
+                                                       Value *root,
+                                                       uint32_t expected_count)
 {
     Value *fp = frontier;
+    uint32_t count = 0;
     for(uint32_t depth = 0; depth < 64 && fp != nullptr; ++depth)
     {
-        if(fp == target)
+        ++count;
+        if(fp == root)
         {
-            return true;
+            return count == expected_count &&
+                   fp[FrameHeaderPreviousFpOffset].as.ptr == nullptr &&
+                   fp[FrameHeaderCompiledReturnPcOffset].as.ptr == nullptr &&
+                   fp[FrameHeaderReturnCodeObjectOffset].as.ptr == nullptr &&
+                   fp[FrameHeaderReturnPcOffset].as.ptr == nullptr;
         }
         fp = reinterpret_cast<Value *>(fp[FrameHeaderPreviousFpOffset].as.ptr);
     }
@@ -140,28 +148,28 @@ static Value native_frame_frontier3(Value arg0, Value arg1, Value arg2)
                                             : 0);
 }
 
-static void expect_current_frontier_reaches_initial()
+static void expect_current_frontier_reaches_initial(uint32_t expected_count)
 {
     ThreadState *thread = active_thread();
     Value *frontier = thread->clover_frame_frontier();
     EXPECT_NE(nullptr, frontier);
-    EXPECT_TRUE(
-        clover_frame_chain_reaches(frontier, g_expected_initial_clover_fp));
+    EXPECT_TRUE(clover_frame_chain_reaches_terminated_root(
+        frontier, g_expected_initial_clover_fp, expected_count));
     ++g_weave_frontier_checks;
 }
 
 static Value native_weave_inner()
 {
-    expect_current_frontier_reaches_initial();
+    expect_current_frontier_reaches_initial(7);
     return Value::from_smi(23);
 }
 
 static Value native_weave_outer(Value inner_function)
 {
-    expect_current_frontier_reaches_initial();
+    expect_current_frontier_reaches_initial(4);
     Value result = active_thread()->call_clovervm_function(
         TValue<Function>::from_value_checked(inner_function));
-    expect_current_frontier_reaches_initial();
+    expect_current_frontier_reaches_initial(4);
     if(result.is_exception_marker())
     {
         return result;
@@ -1608,6 +1616,21 @@ TEST(Interpreter, call_native_sets_clover_frame_frontier)
     EXPECT_EQ(initial_frontier, test_context.thread()->clover_frame_frontier());
     EXPECT_NE(g_native_frame_frontier_seen,
               test_context.thread()->clover_frame_frontier());
+}
+
+TEST(Interpreter, run_initializes_terminated_clover_frame_frontier)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    Value *initial_fp = test_context.thread()->clover_frame_frontier();
+    CodeObject *code_obj = test_context.compile_file(L"42\n");
+
+    Value actual = test_context.thread()->run(code_obj);
+
+    EXPECT_EQ(Value::from_smi(42), actual);
+    EXPECT_EQ(initial_fp, test_context.thread()->clover_frame_frontier());
+    EXPECT_TRUE(
+        clover_frame_chain_reaches_terminated_root(initial_fp, initial_fp, 1));
 }
 
 TEST(Interpreter, clover_frame_frontier_chain_survives_nested_native_reentry)

@@ -34,12 +34,9 @@ namespace cl
 
     using DispatchTableEntry = Value (*)(PARAMS);
 
-    static constexpr uintptr_t StackFrameAlignmentBytes = 16;
-
     [[maybe_unused]] static ALWAYSINLINE bool is_stack_frame_aligned(Value *fp)
     {
-        return (reinterpret_cast<uintptr_t>(fp) % StackFrameAlignmentBytes) ==
-               0;
+        return (reinterpret_cast<uintptr_t>(fp) % FrameAlignmentBytes) == 0;
     }
 
     struct DispatchTable

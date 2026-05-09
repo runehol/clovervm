@@ -112,6 +112,8 @@ namespace cl
     static_assert(FrameHeaderSizeAboveFp ==
                   FrameHeaderReturnPcOffset - FrameHeaderPreviousFpOffset + 1);
 
+    static constexpr uintptr_t FrameAlignmentBytes = 16;
+
     constexpr uint32_t round_up_to_abi_alignment(uint32_t value)
     {
         return (value + 1u) & ~1u;

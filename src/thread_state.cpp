@@ -1,6 +1,7 @@
 #include "thread_state.h"
 #include "class_object.h"
 #include "clover_entry.h"
+#include "code_object.h"
 #include "codegen.h"
 #include "compilation_unit.h"
 #include "exception_object.h"
@@ -11,11 +12,18 @@
 #include "runtime_helpers.h"
 #include "tokenizer.h"
 #include "virtual_machine.h"
+#include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace cl
 {
+    static_assert(sizeof(Value) == 8);
+    static_assert(FrameHeaderSizeAboveFp * sizeof(Value) == 32);
+    static_assert((FrameHeaderSizeAboveFp * sizeof(Value)) %
+                      FrameAlignmentBytes ==
+                  0);
 
     thread_local ThreadState *ThreadState::current_thread = nullptr;
 
@@ -24,17 +32,40 @@ namespace cl
     {
     }
 
+    static Value *align_clover_frame_pointer_down(Value *fp)
+    {
+        uintptr_t address = reinterpret_cast<uintptr_t>(fp);
+        address &= ~(FrameAlignmentBytes - 1);
+        return reinterpret_cast<Value *>(address);
+    }
+
+    static Value *initial_clover_frame_frontier(std::vector<Value> &stack)
+    {
+        Value *highest_fp_with_header =
+            stack.data() + stack.size() - FrameHeaderSizeAboveFp;
+        return align_clover_frame_pointer_down(highest_fp_with_header);
+    }
+
     ThreadState::ThreadState(VirtualMachine *_machine)
         : machine(_machine),
           refcounted_heap(&machine->get_refcounted_global_heap()),
           stack(1024 * 1024)
     {
-        set_clover_frame_frontier(&stack[stack.size() - 1024]);
+        set_clover_frame_frontier(initial_clover_frame_frontier(stack));
+    }
+
+    static void initialize_initial_clover_frame(Value *initial_fp)
+    {
+        initial_fp[FrameHeaderPreviousFpOffset].as.ptr = nullptr;
+        initial_fp[FrameHeaderCompiledReturnPcOffset].as.ptr = nullptr;
+        initial_fp[FrameHeaderReturnCodeObjectOffset].as.ptr = nullptr;
+        initial_fp[FrameHeaderReturnPcOffset].as.ptr = nullptr;
     }
 
     Value ThreadState::run(CodeObject *obj)
     {
         ActivationScope activation_scope(this);
+        initialize_initial_clover_frame(clover_frame_frontier());
         OwnedTValue<CodeObject> startup_wrapper(
             make_startup_wrapper_code_object(obj));
         return run_interpreter(clover_frame_frontier(),
