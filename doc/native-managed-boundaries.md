@@ -197,11 +197,14 @@ still letting native implementations report failure as pending exception plus
 `Value::exception_marker()` locally inside the thunk. Native boundaries do not
 become a first-order unwinder frame kind.
 
-C++ exceptions are still temporary outer panic plumbing in some old paths, but
-they must not become the native-call convention. In particular, future
-handwritten stack-switch bridges must not allow C++ exceptions to unwind across
-the bridge. Native functions used from those paths must return through the
-pending-exception/sentinel convention.
+C++ exceptions are still temporary outer panic plumbing in some old paths. In
+the current interpreter-only runtime they unwind the native C++ interpreter
+stack to the outer harness cleanly enough for fatal/unhandled cases, but they
+must not become the native-call convention. Expected VM failures at native
+boundaries use pending exception state plus `Value::exception_marker()`.
+Future handwritten stack-switch bridges must not allow C++ exceptions to unwind
+across the bridge. Native functions used from those paths must return through
+the pending-exception/sentinel convention.
 
 For native functions that also expose a stop-returning convention, the ordinary
 and stop-returning `CodeObject`s are sibling thunks. Both thunks call the same
@@ -302,7 +305,18 @@ Exception table:
 
 The copying is intentionally explicit in the first design. `CallSimple` expects
 the callable separately from the outgoing argument span, while parameters and
-outgoing call slots live in different parts of the frame. The wrapper can later
+outgoing call slots live in different parts of the frame. With the current
+bytecode set, each copy is a two-step accumulator move:
+
+```text
+Ldar p1
+Star a0
+Ldar p2
+Star a1
+...
+```
+
+That is acceptable for the first wrapper implementation. The wrapper can later
 grow specialized construction if measurements justify avoiding those moves.
 
 ### Native C++ API
@@ -596,23 +610,23 @@ entry.
 
 ## Remaining Work
 
-1. Design and implement the packed tuple/vector native convention for true
-   variadic native callables.
-2. Continue converting old C++ exception paths to pending-exception/sentinel
-   results where they may be reached by native functions or future transition
-   stubs.
-3. Add specialized interpreter or JIT fast paths for trivial native thunk code
-   objects when measurements justify it.
-4. Add `ThreadState` storage for the newest live managed fp and publish it at
-   native boundaries.
-5. Keep `Halt` for startup/test-style interpreter entry, and add separate
+1. Add `ThreadState` storage for the newest live managed fp and publish it at
+   native boundaries, starting with `CallNative0`/`CallNative1`/`CallNative2`/
+   `CallNative3`.
+2. Keep `Halt` for startup/test-style interpreter entry, and add separate
    boundary-return opcodes: `ReturnToNative` and
    `ReturnPendingExceptionToNative`.
-6. Build/cache native-to-managed function call wrappers by positional arity.
+3. Build/cache native-to-managed function call wrappers by positional arity.
    Keep raw code-object entry as a separate prepared `CallCodeObject` wrapper
    path for module startup and similar non-`Function` code.
-7. Add fixed-arity `ThreadState::call_clovervm_function` overloads backed by the
+4. Add fixed-arity `ThreadState::call_clovervm_function` overloads backed by the
    matching arity wrappers.
+5. Add raw code-object boundary-return wrappers when native code needs local
+   pending-exception conversion for non-`Function` code entry.
+6. Design and implement the packed tuple/vector native convention for true
+   variadic native callables.
+7. Add specialized interpreter or JIT fast paths for trivial native thunk code
+   objects when measurements justify it.
 8. Add a separate special-method native-call API once lookup and binding
    semantics are ready.
 9. Design the JIT managed-to-native transition ABI:
@@ -621,7 +635,11 @@ entry.
      Clover frame slots
    - how the transition switches from the Clover stack to the native stack
    - how `Value::exception_marker()` returns resume managed exceptional unwind
-8. Keep `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` as the portable
+10. Continue converting old C++ exception paths to pending-exception/sentinel
+    results before JIT/native stack-switch bridges or any other boundary where
+    C++ unwinding would cross manually switched stack state. Until then, those
+    old throws are panic plumbing, not the native boundary contract.
+11. Keep `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` as the portable
    interpreter path. A JIT fast path may bypass the bytecode thunk, but it must
    preserve the same arity, root, and exception contracts.
 
