@@ -27,28 +27,19 @@ namespace cl
         }
 
         TupleIterator *iterator = self.get_ptr<TupleIterator>();
-        Value index_value = iterator->index;
-        if(!index_value.is_smi())
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"tuple iterator index must be a small integer");
-        }
-
-        int64_t index_smi = index_value.get_smi();
-        if(index_smi < 0)
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"tuple iterator index must be non-negative");
-        }
-
+        int64_t index_smi = iterator->index.extract();
+        int64_t length_smi = iterator->length.extract();
+        assert(index_smi >= 0);
+        assert(length_smi >= 0);
         size_t index = static_cast<size_t>(index_smi);
-        Tuple *tuple = iterator->tuple.extract();
-        if(index >= tuple->size())
+        if(index >= static_cast<size_t>(length_smi))
         {
             return active_thread()->set_pending_stop_iteration_no_value();
         }
 
-        iterator->index = Value::from_smi(static_cast<int64_t>(index + 1));
+        iterator->index =
+            TValue<SMI>::from_smi(static_cast<int64_t>(index + 1));
+        Tuple *tuple = iterator->tuple.extract();
         return tuple->item_unchecked(index);
     }
 

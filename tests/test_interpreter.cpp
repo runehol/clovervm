@@ -174,6 +174,7 @@ static void expect_range_iterator(Value actual, int64_t expected_current,
 }
 
 static void expect_tuple_iterator(Value actual, Tuple *expected_tuple,
+                                  int64_t expected_length,
                                   int64_t expected_index)
 {
     ASSERT_TRUE(actual.is_ptr());
@@ -182,6 +183,7 @@ static void expect_tuple_iterator(Value actual, Tuple *expected_tuple,
 
     TupleIterator *iterator = actual.get_ptr<TupleIterator>();
     EXPECT_EQ(Value::from_oop(expected_tuple), iterator->tuple.as_value());
+    EXPECT_EQ(Value::from_smi(expected_length), iterator->length);
     EXPECT_EQ(Value::from_smi(expected_index), iterator->index);
 }
 
@@ -3268,6 +3270,8 @@ TEST(Interpreter, tuple_iter_returns_tuple_iterator)
 
     Value iterator_value = test_context.run_file(L"iter((1, 2, 3))\n");
     ASSERT_TRUE(can_convert_to<TupleIterator>(iterator_value));
+    EXPECT_EQ(Value::from_smi(3),
+              iterator_value.get_ptr<TupleIterator>()->length);
     EXPECT_EQ(Value::from_smi(0),
               iterator_value.get_ptr<TupleIterator>()->index);
     ASSERT_TRUE(can_convert_to<Tuple>(
@@ -3295,7 +3299,7 @@ TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
     ASSERT_TRUE(can_convert_to<TupleIterator>(iterator_value));
     TupleIterator *iterator = iterator_value.get_ptr<TupleIterator>();
     Tuple *tuple = iterator->tuple.extract();
-    expect_tuple_iterator(iterator_value, tuple, 0);
+    expect_tuple_iterator(iterator_value, tuple, 2, 0);
 
     Value first = test_context.thread()->call_clovervm_function(
         TValue<Function>::from_value_checked(
@@ -3304,7 +3308,7 @@ TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
                     L"next"))),
         iterator_value);
     EXPECT_EQ(Value::from_smi(4), first);
-    expect_tuple_iterator(iterator_value, tuple, 1);
+    expect_tuple_iterator(iterator_value, tuple, 2, 1);
 
     Value second = test_context.thread()->call_clovervm_function(
         TValue<Function>::from_value_checked(
@@ -3313,7 +3317,7 @@ TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
                     L"next"))),
         iterator_value);
     EXPECT_EQ(Value::from_smi(5), second);
-    expect_tuple_iterator(iterator_value, tuple, 2);
+    expect_tuple_iterator(iterator_value, tuple, 2, 2);
 
     Value exhausted = test_context.thread()->call_clovervm_function(
         TValue<Function>::from_value_checked(

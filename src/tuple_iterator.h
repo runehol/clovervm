@@ -20,14 +20,17 @@ namespace cl
 
         TupleIterator(ClassObject *cls, TValue<Tuple> _tuple)
             : Object(cls, native_layout_id, compact_layout()), tuple(_tuple),
-              index(Value::from_smi(0))
+              index(TValue<SMI>::from_smi(0)),
+              length(TValue<SMI>::from_smi(
+                  static_cast<int64_t>(_tuple.extract()->size())))
         {
         }
 
         MemberTValue<Tuple> tuple;
         MemberTValue<SMI> index;
+        MemberTValue<SMI> length;
 
-        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(TupleIterator, Object, 2);
+        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(TupleIterator, Object, 3);
     };
 
     static_assert(std::is_trivially_destructible_v<TupleIterator>);
