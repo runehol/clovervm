@@ -2,6 +2,7 @@
 #include "class_object.h"
 #include "str.h"
 #include "thread_state.h"
+#include "virtual_machine.h"
 #include <stdexcept>
 
 namespace cl
@@ -58,6 +59,15 @@ namespace cl
                                           next_slot_index, shape_flags);
     }
 
+    Shape *Shape::make_immortal_root_with_single_descriptor(
+        VirtualMachine *vm, Value class_value, TValue<String> name,
+        DescriptorInfo info, int32_t next_slot_index, ShapeFlags shape_flags)
+    {
+        ShapeRootDescriptor descriptor{name, info};
+        return make_immortal_root_with_descriptors(
+            vm, class_value, &descriptor, 1, next_slot_index, shape_flags);
+    }
+
     Shape *Shape::make_root_with_descriptors(
         Value class_value, const ShapeRootDescriptor *descriptors,
         uint32_t descriptor_count, int32_t next_slot_index,
@@ -68,6 +78,16 @@ namespace cl
                                           descriptor_count, shape_flags);
     }
 
+    Shape *Shape::make_immortal_root_with_descriptors(
+        VirtualMachine *vm, Value class_value,
+        const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
+        int32_t next_slot_index, ShapeFlags shape_flags)
+    {
+        return make_immortal_root_with_descriptors(
+            vm, class_value, descriptors, descriptor_count, next_slot_index,
+            descriptor_count, shape_flags);
+    }
+
     Shape *Shape::make_root_with_descriptors(
         Value class_value, const ShapeRootDescriptor *descriptors,
         uint32_t descriptor_count, int32_t next_slot_index,
@@ -76,15 +96,34 @@ namespace cl
         Shape *shape = make_internal_raw<Shape>(
             class_value, nullptr, next_slot_index, descriptor_count,
             shape_flags, present_count);
+        shape->initialize_root_descriptors(descriptors, descriptor_count);
+        return shape;
+    }
+
+    Shape *Shape::make_immortal_root_with_descriptors(
+        VirtualMachine *vm, Value class_value,
+        const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
+        int32_t next_slot_index, uint32_t present_count, ShapeFlags shape_flags)
+    {
+        Shape *shape = vm->make_immortal_internal_raw<Shape>(
+            class_value, nullptr, next_slot_index, descriptor_count,
+            shape_flags, present_count);
+        shape->initialize_root_descriptors(descriptors, descriptor_count);
+        return shape;
+    }
+
+    void
+    Shape::initialize_root_descriptors(const ShapeRootDescriptor *descriptors,
+                                       uint32_t descriptor_count)
+    {
         for(uint32_t descriptor_idx = 0; descriptor_idx < descriptor_count;
             ++descriptor_idx)
         {
-            shape->descriptor_names[descriptor_idx] =
+            descriptor_names[descriptor_idx] =
                 incref(descriptors[descriptor_idx].name.as_value());
-            shape->descriptor_infos()[descriptor_idx] =
+            descriptor_infos()[descriptor_idx] =
                 descriptors[descriptor_idx].info;
         }
-        return shape;
     }
 
     ClassObject *Shape::get_class() const

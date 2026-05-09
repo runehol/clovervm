@@ -232,23 +232,33 @@ namespace cl
         BuiltinClassDefinition int_definition = make_int_class(this);
         int_class_ = int_definition.cls;
         register_builtin_class(int_definition);
-        smi_shape_ = make_immortal_internal_raw<Shape>(
-            Value::from_oop(int_class_), nullptr, 0, 0,
-            fixed_attribute_shape_flags(), 0);
+        DescriptorFlags inline_class_flags =
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+            descriptor_flag(DescriptorFlag::StableSlot) |
+            descriptor_flag(DescriptorFlag::ShapeClassValue);
+        smi_shape_ = Shape::make_immortal_root_with_single_descriptor(
+            this, Value::from_oop(int_class_), dunder_class_name(),
+            DescriptorInfo::make(StorageLocation::not_found(),
+                                 inline_class_flags),
+            0, fixed_attribute_shape_flags());
         BuiltinClassDefinition bool_definition =
             make_bool_class(this, int_class_);
         bool_class_ = bool_definition.cls;
         register_builtin_class(bool_definition);
-        bool_shape_ = make_immortal_internal_raw<Shape>(
-            Value::from_oop(bool_class_), nullptr, 0, 0,
-            fixed_attribute_shape_flags(), 0);
+        bool_shape_ = Shape::make_immortal_root_with_single_descriptor(
+            this, Value::from_oop(bool_class_), dunder_class_name(),
+            DescriptorInfo::make(StorageLocation::not_found(),
+                                 inline_class_flags),
+            0, fixed_attribute_shape_flags());
         BuiltinClassDefinition none_type_definition =
             make_none_type_class(this);
         none_type_class_ = none_type_definition.cls;
         register_builtin_class(none_type_definition);
-        none_shape_ = make_immortal_internal_raw<Shape>(
-            Value::from_oop(none_type_class_), nullptr, 0, 0,
-            fixed_attribute_shape_flags(), 0);
+        none_shape_ = Shape::make_immortal_root_with_single_descriptor(
+            this, Value::from_oop(none_type_class_), dunder_class_name(),
+            DescriptorInfo::make(StorageLocation::not_found(),
+                                 inline_class_flags),
+            0, fixed_attribute_shape_flags());
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_function_class(this));

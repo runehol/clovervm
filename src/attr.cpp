@@ -100,16 +100,6 @@ namespace cl
         return descriptor;
     }
 
-    static AttributeReadDescriptor
-    inline_receiver_dunder_class_descriptor(Value receiver)
-    {
-        Value class_value = Value::from_oop(
-            active_thread()->shape_of_value(receiver)->get_class());
-        return uncacheable_inline_receiver_descriptor(
-            AttributeReadDescriptor::found(
-                AttributeReadPlan::constant(class_value), class_value));
-    }
-
     static AttributeReadDescriptor shape_class_value_descriptor(Value receiver)
     {
         Value class_value = Value::from_oop(
@@ -128,6 +118,25 @@ namespace cl
             return Value::from_oop(const_cast<ClassObject *>(class_object));
         }
         return binding.self;
+    }
+
+    static AttributeReadDescriptor
+    lookup_inline_shape_attribute_read_descriptor(Value receiver,
+                                                  TValue<String> name)
+    {
+        DescriptorLookup lookup =
+            active_thread()
+                ->shape_of_value(receiver)
+                ->lookup_descriptor_including_latent(name);
+        if(!lookup.is_present())
+        {
+            return AttributeReadDescriptor::not_found();
+        }
+        if(lookup.info.has_flag(DescriptorFlag::ShapeClassValue))
+        {
+            return shape_class_value_descriptor(receiver);
+        }
+        return AttributeReadDescriptor::not_found();
     }
 
     static AttributeCacheBlockers
@@ -436,10 +445,14 @@ namespace cl
                 class_descriptor, class_object);
         }
 
-        if(string_eq(name, active_vm()->dunder_class_name()))
+        AttributeReadDescriptor inline_shape_descriptor =
+            lookup_inline_shape_attribute_read_descriptor(obj, name);
+        if(inline_shape_descriptor.is_found())
         {
-            return inline_receiver_dunder_class_descriptor(obj);
+            return uncacheable_inline_receiver_descriptor(
+                inline_shape_descriptor);
         }
+
         ClassObject *class_object = active_thread()->class_of_value(obj);
         return uncacheable_inline_receiver_descriptor(
             classify_class_read_descriptor(

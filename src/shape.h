@@ -14,6 +14,7 @@
 namespace cl
 {
     class ClassObject;
+    class VirtualMachine;
     enum class ShapeTransitionVerb : uint8_t
     {
         Add,
@@ -105,14 +106,28 @@ namespace cl
             Value class_value, TValue<String> name, DescriptorInfo info,
             int32_t next_slot_index,
             ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
+        static Shape *make_immortal_root_with_single_descriptor(
+            VirtualMachine *vm, Value class_value, TValue<String> name,
+            DescriptorInfo info, int32_t next_slot_index,
+            ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
         static Shape *make_root_with_descriptors(
             Value class_value, const ShapeRootDescriptor *descriptors,
             uint32_t descriptor_count, int32_t next_slot_index,
+            ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
+        static Shape *make_immortal_root_with_descriptors(
+            VirtualMachine *vm, Value class_value,
+            const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
+            int32_t next_slot_index,
             ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
         static Shape *make_root_with_descriptors(
             Value class_value, const ShapeRootDescriptor *descriptors,
             uint32_t descriptor_count, int32_t next_slot_index,
             uint32_t present_count,
+            ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
+        static Shape *make_immortal_root_with_descriptors(
+            VirtualMachine *vm, Value class_value,
+            const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
+            int32_t next_slot_index, uint32_t present_count,
             ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
 
         static size_t size_for(uint32_t property_count)
@@ -214,6 +229,8 @@ namespace cl
         Shape *clone_with_class(Value new_class) const;
 
     private:
+        void initialize_root_descriptors(const ShapeRootDescriptor *descriptors,
+                                         uint32_t descriptor_count);
         Shape *derive_add_transition(TValue<String> name,
                                      DescriptorFlags descriptor_flags);
         Shape *derive_delete_transition(TValue<String> name);

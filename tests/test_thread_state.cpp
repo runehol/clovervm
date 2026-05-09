@@ -180,6 +180,24 @@ namespace cl
                   thread->shape_of_value(Value::None()));
         EXPECT_EQ(context.vm().none_type_class(),
                   thread->shape_of_value(Value::None())->get_class());
+
+        TValue<String> dunder_class_name = context.vm().dunder_class_name();
+        Shape *inline_shapes[] = {context.vm().smi_shape(),
+                                  context.vm().bool_shape(),
+                                  context.vm().none_shape()};
+        for(Shape *shape: inline_shapes)
+        {
+            ASSERT_EQ(1u, shape->property_count());
+            EXPECT_EQ(1u, shape->present_count());
+            EXPECT_EQ(0, shape->get_next_slot_index());
+            DescriptorLookup lookup =
+                shape->lookup_descriptor_including_latent(dunder_class_name);
+            ASSERT_TRUE(lookup.is_present());
+            EXPECT_FALSE(lookup.storage_location().is_found());
+            EXPECT_TRUE(lookup.info.has_flag(DescriptorFlag::ReadOnly));
+            EXPECT_TRUE(lookup.info.has_flag(DescriptorFlag::StableSlot));
+            EXPECT_TRUE(lookup.info.has_flag(DescriptorFlag::ShapeClassValue));
+        }
     }
 
 }  // namespace cl
