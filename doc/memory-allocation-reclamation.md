@@ -147,6 +147,11 @@ Each slab maintains:
 - size-class identity or slab kind metadata
 - allocation bounds / bump pointer state
 
+`n_live_objects` is better understood as a committed live-object count than as
+an allocation counter. It is incremented only after an object has been
+constructed far enough that it can be safely torn down, and it is decremented
+only after final reclamation of that object.
+
 ### Object Commitment
 
 Object allocation proceeds in two phases:
@@ -159,6 +164,11 @@ Object allocation proceeds in two phases:
 
 Only committed objects participate in reference counting and reclamation.
 
+Each committed object also has a heap lifecycle state. The ZCT lifecycle
+prevents duplicate zero-count entries and protects against double reclamation.
+See [Refcounting and Safepoints](refcounting-and-safepoints.md) for the
+`Normal`, `InZct`, `Reclaiming`, and `Dead` state machine.
+
 ### Reclamation
 
 At safepoint:
@@ -167,6 +177,9 @@ At safepoint:
   - finalized (destructor / field `DECREF`)
   - accounted for by decrementing its slab’s `n_live_objects`
 
+Finalization may `DECREF` child objects. If those children reach zero, they are
+added to the active ZCT and may be processed during the same safepoint.
+
 ### Whole-Slab Reuse
 
 - when `slab->n_live_objects == 0`, the slab is fully dead
@@ -174,6 +187,70 @@ At safepoint:
 - future allocations may reuse slabs from that pool instead of allocating new ones
 
 At this stage, memory reuse occurs only at whole-slab granularity.
+
+### Slab Lookup
+
+Reclamation needs to find the owning slab for a dead `HeapObject *` so it can
+decrement the slab's live-object count and eventually recycle the slab. The
+object header should not carry a per-object slab pointer. Instead, slab
+ownership is allocator metadata.
+
+The global heap maintains a lookup table from heap-region granules to slab
+metadata:
+
+```c++
+absl::flat_hash_map<uintptr_t, Slab *> slab_lookup;
+```
+
+The initial granule should be 4 KiB. Although it is tempting to use the default
+slab size as the lookup granule, plain `mmap` only guarantees page-aligned
+allocation. The lookup design must never permit two slabs to occupy the same
+lookup granule, so the granule cannot be larger than the alignment guarantee
+unless the allocator also enforces matching higher alignment. The design should
+still name this as a slab lookup granule rather than making OS pages
+fundamental:
+
+```c++
+static constexpr uintptr_t SlabLookupGranuleSize = 4096;
+static constexpr uintptr_t SlabLookupGranuleShift = 12;
+
+uintptr_t slab_lookup_key_for(void *ptr) {
+    return reinterpret_cast<uintptr_t>(ptr) >> SlabLookupGranuleShift;
+}
+```
+
+On slab creation, every granule covered by the slab is registered to that slab:
+
+```c++
+for(uintptr_t key = slab_lookup_key_for(slab->start);
+    key <= slab_lookup_key_for(slab->end - 1);
+    ++key) {
+    slab_lookup.emplace(key, slab);
+}
+```
+
+Lookup during reclamation is then:
+
+```c++
+Slab *slab_for_object(HeapObject *obj) {
+    auto it = slab_lookup.find(slab_lookup_key_for(obj));
+    assert(it != slab_lookup.end());
+    return it->second;
+}
+```
+
+The hard invariant is that every reclaimable heap object address maps to exactly
+one slab metadata record by lookup granule. No two slabs may share one lookup
+granule. If the granule is larger than an OS page, slabs must be allocated with
+explicit matching alignment and sized so that no lookup granule contains objects
+from two different slabs.
+
+Slab lookup is global, but it is not on the allocation fast path. The map is
+updated only on slab creation/destruction or when slab address ranges change,
+under the heap lock. Reclamation reads it during safepoints, when attached
+threads have stopped mutating managed stacks, ZCTs, and heap object ownership.
+Dedicated large-object slabs use the same registration mechanism as ordinary
+size-class slabs.
 
 ---
 

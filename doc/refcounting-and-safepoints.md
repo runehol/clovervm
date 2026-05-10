@@ -8,21 +8,454 @@ This is safe, because there's no way for the heap to point at the stack.
 
 We'll also have immutable and interned values. These are marked in the value so you don't have to dereference them, and the refcount itself will be `-1`. The `INCREF` and `DECREF` operations will be performed using atomic operations.
 
-Whenever we `DECREF` an object and it reaches zero, we do not delete it immediately, simply put it on a zero-count table to delete later. One array per thread to avoid threading issues. When we run out of slab memory or the zero count table overflows, it's time to free unused memory. At that point, we bring the threads to a safe point, where the managed Clover stacks are no longer being changed, and we look at the zero count tables, scan for references on the managed stacks and remove them from the zero count tables, and delete and `DECREF` or delete members of these objects. Note that children themselves can be pointed-to from the managed stacks.
+Whenever we `DECREF` an object and it reaches zero, we do not delete it immediately, simply put it on a zero-count table to delete later. One array per thread to avoid threading issues. When we run out of slab memory or the zero count table overflows, it's time to free unused memory. At that point, we bring the threads to a safe point, where the managed Clover stacks are no longer being changed, and we look at the zero count tables. Objects still referenced from managed stacks stay in the zero count table for the next safepoint. Objects with no heap refcount and no stack reference are deleted, which may `DECREF` members of these objects. Note that children themselves can be pointed-to from the managed stacks.
 
 Maybe we build a bloom filter from the stacks to achieve this quickly. No, this doesn't work, we cannot forget to decref some objects due to lossiness, because these objects will never show up again on the ZCT and therefore leak. They can also hold on to large graphs of stuff transitively.
 
 This scheme would naturally place all newly allocated objects on the zero count tables, which is wasteful. Maybe we can have a scheme where bump-allocated objects from slabs don't go on the list, but we have a way to traverse objects on bump-allocated slabs and note what slabs we've allocated from.
 
-Finally, we have to stop mutation of the managed Clover stacks and zero count tables when we do the scan. We can do this with JVM-style safepoints that are tested on loop iterations and either function calls or returns. Long-running C calls pose a bit of a problem. However, the only guarantee we need is that we stop mutating the managed stacks and zero count tables, that is, stop `DECREF`. There is already a system for this in CPython:
+## Zero Count Table Semantics
 
-```c
-Py_BEGIN_ALLOW_THREADS
-... Do some blocking I/O operation ...
-Py_END_ALLOW_THREADS
+The zero-count table is not a list of objects known to be dead. It is a list of
+objects whose heap reference count is zero and whose final liveness has to be
+rechecked at a safepoint.
+
+An object that is in the ZCT and is also found in a managed stack root is still a
+zero-refcount object. It is only temporarily protected by the current stack
+state, so it must remain in the ZCT and be tested again at the next safepoint.
+Removing it from the ZCT would be incorrect: when the stack reference later
+disappears, no heap `DECREF` will necessarily occur to re-add it.
+
+ZCT processing should therefore compact surviving candidates in place:
+
+```c++
+size_t scan = 0;
+size_t keep = 0;
+
+while(scan < zct.size()) {
+    HeapObject *obj = zct[scan++];
+
+    if(obj->refcount > 0) {
+        obj->lifecycle_state = HeapLifecycleState::Normal;
+        continue;
+    }
+
+    if(stack_roots.contains(obj)) {
+        zct[keep++] = obj;
+        continue;
+    }
+
+    obj->lifecycle_state = HeapLifecycleState::Reclaiming;
+    reclaim(obj);  // May append newly-zero children to zct.
+}
+
+zct.resize(keep);
 ```
 
-The original purpose is to release the GIL so that other Python threads can do their thing, but we could repurpose it to declare that this thread won't touch Python objects, and does not need to participate in safepoint coordination. This is in fact what [PEP 703 - Making the Global Interpreter Lock Optional in CPython](https://peps.python.org/pep-0703/) does - a thread gets a PyThreadState of Attached, Detached and GC, Py_BEGIN_ALLOW_THREADS detaches the thread, Py_END_ALLOW_THREADS attaches the thread, and safepointing blocks only until there are no more attached threads.
+The scan bound is dynamic (`scan < zct.size()`) because reclaiming one object may
+`DECREF` its children and append new zero-count candidates. Those candidates can
+be handled during the same safepoint.
+
+The ZCT should be represented as a contiguous array such as
+`std::vector<HeapObject *>`. The scan uses integer indices, not iterators,
+because appending may reallocate the underlying storage.
+
+Newly allocated reclaimable objects start with heap `refcount == 0`. If such an
+object is only ever stored in managed frame slots and is later forgotten, no
+heap `DECREF` will occur to enqueue it. Therefore a committed zero-refcount
+object must be discoverable by reclamation.
+
+The initial implementation should make this explicit by enqueuing every
+committed reclaimable allocation whose refcount is still zero. If the object is
+soon retained by a heap store, the stale ZCT entry is harmless: the next
+safepoint will observe `refcount > 0` and transition the object back to
+`Normal`.
+
+A later optimization can avoid this eager allocation-time ZCT traffic by
+recording which slabs received new committed objects since the previous
+safepoint. At safepoint, the runtime can walk those slabs' committed-object
+records and enqueue or directly process objects that are still
+`refcount == 0 && lifecycle_state == Normal`. This requires reliable slab object
+enumeration, so it should come after the basic ZCT and slab metadata machinery.
+
+## Heap Object Lifecycle State
+
+The runtime should prevent duplicate ZCT entries with an explicit heap object
+lifecycle state. This is a correctness invariant, not merely an optimization:
+duplicate ZCT entries can lead to double reclamation.
+
+Initial implementation can add the field directly to `HeapObject` and worry
+about tighter packing during the later layout-ID refactor.
+
+```c++
+enum class HeapLifecycleState : uint8_t {
+    Normal,
+    InZct,
+    Reclaiming,
+    Dead,
+};
+```
+
+The intended transitions are:
+
+- `Normal -> InZct`: a `DECREF` reduces the heap refcount to zero and enqueues
+  exactly one ZCT entry.
+- `InZct -> Normal`: a safepoint observes that the object's heap refcount became
+  positive again.
+- `InZct -> InZct`: a safepoint finds the zero-refcount object in managed roots,
+  so it is compacted into the retained ZCT prefix.
+- `InZct -> Reclaiming`: a safepoint finds no heap refcount and no managed root.
+- `Reclaiming -> Dead`: teardown has completed and the allocation is no longer
+  a valid heap object.
+
+`Reclaiming` and `Dead` objects must never be enqueued. Immortal and interned
+objects do not participate in this reclaimable-object lifecycle.
+
+For the current single-threaded implementation, refcount and lifecycle state may
+be plain fields. The GIL-less design should treat them as one logical atomic
+state, because a transition such as "refcount reached zero and lifecycle was
+`Normal`" must enqueue at most one ZCT entry. This suggests eventually packing
+the refcount and lifecycle state into the same 64-bit word, so future atomic
+compare/exchange operations can update and validate them together.
+
+The transitions are driven by two places:
+
+- `DECREF` only performs `Normal -> InZct`. If a `DECREF` reaches zero and the
+  object is already `InZct`, it must not enqueue a duplicate entry.
+- Safepoint ZCT processing performs the `InZct` exits. A positive heap refcount
+  means the object has been retained by heap ownership and can return to
+  `Normal`. A zero heap refcount plus a stack root keeps the object in `InZct`.
+  A zero heap refcount with no stack root moves the object to `Reclaiming`.
+
+`Reclaiming` is useful even if memory is released immediately after teardown. It
+states that the object is currently being destroyed, so child `DECREF`s,
+reentrant checks, or accidental duplicate ZCT entries cannot treat it as an
+ordinary zero-count object. `Dead` states that the allocation no longer contains
+a valid heap object; it is available for slab accounting and eventual reuse.
+
+This explicit lifecycle state is also a useful foundation for later cycle
+collection. A trial-deletion or trial-`DECREF` collector will need to distinguish
+ordinary objects, zero-count candidates, objects being investigated as part of a
+candidate cycle, and objects being destroyed. The initial state machine does not
+reclaim cycles, but it keeps room for those future states without overloading
+the numeric refcount itself.
+
+## Stack Root Collection
+
+Safepoint validation should first build a temporary set of stack roots, then use
+that set as a filter while processing the ZCT.
+
+The order is deliberate: scan stacks first and build one root set, then scan the
+ZCTs afterward. Do not build a ZCT-candidate set first and use it to filter stack
+scanning; the stack scanner should remain a simple conservative producer of
+possible heap roots.
+
+The initial implementation should conservatively scan the managed stack slice
+published by safepoint arrival:
+
+1. Read from `lowest_live_stack_slot` upward to the permanent Clover frame
+   sentinel.
+2. Include frame headers and any other slots in that published range.
+3. For each slot, if it has refcounted-pointer shape, insert the
+   `HeapObject *` into the root set.
+4. If `accumulator_or_not_present` is a refcounted heap pointer, insert it too.
+
+This set is only a safepoint-local protection filter. It does not increment
+refcounts and it does not remove objects from the ZCT.
+
+The stack scanner must not dereference candidate pointers or consult allocator
+metadata to validate them. Conservative scans may encounter stale values that
+point to memory that was formerly an object. The scanner should insert
+refcounted-pointer-shaped candidates into the root set and let ZCT processing
+decide whether a candidate matters.
+
+Frame pointer and PC header fields may have pointer-shaped bits, but they point
+into the Clover stack or code storage rather than to heap object starts. They
+may consume root-set space if scanned conservatively, but they should not cause
+false positive ZCT hits.
+
+The scanner should not infer liveness from frame shape, bytecode, or
+`CodeObject` metadata. When the interpreter arrives at a safepoint, the
+safepoint check instruction writes a normalized stack-scan record into
+`ThreadState`. The safepoint instruction encodes the lowest live stack slot as
+a signed offset relative to the current `fp`. Use two opcode forms: one
+safepoint instruction publishes the accumulator as live, and the other publishes
+`Value::not_present()`. The record contains:
+
+- the lowest live stack slot for that safepoint;
+- `accumulator_or_not_present`.
+
+The stack scanner consumes this record directly: it scans from
+`lowest_live_stack_slot` upward to the permanent Clover frame sentinel, and it
+adds `accumulator_or_not_present` if that value is a refcounted heap pointer. The
+accumulator is not saved into the frame merely for safepointing; if it is live,
+safepoint arrival publishes it in `accumulator_or_not_present`. Otherwise that
+field is `Value::not_present()`.
+
+The initial scanner does not need to walk frame headers as a linked frame chain.
+If a future scanner needs frame-structured traversal, the safepoint check
+instruction can also checkpoint the current `fp`, but that is not part of the
+first root-scanning contract. One likely reason to add this later is support for
+a mixed native/managed stack model where the scanner must recognize transition
+frames between native and managed execution.
+
+Outgoing argument windows are tricky because runtime call adaptation can place
+values on the stack that were not statically pushed by codegen. Examples include
+tuples or dictionaries materialized for `*args` or `**kwargs` adaptation for the
+concrete callee. Codegen may know the lowest argument slot it emitted, but it
+does not necessarily know the full runtime extent created by adaptation.
+
+The initial interpreter reclamation design should therefore only allow
+safepoints at places where the outgoing argument area is known dead: function
+entry, function return to the caller, and loop back branches. At those points,
+the outgoing argument area does not need to be scanned.
+
+These safepoint locations also give useful liveness facts:
+
+- At function entry, the callee's locals and temporaries are dead or
+  uninitialized. Parameters and frame headers are live. The safepoint encodes
+  `lowest_live_stack_slot = fp` and uses the no-accumulator opcode form.
+- At function return, the safepoint occurs while the returning frame is still
+  installed. The returning frame's locals and temporaries are dead, and the
+  return value lives in the accumulator carried by the published interpreter
+  state. The safepoint can conservatively publish the returning frame's `fp` as
+  the lowest live stack slot, scanning upward through its header/parameters and
+  caller frames, without reconstructing the caller's live extent. The safepoint
+  encodes `lowest_live_stack_slot = fp` and uses the accumulator-live opcode
+  form.
+  Scanning the callee's arguments at this point is acceptable even though they
+  died logically at return; they died immediately before the safepoint, and the
+  conservative retention is preferable to reconstructing caller state.
+  This keeps return safepoints centralized next to `Return`-style opcodes
+  instead of requiring every opcode that may indirectly call Python code, such as
+  arithmetic or descriptor operations, to identify and safepoint all possible
+  return PCs.
+- At codegen-marked loop back edges, expression temporaries are dead. Locals and
+  frame headers remain live. Codegen knows where it emits loops and inserts a
+  safepoint instruction with the appropriate lowest live local/header boundary.
+  The safepoint encodes the lowest live local slot and uses the no-accumulator
+  opcode form.
+
+Only function-return safepoints normally publish the accumulator as live.
+Function-entry and loop-back safepoints normally publish `Value::not_present()`
+for `accumulator_or_not_present`; the instruction encoding still makes
+accumulator liveness explicit rather than something the scanner guesses.
+
+The first implementation may still conservatively scan broader frame-owned
+storage if that is simpler, but these liveness facts define where eager clearing
+or narrower interpreter scans are allowed without per-PC safepoint maps.
+
+Do not try to support safepoints during call preparation or argument adaptation
+by reconstructing a dynamic outgoing-argument extent. That path is too subtle to
+make into a reliable root-scanning contract.
+
+Function entry means after the callee frame is fully established and after
+argument adaptation has completed. It does not mean the caller's function-call
+site. This is deliberately different from the more conventional "call
+safepoint" location, because call-site and adaptation state may contain transient
+outgoing argument layouts that are not part of the initial root-scanning
+contract.
+
+Safepoints around native/managed transitions need a separate design pass.
+
+For the first version, a conservative root set such as
+`absl::flat_hash_set<HeapObject *>` is acceptable. Stale values in dead
+temporaries or outgoing call slots may retain zero-refcount objects for extra
+safepoints, but they do not compromise memory safety.
+
+Stack hygiene can reduce conservative-scan retention. Frame slots should be
+initialized to non-pointer sentinels, and codegen may clear known-dead
+temporaries or outgoing call windows around safepoint-capable operations. This
+clearing is root-set hygiene only; stack slots do not own references and must
+not `DECREF` when cleared.
+
+If stale frame values become a practical retention problem, prefer eager
+clearing of dead frame slots over per-PC frame maps. Per-PC safepoint maps remain
+possible for future JIT or optimization work, but they are not part of the first
+interpreter reclamation design.
+
+## Safepoint Requests
+
+Allocation pressure, ZCT growth, or explicit runtime requests do not force an
+immediate stop at arbitrary program points. They set a pending safepoint request.
+Attached threads continue until they reach one of the allowed safepoint checks,
+publish their stack-scan record, and park or participate in reclamation there.
+Multiple requests while a safepoint is already pending or in progress coalesce
+into that safepoint.
+
+This keeps allocation helpers and call-adaptation helpers from needing to make
+their transient state scan-safe. Reclamation only runs after all attached threads
+have arrived at allowed safepoints.
+
+While a safepoint request is merely pending, attached threads may continue
+executing, allocating, and mutating their stacks and ZCTs. Once a thread reaches
+the safepoint slow path, publishes its scan record, and enters `GC`, it must stop
+allocation and stack/ZCT mutation until the coordinator releases it.
+
+The safepoint instruction fast path should be a hot-path poll: check the global
+pending-safepoint flag and continue immediately if it is clear. This fast path
+must not set up a stack frame. When the flag is set, the instruction branches to
+a slow path that publishes the safepoint's stack-scan record and enters
+coordination/reclamation.
+
+The first implementation can be single-threaded, but the API shape should leave
+room for a global coordinator that knows every registered `ThreadState`.
+
+Future multi-threading should use a
+[CPython/PEP-703-style thread status model](https://peps.python.org/pep-0703/#thread-states):
+
+- `Attached`: the thread may touch Python/Clover objects and mutate managed
+  state. Attached threads must poll safepoints.
+- `Detached`: the thread promises not to touch Python/Clover objects. It does
+  not block safepoint coordination, but its published stack-scan record still
+  participates in root scanning. Detached threads' stacks and ZCTs are scan-safe
+  precisely because detached threads do not mutate them.
+- `GC`: the thread is stopped or otherwise enrolled in the current safepoint
+  reclamation cycle. Its scan record is stable.
+
+Every registered thread has a stack-scan record. "No managed Clover stack" is
+represented as an empty stack slice, not as a separate state:
+
+```text
+lowest_live_stack_slot == stack_sentinel
+accumulator_or_not_present == Value::not_present()
+```
+
+A future native-extension API may support a CPython-like detach operation for
+long-running native code. Detaching must leave behind a stable stack-scan record.
+Native code may be running without an OS thread available to execute VM code on
+request, so safepoint reclamation cannot rely on asking detached native code to
+publish new state. Native transition handling will likely be responsible for
+publishing the detached thread's stable scan record, but that boundary needs a
+separate design pass.
+
+Thread exit and unregistering also need an ownership boundary. A thread must not
+drop a non-empty ZCT when it exits. Its ZCT entries must be transferred to a
+parent thread's ZCT, such as the main thread or the thread performing the join.
+The exact parent-selection policy can be decided later, but ZCT handoff is
+required before the exiting `ThreadState` disappears.
+
+## Safepoint And Reclamation Phases
+
+The first implementation can run these phases with a single `ThreadState`, but
+the protocol should map cleanly to multiple threads.
+
+### 1. Request
+
+Some thread or allocator slow path sets a global pending-safepoint flag. The
+request may be caused by ZCT growth, allocation pressure, tests, or a future
+policy such as bytes allocated since the last safepoint.
+
+In a multi-threaded runtime, setting the flag is global. It does not stop threads
+immediately and it does not require the requesting thread to be at a scan-safe
+point.
+
+### 2. Arrival
+
+Attached threads poll the global flag at allowed safepoint instructions:
+function entry, function return, and codegen-marked loop back edges. If the flag
+is clear, the hot path continues. If the flag is set, the slow path publishes the
+thread's stack-scan record:
+
+- `lowest_live_stack_slot`;
+- `accumulator_or_not_present`;
+- any future fields needed by the scanner.
+
+The thread then enters `GC` state and stops mutating managed stacks, ZCTs, and
+heap ownership until reclamation is complete.
+
+Detached threads do not need to execute an arrival slow path, but they must have
+left behind a stable scan record at detach time. If the detached thread has no
+managed Clover stack, that record is simply an empty stack slice.
+
+### 3. Quiescence
+
+The coordinator waits until every registered thread is quiescent:
+
+- attached threads have reached an allowed safepoint, published their scan
+  record, and entered `GC`;
+- detached threads already have stable scan records and do not need to run VM
+  code to participate.
+
+Only after this point may reclamation inspect all thread stack records and all
+ZCTs.
+
+Because all attached threads are in `GC` and detached threads promise not to
+mutate VM state, the coordinator does not need per-ZCT locks while processing
+ZCTs during the safepoint.
+
+### 4. Root Collection
+
+The coordinator builds one temporary root set by scanning every registered
+thread's published stack slice and any live accumulator value in that thread's
+scan record. The scanner performs only tag checks for refcounted-pointer shape
+and inserts matching pointer values into an `absl::flat_hash_set<HeapObject *>`.
+
+Root collection can be parallelized independently of VM thread count. Once
+quiescence is reached, stack records are immutable scan tasks. There may be more
+stack records than worker threads; workers can scan tasks from a queue, build
+worker-local `absl::flat_hash_set<HeapObject *>` instances, and merge those sets
+afterward. Detached threads are just scan records in this model; they do not
+need to be available as workers.
+
+### 5. Serial ZCT Processing
+
+After root collection, the coordinator processes every registered thread's ZCT
+serially. There is no common ZCT in the first design. Each thread ZCT is a vector
+processed with the dynamic `scan < zct.size()` loop and scan/keep compaction.
+Objects with positive refcount transition back to `Normal`. Zero-refcount objects
+found in the global root set remain `InZct` and are compacted into that ZCT's
+kept prefix. Zero-refcount objects not found in roots transition to
+`Reclaiming`, are torn down, and eventually transition to `Dead`.
+
+While a ZCT is being processed, object teardown uses explicit reclamation
+scanning code rather than ordinary hot-path `decref()` calls. That reclamation
+context is passed the ZCT or thread state to use for newly-zero children. Child
+references that reach zero should append to the same ZCT currently being walked.
+This improves locality and, more importantly, lets the dynamic scan process
+cascaded children in the same safepoint sweep. If a cascaded child is
+stack-rooted, it is copied into the kept prefix and remains in that ZCT for the
+next safepoint.
+
+ZCT processing should be serial in the first multi-thread-capable design. Unlike
+root scanning, it mutates lifecycle state, compacts ZCTs, runs teardown, appends
+cascaded zero-count children, and updates slab live counts. These operations are
+too subtle to parallelize before the basic invariants are proven.
+
+A single heap object must appear in at most one ZCT across the whole VM. This is
+enforced by the object lifecycle state: only the transition `Normal -> InZct`
+enqueues, and future multi-threaded implementations must make that transition
+globally unique with atomic state. ZCT membership is queue placement, not object
+ownership; it is fine for a cascaded child to be retained in a different thread's
+ZCT than the one that allocated or last touched it, because reclamation appends
+cascades to the ZCT currently being walked.
+
+Debug builds should validate the global uniqueness invariant at safepoints by
+checking all ZCT entries with a temporary `absl::flat_hash_set<HeapObject *>`.
+This is not the mechanism that prevents duplicates; it is a guardrail for finding
+lifecycle bugs.
+
+### 6. Slab Accounting And Reuse
+
+When object teardown is complete, the owning slab's live-object count is
+decremented. If it reaches zero, the slab can be reset and returned to the
+appropriate free pool. Slab lookup uses the global slab lookup granule map
+described in [CloverVM Memory Reclamation Design](memory-allocation-reclamation.md).
+
+Teardown may process owned child fields word-by-word. For each owned field, it
+should copy the child value, clear the field's ownership in the object, and then
+release the copied child through the reclamation path that appends newly-zero
+children to the currently walked ZCT. Two different fields may legitimately own
+the same child and therefore release it twice; the lifecycle state still prevents
+duplicate ZCT enqueue.
+
+### 7. Release
+
+After all ZCTs have been processed and slab accounting is complete, the
+coordinator clears the global pending-safepoint flag and releases arrived
+threads. Threads that were attached before the pause resume from their safepoint
+instructions. Detached threads remain detached and must reattach before touching
+Python/Clover objects again.
 
 clovervm will only implement the limited API.
 
@@ -31,19 +464,27 @@ The interpreter and native C++ functions run on the native stack; future JIT cod
 may run on the Clover stack for managed execution, but must switch to the native
 stack before calling C++/native code. Any live `Value` that must survive such a
 transition has to be present in a managed frame slot, retained by a heap object,
-or published through explicit transition/root metadata. We should not rely on
+or owned by native code through ordinary refcounting. We should not rely on
 finding roots by treating arbitrary native stack words as managed `Value` slots.
 
-It's important to remember the accumulator as well when we do an allocation, store, safepoint or function call, as these can lead to decref or to-delete overflow that triggers garbage collection. Reserve a spot on the stack frame for the accumulator, and eagerly save it in these cases. Same goes for when we exit jitted code and place registers back on the frame.
+Native stack values follow the CPython C API ownership model: native code that
+keeps a heap object live across safepoint-capable work must own a reference.
+Those references are heap refcounts, not stack-scan roots.
 
-Actually, cleverly arrange the opcodes so the accumulator either gets overwritten or consumed by these ops. Then there is no issue.
+Reclamation must not execute arbitrary Python finalizers. Initial teardown is
+VM-native only: clear owned child references, `DECREF` children, and run only
+destroy hooks that do not invoke Python code or allow Python-level resurrection.
+Weakrefs, `__del__`, and C-extension `tp_dealloc` resurrection semantics require
+a separate design.
 
-Accumulators are only live across expressions, not across statements. This helps.
+Worker-thread participation in parallel root scanning, out-of-memory behavior
+while a safepoint is pending, and the eventual packed atomic refcount/lifecycle
+header layout are later design topics.
 
-Examples:
-
-- store accumulator into named property
-- store accumulator into array element
-- call function object pointed to by accumulator, which stores the function object on the stack frame
-
-We have function object, code object, instruction pointer.
+The accumulator is represented in safepoint records as
+`accumulator_or_not_present`. Initial interpreter safepoints publish it only at
+function return, where it carries the return value. Function-entry and loop-back
+safepoints publish `Value::not_present()`. Future JIT exits or native/managed
+transitions must follow the same rule: any live accumulator/register value that
+is not present in the managed stack slice must be published explicitly in the
+transition's scan record or owned by native code through refcounting.
