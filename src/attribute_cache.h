@@ -10,8 +10,9 @@
 
 namespace cl
 {
-    struct AttributeReadInlineCache
+    class AttributeReadInlineCache
     {
+    public:
         Shape *receiver_shape = nullptr;
         AttributeReadPlan plan = AttributeReadDescriptor::not_found().plan;
 
@@ -38,8 +39,9 @@ namespace cl
         }
     };
 
-    struct AttributeMutationInlineCache
+    class AttributeMutationInlineCache
     {
+    public:
         Shape *receiver_shape = nullptr;
         AttributeMutationPlan plan = AttributeWriteDescriptor::not_found().plan;
 

@@ -234,8 +234,9 @@ namespace cl
       needed for refcounting and value scanning, but are not necessarily
       Python-visible objects.
     */
-    struct HeapObject
+    class HeapObject
     {
+    public:
         explicit HeapObject(HeapLayout _layout) : refcount(0), layout(_layout)
         {
         }

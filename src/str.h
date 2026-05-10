@@ -19,8 +19,9 @@ namespace cl
     class Shape;
     class VirtualMachine;
 
-    struct String : public Object
+    class String : public Object
     {
+    public:
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::String;
 

@@ -67,7 +67,7 @@ namespace cl
     static constexpr size_t LargeAllocationSize = DefaultSlabSize / 2;
 
     class ThreadLocalHeap;
-    struct HeapObject;
+    class HeapObject;
 
     /* global heap, shared between threads */
 

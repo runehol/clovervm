@@ -6,7 +6,7 @@
 
 namespace cl
 {
-    struct CodeObject;
+    class CodeObject;
     class VirtualMachine;
 
     constexpr uint32_t MaxCloverFunctionEntryAdapterArgs = 3;

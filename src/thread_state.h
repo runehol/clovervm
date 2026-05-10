@@ -24,7 +24,7 @@ namespace cl
     class Function;
     class Scope;
     class VirtualMachine;
-    struct CodeObject;
+    class CodeObject;
 
     ClassObject *class_for_native_layout(VirtualMachine *vm, NativeLayoutId id);
 

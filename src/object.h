@@ -11,16 +11,16 @@
 
 namespace cl
 {
-    struct AttributeDeleteDescriptor;
-    struct AttributeReadDescriptor;
-    struct AttributeWriteDescriptor;
+    class AttributeDeleteDescriptor;
+    class AttributeReadDescriptor;
+    class AttributeWriteDescriptor;
     struct BuiltinClassDefinition;
     class ClassObject;
     class OverflowSlots;
     class Shape;
     class VirtualMachine;
-    struct String;
-    struct Value;
+    class String;
+    class Value;
     template <typename T> class TValue;
 
     struct BootstrapObjectTag
@@ -31,8 +31,9 @@ namespace cl
       Base class for Python-visible objects. These are heap records that also
       have Python class identity and concrete native layout identity.
     */
-    struct Object : public HeapObject
+    class Object : public HeapObject
     {
+    public:
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id,
                HeapLayout _layout)
             : HeapObject(_layout), native_layout(_native_layout_id),

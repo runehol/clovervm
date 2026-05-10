@@ -13,8 +13,9 @@ namespace cl
     class Dict : public Object
     {
     private:
-        struct Entry
+        class Entry
         {
+        public:
             Entry(Value _key, Value _value, TValue<SMI> _hash)
                 : key(_key), value(_value), hash(_hash)
             {

@@ -17,9 +17,9 @@ namespace cl
         Interactive
     };
 
-    struct AstVector;
+    class AstVector;
     class Scope;
-    struct String;
+    class String;
     template <typename T> class TValue;
 
     CodeObject *codegen_module(

@@ -11,7 +11,7 @@ namespace cl
     class ClassObject;
     class Shape;
     class ValidityCell;
-    struct Object;
+    class Object;
 
     enum class AttributeReadStatus : uint8_t
     {
@@ -114,8 +114,9 @@ namespace cl
         }
     };
 
-    struct AttributeReadPlan
+    class AttributeReadPlan
     {
+    public:
         AttributeReadPlanPath path;
         AttributeReadPlanKind kind;
         const Object *storage_owner;
@@ -144,8 +145,9 @@ namespace cl
         }
     };
 
-    struct AttributeReadDescriptor
+    class AttributeReadDescriptor
     {
+    public:
         AttributeReadStatus status;
         AttributeReadPlan plan;
         Value lookup_value;
@@ -188,8 +190,9 @@ namespace cl
         }
     };
 
-    struct AttributeMutationPlan
+    class AttributeMutationPlan
     {
+    public:
         union
         {
             Object *storage_owner;
@@ -260,8 +263,9 @@ namespace cl
         sizeof(AttributeMutationPlan) == 24,
         "AttributeMutationPlan should stay compact for mutation caches");
 
-    struct AttributeWriteDescriptor
+    class AttributeWriteDescriptor
     {
+    public:
         AttributeWriteStatus status;
         AttributeMutationPlan plan;
         AttributeCacheBlockers cache_blockers;
@@ -317,8 +321,9 @@ namespace cl
         }
     };
 
-    struct AttributeDeleteDescriptor
+    class AttributeDeleteDescriptor
     {
+    public:
         AttributeDeleteStatus status;
         AttributeMutationPlan plan;
         AttributeCacheBlockers cache_blockers;

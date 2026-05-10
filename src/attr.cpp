@@ -8,8 +8,9 @@
 
 namespace cl
 {
-    struct DescriptorProtocol
+    class DescriptorProtocol
     {
+    public:
         Value get;
         Value set;
         Value delete_;

@@ -12,7 +12,7 @@ namespace cl
 
     class VirtualMachine;
 
-    struct TokenVector;
+    class TokenVector;
 
     enum class StartRule
     {

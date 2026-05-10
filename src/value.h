@@ -72,8 +72,9 @@ namespace cl
         Always
     };
 
-    struct Value
+    class Value
     {
+    public:
         static inline Value from_smi(int64_t v)
         {
             Value val;
@@ -159,7 +160,7 @@ namespace cl
         union
         {
             long long integer;
-            struct HeapObject *ptr;
+            HeapObject *ptr;
         } as;
 
         bool operator==(Value o) const { return as.integer == o.as.integer; }

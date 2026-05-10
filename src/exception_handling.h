@@ -7,7 +7,7 @@
 
 namespace cl
 {
-    struct CodeObject;
+    class CodeObject;
 
     struct ExceptionalTarget
     {

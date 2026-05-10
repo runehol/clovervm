@@ -6,7 +6,7 @@
 
 namespace cl
 {
-    struct CodeObject;
+    class CodeObject;
     class ThreadState;
 
     Value run_interpreter(Value *stack_frame, CodeObject *code_object,

@@ -304,8 +304,9 @@ namespace cl
 
     using AstChildren = absl::InlinedVector<int32_t, 4>;
 
-    struct AstVector
+    class AstVector
     {
+    public:
         AstVector(const CompilationUnit *_compilation_unit)
             : compilation_unit(_compilation_unit)
         {

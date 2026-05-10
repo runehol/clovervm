@@ -9,7 +9,7 @@
 
 namespace cl
 {
-    struct String;
+    class String;
     struct SMI
     {
     };

@@ -11,8 +11,9 @@ namespace cl
         Overflow,
     };
 
-    struct StorageLocation
+    class StorageLocation
     {
+    public:
         int32_t physical_idx;
         StorageKind kind;
 
@@ -45,8 +46,9 @@ namespace cl
         return (flags & descriptor_flag(flag)) != 0;
     }
 
-    struct DescriptorInfo
+    class DescriptorInfo
     {
+    public:
         int32_t physical_idx;
         StorageKind kind;
         uint8_t reserved;
@@ -87,8 +89,9 @@ namespace cl
         Latent,
     };
 
-    struct DescriptorLookup
+    class DescriptorLookup
     {
+    public:
         DescriptorPresence presence;
         int32_t descriptor_idx;
         DescriptorInfo info;

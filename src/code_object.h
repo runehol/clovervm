@@ -53,7 +53,7 @@ namespace cl
     };
 
     struct CompilationUnit;
-    struct CodeObject;
+    class CodeObject;
     class Function;
     class ClassObject;
     class ValidityCell;
@@ -124,8 +124,9 @@ namespace cl
     static_assert(round_up_to_abi_alignment(2) == 2);
     static_assert(round_up_to_abi_alignment(3) == 4);
 
-    struct CodeObject : public Object
+    class CodeObject : public Object
     {
+    public:
         static constexpr NativeLayoutId native_layout_id =
             NativeLayoutId::CodeObject;
 

@@ -21,7 +21,7 @@
 namespace cl
 {
     class ThreadState;
-    struct CodeObject;
+    class CodeObject;
 
     class VirtualMachine
     {

@@ -126,8 +126,9 @@ namespace cl
     const char *to_string(Token t);
     std::ostream &operator<<(std::ostream &o, Token t);
 
-    struct TokenVector
+    class TokenVector
     {
+    public:
         TokenVector(const CompilationUnit *_compilation_unit)
             : compilation_unit(_compilation_unit)
         {
