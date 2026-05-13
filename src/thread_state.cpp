@@ -69,6 +69,17 @@ namespace cl
         set_clover_frame_frontier(sentinel_fp);
     }
 
+    void
+    ThreadState::publish_safepoint_scan_record(Value *lowest_live_stack_slot,
+                                               Value accumulator_or_not_present)
+    {
+        assert(lowest_live_stack_slot >= stack.data());
+        assert(lowest_live_stack_slot <= clover_frame_sentinel_ptr);
+        safepoint_scan_record_.lowest_live_stack_slot = lowest_live_stack_slot;
+        safepoint_scan_record_.accumulator_or_not_present =
+            accumulator_or_not_present;
+    }
+
     static Value *entry_frame_pointer(Value *caller_fp, CodeObject *code_object)
     {
         int32_t slots_above_entry_fp =

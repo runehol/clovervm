@@ -43,6 +43,12 @@ namespace cl
         PendingException();
     };
 
+    struct SafepointScanRecord
+    {
+        Value *lowest_live_stack_slot = nullptr;
+        Value accumulator_or_not_present = Value::not_present();
+    };
+
     class ThreadState
     {
     public:
@@ -105,6 +111,12 @@ namespace cl
         ALWAYSINLINE bool safepoint_requested() const
         {
             return *safepoint_requested_ptr;
+        }
+        void publish_safepoint_scan_record(Value *lowest_live_stack_slot,
+                                           Value accumulator_or_not_present);
+        const SafepointScanRecord &safepoint_scan_record() const
+        {
+            return safepoint_scan_record_;
         }
 
         bool has_pending_exception() const;
@@ -225,6 +237,7 @@ namespace cl
         std::vector<Value> stack;
         std::vector<HeapObject *> zero_count_table;
         PendingException pending_exception;
+        SafepointScanRecord safepoint_scan_record_;
         // This thread's Clover frame frontier during native execution: the
         // newest live Clover frame available to native C++ code while the
         // interpreter is not actively carrying fp in its dispatch state. This

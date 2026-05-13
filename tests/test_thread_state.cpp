@@ -1,3 +1,4 @@
+#include "code_object_builder.h"
 #include "test_helpers.h"
 
 #include "exception_object.h"
@@ -78,6 +79,57 @@ namespace cl
 
         context.vm().clear_safepoint_request();
         EXPECT_FALSE(thread->safepoint_requested());
+    }
+
+    static CodeObject *make_safepoint_test_code(test::VmTestContext &context,
+                                                bool publish_accumulator)
+    {
+        TValue<String> name =
+            context.vm().get_or_create_interned_string_value(L"<safepoint>");
+        CodeObjectBuilder builder(&context.vm(), nullptr, nullptr, nullptr,
+                                  name);
+        if(publish_accumulator)
+        {
+            builder.emit_lda_smi(0, 42);
+            builder.emit_safepoint_with_accumulator(0, 0);
+        }
+        else
+        {
+            builder.emit_safepoint(0, 0);
+            builder.emit_lda_smi(0, 42);
+        }
+        builder.emit_return(0);
+        return builder.finalize();
+    }
+
+    TEST(ThreadState, SafepointPublishesScanRecordWithoutAccumulator)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        context.vm().request_safepoint();
+
+        Value result = thread->run_clovervm_code_object(
+            make_safepoint_test_code(context, false));
+
+        const SafepointScanRecord &record = thread->safepoint_scan_record();
+        EXPECT_EQ(Value::from_smi(42), result);
+        EXPECT_NE(nullptr, record.lowest_live_stack_slot);
+        EXPECT_TRUE(record.accumulator_or_not_present.is_not_present());
+    }
+
+    TEST(ThreadState, SafepointPublishesScanRecordWithAccumulator)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        context.vm().request_safepoint();
+
+        Value result = thread->run_clovervm_code_object(
+            make_safepoint_test_code(context, true));
+
+        const SafepointScanRecord &record = thread->safepoint_scan_record();
+        EXPECT_EQ(Value::from_smi(42), result);
+        EXPECT_NE(nullptr, record.lowest_live_stack_slot);
+        EXPECT_EQ(Value::from_smi(42), record.accumulator_or_not_present);
     }
 
     TEST(ThreadState, PendingExceptionObjectStoresTypedObject)
