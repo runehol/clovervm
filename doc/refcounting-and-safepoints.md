@@ -485,7 +485,7 @@ lifecycle bugs.
 When object teardown is complete, the owning slab's reclaim-blocker count is
 decremented. If it reaches zero, the slab is handed to `GlobalHeap` for
 reclamation. Slab lookup uses the global slab lookup granule map described in
-[CloverVM Memory Reclamation Design](memory-allocation-reclamation.md).
+[Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md).
 
 Teardown may process owned child fields word-by-word. For each owned field, it
 should copy the child value, clear the field's ownership in the object, and then

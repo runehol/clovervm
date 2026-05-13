@@ -2,7 +2,7 @@
 
 This document is the step-by-step implementation plan for the memory substrate
 described in [Refcounting and Safepoints](refcounting-and-safepoints.md),
-[CloverVM Memory Reclamation Design](memory-allocation-reclamation.md), and
+[Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md), and
 [Layout-ID-Driven Value Scanning and Deallocation Dispatch](layout-id-driven-scanning.md).
 
 The goal is a correct single-threaded baseline for deferred reference counting,
@@ -18,7 +18,7 @@ C-extension deallocation semantics in the first pass.
 - Follow the durable ownership, ZCT, stack scanning, and safepoint invariants in
   [Refcounting and Safepoints](refcounting-and-safepoints.md).
 - Follow the durable slab accounting and handoff invariants in
-  [CloverVM Memory Reclamation Design](memory-allocation-reclamation.md).
+  [Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md).
 - Follow the durable heap layout descriptor and teardown invariants in
   [Layout-ID-Driven Value Scanning and Deallocation Dispatch](layout-id-driven-scanning.md).
 - Out-of-memory during reclamation is fatal in the baseline. Root-set

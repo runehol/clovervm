@@ -67,7 +67,7 @@ Detailed docs:
 
 - [Value Representation](value-representation.md)
 - [Object Metadata Layout](object-metadata.md)
-- [CloverVM Memory Reclamation Design](memory-allocation-reclamation.md)
+- [Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md)
 
 ## Bytecode And Calling
 
@@ -168,7 +168,7 @@ C++ stack frames as if they were Clover `Value` slots.
 Detailed docs:
 
 - [Refcounting and Safepoints](refcounting-and-safepoints.md)
-- [CloverVM Memory Reclamation Design](memory-allocation-reclamation.md)
+- [Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md)
 
 ## Exceptions And Control Flow
 

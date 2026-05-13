@@ -1,8 +1,9 @@
-# CloverVM Memory Reclamation Design
+# Heap Slab Allocation and Reuse
 
 ## Overview
 
-This document describes the memory reclamation strategy for CloverVM. The design combines:
+This document describes the heap slab allocation and reuse part of CloverVM's
+memory substrate. The design combines:
 
 - Thread-local bump allocation
 - Atomic reference counting (RC)
