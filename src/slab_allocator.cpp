@@ -1,6 +1,6 @@
 #include "slab_allocator.h"
 
-#include "heap.h"
+#include "global_heap.h"
 
 #include <stdexcept>
 #include <sys/mman.h>

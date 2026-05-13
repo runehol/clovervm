@@ -38,8 +38,9 @@ add_library(libclovervm STATIC
     exception_object.h
     exception_propagation.h
     function.cpp
-    heap.cpp
-    heap.h
+    global_heap.cpp
+    global_heap.h
+    heap_construction.h
     heap_object.h
     instance.cpp
     instance.h
@@ -95,6 +96,8 @@ add_library(libclovervm STATIC
     str.h
     subscript.cpp
     subscript.h
+    thread_local_heap.cpp
+    thread_local_heap.h
     thread_state.cpp
     thread_state.h
     typed_value.h

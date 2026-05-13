@@ -11,7 +11,7 @@
 
 #include "class_object.h"
 #include "clover_entry.h"
-#include "heap.h"
+#include "global_heap.h"
 #include "intern_store.h"
 #include "owned_typed_value.h"
 #include "scope.h"

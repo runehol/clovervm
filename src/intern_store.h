@@ -1,7 +1,7 @@
 #ifndef CL_INTERN_STORE_H
 #define CL_INTERN_STORE_H
 
-#include "heap.h"
+#include "global_heap.h"
 #include "value.h"
 #include <absl/container/flat_hash_map.h>
 

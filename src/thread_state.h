@@ -4,10 +4,10 @@
 #include <memory>
 #include <vector>
 
-#include "heap.h"
 #include "owned.h"
 #include "owned_typed_value.h"
 #include "shape.h"
+#include "thread_local_heap.h"
 #include "typed_value.h"
 #include "value.h"
 #include <type_traits>
