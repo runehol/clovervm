@@ -53,14 +53,14 @@ namespace cl
         return t;
     }
 
-    void add_to_active_zero_count_table(HeapObject *obj);
+    void add_to_active_zero_count_table_if_needed(HeapObject *obj);
 
     static inline void decref_refcounted_ptr(Value v)
     {
         assert(v.is_refcounted_ptr());
         if(--v.as.ptr->refcount == 0)
         {
-            add_to_active_zero_count_table(v.as.ptr);
+            add_to_active_zero_count_table_if_needed(v.as.ptr);
         }
     }
 
@@ -70,7 +70,7 @@ namespace cl
                heap_ptr_is_interned(obj));
         if(heap_ptr_is_refcounted(obj) && --obj->refcount == 0)
         {
-            add_to_active_zero_count_table(obj);
+            add_to_active_zero_count_table_if_needed(obj);
         }
     }
 
@@ -80,7 +80,7 @@ namespace cl
         {
             if(--v.as.ptr->refcount == 0)
             {
-                add_to_active_zero_count_table(v.as.ptr);
+                add_to_active_zero_count_table_if_needed(v.as.ptr);
             }
         }
     }

@@ -1449,7 +1449,7 @@ namespace cl
             module_scope->swap_by_slot_index(slot_idx, accumulator);
         if(unlikely(zct_object != nullptr))
         {
-            thread->add_to_zero_count_table(zct_object);
+            thread->add_to_zero_count_table_if_needed(zct_object);
         }
         COMPLETE();
     }

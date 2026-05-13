@@ -362,10 +362,28 @@ namespace cl
                                        language_mode, result_mode);
     }
 
-    void ThreadState::add_to_active_zero_count_table(HeapObject *obj)
+    void ThreadState::add_to_active_zero_count_table_if_needed(HeapObject *obj)
     {
         ThreadState *ts = ThreadState::get_active();
-        ts->add_to_zero_count_table(obj);
+        ts->add_to_zero_count_table_if_needed(obj);
+    }
+
+    void ThreadState::add_to_zero_count_table_if_needed(HeapObject *obj)
+    {
+        assert(obj != nullptr);
+        assert((reinterpret_cast<uintptr_t>(obj) & value_ptr_mask) ==
+               value_refcounted_ptr_tag);
+        assert(obj->lifecycle_state != HeapLifecycleState::Reclaiming);
+        assert(obj->lifecycle_state != HeapLifecycleState::Dead);
+        if(obj->lifecycle_state == HeapLifecycleState::InZct)
+        {
+            return;
+        }
+
+        assert(obj->lifecycle_state == HeapLifecycleState::Normal);
+        assert(obj->refcount == 0);
+        obj->lifecycle_state = HeapLifecycleState::InZct;
+        zero_count_table.push_back(obj);
     }
 
 }  // namespace cl

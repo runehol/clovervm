@@ -1,7 +1,6 @@
 #ifndef CL_THREAD_STATE_H
 #define CL_THREAD_STATE_H
 
-#include <deque>
 #include <memory>
 #include <vector>
 
@@ -67,11 +66,9 @@ namespace cl
 
         ThreadState(VirtualMachine *_machine);
 
-        static void add_to_active_zero_count_table(HeapObject *obj);
-        void add_to_zero_count_table(HeapObject *obj)
-        {
-            zero_count_table.push_back(obj);
-        }
+        static void add_to_active_zero_count_table_if_needed(HeapObject *obj);
+        void add_to_zero_count_table_if_needed(HeapObject *obj);
+        size_t zero_count_table_size() const { return zero_count_table.size(); }
 
         [[nodiscard]] Value run_clovervm_code_object(CodeObject *obj);
         [[nodiscard]] Value call_clovervm_function(TValue<Function> function);
@@ -143,7 +140,12 @@ namespace cl
         {
             static_assert(std::is_base_of_v<HeapObject, T>);
             static_assert(HasObjectLayout<T>::value);
-            return refcounted_heap.make<T>(std::forward<Args>(args)...);
+            T *obj = refcounted_heap.make<T>(std::forward<Args>(args)...);
+            if(obj->refcount == 0)
+            {
+                add_to_zero_count_table_if_needed(obj);
+            }
+            return obj;
         }
 
         template <typename T, typename... Args>
@@ -216,7 +218,7 @@ namespace cl
         ThreadLocalHeap refcounted_heap;
 
         std::vector<Value> stack;
-        std::deque<HeapObject *> zero_count_table;
+        std::vector<HeapObject *> zero_count_table;
         PendingException pending_exception;
         // This thread's Clover frame frontier during native execution: the
         // newest live Clover frame available to native C++ code while the

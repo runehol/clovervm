@@ -22,6 +22,14 @@ namespace cl
 
     using HeapLayout = uint32_t;
 
+    enum class HeapLifecycleState : uint8_t
+    {
+        Normal,
+        InZct,
+        Reclaiming,
+        Dead,
+    };
+
     constexpr uint32_t object_layout_expanded_bit = 1u << 31;
     constexpr uint32_t object_layout_size_shift = 0;
     constexpr uint32_t object_layout_offset_shift = 28;
@@ -237,13 +245,20 @@ namespace cl
     class HeapObject
     {
     public:
-        explicit HeapObject(HeapLayout _layout) : refcount(0), layout(_layout)
+        explicit HeapObject(HeapLayout _layout)
+            : refcount(0), lifecycle_state(HeapLifecycleState::Normal),
+              layout(_layout)
         {
         }
 
-        HeapObject() : refcount(0), layout(0) {}
+        HeapObject()
+            : refcount(0), lifecycle_state(HeapLifecycleState::Normal),
+              layout(0)
+        {
+        }
 
         int32_t refcount;
+        HeapLifecycleState lifecycle_state;
         HeapLayout layout;
     };
 
@@ -275,7 +290,7 @@ namespace cl
 
     static_assert(sizeof(DynamicLayoutSpec) == 16);
     static_assert(sizeof(ExpandedHeader) == 16);
-    static_assert(sizeof(HeapObject) == 8);
+    static_assert(sizeof(HeapObject) == 12);
     static_assert(std::is_trivially_destructible_v<HeapObject>);
 
 }  // namespace cl

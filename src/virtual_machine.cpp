@@ -334,7 +334,7 @@ namespace cl
         initialize_builtin_types();
 
         builtin_scope = HeapPtr<Scope>(
-            refcounted_global_heap.make_global_internal_raw<Scope>(nullptr));
+            get_default_thread()->make_internal_raw<Scope>(nullptr));
 
         for(ClassObject *cls: builtin_classes)
         {

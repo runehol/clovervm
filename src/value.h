@@ -9,7 +9,7 @@
 
 namespace cl
 {
-    void add_to_active_zero_count_table(HeapObject *obj);
+    void add_to_active_zero_count_table_if_needed(HeapObject *obj);
 
 /*
   A cl_value is a 64-bit generic cell to hold any value. It holds some of them
@@ -336,7 +336,7 @@ namespace cl
         slots[location.physical_idx] = value;
         if(old_value.is_refcounted_ptr() && --old_value.as.ptr->refcount == 0)
         {
-            add_to_active_zero_count_table(old_value.as.ptr);
+            add_to_active_zero_count_table_if_needed(old_value.as.ptr);
         }
     }
 }  // namespace cl

@@ -1,6 +1,7 @@
 #include "test_helpers.h"
 
 #include "exception_object.h"
+#include "refcount.h"
 
 #include <gtest/gtest.h>
 
@@ -14,6 +15,55 @@ namespace cl
 
         EXPECT_FALSE(thread->has_pending_exception());
         EXPECT_EQ(PendingExceptionKind::None, thread->pending_exception_kind());
+    }
+
+    TEST(ThreadState, AllocationAddsZeroRefcountObjectToZct)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+
+        size_t zct_size_before = thread->zero_count_table_size();
+        String *string = thread->make_object_raw<String>(L"zct");
+
+        EXPECT_EQ(0, string->refcount);
+        EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
+        EXPECT_EQ(zct_size_before + 1, thread->zero_count_table_size());
+    }
+
+    TEST(ThreadState, ZeroRefcountEnqueueIsUnique)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+
+        size_t zct_size_before = thread->zero_count_table_size();
+        String *string = thread->make_object_raw<String>(L"zct");
+        ASSERT_EQ(zct_size_before + 1, thread->zero_count_table_size());
+
+        thread->add_to_zero_count_table_if_needed(string);
+
+        EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
+        EXPECT_EQ(zct_size_before + 1, thread->zero_count_table_size());
+    }
+
+    TEST(ThreadState, DecrefToZeroDoesNotDuplicateExistingZctEntry)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+
+        size_t zct_size_before = thread->zero_count_table_size();
+        String *string = thread->make_object_raw<String>(L"zct");
+        ASSERT_EQ(zct_size_before + 1, thread->zero_count_table_size());
+
+        incref_heap_ptr(string);
+        EXPECT_EQ(1, string->refcount);
+        decref_heap_ptr(string);
+
+        EXPECT_EQ(0, string->refcount);
+        EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
+        EXPECT_EQ(zct_size_before + 1, thread->zero_count_table_size());
     }
 
     TEST(ThreadState, PendingExceptionObjectStoresTypedObject)

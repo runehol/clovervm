@@ -166,6 +166,15 @@ candidate cycle, and objects being destroyed. The initial state machine does not
 reclaim cycles, but it keeps room for those future states without overloading
 the numeric refcount itself.
 
+Known cycle to resolve: `ClassObject` and `Shape` already form a strong
+metadata cycle. A class object owns its own shape and instance-root shape, while
+those shapes store `class_value` so normal class discovery can go through
+`Shape::get_class()`. That `class_value` cannot simply be weak without replacing
+the class-discovery invariant. Cycle collection or a class/shape-specific
+ownership rule must eventually break this cycle; Phase 1 keeps the conservative
+`if(refcount == 0)` allocation-time ZCT enqueue so objects retained during
+construction are not treated as zero-count candidates.
+
 ## Stack Root Collection
 
 Safepoint validation should first build a temporary set of stack roots, then use
