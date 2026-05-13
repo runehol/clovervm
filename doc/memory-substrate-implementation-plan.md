@@ -89,6 +89,8 @@ Validation:
    design, using a 4 KiB initial lookup granule.
 9. Register every granule covered by ordinary and dedicated slabs when the slab
    is created.
+10. Make each slab remember its owning `GlobalHeap` and hand itself back when
+    `n_reclaim_blockers` reaches zero.
 
 Validation:
 
@@ -98,9 +100,9 @@ Validation:
   reclamation.
 - Tests that an otherwise empty slab is not reset while installed as an active
   allocation slab.
-- Tests that a dedicated large-object slab drops its allocator blocker
-  immediately after object commit and is reclaimed when the object blocker is
-  dropped.
+- Tests that a dedicated large-object slab has no active-allocator blocker,
+  gains one object blocker on commit, and is handed back when that object
+  blocker is dropped.
 - Debug assertions that every reclaimable object maps to exactly one slab.
 
 ## Phase 3: Minimal Layout Descriptor Facade

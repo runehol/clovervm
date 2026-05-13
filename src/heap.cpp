@@ -1,15 +1,30 @@
 #include "heap.h"
 #include "slab_allocator.h"
 
+#include <algorithm>
+#include <cassert>
 #include <stdexcept>
 #include <sys/mman.h>
 
 namespace cl
 {
+    uintptr_t slab_lookup_key_for_address(const void *ptr)
+    {
+        return reinterpret_cast<uintptr_t>(ptr) >> SlabLookupGranuleShift;
+    }
+
+    void commit_heap_allocation(const HeapAllocation &allocation, HeapObject *)
+    {
+        assert(allocation.memory != nullptr);
+        assert(allocation.slab != nullptr);
+        allocation.slab->add_reclaim_blocker();
+    }
 
     GlobalHeap::GlobalHeap(size_t _offset, size_t _slab_size)
         : offset(_offset), slab_size(_slab_size)
     {
+        assert(SlabLookupGranuleSize == (size_t(1) << SlabLookupGranuleShift));
+        assert(offset < value_ptr_granularity);
     }
 
     SlabAllocator *GlobalHeap::make_new_slab()
@@ -20,22 +35,76 @@ namespace cl
     SlabAllocator *GlobalHeap::make_new_slab(size_t actual_slab_size)
     {
         const std::lock_guard<std::mutex> lock(heap_mutex);
-        return slabs
-            .emplace_front(
-                std::make_unique<SlabAllocator>(offset, actual_slab_size))
-            .get();
+        SlabAllocator *slab =
+            slabs
+                .emplace_front(std::make_unique<SlabAllocator>(
+                    this, offset, actual_slab_size))
+                .get();
+        register_slab_pages_locked(slab);
+        return slab;
     }
 
-    void *GlobalHeap::allocate_large_object(size_t n_bytes)
+    void GlobalHeap::register_slab_pages_locked(SlabAllocator *slab)
+    {
+        assert(slab != nullptr);
+        assert(reinterpret_cast<uintptr_t>(slab->start()) %
+                   SlabLookupGranuleSize ==
+               0);
+        uintptr_t first_key = slab_lookup_key_for_address(slab->start());
+        uintptr_t last_key = slab_lookup_key_for_address(slab->end() - 1);
+        for(uintptr_t key = first_key; key <= last_key; ++key)
+        {
+            bool inserted = slab_lookup.emplace(key, slab).second;
+            assert(inserted);
+            (void)inserted;
+        }
+    }
+
+    void GlobalHeap::unregister_slab_pages_locked(SlabAllocator *slab)
+    {
+        assert(slab != nullptr);
+        uintptr_t first_key = slab_lookup_key_for_address(slab->start());
+        uintptr_t last_key = slab_lookup_key_for_address(slab->end() - 1);
+        for(uintptr_t key = first_key; key <= last_key; ++key)
+        {
+            size_t erased = slab_lookup.erase(key);
+            assert(erased == 1);
+            (void)erased;
+        }
+    }
+
+    SlabAllocator *GlobalHeap::slab_for_address_unlocked(const void *ptr) const
+    {
+        auto it = slab_lookup.find(slab_lookup_key_for_address(ptr));
+        assert(it != slab_lookup.end());
+        return it->second;
+    }
+
+    void GlobalHeap::reclaim_slab(SlabAllocator *slab)
+    {
+        const std::lock_guard<std::mutex> lock(heap_mutex);
+        unregister_slab_pages_locked(slab);
+        auto it = std::find_if(
+            slabs.begin(), slabs.end(),
+            [slab](const std::unique_ptr<SlabAllocator> &owned_slab) {
+                return owned_slab.get() == slab;
+            });
+        assert(it != slabs.end());
+        slabs.erase(it);
+    }
+
+    HeapAllocation GlobalHeap::allocate_large_object(size_t n_bytes)
     {
         size_t required_slab_size =
             n_bytes + value_ptr_granularity -
             offset;  // make sure we have space for the pointer offset
         SlabAllocator *single_allocator = make_new_slab(required_slab_size);
-        return single_allocator->allocate(n_bytes);
+        char *memory = single_allocator->allocate(n_bytes);
+        assert(memory != nullptr);
+        return HeapAllocation{memory, single_allocator};
     }
 
-    void *GlobalHeap::allocate_global(size_t n_bytes)
+    HeapAllocation GlobalHeap::allocate_global(size_t n_bytes)
     {
         const std::lock_guard<std::mutex> lock(global_allocator_mutex);
         if(global_allocator == nullptr)
@@ -49,6 +118,25 @@ namespace cl
         : global_heap(_global_heap),
           local_allocator(global_heap->make_new_slab())
     {
+        add_allocator_reclaim_blocker();
+    }
+
+    ThreadLocalHeap::~ThreadLocalHeap() { drop_allocator_reclaim_blocker(); }
+
+    void ThreadLocalHeap::add_allocator_reclaim_blocker()
+    {
+        local_allocator->add_reclaim_blocker();
+    }
+
+    void ThreadLocalHeap::drop_allocator_reclaim_blocker()
+    {
+        drop_allocator_reclaim_blocker(local_allocator);
+    }
+
+    void
+    ThreadLocalHeap::drop_allocator_reclaim_blocker(SlabAllocator *allocator)
+    {
+        allocator->drop_reclaim_blocker();
     }
 
 }  // namespace cl

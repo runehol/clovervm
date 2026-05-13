@@ -15,6 +15,7 @@ enable_sanitizers(test_clovervm)
 target_sources(test_clovervm PRIVATE
 	test_codegen.cpp
 	test_exception_handling.cpp
+	test_heap.cpp
 	test_python_source_files.cpp
 	test_attr.cpp
 	test_dict.cpp

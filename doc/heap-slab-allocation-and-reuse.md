@@ -117,11 +117,10 @@ Objects exceeding a size threshold are allocated separately:
 - This slab is logically owned by the allocating thread.
 
 Dedicated large-object slabs follow the same reclaim-blocker rules as ordinary
-slabs. The allocator holds a reclaim blocker while creating the dedicated slab,
-the committed object holds its own reclaim blocker, and the allocator
-immediately drops its blocker because the dedicated slab is closed to further
-allocation. When the object blocker later drops to zero, the slab is handed to
-`GlobalHeap`.
+slabs, with no active-allocator blocker because the dedicated slab is never
+installed as an active allocation slab. The committed object holds its own
+reclaim blocker. When that object blocker later drops to zero, the slab is
+handed to `GlobalHeap`.
 
 The dedicated-slab threshold is a policy decision. It should prevent oversized
 objects from being mixed into ordinary slabs, and later size-class routing should
@@ -168,8 +167,12 @@ Each slab maintains:
 - allocation bounds / bump pointer state
 
 `n_reclaim_blockers` is the authoritative first-pass slab lifetime invariant. A
-slab is reclaimed when this counter reaches zero. Do not require a separate slab
-state enum for correctness in the first design.
+slab remembers its owning `GlobalHeap` and hands itself back immediately when
+this counter reaches zero. The initial `GlobalHeap` policy is to unregister and
+`munmap` the slab immediately. Immortal heaps use the same blocker accounting;
+their objects are immortal because they are never deallocated, so their object
+blockers naturally remain. Do not require a separate slab state enum for
+correctness in the first design.
 
 The counter has two sources:
 
@@ -211,12 +214,12 @@ added to the active ZCT and may be processed during the same safepoint.
 
 ### Whole-Slab Reuse
 
-- when `slab->n_reclaim_blockers == 0`, the slab is handed to `GlobalHeap`
-  immediately for reclamation
-- `GlobalHeap` owns the policy for deallocating it with `munmap` or retaining it
-  on a free slab list for later reuse
-- future allocations may reuse slabs retained by `GlobalHeap` instead of
-  allocating new ones
+- when `slab->n_reclaim_blockers == 0`, the slab calls back to its owning
+  `GlobalHeap` immediately for reclamation
+- the first `GlobalHeap` policy unregisters the slab from the lookup map and
+  deallocates it with `munmap`
+- a later policy may retain fully reclaimed slabs on a free list instead of
+  immediately unmapping them
 
 At this stage, memory reuse occurs only at whole-slab granularity.
 
@@ -227,35 +230,35 @@ decrement the slab's reclaim-blocker count and eventually recycle the slab. The
 object header should not carry a per-object slab pointer. Instead, slab
 ownership is allocator metadata.
 
-The global heap maintains a lookup table from heap-region granules to slab
+The global heap maintains a lookup table from heap lookup granules to slab
 metadata:
 
 ```c++
-absl::flat_hash_map<uintptr_t, Slab *> slab_lookup;
+std::unordered_map<uintptr_t, Slab *> slab_lookup;
 ```
 
-The initial granule should be 4 KiB. Although it is tempting to use the default
-slab size as the lookup granule, plain `mmap` only guarantees page-aligned
-allocation. The lookup design must never permit two slabs to occupy the same
-lookup granule, so the granule cannot be larger than the alignment guarantee
-unless the allocator also enforces matching higher alignment. The design should
-still name this as a slab lookup granule rather than making OS pages
-fundamental:
+The slab lookup granule is fixed at 4 KiB in the first design. Slab mappings are
+required to start on a lookup-granule boundary. Logical slab sizes do not need to
+be lookup-granule multiples; lookup registration covers every granule touched by
+the slab's half-open address range. The lookup key is the address shifted by the
+granule shift:
 
 ```c++
-static constexpr uintptr_t SlabLookupGranuleSize = 4096;
 static constexpr uintptr_t SlabLookupGranuleShift = 12;
+static constexpr size_t SlabLookupGranuleSize =
+    size_t(1) << SlabLookupGranuleShift;
 
-uintptr_t slab_lookup_key_for(void *ptr) {
+uintptr_t slab_lookup_key_for_address(void *ptr) {
     return reinterpret_cast<uintptr_t>(ptr) >> SlabLookupGranuleShift;
 }
 ```
 
-On slab creation, every granule covered by the slab is registered to that slab:
+On slab creation, every lookup granule covered by the slab is registered to that
+slab:
 
 ```c++
-for(uintptr_t key = slab_lookup_key_for(slab->start);
-    key <= slab_lookup_key_for(slab->end - 1);
+for(uintptr_t key = slab_lookup_key_for_address(slab->start);
+    key <= slab_lookup_key_for_address(slab->end - 1);
     ++key) {
     slab_lookup.emplace(key, slab);
 }
@@ -264,25 +267,20 @@ for(uintptr_t key = slab_lookup_key_for(slab->start);
 Lookup during reclamation is then:
 
 ```c++
-Slab *slab_for_object(HeapObject *obj) {
-    auto it = slab_lookup.find(slab_lookup_key_for(obj));
+Slab *slab_for_address_unlocked(void *ptr) {
+    auto it = slab_lookup.find(slab_lookup_key_for_address(ptr));
     assert(it != slab_lookup.end());
     return it->second;
 }
 ```
 
 The hard invariant is that every reclaimable heap object address maps to exactly
-one slab metadata record by lookup granule. No two slabs may share one lookup
-granule. If the granule is larger than an OS page, slabs must be allocated with
-explicit matching alignment and sized so that no lookup granule contains objects
-from two different slabs.
-
-Slab lookup is global, but it is not on the allocation fast path. The map is
-updated only on slab creation/destruction or when slab address ranges change,
-under the heap lock. Reclamation reads it during safepoints, when attached
-threads have stopped mutating managed stacks, ZCTs, and heap object ownership.
-Dedicated large-object slabs use the same registration mechanism as ordinary
-slabs.
+one slab metadata record by slab lookup key. No two slabs may share one lookup
+granule. The map is owned by `GlobalHeap`. Registration happens under the heap
+lock when a slab is created. Hot lookup uses `slab_for_address_unlocked`;
+callers must ensure the map is stable, such as during safepoint reclamation or
+while already holding the heap lock. Dedicated large-object slabs use the same
+registration mechanism as ordinary slabs.
 
 ---
 

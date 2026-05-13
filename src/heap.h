@@ -10,10 +10,25 @@
 #include <mutex>
 #include <tuple>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 
 namespace cl
 {
+    static constexpr uintptr_t SlabLookupGranuleShift = 12;
+    static constexpr size_t SlabLookupGranuleSize = size_t(1)
+                                                    << SlabLookupGranuleShift;
+
+    struct HeapAllocation
+    {
+        char *memory;
+        SlabAllocator *slab;
+    };
+
+    uintptr_t slab_lookup_key_for_address(const void *ptr);
+    void commit_heap_allocation(const HeapAllocation &allocation,
+                                HeapObject *obj);
+
     template <typename T, typename = void>
     struct HasObjectLayout : std::false_type
     {
@@ -45,22 +60,27 @@ namespace cl
             HeapLayout layout = encode_compact_layout_unchecked(
                 spec.object_size_in_16byte_units, value_offset_in_words,
                 spec.value_count);
-            return new(allocate_fn(object_size_in_bytes))
-                T(layout, std::forward<Args>(args)...);
+            HeapAllocation allocation = allocate_fn(object_size_in_bytes);
+            T *obj =
+                new(allocation.memory) T(layout, std::forward<Args>(args)...);
+            commit_heap_allocation(allocation, obj);
+            return obj;
         }
 
         size_t allocation_size_in_bytes =
             sizeof(ExpandedHeader) + object_size_in_bytes;
-        char *allocation =
-            reinterpret_cast<char *>(allocate_fn(allocation_size_in_bytes));
-        ExpandedHeader *header = reinterpret_cast<ExpandedHeader *>(allocation);
+        HeapAllocation allocation = allocate_fn(allocation_size_in_bytes);
+        ExpandedHeader *header =
+            reinterpret_cast<ExpandedHeader *>(allocation.memory);
         header->object_size_in_16byte_units = spec.object_size_in_16byte_units;
         header->value_count = spec.value_count;
 
         HeapLayout layout =
             encode_expanded_layout_unchecked(value_offset_in_words);
-        return new(allocation + sizeof(ExpandedHeader))
+        T *obj = new(allocation.memory + sizeof(ExpandedHeader))
             T(layout, std::forward<Args>(args)...);
+        commit_heap_allocation(allocation, obj);
+        return obj;
     }
 
     static constexpr size_t DefaultSlabSize = 65536;
@@ -87,10 +107,10 @@ namespace cl
             return GlobalHeap(value_interned_ptr_tag, slab_size);
         }
 
-        void *allocate_large_object(
+        HeapAllocation allocate_large_object(
             size_t n_bytes);  // slow path allocation for large objects
 
-        void *allocate_global(size_t n_bytes);
+        HeapAllocation allocate_global(size_t n_bytes);
 
         template <typename T, typename... Args>
         T *make_global_internal_raw(Args &&...args)
@@ -104,8 +124,10 @@ namespace cl
             }
             else
             {
-                return new(allocate_global(sizeof(T)))
-                    T(std::forward<Args>(args)...);
+                HeapAllocation allocation = allocate_global(sizeof(T));
+                T *obj = new(allocation.memory) T(std::forward<Args>(args)...);
+                commit_heap_allocation(allocation, obj);
+                return obj;
             }
         }
 
@@ -118,13 +140,25 @@ namespace cl
 
         SlabAllocator *make_new_slab();
 
-        SlabAllocator *get_active_slab();
+        // Caller must ensure that this heap's slab lookup map is stable, for
+        // example during safepoint reclamation or while holding heap_mutex.
+        SlabAllocator *slab_for_address_unlocked(const void *ptr) const;
+        SlabAllocator *slab_for_object_unlocked(const HeapObject *obj) const
+        {
+            return slab_for_address_unlocked(obj);
+        }
 
     private:
+        friend class SlabAllocator;
+
+        void register_slab_pages_locked(SlabAllocator *slab);
+        void unregister_slab_pages_locked(SlabAllocator *slab);
         SlabAllocator *make_new_slab(size_t actual_slab_size);
+        void reclaim_slab(SlabAllocator *slab);
 
         std::mutex heap_mutex;
         std::deque<std::unique_ptr<SlabAllocator>> slabs;
+        std::unordered_map<uintptr_t, SlabAllocator *> slab_lookup;
         size_t offset;
         size_t slab_size;
         std::unique_ptr<ThreadLocalHeap> global_allocator;
@@ -136,25 +170,30 @@ namespace cl
     {
     public:
         ThreadLocalHeap(GlobalHeap *_global_heap);
+        ~ThreadLocalHeap();
 
         // allocation fast path
-        void *allocate(size_t n_bytes)
+        HeapAllocation allocate(size_t n_bytes)
         {
-            void *result = local_allocator->allocate(n_bytes);
-            if(likely(result != nullptr))
-            {
-                return result;
-            }
-
             if(n_bytes >= LargeAllocationSize)
             {
                 return global_heap->allocate_large_object(n_bytes);
             }
-            else
+
+            char *result = local_allocator->allocate(n_bytes);
+            if(likely(result != nullptr))
             {
-                local_allocator = global_heap->make_new_slab();
-                return local_allocator->allocate(n_bytes);
+                return HeapAllocation{result, local_allocator};
             }
+
+            SlabAllocator *old_allocator = local_allocator;
+            SlabAllocator *new_allocator = global_heap->make_new_slab();
+            local_allocator = new_allocator;
+            add_allocator_reclaim_blocker();
+            drop_allocator_reclaim_blocker(old_allocator);
+            char *memory = local_allocator->allocate(n_bytes);
+            assert(memory != nullptr);
+            return HeapAllocation{memory, local_allocator};
         }
 
         template <typename T, typename... Args> T *make(Args &&...args)
@@ -169,11 +208,18 @@ namespace cl
             }
             else
             {
-                return new(allocate(sizeof(T))) T(std::forward<Args>(args)...);
+                HeapAllocation allocation = allocate(sizeof(T));
+                T *obj = new(allocation.memory) T(std::forward<Args>(args)...);
+                commit_heap_allocation(allocation, obj);
+                return obj;
             }
         }
 
     private:
+        void add_allocator_reclaim_blocker();
+        void drop_allocator_reclaim_blocker();
+        void drop_allocator_reclaim_blocker(SlabAllocator *allocator);
+
         GlobalHeap *global_heap;
         SlabAllocator *local_allocator;
     };
