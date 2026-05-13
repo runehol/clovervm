@@ -16,7 +16,7 @@ namespace cl
         SlabAllocator(GlobalHeap *global_heap, size_t offset, size_t slab_size);
         ~SlabAllocator();
 
-        void add_reclaim_blocker();
+        void add_reclaim_blocker() { ++n_reclaim_blockers; }
         void drop_reclaim_blocker();
         uint32_t reclaim_blocker_count() const { return n_reclaim_blockers; }
 

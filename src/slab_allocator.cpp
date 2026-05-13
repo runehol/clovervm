@@ -25,8 +25,6 @@ namespace cl
     }
     SlabAllocator::~SlabAllocator() { munmap(start_ptr, end_ptr - start_ptr); }
 
-    void SlabAllocator::add_reclaim_blocker() { ++n_reclaim_blockers; }
-
     void SlabAllocator::drop_reclaim_blocker()
     {
         assert(n_reclaim_blockers > 0);
