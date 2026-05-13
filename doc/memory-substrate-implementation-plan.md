@@ -1,0 +1,333 @@
+# Memory Substrate Implementation Plan
+
+This document is the step-by-step implementation plan for the memory substrate
+described in [Refcounting and Safepoints](refcounting-and-safepoints.md),
+[CloverVM Memory Reclamation Design](memory-allocation-reclamation.md), and
+[Layout-ID-Driven Value Scanning and Deallocation Dispatch](layout-id-driven-scanning.md).
+
+The goal is a correct single-threaded baseline for deferred reference counting,
+root discovery, heap object teardown, and slab accounting. The first pass should
+use one ordinary slab family for regular allocations; size-class routing comes
+later. The implementation should keep API shapes compatible with later
+multi-threaded safepoint coordination, but it should not attempt no-GIL
+execution, Python finalizers, cycle collection, size-class routing, or
+C-extension deallocation semantics in the first pass.
+
+## Ground Rules
+
+- Follow the durable ownership, ZCT, stack scanning, and safepoint invariants in
+  [Refcounting and Safepoints](refcounting-and-safepoints.md).
+- Follow the durable slab accounting and handoff invariants in
+  [CloverVM Memory Reclamation Design](memory-allocation-reclamation.md).
+- Follow the durable heap layout descriptor and teardown invariants in
+  [Layout-ID-Driven Value Scanning and Deallocation Dispatch](layout-id-driven-scanning.md).
+- Out-of-memory during reclamation is fatal in the baseline. Root-set
+  allocation, debug duplicate-ZCT checks, and other reclamation bookkeeping do
+  not need recovery paths in the first implementation.
+- Preserve interpreter dispatch shape and `MUSTTAIL` constraints when adding
+  safepoint polling.
+
+## First Vertical Milestone
+
+Phases 1 through 6 form one vertical correctness milestone: lifecycle/ZCT
+plumbing, slab accounting, descriptor-based teardown, safepoint arrival, root
+collection, and ZCT processing. Early phases should add internal assertions and
+focused unit tests where possible, but full semantic validation only becomes
+meaningful once every-safepoint reclamation, managed root collection, and serial
+ZCT processing are all in place.
+
+## Phase 1: Heap Lifecycle State And ZCT Plumbing
+
+1. Add a heap lifecycle state to `HeapObject`:
+   - `Normal`
+   - `InZct`
+   - `Reclaiming`
+   - `Dead`
+2. Add a per-`ThreadState` zero count table represented as
+   `std::vector<HeapObject *>`.
+3. Route `DECREF` zero transitions through a helper that performs only
+   `Normal -> InZct` and appends exactly one ZCT entry.
+4. Keep current refcount fields plain in the single-threaded implementation, but
+   isolate transitions behind helpers so a future packed atomic state can replace
+   them.
+5. Add debug assertions for illegal transitions, especially attempts to enqueue
+   `InZct`, `Reclaiming`, `Dead`, or non-reclaimable-tagged objects.
+6. Ensure every committed reclaimable allocation with `refcount == 0` is
+   explicitly enqueued in the ZCT. This is intentionally eager; slab enumeration
+   can optimize it later.
+7. Thread allocation through a reclamation context rooted in `ThreadState`.
+   Any allocation entry point that creates reclaimable objects must take or
+   recover that context.
+8. Refcount mutation is centralized through helpers in `value.h`. Audit those
+   helpers and their callers so every zero transition enqueues through the ZCT
+   path. The existing data structures were developed with "zero means enqueue"
+   in mind, but this path is lightly tested and should get focused coverage.
+
+Validation:
+
+- Unit tests for duplicate enqueue prevention.
+- Debug-only checks that every ZCT entry has lifecycle state `InZct`.
+- Tests for `OwnedValue`, `MemberValue`, and container/object stores that
+  exercise zero-refcount enqueue rather than immediate recursive destruction.
+- Cross-phase validation after Phases 4 and 5: tests showing a newly allocated
+  object that only lives in frame slots is retained while rooted and reclaimed
+  after the frame drops it.
+
+## Phase 2: Commit-Time Slab Accounting And Slab Pinning
+
+1. Split allocation into reserve, initialize, and commit concepts where needed.
+2. Rename `slab->n_live_objects` to `slab->n_reclaim_blockers` and implement the
+   counter rules from the reclamation design.
+3. Implement allocator-open reclaim blockers for ordinary slabs.
+4. Implement object-commit reclaim blockers for committed objects.
+5. Implement the same blocker rules for dedicated large-object slabs.
+6. Leave failed pre-commit construction as abandoned bump memory with no live
+   object accounting.
+7. Add or preserve enough allocator metadata to find the owning slab for a
+   committed `HeapObject *`.
+8. Introduce the global slab lookup granule map described in the reclamation
+   design, using a 4 KiB initial lookup granule.
+9. Register every granule covered by ordinary and dedicated slabs when the slab
+   is created.
+
+Validation:
+
+- Tests that failed construction before commit does not affect slab
+  reclaim-blocker counts.
+- Tests that committed objects decrement their owning slab exactly once during
+  reclamation.
+- Tests that an otherwise empty slab is not reset while installed as an active
+  allocation slab.
+- Tests that a dedicated large-object slab drops its allocator blocker
+  immediately after object commit and is reclaimed when the object blocker is
+  dropped.
+- Debug assertions that every reclaimable object maps to exactly one slab.
+
+## Phase 3: Minimal Layout Descriptor Facade
+
+1. Introduce a descriptor-shaped API for object size, owned-child scanning, and
+   native teardown, following the layout-ID design.
+2. Implement the initial native descriptor path using metadata descriptors for
+   layouts that can be described by size plus scanned `Value` regions.
+3. Bridge any still-unmigrated layout through existing `HeapLayout` decoding only
+   as a compatibility path, not as the main reclamation interface.
+4. Route reclamation child scanning and teardown through the descriptor facade,
+   not through ad hoc metadata decoding at the reclamation call sites.
+5. Add startup or debug validation that metadata descriptors match the existing
+   object layout metadata for migrated layouts.
+6. Add custom dynamic descriptor handlers only for layouts that cannot be
+   expressed cleanly by ordinary metadata descriptors.
+7. Migrate fixed native layouts to `NativeLayoutId` metadata descriptors in
+   small groups as the safepoint/ZCT invariants come online.
+8. Keep C-extension descriptor kind as a reserved design point, but do not
+   implement extension `tp_dealloc` behavior in the baseline.
+
+Validation:
+
+- Tests that reclamation uses the descriptor facade for owned-child scanning.
+- Descriptor parity tests for metadata descriptor entries as they are added.
+- Focused teardown tests for objects with owned children through the facade.
+- Dynamic-layout tests for list, tuple, string-adjacent, or other variable-size
+  objects as they are migrated.
+
+## Phase 4: Single-Threaded Safepoint Request And Arrival
+
+1. Add a global or VM-owned pending-safepoint flag.
+2. Add a safepoint scan record to `ThreadState`:
+   - `lowest_live_stack_slot`
+   - `accumulator_or_not_present`
+3. Add two bytecode forms or equivalent interpreter hooks:
+   - safepoint with no live accumulator
+   - safepoint with live accumulator
+4. Insert safepoint polls only at initial scan-safe locations:
+   - function entry after frame setup and argument adaptation
+   - normal function return while the returning frame is still installed
+   - codegen-marked loop back edges
+   Exception propagation and unwind paths are not safepoint locations in the
+   first pass.
+5. Keep the safepoint fast path as a cheap flag check that preserves hot opcode
+   handler shape.
+6. Put publishing and reclamation work in a cold slow path.
+7. Add a debug/test mode that treats every executed safepoint as a reclamation
+   trigger. In this mode, each safepoint should publish its scan record and run
+   the single-threaded reclamation path immediately, even if ordinary allocation
+   pressure would not request a safepoint. This is required for meaningful
+   reclaimer testing because it exercises root publication and ZCT processing at
+   every allowed location.
+8. Audit safepoint check placement so no check is reachable while borrowed
+   `Value`s are live only in C++ helper locals.
+
+Validation:
+
+- Interpreter tests that safepoints can be requested and reached at entry,
+  return, and loop back edges.
+- Reclamation tests run with the every-safepoint reclamation mode enabled.
+- Existing hot-path frame checks still pass for hot opcode handlers.
+- Tests that call preparation and argument adaptation are not safepoint
+  locations.
+- Tests that exception propagation and unwind paths are not safepoint locations.
+- Debug or targeted tests for helpers that must discharge borrowed values before
+  reaching a safepoint check.
+
+## Phase 5: Conservative Managed Root Collection
+
+1. Implement stack scanning from the published `lowest_live_stack_slot` up to
+   the permanent Clover frame sentinel stored in `ThreadState`.
+2. Insert every refcounted-pointer-shaped slot into a temporary
+   `absl::flat_hash_set<HeapObject *>`.
+3. Insert `accumulator_or_not_present` if it has refcounted pointer shape.
+4. Do not dereference candidate roots or validate them against allocator
+   metadata during stack scanning.
+5. Treat stack-scanned values only as a filter against the ZCT.
+6. Prefer targeted clearing only if conservative retention becomes visible in
+   tests or benchmarks.
+7. In debug builds, validate that `lowest_live_stack_slot` is within the managed
+   stack bounds and does not scan past the `ThreadState` sentinel.
+
+Validation:
+
+- Tests where a zero-refcount object is protected only by a live frame slot.
+- Tests where a zero-refcount return value is protected only by the published
+  accumulator.
+- Tests showing stale pointer-shaped non-ZCT values in scanned slots do not
+  affect correctness and are not dereferenced.
+
+## Phase 6: Serial ZCT Processing
+
+1. Build the safepoint-local root set before scanning any ZCT.
+2. Process each ZCT with index-based scan/keep compaction and a dynamic scan
+   bound.
+3. For each entry:
+   - if `refcount > 0`, transition `InZct -> Normal`
+   - if `refcount == 0` and the object is in roots, keep it in `InZct`
+   - if `refcount == 0` and the object is not in roots, transition to
+     `Reclaiming`
+4. Tear down `Reclaiming` objects through descriptor-driven child release, not
+   ordinary hot-path `decref()` calls.
+5. When child releases reach zero, append them to the ZCT currently being
+   processed so cascades can be handled in the same safepoint.
+6. After teardown, transition the object to `Dead`, decrement its slab
+   reclaim-blocker count, and make the allocation invalid for ordinary heap use.
+7. Add debug validation that no heap object appears in more than one ZCT.
+
+Validation:
+
+- Tests for root-kept ZCT entries remaining in the ZCT across safepoints.
+- Tests for positive-refcount stale ZCT entries returning to `Normal`.
+- Tests for cascaded child reclamation during the same safepoint.
+- Tests for duplicate-ZCT detection in debug builds.
+
+## Phase 7: Whole-Slab Reuse
+
+1. When object teardown decrements the slab reclaim-blocker count to zero, hand
+   the slab to `GlobalHeap` for reclamation immediately.
+2. Treat active allocation installation as a slab reclaim blocker. A slab with no
+   committed objects but still installed in a `ThreadLocalHeap` is not reusable
+   by any other allocation context.
+3. Return empty ordinary slabs to the ordinary free slab pool only after
+   no committed objects and no active allocation installation remain.
+4. Return empty dedicated large-object slabs to the appropriate dedicated slab
+   pool or release path.
+5. Keep partial-slab reuse out of the baseline.
+6. Add allocation tests that demonstrate reuse of a fully dead slab.
+
+Validation:
+
+- Tests that a slab is not reused while any committed object remains live or
+  stack-rooted.
+- Tests that a slab is not reused while still installed as a thread's active
+  allocation slab, even if no committed objects remain in it.
+- Tests that a fully reclaimed ordinary slab is reused by later ordinary
+  allocations.
+- Existing allocation and interpreter tests continue to pass.
+
+## Phase 8: Policy And Pressure
+
+1. Add ZCT growth and allocation pressure triggers after correctness tests are
+   stable.
+2. Keep multiple pending requests coalesced into one safepoint.
+3. Add debug counters for:
+   - ZCT entries processed
+   - objects reclaimed
+   - objects kept by stack roots
+   - objects returned to `Normal`
+   - slabs reused
+4. Add failure-mode tests for allocation pressure while a safepoint is pending.
+
+Validation:
+
+- Deterministic reclamation tests using every-safepoint reclamation mode.
+- Stress tests that allocate, drop, and safepoint repeatedly.
+- Counter sanity checks in debug builds.
+
+## Phase 9: Multi-Thread-Ready API Shape
+
+Do this only after the single-threaded baseline is correct.
+
+1. Have the safepoint coordinator iterate the registered `ThreadState`s already
+   tracked by `VirtualMachine`.
+2. For a thread with no managed Clover stack, publish `lowest_live_stack_slot`
+   equal to that thread's `ThreadState` sentinel.
+3. Add `Attached`, `Detached`, and `GC` states without enabling arbitrary
+   concurrent object mutation yet.
+4. Require thread exit to transfer any non-empty ZCT to another live thread.
+5. Keep root scanning parallelization and atomic packed refcount/lifecycle state
+   as later work.
+
+Validation:
+
+- Single-threaded behavior remains unchanged through the coordinator path.
+- Tests for no-managed-stack sentinel records and thread ZCT handoff once
+  threads exist.
+
+## Later Extension: Size-Class Slab Routing
+
+Do not implement size-class routing in the first pass. The baseline allocator
+uses one ordinary slab family for regular allocations, plus the existing
+dedicated path for large allocations if needed. After reclamation invariants are
+working, ordinary slabs can be split into size-class families.
+
+1. Compute final aligned allocation size before classification.
+2. Route small and medium allocations to thread-local active slabs by size
+   class.
+3. Refill exhausted active slabs from class-specific free pools before
+   allocating fresh slabs.
+4. Route allocations above the dedicated-slab threshold to one-object dedicated
+   slabs.
+5. Keep slab sizes page-aligned, quantized, and bounded by policy constants.
+
+Validation:
+
+- Tests for classification using final aligned size.
+- Tests for dedicated large-object slabs.
+- Benchmarks comparing allocation-heavy workloads before and after routing.
+
+## Explicit Non-Goals For The Baseline
+
+- Cycle collection.
+- Partial-slab reuse.
+- Python-level finalizers, weakref callbacks, or resurrection.
+- C-extension `tp_dealloc` integration.
+- Size-class slab routing.
+- Native stack scanning.
+- Per-PC safepoint maps.
+- Safepoints during call preparation or argument adaptation.
+- Safepoints during exception propagation or unwind.
+- Parallel ZCT processing.
+- Atomic no-GIL refcount/lifecycle transitions.
+
+## Completion Criteria
+
+The baseline memory substrate is complete when:
+
+1. Objects can be allocated, committed, dropped to zero heap refcount, retained
+   by managed stack roots across safepoints, and reclaimed after those roots are
+   gone. This completion criterion covers acyclic unreachable reclaimable
+   objects; reclaiming cycles is not part of the baseline.
+2. Object teardown releases owned children through descriptor-driven scanning,
+   and cascaded children can be reclaimed during the same safepoint.
+3. Slab reclaim-blocker counts match committed object lifetimes plus active
+   allocator installation, and fully unblocked slabs can be reused.
+4. Safepoint polls exist only at the agreed initial scan-safe locations.
+5. Debug checks can detect duplicate ZCT entries and missing slab ownership.
+6. `ninja -C build-debug all check` passes.

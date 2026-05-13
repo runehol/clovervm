@@ -28,11 +28,27 @@ stable dispatch key.
 ## Proposal Summary
 
 Use `NativeLayoutId` as the primary dispatch key for object scanning and
-object-specific teardown.
+object-specific teardown. In this document, "descriptor" means a VM-internal heap
+layout descriptor, not a Python attribute descriptor. It is runtime metadata that
+tells reclamation how to handle one heap layout: how large the object allocation
+is, which stored `Value` fields are owned child references, and which native
+teardown hook, if any, must run.
 
 ### Core idea
 
-Maintain a runtime table keyed by `NativeLayoutId`:
+Maintain a runtime table keyed by `NativeLayoutId`. Most native layout IDs
+should map to a normalized metadata descriptor:
+
+- object size, or enough metadata to compute it
+- scanned owned `Value` field spans
+- optional native destroy hook
+
+Custom callbacks are escape hatches for layouts that cannot be described by this
+normal form. This keeps reclamation friendly to branch prediction: most heap
+objects flow through one predictable metadata-descriptor path instead of a large,
+unpredictable per-object switch.
+
+The table still needs distinct entry kinds:
 
 - **Static-layout entries**: contain compile-time constants for
   - object size
@@ -84,7 +100,8 @@ Dispatching by layout ID introduces table lookups and potentially callback calls
 For hot paths, this is likely acceptable if:
 
 - static entries are fully inlineable via small IDs + contiguous table
-- dynamic handlers are rare/cold compared to fixed-layout objects
+- the normalized metadata-descriptor path handles most native objects
+- dynamic handlers are rare/cold compared to metadata-descriptor objects
 
 Still, this is a measurable tradeoff vs reading packed fields directly.
 
@@ -158,18 +175,33 @@ struct LayoutDescriptor {
 
 This keeps fixed objects fast while permitting non-contiguous layouts.
 
+For most native layouts, `NativeLayoutId` should look up a metadata descriptor
+rather than dispatching directly to one custom handler per heap object kind.
+Custom dynamic handlers should be reserved for layouts that genuinely cannot fit
+the normal metadata form.
+
 ## 3. Keep compact fast paths for common static layouts
 
 For top N high-frequency layouts, encode direct static recipes and size in a
 cache-hot table indexed by `NativeLayoutId`. Avoid function pointers on these
-entries to preserve branch predictability.
+entries to preserve branch predictability. Keep descriptor dispatch biased toward
+a small number of common paths: metadata descriptors first, custom dynamic
+handlers second, and extension bridges later.
 
-## 4. Make extension path explicit and isolated
+## 4. Define teardown order
+
+Teardown processes owned `Value` fields one by one. For each owned field, the
+reclamation path may read or copy the current `Value`, then it must clear the
+field in the object, and only then release the copied value through the
+reclamation path. Clearing before release prevents partially torn-down objects
+from retaining ownership if child release cascades or trips debug checks.
+
+## 5. Make extension path explicit and isolated
 
 Treat extension layouts as a first-class descriptor kind. All special behavior
 lives in one bridge layer that maps VM lifecycle to `tp_dealloc` safely.
 
-## 5. Add validation
+## 6. Add validation
 
 At startup (or in debug builds):
 
@@ -180,15 +212,19 @@ At startup (or in debug builds):
 
 ## Migration Plan
 
-1. **Introduce descriptors without deleting current metadata path.**
-   Add layout table and wire read-only verification against current metadata.
-2. **Switch scanning to descriptor path for fixed native layouts.**
-   Keep fallback to old header decode behind debug asserts.
-3. **Add dynamic handlers for variable-size builtins.**
+1. **Introduce the descriptor-shaped API without deleting current metadata.**
+   Reclamation should call this API from the start.
+2. **Implement the normalized metadata-descriptor path.**
+   Use it for layouts that can be described by size plus scanned `Value` spans.
+   Bridge still-unmigrated layouts through existing `HeapLayout` decoding as a
+   compatibility path, not as the main reclamation interface.
+3. **Migrate fixed native layouts in small groups.**
+   Validate descriptor parity against current metadata as entries are added.
+4. **Add custom dynamic handlers only where metadata descriptors are insufficient.**
    Validate parity in tests.
-4. **Introduce C-extension descriptor kind + bridge.**
+5. **Introduce C-extension descriptor kind + bridge.**
    Gate with focused extension lifecycle tests.
-5. **Remove legacy header-scanning dependence once parity is proven.**
+6. **Remove legacy header-scanning dependence once parity is proven.**
 
 ## Decision
 
@@ -199,9 +235,12 @@ scan behavior.
 In short:
 
 - **Yes** to layout-ID keyed scanning/teardown dispatch.
-- **Yes** to explicit dynamic-layout handlers.
+- **Yes** to a normalized metadata-descriptor path for most native layouts.
+- **Yes** to explicit dynamic-layout handlers where the normal metadata form is
+  insufficient.
 - **Yes** to dedicated C-extension (`tp_dealloc`) bridge kind.
-- **No** to replacing fast static decoding with generic callbacks everywhere.
+- **No** to replacing fast metadata-descriptor scanning with generic callbacks or
+  a broad unpredictable switch everywhere.
 
 A hybrid descriptor table (fast static entries + explicit dynamic/extension
 handlers) provides the flexibility you want without giving up predictable

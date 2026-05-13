@@ -6,7 +6,27 @@ We prefer to do deferred reference counting. This means that we don't refcount v
 
 This is safe, because there's no way for the heap to point at the stack.
 
-We'll also have immutable and interned values. These are marked in the value so you don't have to dereference them, and the refcount itself will be `-1`. The `INCREF` and `DECREF` operations will be performed using atomic operations.
+We'll also have non-reclaimable immortal/interned values. These are marked in
+the value so you don't have to dereference them, and the refcount itself will be
+`-1`. The `INCREF` and `DECREF` operations will be performed using atomic
+operations for reclaimable heap references.
+
+Reclaimability is determined by allocation heap and pointer tag, not by the
+semantic type of the object. Objects allocated from a `ThreadState`'s
+thread-local refcounted heap are reclaimable and use the refcounted pointer tag,
+currently `value_refcounted_ptr_tag == 0x10`. VM startup objects, code objects,
+modules, and other long-lived runtime objects may still be reclaimable if they
+are allocated from a thread-local refcounted heap.
+
+The global immortal heap is not reclaimable. Objects allocated there use the
+non-reclaimable pointer storage class, currently represented by
+`value_interned_ptr_tag == 0x08`, have `refcount == -1`, never enter the ZCT, and
+are skipped by the reclaimable-object lifecycle. The current
+`value_interned_ptr_tag` couples two concepts: interned value semantics, where
+pointer equality implies value equality, and immortal lifetime, where the
+allocation is never reclaimed. The implementation may keep them tied together
+for now, but the design should name the concepts separately so later storage
+classes do not inherit the wrong semantic assumption.
 
 Whenever we `DECREF` an object and it reaches zero, we do not delete it immediately, simply put it on a zero-count table to delete later. One array per thread to avoid threading issues. When we run out of slab memory or the zero count table overflows, it's time to free unused memory. At that point, we bring the threads to a safe point, where the managed Clover stacks are no longer being changed, and we look at the zero count tables. Objects still referenced from managed stacks stay in the zero count table for the next safepoint. Objects with no heap refcount and no stack reference are deleted, which may `DECREF` members of these objects. Note that children themselves can be pointed-to from the managed stacks.
 
@@ -108,8 +128,14 @@ The intended transitions are:
 - `Reclaiming -> Dead`: teardown has completed and the allocation is no longer
   a valid heap object.
 
-`Reclaiming` and `Dead` objects must never be enqueued. Immortal and interned
-objects do not participate in this reclaimable-object lifecycle.
+`Reclaiming` and `Dead` objects must never be enqueued. Objects with the
+non-reclaimable pointer storage class do not participate in this
+reclaimable-object lifecycle.
+
+Any allocation entry point that creates reclaimable objects must take or recover
+the owning `ThreadState` reclamation context so allocation-time ZCT enqueue has a
+well-defined destination. Allocation entry points for the global immortal heap do
+not enqueue ZCT entries.
 
 For the current single-threaded implementation, refcount and lifecycle state may
 be plain fields. The GIL-less design should treat them as one logical atomic
@@ -154,14 +180,16 @@ The initial implementation should conservatively scan the managed stack slice
 published by safepoint arrival:
 
 1. Read from `lowest_live_stack_slot` upward to the permanent Clover frame
-   sentinel.
+   sentinel stored in `ThreadState`.
 2. Include frame headers and any other slots in that published range.
 3. For each slot, if it has refcounted-pointer shape, insert the
    `HeapObject *` into the root set.
 4. If `accumulator_or_not_present` is a refcounted heap pointer, insert it too.
 
 This set is only a safepoint-local protection filter. It does not increment
-refcounts and it does not remove objects from the ZCT.
+refcounts and it does not remove objects from the ZCT. If the scanner finds a
+stale pointer-shaped value that is not an object currently present in the ZCT, it
+must not dereference that value and it has no reclamation effect.
 
 The stack scanner must not dereference candidate pointers or consult allocator
 metadata to validate them. Conservative scans may encounter stale values that
@@ -192,6 +220,11 @@ accumulator is not saved into the frame merely for safepointing; if it is live,
 safepoint arrival publishes it in `accumulator_or_not_present`. Otherwise that
 field is `Value::not_present()`.
 
+An empty managed stack does not need a separate scan-record shape; it is
+represented by `lowest_live_stack_slot` equal to the `ThreadState` sentinel.
+Debug builds should validate that `lowest_live_stack_slot` is within the managed
+stack bounds and does not scan past the sentinel.
+
 The initial scanner does not need to walk frame headers as a linked frame chain.
 If a future scanner needs frame-structured traversal, the safepoint check
 instruction can also checkpoint the current `fp`, but that is not part of the
@@ -207,16 +240,17 @@ does not necessarily know the full runtime extent created by adaptation.
 
 The initial interpreter reclamation design should therefore only allow
 safepoints at places where the outgoing argument area is known dead: function
-entry, function return to the caller, and loop back branches. At those points,
-the outgoing argument area does not need to be scanned.
+entry, normal function return to the caller, and loop back branches. Exception
+propagation and unwind paths are not safepoint locations. At those points, the
+outgoing argument area does not need to be scanned.
 
 These safepoint locations also give useful liveness facts:
 
 - At function entry, the callee's locals and temporaries are dead or
   uninitialized. Parameters and frame headers are live. The safepoint encodes
   `lowest_live_stack_slot = fp` and uses the no-accumulator opcode form.
-- At function return, the safepoint occurs while the returning frame is still
-  installed. The returning frame's locals and temporaries are dead, and the
+- At normal function return, the safepoint occurs while the returning frame is
+  still installed. The returning frame's locals and temporaries are dead, and the
   return value lives in the accumulator carried by the published interpreter
   state. The safepoint can conservatively publish the returning frame's `fp` as
   the lowest live stack slot, scanning upward through its header/parameters and
@@ -236,7 +270,7 @@ These safepoint locations also give useful liveness facts:
   The safepoint encodes the lowest live local slot and uses the no-accumulator
   opcode form.
 
-Only function-return safepoints normally publish the accumulator as live.
+Only normal function-return safepoints normally publish the accumulator as live.
 Function-entry and loop-back safepoints normally publish `Value::not_present()`
 for `accumulator_or_not_present`; the instruction encoding still makes
 accumulator liveness explicit rather than something the scanner guesses.
@@ -248,6 +282,11 @@ or narrower interpreter scans are allowed without per-PC safepoint maps.
 Do not try to support safepoints during call preparation or argument adaptation
 by reconstructing a dynamic outgoing-argument extent. That path is too subtle to
 make into a reliable root-scanning contract.
+
+Native helpers must not reach a safepoint while holding borrowed `Value`s only
+on the C++ stack. Before any safepoint check, borrowed values that must remain
+live must be discharged onto the Clover managed stack or otherwise owned by a
+heap/native owner.
 
 Function entry means after the callee frame is fully established and after
 argument adaptation has completed. It does not mean the caller's function-call
@@ -263,11 +302,14 @@ For the first version, a conservative root set such as
 temporaries or outgoing call slots may retain zero-refcount objects for extra
 safepoints, but they do not compromise memory safety.
 
-Stack hygiene can reduce conservative-scan retention. Frame slots should be
+Stack hygiene can reduce conservative-scan retention. Frame slots may be
 initialized to non-pointer sentinels, and codegen may clear known-dead
 temporaries or outgoing call windows around safepoint-capable operations. This
 clearing is root-set hygiene only; stack slots do not own references and must
-not `DECREF` when cleared.
+not `DECREF` when cleared. It is not a correctness requirement: conservative
+scans may find stale pointer-shaped values in frame slots, and those values are
+harmless as long as the scanner treats roots only as a filter against ZCT
+entries and never dereferences non-ZCT candidates.
 
 If stale frame values become a practical retention problem, prefer eager
 clearing of dead frame slots over per-PC frame maps. Per-PC safepoint maps remain
@@ -299,7 +341,8 @@ a slow path that publishes the safepoint's stack-scan record and enters
 coordination/reclamation.
 
 The first implementation can be single-threaded, but the API shape should leave
-room for a global coordinator that knows every registered `ThreadState`.
+room for a global coordinator that iterates the registered `ThreadState`s tracked
+by `VirtualMachine`.
 
 Future multi-threading should use a
 [CPython/PEP-703-style thread status model](https://peps.python.org/pep-0703/#thread-states):
@@ -314,7 +357,8 @@ Future multi-threading should use a
   reclamation cycle. Its scan record is stable.
 
 Every registered thread has a stack-scan record. "No managed Clover stack" is
-represented as an empty stack slice, not as a separate state:
+represented by a stack slice whose lower bound is the sentinel, not as a separate
+state:
 
 ```text
 lowest_live_stack_slot == stack_sentinel
@@ -353,9 +397,9 @@ point.
 ### 2. Arrival
 
 Attached threads poll the global flag at allowed safepoint instructions:
-function entry, function return, and codegen-marked loop back edges. If the flag
-is clear, the hot path continues. If the flag is set, the slow path publishes the
-thread's stack-scan record:
+function entry, normal function return, and codegen-marked loop back edges. If
+the flag is clear, the hot path continues. If the flag is set, the slow path
+publishes the thread's stack-scan record:
 
 - `lowest_live_stack_slot`;
 - `accumulator_or_not_present`;
@@ -366,7 +410,8 @@ heap ownership until reclamation is complete.
 
 Detached threads do not need to execute an arrival slow path, but they must have
 left behind a stable scan record at detach time. If the detached thread has no
-managed Clover stack, that record is simply an empty stack slice.
+managed Clover stack, that record publishes `lowest_live_stack_slot` equal to
+that thread's sentinel.
 
 ### 3. Quiescence
 
@@ -419,8 +464,8 @@ next safepoint.
 
 ZCT processing should be serial in the first multi-thread-capable design. Unlike
 root scanning, it mutates lifecycle state, compacts ZCTs, runs teardown, appends
-cascaded zero-count children, and updates slab live counts. These operations are
-too subtle to parallelize before the basic invariants are proven.
+cascaded zero-count children, and updates slab reclaim-blocker counts. These
+operations are too subtle to parallelize before the basic invariants are proven.
 
 A single heap object must appear in at most one ZCT across the whole VM. This is
 enforced by the object lifecycle state: only the transition `Normal -> InZct`
@@ -437,10 +482,10 @@ lifecycle bugs.
 
 ### 6. Slab Accounting And Reuse
 
-When object teardown is complete, the owning slab's live-object count is
-decremented. If it reaches zero, the slab can be reset and returned to the
-appropriate free pool. Slab lookup uses the global slab lookup granule map
-described in [CloverVM Memory Reclamation Design](memory-allocation-reclamation.md).
+When object teardown is complete, the owning slab's reclaim-blocker count is
+decremented. If it reaches zero, the slab is handed to `GlobalHeap` for
+reclamation. Slab lookup uses the global slab lookup granule map described in
+[CloverVM Memory Reclamation Design](memory-allocation-reclamation.md).
 
 Teardown may process owned child fields word-by-word. For each owned field, it
 should copy the child value, clear the field's ownership in the object, and then
@@ -483,8 +528,9 @@ header layout are later design topics.
 
 The accumulator is represented in safepoint records as
 `accumulator_or_not_present`. Initial interpreter safepoints publish it only at
-function return, where it carries the return value. Function-entry and loop-back
-safepoints publish `Value::not_present()`. Future JIT exits or native/managed
-transitions must follow the same rule: any live accumulator/register value that
-is not present in the managed stack slice must be published explicitly in the
-transition's scan record or owned by native code through refcounting.
+normal function return, where it carries the return value. Function-entry and
+loop-back safepoints publish `Value::not_present()`. Future JIT exits or
+native/managed transitions must follow the same rule: any live
+accumulator/register value that is not present in the managed stack slice must be
+published explicitly in the transition's scan record or owned by native code
+through refcounting.

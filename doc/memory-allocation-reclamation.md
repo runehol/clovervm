@@ -1,4 +1,4 @@
-# CloverVM Memory Reclamation Design (with Size-Class Slabs)
+# CloverVM Memory Reclamation Design
 
 ## Overview
 
@@ -8,7 +8,6 @@ This document describes the memory reclamation strategy for CloverVM. The design
 - Atomic reference counting (RC)
 - Deferred reclamation via safepoints
 - Whole-slab reuse
-- Size-class slabs for small and medium-sized objects
 
 The system is explicitly non-moving to preserve object address stability, which is required for compatibility with C extensions and direct pointer usage.
 
@@ -18,19 +17,27 @@ The design is structured so that:
 - memory reuse initially occurs at slab granularity
 - allocation remains fast by routing requests to thread-local active slabs
 
+The first implementation uses one ordinary slab family for regular allocations.
+Size-class slabs are a later extension; they improve placement but do not change
+the lifetime or reclamation model.
+
 ---
 
 ## Allocation Architecture
 
 ### Thread-Local Allocation
 
-Each thread owns a `ThreadLocalHeap` containing a set of current slab allocators, one per size class:
+Each thread owns a `ThreadLocalHeap` containing its current ordinary slab
+allocator:
 
-- Allocation is performed via bump pointer within the current slab for the selected size class.
+- Allocation is performed via bump pointer within the current slab.
 - This path is lock-free and extremely fast.
-- When the slab for a size class is exhausted, a new slab is requested from the global heap or reused from the free slab pool for that class.
+- When the slab is exhausted, it is closed for allocation and a new slab is
+  requested from the global heap or reused from the ordinary free slab pool.
 
-This preserves the fast-path property of the original design while improving packing and reducing fragmentation caused by mixing very different object sizes in the same slab.
+This preserves the fast-path property of the original design. Later size-class
+routing can improve packing and reduce fragmentation caused by mixing very
+different object sizes in the same slab.
 
 ### Global Heap
 
@@ -46,6 +53,11 @@ It is not involved in per-object allocation on the fast path.
 ---
 
 ## Size Classes
+
+Size-class slabs are not part of the first implementation pass. The baseline
+allocator has one ordinary slab family for regular allocations. The size-class
+design below is a later extension that should not obscure the core reclamation
+invariants.
 
 ### Classification
 
@@ -103,9 +115,16 @@ Objects exceeding a size threshold are allocated separately:
 - The slab contains exactly one object.
 - This slab is logically owned by the allocating thread.
 
-This simplifies reclamation: when the object is reclaimed, the entire slab becomes reusable.
+Dedicated large-object slabs follow the same reclaim-blocker rules as ordinary
+slabs. The allocator holds a reclaim blocker while creating the dedicated slab,
+the committed object holds its own reclaim blocker, and the allocator
+immediately drops its blocker because the dedicated slab is closed to further
+allocation. When the object blocker later drops to zero, the slab is handed to
+`GlobalHeap`.
 
-The dedicated-slab threshold is a policy decision, but it should be tied to the slab sizing strategy and should prevent oversized objects from being mixed into ordinary size-class slabs.
+The dedicated-slab threshold is a policy decision. It should prevent oversized
+objects from being mixed into ordinary slabs, and later size-class routing should
+keep the threshold consistent with its slab sizing strategy.
 
 ---
 
@@ -143,14 +162,23 @@ This ensures correctness in the presence of:
 
 Each slab maintains:
 
-- `n_live_objects`: number of committed, live objects in the slab
-- size-class identity or slab kind metadata
+- `n_reclaim_blockers`: number of current reasons the slab cannot be reclaimed
+- slab family or slab kind metadata
 - allocation bounds / bump pointer state
 
-`n_live_objects` is better understood as a committed live-object count than as
-an allocation counter. It is incremented only after an object has been
-constructed far enough that it can be safely torn down, and it is decremented
-only after final reclamation of that object.
+`n_reclaim_blockers` is the authoritative first-pass slab lifetime invariant. A
+slab is reclaimed when this counter reaches zero. Do not require a separate slab
+state enum for correctness in the first design.
+
+The counter has two sources:
+
+- an allocator that has a slab open for allocation holds one reclaim blocker on
+  that slab, and drops it when the slab is closed for allocation;
+- each committed object allocated on the slab holds one reclaim blocker, and
+  drops it when the object is deallocated.
+
+This means a slab with no committed objects is still not reusable if it remains
+installed as an active allocation slab.
 
 ### Object Commitment
 
@@ -159,7 +187,7 @@ Object allocation proceeds in two phases:
 1. Reserve raw memory via bump allocation from the selected slab.
 2. Initialize object state sufficiently for safe teardown.
 3. Commit the object:
-   - increment `slab->n_live_objects`
+   - increment `slab->n_reclaim_blockers`
    - make the object visible to the system
 
 Only committed objects participate in reference counting and reclamation.
@@ -175,23 +203,26 @@ At safepoint:
 
 - each truly dead object is:
   - finalized (destructor / field `DECREF`)
-  - accounted for by decrementing its slab’s `n_live_objects`
+  - accounted for by decrementing its slab’s `n_reclaim_blockers`
 
 Finalization may `DECREF` child objects. If those children reach zero, they are
 added to the active ZCT and may be processed during the same safepoint.
 
 ### Whole-Slab Reuse
 
-- when `slab->n_live_objects == 0`, the slab is fully dead
-- the slab is returned to the free slab pool for its size class, or to the appropriate pool for its slab kind
-- future allocations may reuse slabs from that pool instead of allocating new ones
+- when `slab->n_reclaim_blockers == 0`, the slab is handed to `GlobalHeap`
+  immediately for reclamation
+- `GlobalHeap` owns the policy for deallocating it with `munmap` or retaining it
+  on a free slab list for later reuse
+- future allocations may reuse slabs retained by `GlobalHeap` instead of
+  allocating new ones
 
 At this stage, memory reuse occurs only at whole-slab granularity.
 
 ### Slab Lookup
 
 Reclamation needs to find the owning slab for a dead `HeapObject *` so it can
-decrement the slab's live-object count and eventually recycle the slab. The
+decrement the slab's reclaim-blocker count and eventually recycle the slab. The
 object header should not carry a per-object slab pointer. Instead, slab
 ownership is allocator metadata.
 
@@ -250,19 +281,23 @@ updated only on slab creation/destruction or when slab address ranges change,
 under the heap lock. Reclamation reads it during safepoints, when attached
 threads have stopped mutating managed stacks, ZCTs, and heap object ownership.
 Dedicated large-object slabs use the same registration mechanism as ordinary
-size-class slabs.
+slabs.
 
 ---
 
 ## Allocation Fast Path
 
-For ordinary objects, allocation proceeds as follows:
+For ordinary objects in the first implementation, allocation proceeds as
+follows:
 
 1. Compute final aligned allocation size.
-2. Select a size class from that allocation size.
-3. Attempt bump allocation from the thread’s current slab for that class.
-4. If exhausted, refill from the class-specific free slab pool or allocate a fresh slab from the global heap.
-5. If the allocation exceeds the dedicated-slab threshold, bypass the size-class slab system and allocate a dedicated slab.
+2. Attempt bump allocation from the thread’s current ordinary slab.
+3. If exhausted, close the current slab for allocation, dropping the allocator's
+   reclaim blocker.
+4. Refill from the ordinary free slab pool or allocate a fresh slab from the
+   global heap.
+5. If the allocation exceeds the dedicated-slab threshold, bypass the ordinary
+   slab path and allocate a dedicated slab.
 
 This preserves a simple fast path while avoiding general-purpose free-list allocation.
 
@@ -276,8 +311,10 @@ This preserves a simple fast path while avoiding general-purpose free-list alloc
 
 ### Slab Counters
 
-- `slab->n_live_objects` is non-atomic.
-- It is only modified during controlled reclamation phases.
+- `slab->n_reclaim_blockers` is non-atomic in the first single-threaded design.
+- Object blockers are dropped during controlled reclamation phases. Allocator
+  blockers are added when a slab is opened for allocation and dropped when that
+  slab is closed for allocation.
 - Slabs are logically owned by a single thread for allocation purposes.
 
 ### Global Structures
@@ -291,12 +328,14 @@ This preserves a simple fast path while avoiding general-purpose free-list alloc
 
 To maintain correctness:
 
-- `slab->n_live_objects` is incremented only after successful object commitment.
+- `slab->n_reclaim_blockers` is incremented for an object only after successful
+  object commitment.
 - If object construction fails before commit:
   - the reserved memory is abandoned
   - no slab accounting is affected
 
-This ensures that every increment of `n_live_objects` corresponds to exactly one eventual decrement during reclamation.
+This ensures that every object-commit increment of `n_reclaim_blockers`
+corresponds to exactly one eventual decrement during reclamation.
 
 ---
 
@@ -306,7 +345,7 @@ This ensures that every increment of `n_live_objects` corresponds to exactly one
 
 - Fast allocation path (bump pointer, thread-local)
 - No object movement (stable addresses)
-- Better placement for similarly sized objects
+- Simple whole-slab reuse path
 - Simple reclamation model
 - Low synchronization overhead
 
@@ -315,7 +354,8 @@ This ensures that every increment of `n_live_objects` corresponds to exactly one
 - No partial slab reuse (fragmentation from mixed lifetimes remains possible)
 - Cyclic garbage is not reclaimed
 - Reclamation is delayed until safepoints
-- More active slab state is maintained per thread than in the single-slab design
+- Size-class routing is deferred, so early placement may mix object sizes within
+  ordinary slabs
 
 ---
 
@@ -347,12 +387,15 @@ Possible future improvements include:
 
 ## Summary
 
-The system combines deferred reference counting with size-class slab allocation and whole-slab reclamation:
+The system combines deferred reference counting with thread-local slab
+allocation and whole-slab reclamation:
 
 - allocation is fast and thread-local
 - object liveness is determined by RC + ZCT + safepoint validation
-- small and medium objects are routed to size-class slabs
+- the first implementation uses one ordinary slab family for regular allocations
 - large objects use dedicated slabs
 - memory reuse occurs at slab granularity
 
-This provides a simple, correct, and performant baseline that improves object placement without introducing partial-slab reuse complexity.
+This provides a simple, correct, and performant baseline without introducing
+partial-slab reuse complexity. Size-class slabs can be added later to improve
+object placement without changing the core reclamation model.
