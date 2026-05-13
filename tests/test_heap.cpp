@@ -1,4 +1,6 @@
 #include "heap_object_scan.h"
+#include "refcount.h"
+#include "test_helpers.h"
 #include "thread_local_heap.h"
 
 #include <gtest/gtest.h>
@@ -141,6 +143,8 @@ TEST(HeapObjectScan, CompactLayoutWithValueSpan)
 {
     static_assert(!ScanObject::has_dynamic_layout);
     ScanObject obj;
+    obj.values[0] = Value::from_smi(11);
+    obj.values[1] = Value::from_smi(22);
 
     HeapScanDescriptor descriptor = heap_scan_descriptor_for_object(&obj);
 
@@ -148,6 +152,34 @@ TEST(HeapObjectScan, CompactLayoutWithValueSpan)
               descriptor.first_value_offset_in_words);
     EXPECT_EQ(2u, descriptor.value_count);
     EXPECT_EQ(&obj.values[0], heap_first_value_slot(&obj, descriptor));
+}
+
+TEST(HeapObjectScan, DeallocatorClearsSlotsAndReleasesValues)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    GlobalHeap heap = GlobalHeap::refcounted_heap();
+    ThreadLocalHeap local_heap(&heap);
+
+    ScanObject owner;
+    ScanObject *child = local_heap.make<ScanObject>();
+    incref(child);
+    Value child_value;
+    child_value.as.ptr = child;
+    owner.values[0] = child_value;
+    owner.values[1] = Value::from_smi(22);
+
+    deallocate_heap_object_values(&owner);
+
+    EXPECT_EQ(0, child->refcount);
+    EXPECT_TRUE(owner.values[0].is_not_present());
+    EXPECT_TRUE(owner.values[1].is_not_present());
+
+    deallocate_heap_object_values(&owner);
+
+    EXPECT_TRUE(owner.values[0].is_not_present());
+    EXPECT_TRUE(owner.values[1].is_not_present());
+    EXPECT_EQ(2u, heap_scan_descriptor_for_object(&owner).value_count);
 }
 
 TEST(HeapObjectScan, ExpandedLayoutWithValueSpan)

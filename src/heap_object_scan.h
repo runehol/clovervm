@@ -2,6 +2,7 @@
 #define CL_HEAP_OBJECT_SCAN_H
 
 #include "heap_object.h"
+#include "refcount.h"
 #include "value.h"
 #include <cassert>
 #include <cstdint>
@@ -46,6 +47,18 @@ namespace cl
         return reinterpret_cast<const Value *>(
             reinterpret_cast<const uint64_t *>(obj) +
             descriptor.first_value_offset_in_words);
+    }
+
+    inline void deallocate_heap_object_values(HeapObject *obj)
+    {
+        HeapScanDescriptor descriptor = heap_scan_descriptor_for_object(obj);
+        Value *slots = heap_first_value_slot(obj, descriptor);
+        for(uint32_t i = 0; i < descriptor.value_count; ++i)
+        {
+            Value value = slots[i];
+            slots[i] = Value::not_present();
+            decref(value);
+        }
     }
 }  // namespace cl
 
