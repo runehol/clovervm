@@ -2,18 +2,32 @@
 
 #include <gtest/gtest.h>
 #include <new>
+#include <stdexcept>
 
 using namespace cl;
+
+namespace
+{
+    class ThrowingHeapObject : public HeapObject
+    {
+    public:
+        CL_DECLARE_STATIC_LAYOUT_NO_VALUES(ThrowingHeapObject);
+
+        ThrowingHeapObject() : HeapObject(compact_layout())
+        {
+            throw std::runtime_error("construction failed");
+        }
+    };
+}  // namespace
 
 TEST(GlobalHeap, SlabMapFindsAllocatedAddresses)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
-    HeapAllocation allocation = local_heap.allocate(sizeof(HeapObject));
+    char *memory = local_heap.allocate(sizeof(HeapObject));
 
-    EXPECT_EQ(allocation.slab,
-              heap.slab_for_address_unlocked(allocation.memory));
+    EXPECT_NE(nullptr, heap.slab_for_address_unlocked(memory));
 }
 
 TEST(GlobalHeap, ThreadLocalHeapPinsActiveAllocatorSlab)
@@ -22,25 +36,22 @@ TEST(GlobalHeap, ThreadLocalHeapPinsActiveAllocatorSlab)
 
     {
         ThreadLocalHeap local_heap(&heap);
-        HeapAllocation allocation = local_heap.allocate(sizeof(HeapObject));
-        SlabAllocator *slab = heap.slab_for_address_unlocked(allocation.memory);
+        char *memory = local_heap.allocate(sizeof(HeapObject));
+        SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
 
-        EXPECT_EQ(1u, slab->reclaim_blocker_count());
+        EXPECT_EQ(2u, slab->reclaim_blocker_count());
     }
 }
 
-TEST(GlobalHeap, CommittedOrdinaryObjectAddsReclaimBlocker)
+TEST(GlobalHeap, OrdinaryAllocationAddsObjectBlocker)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
-    HeapAllocation allocation = local_heap.allocate(sizeof(HeapObject));
-    ASSERT_EQ(1u, allocation.slab->reclaim_blocker_count());
+    char *memory = local_heap.allocate(sizeof(HeapObject));
+    SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
 
-    HeapObject *obj = new(allocation.memory) HeapObject(0);
-    commit_heap_allocation(allocation, obj);
-
-    EXPECT_EQ(2u, allocation.slab->reclaim_blocker_count());
+    EXPECT_EQ(2u, slab->reclaim_blocker_count());
 }
 
 TEST(GlobalHeap, OpeningNewOrdinarySlabDropsPreviousAllocatorBlocker)
@@ -48,37 +59,50 @@ TEST(GlobalHeap, OpeningNewOrdinarySlabDropsPreviousAllocatorBlocker)
     GlobalHeap heap = GlobalHeap::refcounted_heap(SlabLookupGranuleSize);
     ThreadLocalHeap local_heap(&heap);
 
-    HeapAllocation first = local_heap.allocate(SlabLookupGranuleSize / 2);
-    ASSERT_EQ(1u, first.slab->reclaim_blocker_count());
+    char *first = local_heap.allocate(SlabLookupGranuleSize / 2);
+    SlabAllocator *first_slab = heap.slab_for_address_unlocked(first);
+    ASSERT_EQ(2u, first_slab->reclaim_blocker_count());
 
-    HeapAllocation second = local_heap.allocate(SlabLookupGranuleSize / 2);
+    char *second = local_heap.allocate(SlabLookupGranuleSize / 2);
+    SlabAllocator *second_slab = heap.slab_for_address_unlocked(second);
 
-    EXPECT_NE(first.slab, second.slab);
-    EXPECT_EQ(1u, second.slab->reclaim_blocker_count());
+    EXPECT_NE(first_slab, second_slab);
+    EXPECT_EQ(1u, first_slab->reclaim_blocker_count());
+    EXPECT_EQ(2u, second_slab->reclaim_blocker_count());
 }
 
-TEST(GlobalHeap, DedicatedLargeAllocationHasNoAllocatorBlocker)
+TEST(GlobalHeap, DedicatedLargeAllocationAddsObjectBlocker)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
-    HeapAllocation allocation = local_heap.allocate(LargeAllocationSize);
-    ASSERT_EQ(0u, allocation.slab->reclaim_blocker_count());
+    char *memory = local_heap.allocate(LargeAllocationSize);
+    SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
 
-    HeapObject *obj = new(allocation.memory) HeapObject(0);
-    commit_heap_allocation(allocation, obj);
-
-    EXPECT_EQ(1u, allocation.slab->reclaim_blocker_count());
+    EXPECT_EQ(1u, slab->reclaim_blocker_count());
 }
 
-TEST(GlobalHeap, DedicatedLargeAllocationAbortHasNoBlockerCleanup)
+TEST(GlobalHeap, DedicatedLargeAllocationConstructionFailureDropsObjectBlocker)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
-    HeapAllocation allocation = local_heap.allocate(LargeAllocationSize);
+    char *memory = local_heap.allocate(LargeAllocationSize);
+    local_heap.drop_reclaim_blocker_for_failed_construction(memory);
 
-    EXPECT_EQ(0u, allocation.slab->reclaim_blocker_count());
+    SUCCEED();
+}
+
+TEST(GlobalHeap, FailedConstructionDropsObjectBlocker)
+{
+    GlobalHeap heap = GlobalHeap::refcounted_heap();
+    ThreadLocalHeap local_heap(&heap);
+
+    EXPECT_THROW(local_heap.make<ThrowingHeapObject>(), std::runtime_error);
+
+    char *memory = local_heap.allocate(sizeof(HeapObject));
+    SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
+    EXPECT_EQ(2u, slab->reclaim_blocker_count());
 }
 
 TEST(GlobalHeap, InternedHeapTracksReclaimBlockers)
@@ -86,10 +110,8 @@ TEST(GlobalHeap, InternedHeapTracksReclaimBlockers)
     GlobalHeap heap = GlobalHeap::interned_heap();
     ThreadLocalHeap local_heap(&heap);
 
-    HeapAllocation allocation = local_heap.allocate(sizeof(HeapObject));
-    ASSERT_EQ(1u, allocation.slab->reclaim_blocker_count());
+    char *memory = local_heap.allocate(sizeof(HeapObject));
+    SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
 
-    commit_heap_allocation(allocation, new(allocation.memory) HeapObject(0));
-
-    EXPECT_EQ(2u, allocation.slab->reclaim_blocker_count());
+    EXPECT_EQ(2u, slab->reclaim_blocker_count());
 }

@@ -19,15 +19,7 @@ namespace cl
     static constexpr size_t SlabLookupGranuleSize = size_t(1)
                                                     << SlabLookupGranuleShift;
 
-    struct HeapAllocation
-    {
-        char *memory;
-        SlabAllocator *slab;
-    };
-
     uintptr_t slab_lookup_key_for_address(const void *ptr);
-    void commit_heap_allocation(const HeapAllocation &allocation,
-                                HeapObject *obj);
 
     template <typename T, typename = void>
     struct HasObjectLayout : std::false_type
@@ -42,8 +34,25 @@ namespace cl
     {
     };
 
-    template <typename T, typename AllocateFn, typename... Args>
-    T *construct_dynamic_object(AllocateFn &&allocate_fn, Args &&...args)
+    template <typename Heap, typename T, typename... Args>
+    T *construct_static_object(Heap *heap, Args &&...args)
+    {
+        static_assert(std::is_base_of_v<HeapObject, T>);
+
+        char *memory = heap->allocate(sizeof(T));
+        try
+        {
+            return new(memory) T(std::forward<Args>(args)...);
+        }
+        catch(...)
+        {
+            heap->drop_reclaim_blocker_for_failed_construction(memory);
+            throw;
+        }
+    }
+
+    template <typename T, typename Heap, typename... Args>
+    T *construct_dynamic_object(Heap *heap, Args &&...args)
     {
         static_assert(std::is_base_of_v<HeapObject, T>);
         static_assert(HasObjectLayout<T>::value && T::has_dynamic_layout);
@@ -60,27 +69,38 @@ namespace cl
             HeapLayout layout = encode_compact_layout_unchecked(
                 spec.object_size_in_16byte_units, value_offset_in_words,
                 spec.value_count);
-            HeapAllocation allocation = allocate_fn(object_size_in_bytes);
-            T *obj =
-                new(allocation.memory) T(layout, std::forward<Args>(args)...);
-            commit_heap_allocation(allocation, obj);
-            return obj;
+            char *memory = heap->allocate(object_size_in_bytes);
+            try
+            {
+                return new(memory) T(layout, std::forward<Args>(args)...);
+            }
+            catch(...)
+            {
+                heap->drop_reclaim_blocker_for_failed_construction(memory);
+                throw;
+            }
         }
 
         size_t allocation_size_in_bytes =
             sizeof(ExpandedHeader) + object_size_in_bytes;
-        HeapAllocation allocation = allocate_fn(allocation_size_in_bytes);
-        ExpandedHeader *header =
-            reinterpret_cast<ExpandedHeader *>(allocation.memory);
-        header->object_size_in_16byte_units = spec.object_size_in_16byte_units;
-        header->value_count = spec.value_count;
+        char *memory = heap->allocate(allocation_size_in_bytes);
+        try
+        {
+            ExpandedHeader *header = reinterpret_cast<ExpandedHeader *>(memory);
+            header->object_size_in_16byte_units =
+                spec.object_size_in_16byte_units;
+            header->value_count = spec.value_count;
 
-        HeapLayout layout =
-            encode_expanded_layout_unchecked(value_offset_in_words);
-        T *obj = new(allocation.memory + sizeof(ExpandedHeader))
-            T(layout, std::forward<Args>(args)...);
-        commit_heap_allocation(allocation, obj);
-        return obj;
+            HeapLayout layout =
+                encode_expanded_layout_unchecked(value_offset_in_words);
+            return new(memory + sizeof(ExpandedHeader))
+                T(layout, std::forward<Args>(args)...);
+        }
+        catch(...)
+        {
+            heap->drop_reclaim_blocker_for_failed_construction(memory);
+            throw;
+        }
     }
 
     static constexpr size_t DefaultSlabSize = 65536;
@@ -107,10 +127,12 @@ namespace cl
             return GlobalHeap(value_interned_ptr_tag, slab_size);
         }
 
-        HeapAllocation allocate_large_object(
+        char *allocate_large_object(
             size_t n_bytes);  // slow path allocation for large objects
 
-        HeapAllocation allocate_global(size_t n_bytes);
+        char *allocate(size_t n_bytes) { return allocate_global(n_bytes); }
+        char *allocate_global(size_t n_bytes);
+        void drop_reclaim_blocker_for_failed_construction(char *memory);
 
         template <typename T, typename... Args>
         T *make_global_internal_raw(Args &&...args)
@@ -118,16 +140,13 @@ namespace cl
             static_assert(std::is_base_of_v<HeapObject, T>);
             if constexpr(HasObjectLayout<T>::value && T::has_dynamic_layout)
             {
-                return construct_dynamic_object<T>(
-                    [this](size_t n_bytes) { return allocate_global(n_bytes); },
-                    std::forward<Args>(args)...);
+                return construct_dynamic_object<T>(this,
+                                                   std::forward<Args>(args)...);
             }
             else
             {
-                HeapAllocation allocation = allocate_global(sizeof(T));
-                T *obj = new(allocation.memory) T(std::forward<Args>(args)...);
-                commit_heap_allocation(allocation, obj);
-                return obj;
+                return construct_static_object<GlobalHeap, T>(
+                    this, std::forward<Args>(args)...);
             }
         }
 
@@ -173,7 +192,7 @@ namespace cl
         ~ThreadLocalHeap();
 
         // allocation fast path
-        HeapAllocation allocate(size_t n_bytes)
+        char *allocate(size_t n_bytes)
         {
             if(n_bytes >= LargeAllocationSize)
             {
@@ -183,7 +202,8 @@ namespace cl
             char *result = local_allocator->allocate(n_bytes);
             if(likely(result != nullptr))
             {
-                return HeapAllocation{result, local_allocator};
+                local_allocator->add_reclaim_blocker();
+                return result;
             }
 
             SlabAllocator *old_allocator = local_allocator;
@@ -193,8 +213,11 @@ namespace cl
             drop_allocator_reclaim_blocker(old_allocator);
             char *memory = local_allocator->allocate(n_bytes);
             assert(memory != nullptr);
-            return HeapAllocation{memory, local_allocator};
+            local_allocator->add_reclaim_blocker();
+            return memory;
         }
+
+        void drop_reclaim_blocker_for_failed_construction(char *memory);
 
         template <typename T, typename... Args> T *make(Args &&...args)
         {
@@ -202,16 +225,13 @@ namespace cl
             static_assert(HasObjectLayout<T>::value);
             if constexpr(T::has_dynamic_layout)
             {
-                return construct_dynamic_object<T>(
-                    [this](size_t n_bytes) { return allocate(n_bytes); },
-                    std::forward<Args>(args)...);
+                return construct_dynamic_object<T>(this,
+                                                   std::forward<Args>(args)...);
             }
             else
             {
-                HeapAllocation allocation = allocate(sizeof(T));
-                T *obj = new(allocation.memory) T(std::forward<Args>(args)...);
-                commit_heap_allocation(allocation, obj);
-                return obj;
+                return construct_static_object<ThreadLocalHeap, T>(
+                    this, std::forward<Args>(args)...);
             }
         }
 

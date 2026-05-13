@@ -73,18 +73,19 @@ Validation:
   object that only lives in frame slots is retained while rooted and reclaimed
   after the frame drops it.
 
-## Phase 2: Commit-Time Slab Accounting And Slab Pinning
+## Phase 2: Allocation-Time Slab Accounting And Slab Pinning
 
-1. Split allocation into reserve, initialize, and commit concepts where needed.
+1. Split allocation into reserve, construct, and construction-failure cleanup
+   concepts where needed.
 2. Rename `slab->n_live_objects` to `slab->n_reclaim_blockers` and implement the
    counter rules from the reclamation design.
 3. Implement allocator-open reclaim blockers for ordinary slabs.
-4. Implement object-commit reclaim blockers for committed objects.
+4. Increment the object reclaim blocker when memory is reserved for an object.
 5. Implement the same blocker rules for dedicated large-object slabs.
-6. Leave failed pre-commit construction as abandoned bump memory with no live
-   object accounting.
+6. On constructor failure, use the cold path to find the owning slab and drop
+   the object reclaim blocker. The bump memory remains abandoned.
 7. Add or preserve enough allocator metadata to find the owning slab for a
-   committed `HeapObject *`.
+   `HeapObject *` or failed construction address.
 8. Introduce the global slab lookup granule map described in the reclamation
    design, using a 4 KiB initial lookup granule.
 9. Register every granule covered by ordinary and dedicated slabs when the slab
@@ -94,15 +95,14 @@ Validation:
 
 Validation:
 
-- Tests that failed construction before commit does not affect slab
-  reclaim-blocker counts.
-- Tests that committed objects decrement their owning slab exactly once during
+- Tests that failed construction drops the object reclaim blocker exactly once.
+- Tests that constructed objects decrement their owning slab exactly once during
   reclamation.
 - Tests that an otherwise empty slab is not reset while installed as an active
   allocation slab.
 - Tests that a dedicated large-object slab has no active-allocator blocker,
-  gains one object blocker on commit, and is handed back when that object
-  blocker is dropped.
+  gains one object blocker on allocation, and is handed back when that object
+  blocker is dropped on construction failure or later reclamation.
 - Debug assertions that every reclaimable object maps to exactly one slab.
 
 ## Phase 3: Minimal Layout Descriptor Facade
@@ -224,10 +224,10 @@ Validation:
 1. When object teardown decrements the slab reclaim-blocker count to zero, hand
    the slab to `GlobalHeap` for reclamation immediately.
 2. Treat active allocation installation as a slab reclaim blocker. A slab with no
-   committed objects but still installed in a `ThreadLocalHeap` is not reusable
+   constructed objects but still installed in a `ThreadLocalHeap` is not reusable
    by any other allocation context.
 3. Return empty ordinary slabs to the ordinary free slab pool only after
-   no committed objects and no active allocation installation remain.
+   no constructed objects and no active allocation installation remain.
 4. Return empty dedicated large-object slabs to the appropriate dedicated slab
    pool or release path.
 5. Keep partial-slab reuse out of the baseline.
@@ -235,10 +235,10 @@ Validation:
 
 Validation:
 
-- Tests that a slab is not reused while any committed object remains live or
+- Tests that a slab is not reused while any constructed object remains live or
   stack-rooted.
 - Tests that a slab is not reused while still installed as a thread's active
-  allocation slab, even if no committed objects remain in it.
+  allocation slab, even if no constructed objects remain in it.
 - Tests that a fully reclaimed ordinary slab is reused by later ordinary
   allocations.
 - Existing allocation and interpreter tests continue to pass.
@@ -328,7 +328,7 @@ The baseline memory substrate is complete when:
    objects; reclaiming cycles is not part of the baseline.
 2. Object teardown releases owned children through descriptor-driven scanning,
    and cascaded children can be reclaimed during the same safepoint.
-3. Slab reclaim-blocker counts match committed object lifetimes plus active
+3. Slab reclaim-blocker counts match object allocation lifetimes plus active
    allocator installation, and fully unblocked slabs can be reused.
 4. Safepoint polls exist only at the agreed initial scan-safe locations.
 5. Debug checks can detect duplicate ZCT entries and missing slab ownership.

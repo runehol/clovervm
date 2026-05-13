@@ -13,13 +13,6 @@ namespace cl
         return reinterpret_cast<uintptr_t>(ptr) >> SlabLookupGranuleShift;
     }
 
-    void commit_heap_allocation(const HeapAllocation &allocation, HeapObject *)
-    {
-        assert(allocation.memory != nullptr);
-        assert(allocation.slab != nullptr);
-        allocation.slab->add_reclaim_blocker();
-    }
-
     GlobalHeap::GlobalHeap(size_t _offset, size_t _slab_size)
         : offset(_offset), slab_size(_slab_size)
     {
@@ -93,7 +86,7 @@ namespace cl
         slabs.erase(it);
     }
 
-    HeapAllocation GlobalHeap::allocate_large_object(size_t n_bytes)
+    char *GlobalHeap::allocate_large_object(size_t n_bytes)
     {
         size_t required_slab_size =
             n_bytes + value_ptr_granularity -
@@ -101,15 +94,21 @@ namespace cl
         SlabAllocator *single_allocator = make_new_slab(required_slab_size);
         char *memory = single_allocator->allocate(n_bytes);
         assert(memory != nullptr);
-        return HeapAllocation{memory, single_allocator};
+        single_allocator->add_reclaim_blocker();
+        return memory;
     }
 
-    HeapAllocation GlobalHeap::allocate_global(size_t n_bytes)
+    char *GlobalHeap::allocate_global(size_t n_bytes)
     {
         const std::lock_guard<std::mutex> lock(global_allocator_mutex);
         if(global_allocator == nullptr)
             global_allocator = std::make_unique<ThreadLocalHeap>(this);
         return global_allocator->allocate(n_bytes);
+    }
+
+    void GlobalHeap::drop_reclaim_blocker_for_failed_construction(char *memory)
+    {
+        slab_for_address_unlocked(memory)->drop_reclaim_blocker();
     }
 
     GlobalHeap::~GlobalHeap() = default;
@@ -137,6 +136,12 @@ namespace cl
     ThreadLocalHeap::drop_allocator_reclaim_blocker(SlabAllocator *allocator)
     {
         allocator->drop_reclaim_blocker();
+    }
+
+    void
+    ThreadLocalHeap::drop_reclaim_blocker_for_failed_construction(char *memory)
+    {
+        global_heap->drop_reclaim_blocker_for_failed_construction(memory);
     }
 
 }  // namespace cl

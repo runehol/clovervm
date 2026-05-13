@@ -118,9 +118,10 @@ Objects exceeding a size threshold are allocated separately:
 
 Dedicated large-object slabs follow the same reclaim-blocker rules as ordinary
 slabs, with no active-allocator blocker because the dedicated slab is never
-installed as an active allocation slab. The committed object holds its own
-reclaim blocker. When that object blocker later drops to zero, the slab is
-handed to `GlobalHeap`.
+installed as an active allocation slab. The allocation reserve itself adds the
+object reclaim blocker. If construction fails, the cold failure path drops that
+blocker; otherwise the blocker remains until the object is deallocated. When
+that object blocker later drops to zero, the slab is handed to `GlobalHeap`.
 
 The dedicated-slab threshold is a policy decision. It should prevent oversized
 objects from being mixed into ordinary slabs, and later size-class routing should
@@ -178,25 +179,28 @@ The counter has two sources:
 
 - an allocator that has a slab open for allocation holds one reclaim blocker on
   that slab, and drops it when the slab is closed for allocation;
-- each committed object allocated on the slab holds one reclaim blocker, and
-  drops it when the object is deallocated.
+- each reserved object allocation on the slab holds one reclaim blocker, and
+  drops it on constructor failure or when the constructed object is later
+  deallocated.
 
-This means a slab with no committed objects is still not reusable if it remains
-installed as an active allocation slab.
+This means a slab with no constructed objects is still not reusable if it
+remains installed as an active allocation slab.
 
-### Object Commitment
+### Object Allocation And Construction
 
-Object allocation proceeds in two phases:
+Object allocation proceeds in three steps:
 
-1. Reserve raw memory via bump allocation from the selected slab.
-2. Initialize object state sufficiently for safe teardown.
-3. Commit the object:
-   - increment `slab->n_reclaim_blockers`
-   - make the object visible to the system
+1. Reserve raw memory via bump allocation from the selected slab and increment
+   `slab->n_reclaim_blockers` for the object allocation.
+2. Run the object constructor.
+3. If construction fails, the cold failure path finds the owning slab and drops
+   the object reclaim blocker. If construction succeeds, make the object visible
+   to the system.
 
-Only committed objects participate in reference counting and reclamation.
+Only successfully constructed objects participate in reference counting and
+reclamation.
 
-Each committed object also has a heap lifecycle state. The ZCT lifecycle
+Each constructed object also has a heap lifecycle state. The ZCT lifecycle
 prevents duplicate zero-count entries and protects against double reclamation.
 See [Refcounting and Safepoints](refcounting-and-safepoints.md) for the
 `Normal`, `InZct`, `Reclaiming`, and `Dead` state machine.
@@ -327,14 +331,16 @@ This preserves a simple fast path while avoiding general-purpose free-list alloc
 
 To maintain correctness:
 
-- `slab->n_reclaim_blockers` is incremented for an object only after successful
-  object commitment.
-- If object construction fails before commit:
-  - the reserved memory is abandoned
-  - no slab accounting is affected
+- `slab->n_reclaim_blockers` is incremented when memory is reserved for an
+  object allocation.
+- If object construction fails, the cold failure path finds the owning slab and
+  drops that object reclaim blocker.
+- The reserved bump memory is abandoned; whole-slab reclamation eventually
+  recovers it.
 
-This ensures that every object-commit increment of `n_reclaim_blockers`
-corresponds to exactly one eventual decrement during reclamation.
+This keeps the normal construction path simple while ensuring every object
+allocation blocker gets exactly one decrement, either on construction failure or
+during reclamation.
 
 ---
 
