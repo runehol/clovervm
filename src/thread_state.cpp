@@ -59,6 +59,7 @@ namespace cl
 
     ThreadState::ThreadState(VirtualMachine *_machine)
         : machine(_machine),
+          safepoint_requested_ptr(machine->safepoint_requested_ptr()),
           refcounted_heap(&machine->get_refcounted_global_heap()),
           stack(1024 * 1024)
     {

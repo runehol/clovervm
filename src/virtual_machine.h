@@ -33,6 +33,10 @@ namespace cl
 
         ThreadState *make_new_thread();
 
+        bool *safepoint_requested_ptr() { return &safepoint_requested_; }
+        void request_safepoint() { safepoint_requested_ = true; }
+        void clear_safepoint_request() { safepoint_requested_ = false; }
+
         GlobalHeap &get_refcounted_global_heap()
         {
             return refcounted_global_heap;
@@ -220,6 +224,7 @@ namespace cl
         std::vector<ClassObject *> builtin_classes;
         OwnedHeapPtr<Scope> builtin_scope;
         OwnedValue range_builtin;
+        bool safepoint_requested_ = false;
         FILE *stdout_file_ = stdout;
     };
 

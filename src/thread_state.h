@@ -102,6 +102,10 @@ namespace cl
         {
             return clover_frame_sentinel_ptr;
         }
+        ALWAYSINLINE bool safepoint_requested() const
+        {
+            return *safepoint_requested_ptr;
+        }
 
         bool has_pending_exception() const;
         PendingExceptionKind pending_exception_kind() const;
@@ -214,6 +218,7 @@ namespace cl
         NOINLINE Shape *shape_of_inline_value(Value value) const;
 
         VirtualMachine *machine;
+        bool *safepoint_requested_ptr;
 
         ThreadLocalHeap refcounted_heap;
 

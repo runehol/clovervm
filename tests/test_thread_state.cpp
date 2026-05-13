@@ -66,6 +66,20 @@ namespace cl
         EXPECT_EQ(zct_size_before + 1, thread->zero_count_table_size());
     }
 
+    TEST(ThreadState, SafepointRequestReadsVmFlag)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+
+        EXPECT_FALSE(thread->safepoint_requested());
+
+        context.vm().request_safepoint();
+        EXPECT_TRUE(thread->safepoint_requested());
+
+        context.vm().clear_safepoint_request();
+        EXPECT_FALSE(thread->safepoint_requested());
+    }
+
     TEST(ThreadState, PendingExceptionObjectStoresTypedObject)
     {
         test::VmTestContext context;
