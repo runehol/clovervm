@@ -94,6 +94,12 @@ namespace cl
         return (layout >> object_layout_count_shift) & object_layout_count_mask;
     }
 
+    constexpr uint32_t compact_layout_value_offset_in_words(HeapLayout layout)
+    {
+        return (layout >> object_layout_offset_shift) &
+               object_layout_offset_mask;
+    }
+
     constexpr HeapLayout compact_layout_without_value_count(HeapLayout layout)
     {
         return layout &
