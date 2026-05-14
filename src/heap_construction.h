@@ -68,20 +68,22 @@ namespace cl
             }
         }
 
-        size_t allocation_size_in_bytes =
-            sizeof(ExpandedHeader) + object_size_in_bytes;
+        size_t allocation_size_in_bytes = value_ptr_granularity +
+                                          sizeof(ExpandedHeader) +
+                                          object_size_in_bytes;
         char *memory = heap->allocate(allocation_size_in_bytes);
         try
         {
-            ExpandedHeader *header = reinterpret_cast<ExpandedHeader *>(memory);
+            char *object_memory = memory + value_ptr_granularity;
+            ExpandedHeader *header = reinterpret_cast<ExpandedHeader *>(
+                object_memory - sizeof(ExpandedHeader));
             header->object_size_in_16byte_units =
                 spec.object_size_in_16byte_units;
             header->value_count = spec.value_count;
 
             HeapLayout layout =
                 encode_expanded_layout_unchecked(value_offset_in_words);
-            return new(memory + sizeof(ExpandedHeader))
-                T(layout, std::forward<Args>(args)...);
+            return new(object_memory) T(layout, std::forward<Args>(args)...);
         }
         catch(...)
         {

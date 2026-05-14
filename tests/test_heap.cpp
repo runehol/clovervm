@@ -2,6 +2,7 @@
 #include "refcount.h"
 #include "test_helpers.h"
 #include "thread_local_heap.h"
+#include "tuple.h"
 
 #include <gtest/gtest.h>
 #include <new>
@@ -197,4 +198,17 @@ TEST(HeapObjectScan, ExpandedLayoutWithValueSpan)
 
     EXPECT_EQ(3u, descriptor.first_value_offset_in_words);
     EXPECT_EQ(7u, descriptor.value_count);
+}
+
+TEST(GlobalHeap, ExpandedDynamicAllocationPreservesPointerTag)
+{
+    GlobalHeap heap = GlobalHeap::refcounted_heap();
+    ThreadLocalHeap local_heap(&heap);
+
+    Tuple *tuple =
+        local_heap.make<Tuple>(BootstrapObjectTag{}, object_layout_count_mask);
+
+    EXPECT_TRUE(layout_is_expanded(tuple->layout));
+    EXPECT_TRUE(heap_ptr_is_refcounted(tuple));
+    EXPECT_NE(nullptr, heap.slab_for_object_unlocked(tuple));
 }
