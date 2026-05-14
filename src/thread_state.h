@@ -114,6 +114,8 @@ namespace cl
         }
         void publish_safepoint_scan_record(Value *lowest_live_stack_slot,
                                            Value accumulator_or_not_present);
+        void handle_safepoint(Value accumulator, Value *fp, const uint8_t *pc,
+                              CodeObject *code_object);
         const SafepointScanRecord &safepoint_scan_record() const
         {
             return safepoint_scan_record_;

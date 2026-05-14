@@ -80,6 +80,20 @@ namespace cl
             accumulator_or_not_present;
     }
 
+    void ThreadState::handle_safepoint(Value accumulator, Value *fp,
+                                       const uint8_t *pc,
+                                       CodeObject *code_object)
+    {
+        machine->run_safepoint_callback_for_testing(
+            this, accumulator, fp, code_object,
+            code_object->offset_for_interpreted_pc(pc), safepoint_scan_record_);
+        machine->clear_safepoint_request();
+        if(machine->fire_every_safepoint_for_testing())
+        {
+            machine->request_safepoint();
+        }
+    }
+
     static Value *entry_frame_pointer(Value *caller_fp, CodeObject *code_object)
     {
         int32_t slots_above_entry_fp =

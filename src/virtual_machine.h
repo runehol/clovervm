@@ -22,6 +22,12 @@ namespace cl
 {
     class ThreadState;
     class CodeObject;
+    struct SafepointScanRecord;
+
+    using SafepointCallbackForTesting =
+        void (*)(void *context, ThreadState *thread, Value accumulator,
+                 Value *fp, CodeObject *code_object, uint32_t pc_offset,
+                 const SafepointScanRecord &scan_record);
 
     class VirtualMachine
     {
@@ -36,6 +42,21 @@ namespace cl
         bool *safepoint_requested_ptr() { return &safepoint_requested_; }
         void request_safepoint() { safepoint_requested_ = true; }
         void clear_safepoint_request() { safepoint_requested_ = false; }
+        void set_fire_every_safepoint_for_testing(bool enabled)
+        {
+            fire_every_safepoint_for_testing_ = enabled;
+        }
+        bool fire_every_safepoint_for_testing() const
+        {
+            return fire_every_safepoint_for_testing_;
+        }
+        void
+        set_safepoint_callback_for_testing(SafepointCallbackForTesting callback,
+                                           void *context)
+        {
+            safepoint_callback_for_testing_ = callback;
+            safepoint_callback_context_for_testing_ = context;
+        }
 
         GlobalHeap &get_refcounted_global_heap()
         {
@@ -194,8 +215,23 @@ namespace cl
         }
 
     private:
+        friend class ThreadState;
+
         static constexpr size_t NativeLayoutCount =
             static_cast<size_t>(NativeLayoutId::Count);
+
+        void run_safepoint_callback_for_testing(
+            ThreadState *thread, Value accumulator, Value *fp,
+            CodeObject *code_object, uint32_t pc_offset,
+            const SafepointScanRecord &scan_record)
+        {
+            if(safepoint_callback_for_testing_ != nullptr)
+            {
+                safepoint_callback_for_testing_(
+                    safepoint_callback_context_for_testing_, thread,
+                    accumulator, fp, code_object, pc_offset, scan_record);
+            }
+        }
 
         void register_builtin_class(const BuiltinClassDefinition &definition);
         void install_bootstrap_string_class();
@@ -225,6 +261,9 @@ namespace cl
         OwnedHeapPtr<Scope> builtin_scope;
         OwnedValue range_builtin;
         bool safepoint_requested_ = false;
+        bool fire_every_safepoint_for_testing_ = false;
+        SafepointCallbackForTesting safepoint_callback_for_testing_ = nullptr;
+        void *safepoint_callback_context_for_testing_ = nullptr;
         FILE *stdout_file_ = stdout;
     };
 

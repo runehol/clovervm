@@ -8,6 +8,39 @@
 
 namespace cl
 {
+    struct TargetSafepointRecorder
+    {
+        CodeObject *target = nullptr;
+        SafepointScanRecord record;
+        uint32_t pc_offset = 0;
+    };
+
+    static void record_target_safepoint_callback(
+        void *context, ThreadState *, Value, Value *, CodeObject *code_object,
+        uint32_t pc_offset, const SafepointScanRecord &scan_record)
+    {
+        TargetSafepointRecorder *recorder =
+            static_cast<TargetSafepointRecorder *>(context);
+        if(code_object != recorder->target)
+        {
+            return;
+        }
+        recorder->pc_offset = pc_offset;
+        recorder->record = scan_record;
+    }
+
+    static void
+    begin_recording_target_safepoints(test::VmTestContext &context,
+                                      TargetSafepointRecorder *recorder,
+                                      CodeObject *target)
+    {
+        recorder->target = target;
+        recorder->record = {};
+        recorder->pc_offset = 0;
+        context.vm().set_fire_every_safepoint_for_testing(true);
+        context.vm().set_safepoint_callback_for_testing(
+            record_target_safepoint_callback, recorder);
+    }
 
     TEST(ThreadState, PendingExceptionStartsClear)
     {
@@ -106,30 +139,36 @@ namespace cl
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
+        CodeObject *code = make_safepoint_test_code(context, false);
+        TargetSafepointRecorder recorder;
+        begin_recording_target_safepoints(context, &recorder, code);
         context.vm().request_safepoint();
 
-        Value result = thread->run_clovervm_code_object(
-            make_safepoint_test_code(context, false));
+        Value result = thread->run_clovervm_code_object(code);
 
-        const SafepointScanRecord &record = thread->safepoint_scan_record();
         EXPECT_EQ(Value::from_smi(42), result);
-        EXPECT_NE(nullptr, record.lowest_live_stack_slot);
-        EXPECT_TRUE(record.accumulator_or_not_present.is_not_present());
+        EXPECT_EQ(2u, recorder.pc_offset);
+        EXPECT_NE(nullptr, recorder.record.lowest_live_stack_slot);
+        EXPECT_TRUE(
+            recorder.record.accumulator_or_not_present.is_not_present());
     }
 
     TEST(ThreadState, SafepointPublishesScanRecordWithAccumulator)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
+        CodeObject *code = make_safepoint_test_code(context, true);
+        TargetSafepointRecorder recorder;
+        begin_recording_target_safepoints(context, &recorder, code);
         context.vm().request_safepoint();
 
-        Value result = thread->run_clovervm_code_object(
-            make_safepoint_test_code(context, true));
+        Value result = thread->run_clovervm_code_object(code);
 
-        const SafepointScanRecord &record = thread->safepoint_scan_record();
         EXPECT_EQ(Value::from_smi(42), result);
-        EXPECT_NE(nullptr, record.lowest_live_stack_slot);
-        EXPECT_EQ(Value::from_smi(42), record.accumulator_or_not_present);
+        EXPECT_EQ(4u, recorder.pc_offset);
+        EXPECT_NE(nullptr, recorder.record.lowest_live_stack_slot);
+        EXPECT_EQ(Value::from_smi(42),
+                  recorder.record.accumulator_or_not_present);
     }
 
     TEST(ThreadState, PendingExceptionObjectStoresTypedObject)

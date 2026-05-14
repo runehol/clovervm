@@ -279,6 +279,37 @@ namespace cl
         fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
     }
 
+    static ALWAYSINLINE Value *
+    lowest_live_stack_slot_for_current_frame(Value *fp, CodeObject *code_object)
+    {
+        uint32_t n_below_frame_slots =
+            code_object->get_padded_n_ordinary_below_frame_slots() +
+            code_object->n_outgoing_call_slots;
+        return fp - int32_t(n_below_frame_slots);
+    }
+
+    NOINLINE static Value op_committed_safepoint_slow(PARAMS)
+    {
+        thread->publish_safepoint_scan_record(
+            lowest_live_stack_slot_for_current_frame(fp, code_object),
+            Value::not_present());
+        thread->handle_safepoint(accumulator, fp, pc, code_object);
+
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_committed_safepoint_with_accumulator_slow(PARAMS)
+    {
+        thread->publish_safepoint_scan_record(
+            lowest_live_stack_slot_for_current_frame(fp, code_object),
+            accumulator);
+        thread->handle_safepoint(accumulator, fp, pc, code_object);
+
+        START(0);
+        COMPLETE();
+    }
+
     [[maybe_unused]] static NOINLINE ExceptionalTarget
     resolve_exceptional_frame_exit(ThreadState *thread, Value *fp,
                                    const uint8_t *pc, CodeObject *code_object)
@@ -2188,6 +2219,10 @@ namespace cl
             enter_function_frame_from_positional_args(
                 fp, pc, code_object, thunk, first_arg_reg, n_args,
                 call_instr_len, adaptation);
+            if(unlikely(thread->safepoint_requested()))
+            {
+                MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            }
 
             START(0);
             COMPLETE();
@@ -2211,6 +2246,10 @@ namespace cl
         enter_function_frame_from_positional_args(fp, pc, code_object, function,
                                                   first_arg_reg, n_args,
                                                   call_instr_len, adaptation);
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
 
         START(0);
         COMPLETE();
@@ -2228,6 +2267,10 @@ namespace cl
         enter_function_frame_from_positional_args(
             fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, cache.adaptation);
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
 
         START(0);
         COMPLETE();
@@ -2285,6 +2328,10 @@ namespace cl
         fp = new_fp;
         code_object = target_code_object;
         pc = target_code_object->code.data();
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
 
         START(0);
         COMPLETE();
@@ -2361,6 +2408,10 @@ namespace cl
             enter_function_frame_from_positional_args(
                 fp, pc, code_object, cached_function, first_arg_reg, n_args,
                 call_instr_len, call_cache.adaptation);
+            if(unlikely(thread->safepoint_requested()))
+            {
+                MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            }
 
             START(0);
             COMPLETE();
@@ -2377,6 +2428,10 @@ namespace cl
         enter_function_frame_from_positional_args(fp, pc, code_object, function,
                                                   first_arg_reg, n_args,
                                                   call_instr_len, adaptation);
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
 
         {
             START(0);
@@ -2432,6 +2487,10 @@ namespace cl
         enter_function_frame_from_positional_args(
             fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, FunctionCallAdaptation::FixedArity);
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
 
         START(0);
         COMPLETE();
@@ -2524,6 +2583,10 @@ namespace cl
             enter_function_frame_from_positional_args(
                 fp, pc, code_object, cached_function, first_arg_reg, n_args,
                 call_instr_len, call_cache.adaptation);
+            if(unlikely(thread->safepoint_requested()))
+            {
+                MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            }
 
             START(0);
             COMPLETE();
@@ -2540,6 +2603,10 @@ namespace cl
         enter_function_frame_from_positional_args(fp, pc, code_object, function,
                                                   first_arg_reg, n_args,
                                                   call_instr_len, adaptation);
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
 
         {
             START(0);
@@ -2595,6 +2662,10 @@ namespace cl
         enter_function_frame_from_positional_args(
             fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, FunctionCallAdaptation::FixedArity);
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
 
         START(0);
         COMPLETE();
@@ -2874,6 +2945,10 @@ namespace cl
     static Value op_return(PARAMS)
     {
         restore_frame_header(fp, pc, code_object);
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
+        }
 
         START(0);
         COMPLETE();
@@ -2916,6 +2991,10 @@ namespace cl
         }
 
         restore_frame_header(fp, pc, code_object);
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_with_accumulator_slow(ARGS);
+        }
         START(0);
         COMPLETE();
     }
@@ -2953,9 +3032,12 @@ namespace cl
     NOINLINE static Value op_safepoint_slow(PARAMS)
     {
         int8_t lowest_live_stack_slot_offset = int8_t(pc[1]);
-        thread->publish_safepoint_scan_record(
-            fp + lowest_live_stack_slot_offset, Value::not_present());
-        START(2);
+        Value *lowest_live_stack_slot = fp + lowest_live_stack_slot_offset;
+        pc += 2;
+        thread->publish_safepoint_scan_record(lowest_live_stack_slot,
+                                              Value::not_present());
+        thread->handle_safepoint(accumulator, fp, pc, code_object);
+        START(0);
         COMPLETE();
     }
 
@@ -2972,9 +3054,12 @@ namespace cl
     NOINLINE static Value op_safepoint_with_accumulator_slow(PARAMS)
     {
         int8_t lowest_live_stack_slot_offset = int8_t(pc[1]);
-        thread->publish_safepoint_scan_record(
-            fp + lowest_live_stack_slot_offset, accumulator);
-        START(2);
+        Value *lowest_live_stack_slot = fp + lowest_live_stack_slot_offset;
+        pc += 2;
+        thread->publish_safepoint_scan_record(lowest_live_stack_slot,
+                                              accumulator);
+        thread->handle_safepoint(accumulator, fp, pc, code_object);
+        START(0);
         COMPLETE();
     }
 
