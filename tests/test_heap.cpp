@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include <new>
 #include <stdexcept>
+#include <vector>
 
 using namespace cl;
 
@@ -29,6 +30,25 @@ namespace
 
         SimpleHeapObject() : HeapObject(compact_layout()) {}
     };
+
+    class LargeSimpleHeapObject : public HeapObject
+    {
+    public:
+        CL_DECLARE_STATIC_LAYOUT_NO_VALUES(LargeSimpleHeapObject);
+
+        LargeSimpleHeapObject() : HeapObject(compact_layout()) {}
+
+    private:
+        [[maybe_unused]] char payload[LargeAllocationSize] = {};
+    };
+
+    std::vector<HeapObject *> valid_objects_in(SlabAllocator *slab)
+    {
+        std::vector<HeapObject *> objects;
+        slab->for_each_valid_object(
+            [&objects](HeapObject *obj) { objects.push_back(obj); });
+        return objects;
+    }
 
 }  // namespace
 
@@ -145,6 +165,61 @@ TEST(GlobalHeap, FailedConstructionDropsObjectBlocker)
     char *memory = local_heap.allocate(sizeof(HeapObject));
     SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
     EXPECT_EQ(2u, slab->reclaim_blocker_count());
+}
+
+TEST(GlobalHeap, SuccessfulConstructionMarksValidObject)
+{
+    GlobalHeap heap = GlobalHeap::refcounted_heap();
+    ThreadLocalHeap local_heap(&heap);
+
+    SimpleHeapObject *object = local_heap.make<SimpleHeapObject>();
+    SlabAllocator *slab = heap.slab_for_object_unlocked(object);
+
+    std::vector<HeapObject *> objects = valid_objects_in(slab);
+    ASSERT_EQ(1u, objects.size());
+    EXPECT_EQ(object, objects[0]);
+    EXPECT_TRUE(slab->has_valid_objects());
+}
+
+TEST(GlobalHeap, FailedConstructionDoesNotMarkValidObject)
+{
+    GlobalHeap heap = GlobalHeap::refcounted_heap();
+    ThreadLocalHeap local_heap(&heap);
+
+    EXPECT_THROW(local_heap.make<ThrowingHeapObject>(), std::runtime_error);
+
+    char *memory = local_heap.allocate(sizeof(HeapObject));
+    SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
+    EXPECT_FALSE(slab->has_valid_objects());
+}
+
+TEST(GlobalHeap, ValidObjectIterationSkipsAbandonedBumpGaps)
+{
+    GlobalHeap heap = GlobalHeap::refcounted_heap();
+    ThreadLocalHeap local_heap(&heap);
+
+    EXPECT_THROW(local_heap.make<ThrowingHeapObject>(), std::runtime_error);
+    SimpleHeapObject *object = local_heap.make<SimpleHeapObject>();
+    SlabAllocator *slab = heap.slab_for_object_unlocked(object);
+
+    std::vector<HeapObject *> objects = valid_objects_in(slab);
+    ASSERT_EQ(1u, objects.size());
+    EXPECT_EQ(object, objects[0]);
+}
+
+TEST(GlobalHeap, DedicatedLargeObjectMarksOnlyBitZero)
+{
+    GlobalHeap heap = GlobalHeap::refcounted_heap();
+    ThreadLocalHeap local_heap(&heap);
+
+    LargeSimpleHeapObject *object = local_heap.make<LargeSimpleHeapObject>();
+    SlabAllocator *slab = heap.slab_for_object_unlocked(object);
+
+    std::vector<HeapObject *> objects = valid_objects_in(slab);
+    ASSERT_EQ(1u, objects.size());
+    EXPECT_EQ(object, objects[0]);
+    EXPECT_EQ(slab->first_valid_object_slot_for_testing(),
+              reinterpret_cast<char *>(object));
 }
 
 TEST(GlobalHeap, InternedHeapTracksReclaimBlockers)

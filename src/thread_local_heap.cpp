@@ -32,29 +32,11 @@ namespace cl
         return memory;
     }
 
-    void
-    ThreadLocalHeap::add_allocator_reclaim_blocker(SlabAllocator *allocator)
-    {
-        allocator->add_reclaim_blocker();
-    }
-
     void ThreadLocalHeap::switch_to_new_slabs()
     {
         SlabAllocator *old_allocator = local_allocator;
         local_allocator = global_heap->make_new_slab();
         add_allocator_reclaim_blocker(local_allocator);
         drop_allocator_reclaim_blocker(old_allocator);
-    }
-
-    void
-    ThreadLocalHeap::drop_allocator_reclaim_blocker(SlabAllocator *allocator)
-    {
-        allocator->drop_reclaim_blocker();
-    }
-
-    void
-    ThreadLocalHeap::drop_reclaim_blocker_for_failed_construction(char *memory)
-    {
-        global_heap->drop_reclaim_blocker_for_failed_construction(memory);
     }
 }  // namespace cl

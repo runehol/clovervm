@@ -29,7 +29,9 @@ namespace cl
         char *memory = heap->allocate(sizeof(T));
         try
         {
-            return new(memory) T(std::forward<Args>(args)...);
+            T *obj = new(memory) T(std::forward<Args>(args)...);
+            heap->mark_valid_object(obj);
+            return obj;
         }
         catch(...)
         {
@@ -59,7 +61,9 @@ namespace cl
             char *memory = heap->allocate(object_size_in_bytes);
             try
             {
-                return new(memory) T(layout, std::forward<Args>(args)...);
+                T *obj = new(memory) T(layout, std::forward<Args>(args)...);
+                heap->mark_valid_object(obj);
+                return obj;
             }
             catch(...)
             {
@@ -83,7 +87,9 @@ namespace cl
 
             HeapLayout layout =
                 encode_expanded_layout_unchecked(value_offset_in_words);
-            return new(object_memory) T(layout, std::forward<Args>(args)...);
+            T *obj = new(object_memory) T(layout, std::forward<Args>(args)...);
+            heap->mark_valid_object(obj);
+            return obj;
         }
         catch(...)
         {

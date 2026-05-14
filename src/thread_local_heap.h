@@ -35,7 +35,14 @@ namespace cl
         }
 
         void switch_to_new_slabs();
-        void drop_reclaim_blocker_for_failed_construction(char *memory);
+        void drop_reclaim_blocker_for_failed_construction(char *memory)
+        {
+            global_heap->drop_reclaim_blocker_for_failed_construction(memory);
+        }
+        void mark_valid_object(HeapObject *obj)
+        {
+            global_heap->mark_valid_object(obj);
+        }
 
         template <typename T, typename... Args> T *make(Args &&...args)
         {
@@ -55,8 +62,14 @@ namespace cl
 
     private:
         NOINLINE char *allocate_slow(size_t n_bytes);
-        void add_allocator_reclaim_blocker(SlabAllocator *allocator);
-        void drop_allocator_reclaim_blocker(SlabAllocator *allocator);
+        void add_allocator_reclaim_blocker(SlabAllocator *allocator)
+        {
+            allocator->add_reclaim_blocker();
+        }
+        void drop_allocator_reclaim_blocker(SlabAllocator *allocator)
+        {
+            allocator->drop_reclaim_blocker();
+        }
 
         GlobalHeap *global_heap;
         SlabAllocator *local_allocator;

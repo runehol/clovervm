@@ -22,6 +22,7 @@ namespace cl
                0);
         curr_ptr = start_ptr + offset;
         end_ptr = start_ptr + slab_size;
+        first_object_header = curr_ptr;
     }
     SlabAllocator::~SlabAllocator() { munmap(start_ptr, end_ptr - start_ptr); }
 

@@ -110,6 +110,11 @@ namespace cl
         slab_for_address_unlocked(memory)->drop_reclaim_blocker();
     }
 
+    void GlobalHeap::mark_valid_object(HeapObject *obj)
+    {
+        slab_for_object_unlocked(obj)->mark_valid_object(obj);
+    }
+
     uint64_t GlobalHeap::total_reclaim_blockers_for_testing() const
     {
         const std::lock_guard<std::mutex> lock(heap_mutex);

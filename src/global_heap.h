@@ -1,6 +1,7 @@
 #ifndef CL_GLOBAL_HEAP_H
 #define CL_GLOBAL_HEAP_H
 
+#include "heap_constants.h"
 #include "heap_construction.h"
 #include "slab_allocator.h"
 #include "typed_value.h"
@@ -15,12 +16,6 @@
 
 namespace cl
 {
-    static constexpr uintptr_t SlabLookupGranuleShift = 12;
-    static constexpr size_t SlabLookupGranuleSize = size_t(1)
-                                                    << SlabLookupGranuleShift;
-    static constexpr size_t DefaultSlabSize = 65536;
-    static constexpr size_t LargeAllocationSize = DefaultSlabSize / 2;
-
     uintptr_t slab_lookup_key_for_address(const void *ptr);
 
     class ThreadLocalHeap;
@@ -49,6 +44,7 @@ namespace cl
         char *allocate(size_t n_bytes) { return allocate_global(n_bytes); }
         char *allocate_global(size_t n_bytes);
         void drop_reclaim_blocker_for_failed_construction(char *memory);
+        void mark_valid_object(HeapObject *obj);
 
         template <typename T, typename... Args>
         T *make_global_internal_raw(Args &&...args)
