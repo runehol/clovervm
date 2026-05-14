@@ -1,4 +1,4 @@
-#include "safepoint_reclamation.h"
+#include "heap_reclamation.h"
 
 #include "global_heap.h"
 #include "slab_allocator.h"
@@ -119,8 +119,8 @@ namespace cl
         };
     }  // namespace
 
-    void collect_safepoint_roots_from_thread(SafepointRootSet &roots,
-                                             const ThreadState &thread)
+    void collect_reclamation_roots_from_thread(ReclamationRootSet &roots,
+                                               const ThreadState &thread)
     {
         const SafepointScanRecord &record = thread.safepoint_scan_record();
         Value *lowest_live_stack_slot = record.lowest_live_stack_slot;
@@ -139,19 +139,20 @@ namespace cl
         roots.add_conservative_value(record.accumulator_or_not_present);
     }
 
-    SafepointRootSet
-    collect_safepoint_roots_from_threads(const ThreadStateList &threads)
+    ReclamationRootSet
+    collect_reclamation_roots_from_threads(const ThreadStateList &threads)
     {
-        SafepointRootSet roots;
+        ReclamationRootSet roots;
         for(const std::unique_ptr<ThreadState> &thread: threads)
         {
-            collect_safepoint_roots_from_thread(roots, *thread);
+            collect_reclamation_roots_from_thread(roots, *thread);
         }
         return roots;
     }
 
-    void process_zero_count_table_for_safepoint(ThreadState &thread,
-                                                const SafepointRootSet &roots)
+    void
+    process_zero_count_table_for_reclamation(ThreadState &thread,
+                                             const ReclamationRootSet &roots)
     {
         std::vector<HeapObject *> &zero_count_table = thread.zero_count_table;
         ReclamationContext reclamation_context(
@@ -190,12 +191,13 @@ namespace cl
         zero_count_table.resize(keep);
     }
 
-    void run_safepoint_reclamation(const ThreadStateList &threads)
+    void run_heap_reclamation(const ThreadStateList &threads)
     {
-        SafepointRootSet roots = collect_safepoint_roots_from_threads(threads);
+        ReclamationRootSet roots =
+            collect_reclamation_roots_from_threads(threads);
         for(const std::unique_ptr<ThreadState> &thread: threads)
         {
-            process_zero_count_table_for_safepoint(*thread, roots);
+            process_zero_count_table_for_reclamation(*thread, roots);
         }
     }
 

@@ -1,8 +1,8 @@
 #include "test_helpers.h"
 
 #include "global_heap.h"
+#include "heap_reclamation.h"
 #include "refcount.h"
-#include "safepoint_reclamation.h"
 
 #include <gtest/gtest.h>
 
@@ -27,12 +27,12 @@ namespace cl
 
         void drain_supported_zct_entries(ThreadState *thread)
         {
-            SafepointRootSet roots;
-            process_zero_count_table_for_safepoint(*thread, roots);
+            ReclamationRootSet roots;
+            process_zero_count_table_for_reclamation(*thread, roots);
         }
     }  // namespace
 
-    TEST(SafepointReclamation, RootCollectionIncludesFrameSlotRoot)
+    TEST(HeapReclamation, RootCollectionIncludesFrameSlotRoot)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
@@ -42,13 +42,13 @@ namespace cl
         *slot = Value::from_oop(string);
         thread->publish_safepoint_scan_record(slot, Value::not_present());
 
-        SafepointRootSet roots;
-        collect_safepoint_roots_from_thread(roots, *thread);
+        ReclamationRootSet roots;
+        collect_reclamation_roots_from_thread(roots, *thread);
 
         EXPECT_TRUE(roots.contains(string));
     }
 
-    TEST(SafepointReclamation, RootCollectionIncludesAccumulatorRoot)
+    TEST(HeapReclamation, RootCollectionIncludesAccumulatorRoot)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
@@ -57,13 +57,13 @@ namespace cl
         thread->publish_safepoint_scan_record(thread->clover_frame_sentinel(),
                                               Value::from_oop(string));
 
-        SafepointRootSet roots;
-        collect_safepoint_roots_from_thread(roots, *thread);
+        ReclamationRootSet roots;
+        collect_reclamation_roots_from_thread(roots, *thread);
 
         EXPECT_TRUE(roots.contains(string));
     }
 
-    TEST(SafepointReclamation, RootCollectionDoesNotDereferenceJunk)
+    TEST(HeapReclamation, RootCollectionDoesNotDereferenceJunk)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
@@ -73,13 +73,13 @@ namespace cl
         *slot = junk;
         thread->publish_safepoint_scan_record(slot, Value::not_present());
 
-        SafepointRootSet roots;
-        collect_safepoint_roots_from_thread(roots, *thread);
+        ReclamationRootSet roots;
+        collect_reclamation_roots_from_thread(roots, *thread);
 
         EXPECT_TRUE(roots.contains(reinterpret_cast<HeapObject *>(0x1010)));
     }
 
-    TEST(SafepointReclamation, ZctProcessingRestoresPositiveRefcountEntry)
+    TEST(HeapReclamation, ZctProcessingRestoresPositiveRefcountEntry)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
@@ -90,8 +90,8 @@ namespace cl
         ASSERT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
 
         incref_heap_ptr(string);
-        SafepointRootSet roots;
-        process_zero_count_table_for_safepoint(*thread, roots);
+        ReclamationRootSet roots;
+        process_zero_count_table_for_reclamation(*thread, roots);
 
         EXPECT_EQ(1, string->refcount);
         EXPECT_EQ(HeapLifecycleState::Normal, string->lifecycle_state);
@@ -99,7 +99,7 @@ namespace cl
         decref_heap_ptr(string);
     }
 
-    TEST(SafepointReclamation, ZctProcessingKeepsStackRootedZeroEntry)
+    TEST(HeapReclamation, ZctProcessingKeepsStackRootedZeroEntry)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
@@ -110,10 +110,10 @@ namespace cl
         Value *slot = thread->clover_frame_sentinel() - 1;
         *slot = Value::from_oop(string);
         thread->publish_safepoint_scan_record(slot, Value::not_present());
-        SafepointRootSet roots;
-        collect_safepoint_roots_from_thread(roots, *thread);
+        ReclamationRootSet roots;
+        collect_reclamation_roots_from_thread(roots, *thread);
 
-        process_zero_count_table_for_safepoint(*thread, roots);
+        process_zero_count_table_for_reclamation(*thread, roots);
 
         EXPECT_EQ(0, string->refcount);
         EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
@@ -121,7 +121,7 @@ namespace cl
         *slot = Value::not_present();
     }
 
-    TEST(SafepointReclamation, ZctProcessingReclaimsUnrootedZeroEntry)
+    TEST(HeapReclamation, ZctProcessingReclaimsUnrootedZeroEntry)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
@@ -137,15 +137,15 @@ namespace cl
             heap.total_reclaim_blockers_for_testing();
         ASSERT_EQ(blockers_before_alloc + 1, blockers_after_alloc);
 
-        SafepointRootSet roots;
-        process_zero_count_table_for_safepoint(*thread, roots);
+        ReclamationRootSet roots;
+        process_zero_count_table_for_reclamation(*thread, roots);
 
         EXPECT_EQ(blockers_after_alloc - 1,
                   heap.total_reclaim_blockers_for_testing());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(object));
     }
 
-    TEST(SafepointReclamation, ZctProcessingReclaimsCascadedChild)
+    TEST(HeapReclamation, ZctProcessingReclaimsCascadedChild)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
@@ -167,8 +167,8 @@ namespace cl
             heap.total_reclaim_blockers_for_testing();
         ASSERT_EQ(blockers_before_alloc + 2, blockers_after_alloc);
 
-        SafepointRootSet roots;
-        process_zero_count_table_for_safepoint(*thread, roots);
+        ReclamationRootSet roots;
+        process_zero_count_table_for_reclamation(*thread, roots);
 
         EXPECT_EQ(blockers_after_alloc - 2,
                   heap.total_reclaim_blockers_for_testing());

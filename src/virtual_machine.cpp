@@ -7,6 +7,7 @@
 #include "exception_object.h"
 #include "exception_propagation.h"
 #include "function.h"
+#include "heap_reclamation.h"
 #include "instance.h"
 #include "int.h"
 #include "list.h"
@@ -15,7 +16,6 @@
 #include "none_type.h"
 #include "parser.h"
 #include "range_iterator.h"
-#include "safepoint_reclamation.h"
 #include "scope.h"
 #include "shape.h"
 #include "thread_state.h"
@@ -130,17 +130,12 @@ namespace cl
 
     void VirtualMachine::complete_safepoint()
     {
-        run_safepoint_reclamation();
+        run_heap_reclamation(threads);
         clear_safepoint_request();
         if(fire_every_safepoint_for_testing())
         {
             request_safepoint();
         }
-    }
-
-    void VirtualMachine::run_safepoint_reclamation()
-    {
-        cl::run_safepoint_reclamation(threads);
     }
 
     ClassObject *class_for_native_layout(VirtualMachine *vm, NativeLayoutId id)

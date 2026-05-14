@@ -56,8 +56,8 @@ add_library(libclovervm STATIC
     range_iterator.cpp
     range_iterator.h
     runtime_helpers.h
-    safepoint_reclamation.cpp
-    safepoint_reclamation.h
+    heap_reclamation.cpp
+    heap_reclamation.h
     shape.cpp
     shape.h
     token.cpp

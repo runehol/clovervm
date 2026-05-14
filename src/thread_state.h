@@ -25,10 +25,11 @@ namespace cl
     class VirtualMachine;
     class CodeObject;
     class ThreadState;
-    class SafepointRootSet;
+    class ReclamationRootSet;
 
-    void process_zero_count_table_for_safepoint(ThreadState &thread,
-                                                const SafepointRootSet &roots);
+    void
+    process_zero_count_table_for_reclamation(ThreadState &thread,
+                                             const ReclamationRootSet &roots);
 
     ClassObject *class_for_native_layout(VirtualMachine *vm, NativeLayoutId id);
 
@@ -259,9 +260,8 @@ namespace cl
                                                            uint32_t n_args);
         NOINLINE Shape *shape_of_inline_value(Value value) const;
 
-        friend void
-        process_zero_count_table_for_safepoint(ThreadState &thread,
-                                               const SafepointRootSet &roots);
+        friend void process_zero_count_table_for_reclamation(
+            ThreadState &thread, const ReclamationRootSet &roots);
 
         VirtualMachine *machine;
         bool *safepoint_requested_ptr;

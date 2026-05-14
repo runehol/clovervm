@@ -233,7 +233,6 @@ namespace cl
             }
         }
         void complete_safepoint();
-        void run_safepoint_reclamation();
 
         void register_builtin_class(const BuiltinClassDefinition &definition);
         void install_bootstrap_string_class();
