@@ -26,12 +26,6 @@ namespace cl
             Value values[2];
         };
 
-        void drain_supported_zct_entries(ThreadState *thread)
-        {
-            ReclamationRootSet roots;
-            process_zero_count_table_for_reclamation(*thread, roots);
-        }
-
         HeapObject *allocate_until_slab_changes(ThreadState *thread,
                                                 GlobalHeap &heap,
                                                 SlabAllocator *slab)
@@ -122,7 +116,7 @@ namespace cl
         test::VmTestContext context;
         ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        drain_supported_zct_entries(thread);
+        thread->drain_zero_count_table_for_testing();
         ReclamationTestObject *object =
             thread->make_internal_raw<ReclamationTestObject>();
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(object));
@@ -189,7 +183,7 @@ namespace cl
         test::VmTestContext context;
         ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        drain_supported_zct_entries(thread);
+        thread->drain_zero_count_table_for_testing();
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
         uint64_t blockers_before_alloc =
             heap.total_reclaim_blockers_for_testing();
@@ -213,7 +207,7 @@ namespace cl
         test::VmTestContext context;
         ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        drain_supported_zct_entries(thread);
+        thread->drain_zero_count_table_for_testing();
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
         uint64_t blockers_before_alloc =
             heap.total_reclaim_blockers_for_testing();
@@ -244,7 +238,7 @@ namespace cl
         test::VmTestContext context;
         ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        drain_supported_zct_entries(thread);
+        thread->drain_zero_count_table_for_testing();
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
         uint64_t blockers_before_alloc =
             heap.total_reclaim_blockers_for_testing();
@@ -273,7 +267,7 @@ namespace cl
         test::VmTestContext context;
         ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        drain_supported_zct_entries(thread);
+        thread->drain_zero_count_table_for_testing();
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
         Tuple *tuple = thread->make_object_raw<Tuple>(object_layout_count_mask);
         ASSERT_TRUE(layout_is_expanded(tuple->layout));
@@ -294,7 +288,7 @@ namespace cl
         test::VmTestContext context;
         ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        drain_supported_zct_entries(thread);
+        thread->drain_zero_count_table_for_testing();
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
 
         ReclamationTestObject *current_object =
@@ -304,7 +298,7 @@ namespace cl
         HeapObject *fresh_slab_object =
             allocate_until_slab_changes(thread, heap, initial_slab);
         ASSERT_NE(nullptr, fresh_slab_object);
-        drain_supported_zct_entries(thread);
+        thread->drain_zero_count_table_for_testing();
 
         ReclamationTestObject *target =
             thread->make_internal_raw<ReclamationTestObject>();
@@ -333,7 +327,7 @@ namespace cl
         test::VmTestContext context;
         ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        drain_supported_zct_entries(thread);
+        thread->drain_zero_count_table_for_testing();
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
         size_t tuple_size = LargeAllocationSize / sizeof(Value);
         Tuple *tuple = thread->make_object_raw<Tuple>(tuple_size);

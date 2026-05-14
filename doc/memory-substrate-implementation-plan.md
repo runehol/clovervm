@@ -67,7 +67,7 @@ Validation:
 
 - [x] Unit tests for duplicate enqueue prevention.
 - [x] Debug-only checks that every ZCT entry has lifecycle state `InZct`.
-- [ ] Tests for `OwnedValue`, `MemberValue`, and container/object stores that
+- [x] Tests for `OwnedValue`, `MemberValue`, and container/object stores that
   exercise zero-refcount enqueue rather than immediate recursive destruction.
 - [x] Cross-phase validation after Phases 4 and 5: tests showing a newly allocated
   object that only lives in frame slots is retained while rooted and reclaimed

@@ -1,5 +1,6 @@
 #include "exception_object.h"
 #include "list.h"
+#include "owned.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -94,6 +95,30 @@ TEST(List, CheckedIndexingSupportsNegativeIndices)
 
     EXPECT_EQ(Value::None(), list->set_item(-1, Value::from_smi(99)));
     EXPECT_EQ(Value::from_smi(99), list->get_item(2));
+}
+
+TEST(List, SetItemUncheckedEnqueuesOverwrittenObject)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    List *list = thread->make_object_raw<List>();
+    String *old_string = make_string(context, L"old-list");
+    String *new_string = make_string(context, L"new-list");
+    OwnedValue keep_list(Value::from_oop(list));
+    OwnedValue keep_new(Value::from_oop(new_string));
+    list->append(Value::from_oop(old_string));
+    thread->drain_zero_count_table_for_testing();
+    ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
+    ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);
+
+    list->set_item_unchecked(0, Value::from_oop(new_string));
+
+    EXPECT_EQ(Value::from_oop(new_string), list->item_unchecked(0));
+    EXPECT_EQ(0, old_string->refcount);
+    EXPECT_EQ(HeapLifecycleState::InZct, old_string->lifecycle_state);
+    EXPECT_TRUE(thread->zero_count_table_contains_for_testing(old_string));
+    EXPECT_FALSE(thread->zero_count_table_contains_for_testing(new_string));
 }
 
 TEST(List, CheckedInsertClampsToPythonListSemantics)

@@ -1,5 +1,6 @@
 #include "dict.h"
 #include "exception_object.h"
+#include "owned.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -69,6 +70,33 @@ TEST(Dict, SetItemOverwritesExistingValue)
 
     EXPECT_EQ(1u, dict->size());
     EXPECT_EQ(Value::from_smi(99), dict->get_item(key));
+}
+
+TEST(Dict, SetItemOverwriteEnqueuesOverwrittenObject)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Dict *dict = thread->make_object_raw<Dict>();
+    Value key = make_string(context, L"shared");
+    Value old_value = make_string(context, L"old-dict");
+    Value new_value = make_string(context, L"new-dict");
+    OwnedValue keep_dict(Value::from_oop(dict));
+    OwnedValue keep_new(new_value);
+    HeapObject *old_object = old_value.as.ptr;
+    HeapObject *new_object = new_value.as.ptr;
+    dict->set_item(key, old_value);
+    thread->drain_zero_count_table_for_testing();
+    ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_object));
+    ASSERT_EQ(HeapLifecycleState::Normal, old_object->lifecycle_state);
+
+    dict->set_item(key, new_value);
+
+    EXPECT_EQ(new_value, dict->get_item(key));
+    EXPECT_EQ(0, old_object->refcount);
+    EXPECT_EQ(HeapLifecycleState::InZct, old_object->lifecycle_state);
+    EXPECT_TRUE(thread->zero_count_table_contains_for_testing(old_object));
+    EXPECT_FALSE(thread->zero_count_table_contains_for_testing(new_object));
 }
 
 TEST(Dict, DelItemRemovesKeyFromLookupAndLogicalSize)

@@ -1,4 +1,7 @@
+#include "owned.h"
+#include "refcount.h"
 #include "scope.h"
+#include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
 #include <gtest/gtest.h>
@@ -78,4 +81,32 @@ TEST(Scope, DeletedChildSlotFallsBackToParentByCurrentEntryName)
     child->set_by_slot_index(slot_idx, Value::not_present());
 
     EXPECT_EQ(Value::from_smi(7), child->get_by_name(name));
+}
+
+TEST(Scope, SetBySlotIndexEnqueuesOverwrittenObject)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    Scope *scope = thread->make_internal_raw<Scope>(nullptr);
+    incref_heap_ptr(scope);
+    TValue<String> name(
+        context.vm().get_or_create_interned_string_value(L"slot"));
+    String *old_string = thread->make_object_raw<String>(L"old-scope");
+    String *new_string = thread->make_object_raw<String>(L"new-scope");
+    OwnedValue keep_new(Value::from_oop(new_string));
+    int32_t slot_idx = scope->register_slot_index_for_write(name);
+    scope->set_by_slot_index(slot_idx, Value::from_oop(old_string));
+    thread->drain_zero_count_table_for_testing();
+    ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
+    ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);
+
+    scope->set_by_slot_index(slot_idx, Value::from_oop(new_string));
+
+    EXPECT_EQ(Value::from_oop(new_string), scope->get_by_slot_index(slot_idx));
+    EXPECT_EQ(0, old_string->refcount);
+    EXPECT_EQ(HeapLifecycleState::InZct, old_string->lifecycle_state);
+    EXPECT_TRUE(thread->zero_count_table_contains_for_testing(old_string));
+    EXPECT_FALSE(thread->zero_count_table_contains_for_testing(new_string));
+    decref_heap_ptr(scope);
 }

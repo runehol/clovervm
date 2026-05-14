@@ -2,7 +2,9 @@
 #include "test_helpers.h"
 
 #include "exception_object.h"
+#include "owned.h"
 #include "refcount.h"
+#include "str.h"
 
 #include <gtest/gtest.h>
 
@@ -98,6 +100,49 @@ namespace cl
         EXPECT_EQ(0, string->refcount);
         EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
         EXPECT_EQ(zct_size_before + 1, thread->zero_count_table_size());
+    }
+
+    TEST(ThreadState, OwnedValueOverwriteEnqueuesReleasedObject)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        String *old_string = thread->make_object_raw<String>(L"old-owned");
+        String *new_string = thread->make_object_raw<String>(L"new-owned");
+        OwnedValue owner(Value::from_oop(old_string));
+        OwnedValue keep_new(Value::from_oop(new_string));
+        thread->drain_zero_count_table_for_testing();
+        ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
+        ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);
+
+        owner = Value::from_oop(new_string);
+
+        EXPECT_EQ(0, old_string->refcount);
+        EXPECT_EQ(HeapLifecycleState::InZct, old_string->lifecycle_state);
+        EXPECT_TRUE(thread->zero_count_table_contains_for_testing(old_string));
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(new_string));
+    }
+
+    TEST(ThreadState, MemberValueOverwriteEnqueuesReleasedObject)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        String *old_string = thread->make_object_raw<String>(L"old-member");
+        String *new_string = thread->make_object_raw<String>(L"new-member");
+        MemberValue member(Value::from_oop(old_string));
+        OwnedValue keep_new(Value::from_oop(new_string));
+        thread->drain_zero_count_table_for_testing();
+        ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
+        ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);
+
+        member = Value::from_oop(new_string);
+
+        EXPECT_EQ(0, old_string->refcount);
+        EXPECT_EQ(HeapLifecycleState::InZct, old_string->lifecycle_state);
+        EXPECT_TRUE(thread->zero_count_table_contains_for_testing(old_string));
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(new_string));
+        member.clear();
     }
 
     TEST(ThreadState, SafepointRequestReadsVmFlag)

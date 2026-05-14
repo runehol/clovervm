@@ -7,6 +7,7 @@
 #include "compilation_unit.h"
 #include "exception_object.h"
 #include "function.h"
+#include "heap_reclamation.h"
 #include "interpreter.h"
 #include "owned_typed_value.h"
 #include "parser.h"
@@ -415,6 +416,12 @@ namespace cl
     {
         return std::find(zero_count_table.begin(), zero_count_table.end(),
                          obj) != zero_count_table.end();
+    }
+
+    void ThreadState::drain_zero_count_table_for_testing()
+    {
+        ReclamationRootSet roots;
+        process_zero_count_table_for_reclamation(*this, roots);
     }
 
 }  // namespace cl
