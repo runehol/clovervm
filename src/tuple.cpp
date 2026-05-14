@@ -102,15 +102,6 @@ namespace cl
                                        std::size(methods));
     }
 
-    void Tuple::initialize_item_unchecked(size_t idx, Value value)
-    {
-        assert(idx < size());
-        value.assert_not_vm_sentinel();
-        Value old_value = elements[idx];
-        elements[idx] = incref(value);
-        decref(old_value);
-    }
-
     Value Tuple::get_item(int64_t py_idx) const
     {
         size_t idx = wrap_index(py_idx);

@@ -4,6 +4,7 @@
 #include "builtin_class_registry.h"
 #include "object.h"
 #include "owned_typed_value.h"
+#include "refcount.h"
 #include "runtime_helpers.h"
 #include "thread_state.h"
 #include "value.h"
@@ -35,7 +36,13 @@ namespace cl
             assert(idx < size());
             return elements[idx];
         }
-        void initialize_item_unchecked(size_t idx, Value value);
+        ALWAYSINLINE void initialize_item_unchecked(size_t idx, Value value)
+        {
+            assert(idx < size());
+            assert(elements[idx] == Value::not_present());
+            value.assert_not_vm_sentinel();
+            elements[idx] = incref(value);
+        }
         [[nodiscard]] Value get_item(int64_t py_idx) const;
 
         static ALWAYSINLINE TValue<Tuple>
