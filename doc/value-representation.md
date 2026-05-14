@@ -141,7 +141,7 @@ The pointer tag lets `Value::storage_class()` decide whether a value is inline,
 interned, or refcounted without dereferencing the pointer.
 
 Detailed heap metadata is covered in [Object Metadata Layout](object-metadata.md)
-and [Layout-ID-Driven Value Scanning and Deallocation Dispatch](layout-id-driven-scanning.md).
+and [Native Layout Descriptors](native-layout-descriptors.md).
 
 ## Relationship To Object Layouts
 

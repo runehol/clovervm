@@ -4,7 +4,7 @@ This document is the current forward plan for CloverVM's memory substrate. The
 historical lifecycle/ZCT/safepoint baseline and bitmap-discovered young-object
 reclamation are implemented; this plan now tracks the remaining design arc:
 
-1. native-layout-id based owned-value scanning and teardown;
+1. native-layout-id based release and teardown;
 2. production reclamation policy;
 3. size-partitioned thread-local heaps.
 
@@ -13,7 +13,7 @@ Background design documents:
 - [Refcounting and Safepoints](refcounting-and-safepoints.md)
 - [Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md)
 - [Valid-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md)
-- [Layout-ID-Driven Value Scanning and Deallocation Dispatch](layout-id-driven-scanning.md)
+- [Native Layout Descriptors](native-layout-descriptors.md)
 
 ## Current Baseline
 
