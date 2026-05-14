@@ -204,12 +204,12 @@ Validation:
 
 ## Phase 6: Serial ZCT Processing
 
-1. Build the safepoint-local root set before scanning any ZCT.
-2. Process each ZCT with index-based scan/keep compaction and a dynamic scan
+1. [x] Build the safepoint-local root set before scanning any ZCT.
+2. [x] Process each ZCT with index-based scan/keep compaction and a dynamic scan
    bound.
 3. For each entry:
-   - if `refcount > 0`, transition `InZct -> Normal`
-   - if `refcount == 0` and the object is in roots, keep it in `InZct`
+   - [x] if `refcount > 0`, transition `InZct -> Normal`
+   - [x] if `refcount == 0` and the object is in roots, keep it in `InZct`
    - if `refcount == 0` and the object is not in roots, transition to
      `Reclaiming`
 4. Tear down `Reclaiming` objects through descriptor-driven child release, not
@@ -222,8 +222,8 @@ Validation:
 
 Validation:
 
-- Tests for root-kept ZCT entries remaining in the ZCT across safepoints.
-- Tests for positive-refcount stale ZCT entries returning to `Normal`.
+- [x] Tests for root-kept ZCT entries remaining in the ZCT across safepoints.
+- [x] Tests for positive-refcount stale ZCT entries returning to `Normal`.
 - Tests for cascaded child reclamation during the same safepoint.
 - Tests for duplicate-ZCT detection in debug builds.
 

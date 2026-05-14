@@ -141,7 +141,10 @@ namespace cl
     void VirtualMachine::run_safepoint_reclamation()
     {
         SafepointRootSet roots = collect_safepoint_roots();
-        (void)roots;
+        for(const std::unique_ptr<ThreadState> &thread: threads)
+        {
+            thread->process_zero_count_table_for_safepoint(roots);
+        }
     }
 
     SafepointRootSet VirtualMachine::collect_safepoint_roots() const

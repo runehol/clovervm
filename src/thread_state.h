@@ -21,6 +21,7 @@ namespace cl
     class ClassObject;
     class ExceptionObject;
     class Function;
+    class SafepointRootSet;
     class Scope;
     class VirtualMachine;
     class CodeObject;
@@ -91,7 +92,10 @@ namespace cl
 
         static void add_to_active_zero_count_table_if_needed(HeapObject *obj);
         void add_to_zero_count_table_if_needed(HeapObject *obj);
+        void
+        process_zero_count_table_for_safepoint(const SafepointRootSet &roots);
         size_t zero_count_table_size() const { return zero_count_table.size(); }
+        bool zero_count_table_contains_for_testing(HeapObject *obj) const;
 
         [[nodiscard]] Value run_clovervm_code_object(CodeObject *obj);
         [[nodiscard]] Value call_clovervm_function(TValue<Function> function);
