@@ -83,21 +83,15 @@ because appending may reallocate the underlying storage.
 
 Newly allocated reclaimable objects start with heap `refcount == 0`. If such an
 object is only ever stored in managed frame slots and is later forgotten, no
-heap `DECREF` will occur to enqueue it. Therefore a committed zero-refcount
-object must be discoverable by reclamation.
+heap `DECREF` will occur to enqueue it. Therefore a valid zero-refcount object
+must be discoverable by reclamation.
 
-The initial implementation makes this explicit by enqueuing every committed
-reclaimable allocation whose refcount is still zero. If the object is soon
-retained by a heap store, the stale ZCT entry is harmless: the next safepoint
-will observe `refcount > 0` and transition the object back to `Normal`.
-
-This eager allocation-time ZCT traffic is not the long-term shape. The intended
-replacement is described in
-[Committed-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md):
-thread-local heaps
-remember slabs that have been active since the previous reclamation, and
-reclamation scans those slabs' committed-object header bitmaps to discover young
-`refcount == 0 && lifecycle_state == Normal` candidates. The ZCT then primarily
+The implementation discovers those young objects through slab metadata rather
+than eager allocation-time ZCT enqueue. As described in
+[Valid-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md),
+thread-local heaps remember slabs that have been active since the previous
+reclamation, and reclamation scans those slabs' valid-object bitmaps to discover
+young `refcount == 0 && lifecycle_state == Normal` candidates. The ZCT primarily
 tracks older zero-refcount objects whose stack-root protection survived a
 previous reclamation, plus objects that reached zero through heap `DECREF`.
 
@@ -471,10 +465,9 @@ found in the global root set remain `InZct` and are compacted into that ZCT's
 kept prefix. Zero-refcount objects not found in roots transition to
 `Reclaiming`, are torn down, and eventually transition to `Dead`.
 
-Once slab-based young-object discovery exists, the coordinator also walks the
-committed-object header bitmaps for slabs that were active in each
-`ThreadLocalHeap` since the previous reclamation. For each young object with
-`refcount == 0 && lifecycle_state == Normal`, the same root set acts as a
+The coordinator also walks the valid-object bitmaps for slabs that were active
+in each `ThreadLocalHeap` since the previous reclamation. For each young object
+with `refcount == 0 && lifecycle_state == Normal`, the same root set acts as a
 filter:
 
 - if the root set contains the object, transition `Normal -> InZct` and append

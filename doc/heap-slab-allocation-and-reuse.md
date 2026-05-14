@@ -35,8 +35,9 @@ allocator:
 - Allocation is performed via bump pointer within the current slab.
 - This path is lock-free and extremely fast.
 - When the slab is exhausted, the slow path opens a fresh slab, transfers the
-  active-allocator blocker, and allocates from the new slab. Ordinary free-slab
-  reuse is the next policy step.
+  active allocator pin, gives the old slab to the current reclamation epoch, and
+  allocates from the new slab. Ordinary free-slab reuse is not part of the
+  current plan.
 - `switch_to_new_slabs()` explicitly opens fresh active slabs. VM startup uses
   this after builtin initialization so long-lived bootstrap allocations do not
   share ordinary slabs with later runtime allocations.
@@ -122,12 +123,13 @@ Objects exceeding a size threshold are allocated separately:
 - The slab contains exactly one object.
 - This slab is logically owned by the allocating thread.
 
-Dedicated large-object slabs follow the same reclaim-blocker rules as ordinary
-slabs, with no active-allocator blocker because the dedicated slab is never
-installed as an active allocation slab. The allocation reserve itself adds the
-object reclaim blocker. If construction fails, the cold failure path drops that
-blocker; otherwise the blocker remains until the object is deallocated. When
-that object blocker later drops to zero, the slab is handed to `GlobalHeap`.
+Dedicated large-object slabs use the same valid-object bitmap API as ordinary
+slabs, with no active allocator pin because the dedicated slab is never
+installed as an active allocation slab. The allocating thread records the slab in
+its current reclamation epoch and holds an epoch discovery pin until reclamation
+scans that slab. Successful construction marks bit 0 in the bitmap; failed
+construction leaves the slab with no valid object bit and the normal epoch finish
+drops the discovery pin and asks `GlobalHeap` whether the slab is empty.
 
 The dedicated-slab threshold is a policy decision. It should prevent oversized
 objects from being mixed into ordinary slabs, and later size-class routing should
@@ -171,25 +173,20 @@ This ensures correctness in the presence of:
 
 Each slab maintains:
 
-- `n_reclaim_blockers`: number of current reasons the slab cannot be reclaimed
+- `valid_object_bitmap`: valid constructed object header slots
+- `n_slab_pins`: active allocator and epoch discovery lifetime pins
 - slab family or slab kind metadata
 - allocation bounds / bump pointer state
 
-`n_reclaim_blockers` is the authoritative first-pass slab lifetime invariant. A
-slab remembers its owning `GlobalHeap` and hands itself back immediately when
-this counter reaches zero. The initial `GlobalHeap` policy is to unregister and
-`munmap` the slab immediately. Immortal heaps use the same blocker accounting;
-their objects are immortal because they are never deallocated, so their object
-blockers naturally remain. Do not require a separate slab state enum for
-correctness in the first design.
+The bitmap records object presence; pins record temporary slab lifetime
+ownership. `SlabAllocator` does not remember its owning `GlobalHeap`, and pin
+drops never release or unmap a slab as a side effect. `GlobalHeap` owns lookup
+removal and unmapping through explicit `release_slab_if_empty()` calls.
 
-The counter has two sources:
+A slab is releasable only when both conditions hold:
 
-- an allocator that has a slab open for allocation holds one reclaim blocker on
-  that slab, and drops it when the slab is closed for allocation;
-- each reserved object allocation on the slab holds one reclaim blocker, and
-  drops it on constructor failure or when the constructed object is later
-  deallocated.
+- its valid-object bitmap is empty;
+- `n_slab_pins == 0`.
 
 This means a slab with no constructed objects is still not reusable if it
 remains installed as an active allocation slab.
@@ -198,12 +195,11 @@ remains installed as an active allocation slab.
 
 Object allocation proceeds in three steps:
 
-1. Reserve raw memory via bump allocation from the selected slab and increment
-   `slab->n_reclaim_blockers` for the object allocation.
+1. Reserve raw memory via bump allocation from the selected slab.
 2. Run the object constructor.
-3. If construction fails, the cold failure path finds the owning slab and drops
-   the object reclaim blocker. If construction succeeds, make the object visible
-   to the system.
+3. If construction succeeds, mark the object in the slab's valid-object bitmap
+   and make it visible to the system. If construction fails, leave the reserved
+   bump memory as an unmarked hole.
 
 Only successfully constructed objects participate in reference counting and
 reclamation.
@@ -219,35 +215,32 @@ At safepoint:
 
 - each truly dead object is:
   - torn down by clearing owned `Value` slots and releasing copied child values
-  - accounted for by decrementing its slab’s `n_reclaim_blockers`
+  - accounted for by clearing its valid-object bit and remembering the slab for
+    a later release check
 
 Teardown may release child objects. If those children reach zero, they are added
 to the active ZCT and may be processed during the same safepoint.
 
 ### Recently Allocated Slab Discovery
 
-The current baseline eagerly enqueues every committed zero-refcount reclaimable
-allocation into the ZCT. That is a correctness bridge, not the intended
-long-term allocation path.
-
-The target design is described in
-[Committed-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md).
-In short, each slab maintains a committed-object header bitmap.
+The young-object discovery design is described in
+[Valid-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md). In
+short, each slab maintains a valid-object bitmap.
 `ThreadLocalHeap` remembers slabs that have been active since the previous
 reclamation, updating that list on slab switches rather than on every
 allocation. During reclamation, the VM walks those slabs' bitmaps to discover
 young objects with `refcount == 0 && lifecycle_state == Normal`.
 
 The bitmap also replaces per-object slab reclaim blockers. Active allocator pins
-remain separate. Object teardown clears committed-object bits and batches slab
+remain separate. Object teardown clears valid-object bits and batches slab
 release checks until the end of reclamation.
 
 ### Whole-Slab Release And Later Reuse
 
-- when `slab->n_reclaim_blockers == 0`, the slab calls back to its owning
-  `GlobalHeap` immediately for reclamation
-- the first `GlobalHeap` policy unregisters the slab from the lookup map and
-  deallocates it with `munmap`
+- callers run `GlobalHeap::release_slab_if_empty()` at explicit batch points
+  after they are done touching candidate slabs
+- `GlobalHeap` unregisters empty, unpinned slabs from the lookup map and
+  deallocates them with `munmap`
 - a later policy may retain fully reclaimed slabs on a free list instead of
   immediately unmapping them
 
@@ -326,8 +319,9 @@ follows:
 3. If the fast path cannot satisfy the request, call the non-inlined slow path.
 4. If the allocation exceeds the dedicated-slab threshold, bypass the ordinary
    slab path and allocate a dedicated slab.
-5. Otherwise open a fresh ordinary slab, add the new allocator blocker, drop the
-   old allocator blocker, then reserve the object and add its object blocker.
+5. Otherwise open a fresh ordinary slab, add the new active allocator pin, drop
+   the old active allocator pin, remember the new slab in the current
+   reclamation epoch, then reserve the object.
 
 This preserves a simple fast path while avoiding general-purpose free-list allocation.
 
@@ -341,12 +335,13 @@ This preserves a simple fast path while avoiding general-purpose free-list alloc
 - Future multi-threading should make refcount transitions atomic, because
   references may be modified by multiple threads.
 
-### Slab Counters
+### Slab Pins
 
-- `slab->n_reclaim_blockers` is non-atomic in the first single-threaded design.
-- Object blockers are dropped during controlled reclamation phases. Allocator
-  blockers are added when a slab is opened for allocation and dropped when that
-  slab is closed for allocation.
+- `slab->n_slab_pins` is non-atomic in the first single-threaded design.
+- Active allocator pins are added when a slab is opened for allocation and
+  dropped when that slab is closed for allocation.
+- Epoch discovery pins are added when a slab enters a thread-local reclamation
+  epoch list and dropped after reclamation scans that epoch.
 - Slabs are logically owned by a single thread for allocation purposes.
 
 ### Global Structures
@@ -360,10 +355,9 @@ This preserves a simple fast path while avoiding general-purpose free-list alloc
 
 To maintain correctness:
 
-- `slab->n_reclaim_blockers` is incremented when memory is reserved for an
-  object allocation.
-- If object construction fails, the cold failure path finds the owning slab and
-  drops that object reclaim blocker.
+- reserving bump memory does not make an object visible to reclamation;
+- successful construction marks the valid-object bit;
+- failed construction leaves no valid-object bit to clear.
 - The reserved bump memory is abandoned; whole-slab reclamation eventually
   recovers it.
 

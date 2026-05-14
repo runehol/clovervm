@@ -12,7 +12,7 @@ Background design documents:
 
 - [Refcounting and Safepoints](refcounting-and-safepoints.md)
 - [Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md)
-- [Committed-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md)
+- [Valid-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md)
 - [Layout-ID-Driven Value Scanning and Deallocation Dispatch](layout-id-driven-scanning.md)
 
 ## Current Baseline
@@ -23,8 +23,10 @@ baseline:
 - `HeapObject` lifecycle states: `Normal`, `InZct`, `Reclaiming`, `Dead`.
 - Per-thread ZCTs with duplicate-entry validation.
 - Refcount zero transitions enqueue through helper APIs.
-- Fresh zero-refcount reclaimable allocations are still eagerly added to the
-  ZCT.
+- Fresh zero-refcount reclaimable allocations do not enter the ZCT at allocation
+  time. Reclamation discovers young zero-refcount candidates from per-slab
+  valid-object bitmaps; stack-rooted young candidates are moved into the ZCT so
+  they remain discoverable later.
 - Conservative stack root collection from published safepoint scan records.
 - Safepoints embedded in committed call/return paths, not explicit bytecodes.
 - VM-global `run_heap_reclamation()` over registered `ThreadState`s.
@@ -37,9 +39,8 @@ baseline:
   of the current plan.
 - VM bootstrap switches the default thread to fresh slabs after builtin setup.
 
-The next work should remove the two biggest temporary shapes:
+The next work should remove the biggest remaining temporary shape:
 
-- eager allocation-time ZCT enqueue for every young zero-refcount object;
 - ad hoc `HeapLayout` value-span decoding inside reclamation.
 
 ## Ground Rules
@@ -62,7 +63,7 @@ The next work should remove the two biggest temporary shapes:
 
 Replace per-object slab reclaim blockers with a valid-object header bitmap
 as described in
-[Committed-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md).
+[Valid-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md).
 
 1. [x] Add fixed-size valid-object bitmap metadata to `SlabAllocator`.
    - Derive bitmap word count from `DefaultSlabSize` and the 32-byte heap pointer
