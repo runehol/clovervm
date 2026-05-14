@@ -1150,13 +1150,13 @@ namespace cl
                 source_offset, OutgoingArgReg(0), enter_method_name_idx(), 0,
                 context_manager_protocol_type_error_idx(),
                 context_manager_protocol_message_idx());
-            if(item_children.size() == 2)
-            {
-                emit_store_accumulator_to_target(source_offset,
-                                                 item_children[1]);
-            }
 
             auto codegen_protected_body = [&]() {
+                if(item_children.size() == 2)
+                {
+                    emit_store_accumulator_to_target(source_offset,
+                                                     item_children[1]);
+                }
                 if(item_offset + 2 == with_children.size())
                 {
                     codegen_node(body_idx);

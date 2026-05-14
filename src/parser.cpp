@@ -1617,10 +1617,6 @@ namespace cl
             children.push_back(with_item());
             while(match(Token::COMMA))
             {
-                if(peek() == Token::COLON)
-                {
-                    break;
-                }
                 children.push_back(with_item());
             }
             consume(Token::COLON);

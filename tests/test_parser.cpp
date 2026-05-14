@@ -255,6 +255,14 @@ TEST(Parser, with_multiple_items_stmt)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, with_stmt_rejects_trailing_comma)
+{
+    expect_parse_error(L"with manager(), :\n"
+                       L"    pass\n",
+                       "Unexpected token COLON at offset 16 (line 1, column "
+                       "17), near \"with manager(), :\"");
+}
+
 TEST(Parser, try_bare_except_stmt)
 {
     std::string expected = ("try:\n"

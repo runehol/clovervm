@@ -3760,6 +3760,24 @@ TEST(Interpreter, with_statement_reraises_when_exit_returns_false)
                         L"ValueError");
 }
 
+TEST(Interpreter, with_statement_exit_runs_when_as_target_binding_raises)
+{
+    test::FileRunner file_runner(L"seen = False\n"
+                                 L"values = []\n"
+                                 L"class Manager:\n"
+                                 L"    def __enter__(self):\n"
+                                 L"        return 7\n"
+                                 L"    def __exit__(self, typ, exc, tb):\n"
+                                 L"        global seen\n"
+                                 L"        seen = typ is IndexError\n"
+                                 L"        return True\n"
+                                 L"with Manager() as values[0]:\n"
+                                 L"    seen = 99\n"
+                                 L"seen\n");
+
+    EXPECT_EQ(Value::True(), file_runner.return_value);
+}
+
 TEST(Interpreter, with_statement_exit_runs_before_return)
 {
     test::FileRunner file_runner(L"log = 0\n"
