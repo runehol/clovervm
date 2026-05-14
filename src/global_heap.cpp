@@ -116,11 +116,6 @@ namespace cl
         return global_allocator->allocate(n_bytes);
     }
 
-    void GlobalHeap::release_for_failed_construction(char *memory)
-    {
-        release_slab_if_empty(slab_for_address_unlocked(memory));
-    }
-
     void GlobalHeap::mark_valid_object(HeapObject *obj)
     {
         slab_for_object_unlocked(obj)->mark_valid_object(obj);

@@ -27,17 +27,9 @@ namespace cl
         static_assert(std::is_base_of_v<HeapObject, T>);
 
         char *memory = heap->allocate(sizeof(T));
-        try
-        {
-            T *obj = new(memory) T(std::forward<Args>(args)...);
-            heap->mark_valid_object(obj);
-            return obj;
-        }
-        catch(...)
-        {
-            heap->release_for_failed_construction(memory);
-            throw;
-        }
+        T *obj = new(memory) T(std::forward<Args>(args)...);
+        heap->mark_valid_object(obj);
+        return obj;
     }
 
     template <typename T, typename Heap, typename... Args>
@@ -59,43 +51,26 @@ namespace cl
                 spec.object_size_in_16byte_units, value_offset_in_words,
                 spec.value_count);
             char *memory = heap->allocate(object_size_in_bytes);
-            try
-            {
-                T *obj = new(memory) T(layout, std::forward<Args>(args)...);
-                heap->mark_valid_object(obj);
-                return obj;
-            }
-            catch(...)
-            {
-                heap->release_for_failed_construction(memory);
-                throw;
-            }
+            T *obj = new(memory) T(layout, std::forward<Args>(args)...);
+            heap->mark_valid_object(obj);
+            return obj;
         }
 
         size_t allocation_size_in_bytes = value_ptr_granularity +
                                           sizeof(ExpandedHeader) +
                                           object_size_in_bytes;
         char *memory = heap->allocate(allocation_size_in_bytes);
-        try
-        {
-            char *object_memory = memory + value_ptr_granularity;
-            ExpandedHeader *header = reinterpret_cast<ExpandedHeader *>(
-                object_memory - sizeof(ExpandedHeader));
-            header->object_size_in_16byte_units =
-                spec.object_size_in_16byte_units;
-            header->value_count = spec.value_count;
+        char *object_memory = memory + value_ptr_granularity;
+        ExpandedHeader *header = reinterpret_cast<ExpandedHeader *>(
+            object_memory - sizeof(ExpandedHeader));
+        header->object_size_in_16byte_units = spec.object_size_in_16byte_units;
+        header->value_count = spec.value_count;
 
-            HeapLayout layout =
-                encode_expanded_layout_unchecked(value_offset_in_words);
-            T *obj = new(object_memory) T(layout, std::forward<Args>(args)...);
-            heap->mark_valid_object(obj);
-            return obj;
-        }
-        catch(...)
-        {
-            heap->release_for_failed_construction(memory);
-            throw;
-        }
+        HeapLayout layout =
+            encode_expanded_layout_unchecked(value_offset_in_words);
+        T *obj = new(object_memory) T(layout, std::forward<Args>(args)...);
+        heap->mark_valid_object(obj);
+        return obj;
     }
 }  // namespace cl
 

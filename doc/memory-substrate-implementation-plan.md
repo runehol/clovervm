@@ -113,7 +113,6 @@ Move slab release authority out of slabs and into `GlobalHeap`.
    do not release/unmap slabs immediately from object teardown.
 7. [x] After explicit batch points, run `release_slab_if_empty()` for release
    candidate slabs:
-   - after dedicated construction failure drops its epoch discovery pin;
    - after reclamation drops epoch discovery pins and clears valid-object bits.
    - active slab switches drop the old active allocator pin but do not run a
      release check there, because the epoch discovery pin keeps the slab alive
@@ -159,7 +158,9 @@ allocation.
 7. [x] Track dedicated large-object slabs in the shared epoch list and
    dedicated byte counter, not in the ordinary inactive-slab counter.
    - First insertion adds an epoch discovery pin.
-   - Construction failure before commit drops that pin and runs a release check.
+   - Construction failure before commit leaves an unmarked allocation in the
+     epoch-pinned slab; the normal epoch finish drops the pin and release-checks
+     the slab.
 8. [x] Do not update the epoch slab list on every allocation.
 9. [x] After each reclamation, reset each thread-local heap's epoch slab list to
    the slabs currently open for allocation, reset the ordinary inactive counter

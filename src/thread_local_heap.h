@@ -36,7 +36,6 @@ namespace cl
         }
 
         void switch_to_new_slabs();
-        void release_for_failed_construction(char *memory);
         void adopt_epoch_state_from(ThreadLocalHeap &child);
         template <typename Fn> void for_each_epoch_slab(Fn &&fn) const
         {
@@ -93,8 +92,6 @@ namespace cl
         void remember_ordinary_epoch_slab(SlabAllocator *allocator);
         void remember_dedicated_epoch_slab(SlabAllocator *allocator,
                                            size_t n_bytes);
-        bool forget_dedicated_epoch_slab_for_failed_construction(
-            SlabAllocator *allocator);
         void drop_epoch_discovery_pins_and_release_slabs();
         bool owns_epoch_slab(SlabAllocator *allocator) const;
 

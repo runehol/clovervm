@@ -50,6 +50,18 @@ namespace
         return objects;
     }
 
+    void finish_epoch_and_release_empty_slabs(ThreadLocalHeap &local_heap,
+                                              GlobalHeap &heap)
+    {
+        std::vector<SlabAllocator *> slabs =
+            local_heap.finish_reclamation_epoch();
+        for(SlabAllocator *slab: slabs)
+        {
+            slab->drop_epoch_discovery_pin();
+            heap.release_slab_if_empty(slab);
+        }
+    }
+
 }  // namespace
 
 TEST(GlobalHeap, SlabMapFindsAllocatedAddresses)
@@ -160,21 +172,21 @@ TEST(GlobalHeap, DedicatedLargeRawAllocationHasEpochPin)
     EXPECT_EQ(2u, local_heap.epoch_slab_count());
     EXPECT_EQ(LargeAllocationSize,
               local_heap.dedicated_large_bytes_since_reclamation_count());
-    local_heap.release_for_failed_construction(memory);
-    EXPECT_EQ(1u, local_heap.epoch_slab_count());
-    EXPECT_EQ(LargeAllocationSize,
-              local_heap.dedicated_large_bytes_since_reclamation_count());
 }
 
-TEST(GlobalHeap, DedicatedLargeAllocationConstructionFailureReleasesEmptySlab)
+TEST(GlobalHeap, DedicatedLargeAbandonedAllocationReleasesAfterEpochFinish)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
     char *memory = local_heap.allocate(LargeAllocationSize);
-    local_heap.release_for_failed_construction(memory);
+    ASSERT_TRUE(heap.has_slab_for_address_for_testing(memory));
+
+    finish_epoch_and_release_empty_slabs(local_heap, heap);
 
     EXPECT_FALSE(heap.has_slab_for_address_for_testing(memory));
+    EXPECT_EQ(1u, local_heap.epoch_slab_count());
+    EXPECT_EQ(0u, local_heap.dedicated_large_bytes_since_reclamation_count());
 }
 
 TEST(GlobalHeap, ThreadLocalHeapAdoptsEpochStateByMove)

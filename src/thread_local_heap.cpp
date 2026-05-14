@@ -51,19 +51,6 @@ namespace cl
         drop_active_allocator_pin(old_allocator);
     }
 
-    void ThreadLocalHeap::release_for_failed_construction(char *memory)
-    {
-        SlabAllocator *allocator =
-            global_heap->slab_for_address_unlocked(memory);
-        if(forget_dedicated_epoch_slab_for_failed_construction(allocator))
-        {
-            global_heap->release_slab_if_empty(allocator);
-            return;
-        }
-
-        global_heap->release_for_failed_construction(memory);
-    }
-
     void ThreadLocalHeap::adopt_epoch_state_from(ThreadLocalHeap &child)
     {
         assert(this != &child);
@@ -118,25 +105,6 @@ namespace cl
     {
         remember_epoch_slab(allocator);
         dedicated_large_bytes_since_reclamation += n_bytes;
-    }
-
-    bool ThreadLocalHeap::forget_dedicated_epoch_slab_for_failed_construction(
-        SlabAllocator *allocator)
-    {
-        if(allocator == local_allocator)
-        {
-            return false;
-        }
-        auto it = std::find(epoch_slabs_since_reclamation.begin(),
-                            epoch_slabs_since_reclamation.end(), allocator);
-        if(it == epoch_slabs_since_reclamation.end())
-        {
-            return false;
-        }
-
-        allocator->drop_epoch_discovery_pin();
-        epoch_slabs_since_reclamation.erase(it);
-        return true;
     }
 
     void ThreadLocalHeap::drop_epoch_discovery_pins_and_release_slabs()
