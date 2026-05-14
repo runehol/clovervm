@@ -53,6 +53,7 @@ namespace cl
             });
             return found;
         }
+
     }  // namespace
 
     TEST(HeapReclamation, RootCollectionIncludesFrameSlotRoot)
@@ -115,7 +116,7 @@ namespace cl
 
         incref_heap_ptr(string);
         ReclamationRootSet roots;
-        process_zero_count_table_for_reclamation(*thread, roots);
+        process_zct_only_for_testing(*thread, roots);
 
         EXPECT_EQ(1, string->refcount);
         EXPECT_EQ(HeapLifecycleState::Normal, string->lifecycle_state);
@@ -127,9 +128,8 @@ namespace cl
     TEST(HeapReclamation, ZctProcessingRejectsDuplicateZctEntry)
     {
         test::VmTestContext context;
-        ThreadState *thread = context.thread();
+        ThreadState *thread = context.vm().make_new_thread();
         ThreadState::ActivationScope active_thread(thread);
-        thread->drain_zero_count_table_for_testing();
         ReclamationTestObject *object =
             thread->make_internal_raw<ReclamationTestObject>();
         thread->add_to_zero_count_table_if_needed(object);
@@ -142,7 +142,7 @@ namespace cl
         EXPECT_DEATH(
             {
                 ReclamationRootSet roots;
-                process_zero_count_table_for_reclamation(*thread, roots);
+                process_zct_only_for_testing(*thread, roots);
             },
             "duplicate heap object in zero count table");
     }
@@ -186,7 +186,7 @@ namespace cl
         ReclamationRootSet roots;
         collect_reclamation_roots_from_thread(roots, *thread);
 
-        process_zero_count_table_for_reclamation(*thread, roots);
+        process_zct_only_for_testing(*thread, roots);
 
         EXPECT_EQ(0, string->refcount);
         EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
@@ -194,33 +194,25 @@ namespace cl
         *slot = Value::not_present();
     }
 
-    TEST(HeapReclamation, ZctProcessingReclaimsUnrootedZeroEntry)
+    TEST(HeapReclamation, FullReclamationReclaimsUnrootedZctEntry)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        thread->drain_zero_count_table_for_testing();
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
-        uint64_t blockers_before_alloc =
-            heap.total_reclaim_blockers_for_testing();
+        context.vm().run_heap_reclamation();
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
         ReclamationTestObject *object =
             thread->make_internal_raw<ReclamationTestObject>();
         SlabAllocator *slab = heap.slab_for_object_unlocked(object);
         thread->add_to_zero_count_table_if_needed(object);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(object));
-        uint64_t blockers_after_alloc =
-            heap.total_reclaim_blockers_for_testing();
-        ASSERT_EQ(blockers_before_alloc + 1, blockers_after_alloc);
         uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
         ASSERT_EQ(valid_objects_before_alloc + 1, valid_objects_after_alloc);
         ASSERT_TRUE(slab_has_valid_object(slab, object));
 
-        ReclamationRootSet roots;
-        process_zero_count_table_for_reclamation(*thread, roots);
+        context.vm().run_heap_reclamation();
 
-        EXPECT_EQ(blockers_after_alloc - 1,
-                  heap.total_reclaim_blockers_for_testing());
         EXPECT_EQ(valid_objects_after_alloc - 1,
                   heap.count_valid_objects_slow());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(object));
@@ -229,12 +221,9 @@ namespace cl
     TEST(HeapReclamation, ZctProcessingReclaimsCascadedChild)
     {
         test::VmTestContext context;
-        ThreadState *thread = context.thread();
+        ThreadState *thread = context.vm().make_new_thread();
         ThreadState::ActivationScope active_thread(thread);
-        thread->drain_zero_count_table_for_testing();
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
-        uint64_t blockers_before_alloc =
-            heap.total_reclaim_blockers_for_testing();
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
         ReclamationTestObject *child =
             thread->make_internal_raw<ReclamationTestObject>();
@@ -250,32 +239,25 @@ namespace cl
         SlabAllocator *child_slab = heap.slab_for_object_unlocked(child);
         ASSERT_TRUE(slab_has_valid_object(owner_slab, owner));
         ASSERT_TRUE(slab_has_valid_object(child_slab, child));
-        uint64_t blockers_after_alloc =
-            heap.total_reclaim_blockers_for_testing();
-        ASSERT_EQ(blockers_before_alloc + 2, blockers_after_alloc);
         uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
         ASSERT_EQ(valid_objects_before_alloc + 2, valid_objects_after_alloc);
 
         ReclamationRootSet roots;
-        process_zero_count_table_for_reclamation(*thread, roots);
+        process_zct_only_for_testing(*thread, roots);
 
-        EXPECT_EQ(blockers_after_alloc - 2,
-                  heap.total_reclaim_blockers_for_testing());
         EXPECT_EQ(valid_objects_after_alloc - 2,
                   heap.count_valid_objects_slow());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(owner));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(child));
     }
 
-    TEST(HeapReclamation, ZctProcessingReclaimsCompactDynamicObject)
+    TEST(HeapReclamation, FullReclamationReclaimsCompactDynamicObject)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        thread->drain_zero_count_table_for_testing();
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
-        uint64_t blockers_before_alloc =
-            heap.total_reclaim_blockers_for_testing();
+        context.vm().run_heap_reclamation();
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
         String *child = thread->make_object_raw<String>(L"tuple-child");
         Tuple *owner = thread->make_object_raw<Tuple>(1);
@@ -289,32 +271,24 @@ namespace cl
         SlabAllocator *child_slab = heap.slab_for_object_unlocked(child);
         ASSERT_TRUE(slab_has_valid_object(owner_slab, owner));
         ASSERT_TRUE(slab_has_valid_object(child_slab, child));
-        uint64_t blockers_after_alloc =
-            heap.total_reclaim_blockers_for_testing();
-        ASSERT_EQ(blockers_before_alloc + 2, blockers_after_alloc);
         uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
         ASSERT_EQ(valid_objects_before_alloc + 2, valid_objects_after_alloc);
 
-        ReclamationRootSet roots;
-        process_zero_count_table_for_reclamation(*thread, roots);
+        context.vm().run_heap_reclamation();
 
-        EXPECT_EQ(blockers_after_alloc - 2,
-                  heap.total_reclaim_blockers_for_testing());
         EXPECT_EQ(valid_objects_after_alloc - 2,
                   heap.count_valid_objects_slow());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(owner));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(child));
     }
 
-    TEST(HeapReclamation, ZctProcessingReclaimsExpandedDynamicObject)
+    TEST(HeapReclamation, FullReclamationReclaimsExpandedDynamicObject)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        thread->drain_zero_count_table_for_testing();
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
-        uint64_t blockers_before_alloc =
-            heap.total_reclaim_blockers_for_testing();
+        context.vm().run_heap_reclamation();
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
         Tuple *tuple = thread->make_object_raw<Tuple>(object_layout_count_mask);
         ASSERT_TRUE(layout_is_expanded(tuple->layout));
@@ -322,28 +296,21 @@ namespace cl
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
         SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
         ASSERT_TRUE(slab_has_valid_object(slab, tuple));
-        uint64_t blockers_after_alloc =
-            heap.total_reclaim_blockers_for_testing();
-        ASSERT_GE(blockers_after_alloc, blockers_before_alloc + 1);
         uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
         ASSERT_EQ(valid_objects_before_alloc + 1, valid_objects_after_alloc);
 
-        ReclamationRootSet roots;
-        process_zero_count_table_for_reclamation(*thread, roots);
+        context.vm().run_heap_reclamation();
 
-        EXPECT_EQ(blockers_after_alloc - 1,
-                  heap.total_reclaim_blockers_for_testing());
         EXPECT_EQ(valid_objects_after_alloc - 1,
                   heap.count_valid_objects_slow());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
     }
 
-    TEST(HeapReclamation, ZctProcessingLeavesEpochPinnedInactiveSlabMapped)
+    TEST(HeapReclamation, FullReclamationReleasesInactiveSlab)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        thread->drain_zero_count_table_for_testing();
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
 
         ReclamationTestObject *current_object =
@@ -368,22 +335,20 @@ namespace cl
         void *next_slab_address = next_slab_object;
         ASSERT_NE(target_slab, heap.slab_for_object_unlocked(next_slab_object));
 
-        ReclamationRootSet roots;
-        process_zero_count_table_for_reclamation(*thread, roots);
+        context.vm().run_heap_reclamation();
 
-        EXPECT_TRUE(heap.has_slab_for_address_for_testing(target_address));
+        EXPECT_FALSE(heap.has_slab_for_address_for_testing(target_address));
         EXPECT_TRUE(heap.has_slab_for_address_for_testing(next_slab_address));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(target));
     }
 
-    TEST(HeapReclamation,
-         ZctProcessingLeavesEpochPinnedDedicatedLargeSlabMapped)
+    TEST(HeapReclamation, FullReclamationReleasesDedicatedLargeSlab)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        thread->drain_zero_count_table_for_testing();
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+        context.vm().run_heap_reclamation();
         size_t tuple_size = LargeAllocationSize / sizeof(Value);
         Tuple *tuple = thread->make_object_raw<Tuple>(tuple_size);
         void *tuple_address = tuple;
@@ -393,29 +358,22 @@ namespace cl
         SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
         EXPECT_EQ(1u, slab->slab_pin_count());
         ASSERT_EQ(1u, slab->count_valid_objects_slow());
-        uint64_t blockers_after_alloc =
-            heap.total_reclaim_blockers_for_testing();
         uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
 
-        ReclamationRootSet roots;
-        process_zero_count_table_for_reclamation(*thread, roots);
+        context.vm().run_heap_reclamation();
 
-        EXPECT_EQ(blockers_after_alloc - 1,
-                  heap.total_reclaim_blockers_for_testing());
         EXPECT_EQ(valid_objects_after_alloc - 1,
                   heap.count_valid_objects_slow());
-        EXPECT_TRUE(heap.has_slab_for_address_for_testing(tuple_address));
+        EXPECT_FALSE(heap.has_slab_for_address_for_testing(tuple_address));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
     }
 
     TEST(HeapReclamation, EpochScanReclaimsUnrootedYoungZeroRefcountObject)
     {
-        VirtualMachine vm;
-        ThreadStateList threads;
-        threads.push_back(std::make_unique<ThreadState>(&vm));
-        ThreadState *thread = threads[0].get();
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        GlobalHeap &heap = vm.get_refcounted_global_heap();
+        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
 
         size_t tuple_size = LargeAllocationSize / sizeof(Value);
         Tuple *tuple = thread->make_object_raw<Tuple>(tuple_size);
@@ -425,7 +383,7 @@ namespace cl
         ASSERT_EQ(1u, slab->slab_pin_count());
         ASSERT_EQ(HeapLifecycleState::Normal, tuple->lifecycle_state);
 
-        run_heap_reclamation(threads);
+        context.vm().run_heap_reclamation();
 
         EXPECT_FALSE(heap.has_slab_for_address_for_testing(tuple_address));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
@@ -433,12 +391,10 @@ namespace cl
 
     TEST(HeapReclamation, EpochScanMovesRootedYoungZeroRefcountObjectToZct)
     {
-        VirtualMachine vm;
-        ThreadStateList threads;
-        threads.push_back(std::make_unique<ThreadState>(&vm));
-        ThreadState *thread = threads[0].get();
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
         ThreadState::ActivationScope active_thread(thread);
-        GlobalHeap &heap = vm.get_refcounted_global_heap();
+        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
 
         size_t tuple_size = LargeAllocationSize / sizeof(Value);
         Tuple *tuple = thread->make_object_raw<Tuple>(tuple_size);
@@ -452,7 +408,7 @@ namespace cl
         *slot = Value::from_oop(tuple);
         thread->publish_safepoint_scan_record(slot, Value::not_present());
 
-        run_heap_reclamation(threads);
+        context.vm().run_heap_reclamation();
 
         EXPECT_TRUE(heap.has_slab_for_address_for_testing(tuple_address));
         EXPECT_EQ(0u, slab->slab_pin_count());

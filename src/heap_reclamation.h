@@ -52,9 +52,8 @@ namespace cl
     void
     validate_zero_count_tables_for_reclamation(const ThreadStateList &threads);
 #endif
-    void
-    process_zero_count_table_for_reclamation(ThreadState &thread,
-                                             const ReclamationRootSet &roots);
+    void process_zct_only_for_testing(ThreadState &thread,
+                                      const ReclamationRootSet &roots);
     void run_heap_reclamation(const ThreadStateList &threads);
 
 }  // namespace cl

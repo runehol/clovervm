@@ -437,10 +437,4 @@ namespace cl
                          obj) != zero_count_table.end();
     }
 
-    void ThreadState::drain_zero_count_table_for_testing()
-    {
-        ReclamationRootSet roots;
-        process_zero_count_table_for_reclamation(*this, roots);
-    }
-
 }  // namespace cl

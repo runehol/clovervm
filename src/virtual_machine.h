@@ -38,6 +38,7 @@ namespace cl
         ThreadState *get_default_thread() { return threads[0].get(); }
 
         ThreadState *make_new_thread();
+        void run_heap_reclamation();
 
         bool *safepoint_requested_ptr() { return &safepoint_requested_; }
         void request_safepoint() { safepoint_requested_ = true; }

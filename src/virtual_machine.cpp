@@ -129,9 +129,14 @@ namespace cl
         return threads.emplace_back(std::make_unique<ThreadState>(this)).get();
     }
 
+    void VirtualMachine::run_heap_reclamation()
+    {
+        cl::run_heap_reclamation(threads);
+    }
+
     void VirtualMachine::complete_safepoint()
     {
-        run_heap_reclamation(threads);
+        run_heap_reclamation();
         clear_safepoint_request();
         if(fire_every_safepoint_for_testing())
         {

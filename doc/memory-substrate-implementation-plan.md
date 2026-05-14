@@ -314,9 +314,6 @@ Validation:
 
 ## Later Work
 
-- Refactor `process_zero_count_table_for_reclamation()`, which is now mostly a
-  focused test helper, so tests either go through the production per-thread
-  reclamation epoch path or through an explicitly test-scoped wrapper.
 - Multi-thread `Attached` / `Detached` / `GC` state model.
 - Thread exit ZCT handoff.
 - Parallel root scanning.

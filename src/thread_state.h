@@ -27,11 +27,8 @@ namespace cl
     class ThreadState;
     class ReclamationRootSet;
 
-    void
-    process_zero_count_table_for_reclamation(ThreadState &thread,
-                                             const ReclamationRootSet &roots);
-    void scan_epoch_slabs_for_reclamation(ThreadState &thread,
-                                          const ReclamationRootSet &roots);
+    void process_zct_only_for_testing(ThreadState &thread,
+                                      const ReclamationRootSet &roots);
     void process_thread_reclamation_epoch(ThreadState &thread,
                                           const ReclamationRootSet &roots);
 #ifndef NDEBUG
@@ -109,7 +106,6 @@ namespace cl
         void adopt_reclamation_state_from(ThreadState &child);
         size_t zero_count_table_size() const { return zero_count_table.size(); }
         bool zero_count_table_contains_for_testing(HeapObject *obj) const;
-        void drain_zero_count_table_for_testing();
         void switch_to_new_heap_slabs()
         {
             refcounted_heap.switch_to_new_slabs();
@@ -270,11 +266,9 @@ namespace cl
                                                            uint32_t n_args);
         NOINLINE Shape *shape_of_inline_value(Value value) const;
 
-        friend void process_zero_count_table_for_reclamation(
-            ThreadState &thread, const ReclamationRootSet &roots);
         friend void
-        scan_epoch_slabs_for_reclamation(ThreadState &thread,
-                                         const ReclamationRootSet &roots);
+        process_zct_only_for_testing(ThreadState &thread,
+                                     const ReclamationRootSet &roots);
         friend void
         process_thread_reclamation_epoch(ThreadState &thread,
                                          const ReclamationRootSet &roots);
