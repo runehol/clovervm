@@ -306,6 +306,34 @@ static Value native_base_exception_with_message()
         TValue<ClassObject>::from_oop(cls), L"boom");
 }
 
+static void *g_every_safepoint_reclamation_target_address = nullptr;
+static uint64_t g_every_safepoint_reclamation_target_blockers = 0;
+
+static Value native_large_tuple_for_every_safepoint_reclamation()
+{
+    size_t tuple_size = LargeAllocationSize / sizeof(Value);
+    return active_thread()->make_object_value<Tuple>(tuple_size);
+}
+
+static Value native_capture_every_safepoint_reclamation_target(Value value)
+{
+    assert(value.is_ptr());
+    assert(value.get_ptr<Object>()->native_layout_id() ==
+           NativeLayoutId::Tuple);
+    ThreadState *thread = active_thread();
+    GlobalHeap &heap = thread->get_machine()->get_refcounted_global_heap();
+    g_every_safepoint_reclamation_target_address = value.as.ptr;
+    g_every_safepoint_reclamation_target_blockers =
+        heap.total_reclaim_blockers_for_testing();
+    assert(heap.has_slab_for_address_for_testing(value.as.ptr));
+    return Value::from_smi(0);
+}
+
+static Value native_every_safepoint_reclamation_ping()
+{
+    return Value::from_smi(1);
+}
+
 static void bind_global(test::VmTestContext &test_context,
                         CodeObject *code_object, const wchar_t *name,
                         Value value)
@@ -1696,6 +1724,49 @@ TEST(Interpreter, call_native_zero_arg_function)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
+}
+
+TEST(Interpreter, every_safepoint_reclamation_reclaims_unrooted_object)
+{
+    g_every_safepoint_reclamation_target_address = nullptr;
+    g_every_safepoint_reclamation_target_blockers = 0;
+
+    test::VmTestContext test_context;
+    ThreadState *thread = test_context.thread();
+    ThreadState::ActivationScope activation_scope(thread);
+    CodeObject *code_obj =
+        test_context.compile_file(L"def exercise():\n"
+                                  L"    x = make_large_tuple()\n"
+                                  L"    capture_target(x)\n"
+                                  L"    x = 1\n"
+                                  L"    reclamation_ping()\n"
+                                  L"exercise()\n");
+    bind_global(test_context, code_obj, L"make_large_tuple",
+                make_native_function(
+                    &test_context.vm(),
+                    native_large_tuple_for_every_safepoint_reclamation));
+    bind_global(test_context, code_obj, L"capture_target",
+                make_native_function(
+                    &test_context.vm(),
+                    native_capture_every_safepoint_reclamation_target));
+    bind_global(test_context, code_obj, L"reclamation_ping",
+                make_native_function(&test_context.vm(),
+                                     native_every_safepoint_reclamation_ping));
+    GlobalHeap &heap = test_context.vm().get_refcounted_global_heap();
+    test_context.vm().set_fire_every_safepoint_for_testing(true);
+    test_context.vm().request_safepoint();
+
+    Value result = thread->run_clovervm_code_object(code_obj);
+
+    ASSERT_FALSE(result.is_exception_marker());
+    ASSERT_NE(nullptr, g_every_safepoint_reclamation_target_address);
+    EXPECT_GT(g_every_safepoint_reclamation_target_blockers,
+              heap.total_reclaim_blockers_for_testing());
+    EXPECT_FALSE(heap.has_slab_for_address_for_testing(
+        g_every_safepoint_reclamation_target_address));
+    EXPECT_FALSE(
+        thread->zero_count_table_contains_for_testing(static_cast<HeapObject *>(
+            g_every_safepoint_reclamation_target_address)));
 }
 
 TEST(Interpreter, native_function_thunk_uses_return_or_raise_adapter)

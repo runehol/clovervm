@@ -69,7 +69,7 @@ Validation:
 - [x] Debug-only checks that every ZCT entry has lifecycle state `InZct`.
 - [ ] Tests for `OwnedValue`, `MemberValue`, and container/object stores that
   exercise zero-refcount enqueue rather than immediate recursive destruction.
-- [ ] Cross-phase validation after Phases 4 and 5: tests showing a newly allocated
+- [x] Cross-phase validation after Phases 4 and 5: tests showing a newly allocated
   object that only lives in frame slots is retained while rooted and reclaimed
   after the frame drops it.
 
@@ -156,15 +156,13 @@ Validation:
    first pass.
 5. [x] Keep the safepoint fast path as a cheap flag check that preserves hot opcode
    handler shape.
-6. [ ] Put publishing and reclamation work in a cold slow path. Publishing is in
-   the cold path; reclamation is still to be wired in.
-7. [ ] Add a debug/test mode that treats every executed safepoint as a reclamation
+6. [x] Put publishing and reclamation work in a cold slow path.
+7. [x] Add a debug/test mode that treats every executed safepoint as a reclamation
    trigger. In this mode, each safepoint should publish its scan record and run
    the single-threaded reclamation path immediately, even if ordinary allocation
    pressure would not request a safepoint. This is required for meaningful
    reclaimer testing because it exercises root publication and ZCT processing at
-   every allowed location. The "fire every safepoint" testing hook exists, but it
-   currently drives callbacks rather than reclamation.
+   every allowed location.
 8. [ ] Audit safepoint check placement so no check is reachable while borrowed
    `Value`s are live only in C++ helper locals.
 
@@ -172,7 +170,7 @@ Validation:
 
 - [ ] Interpreter tests that safepoints can be requested and reached at entry,
   return, and loop back edges.
-- [ ] Reclamation tests run with the every-safepoint reclamation mode enabled.
+- [x] Reclamation tests run with the every-safepoint reclamation mode enabled.
 - [x] Existing hot-path frame checks still pass for hot opcode handlers.
 - [ ] Tests that call preparation and argument adaptation are not safepoint
   locations.
