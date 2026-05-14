@@ -123,19 +123,29 @@ Track young-object candidate slabs at the allocator-epoch level, not per
 allocation.
 
 1. [ ] Add `ThreadLocalHeap::slabs_active_since_reclamation`.
-2. [ ] Add a helper to remember an active slab once per reclamation epoch.
+2. [ ] Add `ThreadLocalHeap::ordinary_inactive_slabs_since_reclamation`, seeded
+   to zero after each reclamation.
+3. [ ] Add `ThreadLocalHeap::dedicated_slabs_since_reclamation` and
+   `ThreadLocalHeap::dedicated_large_bytes_since_reclamation` for large-object
+   policy and discovery.
+4. [ ] Add a helper to remember an active slab once per reclamation epoch.
    A small vector with linear duplicate suppression is enough initially.
-3. [ ] Update the list when a thread-local heap installs or switches active
+5. [ ] Update the list when a thread-local heap installs or switches active
    slabs:
    - construction of `ThreadLocalHeap`;
    - ordinary slab exhaustion;
    - `switch_to_new_slabs()`;
    - future size-class active slab switches.
-4. [ ] Do not update this list on every allocation.
-5. [ ] After each reclamation, reset each thread-local heap's list to the slabs
-   currently open for allocation.
-6. [ ] Expose the list to VM-global reclamation through `ThreadState` or a
-   `ThreadLocalHeap` accessor.
+6. [ ] Increment `ordinary_inactive_slabs_since_reclamation` when an ordinary
+   active slab is switched out.
+7. [ ] Track dedicated large-object slabs in the dedicated list/counter, not in
+   the ordinary inactive-slab counter.
+8. [ ] Do not update the ordinary active-slab list on every allocation.
+9. [ ] After each reclamation, reset each thread-local heap's ordinary list to
+   the slabs currently open for allocation, reset the ordinary inactive counter
+   to zero, and clear the dedicated large-object list/counter.
+10. [ ] Expose these lists and counters to VM-global reclamation through
+    `ThreadState` or `ThreadLocalHeap` accessors.
 
 Validation:
 
@@ -143,6 +153,10 @@ Validation:
 - Tests that repeated activation of the same slab in one epoch does not produce
   duplicate scan entries.
 - Tests that post-reclamation reset leaves current active slabs on the list.
+- Tests that ordinary slab switches increment the inactive ordinary slab counter
+  and post-reclamation reset clears it.
+- Tests that dedicated large-object slabs update the dedicated list/counter but
+  not the ordinary inactive slab counter.
 - Tests that ordinary allocation does not mutate the active-slab list.
 
 ## Phase 4: Bitmap-Based Young-Object Discovery
@@ -153,7 +167,9 @@ objects that no longer enter the ZCT at allocation time.
 1. [ ] Extend `run_heap_reclamation()` to collect roots once, then process both:
    - existing ZCT entries;
    - bitmap-discovered young candidates from each thread-local heap's
-     active-slab list.
+     active-slab list;
+   - bitmap-discovered young candidates from each thread-local heap's dedicated
+     large-object slab list.
 2. [ ] For each bitmap-discovered object:
    - ignore it if `refcount > 0`;
    - ignore it if `lifecycle_state != Normal`;
@@ -218,17 +234,20 @@ scanning are stable.
 
 1. [ ] Add counters for:
    - ZCT length;
-   - bytes allocated since last reclamation;
-   - active-since-reclamation slab count;
+   - ordinary inactive slab count since last reclamation;
+   - dedicated large-object bytes since last reclamation;
    - committed bitmap entries scanned;
    - objects reclaimed;
    - objects retained by stack roots;
    - slabs released.
 2. [ ] Request reclamation on ZCT growth.
-3. [ ] Request reclamation on bytes allocated since the previous reclamation.
-4. [ ] Request reclamation on active-slab count or committed-object scan budget.
-5. [ ] Coalesce multiple pending requests into one safepoint.
-6. [ ] Keep every-safepoint reclamation as deterministic testing mode only.
+3. [ ] Request reclamation when ordinary inactive slabs since the previous
+   reclamation crosses a threshold.
+4. [ ] Request reclamation when dedicated large-object bytes since the previous
+   reclamation crosses a threshold.
+5. [ ] Request reclamation on committed-object scan budget.
+6. [ ] Coalesce multiple pending requests into one safepoint.
+7. [ ] Keep every-safepoint reclamation as deterministic testing mode only.
 
 Validation:
 

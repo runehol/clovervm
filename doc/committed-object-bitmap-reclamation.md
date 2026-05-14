@@ -126,6 +126,9 @@ zero-refcount objects:
 
 ```cpp
 std::vector<SlabAllocator *> slabs_active_since_reclamation;
+uint32_t ordinary_inactive_slabs_since_reclamation = 0;
+std::vector<SlabAllocator *> dedicated_slabs_since_reclamation;
+size_t dedicated_large_bytes_since_reclamation = 0;
 ```
 
 This is thread-local allocator epoch state, not VM-global state.
@@ -140,10 +143,23 @@ That happens on construction, `switch_to_new_slabs()`, ordinary slab exhaustion,
 and future size-class active slab switches. It does not happen on every
 allocation.
 
+When an ordinary active slab is switched out, increment
+`ordinary_inactive_slabs_since_reclamation`. This counter is seeded to zero
+after reclamation and is the first ordinary-slab policy trigger: it counts how
+many ordinary allocation slabs have gone inactive during the current epoch.
+
+Dedicated large-object slabs do not count as ordinary inactive slabs. They claim
+a slab on their own, are never installed as ordinary active allocation slabs, and
+would distort the ordinary slab switch policy. Track them through the separate
+dedicated slab list and byte counter.
+
 After each reclamation, reset the list to the slabs that are active right now:
 
 ```cpp
 slabs_active_since_reclamation = current_active_slabs();
+ordinary_inactive_slabs_since_reclamation = 0;
+dedicated_slabs_since_reclamation.clear();
+dedicated_large_bytes_since_reclamation = 0;
 ```
 
 This is required because an active slab may receive more allocations before the
@@ -161,10 +177,13 @@ Reclamation has two candidate sources:
   through heap `DECREF`.
 - **Active-since-reclamation slabs**: young objects that may never have entered
   the ZCT because their only references were managed stack values.
+- **Dedicated slabs since reclamation**: large one-object slabs allocated during
+  the current epoch.
 
 VM-global reclamation iterates registered `ThreadState`s. For each thread, it
 processes that thread's ZCT and scans the committed-object bitmap for the slabs
-in that thread's `ThreadLocalHeap::slabs_active_since_reclamation`.
+in that thread's `ThreadLocalHeap::slabs_active_since_reclamation` and
+`ThreadLocalHeap::dedicated_slabs_since_reclamation`.
 
 For each bitmap-discovered young object:
 
@@ -245,8 +264,8 @@ Reclamation request policy can be added after the mechanism is stable. Useful
 triggers include:
 
 - ZCT length
-- bytes allocated since the previous reclamation
-- number of slabs active since the previous reclamation
+- ordinary inactive slab count since the previous reclamation
+- dedicated large-object bytes since the previous reclamation
 - total committed slab bytes
 
 Every-safepoint reclamation remains a testing mode, not a production policy.
