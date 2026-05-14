@@ -417,11 +417,13 @@ namespace cl
     {
         assert(this != &child);
         assert(machine == child.machine);
+#ifndef NDEBUG
         for(HeapObject *obj: child.zero_count_table)
         {
             assert(std::find(zero_count_table.begin(), zero_count_table.end(),
                              obj) == zero_count_table.end());
         }
+#endif
 
         zero_count_table.insert(
             zero_count_table.end(),

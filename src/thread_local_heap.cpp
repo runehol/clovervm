@@ -59,10 +59,12 @@ namespace cl
     {
         assert(this != &child);
         assert(global_heap == child.global_heap);
+#ifndef NDEBUG
         for(SlabAllocator *allocator: child.epoch_slabs_since_reclamation)
         {
             assert(!owns_epoch_slab(allocator));
         }
+#endif
 
         epoch_slabs_since_reclamation.insert(
             epoch_slabs_since_reclamation.end(),
