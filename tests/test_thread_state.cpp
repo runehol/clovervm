@@ -53,7 +53,7 @@ namespace cl
         EXPECT_EQ(PendingExceptionKind::None, thread->pending_exception_kind());
     }
 
-    TEST(ThreadState, AllocationAddsZeroRefcountObjectToZct)
+    TEST(ThreadState, AllocationLeavesZeroRefcountObjectOutOfZct)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
@@ -63,8 +63,8 @@ namespace cl
         String *string = thread->make_object_raw<String>(L"zct");
 
         EXPECT_EQ(0, string->refcount);
-        EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
-        EXPECT_EQ(zct_size_before + 1, thread->zero_count_table_size());
+        EXPECT_EQ(HeapLifecycleState::Normal, string->lifecycle_state);
+        EXPECT_EQ(zct_size_before, thread->zero_count_table_size());
     }
 
     TEST(ThreadState, ZeroRefcountEnqueueIsUnique)
@@ -75,6 +75,7 @@ namespace cl
 
         size_t zct_size_before = thread->zero_count_table_size();
         String *string = thread->make_object_raw<String>(L"zct");
+        thread->add_to_zero_count_table_if_needed(string);
         ASSERT_EQ(zct_size_before + 1, thread->zero_count_table_size());
 
         thread->add_to_zero_count_table_if_needed(string);
@@ -91,6 +92,7 @@ namespace cl
 
         size_t zct_size_before = thread->zero_count_table_size();
         String *string = thread->make_object_raw<String>(L"zct");
+        thread->add_to_zero_count_table_if_needed(string);
         ASSERT_EQ(zct_size_before + 1, thread->zero_count_table_size());
 
         incref_heap_ptr(string);
@@ -116,6 +118,7 @@ namespace cl
             {
                 ThreadState::ActivationScope active_child(&child);
                 string = child.make_object_raw<String>(L"adopted-zct");
+                child.add_to_zero_count_table_if_needed(string);
             }
             slab = heap.slab_for_object_unlocked(string);
             ASSERT_EQ(2u, slab->slab_pin_count());

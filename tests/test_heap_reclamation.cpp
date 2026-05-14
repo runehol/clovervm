@@ -109,6 +109,7 @@ namespace cl
         ThreadState::ActivationScope active_thread(thread);
         size_t zct_size_before = thread->zero_count_table_size();
         String *string = thread->make_object_raw<String>(L"retained");
+        thread->add_to_zero_count_table_if_needed(string);
         ASSERT_EQ(zct_size_before + 1, thread->zero_count_table_size());
         ASSERT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
 
@@ -131,6 +132,7 @@ namespace cl
         thread->drain_zero_count_table_for_testing();
         ReclamationTestObject *object =
             thread->make_internal_raw<ReclamationTestObject>();
+        thread->add_to_zero_count_table_if_needed(object);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(object));
 
         object->lifecycle_state = HeapLifecycleState::Normal;
@@ -159,6 +161,7 @@ namespace cl
                 ThreadState::ActivationScope active_thread(first_thread);
                 ReclamationTestObject *object =
                     first_thread->make_internal_raw<ReclamationTestObject>();
+                first_thread->add_to_zero_count_table_if_needed(object);
                 object->lifecycle_state = HeapLifecycleState::Normal;
                 second_thread->add_to_zero_count_table_if_needed(object);
 
@@ -175,6 +178,7 @@ namespace cl
         ThreadState::ActivationScope active_thread(thread);
         size_t zct_size_before = thread->zero_count_table_size();
         String *string = thread->make_object_raw<String>(L"stack-rooted");
+        thread->add_to_zero_count_table_if_needed(string);
         ASSERT_EQ(zct_size_before + 1, thread->zero_count_table_size());
         Value *slot = thread->clover_frame_sentinel() - 1;
         *slot = Value::from_oop(string);
@@ -203,6 +207,7 @@ namespace cl
         ReclamationTestObject *object =
             thread->make_internal_raw<ReclamationTestObject>();
         SlabAllocator *slab = heap.slab_for_object_unlocked(object);
+        thread->add_to_zero_count_table_if_needed(object);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(object));
         uint64_t blockers_after_alloc =
             heap.total_reclaim_blockers_for_testing();
@@ -238,8 +243,9 @@ namespace cl
         incref_heap_ptr(child);
         owner->values[0].as.ptr = child;
         ASSERT_EQ(1, child->refcount);
+        thread->add_to_zero_count_table_if_needed(owner);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(owner));
-        ASSERT_TRUE(thread->zero_count_table_contains_for_testing(child));
+        ASSERT_FALSE(thread->zero_count_table_contains_for_testing(child));
         SlabAllocator *owner_slab = heap.slab_for_object_unlocked(owner);
         SlabAllocator *child_slab = heap.slab_for_object_unlocked(child);
         ASSERT_TRUE(slab_has_valid_object(owner_slab, owner));
@@ -276,8 +282,9 @@ namespace cl
         ASSERT_FALSE(layout_is_expanded(owner->layout));
         owner->initialize_item_unchecked(0, Value::from_oop(child));
         ASSERT_EQ(1, child->refcount);
+        thread->add_to_zero_count_table_if_needed(owner);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(owner));
-        ASSERT_TRUE(thread->zero_count_table_contains_for_testing(child));
+        ASSERT_FALSE(thread->zero_count_table_contains_for_testing(child));
         SlabAllocator *owner_slab = heap.slab_for_object_unlocked(owner);
         SlabAllocator *child_slab = heap.slab_for_object_unlocked(child);
         ASSERT_TRUE(slab_has_valid_object(owner_slab, owner));
@@ -311,6 +318,7 @@ namespace cl
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
         Tuple *tuple = thread->make_object_raw<Tuple>(object_layout_count_mask);
         ASSERT_TRUE(layout_is_expanded(tuple->layout));
+        thread->add_to_zero_count_table_if_needed(tuple);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
         SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
         ASSERT_TRUE(slab_has_valid_object(slab, tuple));
@@ -380,6 +388,7 @@ namespace cl
         size_t tuple_size = LargeAllocationSize / sizeof(Value);
         Tuple *tuple = thread->make_object_raw<Tuple>(tuple_size);
         void *tuple_address = tuple;
+        thread->add_to_zero_count_table_if_needed(tuple);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
         ASSERT_TRUE(heap.has_slab_for_address_for_testing(tuple_address));
         SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
@@ -413,14 +422,9 @@ namespace cl
         Tuple *tuple = thread->make_object_raw<Tuple>(tuple_size);
         void *tuple_address = tuple;
         SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
-        ASSERT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
-        ASSERT_EQ(1u, slab->slab_pin_count());
-
-        tuple->refcount = 1;
-        thread->drain_zero_count_table_for_testing();
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
+        ASSERT_EQ(1u, slab->slab_pin_count());
         ASSERT_EQ(HeapLifecycleState::Normal, tuple->lifecycle_state);
-        tuple->refcount = 0;
 
         run_heap_reclamation(threads);
 
@@ -441,14 +445,9 @@ namespace cl
         Tuple *tuple = thread->make_object_raw<Tuple>(tuple_size);
         void *tuple_address = tuple;
         SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
-        ASSERT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
-        ASSERT_EQ(1u, slab->slab_pin_count());
-
-        tuple->refcount = 1;
-        thread->drain_zero_count_table_for_testing();
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
+        ASSERT_EQ(1u, slab->slab_pin_count());
         ASSERT_EQ(HeapLifecycleState::Normal, tuple->lifecycle_state);
-        tuple->refcount = 0;
 
         Value *slot = thread->clover_frame_sentinel() - 1;
         *slot = Value::from_oop(tuple);

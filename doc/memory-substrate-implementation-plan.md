@@ -201,7 +201,7 @@ objects that no longer enter the ZCT at allocation time.
 3. [x] Ensure young rooted objects become durable ZCT entries, because no heap
    `DECREF` may rediscover them after the stack root disappears.
 4. [x] Keep child-release cascades appending to the currently processed ZCT.
-5. [ ] Remove eager allocation-time ZCT enqueue once bitmap discovery covers
+5. [x] Remove eager allocation-time ZCT enqueue once bitmap discovery covers
    young zero-refcount objects.
 6. [x] Keep positive-refcount allocation behavior out of the ZCT.
 7. [x] During reclamation, drop epoch discovery pins only after the corresponding

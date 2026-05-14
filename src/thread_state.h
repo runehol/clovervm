@@ -202,12 +202,7 @@ namespace cl
         {
             static_assert(std::is_base_of_v<HeapObject, T>);
             static_assert(HasObjectLayout<T>::value);
-            T *obj = refcounted_heap.make<T>(std::forward<Args>(args)...);
-            if(obj->refcount == 0)
-            {
-                add_to_zero_count_table_if_needed(obj);
-            }
-            return obj;
+            return refcounted_heap.make<T>(std::forward<Args>(args)...);
         }
 
         template <typename T, typename... Args>
