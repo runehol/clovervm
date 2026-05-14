@@ -514,6 +514,27 @@ namespace cl
                         }
                         return;
 
+                    case AstNodeKind::STATEMENT_WITH:
+                        for(size_t child_offset = 0;
+                            child_offset + 1 < children.size(); ++child_offset)
+                        {
+                            validate_global_declarations_in_node(
+                                state, children[child_offset]);
+                        }
+                        validate_global_declarations_in_node(state,
+                                                             children.back());
+                        return;
+
+                    case AstNodeKind::WITH_ITEM:
+                        validate_global_declaration_expression(state,
+                                                               children[0]);
+                        if(children.size() == 2)
+                        {
+                            validate_global_declaration_assignment_target(
+                                state, children[1], false);
+                        }
+                        return;
+
                     case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
                         if(handler_has_type(children))
                         {
@@ -681,6 +702,21 @@ namespace cl
                         }
                         break;
 
+                    case AstNodeKind::WITH_ITEM:
+                        if(children.size() == 2 &&
+                           analysis.result.mode != CodegenMode::Module)
+                        {
+                            int32_t target_idx = children[1];
+                            if(av.kinds[target_idx].node_kind ==
+                               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                            {
+                                ensure_local_binding(
+                                    analysis,
+                                    av.constants[target_idx].as_value());
+                            }
+                        }
+                        break;
+
                     case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
                         if(handler_has_name(children) &&
                            analysis.result.mode != CodegenMode::Module)
@@ -779,6 +815,15 @@ namespace cl
                            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
                             mark_name(av.constants[children[0]].as_value());
+                        }
+                        break;
+
+                    case AstNodeKind::WITH_ITEM:
+                        if(children.size() == 2 &&
+                           av.kinds[children[1]].node_kind ==
+                               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                        {
+                            mark_name(av.constants[children[1]].as_value());
                         }
                         break;
 
@@ -1094,6 +1139,40 @@ namespace cl
                             }
                             break;
                         }
+
+                    case AstNodeKind::STATEMENT_WITH:
+                        {
+                            FlowState with_state = state;
+                            for(size_t child_offset = 0;
+                                child_offset + 1 < children.size();
+                                ++child_offset)
+                            {
+                                analyze_flow_node(analysis,
+                                                  children[child_offset],
+                                                  with_state);
+                            }
+                            analyze_flow_node(analysis, children.back(),
+                                              with_state);
+                            state = with_state;
+                            break;
+                        }
+
+                    case AstNodeKind::WITH_ITEM:
+                        analyze_flow_node(analysis, children[0], state);
+                        if(children.size() == 2)
+                        {
+                            int32_t target_idx = children[1];
+                            if(av.kinds[target_idx].node_kind ==
+                               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                            {
+                                annotate_write(target_idx);
+                            }
+                            else
+                            {
+                                analyze_flow_node(analysis, target_idx, state);
+                            }
+                        }
+                        break;
 
                     case AstNodeKind::STATEMENT_TRY:
                         {

@@ -1594,7 +1594,40 @@ namespace cl
                                     source_pos, children, name_str);
         }
 
-        int32_t with_stmt() { return not_implemented("with statement"); }
+        int32_t with_item()
+        {
+            int32_t source_pos = source_pos_for_token();
+            AstChildren children;
+            children.push_back(named_expression());
+            if(match(Token::AS))
+            {
+                int32_t target = star_expression();
+                validate_assignment_target(target);
+                children.push_back(target);
+            }
+            return ast.emplace_back(AstNodeKind::WITH_ITEM, source_pos,
+                                    children);
+        }
+
+        int32_t with_stmt()
+        {
+            int32_t source_pos = source_pos_for_token();
+            consume(Token::WITH);
+            AstChildren children;
+            children.push_back(with_item());
+            while(match(Token::COMMA))
+            {
+                if(peek() == Token::COLON)
+                {
+                    break;
+                }
+                children.push_back(with_item());
+            }
+            consume(Token::COLON);
+            children.push_back(block());
+            return ast.emplace_back(AstNodeKind::STATEMENT_WITH, source_pos,
+                                    children);
+        }
 
         int32_t for_stmt()
         {

@@ -3714,6 +3714,99 @@ TEST(Interpreter, generic_for_loop_propagates_non_stop_iteration)
                         L"ValueError");
 }
 
+TEST(Interpreter, with_statement_calls_enter_and_exit)
+{
+    test::FileRunner file_runner(L"log = 0\n"
+                                 L"class Manager:\n"
+                                 L"    def __enter__(self):\n"
+                                 L"        return 4\n"
+                                 L"    def __exit__(self, typ, exc, tb):\n"
+                                 L"        global log\n"
+                                 L"        log = log + 10\n"
+                                 L"        return False\n"
+                                 L"with Manager() as value:\n"
+                                 L"    log = value + 1\n"
+                                 L"log\n");
+
+    EXPECT_EQ(Value::from_smi(15), file_runner.return_value);
+}
+
+TEST(Interpreter, with_statement_suppresses_exception_when_exit_returns_true)
+{
+    test::FileRunner file_runner(L"seen = False\n"
+                                 L"class Manager:\n"
+                                 L"    def __enter__(self):\n"
+                                 L"        return self\n"
+                                 L"    def __exit__(self, typ, exc, tb):\n"
+                                 L"        global seen\n"
+                                 L"        seen = typ is ValueError\n"
+                                 L"        return True\n"
+                                 L"with Manager():\n"
+                                 L"    raise ValueError\n"
+                                 L"seen\n");
+
+    EXPECT_EQ(Value::True(), file_runner.return_value);
+}
+
+TEST(Interpreter, with_statement_reraises_when_exit_returns_false)
+{
+    expect_python_error(L"class Manager:\n"
+                        L"    def __enter__(self):\n"
+                        L"        return self\n"
+                        L"    def __exit__(self, typ, exc, tb):\n"
+                        L"        return False\n"
+                        L"with Manager():\n"
+                        L"    raise ValueError\n",
+                        L"ValueError");
+}
+
+TEST(Interpreter, with_statement_exit_runs_before_return)
+{
+    test::FileRunner file_runner(L"log = 0\n"
+                                 L"class Manager:\n"
+                                 L"    def __enter__(self):\n"
+                                 L"        return self\n"
+                                 L"    def __exit__(self, typ, exc, tb):\n"
+                                 L"        global log\n"
+                                 L"        log = 10\n"
+                                 L"        return False\n"
+                                 L"def f():\n"
+                                 L"    with Manager():\n"
+                                 L"        return 7\n"
+                                 L"    return 99\n"
+                                 L"f() + log\n");
+
+    EXPECT_EQ(Value::from_smi(17), file_runner.return_value);
+}
+
+TEST(Interpreter, with_statement_multiple_items_exit_in_reverse_order)
+{
+    test::FileRunner file_runner(L"log = 0\n"
+                                 L"class First:\n"
+                                 L"    def __enter__(self):\n"
+                                 L"        global log\n"
+                                 L"        log = log * 10 + 1\n"
+                                 L"        return self\n"
+                                 L"    def __exit__(self, typ, exc, tb):\n"
+                                 L"        global log\n"
+                                 L"        log = log * 10 + 2\n"
+                                 L"        return False\n"
+                                 L"class Second:\n"
+                                 L"    def __enter__(self):\n"
+                                 L"        global log\n"
+                                 L"        log = log * 10 + 3\n"
+                                 L"        return self\n"
+                                 L"    def __exit__(self, typ, exc, tb):\n"
+                                 L"        global log\n"
+                                 L"        log = log * 10 + 4\n"
+                                 L"        return False\n"
+                                 L"with First(), Second():\n"
+                                 L"    log = log * 10 + 5\n"
+                                 L"log\n");
+
+    EXPECT_EQ(Value::from_smi(13542), file_runner.return_value);
+}
+
 TEST(Interpreter, left_shift_negative_count)
 {
     expect_python_error(L"a = 1\n"
