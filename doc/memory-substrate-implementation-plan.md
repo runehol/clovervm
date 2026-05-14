@@ -38,137 +38,145 @@ ZCT processing are all in place.
 
 ## Phase 1: Heap Lifecycle State And ZCT Plumbing
 
-1. Add a heap lifecycle state to `HeapObject`:
+1. [x] Add a heap lifecycle state to `HeapObject`:
    - `Normal`
    - `InZct`
    - `Reclaiming`
    - `Dead`
-2. Add a per-`ThreadState` zero count table represented as
+2. [x] Add a per-`ThreadState` zero count table represented as
    `std::vector<HeapObject *>`.
-3. Route `DECREF` zero transitions through a helper that performs only
+3. [x] Route `DECREF` zero transitions through a helper that performs only
    `Normal -> InZct` and appends exactly one ZCT entry.
-4. Keep current refcount fields plain in the single-threaded implementation, but
-   isolate transitions behind helpers so a future packed atomic state can replace
-   them.
-5. Add debug assertions for illegal transitions, especially attempts to enqueue
+4. [x] Keep current refcount fields plain in the single-threaded
+   implementation, but isolate transitions behind helpers so a future packed
+   atomic state can replace them.
+5. [x] Add debug assertions for illegal transitions, especially attempts to enqueue
    `InZct`, `Reclaiming`, `Dead`, or non-reclaimable-tagged objects.
-6. Ensure every committed reclaimable allocation with `refcount == 0` is
+6. [x] Ensure every committed reclaimable allocation with `refcount == 0` is
    explicitly enqueued in the ZCT. This is intentionally eager; slab enumeration
    can optimize it later.
-7. Thread allocation through a reclamation context rooted in `ThreadState`.
+7. [x] Thread allocation through a reclamation context rooted in `ThreadState`.
    Any allocation entry point that creates reclaimable objects must take or
    recover that context.
-8. Refcount mutation is centralized through helpers in `value.h`. Audit those
+8. [x] Refcount mutation is centralized through helpers in `value.h`. Audit those
    helpers and their callers so every zero transition enqueues through the ZCT
    path. The existing data structures were developed with "zero means enqueue"
    in mind, but this path is lightly tested and should get focused coverage.
 
 Validation:
 
-- Unit tests for duplicate enqueue prevention.
-- Debug-only checks that every ZCT entry has lifecycle state `InZct`.
-- Tests for `OwnedValue`, `MemberValue`, and container/object stores that
+- [x] Unit tests for duplicate enqueue prevention.
+- [ ] Debug-only checks that every ZCT entry has lifecycle state `InZct`.
+- [ ] Tests for `OwnedValue`, `MemberValue`, and container/object stores that
   exercise zero-refcount enqueue rather than immediate recursive destruction.
-- Cross-phase validation after Phases 4 and 5: tests showing a newly allocated
+- [ ] Cross-phase validation after Phases 4 and 5: tests showing a newly allocated
   object that only lives in frame slots is retained while rooted and reclaimed
   after the frame drops it.
 
 ## Phase 2: Allocation-Time Slab Accounting And Slab Pinning
 
-1. Split allocation into reserve, construct, and construction-failure cleanup
+1. [x] Split allocation into reserve, construct, and construction-failure cleanup
    concepts where needed.
-2. Rename `slab->n_live_objects` to `slab->n_reclaim_blockers` and implement the
-   counter rules from the reclamation design.
-3. Implement allocator-open reclaim blockers for ordinary slabs.
-4. Increment the object reclaim blocker when memory is reserved for an object.
-5. Implement the same blocker rules for dedicated large-object slabs.
-6. On constructor failure, use the cold path to find the owning slab and drop
+2. [x] Rename `slab->n_live_objects` to `slab->n_reclaim_blockers` and implement
+   the counter rules from the reclamation design.
+3. [x] Implement allocator-open reclaim blockers for ordinary slabs.
+4. [x] Increment the object reclaim blocker when memory is reserved for an object.
+5. [x] Implement the same blocker rules for dedicated large-object slabs.
+6. [x] On constructor failure, use the cold path to find the owning slab and drop
    the object reclaim blocker. The bump memory remains abandoned.
-7. Add or preserve enough allocator metadata to find the owning slab for a
+7. [x] Add or preserve enough allocator metadata to find the owning slab for a
    `HeapObject *` or failed construction address.
-8. Introduce the global slab lookup granule map described in the reclamation
+8. [x] Introduce the global slab lookup granule map described in the reclamation
    design, using a 4 KiB initial lookup granule.
-9. Register every granule covered by ordinary and dedicated slabs when the slab
+9. [x] Register every granule covered by ordinary and dedicated slabs when the slab
    is created.
-10. Make each slab remember its owning `GlobalHeap` and hand itself back when
+10. [x] Make each slab remember its owning `GlobalHeap` and hand itself back when
     `n_reclaim_blockers` reaches zero.
 
 Validation:
 
-- Tests that failed construction drops the object reclaim blocker exactly once.
-- Tests that constructed objects decrement their owning slab exactly once during
+- [x] Tests that failed construction drops the object reclaim blocker exactly once.
+- [ ] Tests that constructed objects decrement their owning slab exactly once during
   reclamation.
-- Tests that an otherwise empty slab is not reset while installed as an active
+- [x] Tests that an otherwise empty slab is not reset while installed as an active
   allocation slab.
-- Tests that a dedicated large-object slab has no active-allocator blocker,
+- [x] Tests that a dedicated large-object slab has no active-allocator blocker,
   gains one object blocker on allocation, and is handed back when that object
   blocker is dropped on construction failure or later reclamation.
-- Debug assertions that every reclaimable object maps to exactly one slab.
+- [x] Debug assertions that every reclaimable object maps to exactly one slab.
 
 ## Phase 3: Minimal Layout Descriptor Facade
 
-1. Introduce a descriptor-shaped API for object size, owned-child scanning, and
-   native teardown, following the layout-ID design.
-2. Implement the initial native descriptor path using metadata descriptors for
+1. [ ] Introduce a descriptor-shaped API for object size, owned-child scanning,
+   and native teardown, following the layout-ID design. The mechanical heap
+   value-span scanner exists, but the broader layout-ID descriptor facade is not
+   in place yet.
+2. [ ] Implement the initial native descriptor path using metadata descriptors for
    layouts that can be described by size plus scanned `Value` regions.
-3. Bridge any still-unmigrated layout through existing `HeapLayout` decoding only
-   as a compatibility path, not as the main reclamation interface.
-4. Route reclamation child scanning and teardown through the descriptor facade,
+3. [ ] Bridge any still-unmigrated layout through existing `HeapLayout` decoding
+   only as a compatibility path, not as the main reclamation interface. The
+   current scanner still reads `HeapLayout` directly.
+4. [ ] Route reclamation child scanning and teardown through the descriptor facade,
    not through ad hoc metadata decoding at the reclamation call sites.
-5. Add startup or debug validation that metadata descriptors match the existing
+5. [ ] Add startup or debug validation that metadata descriptors match the existing
    object layout metadata for migrated layouts.
-6. Add custom dynamic descriptor handlers only for layouts that cannot be
+6. [ ] Add custom dynamic descriptor handlers only for layouts that cannot be
    expressed cleanly by ordinary metadata descriptors.
-7. Migrate fixed native layouts to `NativeLayoutId` metadata descriptors in
+7. [ ] Migrate fixed native layouts to `NativeLayoutId` metadata descriptors in
    small groups as the safepoint/ZCT invariants come online.
-8. Keep C-extension descriptor kind as a reserved design point, but do not
+8. [x] Keep C-extension descriptor kind as a reserved design point, but do not
    implement extension `tp_dealloc` behavior in the baseline.
 
 Validation:
 
-- Tests that reclamation uses the descriptor facade for owned-child scanning.
-- Descriptor parity tests for metadata descriptor entries as they are added.
-- Focused teardown tests for objects with owned children through the facade.
-- Dynamic-layout tests for list, tuple, string-adjacent, or other variable-size
-  objects as they are migrated.
+- [ ] Tests that reclamation uses the descriptor facade for owned-child scanning.
+- [ ] Descriptor parity tests for metadata descriptor entries as they are added.
+- [ ] Focused teardown tests for objects with owned children through the facade.
+  There is a mechanical value-span deallocator test, but it is not yet through
+  the descriptor facade.
+- [ ] Dynamic-layout tests for list, tuple, string-adjacent, or other
+  variable-size objects as they are migrated. There is an expanded-layout
+  value-span test, but no migrated dynamic descriptor coverage yet.
 
 ## Phase 4: Single-Threaded Safepoint Request And Arrival
 
-1. Add a global or VM-owned pending-safepoint flag.
-2. Add a safepoint scan record to `ThreadState`:
+1. [x] Add a global or VM-owned pending-safepoint flag.
+2. [x] Add a safepoint scan record to `ThreadState`:
    - `lowest_live_stack_slot`
    - `accumulator_or_not_present`
-3. Add two bytecode forms or equivalent interpreter hooks:
+3. [x] Add two bytecode forms or equivalent interpreter hooks:
    - safepoint with no live accumulator
    - safepoint with live accumulator
-4. Insert safepoint polls only at initial scan-safe locations:
-   - function entry after frame setup and argument adaptation
-   - normal function return while the returning frame is still installed
-   - codegen-marked loop back edges
+4. [ ] Insert safepoint polls only at initial scan-safe locations:
+   - [x] function entry after frame setup and argument adaptation
+   - [x] normal function return after the caller frame has been restored
+   - [ ] codegen-marked loop back edges
    Exception propagation and unwind paths are not safepoint locations in the
    first pass.
-5. Keep the safepoint fast path as a cheap flag check that preserves hot opcode
+5. [x] Keep the safepoint fast path as a cheap flag check that preserves hot opcode
    handler shape.
-6. Put publishing and reclamation work in a cold slow path.
-7. Add a debug/test mode that treats every executed safepoint as a reclamation
+6. [ ] Put publishing and reclamation work in a cold slow path. Publishing is in
+   the cold path; reclamation is still to be wired in.
+7. [ ] Add a debug/test mode that treats every executed safepoint as a reclamation
    trigger. In this mode, each safepoint should publish its scan record and run
    the single-threaded reclamation path immediately, even if ordinary allocation
    pressure would not request a safepoint. This is required for meaningful
    reclaimer testing because it exercises root publication and ZCT processing at
-   every allowed location.
-8. Audit safepoint check placement so no check is reachable while borrowed
+   every allowed location. The "fire every safepoint" testing hook exists, but it
+   currently drives callbacks rather than reclamation.
+8. [ ] Audit safepoint check placement so no check is reachable while borrowed
    `Value`s are live only in C++ helper locals.
 
 Validation:
 
-- Interpreter tests that safepoints can be requested and reached at entry,
+- [ ] Interpreter tests that safepoints can be requested and reached at entry,
   return, and loop back edges.
-- Reclamation tests run with the every-safepoint reclamation mode enabled.
-- Existing hot-path frame checks still pass for hot opcode handlers.
-- Tests that call preparation and argument adaptation are not safepoint
+- [ ] Reclamation tests run with the every-safepoint reclamation mode enabled.
+- [x] Existing hot-path frame checks still pass for hot opcode handlers.
+- [ ] Tests that call preparation and argument adaptation are not safepoint
   locations.
-- Tests that exception propagation and unwind paths are not safepoint locations.
-- Debug or targeted tests for helpers that must discharge borrowed values before
+- [ ] Tests that exception propagation and unwind paths are not safepoint locations.
+- [ ] Debug or targeted tests for helpers that must discharge borrowed values before
   reaching a safepoint check.
 
 ## Phase 5: Conservative Managed Root Collection
@@ -221,27 +229,28 @@ Validation:
 
 ## Phase 7: Whole-Slab Reuse
 
-1. When object teardown decrements the slab reclaim-blocker count to zero, hand
-   the slab to `GlobalHeap` for reclamation immediately.
-2. Treat active allocation installation as a slab reclaim blocker. A slab with no
+1. [ ] When object teardown decrements the slab reclaim-blocker count to zero,
+   hand the slab to `GlobalHeap` for reclamation immediately. The slab-level
+   zero-blocker handoff exists; object teardown has not been wired into it yet.
+2. [x] Treat active allocation installation as a slab reclaim blocker. A slab with no
    constructed objects but still installed in a `ThreadLocalHeap` is not reusable
    by any other allocation context.
-3. Return empty ordinary slabs to the ordinary free slab pool only after
+3. [ ] Return empty ordinary slabs to the ordinary free slab pool only after
    no constructed objects and no active allocation installation remain.
-4. Return empty dedicated large-object slabs to the appropriate dedicated slab
+4. [x] Return empty dedicated large-object slabs to the appropriate dedicated slab
    pool or release path.
-5. Keep partial-slab reuse out of the baseline.
-6. Add allocation tests that demonstrate reuse of a fully dead slab.
+5. [x] Keep partial-slab reuse out of the baseline.
+6. [ ] Add allocation tests that demonstrate reuse of a fully dead slab.
 
 Validation:
 
-- Tests that a slab is not reused while any constructed object remains live or
+- [ ] Tests that a slab is not reused while any constructed object remains live or
   stack-rooted.
-- Tests that a slab is not reused while still installed as a thread's active
+- [x] Tests that a slab is not reused while still installed as a thread's active
   allocation slab, even if no constructed objects remain in it.
-- Tests that a fully reclaimed ordinary slab is reused by later ordinary
+- [ ] Tests that a fully reclaimed ordinary slab is reused by later ordinary
   allocations.
-- Existing allocation and interpreter tests continue to pass.
+- [x] Existing allocation and interpreter tests continue to pass.
 
 ## Phase 8: Policy And Pressure
 
