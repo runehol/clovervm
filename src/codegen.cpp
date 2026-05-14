@@ -134,23 +134,47 @@ namespace cl
         struct LoopTargetSet
         {
             LoopTargetSet(JumpTarget *_break_target,
-                          JumpTarget *_continue_target, size_t _finally_depth)
+                          JumpTarget *_continue_target, size_t _cleanup_depth)
                 : break_target(_break_target),
                   continue_target(_continue_target),
-                  finally_depth(_finally_depth)
+                  cleanup_depth(_cleanup_depth)
             {
             }
 
             JumpTarget *break_target;
             JumpTarget *continue_target;
-            size_t finally_depth;
+            size_t cleanup_depth;
         };
 
-        struct FinallyContext
+        struct CleanupContext
         {
-            explicit FinallyContext(int32_t _body_idx) : body_idx(_body_idx) {}
+            enum class Kind
+            {
+                FinallyBody,
+                WithExit
+            };
 
+            static CleanupContext
+            finally_body(int32_t body_idx,
+                         ExceptionTableRangeBuilder *exception_range)
+            {
+                return CleanupContext{Kind::FinallyBody, body_idx, 0, 0,
+                                      exception_range};
+            }
+
+            static CleanupContext
+            with_exit(uint32_t source_offset, RegisterIndex manager_reg,
+                      ExceptionTableRangeBuilder *exception_range)
+            {
+                return CleanupContext{Kind::WithExit, -1, source_offset,
+                                      manager_reg, exception_range};
+            }
+
+            Kind kind;
             int32_t body_idx;
+            uint32_t source_offset;
+            RegisterIndex manager_reg;
+            ExceptionTableRangeBuilder *exception_range;
         };
 
         constexpr static OpTable operator_table = make_table();
@@ -199,7 +223,7 @@ namespace cl
         ModuleResultMode result_mode;
         std::vector<LoopTargetSet> loop_targets;
         std::vector<RegisterIndex> caught_exception_regs;
-        std::vector<FinallyContext> active_finalies;
+        std::vector<CleanupContext> active_cleanups;
 
         static bool handler_has_type(AstChildren handler_children)
         {
@@ -854,7 +878,7 @@ namespace cl
                                JumpTarget &continue_target)
         {
             loop_targets.emplace_back(&break_target, &continue_target,
-                                      active_finalies.size());
+                                      active_cleanups.size());
             codegen_node(body_idx);
             loop_targets.pop_back();
         }
@@ -967,21 +991,91 @@ namespace cl
             return else_children[0];
         }
 
-        void emit_active_finalies_until(size_t target_depth)
+        uint8_t context_manager_protocol_type_error_idx()
         {
-            assert(target_depth <= active_finalies.size());
-            std::vector<FinallyContext> popped;
-            while(active_finalies.size() > target_depth)
+            return code_obj->allocate_constant(Value::from_oop(
+                active_thread()->class_for_builtin_name(L"TypeError")));
+        }
+
+        uint8_t context_manager_protocol_message_idx()
+        {
+            return code_obj->allocate_constant(
+                interned_string(L"object does not support the context "
+                                L"manager protocol"));
+        }
+
+        uint8_t enter_method_name_idx()
+        {
+            return code_obj->allocate_constant(interned_string(L"__enter__"));
+        }
+
+        uint8_t exit_method_name_idx()
+        {
+            return code_obj->allocate_constant(interned_string(L"__exit__"));
+        }
+
+        void emit_context_exit_call(uint32_t source_offset,
+                                    RegisterIndex manager_reg)
+        {
+            code_obj->emit_ldar(source_offset, manager_reg);
+            code_obj->emit_star(source_offset, OutgoingArgReg(0));
+            code_obj->emit_call_special_method(
+                source_offset, OutgoingArgReg(0), exit_method_name_idx(), 3,
+                context_manager_protocol_type_error_idx(),
+                context_manager_protocol_message_idx());
+        }
+
+        void emit_context_exit_none_call(uint32_t source_offset,
+                                         RegisterIndex manager_reg)
+        {
+            code_obj->emit_ldar(source_offset, manager_reg);
+            code_obj->emit_star(source_offset, OutgoingArgReg(0));
+            for(uint8_t arg_idx = 0; arg_idx < 3; ++arg_idx)
             {
-                FinallyContext ctx = active_finalies.back();
-                active_finalies.pop_back();
-                popped.push_back(ctx);
-                codegen_node(ctx.body_idx);
+                code_obj->emit_lda_none(source_offset);
+                code_obj->emit_star(source_offset, OutgoingArgReg(1 + arg_idx));
             }
+            emit_context_exit_call(source_offset, manager_reg);
+        }
+
+        void emit_cleanup_body(CleanupContext ctx)
+        {
+            switch(ctx.kind)
+            {
+                case CleanupContext::Kind::FinallyBody:
+                    codegen_node(ctx.body_idx);
+                    return;
+                case CleanupContext::Kind::WithExit:
+                    emit_context_exit_none_call(ctx.source_offset,
+                                                ctx.manager_reg);
+                    return;
+            }
+        }
+
+        template <typename EmitAfterCleanups>
+        void emit_active_cleanups_until_and_then(
+            size_t target_depth, EmitAfterCleanups emit_after_cleanups)
+        {
+            assert(target_depth <= active_cleanups.size());
+            std::vector<CleanupContext> popped;
+            std::vector<ExceptionTableRangeSuspension> suspensions;
+            while(active_cleanups.size() > target_depth)
+            {
+                CleanupContext ctx = active_cleanups.back();
+                active_cleanups.pop_back();
+                popped.push_back(ctx);
+                if(ctx.exception_range != nullptr)
+                {
+                    suspensions.push_back(ctx.exception_range->suspend());
+                }
+                emit_cleanup_body(ctx);
+            }
+
+            emit_after_cleanups();
 
             while(!popped.empty())
             {
-                active_finalies.push_back(popped.back());
+                active_cleanups.push_back(popped.back());
                 popped.pop_back();
             }
         }
@@ -1002,6 +1096,135 @@ namespace cl
                                                        saved_exception);
             code_obj->emit_ldar(source_offset, saved_exception);
             emit_variable_store(source_offset, name_idx);
+        }
+
+        void emit_store_accumulator_to_target(uint32_t source_offset,
+                                              int32_t target_idx)
+        {
+            AstNodeKind target_kind = av.kinds[target_idx].node_kind;
+            if(target_kind == AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+            {
+                emit_variable_store(source_offset, target_idx);
+                return;
+            }
+
+            TemporaryReg value_reg(*code_obj);
+            code_obj->emit_star(source_offset, value_reg);
+            if(target_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
+            {
+                AstChildren target_children = av.children[target_idx];
+                uint8_t constant_idx =
+                    code_obj->allocate_constant(av.constants[target_idx]);
+                ScopedRegister receiver_reg =
+                    codegen_node_to_register(target_children[0]);
+                code_obj->emit_ldar(source_offset, value_reg);
+                code_obj->emit_store_attr(source_offset, receiver_reg.reg,
+                                          constant_idx);
+                return;
+            }
+
+            if(target_kind == AstNodeKind::EXPRESSION_BINARY &&
+               av.kinds[target_idx].operator_kind == AstOperatorKind::SUBSCRIPT)
+            {
+                AstChildren target_children = av.children[target_idx];
+                ScopedRegister receiver_reg =
+                    codegen_node_to_register(target_children[0]);
+                ScopedRegister key_reg =
+                    codegen_node_to_register(target_children[1]);
+                code_obj->emit_ldar(source_offset, value_reg);
+                code_obj->emit_store_subscript(source_offset, receiver_reg.reg,
+                                               key_reg.reg);
+                return;
+            }
+
+            throw std::runtime_error(
+                "We don't support assignment to anything but simple variables, "
+                "attributes, and subscripts yet");
+        }
+
+        void codegen_with_statement_from_item(AstChildren with_children,
+                                              size_t item_offset)
+        {
+            assert(item_offset + 1 < with_children.size());
+            int32_t item_idx = with_children[item_offset];
+            int32_t body_idx = with_children.back();
+            AstChildren item_children = av.children[item_idx];
+            assert(av.kinds[item_idx].node_kind == AstNodeKind::WITH_ITEM);
+            assert(item_children.size() == 1 || item_children.size() == 2);
+
+            uint32_t source_offset = av.source_offsets[item_idx];
+            int32_t context_expr_idx = item_children[0];
+            codegen_node(context_expr_idx);
+            TemporaryReg manager_reg(*code_obj);
+            code_obj->emit_star(source_offset, manager_reg);
+
+            code_obj->emit_ldar(source_offset, manager_reg);
+            code_obj->emit_star(source_offset, OutgoingArgReg(0));
+            code_obj->emit_call_special_method(
+                source_offset, OutgoingArgReg(0), enter_method_name_idx(), 0,
+                context_manager_protocol_type_error_idx(),
+                context_manager_protocol_message_idx());
+
+            auto codegen_protected_body = [&]() {
+                if(item_children.size() == 2)
+                {
+                    emit_store_accumulator_to_target(source_offset,
+                                                     item_children[1]);
+                }
+                if(item_offset + 2 == with_children.size())
+                {
+                    codegen_node(body_idx);
+                }
+                else
+                {
+                    codegen_with_statement_from_item(with_children,
+                                                     item_offset + 1);
+                }
+            };
+
+            JumpTarget exceptional_target(code_obj);
+            JumpTarget done_target(code_obj);
+            {
+                ExceptionTableRangeBuilder range(code_obj, exceptional_target);
+                active_cleanups.push_back(CleanupContext::with_exit(
+                    source_offset, RegisterIndex(manager_reg), &range));
+                codegen_protected_body();
+                active_cleanups.pop_back();
+                range.close();
+            }
+
+            emit_context_exit_none_call(source_offset, manager_reg);
+            code_obj->emit_jump(source_offset, done_target);
+
+            exceptional_target.resolve();
+            {
+                TemporaryReg saved_exception(*code_obj);
+                uint8_t class_name_idx =
+                    code_obj->allocate_constant(interned_string(L"__class__"));
+
+                code_obj->emit_drain_active_exception_into(source_offset,
+                                                           saved_exception);
+                code_obj->emit_load_attr(source_offset, saved_exception,
+                                         class_name_idx);
+                code_obj->emit_star(source_offset, OutgoingArgReg(1));
+                code_obj->emit_ldar(source_offset, saved_exception);
+                code_obj->emit_star(source_offset, OutgoingArgReg(2));
+                code_obj->emit_lda_none(source_offset);
+                code_obj->emit_star(source_offset, OutgoingArgReg(3));
+                emit_context_exit_call(source_offset, manager_reg);
+                code_obj->emit_jump_if_true(source_offset, done_target);
+                code_obj->emit_ldar(source_offset, saved_exception);
+                code_obj->emit_raise_unwind(source_offset);
+            }
+
+            done_target.resolve();
+        }
+
+        void codegen_with_statement(int32_t node_idx)
+        {
+            AstChildren children = av.children[node_idx];
+            assert(children.size() >= 2);
+            codegen_with_statement_from_item(children, 0);
         }
 
         void codegen_try_finally_statement(int32_t node_idx)
@@ -1029,9 +1252,10 @@ namespace cl
             JumpTarget done_target(code_obj);
             {
                 ExceptionTableRangeBuilder range(code_obj, exceptional_target);
-                active_finalies.emplace_back(finally_body_idx);
+                active_cleanups.push_back(
+                    CleanupContext::finally_body(finally_body_idx, &range));
                 codegen_protected_body();
-                active_finalies.pop_back();
+                active_cleanups.pop_back();
                 range.close();
             }
 
@@ -1732,7 +1956,7 @@ namespace cl
 
                         loop_targets.emplace_back(&break_target,
                                                   &continue_target,
-                                                  active_finalies.size());
+                                                  active_cleanups.size());
                         codegen_node(children[1]);  // body
                         loop_targets.pop_back();
 
@@ -1802,6 +2026,10 @@ namespace cl
                     codegen_try_statement(node_idx);
                     break;
 
+                case AstNodeKind::STATEMENT_WITH:
+                    codegen_with_statement(node_idx);
+                    break;
+
                 case AstNodeKind::STATEMENT_BREAK:
                     if(loop_targets.empty())
                     {
@@ -1810,10 +2038,12 @@ namespace cl
                     }
                     else
                     {
-                        emit_active_finalies_until(
-                            loop_targets.back().finally_depth);
-                        code_obj->emit_jump(source_offset,
-                                            *loop_targets.back().break_target);
+                        emit_active_cleanups_until_and_then(
+                            loop_targets.back().cleanup_depth, [&]() {
+                                code_obj->emit_jump(
+                                    source_offset,
+                                    *loop_targets.back().break_target);
+                            });
                     }
                     break;
 
@@ -1825,11 +2055,12 @@ namespace cl
                     }
                     else
                     {
-                        emit_active_finalies_until(
-                            loop_targets.back().finally_depth);
-                        code_obj->emit_jump(
-                            source_offset,
-                            *loop_targets.back().continue_target);
+                        emit_active_cleanups_until_and_then(
+                            loop_targets.back().cleanup_depth, [&]() {
+                                code_obj->emit_jump(
+                                    source_offset,
+                                    *loop_targets.back().continue_target);
+                            });
                     }
                     break;
 
@@ -1848,12 +2079,16 @@ namespace cl
                         {
                             code_obj->emit_lda_none(source_offset);
                         }
-                        if(!active_finalies.empty())
+                        if(!active_cleanups.empty())
                         {
                             TemporaryReg return_value(*code_obj);
                             code_obj->emit_star(source_offset, return_value);
-                            emit_active_finalies_until(0);
-                            code_obj->emit_ldar(source_offset, return_value);
+                            emit_active_cleanups_until_and_then(0, [&]() {
+                                code_obj->emit_ldar(source_offset,
+                                                    return_value);
+                                code_obj->emit_return(source_offset);
+                            });
+                            break;
                         }
                         code_obj->emit_return(source_offset);
                         break;
@@ -1895,6 +2130,11 @@ namespace cl
                     throw std::runtime_error(
                         "should not end here - this is handled by "
                         "STATEMENT_TRY");
+
+                case AstNodeKind::WITH_ITEM:
+                    throw std::runtime_error(
+                        "should not end here - this is handled by "
+                        "STATEMENT_WITH");
 
                 case AstNodeKind::PARAMETER_SEQUENCE:
                 case AstNodeKind::PARAMETER:

@@ -415,6 +415,34 @@ template <> struct fmt::formatter<cl::AstVector>
                 }
                 break;
 
+            case cl::AstNodeKind::STATEMENT_WITH:
+                emit_indent(out, indent);
+                format_to(out, "with ");
+                for(size_t idx = 0; idx + 1 < children.size(); ++idx)
+                {
+                    if(idx != 0)
+                    {
+                        format_to(out, ", ");
+                    }
+                    render_node(av, out, children[idx], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                }
+                format_to(out, ":\n");
+                render_node(av, out, children.back(), indent + 1,
+                            cl::ExpressionPrecedence::Lowest);
+                break;
+
+            case cl::AstNodeKind::WITH_ITEM:
+                render_node(av, out, children[0], indent,
+                            cl::ExpressionPrecedence::Lowest);
+                if(children.size() == 2)
+                {
+                    format_to(out, " as ");
+                    render_node(av, out, children[1], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                }
+                break;
+
             case cl::AstNodeKind::STATEMENT_TRY:
                 emit_indent(out, indent);
                 format_to(out, "try:\n");

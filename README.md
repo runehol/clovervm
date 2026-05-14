@@ -25,12 +25,12 @@ are all exercised by the interpreter tests and benchmarks.
 ## Known limitations
 
 This is still a deliberately small Python subset. Large parts of the language
-and standard library are absent, including imports, `with`, generators,
-comprehensions, broad descriptor and metaclass semantics, custom `__new__`,
-complex assignment targets, richer string syntax, arbitrary-precision integer
-arithmetic, full tracebacks, range-object semantics, and `yield from` /
-generator iterator semantics. Error messages and runtime semantics are
-improving, but CPython compatibility is not yet a project guarantee.
+and standard library are absent, including imports, generators, comprehensions,
+broad descriptor and metaclass semantics, custom `__new__`, complex assignment
+targets, richer string syntax, arbitrary-precision integer arithmetic, full
+tracebacks, range-object semantics, and `yield from` / generator iterator
+semantics. Error messages and runtime semantics are improving, but CPython
+compatibility is not yet a project guarantee.
 
 ## Runtime design
 

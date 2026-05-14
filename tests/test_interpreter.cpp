@@ -2632,6 +2632,31 @@ TEST(Interpreter, return_through_finally_runs_cleanup_before_return)
     EXPECT_EQ(Value::from_smi(21), actual);
 }
 
+TEST(Interpreter, return_through_finally_that_raises_runs_cleanup_once)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj =
+        test_context.compile_file(L"result = 0\n"
+                                  L"def f():\n"
+                                  L"    global result\n"
+                                  L"    try:\n"
+                                  L"        return 1\n"
+                                  L"    finally:\n"
+                                  L"        result = result + 1\n"
+                                  L"        raise ValueError\n"
+                                  L"f()\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError");
+
+    TValue<String> result_name =
+        test_context.vm().get_or_create_interned_string_value(L"result");
+    EXPECT_EQ(Value::from_smi(1),
+              code_obj->module_scope.extract()->get_by_name(result_name));
+}
+
 TEST(Interpreter, return_in_finally_overrides_protected_return)
 {
     test::VmTestContext test_context;
@@ -3713,6 +3738,185 @@ TEST(Interpreter, generic_for_loop_propagates_non_stop_iteration)
                         L"for x in Iterator():\n"
                         L"    x\n",
                         L"ValueError");
+}
+
+TEST(Interpreter, with_statement_calls_enter_and_exit)
+{
+    test::FileRunner file_runner(L"log = 0\n"
+                                 L"class Manager:\n"
+                                 L"    def __enter__(self):\n"
+                                 L"        return 4\n"
+                                 L"    def __exit__(self, typ, exc, tb):\n"
+                                 L"        global log\n"
+                                 L"        log = log + 10\n"
+                                 L"        return False\n"
+                                 L"with Manager() as value:\n"
+                                 L"    log = value + 1\n"
+                                 L"log\n");
+
+    EXPECT_EQ(Value::from_smi(15), file_runner.return_value);
+}
+
+TEST(Interpreter, with_statement_suppresses_exception_when_exit_returns_true)
+{
+    test::FileRunner file_runner(L"seen = False\n"
+                                 L"class Manager:\n"
+                                 L"    def __enter__(self):\n"
+                                 L"        return self\n"
+                                 L"    def __exit__(self, typ, exc, tb):\n"
+                                 L"        global seen\n"
+                                 L"        seen = typ is ValueError\n"
+                                 L"        return True\n"
+                                 L"with Manager():\n"
+                                 L"    raise ValueError\n"
+                                 L"seen\n");
+
+    EXPECT_EQ(Value::True(), file_runner.return_value);
+}
+
+TEST(Interpreter, with_statement_reraises_when_exit_returns_false)
+{
+    expect_python_error(L"class Manager:\n"
+                        L"    def __enter__(self):\n"
+                        L"        return self\n"
+                        L"    def __exit__(self, typ, exc, tb):\n"
+                        L"        return False\n"
+                        L"with Manager():\n"
+                        L"    raise ValueError\n",
+                        L"ValueError");
+}
+
+TEST(Interpreter, with_statement_exit_runs_when_as_target_binding_raises)
+{
+    test::FileRunner file_runner(L"seen = False\n"
+                                 L"values = []\n"
+                                 L"class Manager:\n"
+                                 L"    def __enter__(self):\n"
+                                 L"        return 7\n"
+                                 L"    def __exit__(self, typ, exc, tb):\n"
+                                 L"        global seen\n"
+                                 L"        seen = typ is IndexError\n"
+                                 L"        return True\n"
+                                 L"with Manager() as values[0]:\n"
+                                 L"    seen = 99\n"
+                                 L"seen\n");
+
+    EXPECT_EQ(Value::True(), file_runner.return_value);
+}
+
+TEST(Interpreter, with_statement_exit_runs_before_return)
+{
+    test::FileRunner file_runner(L"log = 0\n"
+                                 L"class Manager:\n"
+                                 L"    def __enter__(self):\n"
+                                 L"        return self\n"
+                                 L"    def __exit__(self, typ, exc, tb):\n"
+                                 L"        global log\n"
+                                 L"        log = 10\n"
+                                 L"        return False\n"
+                                 L"def f():\n"
+                                 L"    with Manager():\n"
+                                 L"        return 7\n"
+                                 L"    return 99\n"
+                                 L"f() + log\n");
+
+    EXPECT_EQ(Value::from_smi(17), file_runner.return_value);
+}
+
+TEST(Interpreter, with_statement_exit_that_raises_during_return_runs_once)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj =
+        test_context.compile_file(L"log = 0\n"
+                                  L"class Manager:\n"
+                                  L"    def __enter__(self):\n"
+                                  L"        return self\n"
+                                  L"    def __exit__(self, typ, exc, tb):\n"
+                                  L"        global log\n"
+                                  L"        log = log + 1\n"
+                                  L"        raise ValueError\n"
+                                  L"def f():\n"
+                                  L"    with Manager():\n"
+                                  L"        return 7\n"
+                                  L"f()\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError");
+
+    TValue<String> log_name =
+        test_context.vm().get_or_create_interned_string_value(L"log");
+    EXPECT_EQ(Value::from_smi(1),
+              code_obj->module_scope.extract()->get_by_name(log_name));
+}
+
+TEST(Interpreter, with_statement_inner_exit_stays_suspended_during_outer_exit)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj =
+        test_context.compile_file(L"log = 0\n"
+                                  L"class Outer:\n"
+                                  L"    def __enter__(self):\n"
+                                  L"        global log\n"
+                                  L"        log = log * 10 + 1\n"
+                                  L"        return self\n"
+                                  L"    def __exit__(self, typ, exc, tb):\n"
+                                  L"        global log\n"
+                                  L"        log = log * 10 + 2\n"
+                                  L"        raise ValueError\n"
+                                  L"class Inner:\n"
+                                  L"    def __enter__(self):\n"
+                                  L"        global log\n"
+                                  L"        log = log * 10 + 3\n"
+                                  L"        return self\n"
+                                  L"    def __exit__(self, typ, exc, tb):\n"
+                                  L"        global log\n"
+                                  L"        log = log * 10 + 4\n"
+                                  L"        return False\n"
+                                  L"def f():\n"
+                                  L"    with Outer():\n"
+                                  L"        with Inner():\n"
+                                  L"            return 7\n"
+                                  L"f()\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError");
+
+    TValue<String> log_name =
+        test_context.vm().get_or_create_interned_string_value(L"log");
+    EXPECT_EQ(Value::from_smi(1342),
+              code_obj->module_scope.extract()->get_by_name(log_name));
+}
+
+TEST(Interpreter, with_statement_multiple_items_exit_in_reverse_order)
+{
+    test::FileRunner file_runner(L"log = 0\n"
+                                 L"class First:\n"
+                                 L"    def __enter__(self):\n"
+                                 L"        global log\n"
+                                 L"        log = log * 10 + 1\n"
+                                 L"        return self\n"
+                                 L"    def __exit__(self, typ, exc, tb):\n"
+                                 L"        global log\n"
+                                 L"        log = log * 10 + 2\n"
+                                 L"        return False\n"
+                                 L"class Second:\n"
+                                 L"    def __enter__(self):\n"
+                                 L"        global log\n"
+                                 L"        log = log * 10 + 3\n"
+                                 L"        return self\n"
+                                 L"    def __exit__(self, typ, exc, tb):\n"
+                                 L"        global log\n"
+                                 L"        log = log * 10 + 4\n"
+                                 L"        return False\n"
+                                 L"with First(), Second():\n"
+                                 L"    log = log * 10 + 5\n"
+                                 L"log\n");
+
+    EXPECT_EQ(Value::from_smi(13542), file_runner.return_value);
 }
 
 TEST(Interpreter, left_shift_negative_count)

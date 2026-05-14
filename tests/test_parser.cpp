@@ -235,6 +235,34 @@ TEST(Parser, bare_raise_stmt)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, with_stmt)
+{
+    std::string expected = ("with manager() as value:\n"
+                            "    use(value)\n");
+    std::string actual = parse(L"with manager() as value:\n"
+                               "    use(value)\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, with_multiple_items_stmt)
+{
+    std::string expected = ("with first() as a, second() as b:\n"
+                            "    use(a, b)\n");
+    std::string actual = parse(L"with first() as a, second() as b:\n"
+                               "    use(a, b)\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, with_stmt_rejects_trailing_comma)
+{
+    expect_parse_error(L"with manager(), :\n"
+                       L"    pass\n",
+                       "Unexpected token COLON at offset 16 (line 1, column "
+                       "17), near \"with manager(), :\"");
+}
+
 TEST(Parser, try_bare_except_stmt)
 {
     std::string expected = ("try:\n"
