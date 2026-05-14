@@ -61,7 +61,7 @@ add_custom_target(check_opcode_frames
 
 add_custom_target(run_benchmark
     COMMAND $<TARGET_FILE:bench_clovervm>
-            --benchmark_min_time=0.1s
+            --benchmark_min_time=1s
             --benchmark_counters_tabular=true
     DEPENDS check_opcode_frames bench_clovervm
     USES_TERMINAL
