@@ -108,13 +108,17 @@ Validation:
 
 ## Phase 3: Minimal Layout Descriptor Facade
 
-1. [ ] Introduce a descriptor-shaped API for object size, owned-child scanning,
-   and native teardown, following the layout-ID design. The mechanical heap
-   value-span scanner has been narrowed to an `ObjectValueSpan` helper for a
-   concrete heap object, but the broader layout-ID descriptor facade is not in
-   place yet.
+1. [ ] Introduce a descriptor-shaped API for owned-child scanning and native
+   teardown, following the layout-ID design. Slab candidate discovery uses the
+   committed-object header bitmap described in
+   [Committed-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md),
+   so object extent is not required for young-object slab walks. Extent can
+   remain a future descriptor concern for validation, accounting, or allocation
+   policy. The mechanical heap value-span scanner has been narrowed to an
+   `ObjectValueSpan` helper for a concrete heap object, but the broader
+   layout-ID descriptor facade is not in place yet.
 2. [ ] Implement the initial native descriptor path using metadata descriptors for
-   layouts that can be described by size plus scanned `Value` regions.
+   layouts that can be described by scanned `Value` regions.
 3. [ ] Bridge any still-unmigrated layout through existing `HeapLayout` decoding
    only as a compatibility path, not as the main reclamation interface. The
    current scanner still reads `HeapLayout` directly.
@@ -275,6 +279,49 @@ Validation:
 - Deterministic reclamation tests using every-safepoint reclamation mode.
 - Stress tests that allocate, drop, and safepoint repeatedly.
 - Counter sanity checks in debug builds.
+
+## Later Extension: Young-Object Slab Discovery
+
+The baseline currently enqueues every committed zero-refcount reclaimable
+allocation into the ZCT. This is correct but too expensive as the long-term
+discovery mechanism. The target design is in
+[Committed-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md).
+
+1. Add a committed-object header bitmap to slab metadata. The bitmap replaces
+   per-object slab reclaim blockers as the committed-object existence set.
+2. Keep active allocator pins separate from committed-object bits. A slab is
+   releasable only when its bitmap is empty and it has no active allocator pins.
+3. Move slab release decisions to `GlobalHeap::release_slab_if_empty`; slabs
+   should not remember their owning `GlobalHeap`.
+4. Add `ThreadLocalHeap::slabs_active_since_reclamation`. Update it when active
+   slabs are installed or switched, not on every allocation.
+5. After each reclamation, reset each thread-local heap's active-slab list to
+   the slabs currently open for allocation.
+6. Scan committed-object header bitmaps for those slabs during reclamation. For
+   each slab-discovered object with
+   `refcount == 0 && lifecycle_state == Normal`, use the same reclamation root
+   set as a filter:
+   - if rooted, transition `Normal -> InZct` and append the object to a ZCT;
+   - if unrooted, transition to `Reclaiming` and use the ordinary reclamation
+     teardown path.
+7. Clear committed-object bits during teardown, remember touched slabs, and call
+   `release_slab_if_empty` on touched slabs after candidate processing finishes.
+8. Keep ZCT processing and young-slab discovery as candidate producers for one
+   reclamation mechanism. They must share lifecycle transitions, root filtering,
+   descriptor-owned-value scanning, and slab blocker release.
+9. Once slab discovery is reliable, remove eager allocation-time ZCT enqueue for
+   young zero-refcount objects.
+
+Validation:
+
+- Tests that a young zero-refcount object in a dirty slab is retained when the
+  root set contains its identity and is moved into the ZCT.
+- Tests that a young zero-refcount object in a dirty slab is reclaimed when the
+  root set does not contain it.
+- Tests that slab walking discovers committed object starts from the header
+  bitmap and does not use owned-value scanning for object discovery.
+- Tests that failed-construction gaps or abandoned bump memory are not treated
+  as committed objects.
 
 ## Phase 9: Multi-Thread-Ready API Shape
 

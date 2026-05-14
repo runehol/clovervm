@@ -224,6 +224,24 @@ At safepoint:
 Teardown may release child objects. If those children reach zero, they are added
 to the active ZCT and may be processed during the same safepoint.
 
+### Recently Allocated Slab Discovery
+
+The current baseline eagerly enqueues every committed zero-refcount reclaimable
+allocation into the ZCT. That is a correctness bridge, not the intended
+long-term allocation path.
+
+The target design is described in
+[Committed-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md).
+In short, each slab maintains a committed-object header bitmap.
+`ThreadLocalHeap` remembers slabs that have been active since the previous
+reclamation, updating that list on slab switches rather than on every
+allocation. During reclamation, the VM walks those slabs' bitmaps to discover
+young objects with `refcount == 0 && lifecycle_state == Normal`.
+
+The bitmap also replaces per-object slab reclaim blockers. Active allocator pins
+remain separate. Object teardown clears committed-object bits and batches slab
+release checks until the end of reclamation.
+
 ### Whole-Slab Release And Later Reuse
 
 - when `slab->n_reclaim_blockers == 0`, the slab calls back to its owning

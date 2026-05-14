@@ -8,6 +8,13 @@ reclamation clears those slots before releasing copied child values. That is
 good enough for the acyclic deferred-refcount baseline, including compact and
 expanded dynamic layouts, but it is not the final descriptor facade.
 
+The next slab discovery step is described in
+[Committed-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md).
+In short, slab candidate discovery uses a committed-object header bitmap, while
+native-layout descriptors handle owned-value scanning and teardown. Object
+extent can remain a future descriptor concern, but it is not required for
+bitmap-based slab walks.
+
 Today, heap object metadata encodes three scanning/deallocation facts per object:
 
 - total object size
@@ -33,20 +40,20 @@ stable dispatch key.
 
 ## Proposal Summary
 
-Use `NativeLayoutId` as the primary dispatch key for object scanning and
-object-specific teardown. In this document, "descriptor" means a VM-internal heap
-layout descriptor, not a Python attribute descriptor. It is runtime metadata that
-tells reclamation how to handle one heap layout: how large the object allocation
-is, which stored `Value` fields are owned child references, and which native
-teardown hook, if any, must run.
+Use `NativeLayoutId` as the primary dispatch key for owned-value scanning and
+object-specific teardown. In this document, "descriptor" means a VM-internal
+heap layout descriptor, not a Python attribute descriptor. It is runtime metadata
+that tells reclamation which stored `Value` fields are owned child references
+and which native teardown hook, if any, must run. Object extent may be added to
+the descriptor table later for accounting or validation, but bitmap-based slab
+walking does not require it.
 
 ### Core idea
 
 Maintain a runtime table keyed by `NativeLayoutId`. Most native layout IDs
 should map to a normalized metadata descriptor:
 
-- object size, or enough metadata to compute it
-- scanned owned `Value` field spans
+- scanned owned `Value` field spans or recipes
 - optional native destroy hook
 
 Custom callbacks are escape hatches for layouts that cannot be described by this
@@ -57,11 +64,9 @@ unpredictable per-object switch.
 The table still needs distinct entry kinds:
 
 - **Static-layout entries**: contain compile-time constants for
-  - object size
   - scan recipe (`Value` field locations or spans)
   - optional destroy hook
 - **Dynamic-layout entries**: contain callbacks that compute
-  - object size from object contents
   - scan recipe from object contents
   - optional destroy hook
 - **C-extension entry kind**: delegates teardown semantics to CPython-compatible
@@ -87,12 +92,14 @@ still uses layout-id dispatch for safepoint scanning and teardown coordination.
 
 ### 3) Clearer ownership of behavior
 
-Each layout ID defines its own memory behavior contract (size, scan, teardown),
-which is easier to audit than globally decoding one packed header format.
+Each layout ID defines its own memory behavior contract (owned-value scan,
+teardown, and possibly future extent), which is easier to audit than globally
+decoding one packed header format.
 
 ### 4) Better separation of mechanism and policy
 
-- Mechanism: refcount/safepoint engine asks “how do I scan/free this object?”
+- Mechanism: refcount/safepoint engine asks “how do I scan or tear down this
+  object?”
 - Policy: layout entry answers with exact static data or dynamic computation
 
 This can simplify future features (layout specialization, inline storage
@@ -159,11 +166,9 @@ struct LayoutDescriptor {
   Kind kind;
 
   // For kStatic
-  uint32_t static_size;
   ScanRecipe static_scan;
 
   // For kDynamic
-  uint32_t (*dynamic_size)(const HeapObject*);
   ScanRecipe (*dynamic_scan)(const HeapObject*);
 
   // Optional generic destroy hook for native kinds.
@@ -213,17 +218,18 @@ At startup (or in debug builds):
 
 - verify every ID has a descriptor
 - verify descriptor kind invariants (e.g., static fields present for `kStatic`)
-- verify size/scan expectations for known native C++ types with
+- verify scan expectations for known native C++ types with
   `static_assert`s and table checks
 
 ## Migration Plan
 
 1. **Introduce the descriptor-shaped API without deleting current metadata.**
    Reclamation should call this API instead of open-coding `HeapLayout`
-   decoding. The existing `ObjectValueSpan` helper is the useful nucleus, but
-   it should move behind the facade rather than become the facade itself.
+   decoding. The existing `ObjectValueSpan` helper is the useful nucleus for
+   owned-value scanning, but it should move behind the facade rather than become
+   the facade itself.
 2. **Implement the normalized metadata-descriptor path.**
-   Use it for layouts that can be described by size plus scanned `Value` spans.
+   Use it for layouts that can be described by scanned `Value` spans.
    Bridge still-unmigrated layouts through existing `HeapLayout` decoding as a
    compatibility path, not as the main reclamation interface.
 3. **Migrate fixed native layouts in small groups.**
