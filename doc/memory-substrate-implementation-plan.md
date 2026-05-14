@@ -181,25 +181,25 @@ Validation:
 
 ## Phase 5: Conservative Managed Root Collection
 
-1. Implement stack scanning from the published `lowest_live_stack_slot` up to
+1. [x] Implement stack scanning from the published `lowest_live_stack_slot` up to
    the permanent Clover frame sentinel stored in `ThreadState`.
-2. Insert every refcounted-pointer-shaped slot into a temporary
+2. [x] Insert every refcounted-pointer-shaped slot into a temporary
    `absl::flat_hash_set<HeapObject *>`.
-3. Insert `accumulator_or_not_present` if it has refcounted pointer shape.
-4. Do not dereference candidate roots or validate them against allocator
+3. [x] Insert `accumulator_or_not_present` if it has refcounted pointer shape.
+4. [x] Do not dereference candidate roots or validate them against allocator
    metadata during stack scanning.
 5. Treat stack-scanned values only as a filter against the ZCT.
 6. Prefer targeted clearing only if conservative retention becomes visible in
    tests or benchmarks.
-7. In debug builds, validate that `lowest_live_stack_slot` is within the managed
+7. [x] In debug builds, validate that `lowest_live_stack_slot` is within the managed
    stack bounds and does not scan past the `ThreadState` sentinel.
 
 Validation:
 
-- Tests where a zero-refcount object is protected only by a live frame slot.
-- Tests where a zero-refcount return value is protected only by the published
+- [x] Tests where a zero-refcount object is protected only by a live frame slot.
+- [x] Tests where a zero-refcount return value is protected only by the published
   accumulator.
-- Tests showing stale pointer-shaped non-ZCT values in scanned slots do not
+- [x] Tests showing stale pointer-shaped non-ZCT values in scanned slots do not
   affect correctness and are not dereferenced.
 
 ## Phase 6: Serial ZCT Processing

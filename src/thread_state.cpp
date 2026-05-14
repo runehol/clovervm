@@ -67,6 +67,7 @@ namespace cl
         clover_frame_sentinel_ptr = sentinel_fp;
         initialize_clover_frame_sentinel(sentinel_fp);
         set_clover_frame_frontier(sentinel_fp);
+        publish_safepoint_scan_record(sentinel_fp, Value::not_present());
     }
 
     void

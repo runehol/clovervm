@@ -3,6 +3,7 @@
 
 #include "exception_object.h"
 #include "refcount.h"
+#include "safepoint_roots.h"
 
 #include <gtest/gtest.h>
 
@@ -98,6 +99,53 @@ namespace cl
         EXPECT_EQ(0, string->refcount);
         EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
         EXPECT_EQ(zct_size_before + 1, thread->zero_count_table_size());
+    }
+
+    TEST(ThreadState, SafepointRootCollectionIncludesFrameSlotRoot)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        String *string = thread->make_object_raw<String>(L"root");
+        Value *slot = thread->clover_frame_sentinel() - 1;
+        *slot = Value::from_oop(string);
+        thread->publish_safepoint_scan_record(slot, Value::not_present());
+
+        SafepointRootSet roots =
+            context.vm().collect_safepoint_roots_for_testing();
+
+        EXPECT_TRUE(roots.contains(string));
+    }
+
+    TEST(ThreadState, SafepointRootCollectionIncludesAccumulatorRoot)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        String *string = thread->make_object_raw<String>(L"accumulator");
+        thread->publish_safepoint_scan_record(thread->clover_frame_sentinel(),
+                                              Value::from_oop(string));
+
+        SafepointRootSet roots =
+            context.vm().collect_safepoint_roots_for_testing();
+
+        EXPECT_TRUE(roots.contains(string));
+    }
+
+    TEST(ThreadState, SafepointRootCollectionDoesNotDereferenceJunk)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        Value junk;
+        junk.as.integer = 0x1010;
+        Value *slot = thread->clover_frame_sentinel() - 1;
+        *slot = junk;
+        thread->publish_safepoint_scan_record(slot, Value::not_present());
+
+        SafepointRootSet roots =
+            context.vm().collect_safepoint_roots_for_testing();
+
+        EXPECT_TRUE(roots.contains(reinterpret_cast<HeapObject *>(0x1010)));
     }
 
     TEST(ThreadState, SafepointRequestReadsVmFlag)

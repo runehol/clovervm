@@ -125,6 +125,11 @@ namespace cl
         {
             return clover_frame_sentinel_ptr;
         }
+        const Value *clover_stack_begin() const { return stack.data(); }
+        const Value *clover_stack_end() const
+        {
+            return stack.data() + stack.size();
+        }
         ALWAYSINLINE bool safepoint_requested() const
         {
             return *safepoint_requested_ptr;

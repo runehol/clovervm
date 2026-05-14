@@ -15,6 +15,7 @@
 #include "none_type.h"
 #include "parser.h"
 #include "range_iterator.h"
+#include "safepoint_roots.h"
 #include "scope.h"
 #include "shape.h"
 #include "thread_state.h"
@@ -137,7 +138,26 @@ namespace cl
         }
     }
 
-    void VirtualMachine::run_safepoint_reclamation() {}
+    void VirtualMachine::run_safepoint_reclamation()
+    {
+        SafepointRootSet roots = collect_safepoint_roots();
+        (void)roots;
+    }
+
+    SafepointRootSet VirtualMachine::collect_safepoint_roots() const
+    {
+        SafepointRootSet roots;
+        for(const std::unique_ptr<ThreadState> &thread: threads)
+        {
+            collect_safepoint_roots_from_thread(roots, *thread);
+        }
+        return roots;
+    }
+
+    SafepointRootSet VirtualMachine::collect_safepoint_roots_for_testing() const
+    {
+        return collect_safepoint_roots();
+    }
 
     ClassObject *class_for_native_layout(VirtualMachine *vm, NativeLayoutId id)
     {
