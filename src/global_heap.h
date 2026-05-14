@@ -5,6 +5,7 @@
 #include "slab_allocator.h"
 #include "typed_value.h"
 #include "value.h"
+#include <cstdint>
 #include <cstdlib>
 #include <deque>
 #include <memory>
@@ -81,6 +82,7 @@ namespace cl
         {
             return slab_for_address_unlocked(obj);
         }
+        uint64_t total_reclaim_blockers_for_testing() const;
 
     private:
         friend class SlabAllocator;
@@ -90,7 +92,7 @@ namespace cl
         SlabAllocator *make_new_slab(size_t actual_slab_size);
         void reclaim_slab(SlabAllocator *slab);
 
-        std::mutex heap_mutex;
+        mutable std::mutex heap_mutex;
         std::deque<std::unique_ptr<SlabAllocator>> slabs;
         std::unordered_map<uintptr_t, SlabAllocator *> slab_lookup;
         size_t offset;

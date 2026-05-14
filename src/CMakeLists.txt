@@ -42,7 +42,6 @@ add_library(libclovervm STATIC
     global_heap.h
     heap_construction.h
     heap_object.h
-    heap_object_scan.h
     instance.cpp
     instance.h
     int.cpp

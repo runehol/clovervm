@@ -3,7 +3,6 @@
 
 #include "exception_object.h"
 #include "refcount.h"
-#include "safepoint_reclamation.h"
 
 #include <gtest/gtest.h>
 
@@ -99,95 +98,6 @@ namespace cl
         EXPECT_EQ(0, string->refcount);
         EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
         EXPECT_EQ(zct_size_before + 1, thread->zero_count_table_size());
-    }
-
-    TEST(ThreadState, SafepointRootCollectionIncludesFrameSlotRoot)
-    {
-        test::VmTestContext context;
-        ThreadState *thread = context.thread();
-        ThreadState::ActivationScope active_thread(thread);
-        String *string = thread->make_object_raw<String>(L"root");
-        Value *slot = thread->clover_frame_sentinel() - 1;
-        *slot = Value::from_oop(string);
-        thread->publish_safepoint_scan_record(slot, Value::not_present());
-
-        SafepointRootSet roots;
-        collect_safepoint_roots_from_thread(roots, *thread);
-
-        EXPECT_TRUE(roots.contains(string));
-    }
-
-    TEST(ThreadState, SafepointRootCollectionIncludesAccumulatorRoot)
-    {
-        test::VmTestContext context;
-        ThreadState *thread = context.thread();
-        ThreadState::ActivationScope active_thread(thread);
-        String *string = thread->make_object_raw<String>(L"accumulator");
-        thread->publish_safepoint_scan_record(thread->clover_frame_sentinel(),
-                                              Value::from_oop(string));
-
-        SafepointRootSet roots;
-        collect_safepoint_roots_from_thread(roots, *thread);
-
-        EXPECT_TRUE(roots.contains(string));
-    }
-
-    TEST(ThreadState, SafepointRootCollectionDoesNotDereferenceJunk)
-    {
-        test::VmTestContext context;
-        ThreadState *thread = context.thread();
-        Value junk;
-        junk.as.integer = 0x1010;
-        Value *slot = thread->clover_frame_sentinel() - 1;
-        *slot = junk;
-        thread->publish_safepoint_scan_record(slot, Value::not_present());
-
-        SafepointRootSet roots;
-        collect_safepoint_roots_from_thread(roots, *thread);
-
-        EXPECT_TRUE(roots.contains(reinterpret_cast<HeapObject *>(0x1010)));
-    }
-
-    TEST(ThreadState, SafepointZctProcessingRestoresPositiveRefcountEntry)
-    {
-        test::VmTestContext context;
-        ThreadState *thread = context.thread();
-        ThreadState::ActivationScope active_thread(thread);
-        size_t zct_size_before = thread->zero_count_table_size();
-        String *string = thread->make_object_raw<String>(L"retained");
-        ASSERT_EQ(zct_size_before + 1, thread->zero_count_table_size());
-        ASSERT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
-
-        incref_heap_ptr(string);
-        SafepointRootSet roots;
-        process_zero_count_table_for_safepoint(*thread, roots);
-
-        EXPECT_EQ(1, string->refcount);
-        EXPECT_EQ(HeapLifecycleState::Normal, string->lifecycle_state);
-        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(string));
-        decref_heap_ptr(string);
-    }
-
-    TEST(ThreadState, SafepointZctProcessingKeepsStackRootedZeroEntry)
-    {
-        test::VmTestContext context;
-        ThreadState *thread = context.thread();
-        ThreadState::ActivationScope active_thread(thread);
-        size_t zct_size_before = thread->zero_count_table_size();
-        String *string = thread->make_object_raw<String>(L"stack-rooted");
-        ASSERT_EQ(zct_size_before + 1, thread->zero_count_table_size());
-        Value *slot = thread->clover_frame_sentinel() - 1;
-        *slot = Value::from_oop(string);
-        thread->publish_safepoint_scan_record(slot, Value::not_present());
-        SafepointRootSet roots;
-        collect_safepoint_roots_from_thread(roots, *thread);
-
-        process_zero_count_table_for_safepoint(*thread, roots);
-
-        EXPECT_EQ(0, string->refcount);
-        EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
-        EXPECT_TRUE(thread->zero_count_table_contains_for_testing(string));
-        *slot = Value::not_present();
     }
 
     TEST(ThreadState, SafepointRequestReadsVmFlag)

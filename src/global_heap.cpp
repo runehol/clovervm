@@ -110,5 +110,16 @@ namespace cl
         slab_for_address_unlocked(memory)->drop_reclaim_blocker();
     }
 
+    uint64_t GlobalHeap::total_reclaim_blockers_for_testing() const
+    {
+        const std::lock_guard<std::mutex> lock(heap_mutex);
+        uint64_t total = 0;
+        for(const std::unique_ptr<SlabAllocator> &slab: slabs)
+        {
+            total += slab->reclaim_blocker_count();
+        }
+        return total;
+    }
+
     GlobalHeap::~GlobalHeap() = default;
 }  // namespace cl

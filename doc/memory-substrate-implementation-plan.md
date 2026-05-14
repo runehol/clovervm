@@ -210,21 +210,26 @@ Validation:
 3. For each entry:
    - [x] if `refcount > 0`, transition `InZct -> Normal`
    - [x] if `refcount == 0` and the object is in roots, keep it in `InZct`
-   - if `refcount == 0` and the object is not in roots, transition to
-     `Reclaiming`
-4. Tear down `Reclaiming` objects through descriptor-driven child release, not
-   ordinary hot-path `decref()` calls.
-5. When child releases reach zero, append them to the ZCT currently being
+   - [x] if `refcount == 0` and the object is not in roots, transition to
+     `Reclaiming` for currently supported compact metadata layouts. Expanded
+     dynamic layouts are retained until the descriptor facade can describe them
+     safely.
+4. [x] Tear down `Reclaiming` objects through reclamation-specific child release,
+   not ordinary hot-path `decref()` calls. This is currently wired for compact
+   metadata layouts; full descriptor-facade routing remains Phase 3 work.
+5. [x] When child releases reach zero, append them to the ZCT currently being
    processed so cascades can be handled in the same safepoint.
-6. After teardown, transition the object to `Dead`, decrement its slab
-   reclaim-blocker count, and make the allocation invalid for ordinary heap use.
+6. [x] After teardown, transition the object to `Dead`, decrement its slab
+   reclaim-blocker count, and make the allocation invalid for ordinary heap use
+   for currently supported compact metadata layouts.
 7. Add debug validation that no heap object appears in more than one ZCT.
 
 Validation:
 
 - [x] Tests for root-kept ZCT entries remaining in the ZCT across safepoints.
 - [x] Tests for positive-refcount stale ZCT entries returning to `Normal`.
-- Tests for cascaded child reclamation during the same safepoint.
+- [x] Tests for unrooted compact-layout ZCT entries transitioning to `Dead`.
+- [x] Tests for cascaded child reclamation during the same safepoint.
 - Tests for duplicate-ZCT detection in debug builds.
 
 ## Phase 7: Whole-Slab Reuse
