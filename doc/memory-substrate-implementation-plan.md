@@ -32,6 +32,8 @@ baseline:
 - Child releases that reach zero append to the ZCT currently being processed.
 - Slab lookup by 4 KiB granule.
 - Active allocator slabs and allocated objects currently use reclaim blockers.
+  The target design replaces object blockers with committed-object bitmap bits
+  and uses slab pins for active allocator and epoch-discovery ownership.
 - Fully unblocked slabs are released/unmapped; ordinary slab pooling is not part
   of the current plan.
 - VM bootstrap switches the default thread to fresh slabs after builtin setup.
@@ -90,31 +92,40 @@ Validation:
 - Tests that dedicated large-object slabs use the same bitmap path and only set
   bit 0.
 
-## Phase 2: Heap-Owned Slab Release
+## Phase 2: Slab Pins and Heap-Owned Release
 
 Move slab release authority out of slabs and into `GlobalHeap`.
 
-1. [ ] Split active allocator pins from committed object presence.
+1. [ ] Split slab pins from committed object presence.
    - The bitmap represents committed objects.
-   - `active_allocator_pins` represents thread-local heap ownership of active
-     allocation slabs.
+   - `n_slab_pins` represents slab lifetime ownership.
+   - Named methods distinguish active allocator ownership from epoch discovery
+     ownership while updating the same counter:
+     `add_active_allocator_pin()`, `drop_active_allocator_pin()`,
+     `add_epoch_discovery_pin()`, `drop_epoch_discovery_pin()`.
 2. [ ] Replace object reclaim-blocker increments/decrements with bitmap
    mark/clear.
 3. [ ] Remove the `GlobalHeap *` back-pointer from `SlabAllocator`.
 4. [ ] Add `GlobalHeap::release_slab_if_empty(SlabAllocator *)`.
-5. [ ] Make allocator-pin drops heap-mediated and call
-   `release_slab_if_empty()`.
+5. [ ] Keep pin add/drop symmetric and local to `SlabAllocator`; dropping a pin
+   must not release or unmap a slab as a side effect.
 6. [ ] During object teardown, clear committed bits and remember touched slabs;
    do not release/unmap slabs immediately from object teardown.
-7. [ ] After candidate processing completes, run `release_slab_if_empty()` for
-   touched slabs.
+7. [ ] After explicit batch points, run `release_slab_if_empty()` for touched
+   slabs:
+   - after active slab switches drop the old active allocator pin;
+   - after dedicated construction failure drops its epoch discovery pin;
+   - after reclamation drops epoch discovery pins and clears committed bits.
 
 Validation:
 
 - Tests that an empty slab with an active allocator pin is not released.
-- Tests that dropping the final allocator pin releases an empty slab.
+- Tests that dropping the final pin does not release a slab until the caller runs
+  `release_slab_if_empty()`.
 - Tests that reclaiming the final committed object releases the slab only during
   the batched post-reclamation release step.
+- Tests that epoch-list membership pins a slab even after it is no longer the
+  active allocation slab.
 - Tests that slab lookup no longer finds released ordinary and dedicated slabs.
 
 ## Phase 3: Thread-Local Active-Slab Epoch Lists
@@ -129,7 +140,10 @@ allocation.
    `ThreadLocalHeap::dedicated_large_bytes_since_reclamation` for large-object
    policy and discovery.
 4. [ ] Add a helper to remember an active slab once per reclamation epoch.
-   A small vector with linear duplicate suppression is enough initially.
+   - Each call appends one epoch-list membership and adds one epoch discovery
+     pin.
+   - Allocation/switch paths should make duplicate membership impossible by
+     design; add debug assertions for that invariant.
 5. [ ] Update the list when a thread-local heap installs or switches active
    slabs:
    - construction of `ThreadLocalHeap`;
@@ -137,27 +151,34 @@ allocation.
    - `switch_to_new_slabs()`;
    - future size-class active slab switches.
 6. [ ] Increment `ordinary_inactive_slabs_since_reclamation` when an ordinary
-   active slab is switched out.
+   active slab is switched out. Drop the old slab's active allocator pin and
+   rely on its epoch discovery pin to keep it alive until reclamation scans the
+   epoch list and performs batched release checks.
 7. [ ] Track dedicated large-object slabs in the dedicated list/counter, not in
    the ordinary inactive-slab counter.
+   - First insertion adds an epoch discovery pin.
+   - Construction failure before commit drops that pin and runs a release check.
 8. [ ] Do not update the ordinary active-slab list on every allocation.
 9. [ ] After each reclamation, reset each thread-local heap's ordinary list to
    the slabs currently open for allocation, reset the ordinary inactive counter
    to zero, and clear the dedicated large-object list/counter.
+   - Drop epoch discovery pins for scanned epoch slabs.
+   - Run release checks for scanned epoch slabs whose pins were dropped.
+   - Add epoch discovery pins for current active slabs that seed the next epoch.
 10. [ ] Expose these lists and counters to VM-global reclamation through
     `ThreadState` or `ThreadLocalHeap` accessors.
 
 Validation:
 
 - Tests that slab switches append slabs to the active-since-reclamation list.
-- Tests that repeated activation of the same slab in one epoch does not produce
-  duplicate scan entries.
 - Tests that post-reclamation reset leaves current active slabs on the list.
 - Tests that ordinary slab switches increment the inactive ordinary slab counter
   and post-reclamation reset clears it.
 - Tests that dedicated large-object slabs update the dedicated list/counter but
   not the ordinary inactive slab counter.
 - Tests that ordinary allocation does not mutate the active-slab list.
+- Tests that a slab present only through epoch-list ownership survives until the
+  epoch pin is dropped and a release check runs.
 
 ## Phase 4: Bitmap-Based Young-Object Discovery
 
@@ -183,6 +204,9 @@ objects that no longer enter the ZCT at allocation time.
 5. [ ] Remove eager allocation-time ZCT enqueue once bitmap discovery covers
    young zero-refcount objects.
 6. [ ] Keep positive-refcount allocation behavior out of the ZCT.
+7. [ ] During reclamation, drop epoch discovery pins only after the corresponding
+   epoch slabs have been scanned; run slab release checks only after candidate
+   sources are done.
 
 Validation:
 

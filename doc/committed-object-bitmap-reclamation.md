@@ -48,7 +48,7 @@ class SlabAllocator {
 
     std::array<uint64_t, CommittedHeaderBitmapWords>
         committed_header_bitmap = {};
-    uint32_t active_allocator_pins = 0;
+    uint32_t n_slab_pins = 0;
 };
 ```
 
@@ -77,28 +77,50 @@ object header address for that heap's pointer tag offset. For dedicated slabs,
 `first_object_header` is the dedicated object's header address, and the
 dedicated allocation path should only ever set bit 0.
 
-## Allocator Pins
+## Slab Pins
 
-The bitmap replaces per-object slab reclaim blockers. It does not replace active
-allocator pins.
+The bitmap replaces per-object slab reclaim blockers. It does not replace slab
+lifetime pins.
+
+Use one underlying slab pin count, with named methods for the ownership role at
+the call site:
+
+```cpp
+slab->add_active_allocator_pin();
+slab->drop_active_allocator_pin();
+
+slab->add_epoch_discovery_pin();
+slab->drop_epoch_discovery_pin();
+```
+
+The two method categories update the same `n_slab_pins` counter. They exist so
+call sites say why the slab is being kept alive:
+
+- an active allocator pin is held while a `ThreadLocalHeap` may allocate from
+  that slab;
+- an epoch discovery pin is held while a thread-local reclamation epoch list
+  needs to scan that slab's committed-object bitmap.
 
 A slab is releasable when:
 
 ```text
 committed_header_bitmap is empty
-&& active_allocator_pins == 0
+&& n_slab_pins == 0
 ```
 
-`ThreadLocalHeap` pins the slabs it currently has open for allocation. Dropping
-an allocator pin is heap-mediated:
+Pin drops never release or unmap a slab as a side effect. `SlabAllocator` owns
+local pin accounting; `GlobalHeap` owns registration, slab lookup removal, and
+unmapping.
 
 ```cpp
-global_heap.drop_allocator_pin(slab);
+slab->drop_epoch_discovery_pin();
+global_heap.release_slab_if_empty(slab);
 ```
 
-That operation drops the pin and calls `release_slab_if_empty(slab)`.
-`release_slab_if_empty` is owned by `GlobalHeap`, because only `GlobalHeap` can
-unregister slab lookup entries and erase/unmap slab storage.
+Callers are responsible for checking releasability at explicit batch points
+after they are done touching the slab. `release_slab_if_empty` is owned by
+`GlobalHeap`, because only `GlobalHeap` can unregister slab lookup entries and
+erase/unmap slab storage.
 
 Object reclamation does not release slabs eagerly. It clears committed-object
 bits and batches slab release checks until reclamation teardown is complete.
@@ -121,7 +143,7 @@ fast path should not do per-object list bookkeeping.
 
 ## Active-Slab Epoch Lists
 
-`ThreadLocalHeap` owns the list of slabs that should be scanned for young
+`ThreadLocalHeap` owns the lists of slabs that should be scanned for young
 zero-refcount objects:
 
 ```cpp
@@ -133,30 +155,49 @@ size_t dedicated_large_bytes_since_reclamation = 0;
 
 This is thread-local allocator epoch state, not VM-global state.
 
-The list is updated when the thread-local heap installs an active slab:
+Presence in an epoch list is distinct from being installed as an active
+allocation slab. Each role owns its own pin. A slab can be active only,
+epoch-listed only, both, or neither. In practice, newly installed ordinary active
+slabs should also be remembered for the current epoch so allocations made from
+them can be discovered later.
+
+The ordinary epoch list is updated when the thread-local heap installs an active
+slab:
 
 ```cpp
 remember_active_slab_since_reclamation(new_slab);
 ```
 
-That happens on construction, `switch_to_new_slabs()`, ordinary slab exhaustion,
-and future size-class active slab switches. It does not happen on every
-allocation.
+Each call appends exactly one epoch-list membership and adds exactly one epoch
+discovery pin. It happens on construction, `switch_to_new_slabs()`, ordinary
+slab exhaustion, and future size-class active slab switches. These paths are
+responsible for not adding the same slab twice in one epoch. Remembering does
+not happen on every allocation.
 
 When an ordinary active slab is switched out, increment
 `ordinary_inactive_slabs_since_reclamation`. This counter is seeded to zero
 after reclamation and is the first ordinary-slab policy trigger: it counts how
 many ordinary allocation slabs have gone inactive during the current epoch.
+Switching out also drops the old slab's active allocator pin. The caller then
+does not need to run a release check: ordinary active slabs are already
+epoch-listed, and that epoch discovery pin keeps the slab alive until
+reclamation scans the list and performs batched release checks.
 
 Dedicated large-object slabs do not count as ordinary inactive slabs. They claim
 a slab on their own, are never installed as ordinary active allocation slabs, and
 would distort the ordinary slab switch policy. Track them through the separate
-dedicated slab list and byte counter.
+dedicated slab list and byte counter. First insertion into the dedicated epoch
+list adds an epoch discovery pin. If dedicated construction fails before a
+committed bit is set, the failure path drops that epoch discovery pin and checks
+the slab with `GlobalHeap::release_slab_if_empty()`.
 
 After each reclamation, reset the list to the slabs that are active right now:
 
 ```cpp
+drop epoch discovery pins for scanned ordinary and dedicated epoch slabs
+release empty scanned epoch slabs
 slabs_active_since_reclamation = current_active_slabs();
+add epoch discovery pins for those current active slabs
 ordinary_inactive_slabs_since_reclamation = 0;
 dedicated_slabs_since_reclamation.clear();
 dedicated_large_bytes_since_reclamation = 0;
@@ -166,12 +207,13 @@ This is required because an active slab may receive more allocations before the
 next slab switch. Today there is one ordinary active slab. With size classes,
 `current_active_slabs()` becomes one active slab per size class.
 
-Use simple uniqueness for the first implementation, such as a small vector with
-a linear duplicate check. This bookkeeping is off the per-allocation fast path.
+One epoch-list membership owns one epoch discovery pin. The allocation/switch
+paths should make duplicate membership impossible by design; debug assertions
+can check that invariant.
 
 ## Candidate Discovery
 
-Reclamation has two candidate sources:
+Reclamation has three candidate sources:
 
 - **ZCT entries**: older zero-refcount objects and objects that reached zero
   through heap `DECREF`.
@@ -241,9 +283,16 @@ Child releases that reach zero append to the ZCT currently being processed.
 After all candidate processing is complete:
 
 ```cpp
-for(SlabAllocator *slab: reclaimed_slabs)
+for(SlabAllocator *slab: scanned_epoch_slabs)
+    slab->drop_epoch_discovery_pin();
+
+for(SlabAllocator *slab: touched_slabs)
     global_heap.release_slab_if_empty(slab);
 ```
+
+The release-check set includes slabs whose committed bits were cleared and
+epoch slabs whose discovery pins were dropped. Reclamation must not unmap slabs
+while candidate sources are still being scanned.
 
 ## Descriptor Direction
 
