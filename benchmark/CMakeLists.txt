@@ -24,6 +24,7 @@ add_executable(bench_clovervm
     instance_attribute_write.cpp
     method_call.cpp
     method_call_class_attribute_write.cpp
+    memory_reclamation.cpp
     nested_for_loop.cpp
     pystone_arithmetic.cpp
     pystone_lite.cpp
