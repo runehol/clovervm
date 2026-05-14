@@ -39,9 +39,18 @@ baseline:
   of the current plan.
 - VM bootstrap switches the default thread to fresh slabs after builtin setup.
 
-The next work should remove the biggest remaining temporary shape:
+Near-term order:
 
-- ad hoc `HeapLayout` value-span decoding inside reclamation.
+1. Remove the biggest remaining temporary shape: ad hoc `HeapLayout` value-span
+   decoding inside reclamation. Do the native-layout descriptor refactor before
+   deeper reclamation policy work, so policy counters and hooks attach to the
+   final owned-value scanning boundary instead of today's temporary span bridge.
+2. Add thread-exit reclamation handoff. An exiting thread must move, not copy,
+   its ZCT and epoch slab responsibility to a parent thread.
+3. Return to reclamation policy after the descriptor facade and thread-exit
+   handoff are stable.
+4. Split ordinary heaps into size partitions. Partial-slab hole reuse, if it
+   ever happens, belongs after size classes make hole sizes predictable.
 
 ## Ground Rules
 
@@ -256,7 +265,9 @@ Validation:
 ## Phase 6: Reclamation Policy
 
 Add production reclamation triggers after bitmap discovery and descriptor
-scanning are stable.
+scanning are stable. The initial slab-pressure hook is intentionally small:
+`ThreadLocalHeap::allocate_slow()` requests a safepoint when inactive epoch slab
+pressure or dedicated large-object bytes cross fixed thresholds.
 
 1. [ ] Add counters for:
    - ZCT length;
@@ -267,9 +278,9 @@ scanning are stable.
    - objects retained by stack roots;
    - slabs released.
 2. [ ] Request reclamation on ZCT growth.
-3. [ ] Request reclamation when ordinary inactive slabs since the previous
+3. [x] Request reclamation when ordinary inactive slabs since the previous
    reclamation crosses a threshold.
-4. [ ] Request reclamation when dedicated large-object bytes since the previous
+4. [x] Request reclamation when dedicated large-object bytes since the previous
    reclamation crosses a threshold.
 5. [ ] Request reclamation on valid-object bitmap scan budget.
 6. [ ] Coalesce multiple pending requests into one safepoint.
@@ -277,8 +288,12 @@ scanning are stable.
 
 Validation:
 
-- Tests that each trigger requests a safepoint/reclamation without immediate
-  arbitrary-point reclamation.
+- Tests that ordinary inactive slab pressure requests a safepoint without
+  immediate arbitrary-point reclamation.
+- Tests that dedicated large-object byte pressure requests a safepoint without
+  immediate arbitrary-point reclamation.
+- Tests that each future trigger requests a safepoint/reclamation without
+  immediate arbitrary-point reclamation.
 - Tests that multiple pending requests coalesce.
 - Stress tests that allocate, drop, and safepoint repeatedly under the policy
   triggers.
@@ -316,7 +331,7 @@ Validation:
 ## Later Work
 
 - Multi-thread `Attached` / `Detached` / `GC` state model.
-- Thread exit ZCT handoff.
+- Thread exit ZCT and epoch slab handoff.
 - Parallel root scanning.
 - Packed atomic refcount/lifecycle state for no-GIL.
 - Cycle collection.
