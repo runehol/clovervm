@@ -14,7 +14,6 @@
 #include "global_heap.h"
 #include "intern_store.h"
 #include "owned_typed_value.h"
-#include "safepoint_roots.h"
 #include "scope.h"
 #include "str.h"
 #include "value.h"
@@ -178,7 +177,6 @@ namespace cl
             return TValue<String>::from_oop(dunder_class_name_);
         }
         CodeObject *clover_function_entry_adapter(uint32_t n_args);
-        SafepointRootSet collect_safepoint_roots_for_testing() const;
 
         template <typename T, typename... Args>
         T *make_immortal_internal_raw(Args &&...args)
@@ -236,7 +234,6 @@ namespace cl
         }
         void complete_safepoint();
         void run_safepoint_reclamation();
-        SafepointRootSet collect_safepoint_roots() const;
 
         void register_builtin_class(const BuiltinClassDefinition &definition);
         void install_bootstrap_string_class();

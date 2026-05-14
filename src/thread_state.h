@@ -21,10 +21,14 @@ namespace cl
     class ClassObject;
     class ExceptionObject;
     class Function;
-    class SafepointRootSet;
     class Scope;
     class VirtualMachine;
     class CodeObject;
+    class ThreadState;
+    class SafepointRootSet;
+
+    void process_zero_count_table_for_safepoint(ThreadState &thread,
+                                                const SafepointRootSet &roots);
 
     ClassObject *class_for_native_layout(VirtualMachine *vm, NativeLayoutId id);
 
@@ -92,8 +96,6 @@ namespace cl
 
         static void add_to_active_zero_count_table_if_needed(HeapObject *obj);
         void add_to_zero_count_table_if_needed(HeapObject *obj);
-        void
-        process_zero_count_table_for_safepoint(const SafepointRootSet &roots);
         size_t zero_count_table_size() const { return zero_count_table.size(); }
         bool zero_count_table_contains_for_testing(HeapObject *obj) const;
 
@@ -256,6 +258,10 @@ namespace cl
                                                            const Value *args,
                                                            uint32_t n_args);
         NOINLINE Shape *shape_of_inline_value(Value value) const;
+
+        friend void
+        process_zero_count_table_for_safepoint(ThreadState &thread,
+                                               const SafepointRootSet &roots);
 
         VirtualMachine *machine;
         bool *safepoint_requested_ptr;

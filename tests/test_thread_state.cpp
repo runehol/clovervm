@@ -3,7 +3,7 @@
 
 #include "exception_object.h"
 #include "refcount.h"
-#include "safepoint_roots.h"
+#include "safepoint_reclamation.h"
 
 #include <gtest/gtest.h>
 
@@ -111,8 +111,8 @@ namespace cl
         *slot = Value::from_oop(string);
         thread->publish_safepoint_scan_record(slot, Value::not_present());
 
-        SafepointRootSet roots =
-            context.vm().collect_safepoint_roots_for_testing();
+        SafepointRootSet roots;
+        collect_safepoint_roots_from_thread(roots, *thread);
 
         EXPECT_TRUE(roots.contains(string));
     }
@@ -126,8 +126,8 @@ namespace cl
         thread->publish_safepoint_scan_record(thread->clover_frame_sentinel(),
                                               Value::from_oop(string));
 
-        SafepointRootSet roots =
-            context.vm().collect_safepoint_roots_for_testing();
+        SafepointRootSet roots;
+        collect_safepoint_roots_from_thread(roots, *thread);
 
         EXPECT_TRUE(roots.contains(string));
     }
@@ -142,8 +142,8 @@ namespace cl
         *slot = junk;
         thread->publish_safepoint_scan_record(slot, Value::not_present());
 
-        SafepointRootSet roots =
-            context.vm().collect_safepoint_roots_for_testing();
+        SafepointRootSet roots;
+        collect_safepoint_roots_from_thread(roots, *thread);
 
         EXPECT_TRUE(roots.contains(reinterpret_cast<HeapObject *>(0x1010)));
     }
@@ -160,7 +160,7 @@ namespace cl
 
         incref_heap_ptr(string);
         SafepointRootSet roots;
-        thread->process_zero_count_table_for_safepoint(roots);
+        process_zero_count_table_for_safepoint(*thread, roots);
 
         EXPECT_EQ(1, string->refcount);
         EXPECT_EQ(HeapLifecycleState::Normal, string->lifecycle_state);
@@ -179,10 +179,10 @@ namespace cl
         Value *slot = thread->clover_frame_sentinel() - 1;
         *slot = Value::from_oop(string);
         thread->publish_safepoint_scan_record(slot, Value::not_present());
-        SafepointRootSet roots =
-            context.vm().collect_safepoint_roots_for_testing();
+        SafepointRootSet roots;
+        collect_safepoint_roots_from_thread(roots, *thread);
 
-        thread->process_zero_count_table_for_safepoint(roots);
+        process_zero_count_table_for_safepoint(*thread, roots);
 
         EXPECT_EQ(0, string->refcount);
         EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);

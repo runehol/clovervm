@@ -11,7 +11,6 @@
 #include "owned_typed_value.h"
 #include "parser.h"
 #include "runtime_helpers.h"
-#include "safepoint_roots.h"
 #include "tokenizer.h"
 #include "virtual_machine.h"
 #include <algorithm>
@@ -409,38 +408,6 @@ namespace cl
         assert(obj->refcount == 0);
         obj->lifecycle_state = HeapLifecycleState::InZct;
         zero_count_table.push_back(obj);
-    }
-
-    void ThreadState::process_zero_count_table_for_safepoint(
-        const SafepointRootSet &roots)
-    {
-        size_t scan = 0;
-        size_t keep = 0;
-        while(scan < zero_count_table.size())
-        {
-            HeapObject *obj = zero_count_table[scan++];
-            assert(obj != nullptr);
-            assert(obj->lifecycle_state == HeapLifecycleState::InZct);
-
-            if(obj->refcount > 0)
-            {
-                obj->lifecycle_state = HeapLifecycleState::Normal;
-                continue;
-            }
-
-            assert(obj->refcount == 0);
-            if(roots.contains(obj))
-            {
-                zero_count_table[keep++] = obj;
-                continue;
-            }
-
-            // Object teardown is wired in the next Phase 6 slice. Until then,
-            // retain unrooted candidates in the ZCT rather than losing them.
-            zero_count_table[keep++] = obj;
-        }
-
-        zero_count_table.resize(keep);
     }
 
     bool
