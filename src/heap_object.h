@@ -32,10 +32,10 @@ namespace cl
 
     constexpr uint32_t object_layout_expanded_bit = 1u << 31;
     constexpr uint32_t object_layout_size_shift = 0;
-    constexpr uint32_t object_layout_offset_shift = 28;
     constexpr uint32_t object_layout_count_shift = 14;
+    constexpr uint32_t object_layout_offset_shift = 27;
     constexpr uint32_t object_layout_offset_bits =
-        object_layout_expanded_bit >> object_layout_offset_shift;
+        31 - object_layout_offset_shift;
     constexpr uint32_t object_layout_count_bits =
         object_layout_offset_shift - object_layout_count_shift;
     constexpr uint32_t object_layout_size_bits =

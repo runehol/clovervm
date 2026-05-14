@@ -132,3 +132,24 @@ TEST(GlobalHeap, ExpandedDynamicAllocationPreservesPointerTag)
     EXPECT_TRUE(heap_ptr_is_refcounted(tuple));
     EXPECT_NE(nullptr, heap.slab_for_object_unlocked(tuple));
 }
+
+TEST(HeapLayout, CompactLayoutSupportsOffsetUpToFifteen)
+{
+    HeapLayout layout = encode_compact_layout_unchecked(1, 15, 1);
+
+    EXPECT_FALSE(layout_is_expanded(layout));
+    EXPECT_EQ(15u, compact_layout_value_offset_in_words(layout));
+    EXPECT_EQ(1u, compact_layout_value_count(layout));
+}
+
+TEST(HeapLayout, CompactLayoutRejectsOffsetAboveFifteen)
+{
+    EXPECT_TRUE(compact_layout_fits(1, object_layout_offset_mask, 1));
+    EXPECT_FALSE(compact_layout_fits(1, object_layout_offset_mask + 1, 1));
+}
+
+TEST(HeapLayout, CompactLayoutRejectsValueCountAboveLimit)
+{
+    EXPECT_TRUE(compact_layout_fits(1, 1, object_layout_count_mask));
+    EXPECT_FALSE(compact_layout_fits(1, 1, object_layout_count_mask + 1));
+}

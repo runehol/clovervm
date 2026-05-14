@@ -12,40 +12,33 @@ namespace cl
 {
     namespace
     {
-        struct HeapScanDescriptor
+        struct ObjectValueSpan
         {
-            uint32_t first_value_offset_in_words;
-            uint32_t value_count;
+            Value *slots;
+            uint64_t count;
         };
 
-        HeapScanDescriptor
-        heap_scan_descriptor_for_object(const HeapObject *obj)
+        ObjectValueSpan object_value_span_for(HeapObject *obj)
         {
             assert(obj != nullptr);
+            uint32_t first_value_offset_in_words;
+            uint64_t value_count;
             if(layout_is_expanded(obj->layout))
             {
-                return HeapScanDescriptor{
-                    obj->layout & ~object_layout_expanded_bit,
-                    uint32_t(expanded_header_for_object(obj)->value_count)};
+                first_value_offset_in_words =
+                    obj->layout & ~object_layout_expanded_bit;
+                value_count = expanded_header_for_object(obj)->value_count;
+            }
+            else
+            {
+                first_value_offset_in_words =
+                    compact_layout_value_offset_in_words(obj->layout);
+                value_count = compact_layout_value_count(obj->layout);
             }
 
-            return HeapScanDescriptor{
-                compact_layout_value_offset_in_words(obj->layout),
-                compact_layout_value_count(obj->layout)};
-        }
-
-        Value *heap_first_value_slot(HeapObject *obj,
-                                     HeapScanDescriptor descriptor)
-        {
-            assert(obj != nullptr);
-            return reinterpret_cast<Value *>(
-                reinterpret_cast<uint64_t *>(obj) +
-                descriptor.first_value_offset_in_words);
-        }
-
-        bool has_reclamation_descriptor(HeapObject *obj)
-        {
-            return !layout_is_expanded(obj->layout);
+            return ObjectValueSpan{reinterpret_cast<Value *>(obj) +
+                                       first_value_offset_in_words,
+                                   value_count};
         }
 
         class ReclamationContext
@@ -56,12 +49,11 @@ namespace cl
             {
             }
 
-            void reclaim_object(HeapObject *obj)
+            void reclaim_object(HeapObject *obj, ObjectValueSpan value_span)
             {
                 assert(obj != nullptr);
                 assert(obj->lifecycle_state == HeapLifecycleState::Reclaiming);
-                assert(has_reclamation_descriptor(obj));
-                reclaim_object_value_slots(obj);
+                reclaim_object_value_slots(value_span);
                 SlabAllocator *slab =
                     refcounted_heap.slab_for_object_unlocked(obj);
                 obj->lifecycle_state = HeapLifecycleState::Dead;
@@ -101,15 +93,12 @@ namespace cl
                 }
             }
 
-            void reclaim_object_value_slots(HeapObject *obj)
+            void reclaim_object_value_slots(ObjectValueSpan value_span)
             {
-                HeapScanDescriptor descriptor =
-                    heap_scan_descriptor_for_object(obj);
-                Value *slots = heap_first_value_slot(obj, descriptor);
-                for(uint32_t idx = 0; idx < descriptor.value_count; ++idx)
+                for(uint64_t idx = 0; idx < value_span.count; ++idx)
                 {
-                    Value value = slots[idx];
-                    slots[idx] = Value::not_present();
+                    Value value = value_span.slots[idx];
+                    value_span.slots[idx] = Value::not_present();
                     release_value(value);
                 }
             }
@@ -178,14 +167,10 @@ namespace cl
                 zero_count_table[keep++] = obj;
                 continue;
             }
-            if(!has_reclamation_descriptor(obj))
-            {
-                zero_count_table[keep++] = obj;
-                continue;
-            }
+            ObjectValueSpan value_span = object_value_span_for(obj);
 
             obj->lifecycle_state = HeapLifecycleState::Reclaiming;
-            reclamation_context.reclaim_object(obj);
+            reclamation_context.reclaim_object(obj, value_span);
         }
 
         zero_count_table.resize(keep);

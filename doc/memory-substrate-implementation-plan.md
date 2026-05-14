@@ -109,8 +109,9 @@ Validation:
 
 1. [ ] Introduce a descriptor-shaped API for object size, owned-child scanning,
    and native teardown, following the layout-ID design. The mechanical heap
-   value-span scanner exists, but the broader layout-ID descriptor facade is not
-   in place yet.
+   value-span scanner has been narrowed to an `ObjectValueSpan` helper for a
+   concrete heap object, but the broader layout-ID descriptor facade is not in
+   place yet.
 2. [ ] Implement the initial native descriptor path using metadata descriptors for
    layouts that can be described by size plus scanned `Value` regions.
 3. [ ] Bridge any still-unmigrated layout through existing `HeapLayout` decoding
@@ -129,14 +130,14 @@ Validation:
 
 Validation:
 
-- [ ] Tests that reclamation uses the descriptor facade for owned-child scanning.
+- [x] Tests that reclamation uses the object value-span helper for owned-child
+  scanning.
 - [ ] Descriptor parity tests for metadata descriptor entries as they are added.
 - [ ] Focused teardown tests for objects with owned children through the facade.
   There is a mechanical value-span deallocator test, but it is not yet through
   the descriptor facade.
-- [ ] Dynamic-layout tests for list, tuple, string-adjacent, or other
-  variable-size objects as they are migrated. There is an expanded-layout
-  value-span test, but no migrated dynamic descriptor coverage yet.
+- [x] Compact dynamic-layout reclamation test for tuple.
+- [x] Expanded dynamic-layout reclamation test for tuple.
 
 ## Phase 4: Single-Threaded Safepoint Request And Arrival
 
@@ -211,12 +212,11 @@ Validation:
    - [x] if `refcount > 0`, transition `InZct -> Normal`
    - [x] if `refcount == 0` and the object is in roots, keep it in `InZct`
    - [x] if `refcount == 0` and the object is not in roots, transition to
-     `Reclaiming` for currently supported compact metadata layouts. Expanded
-     dynamic layouts are retained until the descriptor facade can describe them
-     safely.
+     `Reclaiming` for currently supported metadata layouts.
 4. [x] Tear down `Reclaiming` objects through reclamation-specific child release,
-   not ordinary hot-path `decref()` calls. This is currently wired for compact
-   metadata layouts; full descriptor-facade routing remains Phase 3 work.
+   not ordinary hot-path `decref()` calls. This is currently wired through
+   `ObjectValueSpan`; full layout-ID descriptor-facade routing remains Phase 3
+   work.
 5. [x] When child releases reach zero, append them to the ZCT currently being
    processed so cascades can be handled in the same safepoint.
 6. [x] After teardown, transition the object to `Dead`, decrement its slab
