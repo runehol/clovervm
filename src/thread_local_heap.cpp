@@ -5,8 +5,10 @@
 
 namespace cl
 {
-    ThreadLocalHeap::ThreadLocalHeap(GlobalHeap *_global_heap)
+    ThreadLocalHeap::ThreadLocalHeap(GlobalHeap *_global_heap,
+                                     bool *_safepoint_requested_ptr)
         : global_heap(_global_heap),
+          safepoint_requested_ptr(_safepoint_requested_ptr),
           local_allocator(global_heap->make_new_slab())
     {
         add_active_allocator_pin(local_allocator);
@@ -26,6 +28,7 @@ namespace cl
             char *memory = global_heap->allocate_large_object(n_bytes);
             remember_dedicated_epoch_slab(
                 global_heap->slab_for_address_unlocked(memory), n_bytes);
+            request_reclamation_if_policy_triggers();
             return memory;
         }
 
@@ -36,6 +39,7 @@ namespace cl
         remember_ordinary_epoch_slab(local_allocator);
         ++ordinary_inactive_slabs_since_reclamation;
         drop_active_allocator_pin(old_allocator);
+        request_reclamation_if_policy_triggers();
         char *memory = local_allocator->allocate(n_bytes);
         assert(memory != nullptr);
         return memory;
@@ -105,6 +109,21 @@ namespace cl
     {
         remember_epoch_slab(allocator);
         dedicated_large_bytes_since_reclamation += n_bytes;
+    }
+
+    void ThreadLocalHeap::request_reclamation_if_policy_triggers()
+    {
+        if(safepoint_requested_ptr == nullptr)
+        {
+            return;
+        }
+        if(inactive_epoch_slab_count() >
+               ReclamationPolicyInactiveEpochSlabLimit ||
+           dedicated_large_bytes_since_reclamation >
+               ReclamationPolicyDedicatedLargeBytesLimit)
+        {
+            *safepoint_requested_ptr = true;
+        }
     }
 
     void ThreadLocalHeap::drop_epoch_discovery_pins_and_release_slabs()

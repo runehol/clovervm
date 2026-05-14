@@ -234,6 +234,49 @@ TEST(GlobalHeap, ThreadLocalHeapAdoptsEpochStateByMove)
     EXPECT_EQ(1u, large_slab->slab_pin_count());
 }
 
+TEST(GlobalHeap, OrdinarySlowPathRequestsSafepointAtEpochSlabLimit)
+{
+    GlobalHeap heap = GlobalHeap::refcounted_heap(SlabLookupGranuleSize);
+    bool safepoint_requested = false;
+    ThreadLocalHeap local_heap(&heap, &safepoint_requested);
+    char *memory = nullptr;
+
+    while(local_heap.inactive_epoch_slab_count() <=
+          ThreadLocalHeap::ReclamationPolicyInactiveEpochSlabLimit)
+    {
+        memory = local_heap.allocate(SlabLookupGranuleSize / 2);
+        ASSERT_NE(nullptr, memory);
+        if(local_heap.inactive_epoch_slab_count() <=
+           ThreadLocalHeap::ReclamationPolicyInactiveEpochSlabLimit)
+        {
+            EXPECT_FALSE(safepoint_requested);
+        }
+    }
+
+    EXPECT_TRUE(safepoint_requested);
+}
+
+TEST(GlobalHeap, DedicatedLargeSlowPathRequestsSafepointAtByteLimit)
+{
+    GlobalHeap heap = GlobalHeap::refcounted_heap();
+    bool safepoint_requested = false;
+    ThreadLocalHeap local_heap(&heap, &safepoint_requested);
+
+    while(local_heap.dedicated_large_bytes_since_reclamation_count() <=
+          ThreadLocalHeap::ReclamationPolicyDedicatedLargeBytesLimit)
+    {
+        char *memory = local_heap.allocate(LargeAllocationSize);
+        ASSERT_NE(nullptr, memory);
+        if(local_heap.dedicated_large_bytes_since_reclamation_count() <=
+           ThreadLocalHeap::ReclamationPolicyDedicatedLargeBytesLimit)
+        {
+            EXPECT_FALSE(safepoint_requested);
+        }
+    }
+
+    EXPECT_TRUE(safepoint_requested);
+}
+
 TEST(GlobalHeap, FailedOrdinaryConstructionLeavesActiveSlabUnmarked)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();

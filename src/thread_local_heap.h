@@ -17,7 +17,12 @@ namespace cl
     class ThreadLocalHeap
     {
     public:
-        ThreadLocalHeap(GlobalHeap *_global_heap);
+        static constexpr uint64_t ReclamationPolicyInactiveEpochSlabLimit = 8;
+        static constexpr uint64_t ReclamationPolicyDedicatedLargeBytesLimit =
+            DefaultSlabSize;
+
+        ThreadLocalHeap(GlobalHeap *_global_heap,
+                        bool *_safepoint_requested_ptr = nullptr);
         ~ThreadLocalHeap();
 
         // allocation fast path
@@ -61,6 +66,13 @@ namespace cl
         {
             return dedicated_large_bytes_since_reclamation;
         }
+        uint64_t inactive_epoch_slab_count() const
+        {
+            assert(epoch_slabs_since_reclamation.size() >=
+                   current_active_slab_count());
+            return epoch_slabs_since_reclamation.size() -
+                   current_active_slab_count();
+        }
 
         template <typename T, typename... Args> T *make(Args &&...args)
         {
@@ -92,10 +104,16 @@ namespace cl
         void remember_ordinary_epoch_slab(SlabAllocator *allocator);
         void remember_dedicated_epoch_slab(SlabAllocator *allocator,
                                            size_t n_bytes);
+        void request_reclamation_if_policy_triggers();
+        uint64_t current_active_slab_count() const
+        {
+            return local_allocator == nullptr ? 0 : 1;
+        }
         void drop_epoch_discovery_pins_and_release_slabs();
         bool owns_epoch_slab(SlabAllocator *allocator) const;
 
         GlobalHeap *global_heap;
+        bool *safepoint_requested_ptr;
         SlabAllocator *local_allocator;
         std::vector<SlabAllocator *> epoch_slabs_since_reclamation;
         uint64_t ordinary_inactive_slabs_since_reclamation = 0;
