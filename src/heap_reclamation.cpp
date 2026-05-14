@@ -261,18 +261,6 @@ namespace cl
     }
 #endif
 
-    void process_zct_only_for_testing(ThreadState &thread,
-                                      const ReclamationRootSet &roots)
-    {
-        std::vector<HeapObject *> &zero_count_table = thread.zero_count_table;
-        ReclamationContext reclamation_context(
-            thread.get_machine()->get_refcounted_global_heap(),
-            zero_count_table);
-        process_zero_count_table_entries(zero_count_table, thread, roots,
-                                         reclamation_context);
-        reclamation_context.release_empty_candidate_slabs();
-    }
-
     void process_thread_reclamation_epoch(ThreadState &thread,
                                           const ReclamationRootSet &roots)
     {

@@ -115,8 +115,7 @@ namespace cl
         ASSERT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
 
         incref_heap_ptr(string);
-        ReclamationRootSet roots;
-        process_zct_only_for_testing(*thread, roots);
+        context.vm().run_heap_reclamation();
 
         EXPECT_EQ(1, string->refcount);
         EXPECT_EQ(HeapLifecycleState::Normal, string->lifecycle_state);
@@ -140,10 +139,7 @@ namespace cl
         ASSERT_EQ(2u, thread->zero_count_table_size());
 
         EXPECT_DEATH(
-            {
-                ReclamationRootSet roots;
-                process_zct_only_for_testing(*thread, roots);
-            },
+            { context.vm().run_heap_reclamation(); },
             "duplicate heap object in zero count table");
     }
 
@@ -183,10 +179,7 @@ namespace cl
         Value *slot = thread->clover_frame_sentinel() - 1;
         *slot = Value::from_oop(string);
         thread->publish_safepoint_scan_record(slot, Value::not_present());
-        ReclamationRootSet roots;
-        collect_reclamation_roots_from_thread(roots, *thread);
-
-        process_zct_only_for_testing(*thread, roots);
+        context.vm().run_heap_reclamation();
 
         EXPECT_EQ(0, string->refcount);
         EXPECT_EQ(HeapLifecycleState::InZct, string->lifecycle_state);
@@ -224,6 +217,7 @@ namespace cl
         ThreadState *thread = context.vm().make_new_thread();
         ThreadState::ActivationScope active_thread(thread);
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+        context.vm().run_heap_reclamation();
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
         ReclamationTestObject *child =
             thread->make_internal_raw<ReclamationTestObject>();
@@ -242,8 +236,7 @@ namespace cl
         uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
         ASSERT_EQ(valid_objects_before_alloc + 2, valid_objects_after_alloc);
 
-        ReclamationRootSet roots;
-        process_zct_only_for_testing(*thread, roots);
+        context.vm().run_heap_reclamation();
 
         EXPECT_EQ(valid_objects_after_alloc - 2,
                   heap.count_valid_objects_slow());

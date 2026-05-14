@@ -27,8 +27,6 @@ namespace cl
     class ThreadState;
     class ReclamationRootSet;
 
-    void process_zct_only_for_testing(ThreadState &thread,
-                                      const ReclamationRootSet &roots);
     void process_thread_reclamation_epoch(ThreadState &thread,
                                           const ReclamationRootSet &roots);
 #ifndef NDEBUG
@@ -266,9 +264,6 @@ namespace cl
                                                            uint32_t n_args);
         NOINLINE Shape *shape_of_inline_value(Value value) const;
 
-        friend void
-        process_zct_only_for_testing(ThreadState &thread,
-                                     const ReclamationRootSet &roots);
         friend void
         process_thread_reclamation_epoch(ThreadState &thread,
                                          const ReclamationRootSet &roots);
