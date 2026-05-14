@@ -281,4 +281,30 @@ namespace cl
         EXPECT_TRUE(heap.has_slab_for_address_for_testing(next_slab_address));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(target));
     }
+
+    TEST(HeapReclamation, ZctProcessingReleasesDedicatedLargeObjectSlab)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        drain_supported_zct_entries(thread);
+        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+        size_t tuple_size = LargeAllocationSize / sizeof(Value);
+        Tuple *tuple = thread->make_object_raw<Tuple>(tuple_size);
+        void *tuple_address = tuple;
+        ASSERT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
+        ASSERT_TRUE(heap.has_slab_for_address_for_testing(tuple_address));
+        EXPECT_EQ(
+            1u, heap.slab_for_object_unlocked(tuple)->reclaim_blocker_count());
+        uint64_t blockers_after_alloc =
+            heap.total_reclaim_blockers_for_testing();
+
+        ReclamationRootSet roots;
+        process_zero_count_table_for_reclamation(*thread, roots);
+
+        EXPECT_EQ(blockers_after_alloc - 1,
+                  heap.total_reclaim_blockers_for_testing());
+        EXPECT_FALSE(heap.has_slab_for_address_for_testing(tuple_address));
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
+    }
 }  // namespace cl
