@@ -16,12 +16,6 @@ namespace cl
     /* thread local heap, for fast lockless allocation in the common case */
     class ThreadLocalHeap
     {
-        struct DedicatedEpochSlab
-        {
-            SlabAllocator *allocator;
-            uint64_t bytes;
-        };
-
     public:
         ThreadLocalHeap(GlobalHeap *_global_heap);
         ~ThreadLocalHeap();
@@ -44,21 +38,25 @@ namespace cl
         void switch_to_new_slabs();
         void release_for_failed_construction(char *memory);
         void adopt_epoch_state_from(ThreadLocalHeap &child);
+        template <typename Fn> void for_each_epoch_slab(Fn &&fn) const
+        {
+            for(SlabAllocator *allocator: epoch_slabs_since_reclamation)
+            {
+                fn(allocator);
+            }
+        }
+        [[nodiscard]] std::vector<SlabAllocator *> finish_reclamation_epoch();
         void mark_valid_object(HeapObject *obj)
         {
             global_heap->mark_valid_object(obj);
         }
-        size_t ordinary_epoch_slab_count() const
+        size_t epoch_slab_count() const
         {
-            return slabs_active_since_reclamation.size();
+            return epoch_slabs_since_reclamation.size();
         }
         uint64_t ordinary_inactive_slabs_since_reclamation_count() const
         {
             return ordinary_inactive_slabs_since_reclamation;
-        }
-        size_t dedicated_epoch_slab_count() const
-        {
-            return dedicated_slabs_since_reclamation.size();
         }
         uint64_t dedicated_large_bytes_since_reclamation_count() const
         {
@@ -91,6 +89,7 @@ namespace cl
         {
             allocator->drop_active_allocator_pin();
         }
+        void remember_epoch_slab(SlabAllocator *allocator);
         void remember_ordinary_epoch_slab(SlabAllocator *allocator);
         void remember_dedicated_epoch_slab(SlabAllocator *allocator,
                                            size_t n_bytes);
@@ -101,9 +100,8 @@ namespace cl
 
         GlobalHeap *global_heap;
         SlabAllocator *local_allocator;
-        std::vector<SlabAllocator *> slabs_active_since_reclamation;
+        std::vector<SlabAllocator *> epoch_slabs_since_reclamation;
         uint64_t ordinary_inactive_slabs_since_reclamation = 0;
-        std::vector<DedicatedEpochSlab> dedicated_slabs_since_reclamation;
         uint64_t dedicated_large_bytes_since_reclamation = 0;
     };
 }  // namespace cl

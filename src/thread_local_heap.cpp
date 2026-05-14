@@ -68,114 +68,93 @@ namespace cl
     {
         assert(this != &child);
         assert(global_heap == child.global_heap);
-        for(SlabAllocator *allocator: child.slabs_active_since_reclamation)
+        for(SlabAllocator *allocator: child.epoch_slabs_since_reclamation)
         {
             assert(!owns_epoch_slab(allocator));
         }
-        for(const DedicatedEpochSlab &entry:
-            child.dedicated_slabs_since_reclamation)
-        {
-            assert(!owns_epoch_slab(entry.allocator));
-        }
 
-        slabs_active_since_reclamation.insert(
-            slabs_active_since_reclamation.end(),
+        epoch_slabs_since_reclamation.insert(
+            epoch_slabs_since_reclamation.end(),
             std::make_move_iterator(
-                child.slabs_active_since_reclamation.begin()),
-            std::make_move_iterator(
-                child.slabs_active_since_reclamation.end()));
+                child.epoch_slabs_since_reclamation.begin()),
+            std::make_move_iterator(child.epoch_slabs_since_reclamation.end()));
         ordinary_inactive_slabs_since_reclamation +=
             child.ordinary_inactive_slabs_since_reclamation;
-        dedicated_slabs_since_reclamation.insert(
-            dedicated_slabs_since_reclamation.end(),
-            std::make_move_iterator(
-                child.dedicated_slabs_since_reclamation.begin()),
-            std::make_move_iterator(
-                child.dedicated_slabs_since_reclamation.end()));
         dedicated_large_bytes_since_reclamation +=
             child.dedicated_large_bytes_since_reclamation;
 
-        child.slabs_active_since_reclamation.clear();
+        child.epoch_slabs_since_reclamation.clear();
         child.ordinary_inactive_slabs_since_reclamation = 0;
-        child.dedicated_slabs_since_reclamation.clear();
         child.dedicated_large_bytes_since_reclamation = 0;
+    }
+
+    std::vector<SlabAllocator *> ThreadLocalHeap::finish_reclamation_epoch()
+    {
+        std::vector<SlabAllocator *> finished_epoch =
+            std::move(epoch_slabs_since_reclamation);
+        ordinary_inactive_slabs_since_reclamation = 0;
+        dedicated_large_bytes_since_reclamation = 0;
+        remember_ordinary_epoch_slab(local_allocator);
+        return finished_epoch;
+    }
+
+    void ThreadLocalHeap::remember_epoch_slab(SlabAllocator *allocator)
+    {
+        assert(std::find(epoch_slabs_since_reclamation.begin(),
+                         epoch_slabs_since_reclamation.end(),
+                         allocator) == epoch_slabs_since_reclamation.end());
+        allocator->add_epoch_discovery_pin();
+        epoch_slabs_since_reclamation.push_back(allocator);
     }
 
     void ThreadLocalHeap::remember_ordinary_epoch_slab(SlabAllocator *allocator)
     {
-        assert(std::find(slabs_active_since_reclamation.begin(),
-                         slabs_active_since_reclamation.end(),
-                         allocator) == slabs_active_since_reclamation.end());
-        allocator->add_epoch_discovery_pin();
-        slabs_active_since_reclamation.push_back(allocator);
+        remember_epoch_slab(allocator);
     }
 
     void
     ThreadLocalHeap::remember_dedicated_epoch_slab(SlabAllocator *allocator,
                                                    size_t n_bytes)
     {
-        assert(std::find_if(dedicated_slabs_since_reclamation.begin(),
-                            dedicated_slabs_since_reclamation.end(),
-                            [allocator](const DedicatedEpochSlab &entry) {
-                                return entry.allocator == allocator;
-                            }) == dedicated_slabs_since_reclamation.end());
-        allocator->add_epoch_discovery_pin();
-        dedicated_slabs_since_reclamation.push_back(
-            DedicatedEpochSlab{allocator, n_bytes});
+        remember_epoch_slab(allocator);
         dedicated_large_bytes_since_reclamation += n_bytes;
     }
 
     bool ThreadLocalHeap::forget_dedicated_epoch_slab_for_failed_construction(
         SlabAllocator *allocator)
     {
-        auto it = std::find_if(dedicated_slabs_since_reclamation.begin(),
-                               dedicated_slabs_since_reclamation.end(),
-                               [allocator](const DedicatedEpochSlab &entry) {
-                                   return entry.allocator == allocator;
-                               });
-        if(it == dedicated_slabs_since_reclamation.end())
+        if(allocator == local_allocator)
+        {
+            return false;
+        }
+        auto it = std::find(epoch_slabs_since_reclamation.begin(),
+                            epoch_slabs_since_reclamation.end(), allocator);
+        if(it == epoch_slabs_since_reclamation.end())
         {
             return false;
         }
 
         allocator->drop_epoch_discovery_pin();
-        dedicated_large_bytes_since_reclamation -= it->bytes;
-        dedicated_slabs_since_reclamation.erase(it);
+        epoch_slabs_since_reclamation.erase(it);
         return true;
     }
 
     void ThreadLocalHeap::drop_epoch_discovery_pins_and_release_slabs()
     {
-        for(SlabAllocator *allocator: slabs_active_since_reclamation)
+        for(SlabAllocator *allocator: epoch_slabs_since_reclamation)
         {
             allocator->drop_epoch_discovery_pin();
         }
-        for(const DedicatedEpochSlab &entry: dedicated_slabs_since_reclamation)
-        {
-            entry.allocator->drop_epoch_discovery_pin();
-        }
-        for(SlabAllocator *allocator: slabs_active_since_reclamation)
+        for(SlabAllocator *allocator: epoch_slabs_since_reclamation)
         {
             global_heap->release_slab_if_empty(allocator);
-        }
-        for(const DedicatedEpochSlab &entry: dedicated_slabs_since_reclamation)
-        {
-            global_heap->release_slab_if_empty(entry.allocator);
         }
     }
 
     bool ThreadLocalHeap::owns_epoch_slab(SlabAllocator *allocator) const
     {
-        if(std::find(slabs_active_since_reclamation.begin(),
-                     slabs_active_since_reclamation.end(),
-                     allocator) != slabs_active_since_reclamation.end())
-        {
-            return true;
-        }
-        return std::find_if(dedicated_slabs_since_reclamation.begin(),
-                            dedicated_slabs_since_reclamation.end(),
-                            [allocator](const DedicatedEpochSlab &entry) {
-                                return entry.allocator == allocator;
-                            }) != dedicated_slabs_since_reclamation.end();
+        return std::find(epoch_slabs_since_reclamation.begin(),
+                         epoch_slabs_since_reclamation.end(),
+                         allocator) != epoch_slabs_since_reclamation.end();
     }
 }  // namespace cl

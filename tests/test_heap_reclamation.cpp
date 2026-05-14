@@ -399,4 +399,67 @@ namespace cl
         EXPECT_TRUE(heap.has_slab_for_address_for_testing(tuple_address));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
     }
+
+    TEST(HeapReclamation, EpochScanReclaimsUnrootedYoungZeroRefcountObject)
+    {
+        VirtualMachine vm;
+        ThreadStateList threads;
+        threads.push_back(std::make_unique<ThreadState>(&vm));
+        ThreadState *thread = threads[0].get();
+        ThreadState::ActivationScope active_thread(thread);
+        GlobalHeap &heap = vm.get_refcounted_global_heap();
+
+        size_t tuple_size = LargeAllocationSize / sizeof(Value);
+        Tuple *tuple = thread->make_object_raw<Tuple>(tuple_size);
+        void *tuple_address = tuple;
+        SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
+        ASSERT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
+        ASSERT_EQ(1u, slab->slab_pin_count());
+
+        tuple->refcount = 1;
+        thread->drain_zero_count_table_for_testing();
+        ASSERT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
+        ASSERT_EQ(HeapLifecycleState::Normal, tuple->lifecycle_state);
+        tuple->refcount = 0;
+
+        run_heap_reclamation(threads);
+
+        EXPECT_FALSE(heap.has_slab_for_address_for_testing(tuple_address));
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
+    }
+
+    TEST(HeapReclamation, EpochScanMovesRootedYoungZeroRefcountObjectToZct)
+    {
+        VirtualMachine vm;
+        ThreadStateList threads;
+        threads.push_back(std::make_unique<ThreadState>(&vm));
+        ThreadState *thread = threads[0].get();
+        ThreadState::ActivationScope active_thread(thread);
+        GlobalHeap &heap = vm.get_refcounted_global_heap();
+
+        size_t tuple_size = LargeAllocationSize / sizeof(Value);
+        Tuple *tuple = thread->make_object_raw<Tuple>(tuple_size);
+        void *tuple_address = tuple;
+        SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
+        ASSERT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
+        ASSERT_EQ(1u, slab->slab_pin_count());
+
+        tuple->refcount = 1;
+        thread->drain_zero_count_table_for_testing();
+        ASSERT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
+        ASSERT_EQ(HeapLifecycleState::Normal, tuple->lifecycle_state);
+        tuple->refcount = 0;
+
+        Value *slot = thread->clover_frame_sentinel() - 1;
+        *slot = Value::from_oop(tuple);
+        thread->publish_safepoint_scan_record(slot, Value::not_present());
+
+        run_heap_reclamation(threads);
+
+        EXPECT_TRUE(heap.has_slab_for_address_for_testing(tuple_address));
+        EXPECT_EQ(0u, slab->slab_pin_count());
+        EXPECT_EQ(1u, slab->count_valid_objects_slow());
+        EXPECT_EQ(HeapLifecycleState::InZct, tuple->lifecycle_state);
+        EXPECT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
+    }
 }  // namespace cl

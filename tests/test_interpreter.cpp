@@ -1763,7 +1763,7 @@ TEST(Interpreter, every_safepoint_reclamation_reclaims_unrooted_object)
     ASSERT_NE(nullptr, g_every_safepoint_reclamation_target_address);
     EXPECT_LT(heap.count_valid_objects_slow(),
               g_every_safepoint_reclamation_valid_objects);
-    EXPECT_TRUE(heap.has_slab_for_address_for_testing(
+    EXPECT_FALSE(heap.has_slab_for_address_for_testing(
         g_every_safepoint_reclamation_target_address));
     EXPECT_FALSE(
         thread->zero_count_table_contains_for_testing(static_cast<HeapObject *>(

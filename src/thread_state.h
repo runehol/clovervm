@@ -30,6 +30,10 @@ namespace cl
     void
     process_zero_count_table_for_reclamation(ThreadState &thread,
                                              const ReclamationRootSet &roots);
+    void scan_epoch_slabs_for_reclamation(ThreadState &thread,
+                                          const ReclamationRootSet &roots);
+    void process_thread_reclamation_epoch(ThreadState &thread,
+                                          const ReclamationRootSet &roots);
 #ifndef NDEBUG
     void validate_zero_count_table_for_reclamation(const ThreadState &thread);
     void validate_zero_count_tables_for_reclamation(
@@ -273,6 +277,12 @@ namespace cl
 
         friend void process_zero_count_table_for_reclamation(
             ThreadState &thread, const ReclamationRootSet &roots);
+        friend void
+        scan_epoch_slabs_for_reclamation(ThreadState &thread,
+                                         const ReclamationRootSet &roots);
+        friend void
+        process_thread_reclamation_epoch(ThreadState &thread,
+                                         const ReclamationRootSet &roots);
 #ifndef NDEBUG
         friend void
         validate_zero_count_table_for_reclamation(const ThreadState &thread);

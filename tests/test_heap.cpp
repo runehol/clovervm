@@ -73,7 +73,7 @@ TEST(GlobalHeap, ThreadLocalHeapPinsActiveAllocatorSlab)
         SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
 
         EXPECT_EQ(2u, slab->slab_pin_count());
-        EXPECT_EQ(1u, local_heap.ordinary_epoch_slab_count());
+        EXPECT_EQ(1u, local_heap.epoch_slab_count());
         EXPECT_EQ(0u,
                   local_heap.ordinary_inactive_slabs_since_reclamation_count());
     }
@@ -109,7 +109,7 @@ TEST(GlobalHeap, OpeningNewOrdinarySlabDropsPreviousActivePin)
     EXPECT_TRUE(heap.has_slab_for_address_for_testing(first));
     EXPECT_EQ(1u, first_slab->slab_pin_count());
     EXPECT_EQ(2u, second_slab->slab_pin_count());
-    EXPECT_EQ(2u, local_heap.ordinary_epoch_slab_count());
+    EXPECT_EQ(2u, local_heap.epoch_slab_count());
     EXPECT_EQ(1u, local_heap.ordinary_inactive_slabs_since_reclamation_count());
 }
 
@@ -129,7 +129,7 @@ TEST(GlobalHeap, SwitchingThreadLocalHeapToNewSlabsDropsPreviousActivePin)
     EXPECT_TRUE(heap.has_slab_for_address_for_testing(first));
     EXPECT_EQ(1u, first_slab->slab_pin_count());
     EXPECT_EQ(2u, second_slab->slab_pin_count());
-    EXPECT_EQ(2u, local_heap.ordinary_epoch_slab_count());
+    EXPECT_EQ(2u, local_heap.epoch_slab_count());
     EXPECT_EQ(1u, local_heap.ordinary_inactive_slabs_since_reclamation_count());
 }
 
@@ -157,12 +157,13 @@ TEST(GlobalHeap, DedicatedLargeRawAllocationHasEpochPin)
 
     EXPECT_EQ(1u, slab->slab_pin_count());
     EXPECT_EQ(0u, slab->count_valid_objects_slow());
-    EXPECT_EQ(1u, local_heap.dedicated_epoch_slab_count());
+    EXPECT_EQ(2u, local_heap.epoch_slab_count());
     EXPECT_EQ(LargeAllocationSize,
               local_heap.dedicated_large_bytes_since_reclamation_count());
     local_heap.release_for_failed_construction(memory);
-    EXPECT_EQ(0u, local_heap.dedicated_epoch_slab_count());
-    EXPECT_EQ(0u, local_heap.dedicated_large_bytes_since_reclamation_count());
+    EXPECT_EQ(1u, local_heap.epoch_slab_count());
+    EXPECT_EQ(LargeAllocationSize,
+              local_heap.dedicated_large_bytes_since_reclamation_count());
 }
 
 TEST(GlobalHeap, DedicatedLargeAllocationConstructionFailureReleasesEmptySlab)
@@ -197,22 +198,19 @@ TEST(GlobalHeap, ThreadLocalHeapAdoptsEpochStateByMove)
         large = child.allocate(LargeAllocationSize);
         large_slab = heap.slab_for_address_unlocked(large);
 
-        ASSERT_EQ(2u, child.ordinary_epoch_slab_count());
+        ASSERT_EQ(3u, child.epoch_slab_count());
         ASSERT_EQ(1u, child.ordinary_inactive_slabs_since_reclamation_count());
-        ASSERT_EQ(1u, child.dedicated_epoch_slab_count());
         ASSERT_EQ(LargeAllocationSize,
                   child.dedicated_large_bytes_since_reclamation_count());
 
         parent.adopt_epoch_state_from(child);
 
-        EXPECT_EQ(3u, parent.ordinary_epoch_slab_count());
+        EXPECT_EQ(4u, parent.epoch_slab_count());
         EXPECT_EQ(1u, parent.ordinary_inactive_slabs_since_reclamation_count());
-        EXPECT_EQ(1u, parent.dedicated_epoch_slab_count());
         EXPECT_EQ(LargeAllocationSize,
                   parent.dedicated_large_bytes_since_reclamation_count());
-        EXPECT_EQ(0u, child.ordinary_epoch_slab_count());
+        EXPECT_EQ(0u, child.epoch_slab_count());
         EXPECT_EQ(0u, child.ordinary_inactive_slabs_since_reclamation_count());
-        EXPECT_EQ(0u, child.dedicated_epoch_slab_count());
         EXPECT_EQ(0u, child.dedicated_large_bytes_since_reclamation_count());
     }
 

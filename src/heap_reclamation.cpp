@@ -58,27 +58,32 @@ namespace cl
                     refcounted_heap.slab_for_object_unlocked(obj);
                 obj->lifecycle_state = HeapLifecycleState::Dead;
                 slab->clear_valid_object(obj);
-                remember_touched_slab(slab);
+                remember_release_candidate(slab);
             }
 
-            void release_empty_touched_slabs()
+            void reclaim_object(HeapObject *obj)
             {
-                for(SlabAllocator *slab: touched_slabs)
+                reclaim_object(obj, object_value_span_for(obj));
+            }
+
+            void remember_release_candidate(SlabAllocator *slab)
+            {
+                bool inserted = release_candidate_set.insert(slab).second;
+                if(inserted)
+                {
+                    release_candidates.push_back(slab);
+                }
+            }
+
+            void release_empty_candidate_slabs()
+            {
+                for(SlabAllocator *slab: release_candidates)
                 {
                     refcounted_heap.release_slab_if_empty(slab);
                 }
             }
 
         private:
-            void remember_touched_slab(SlabAllocator *slab)
-            {
-                bool inserted = touched_slab_set.insert(slab).second;
-                if(inserted)
-                {
-                    touched_slabs.push_back(slab);
-                }
-            }
-
             void add_to_current_zero_count_table_if_needed(HeapObject *obj)
             {
                 assert(obj != nullptr);
@@ -123,9 +128,77 @@ namespace cl
 
             GlobalHeap &refcounted_heap;
             std::vector<HeapObject *> &current_zct;
-            absl::flat_hash_set<SlabAllocator *> touched_slab_set;
-            std::vector<SlabAllocator *> touched_slabs;
+            absl::flat_hash_set<SlabAllocator *> release_candidate_set;
+            std::vector<SlabAllocator *> release_candidates;
         };
+
+        void process_zero_count_table_entries(
+            std::vector<HeapObject *> &zero_count_table, ThreadState &thread,
+            const ReclamationRootSet &roots, ReclamationContext &context)
+        {
+#ifndef NDEBUG
+            validate_zero_count_table_for_reclamation(thread);
+#endif
+            size_t scan = 0;
+            size_t keep = 0;
+            while(scan < zero_count_table.size())
+            {
+                HeapObject *obj = zero_count_table[scan++];
+                assert(obj != nullptr);
+                assert(obj->lifecycle_state == HeapLifecycleState::InZct);
+
+                if(obj->refcount > 0)
+                {
+                    obj->lifecycle_state = HeapLifecycleState::Normal;
+                    continue;
+                }
+
+                assert(obj->refcount == 0);
+                if(roots.contains(obj))
+                {
+                    zero_count_table[keep++] = obj;
+                    continue;
+                }
+                ObjectValueSpan value_span = object_value_span_for(obj);
+
+                obj->lifecycle_state = HeapLifecycleState::Reclaiming;
+                context.reclaim_object(obj, value_span);
+            }
+
+            zero_count_table.resize(keep);
+        }
+
+        void scan_epoch_slab_bitmaps(
+            ThreadLocalHeap &heap, std::vector<HeapObject *> &zero_count_table,
+            const ReclamationRootSet &roots, ReclamationContext &context)
+        {
+            heap.for_each_epoch_slab(
+                [&zero_count_table, &roots, &context](SlabAllocator *slab) {
+                    slab->for_each_valid_object([&zero_count_table, &roots,
+                                                 &context](HeapObject *obj) {
+                        assert(obj != nullptr);
+                        if(obj->refcount > 0)
+                        {
+                            return;
+                        }
+                        if(obj->lifecycle_state != HeapLifecycleState::Normal)
+                        {
+                            return;
+                        }
+
+                        assert(obj->refcount == 0);
+                        if(roots.contains(obj))
+                        {
+                            obj->lifecycle_state = HeapLifecycleState::InZct;
+                            zero_count_table.push_back(obj);
+                            return;
+                        }
+
+                        obj->lifecycle_state = HeapLifecycleState::Reclaiming;
+                        context.reclaim_object(obj);
+                    });
+                });
+        }
     }  // namespace
 
     void collect_reclamation_roots_from_thread(ReclamationRootSet &roots,
@@ -192,41 +265,46 @@ namespace cl
     process_zero_count_table_for_reclamation(ThreadState &thread,
                                              const ReclamationRootSet &roots)
     {
-#ifndef NDEBUG
-        validate_zero_count_table_for_reclamation(thread);
-#endif
         std::vector<HeapObject *> &zero_count_table = thread.zero_count_table;
         ReclamationContext reclamation_context(
             thread.get_machine()->get_refcounted_global_heap(),
             zero_count_table);
-        size_t scan = 0;
-        size_t keep = 0;
-        while(scan < zero_count_table.size())
+        process_zero_count_table_entries(zero_count_table, thread, roots,
+                                         reclamation_context);
+        reclamation_context.release_empty_candidate_slabs();
+    }
+
+    void scan_epoch_slabs_for_reclamation(ThreadState &thread,
+                                          const ReclamationRootSet &roots)
+    {
+        std::vector<HeapObject *> &zero_count_table = thread.zero_count_table;
+        ReclamationContext reclamation_context(
+            thread.get_machine()->get_refcounted_global_heap(),
+            zero_count_table);
+        scan_epoch_slab_bitmaps(thread.refcounted_heap, zero_count_table, roots,
+                                reclamation_context);
+        reclamation_context.release_empty_candidate_slabs();
+    }
+
+    void process_thread_reclamation_epoch(ThreadState &thread,
+                                          const ReclamationRootSet &roots)
+    {
+        std::vector<HeapObject *> &zero_count_table = thread.zero_count_table;
+        ReclamationContext reclamation_context(
+            thread.get_machine()->get_refcounted_global_heap(),
+            zero_count_table);
+        process_zero_count_table_entries(zero_count_table, thread, roots,
+                                         reclamation_context);
+        scan_epoch_slab_bitmaps(thread.refcounted_heap, zero_count_table, roots,
+                                reclamation_context);
+        std::vector<SlabAllocator *> finished_epoch =
+            thread.refcounted_heap.finish_reclamation_epoch();
+        for(SlabAllocator *slab: finished_epoch)
         {
-            HeapObject *obj = zero_count_table[scan++];
-            assert(obj != nullptr);
-            assert(obj->lifecycle_state == HeapLifecycleState::InZct);
-
-            if(obj->refcount > 0)
-            {
-                obj->lifecycle_state = HeapLifecycleState::Normal;
-                continue;
-            }
-
-            assert(obj->refcount == 0);
-            if(roots.contains(obj))
-            {
-                zero_count_table[keep++] = obj;
-                continue;
-            }
-            ObjectValueSpan value_span = object_value_span_for(obj);
-
-            obj->lifecycle_state = HeapLifecycleState::Reclaiming;
-            reclamation_context.reclaim_object(obj, value_span);
+            slab->drop_epoch_discovery_pin();
+            reclamation_context.remember_release_candidate(slab);
         }
-
-        zero_count_table.resize(keep);
-        reclamation_context.release_empty_touched_slabs();
+        reclamation_context.release_empty_candidate_slabs();
     }
 
     void run_heap_reclamation(const ThreadStateList &threads)
@@ -238,7 +316,7 @@ namespace cl
             collect_reclamation_roots_from_threads(threads);
         for(const std::unique_ptr<ThreadState> &thread: threads)
         {
-            process_zero_count_table_for_reclamation(*thread, roots);
+            process_thread_reclamation_epoch(*thread, roots);
         }
     }
 
