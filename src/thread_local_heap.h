@@ -55,8 +55,7 @@ namespace cl
 
     private:
         NOINLINE char *allocate_slow(size_t n_bytes);
-        void add_allocator_reclaim_blocker();
-        void drop_allocator_reclaim_blocker();
+        void add_allocator_reclaim_blocker(SlabAllocator *allocator);
         void drop_allocator_reclaim_blocker(SlabAllocator *allocator);
 
         GlobalHeap *global_heap;
