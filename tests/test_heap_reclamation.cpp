@@ -31,6 +31,22 @@ namespace cl
             ReclamationRootSet roots;
             process_zero_count_table_for_reclamation(*thread, roots);
         }
+
+        HeapObject *allocate_until_slab_changes(ThreadState *thread,
+                                                GlobalHeap &heap,
+                                                SlabAllocator *slab)
+        {
+            for(size_t idx = 0; idx < 10000; ++idx)
+            {
+                HeapObject *obj =
+                    thread->make_internal_raw<ReclamationTestObject>();
+                if(heap.slab_for_object_unlocked(obj) != slab)
+                {
+                    return obj;
+                }
+            }
+            return nullptr;
+        }
     }  // namespace
 
     TEST(HeapReclamation, RootCollectionIncludesFrameSlotRoot)
@@ -225,5 +241,44 @@ namespace cl
         EXPECT_EQ(blockers_after_alloc - 1,
                   heap.total_reclaim_blockers_for_testing());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
+    }
+
+    TEST(HeapReclamation, ZctProcessingReleasesInactiveSlab)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        drain_supported_zct_entries(thread);
+        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+
+        ReclamationTestObject *current_object =
+            thread->make_internal_raw<ReclamationTestObject>();
+        SlabAllocator *initial_slab =
+            heap.slab_for_object_unlocked(current_object);
+        HeapObject *fresh_slab_object =
+            allocate_until_slab_changes(thread, heap, initial_slab);
+        ASSERT_NE(nullptr, fresh_slab_object);
+        drain_supported_zct_entries(thread);
+
+        ReclamationTestObject *target =
+            thread->make_internal_raw<ReclamationTestObject>();
+        void *target_address = target;
+        SlabAllocator *target_slab = heap.slab_for_object_unlocked(target);
+        ASSERT_EQ(heap.slab_for_object_unlocked(fresh_slab_object),
+                  target_slab);
+        ASSERT_TRUE(heap.has_slab_for_address_for_testing(target_address));
+
+        HeapObject *next_slab_object =
+            allocate_until_slab_changes(thread, heap, target_slab);
+        ASSERT_NE(nullptr, next_slab_object);
+        void *next_slab_address = next_slab_object;
+        ASSERT_NE(target_slab, heap.slab_for_object_unlocked(next_slab_object));
+
+        ReclamationRootSet roots;
+        process_zero_count_table_for_reclamation(*thread, roots);
+
+        EXPECT_FALSE(heap.has_slab_for_address_for_testing(target_address));
+        EXPECT_TRUE(heap.has_slab_for_address_for_testing(next_slab_address));
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(target));
     }
 }  // namespace cl

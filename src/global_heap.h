@@ -83,6 +83,7 @@ namespace cl
             return slab_for_address_unlocked(obj);
         }
         uint64_t total_reclaim_blockers_for_testing() const;
+        bool has_slab_for_address_for_testing(const void *ptr) const;
 
     private:
         friend class SlabAllocator;

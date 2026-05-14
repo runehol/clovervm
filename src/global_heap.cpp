@@ -121,5 +121,12 @@ namespace cl
         return total;
     }
 
+    bool GlobalHeap::has_slab_for_address_for_testing(const void *ptr) const
+    {
+        const std::lock_guard<std::mutex> lock(heap_mutex);
+        return slab_lookup.find(slab_lookup_key_for_address(ptr)) !=
+               slab_lookup.end();
+    }
+
     GlobalHeap::~GlobalHeap() = default;
 }  // namespace cl
