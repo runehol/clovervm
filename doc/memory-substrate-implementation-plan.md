@@ -45,11 +45,8 @@ Near-term order:
    decoding inside reclamation. Do the native-layout descriptor refactor before
    deeper reclamation policy work, so policy counters and hooks attach to the
    final owned-value scanning boundary instead of today's temporary span bridge.
-2. Add thread-exit reclamation handoff. An exiting thread must move, not copy,
-   its ZCT and epoch slab responsibility to a parent thread.
-3. Return to reclamation policy after the descriptor facade and thread-exit
-   handoff are stable.
-4. Split ordinary heaps into size partitions. Partial-slab hole reuse, if it
+2. Return to reclamation policy after the descriptor facade is stable.
+3. Split ordinary heaps into size partitions. Partial-slab hole reuse, if it
    ever happens, belongs after size classes make hole sizes predictable.
 
 ## Ground Rules
@@ -331,7 +328,8 @@ Validation:
 ## Later Work
 
 - Multi-thread `Attached` / `Detached` / `GC` state model.
-- Thread exit ZCT and epoch slab handoff.
+- Thread exit ZCT and epoch slab handoff. This matters once threads can exit
+  independently; it is not a blocker for the current single-threaded milestone.
 - Parallel root scanning.
 - Packed atomic refcount/lifecycle state for no-GIL.
 - Cycle collection.
