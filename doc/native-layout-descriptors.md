@@ -63,6 +63,8 @@ a normalized release descriptor:
 - a static contiguous `Value` span
 - a dynamic contiguous `Value` span whose count is stored as an SMI `Value` at
   a fixed offset from the object header
+- a dynamic contiguous `Value` span whose count is stored in the heap object's
+  small auxiliary count field
 - a cold custom release function
 
 Objects with no owned cells should use `StaticSpan` with count zero. This keeps
@@ -92,7 +94,8 @@ The hot release table should stay small:
 ```cpp
 enum class ReleaseKind : uint8_t {
     StaticSpan,
-    DynamicSpan,
+    DynamicSmiSpan,
+    DynamicAuxSpan,
     Custom,
 };
 
@@ -101,30 +104,39 @@ struct ReleaseDescriptor {
     uint16_t value_offset_words;
     uint32_t static_release_count;
     uint16_t count_offset_words;
+    uint32_t additional_value_count;
     void (*custom_release)(HeapObject *, ReclamationContext &);
 };
 ```
 
-`StaticSpan` and `DynamicSpan` are the fast forms for trivially destructible
-objects whose owned references are represented as one contiguous `Value` span.
-The generic release loop visits cells in order, clears each cell, and releases
-the copied value through the reclamation path.
+`StaticSpan`, `DynamicSmiSpan`, and `DynamicAuxSpan` are the fast forms
+for trivially destructible objects whose owned references are represented as one
+contiguous `Value` span. The generic release loop visits cells in order, clears
+each cell, and releases the copied value through the reclamation path.
 
 `Custom` means the type owns its whole release procedure. A custom release
 function must release owned references in the correct order and run any required
 native teardown, including a non-trivial C++ destructor.
 
-For `DynamicSpan`, the count field is always:
+For dynamic spans, the dynamic count source is either:
 
-- a SMI `Value`
-- at a fixed offset from the object header
-- the exact number of `Value` cells in the released span
+- an SMI `Value` at a fixed offset from the object header, for
+  `DynamicSmiSpan`
+- the heap object's small auxiliary count field, for `DynamicAuxSpan`
 
-The count field itself does not need to be in the released span. The release
-loop can therefore remain generic:
+In both cases, the dynamic count is the exact number of variable `Value` cells
+in the released span.
+
+The total released count is:
 
 ```cpp
-uint64_t count = load_smi_at_words(obj, desc.count_offset_words);
+uint64_t count = dynamic_count_for(obj, desc) +
+                 desc.additional_value_count;
+```
+
+The release loop remains generic:
+
+```cpp
 Value *values = value_ptr_at_words(obj, desc.value_offset_words);
 for(uint64_t idx = 0; idx < count; ++idx) {
     Value value = values[idx];
@@ -133,9 +145,11 @@ for(uint64_t idx = 0; idx < count; ++idx) {
 }
 ```
 
-There is deliberately no per-layout scale or bias in this loop. If a backing
-object stores entries that contain multiple `Value` cells, the backing object
-stores the already-normalized number of `Value` cells to release.
+There is deliberately no per-layout scale in this loop. If a backing object
+stores entries that contain multiple `Value` cells, the backing object stores
+the already-normalized number of `Value` cells to release. The only per-layout
+addition is `additional_value_count`, which accounts for fixed owned cells in
+the same contiguous span.
 
 ## Object Size Query
 
@@ -196,7 +210,7 @@ Dispatching by layout ID introduces table lookups and potentially callback calls
 For hot paths, this is likely acceptable if:
 
 - static entries are fully inlineable via small IDs + contiguous table
-- the normalized `StaticSpan`/`DynamicSpan` paths handle most native objects,
+- the normalized static and dynamic span paths handle most native objects,
   including zero-cell objects as `StaticSpan`
 - custom release functions are rare/cold compared to descriptor objects
 
@@ -245,8 +259,8 @@ different call sites and have different hotness properties.
 For most native layouts, `NativeLayoutId` should look up a `ReleaseDescriptor`
 rather than dispatching directly to one custom handler per heap object kind.
 Custom release functions should be reserved for layouts that genuinely cannot
-fit the normal `StaticSpan`/`DynamicSpan` form, or that require non-trivial
-native destruction.
+fit the normal static/dynamic span forms, or that require non-trivial native
+destruction.
 
 ## 3. Keep compact fast paths for common layouts
 
@@ -256,29 +270,105 @@ dispatch biased toward a small number of common paths: static span, dynamic
 span, then cold custom callbacks. A no-values object is just a static span with
 count zero.
 
-## 4. Store dynamic release counts locally
+## 4. Keep semantic slots separate from physical slot storage
 
-Objects using `DynamicSpan` should store the exact release-cell count locally as
-an SMI `Value`.
+Every Python-visible `Object` has slots semantically because every `Object` has
+a `Shape`, and `Shape` describes the object's storage locations. That does not
+mean every C++ object representation must physically carry inline-slot count or
+overflow-slot storage.
+
+This split is not a prerequisite for native-layout descriptors. The descriptor
+facade only needs a physical count source, a value offset, and an
+`additional_value_count`. Those facts can be declared for the current
+`Instance` layout just as well as for a future `SlotObject` layout.
+
+Use a physical `SlotObject` layout for objects whose shapes can actually resolve
+inline or overflow storage locations. Plain builtin objects can remain ordinary
+`Object` subclasses with immutable/fixed shapes that describe zero addable
+slots. For those objects, attribute add/delete is impossible and no valid
+storage plan should produce an inline or overflow `StorageLocation`.
+
+The intended split is:
+
+- `Object` owns universal Python object metadata, especially `Shape`.
+- `SlotObject` owns slot storage mechanics: overflow-slot storage and the inline
+  slot payload.
+- `Instance` is a dynamic-size `SlotObject`.
+- `ClassObject` can also be a `SlotObject`, but because its slot count and
+  cooked tail fields are fixed, it can use a static release descriptor.
+- builtin non-slot objects such as strings, lists, tuples, dicts, functions,
+  iterators, and exceptions remain plain `Object` subclasses with immutable
+  zero-slot shapes.
+
+`Object` may still expose semantic storage APIs such as
+`read_storage_location`, `write_storage_location`, and `inline_slot_base`.
+Those APIs should assert/delegate to `SlotObject` when a real inline or overflow
+storage location exists. The invariant is:
+
+```text
+Inline/Overflow StorageLocation implies the storage owner is physically a
+SlotObject.
+```
+
+This keeps the object model coherent while avoiding the count/overflow tax on
+all builtin objects, but it should be treated as an object-model refactor rather
+than as part of the descriptor migration's critical path.
+
+Once `NativeLayoutId` moves to `HeapObject`, the header should also reserve a
+small auxiliary count field. A 16-bit field is enough for the intended inline
+slot count use case and avoids spending a full `Value` on every dynamic
+`SlotObject`. That auxiliary count is physical layout metadata: it tells release
+and opaque sizing how many inline slots were allocated. `Shape` remains the
+semantic authority for which slots exist and where attributes live.
+
+## 5. Define dynamic release count sources
+
+Objects using a dynamic span need a cheap count source, but that source does not
+always need to be an object-local SMI field. For objects that already need a
+large semantic count, an SMI member is fine. For hot dynamic-size objects such
+as `Instance`, the count should come from `HeapObject`'s auxiliary count field
+instead of chasing through `Shape` or adding a full `Value` member.
 
 Examples:
 
-- `Tuple` stores its tuple element count in `size_value`; released values begin at
-  `elements`.
-- `Instance` should grow an `inline_slot_count` field; released values begin at
-  the trailing inline slots.
+- `Tuple` stores its tuple element count in `size_value`; released values begin
+  at `size_value`.
+- `Instance` stores its physical inline-slot allocation count in the heap
+  object's auxiliary count field; released values begin at the class-declared
+  value offset and include the slot payload.
 - erased `ValueArrayBacking` should store `value_count`, the exact number of
   `Value` cells in its payload, not an element count that requires scaling.
 - `OverflowSlots` should expose a count/capacity field suitable for dynamic
   release; if it is converted to a SMI `Value`, it fits the same descriptor
   shape.
 
-This avoids pointer chasing through `Shape` or `ClassObject` to recover physical
-layout facts. For `Instance`, the stored count should be treated as physical
-allocation metadata. Class/shape metadata says what new instances should be
-allocated with; the instance field says how large this object actually is.
+For array backings, local SMI counts are preferred because the backing has no
+shape and may need counts larger than the header auxiliary field. For instances,
+the auxiliary count keeps release and `object_size_in_bytes()` local to the
+object while preserving `Shape` as semantic slot metadata.
 
-## 5. Define teardown order
+Dynamic spans also need an `additional_value_count` field. SMI count members
+should keep their semantic meaning, such as tuple length or backing storage
+value count. The release descriptor adds `additional_value_count` for fixed
+owned values in the same contiguous span, including inherited slot-header fields
+or fixed tail fields:
+
+```cpp
+uint64_t dynamic_count =
+    desc.kind == ReleaseKind::DynamicSmiSpan
+        ? load_smi_at_words(obj, desc.count_offset_words)
+        : obj->native_layout_aux_count();
+uint64_t release_count = dynamic_count + desc.additional_value_count;
+```
+
+For `Instance`, the dynamic count is the heap-object auxiliary count and the
+additional values are the fixed owned fields before the inline slot payload,
+whatever the current C++ inheritance shape is. For `Tuple`, the dynamic count is
+the tuple length and the additional value is the SMI count field itself. For
+`ValueArrayBacking`, the dynamic count is the payload `Value` cell count and the
+additional value is the SMI count field.
+
+## 6. Define teardown order
 
 Teardown processes owned cells one by one. For each owned cell, the reclamation
 path may read or copy the current value, then it must clear the cell in the
@@ -290,12 +380,12 @@ For `Value` spans this is a direct `Value` loop. If a future descriptor releases
 raw heap-pointer cells, that should be represented explicitly or documented as a
 deliberate pointer-compatible release form.
 
-## 6. Make extension path explicit and isolated
+## 7. Make extension path explicit and isolated
 
 Treat extension layouts as a first-class descriptor kind. All special behavior
 lives in one bridge layer that maps VM lifecycle to `tp_dealloc` safely.
 
-## 7. Add validation
+## 8. Add validation
 
 At startup (or in debug builds):
 
@@ -347,12 +437,20 @@ public:
     static constexpr NativeLayoutId native_layout_id = NativeLayoutId::Tuple;
     ...
 
-    CL_DECLARE_DYNAMIC_VALUE_SPAN(Tuple, size_value, elements);
+    CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN(Tuple, size_value, size_value, 1);
     CL_DECLARE_DYNAMIC_OBJECT_SIZE(Tuple, Tuple::object_size_in_bytes);
 };
 
 CL_DECLARE_NATIVE_LAYOUT(Tuple);
 ```
+
+The first member is the SMI count field, the second is the first cell in the
+contiguous release span, and the final argument is
+`additional_value_count`.
+
+For `Instance`, the declaration would use the heap-object auxiliary count as
+the dynamic count and the class-local first owned value as the release-span
+start. It does not require `SlotObject` to exist first.
 
 For a custom release object:
 
@@ -375,7 +473,8 @@ The class-local value-span macros choose the release classification:
 ```cpp
 CL_DECLARE_EMPTY_VALUE_SPAN(type)                  // StaticSpan, count 0
 CL_DECLARE_STATIC_VALUE_SPAN(type, first, count)   // StaticSpan
-CL_DECLARE_DYNAMIC_VALUE_SPAN(type, count, first)  // DynamicSpan
+CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN(type, count, first, additional)
+CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(type, first, additional)
 CL_DECLARE_CUSTOM_VALUE_RELEASE(type, function)    // Custom
 ```
 
@@ -383,12 +482,12 @@ These macros expand inside the class body, so they may safely compute offsets
 from private members. They expose release-specific helpers; they do not encode
 or decode `HeapLayout`.
 
-`CL_DECLARE_DYNAMIC_VALUE_SPAN(type, count_member, first_value_member)` expands
-roughly to:
+`CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN(type, count_member, first_value_member,
+additional_value_count_expr)` expands roughly to:
 
 ```cpp
 static constexpr NativeValueSpanKind native_value_span_kind =
-    NativeValueSpanKind::Dynamic;
+    NativeValueSpanKind::DynamicSmi;
 
 static constexpr uint32_t native_value_count_offset_in_words()
 {
@@ -403,11 +502,21 @@ static constexpr uint32_t native_value_offset_in_words()
                   "Value span must start on a Value boundary");
     return CL_OFFSETOF(type, first_value_member) / sizeof(Value);
 }
+
+static constexpr uint64_t native_additional_value_count()
+{
+    return additional_value_count_expr;
+}
 ```
 
-`CL_DECLARE_STATIC_VALUE_SPAN(type, first_value_member, count_expr)` is the same
-idea, but declares `NativeValueSpanKind::Static`,
-`native_value_offset_in_words()`, and `native_static_value_count()`.
+`CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(type, first_value_member,
+additional_value_count_expr)` is similar, but declares
+`NativeValueSpanKind::DynamicAux` and does not need a count-member offset. The
+dynamic count comes from `HeapObject`'s auxiliary count field.
+
+`CL_DECLARE_STATIC_VALUE_SPAN(type, first_value_member, count_expr)` declares
+`NativeValueSpanKind::Static`, `native_value_offset_in_words()`, and
+`native_static_value_count()`.
 
 The class-local object-size macros choose the opaque object-size policy:
 
@@ -454,11 +563,19 @@ struct NativeLayoutReleaseDescriptorBuilder
                 T::native_static_value_count());
         }
         else if constexpr(T::native_value_span_kind ==
-                          NativeValueSpanKind::Dynamic)
+                          NativeValueSpanKind::DynamicSmi)
         {
-            return ReleaseDescriptor::dynamic_span(
+            return ReleaseDescriptor::dynamic_smi_span(
                 T::native_value_count_offset_in_words(),
-                T::native_value_offset_in_words());
+                T::native_value_offset_in_words(),
+                T::native_additional_value_count());
+        }
+        else if constexpr(T::native_value_span_kind ==
+                          NativeValueSpanKind::DynamicAux)
+        {
+            return ReleaseDescriptor::dynamic_aux_span(
+                T::native_value_offset_in_words(),
+                T::native_additional_value_count());
         }
         else
         {
@@ -513,19 +630,19 @@ the intended shapes are:
 
 | Native ID | Release | Object size |
 |---|---|---|
-| `String` | `StaticSpan`, count 0 | custom/dynamic from character count |
+| `String` | `StaticSpan`; `Object` fields + own count field | custom/dynamic from character count |
 | `List` | `StaticSpan` | static |
-| `Tuple` | `DynamicSpan`; count `size_value` SMI, values `elements` | custom/dynamic from tuple length |
+| `Tuple` | `DynamicSmiSpan`; count `size_value` SMI, additional count includes fixed fields | custom/dynamic from tuple length |
 | `Dict` | `StaticSpan` | static |
 | `Function` | `StaticSpan` | static |
 | `RangeIterator` | `StaticSpan` | static |
 | `TupleIterator` | `StaticSpan` | static |
 | `ListIterator` | `StaticSpan` | static |
 | `CodeObject` | `Custom` | static |
-| `ClassObject` | `StaticSpan` | static |
+| `ClassObject` | `StaticSpan`; `SlotObject` fields + fixed class fields | static |
 | `Exception` | `StaticSpan` | static |
 | `StopIteration` | `StaticSpan` | static |
-| `Instance` | `DynamicSpan`; proposed `inline_slot_count` SMI, values trailing inline slots | custom/dynamic from inline slot count |
+| `Instance` | `DynamicAuxSpan`; heap-object aux count plus additional fixed fields | custom/dynamic from heap-object aux count |
 
 Internal heap records need native IDs once `NativeLayoutId` moves to
 `HeapObject`:
@@ -533,33 +650,34 @@ Internal heap records need native IDs once `NativeLayoutId` moves to
 | Internal heap record | Release | Object size |
 |---|---|---|
 | `RawArrayBacking` | `StaticSpan`, count 0 | custom/dynamic from stored byte/storage count |
-| `ValueArrayBacking` | `DynamicSpan`; count is normalized `Value` cell count | custom/dynamic from stored count |
+| `ValueArrayBacking` | `DynamicSmiSpan`; count is normalized `Value` cell count, additional count includes count field | custom/dynamic from stored count |
 | `HeapPtrArrayBacking` | dynamic heap-pointer span or documented pointer-compatible span | custom/dynamic from stored count |
-| `OverflowSlots` | `DynamicSpan`; count from capacity/count field | custom/dynamic from capacity |
+| `OverflowSlots` | `DynamicSmiSpan`; count from capacity/count field | custom/dynamic from capacity |
 | `Scope` | `StaticSpan` | static |
 | `Shape` | likely `Custom` because of transition vector ownership | custom/dynamic from property count |
 | `ValidityCell` | `StaticSpan`, count 0 | static |
 
 ## Dynamic Count Fields
 
-For `DynamicSpan`, count offsets and value offsets are separate. Do not force
-the count field into the released span just to reuse a value offset. The release
-loop loads the count as an SMI `Value`, then releases exactly that many cells
-beginning at `value_offset_words`.
+For dynamic spans, count offsets and value offsets are separate when the count
+is an SMI field. `DynamicAuxSpan` has no count-member offset because the count
+comes from `HeapObject`. In both cases, the release count is the dynamic count
+plus `additional_value_count`. This lets count fields keep their semantic
+meaning while still releasing one contiguous span that may include fixed header
+fields, count fields, or fixed tail fields.
 
 The intended offsets are:
 
-| Layout | Count field | Count type | Count offset | Value offset |
-|---|---|---|---:|---:|
-| `Tuple` | `size_value` | `MemberTValue<SMI>` | 32 bytes / 4 words | `elements`: 40 bytes / 5 words |
-| `Instance` | proposed `inline_slot_count` | `MemberTValue<SMI>` | 32 bytes / 4 words | proposed inline slots: 40 bytes / 5 words |
-| `ValueArrayBacking` | proposed `value_count` | `MemberTValue<SMI>` | 16 bytes / 2 words | `elements`: 24 bytes / 3 words |
-| `HeapPtrArrayBacking` | proposed pointer-cell count | `MemberTValue<SMI>` | 16 bytes / 2 words | `elements`: 24 bytes / 3 words |
-| `OverflowSlots` | current `capacity`, or future SMI count | currently `uint32_t`; prefer `MemberTValue<SMI>` for `DynamicSpan` | current capacity: 16 bytes / 2 words | `slots`: 24 bytes / 3 words |
+| Layout | Count field | Count type | Count offset | Value offset | Additional values |
+|---|---|---|---:|---:|---:|
+| `Tuple` | `size_value` | `MemberTValue<SMI>` | 32 bytes / 4 words | `size_value`: 32 bytes / 4 words | fixed fields including count |
+| `Instance` | heap-object auxiliary count | `uint16_t` header field | n/a | class-declared first owned value | fixed owned fields before inline slots |
+| `ValueArrayBacking` | proposed `value_count` | `MemberTValue<SMI>` | 16 bytes / 2 words | `value_count`: 16 bytes / 2 words | count field |
+| `HeapPtrArrayBacking` | proposed pointer-cell count | `MemberTValue<SMI>` | 16 bytes / 2 words | count field: 16 bytes / 2 words | count field |
+| `OverflowSlots` | current `capacity`, or future SMI count | currently `uint32_t`; prefer `MemberTValue<SMI>` for `DynamicSmiSpan` | current capacity: 16 bytes / 2 words | count/capacity field | fixed fields included in contiguous span |
 
-`String::count` is also a `MemberTValue<SMI>` at 32 bytes / 4 words, but it is
-for `object_size_in_bytes()`, not release, if `String` is classified as
-a zero-count `StaticSpan`.
+`String::count` is also a `MemberTValue<SMI>` and is part of a static release
+span. It also participates in `object_size_in_bytes()`.
 
 For backing objects, the stored count should be the already-normalized number
 of cells the release loop sees. For example, a backing used by `ValueArray<Entry>`
@@ -574,19 +692,24 @@ number of `Entry` objects. This keeps the hot release loop free of scale factors
    owned-value release, but it should move behind the facade rather than become
    the facade itself.
 2. **Implement the normalized release descriptor path.**
-   Use it for layouts that can be described by `StaticSpan` or `DynamicSpan`.
+   Use it for layouts that can be described by static or dynamic spans.
    Bridge still-unmigrated layouts through existing `HeapLayout` decoding as a
    compatibility path, not as the main reclamation interface.
 3. **Migrate fixed native layouts in small groups.**
    Validate descriptor parity against current metadata as entries are added.
-4. **Add local count fields for dynamic-span objects.**
-   In particular, make `Instance` and array backing records remember their
-   physical release counts directly.
+4. **Add physical count sources for dynamic-span objects.**
+   In particular, use the heap-object auxiliary count for dynamic-size
+   `Instance` layouts, and make array backing records remember their physical
+   dynamic counts directly.
 5. **Add custom release functions only where descriptors are insufficient.**
    `CodeObject` is expected to use this path.
-6. **Introduce C-extension descriptor kind + bridge.**
+6. **Optionally refactor slot-bearing objects into `SlotObject`.**
+   This can happen after descriptors are in place. The class-local offset
+   declarations should absorb the physical layout change without changing the
+   release table model.
+7. **Introduce C-extension descriptor kind + bridge.**
    Gate with focused extension lifecycle tests.
-7. **Remove legacy `HeapLayout` release dependence once parity is proven.**
+8. **Remove legacy `HeapLayout` release dependence once parity is proven.**
 
 ## Decision
 
@@ -599,7 +722,10 @@ In short:
 - **Yes** to layout-ID keyed release/teardown dispatch.
 - **Yes** to a normalized release descriptor path for most native layouts.
 - **Yes** to separate `object_size_in_bytes()` queries.
-- **Yes** to local SMI count fields for dynamic spans.
+- **Yes** to local physical count sources for dynamic spans: SMI fields for
+  backing records and the heap-object auxiliary count for hot slot objects.
+- **Yes** to deferring the `SlotObject` refactor; descriptors should not depend
+  on it.
 - **Yes** to explicit cold custom release functions where the normal metadata form is
   insufficient, especially `CodeObject`.
 - **Yes** to `NativeLayoutTraits<NativeLayoutId::...>` definitions near class
