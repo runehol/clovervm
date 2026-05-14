@@ -127,6 +127,18 @@ namespace cl
         return threads.emplace_back(std::make_unique<ThreadState>(this)).get();
     }
 
+    void VirtualMachine::complete_safepoint()
+    {
+        run_safepoint_reclamation();
+        clear_safepoint_request();
+        if(fire_every_safepoint_for_testing())
+        {
+            request_safepoint();
+        }
+    }
+
+    void VirtualMachine::run_safepoint_reclamation() {}
+
     ClassObject *class_for_native_layout(VirtualMachine *vm, NativeLayoutId id)
     {
         return vm->class_for_native_layout(id);

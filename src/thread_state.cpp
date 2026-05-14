@@ -87,11 +87,8 @@ namespace cl
         machine->run_safepoint_callback_for_testing(
             this, accumulator, fp, code_object,
             code_object->offset_for_interpreted_pc(pc), safepoint_scan_record_);
-        machine->clear_safepoint_request();
-        if(machine->fire_every_safepoint_for_testing())
-        {
-            machine->request_safepoint();
-        }
+        NoActiveThreadScope no_active_thread;
+        machine->complete_safepoint();
     }
 
     static Value *entry_frame_pointer(Value *caller_fp, CodeObject *code_object)

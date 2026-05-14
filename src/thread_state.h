@@ -70,6 +70,23 @@ namespace cl
             ThreadState *previous_thread;
         };
 
+        class NoActiveThreadScope
+        {
+        public:
+            NoActiveThreadScope() : previous_thread(ThreadState::current_thread)
+            {
+                ThreadState::current_thread = nullptr;
+            }
+
+            ~NoActiveThreadScope()
+            {
+                ThreadState::current_thread = previous_thread;
+            }
+
+        private:
+            ThreadState *previous_thread;
+        };
+
         ThreadState(VirtualMachine *_machine);
 
         static void add_to_active_zero_count_table_if_needed(HeapObject *obj);
