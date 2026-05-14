@@ -9,6 +9,7 @@
 namespace cl
 {
     class CodeObjectBuilder;
+    class ExceptionTableRangeSuspension;
 
     enum class JumpRelocationKind : uint8_t
     {
@@ -69,13 +70,42 @@ namespace cl
         ~ExceptionTableRangeBuilder();
 
         void close();
+        ExceptionTableRangeSuspension suspend();
 
     private:
+        friend class ExceptionTableRangeSuspension;
+
+        void close_segment();
+        void suspend_segment();
+        void resume_segment();
+
         CodeObjectBuilder *builder;
-        JumpTarget start_target;
-        JumpTarget end_target;
         JumpTarget &handler_target;
+        uint32_t start_pc;
         bool closed = false;
+        bool suspended = false;
+    };
+
+    class ExceptionTableRangeSuspension
+    {
+    public:
+        explicit ExceptionTableRangeSuspension(
+            ExceptionTableRangeBuilder &range);
+
+        ExceptionTableRangeSuspension(
+            ExceptionTableRangeSuspension &&other) noexcept;
+        ExceptionTableRangeSuspension &
+        operator=(ExceptionTableRangeSuspension &&other) noexcept;
+
+        ExceptionTableRangeSuspension(const ExceptionTableRangeSuspension &) =
+            delete;
+        ExceptionTableRangeSuspension &
+        operator=(const ExceptionTableRangeSuspension &) = delete;
+
+        ~ExceptionTableRangeSuspension();
+
+    private:
+        ExceptionTableRangeBuilder *range;
     };
 
     class CodeObjectBuilder
@@ -311,6 +341,8 @@ namespace cl
         uint32_t emit_call_simple(uint32_t source_offset, uint32_t callable_reg,
                                   OutgoingArgReg first_arg_reg, uint8_t argc);
         uint32_t add_exception_table_entry(JumpTarget &start, JumpTarget &end,
+                                           JumpTarget &handler);
+        uint32_t add_exception_table_entry(uint32_t start_pc, uint32_t end_pc,
                                            JumpTarget &handler);
 
         uint32_t allocate_constant(Value val);

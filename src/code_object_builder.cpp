@@ -100,10 +100,9 @@ namespace cl
 
     ExceptionTableRangeBuilder::ExceptionTableRangeBuilder(
         CodeObjectBuilder *_builder, JumpTarget &_handler_target)
-        : builder(_builder), start_target(_builder), end_target(_builder),
-          handler_target(_handler_target)
+        : builder(_builder), handler_target(_handler_target),
+          start_pc(_builder->size())
     {
-        start_target.resolve();
     }
 
     ExceptionTableRangeBuilder::~ExceptionTableRangeBuilder()
@@ -114,13 +113,77 @@ namespace cl
     void ExceptionTableRangeBuilder::close()
     {
         assert(!closed);
-        end_target.resolve();
+        assert(!suspended);
+        close_segment();
+        closed = true;
+    }
+
+    ExceptionTableRangeSuspension ExceptionTableRangeBuilder::suspend()
+    {
+        return ExceptionTableRangeSuspension(*this);
+    }
+
+    void ExceptionTableRangeBuilder::close_segment()
+    {
         // Ranges are appended at close time. With depth-first AST codegen,
         // inner protected ranges close before outer ranges, which puts
         // overlapping entries in exception-table priority order.
-        builder->add_exception_table_entry(start_target, end_target,
+        builder->add_exception_table_entry(start_pc, builder->size(),
                                            handler_target);
-        closed = true;
+    }
+
+    void ExceptionTableRangeBuilder::suspend_segment()
+    {
+        assert(!closed);
+        assert(!suspended);
+        close_segment();
+        suspended = true;
+    }
+
+    void ExceptionTableRangeBuilder::resume_segment()
+    {
+        assert(!closed);
+        assert(suspended);
+        start_pc = builder->size();
+        suspended = false;
+    }
+
+    ExceptionTableRangeSuspension::ExceptionTableRangeSuspension(
+        ExceptionTableRangeBuilder &_range)
+        : range(&_range)
+    {
+        range->suspend_segment();
+    }
+
+    ExceptionTableRangeSuspension::ExceptionTableRangeSuspension(
+        ExceptionTableRangeSuspension &&other) noexcept
+        : range(other.range)
+    {
+        other.range = nullptr;
+    }
+
+    ExceptionTableRangeSuspension &ExceptionTableRangeSuspension::operator=(
+        ExceptionTableRangeSuspension &&other) noexcept
+    {
+        if(this == &other)
+        {
+            return *this;
+        }
+        if(range != nullptr)
+        {
+            range->resume_segment();
+        }
+        range = other.range;
+        other.range = nullptr;
+        return *this;
+    }
+
+    ExceptionTableRangeSuspension::~ExceptionTableRangeSuspension()
+    {
+        if(range != nullptr)
+        {
+            range->resume_segment();
+        }
     }
 
     CodeObjectBuilder::TemporaryReg::TemporaryReg(CodeObjectBuilder &_builder,
@@ -630,6 +693,17 @@ namespace cl
         code_obj->exception_table.push_back({0, 0, 0});
         start.add_exception_table_start_absolute_u32_relocation(idx);
         end.add_exception_table_end_absolute_u32_relocation(idx);
+        handler.add_exception_table_handler_absolute_u32_relocation(idx);
+        return idx;
+    }
+
+    uint32_t CodeObjectBuilder::add_exception_table_entry(uint32_t start_pc,
+                                                          uint32_t end_pc,
+                                                          JumpTarget &handler)
+    {
+        assert_not_finalized();
+        uint32_t idx = code_obj->exception_table.size();
+        code_obj->exception_table.push_back({start_pc, end_pc, 0});
         handler.add_exception_table_handler_absolute_u32_relocation(idx);
         return idx;
     }

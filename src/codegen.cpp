@@ -154,22 +154,27 @@ namespace cl
                 WithExit
             };
 
-            static CleanupContext finally_body(int32_t body_idx)
+            static CleanupContext
+            finally_body(int32_t body_idx,
+                         ExceptionTableRangeBuilder *exception_range)
             {
-                return CleanupContext{Kind::FinallyBody, body_idx, 0, 0};
+                return CleanupContext{Kind::FinallyBody, body_idx, 0, 0,
+                                      exception_range};
             }
 
-            static CleanupContext with_exit(uint32_t source_offset,
-                                            RegisterIndex manager_reg)
+            static CleanupContext
+            with_exit(uint32_t source_offset, RegisterIndex manager_reg,
+                      ExceptionTableRangeBuilder *exception_range)
             {
                 return CleanupContext{Kind::WithExit, -1, source_offset,
-                                      manager_reg};
+                                      manager_reg, exception_range};
             }
 
             Kind kind;
             int32_t body_idx;
             uint32_t source_offset;
             RegisterIndex manager_reg;
+            ExceptionTableRangeBuilder *exception_range;
         };
 
         constexpr static OpTable operator_table = make_table();
@@ -1033,7 +1038,7 @@ namespace cl
             emit_context_exit_call(source_offset, manager_reg);
         }
 
-        void emit_cleanup(CleanupContext ctx)
+        void emit_cleanup_body(CleanupContext ctx)
         {
             switch(ctx.kind)
             {
@@ -1047,17 +1052,26 @@ namespace cl
             }
         }
 
-        void emit_active_cleanups_until(size_t target_depth)
+        template <typename EmitAfterCleanups>
+        void emit_active_cleanups_until_and_then(
+            size_t target_depth, EmitAfterCleanups emit_after_cleanups)
         {
             assert(target_depth <= active_cleanups.size());
             std::vector<CleanupContext> popped;
+            std::vector<ExceptionTableRangeSuspension> suspensions;
             while(active_cleanups.size() > target_depth)
             {
                 CleanupContext ctx = active_cleanups.back();
                 active_cleanups.pop_back();
                 popped.push_back(ctx);
-                emit_cleanup(ctx);
+                if(ctx.exception_range != nullptr)
+                {
+                    suspensions.push_back(ctx.exception_range->suspend());
+                }
+                emit_cleanup_body(ctx);
             }
+
+            emit_after_cleanups();
 
             while(!popped.empty())
             {
@@ -1173,7 +1187,7 @@ namespace cl
             {
                 ExceptionTableRangeBuilder range(code_obj, exceptional_target);
                 active_cleanups.push_back(CleanupContext::with_exit(
-                    source_offset, RegisterIndex(manager_reg)));
+                    source_offset, RegisterIndex(manager_reg), &range));
                 codegen_protected_body();
                 active_cleanups.pop_back();
                 range.close();
@@ -1239,7 +1253,7 @@ namespace cl
             {
                 ExceptionTableRangeBuilder range(code_obj, exceptional_target);
                 active_cleanups.push_back(
-                    CleanupContext::finally_body(finally_body_idx));
+                    CleanupContext::finally_body(finally_body_idx, &range));
                 codegen_protected_body();
                 active_cleanups.pop_back();
                 range.close();
@@ -2024,10 +2038,12 @@ namespace cl
                     }
                     else
                     {
-                        emit_active_cleanups_until(
-                            loop_targets.back().cleanup_depth);
-                        code_obj->emit_jump(source_offset,
-                                            *loop_targets.back().break_target);
+                        emit_active_cleanups_until_and_then(
+                            loop_targets.back().cleanup_depth, [&]() {
+                                code_obj->emit_jump(
+                                    source_offset,
+                                    *loop_targets.back().break_target);
+                            });
                     }
                     break;
 
@@ -2039,11 +2055,12 @@ namespace cl
                     }
                     else
                     {
-                        emit_active_cleanups_until(
-                            loop_targets.back().cleanup_depth);
-                        code_obj->emit_jump(
-                            source_offset,
-                            *loop_targets.back().continue_target);
+                        emit_active_cleanups_until_and_then(
+                            loop_targets.back().cleanup_depth, [&]() {
+                                code_obj->emit_jump(
+                                    source_offset,
+                                    *loop_targets.back().continue_target);
+                            });
                     }
                     break;
 
@@ -2066,8 +2083,12 @@ namespace cl
                         {
                             TemporaryReg return_value(*code_obj);
                             code_obj->emit_star(source_offset, return_value);
-                            emit_active_cleanups_until(0);
-                            code_obj->emit_ldar(source_offset, return_value);
+                            emit_active_cleanups_until_and_then(0, [&]() {
+                                code_obj->emit_ldar(source_offset,
+                                                    return_value);
+                                code_obj->emit_return(source_offset);
+                            });
+                            break;
                         }
                         code_obj->emit_return(source_offset);
                         break;

@@ -2631,6 +2631,31 @@ TEST(Interpreter, return_through_finally_runs_cleanup_before_return)
     EXPECT_EQ(Value::from_smi(21), actual);
 }
 
+TEST(Interpreter, return_through_finally_that_raises_runs_cleanup_once)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj =
+        test_context.compile_file(L"result = 0\n"
+                                  L"def f():\n"
+                                  L"    global result\n"
+                                  L"    try:\n"
+                                  L"        return 1\n"
+                                  L"    finally:\n"
+                                  L"        result = result + 1\n"
+                                  L"        raise ValueError\n"
+                                  L"f()\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError");
+
+    TValue<String> result_name =
+        test_context.vm().get_or_create_interned_string_value(L"result");
+    EXPECT_EQ(Value::from_smi(1),
+              code_obj->module_scope.extract()->get_by_name(result_name));
+}
+
 TEST(Interpreter, return_in_finally_overrides_protected_return)
 {
     test::VmTestContext test_context;
@@ -3795,6 +3820,74 @@ TEST(Interpreter, with_statement_exit_runs_before_return)
                                  L"f() + log\n");
 
     EXPECT_EQ(Value::from_smi(17), file_runner.return_value);
+}
+
+TEST(Interpreter, with_statement_exit_that_raises_during_return_runs_once)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj =
+        test_context.compile_file(L"log = 0\n"
+                                  L"class Manager:\n"
+                                  L"    def __enter__(self):\n"
+                                  L"        return self\n"
+                                  L"    def __exit__(self, typ, exc, tb):\n"
+                                  L"        global log\n"
+                                  L"        log = log + 1\n"
+                                  L"        raise ValueError\n"
+                                  L"def f():\n"
+                                  L"    with Manager():\n"
+                                  L"        return 7\n"
+                                  L"f()\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError");
+
+    TValue<String> log_name =
+        test_context.vm().get_or_create_interned_string_value(L"log");
+    EXPECT_EQ(Value::from_smi(1),
+              code_obj->module_scope.extract()->get_by_name(log_name));
+}
+
+TEST(Interpreter, with_statement_inner_exit_stays_suspended_during_outer_exit)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj =
+        test_context.compile_file(L"log = 0\n"
+                                  L"class Outer:\n"
+                                  L"    def __enter__(self):\n"
+                                  L"        global log\n"
+                                  L"        log = log * 10 + 1\n"
+                                  L"        return self\n"
+                                  L"    def __exit__(self, typ, exc, tb):\n"
+                                  L"        global log\n"
+                                  L"        log = log * 10 + 2\n"
+                                  L"        raise ValueError\n"
+                                  L"class Inner:\n"
+                                  L"    def __enter__(self):\n"
+                                  L"        global log\n"
+                                  L"        log = log * 10 + 3\n"
+                                  L"        return self\n"
+                                  L"    def __exit__(self, typ, exc, tb):\n"
+                                  L"        global log\n"
+                                  L"        log = log * 10 + 4\n"
+                                  L"        return False\n"
+                                  L"def f():\n"
+                                  L"    with Outer():\n"
+                                  L"        with Inner():\n"
+                                  L"            return 7\n"
+                                  L"f()\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"ValueError");
+
+    TValue<String> log_name =
+        test_context.vm().get_or_create_interned_string_value(L"log");
+    EXPECT_EQ(Value::from_smi(1342),
+              code_obj->module_scope.extract()->get_by_name(log_name));
 }
 
 TEST(Interpreter, with_statement_multiple_items_exit_in_reverse_order)
