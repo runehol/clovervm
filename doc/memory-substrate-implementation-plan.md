@@ -1,11 +1,11 @@
 # Memory Substrate Implementation Plan
 
 This document is the current forward plan for CloverVM's memory substrate. The
-historical lifecycle/ZCT/safepoint baseline is implemented; this
-plan now tracks the next design arc:
+historical lifecycle/ZCT/safepoint baseline and bitmap-discovered young-object
+reclamation are implemented; this plan now tracks the remaining design arc:
 
-1. bitmap-based valid-object tracking and young-object discovery;
-2. native-layout-id based owned-value scanning and teardown;
+1. native-layout-id based owned-value scanning and teardown;
+2. production reclamation policy;
 3. size-partitioned thread-local heaps.
 
 Background design documents:
@@ -35,6 +35,10 @@ baseline:
 - Slab lookup by 4 KiB granule.
 - Active allocator and epoch-discovery ownership are represented by slab pins.
   Valid object headers are represented by per-slab valid-object bitmap bits.
+- Thread-local reclamation epochs track ordinary inactive slab pressure and
+  dedicated large-object allocation bytes.
+- Allocation slow paths request a safepoint when initial slab-pressure policy
+  thresholds are crossed.
 - Fully unblocked slabs are released/unmapped; ordinary slab pooling is not part
   of the current plan.
 - VM bootstrap switches the default thread to fresh slabs after builtin setup.
@@ -65,172 +69,7 @@ Near-term order:
   finalizers, weakrefs, C-extension `tp_dealloc`, partial-slab hole allocation,
   and native stack scanning out of this milestone.
 
-## Phase 1: Valid-Object Header Bitmap
-
-Replace per-object slab reclaim blockers with a valid-object header bitmap
-as described in
-[Valid-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md).
-
-1. [x] Add fixed-size valid-object bitmap metadata to `SlabAllocator`.
-   - Derive bitmap word count from `DefaultSlabSize` and the 32-byte heap pointer
-     granularity.
-   - Keep `first_object_header` in slab metadata.
-   - Do not add summary counters or nonempty-word masks until measurements show
-     they are needed.
-2. [x] Add helpers for:
-   - `mark_valid_object(HeapObject *)`
-   - `clear_valid_object(HeapObject *)`
-   - `has_valid_objects()`
-   - iteration over valid object headers by scanning set bits.
-3. [x] Set the valid-object bit only after successful construction.
-4. [x] Leave failed construction as abandoned bump memory with no valid bit.
-5. [x] Keep dedicated large-object slabs on the same bitmap API. They should only
-   set bit 0.
-6. [x] Add debug assertions for header alignment, bit index bounds, duplicate
-   bit set, and clearing absent bits.
-
-Validation:
-
-- Tests that successful construction marks exactly one valid header bit.
-- Tests that constructor failure does not mark a valid header bit.
-- Tests that bitmap iteration returns valid objects and skips abandoned bump
-  gaps.
-- Tests that dedicated large-object slabs use the same bitmap path and only set
-  bit 0.
-
-## Phase 2: Slab Pins and Heap-Owned Release
-
-Move slab release authority out of slabs and into `GlobalHeap`.
-
-1. [x] Split slab pins from valid object presence.
-   - The bitmap represents valid object headers.
-   - `n_slab_pins` represents slab lifetime ownership.
-   - Named methods distinguish active allocator ownership from epoch discovery
-     ownership while updating the same counter:
-     `add_active_allocator_pin()`, `drop_active_allocator_pin()`,
-     `add_epoch_discovery_pin()`, `drop_epoch_discovery_pin()`.
-2. [x] Replace object reclaim-blocker increments/decrements with bitmap
-   mark/clear.
-3. [x] Remove the `GlobalHeap *` back-pointer from `SlabAllocator`.
-4. [x] Add `GlobalHeap::release_slab_if_empty(SlabAllocator *)`.
-5. [x] Keep pin add/drop symmetric and local to `SlabAllocator`; dropping a pin
-   must not release or unmap a slab as a side effect.
-6. [x] During object teardown, clear valid-object bits and remember release
-   candidate slabs;
-   do not release/unmap slabs immediately from object teardown.
-7. [x] After explicit batch points, run `release_slab_if_empty()` for release
-   candidate slabs:
-   - after reclamation drops epoch discovery pins and clears valid-object bits.
-   - active slab switches drop the old active allocator pin but do not run a
-     release check there, because the epoch discovery pin keeps the slab alive
-     until reclamation.
-
-Validation:
-
-- Tests that an empty slab with an active allocator pin is not released.
-- Tests that dropping the final pin does not release a slab until the caller runs
-  `release_slab_if_empty()`.
-- Tests that reclaiming the final valid object releases the slab only during
-  the batched post-reclamation release step.
-- Tests that epoch-list membership pins a slab even after it is no longer the
-  active allocation slab.
-- Tests that slab lookup no longer finds released ordinary and dedicated slabs.
-
-## Phase 3: Thread-Local Epoch Slab Lists
-
-Track young-object candidate slabs at the allocator-epoch level, not per
-allocation.
-
-1. [x] Add `ThreadLocalHeap::epoch_slabs_since_reclamation`.
-2. [x] Add `ThreadLocalHeap::ordinary_inactive_slabs_since_reclamation`, seeded
-   to zero after each reclamation.
-3. [x] Add `ThreadLocalHeap::dedicated_large_bytes_since_reclamation` for
-   large-object policy. Dedicated slabs use the same epoch slab list as ordinary
-   slabs.
-4. [x] Add a helper to remember an active slab once per reclamation epoch.
-   - Each call appends one epoch-list membership and adds one epoch discovery
-     pin.
-   - Allocation/switch paths should make duplicate membership impossible by
-     design; add debug assertions for that invariant.
-5. [x] Update the list when a thread-local heap installs or switches active
-   slabs:
-   - construction of `ThreadLocalHeap`;
-   - ordinary slab exhaustion;
-   - `switch_to_new_slabs()`;
-   - future size-class active slab switches.
-6. [x] Increment `ordinary_inactive_slabs_since_reclamation` when an ordinary
-   active slab is switched out. Drop the old slab's active allocator pin and
-   rely on its epoch discovery pin to keep it alive until reclamation scans the
-   epoch list and performs batched release checks.
-7. [x] Track dedicated large-object slabs in the shared epoch list and
-   dedicated byte counter, not in the ordinary inactive-slab counter.
-   - First insertion adds an epoch discovery pin.
-   - Construction failure before commit leaves an unmarked allocation in the
-     epoch-pinned slab; the normal epoch finish drops the pin and release-checks
-     the slab.
-8. [x] Do not update the epoch slab list on every allocation.
-9. [x] After each reclamation, reset each thread-local heap's epoch slab list to
-   the slabs currently open for allocation, reset the ordinary inactive counter
-   to zero, and clear the dedicated large-object byte counter.
-   - Drop epoch discovery pins for scanned epoch slabs.
-   - Run release checks for scanned epoch slabs whose pins were dropped.
-   - Add epoch discovery pins for current active slabs that seed the next epoch.
-10. [x] Expose these lists and counters to VM-global reclamation through
-    `ThreadState` or `ThreadLocalHeap` accessors.
-
-Validation:
-
-- Tests that slab switches append slabs to the epoch slab list.
-- Tests that post-reclamation reset leaves current active slabs on the list.
-- Tests that ordinary slab switches increment the inactive ordinary slab counter
-  and post-reclamation reset clears it.
-- Tests that dedicated large-object slabs update the shared epoch list and
-  dedicated byte counter but not the ordinary inactive slab counter.
-- Tests that ordinary allocation does not mutate the epoch slab list.
-- Tests that a slab present only through epoch-list ownership survives until the
-  epoch pin is dropped and a release check runs.
-
-## Phase 4: Bitmap-Based Young-Object Discovery
-
-Use epoch slab bitmaps to discover young zero-refcount
-objects that no longer enter the ZCT at allocation time.
-
-1. [x] Extend `run_heap_reclamation()` to collect roots once, then process:
-   - existing ZCT entries;
-   - bitmap-discovered young candidates from each thread-local heap's
-     epoch slab list, including dedicated large-object slabs.
-2. [x] For each bitmap-discovered object:
-   - ignore it if `refcount > 0`;
-   - ignore it if `lifecycle_state != Normal`;
-   - if `refcount == 0 && lifecycle_state == Normal && roots.contains(obj)`,
-     transition `Normal -> InZct` and append it to a ZCT;
-   - otherwise transition `Normal -> Reclaiming` and reclaim through the normal
-     teardown path.
-3. [x] Ensure young rooted objects become durable ZCT entries, because no heap
-   `DECREF` may rediscover them after the stack root disappears.
-4. [x] Keep child-release cascades appending to the currently processed ZCT.
-5. [x] Remove eager allocation-time ZCT enqueue once bitmap discovery covers
-   young zero-refcount objects.
-6. [x] Keep positive-refcount allocation behavior out of the ZCT.
-7. [x] During reclamation, drop epoch discovery pins only after the corresponding
-   epoch slabs have been scanned; run slab release checks only after candidate
-   sources are done.
-
-Validation:
-
-- Tests that a stack-rooted young zero-refcount object discovered from a bitmap
-  is retained and moved into a ZCT.
-- Tests that an unrooted young zero-refcount object discovered from a bitmap is
-  reclaimed.
-- Tests that positive-refcount bitmap entries are ignored.
-- Tests that `InZct`, `Reclaiming`, and `Dead` bitmap entries are not processed
-  as young `Normal` candidates.
-- Tests that allocation no longer adds every fresh zero-refcount object to the
-  ZCT.
-- Existing ZCT tests continue to pass for older objects and heap `DECREF`
-  transitions.
-
-## Phase 5: Native-ID Owned-Value Scanning
+## Phase 1: Native-ID Owned-Value Scanning
 
 Move reclamation owned-value scanning and teardown behind a native-layout-id
 descriptor facade.
@@ -259,36 +98,27 @@ Validation:
 - Tests that compact and expanded dynamic tuple layouts still reclaim correctly.
 - Tests that descriptor scanning and bitmap header discovery remain independent.
 
-## Phase 6: Reclamation Policy
+## Phase 2: Reclamation Policy
 
 Add production reclamation triggers after bitmap discovery and descriptor
 scanning are stable. The initial slab-pressure hook is intentionally small:
 `ThreadLocalHeap::allocate_slow()` requests a safepoint when inactive epoch slab
 pressure or dedicated large-object bytes cross fixed thresholds.
 
-1. [ ] Add counters for:
+1. [ ] Surface or refine counters for:
    - ZCT length;
-   - ordinary inactive slab count since last reclamation;
-   - dedicated large-object bytes since last reclamation;
    - valid-object bitmap entries scanned;
    - objects reclaimed;
    - objects retained by stack roots;
    - slabs released.
 2. [ ] Request reclamation on ZCT growth.
-3. [x] Request reclamation when ordinary inactive slabs since the previous
-   reclamation crosses a threshold.
-4. [x] Request reclamation when dedicated large-object bytes since the previous
-   reclamation crosses a threshold.
-5. [ ] Request reclamation on valid-object bitmap scan budget.
-6. [ ] Coalesce multiple pending requests into one safepoint.
-7. [ ] Keep every-safepoint reclamation as deterministic testing mode only.
+3. [ ] Request reclamation on valid-object bitmap scan budget.
+4. [ ] Coalesce multiple pending requests into one safepoint.
+5. [ ] Tune and document the initial slab-pressure thresholds.
+6. [ ] Keep every-safepoint reclamation as deterministic testing mode only.
 
 Validation:
 
-- Tests that ordinary inactive slab pressure requests a safepoint without
-  immediate arbitrary-point reclamation.
-- Tests that dedicated large-object byte pressure requests a safepoint without
-  immediate arbitrary-point reclamation.
 - Tests that each future trigger requests a safepoint/reclamation without
   immediate arbitrary-point reclamation.
 - Tests that multiple pending requests coalesce.
@@ -296,7 +126,7 @@ Validation:
   triggers.
 - Counter sanity checks in debug builds.
 
-## Phase 7: Size-Partitioned Thread-Local Heaps
+## Phase 3: Size-Partitioned Thread-Local Heaps
 
 Split ordinary allocations into size partitions after bitmap reclamation is
 stable. The goal is better lifetime and size locality, not partial-slab hole
