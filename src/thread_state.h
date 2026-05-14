@@ -102,6 +102,7 @@ namespace cl
 
         static void add_to_active_zero_count_table_if_needed(HeapObject *obj);
         void add_to_zero_count_table_if_needed(HeapObject *obj);
+        void adopt_reclamation_state_from(ThreadState &child);
         size_t zero_count_table_size() const { return zero_count_table.size(); }
         bool zero_count_table_contains_for_testing(HeapObject *obj) const;
         void drain_zero_count_table_for_testing();

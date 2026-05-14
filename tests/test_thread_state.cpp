@@ -102,6 +102,37 @@ namespace cl
         EXPECT_EQ(zct_size_before + 1, thread->zero_count_table_size());
     }
 
+    TEST(ThreadState, AdoptReclamationStateMovesZctOwnership)
+    {
+        test::VmTestContext context;
+        ThreadState *parent = context.thread();
+        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+        size_t parent_zct_size = parent->zero_count_table_size();
+        String *string;
+        SlabAllocator *slab;
+
+        {
+            ThreadState child(&context.vm());
+            {
+                ThreadState::ActivationScope active_child(&child);
+                string = child.make_object_raw<String>(L"adopted-zct");
+            }
+            slab = heap.slab_for_object_unlocked(string);
+            ASSERT_EQ(2u, slab->slab_pin_count());
+            ASSERT_TRUE(child.zero_count_table_contains_for_testing(string));
+
+            parent->adopt_reclamation_state_from(child);
+
+            EXPECT_EQ(0u, child.zero_count_table_size());
+            EXPECT_EQ(parent_zct_size + 1, parent->zero_count_table_size());
+            EXPECT_TRUE(parent->zero_count_table_contains_for_testing(string));
+        }
+
+        EXPECT_TRUE(heap.has_slab_for_address_for_testing(string));
+        EXPECT_EQ(1u, slab->slab_pin_count());
+        EXPECT_TRUE(parent->zero_count_table_contains_for_testing(string));
+    }
+
     TEST(ThreadState, OwnedValueOverwriteEnqueuesReleasedObject)
     {
         test::VmTestContext context;

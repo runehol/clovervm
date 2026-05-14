@@ -43,6 +43,7 @@ namespace cl
 
         void switch_to_new_slabs();
         void release_for_failed_construction(char *memory);
+        void adopt_epoch_state_from(ThreadLocalHeap &child);
         void mark_valid_object(HeapObject *obj)
         {
             global_heap->mark_valid_object(obj);
@@ -96,6 +97,7 @@ namespace cl
         bool forget_dedicated_epoch_slab_for_failed_construction(
             SlabAllocator *allocator);
         void drop_epoch_discovery_pins_and_release_slabs();
+        bool owns_epoch_slab(SlabAllocator *allocator) const;
 
         GlobalHeap *global_heap;
         SlabAllocator *local_allocator;

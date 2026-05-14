@@ -16,6 +16,7 @@
 #include "virtual_machine.h"
 #include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -409,6 +410,24 @@ namespace cl
         assert(obj->refcount == 0);
         obj->lifecycle_state = HeapLifecycleState::InZct;
         zero_count_table.push_back(obj);
+    }
+
+    void ThreadState::adopt_reclamation_state_from(ThreadState &child)
+    {
+        assert(this != &child);
+        assert(machine == child.machine);
+        for(HeapObject *obj: child.zero_count_table)
+        {
+            assert(std::find(zero_count_table.begin(), zero_count_table.end(),
+                             obj) == zero_count_table.end());
+        }
+
+        zero_count_table.insert(
+            zero_count_table.end(),
+            std::make_move_iterator(child.zero_count_table.begin()),
+            std::make_move_iterator(child.zero_count_table.end()));
+        child.zero_count_table.clear();
+        refcounted_heap.adopt_epoch_state_from(child.refcounted_heap);
     }
 
     bool

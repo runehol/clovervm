@@ -176,6 +176,54 @@ TEST(GlobalHeap, DedicatedLargeAllocationConstructionFailureReleasesEmptySlab)
     EXPECT_FALSE(heap.has_slab_for_address_for_testing(memory));
 }
 
+TEST(GlobalHeap, ThreadLocalHeapAdoptsEpochStateByMove)
+{
+    GlobalHeap heap = GlobalHeap::refcounted_heap();
+    ThreadLocalHeap parent(&heap);
+    char *first;
+    char *second;
+    char *large;
+    SlabAllocator *first_slab;
+    SlabAllocator *second_slab;
+    SlabAllocator *large_slab;
+
+    {
+        ThreadLocalHeap child(&heap);
+        first = child.allocate(sizeof(HeapObject));
+        first_slab = heap.slab_for_address_unlocked(first);
+        child.switch_to_new_slabs();
+        second = child.allocate(sizeof(HeapObject));
+        second_slab = heap.slab_for_address_unlocked(second);
+        large = child.allocate(LargeAllocationSize);
+        large_slab = heap.slab_for_address_unlocked(large);
+
+        ASSERT_EQ(2u, child.ordinary_epoch_slab_count());
+        ASSERT_EQ(1u, child.ordinary_inactive_slabs_since_reclamation_count());
+        ASSERT_EQ(1u, child.dedicated_epoch_slab_count());
+        ASSERT_EQ(LargeAllocationSize,
+                  child.dedicated_large_bytes_since_reclamation_count());
+
+        parent.adopt_epoch_state_from(child);
+
+        EXPECT_EQ(3u, parent.ordinary_epoch_slab_count());
+        EXPECT_EQ(1u, parent.ordinary_inactive_slabs_since_reclamation_count());
+        EXPECT_EQ(1u, parent.dedicated_epoch_slab_count());
+        EXPECT_EQ(LargeAllocationSize,
+                  parent.dedicated_large_bytes_since_reclamation_count());
+        EXPECT_EQ(0u, child.ordinary_epoch_slab_count());
+        EXPECT_EQ(0u, child.ordinary_inactive_slabs_since_reclamation_count());
+        EXPECT_EQ(0u, child.dedicated_epoch_slab_count());
+        EXPECT_EQ(0u, child.dedicated_large_bytes_since_reclamation_count());
+    }
+
+    EXPECT_TRUE(heap.has_slab_for_address_for_testing(first));
+    EXPECT_TRUE(heap.has_slab_for_address_for_testing(second));
+    EXPECT_TRUE(heap.has_slab_for_address_for_testing(large));
+    EXPECT_EQ(1u, first_slab->slab_pin_count());
+    EXPECT_EQ(1u, second_slab->slab_pin_count());
+    EXPECT_EQ(1u, large_slab->slab_pin_count());
+}
+
 TEST(GlobalHeap, FailedOrdinaryConstructionLeavesActiveSlabUnmarked)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
