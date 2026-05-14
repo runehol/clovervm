@@ -104,6 +104,10 @@ namespace cl
         void add_to_zero_count_table_if_needed(HeapObject *obj);
         size_t zero_count_table_size() const { return zero_count_table.size(); }
         bool zero_count_table_contains_for_testing(HeapObject *obj) const;
+        void switch_to_new_heap_slabs()
+        {
+            refcounted_heap.switch_to_new_slabs();
+        }
 
         [[nodiscard]] Value run_clovervm_code_object(CodeObject *obj);
         [[nodiscard]] Value call_clovervm_function(TValue<Function> function);

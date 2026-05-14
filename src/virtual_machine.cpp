@@ -104,6 +104,7 @@ namespace cl
         try
         {
             initialize_builtin_scope();
+            default_thread->switch_to_new_heap_slabs();
         }
         catch(...)
         {

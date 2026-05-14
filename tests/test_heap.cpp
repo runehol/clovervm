@@ -22,6 +22,14 @@ namespace
         }
     };
 
+    class SimpleHeapObject : public HeapObject
+    {
+    public:
+        CL_DECLARE_STATIC_LAYOUT_NO_VALUES(SimpleHeapObject);
+
+        SimpleHeapObject() : HeapObject(compact_layout()) {}
+    };
+
 }  // namespace
 
 TEST(GlobalHeap, SlabMapFindsAllocatedAddresses)
@@ -73,6 +81,36 @@ TEST(GlobalHeap, OpeningNewOrdinarySlabDropsPreviousAllocatorBlocker)
     EXPECT_NE(first_slab, second_slab);
     EXPECT_EQ(1u, first_slab->reclaim_blocker_count());
     EXPECT_EQ(2u, second_slab->reclaim_blocker_count());
+}
+
+TEST(GlobalHeap, SwitchingThreadLocalHeapToNewSlabsDropsPreviousBlocker)
+{
+    GlobalHeap heap = GlobalHeap::refcounted_heap();
+    ThreadLocalHeap local_heap(&heap);
+    char *first = local_heap.allocate(sizeof(HeapObject));
+    SlabAllocator *first_slab = heap.slab_for_address_unlocked(first);
+    ASSERT_EQ(2u, first_slab->reclaim_blocker_count());
+
+    local_heap.switch_to_new_slabs();
+    char *second = local_heap.allocate(sizeof(HeapObject));
+    SlabAllocator *second_slab = heap.slab_for_address_unlocked(second);
+
+    EXPECT_NE(first_slab, second_slab);
+    EXPECT_EQ(1u, first_slab->reclaim_blocker_count());
+    EXPECT_EQ(2u, second_slab->reclaim_blocker_count());
+}
+
+TEST(GlobalHeap, VmBootstrapSwitchesDefaultThreadToFreshSlab)
+{
+    test::VmTestContext context;
+    ThreadState *thread = context.thread();
+    ThreadState::ActivationScope active_thread(thread);
+    SimpleHeapObject *object = thread->make_internal_raw<SimpleHeapObject>();
+    SlabAllocator *slab =
+        context.vm().get_refcounted_global_heap().slab_for_object_unlocked(
+            object);
+
+    EXPECT_EQ(2u, slab->reclaim_blocker_count());
 }
 
 TEST(GlobalHeap, DedicatedLargeAllocationAddsObjectBlocker)

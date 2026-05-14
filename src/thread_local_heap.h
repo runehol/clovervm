@@ -21,29 +21,20 @@ namespace cl
         // allocation fast path
         char *allocate(size_t n_bytes)
         {
-            if(n_bytes >= LargeAllocationSize)
+            if(likely(n_bytes < LargeAllocationSize))
             {
-                return global_heap->allocate_large_object(n_bytes);
+                char *result = local_allocator->allocate(n_bytes);
+                if(likely(result != nullptr))
+                {
+                    local_allocator->add_reclaim_blocker();
+                    return result;
+                }
             }
 
-            char *result = local_allocator->allocate(n_bytes);
-            if(likely(result != nullptr))
-            {
-                local_allocator->add_reclaim_blocker();
-                return result;
-            }
-
-            SlabAllocator *old_allocator = local_allocator;
-            SlabAllocator *new_allocator = global_heap->make_new_slab();
-            local_allocator = new_allocator;
-            add_allocator_reclaim_blocker();
-            drop_allocator_reclaim_blocker(old_allocator);
-            char *memory = local_allocator->allocate(n_bytes);
-            assert(memory != nullptr);
-            local_allocator->add_reclaim_blocker();
-            return memory;
+            return allocate_slow(n_bytes);
         }
 
+        void switch_to_new_slabs();
         void drop_reclaim_blocker_for_failed_construction(char *memory);
 
         template <typename T, typename... Args> T *make(Args &&...args)
@@ -63,6 +54,7 @@ namespace cl
         }
 
     private:
+        NOINLINE char *allocate_slow(size_t n_bytes);
         void add_allocator_reclaim_blocker();
         void drop_allocator_reclaim_blocker();
         void drop_allocator_reclaim_blocker(SlabAllocator *allocator);
