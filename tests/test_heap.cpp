@@ -65,17 +65,20 @@ TEST(GlobalHeap, SlabMapFindsAllocatedAddresses)
 TEST(GlobalHeap, ThreadLocalHeapPinsActiveAllocatorSlab)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
+    char *memory;
 
     {
         ThreadLocalHeap local_heap(&heap);
-        char *memory = local_heap.allocate(sizeof(HeapObject));
+        memory = local_heap.allocate(sizeof(HeapObject));
         SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
 
-        EXPECT_EQ(2u, slab->reclaim_blocker_count());
+        EXPECT_EQ(1u, slab->slab_pin_count());
     }
+
+    EXPECT_FALSE(heap.has_slab_for_address_for_testing(memory));
 }
 
-TEST(GlobalHeap, OrdinaryAllocationAddsObjectBlocker)
+TEST(GlobalHeap, OrdinaryRawAllocationDoesNotPinObject)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
@@ -83,41 +86,42 @@ TEST(GlobalHeap, OrdinaryAllocationAddsObjectBlocker)
     char *memory = local_heap.allocate(sizeof(HeapObject));
     SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
 
-    EXPECT_EQ(2u, slab->reclaim_blocker_count());
+    EXPECT_EQ(1u, slab->slab_pin_count());
+    EXPECT_EQ(0u, slab->count_valid_objects_slow());
 }
 
-TEST(GlobalHeap, OpeningNewOrdinarySlabDropsPreviousAllocatorBlocker)
+TEST(GlobalHeap, OpeningNewOrdinarySlabDropsPreviousActivePin)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap(SlabLookupGranuleSize);
     ThreadLocalHeap local_heap(&heap);
 
     char *first = local_heap.allocate(SlabLookupGranuleSize / 2);
     SlabAllocator *first_slab = heap.slab_for_address_unlocked(first);
-    ASSERT_EQ(2u, first_slab->reclaim_blocker_count());
+    ASSERT_EQ(1u, first_slab->slab_pin_count());
 
     char *second = local_heap.allocate(SlabLookupGranuleSize / 2);
     SlabAllocator *second_slab = heap.slab_for_address_unlocked(second);
 
     EXPECT_NE(first_slab, second_slab);
-    EXPECT_EQ(1u, first_slab->reclaim_blocker_count());
-    EXPECT_EQ(2u, second_slab->reclaim_blocker_count());
+    EXPECT_FALSE(heap.has_slab_for_address_for_testing(first));
+    EXPECT_EQ(1u, second_slab->slab_pin_count());
 }
 
-TEST(GlobalHeap, SwitchingThreadLocalHeapToNewSlabsDropsPreviousBlocker)
+TEST(GlobalHeap, SwitchingThreadLocalHeapToNewSlabsDropsPreviousActivePin)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
     char *first = local_heap.allocate(sizeof(HeapObject));
     SlabAllocator *first_slab = heap.slab_for_address_unlocked(first);
-    ASSERT_EQ(2u, first_slab->reclaim_blocker_count());
+    ASSERT_EQ(1u, first_slab->slab_pin_count());
 
     local_heap.switch_to_new_slabs();
     char *second = local_heap.allocate(sizeof(HeapObject));
     SlabAllocator *second_slab = heap.slab_for_address_unlocked(second);
 
     EXPECT_NE(first_slab, second_slab);
-    EXPECT_EQ(1u, first_slab->reclaim_blocker_count());
-    EXPECT_EQ(2u, second_slab->reclaim_blocker_count());
+    EXPECT_FALSE(heap.has_slab_for_address_for_testing(first));
+    EXPECT_EQ(1u, second_slab->slab_pin_count());
 }
 
 TEST(GlobalHeap, VmBootstrapSwitchesDefaultThreadToFreshSlab)
@@ -130,10 +134,11 @@ TEST(GlobalHeap, VmBootstrapSwitchesDefaultThreadToFreshSlab)
         context.vm().get_refcounted_global_heap().slab_for_object_unlocked(
             object);
 
-    EXPECT_EQ(2u, slab->reclaim_blocker_count());
+    EXPECT_EQ(1u, slab->slab_pin_count());
+    EXPECT_EQ(1u, slab->count_valid_objects_slow());
 }
 
-TEST(GlobalHeap, DedicatedLargeAllocationAddsObjectBlocker)
+TEST(GlobalHeap, DedicatedLargeRawAllocationHasNoActivePin)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
@@ -141,21 +146,23 @@ TEST(GlobalHeap, DedicatedLargeAllocationAddsObjectBlocker)
     char *memory = local_heap.allocate(LargeAllocationSize);
     SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
 
-    EXPECT_EQ(1u, slab->reclaim_blocker_count());
+    EXPECT_EQ(0u, slab->slab_pin_count());
+    EXPECT_EQ(0u, slab->count_valid_objects_slow());
+    local_heap.release_for_failed_construction(memory);
 }
 
-TEST(GlobalHeap, DedicatedLargeAllocationConstructionFailureDropsObjectBlocker)
+TEST(GlobalHeap, DedicatedLargeAllocationConstructionFailureReleasesEmptySlab)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
     char *memory = local_heap.allocate(LargeAllocationSize);
-    local_heap.drop_reclaim_blocker_for_failed_construction(memory);
+    local_heap.release_for_failed_construction(memory);
 
-    SUCCEED();
+    EXPECT_FALSE(heap.has_slab_for_address_for_testing(memory));
 }
 
-TEST(GlobalHeap, FailedConstructionDropsObjectBlocker)
+TEST(GlobalHeap, FailedOrdinaryConstructionLeavesActiveSlabUnmarked)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
@@ -164,7 +171,8 @@ TEST(GlobalHeap, FailedConstructionDropsObjectBlocker)
 
     char *memory = local_heap.allocate(sizeof(HeapObject));
     SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
-    EXPECT_EQ(2u, slab->reclaim_blocker_count());
+    EXPECT_EQ(1u, slab->slab_pin_count());
+    EXPECT_EQ(0u, slab->count_valid_objects_slow());
 }
 
 TEST(GlobalHeap, SuccessfulConstructionMarksValidObject)
@@ -178,7 +186,7 @@ TEST(GlobalHeap, SuccessfulConstructionMarksValidObject)
     std::vector<HeapObject *> objects = valid_objects_in(slab);
     ASSERT_EQ(1u, objects.size());
     EXPECT_EQ(object, objects[0]);
-    EXPECT_TRUE(slab->has_valid_objects());
+    EXPECT_EQ(1u, slab->count_valid_objects_slow());
 }
 
 TEST(GlobalHeap, FailedConstructionDoesNotMarkValidObject)
@@ -190,7 +198,7 @@ TEST(GlobalHeap, FailedConstructionDoesNotMarkValidObject)
 
     char *memory = local_heap.allocate(sizeof(HeapObject));
     SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
-    EXPECT_FALSE(slab->has_valid_objects());
+    EXPECT_EQ(0u, slab->count_valid_objects_slow());
 }
 
 TEST(GlobalHeap, ValidObjectIterationSkipsAbandonedBumpGaps)
@@ -218,11 +226,10 @@ TEST(GlobalHeap, DedicatedLargeObjectMarksOnlyBitZero)
     std::vector<HeapObject *> objects = valid_objects_in(slab);
     ASSERT_EQ(1u, objects.size());
     EXPECT_EQ(object, objects[0]);
-    EXPECT_EQ(slab->first_valid_object_slot_for_testing(),
-              reinterpret_cast<char *>(object));
+    EXPECT_EQ(slab->first_object_slot(), reinterpret_cast<char *>(object));
 }
 
-TEST(GlobalHeap, InternedHeapTracksReclaimBlockers)
+TEST(GlobalHeap, InternedHeapTracksSlabPins)
 {
     GlobalHeap heap = GlobalHeap::interned_heap();
     ThreadLocalHeap local_heap(&heap);
@@ -230,7 +237,7 @@ TEST(GlobalHeap, InternedHeapTracksReclaimBlockers)
     char *memory = local_heap.allocate(sizeof(HeapObject));
     SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
 
-    EXPECT_EQ(2u, slab->reclaim_blocker_count());
+    EXPECT_EQ(1u, slab->slab_pin_count());
 }
 
 TEST(GlobalHeap, ExpandedDynamicAllocationPreservesPointerTag)

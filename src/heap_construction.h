@@ -35,7 +35,7 @@ namespace cl
         }
         catch(...)
         {
-            heap->drop_reclaim_blocker_for_failed_construction(memory);
+            heap->release_for_failed_construction(memory);
             throw;
         }
     }
@@ -67,7 +67,7 @@ namespace cl
             }
             catch(...)
             {
-                heap->drop_reclaim_blocker_for_failed_construction(memory);
+                heap->release_for_failed_construction(memory);
                 throw;
             }
         }
@@ -93,7 +93,7 @@ namespace cl
         }
         catch(...)
         {
-            heap->drop_reclaim_blocker_for_failed_construction(memory);
+            heap->release_for_failed_construction(memory);
             throw;
         }
     }

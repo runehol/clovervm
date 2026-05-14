@@ -11,8 +11,6 @@
 
 namespace cl
 {
-    class GlobalHeap;
-
     class SlabAllocator
     {
     public:
@@ -22,19 +20,26 @@ namespace cl
         static constexpr size_t ValidObjectBitmapWords =
             (ValidObjectBitmapBits + 63) / 64;
 
-        SlabAllocator(GlobalHeap *global_heap, size_t offset, size_t slab_size);
+        SlabAllocator(size_t offset, size_t slab_size);
         ~SlabAllocator();
 
-        void add_reclaim_blocker() { ++n_reclaim_blockers; }
-        void drop_reclaim_blocker();
-        uint32_t reclaim_blocker_count() const { return n_reclaim_blockers; }
+        void add_active_allocator_pin() { ++n_slab_pins; }
+        void drop_active_allocator_pin()
+        {
+            assert(n_slab_pins > 0);
+            --n_slab_pins;
+        }
+        void add_epoch_discovery_pin() { ++n_slab_pins; }
+        void drop_epoch_discovery_pin()
+        {
+            assert(n_slab_pins > 0);
+            --n_slab_pins;
+        }
+        uint32_t slab_pin_count() const { return n_slab_pins; }
 
         char *start() const { return start_ptr; }
         char *end() const { return end_ptr; }
-        char *first_valid_object_slot_for_testing() const
-        {
-            return first_object_header;
-        }
+        char *first_object_slot() const { return first_object_header; }
 
         void mark_valid_object(HeapObject *obj);
         void clear_valid_object(HeapObject *obj)
@@ -56,6 +61,28 @@ namespace cl
                 }
             }
             return false;
+        }
+
+        bool has_slab_pins() const { return n_slab_pins != 0; }
+
+        bool has_reclaim_blockers() const
+        {
+            return has_slab_pins() || has_valid_objects();
+        }
+
+        uint64_t count_valid_objects_slow() const
+        {
+            uint64_t count = 0;
+            for(uint64_t word: valid_object_bitmap)
+            {
+                count += __builtin_popcountll(word);
+            }
+            return count;
+        }
+
+        uint64_t count_reclaim_blockers_slow() const
+        {
+            return slab_pin_count() + count_valid_objects_slow();
         }
 
         template <typename Fn> void for_each_valid_object(Fn &&fn) const
@@ -115,13 +142,12 @@ namespace cl
             return bit_idx;
         }
 
-        GlobalHeap *global_heap;
         char *start_ptr;
         char *curr_ptr;
         char *end_ptr;
         char *first_object_header;
         std::array<uint64_t, ValidObjectBitmapWords> valid_object_bitmap = {};
-        uint32_t n_reclaim_blockers = 0;
+        uint32_t n_slab_pins = 0;
     };
 
     inline void SlabAllocator::mark_valid_object(HeapObject *obj)

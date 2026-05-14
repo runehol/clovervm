@@ -26,7 +26,6 @@ namespace cl
                 char *result = local_allocator->allocate(n_bytes);
                 if(likely(result != nullptr))
                 {
-                    local_allocator->add_reclaim_blocker();
                     return result;
                 }
             }
@@ -35,9 +34,9 @@ namespace cl
         }
 
         void switch_to_new_slabs();
-        void drop_reclaim_blocker_for_failed_construction(char *memory)
+        void release_for_failed_construction(char *memory)
         {
-            global_heap->drop_reclaim_blocker_for_failed_construction(memory);
+            global_heap->release_for_failed_construction(memory);
         }
         void mark_valid_object(HeapObject *obj)
         {
@@ -62,13 +61,13 @@ namespace cl
 
     private:
         NOINLINE char *allocate_slow(size_t n_bytes);
-        void add_allocator_reclaim_blocker(SlabAllocator *allocator)
+        void add_active_allocator_pin(SlabAllocator *allocator)
         {
-            allocator->add_reclaim_blocker();
+            allocator->add_active_allocator_pin();
         }
-        void drop_allocator_reclaim_blocker(SlabAllocator *allocator)
+        void drop_active_allocator_pin(SlabAllocator *allocator)
         {
-            allocator->drop_reclaim_blocker();
+            allocator->drop_active_allocator_pin();
         }
 
         GlobalHeap *global_heap;

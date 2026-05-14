@@ -6,12 +6,13 @@ namespace cl
         : global_heap(_global_heap),
           local_allocator(global_heap->make_new_slab())
     {
-        add_allocator_reclaim_blocker(local_allocator);
+        add_active_allocator_pin(local_allocator);
     }
 
     ThreadLocalHeap::~ThreadLocalHeap()
     {
-        drop_allocator_reclaim_blocker(local_allocator);
+        drop_active_allocator_pin(local_allocator);
+        global_heap->release_slab_if_empty(local_allocator);
     }
 
     char *ThreadLocalHeap::allocate_slow(size_t n_bytes)
@@ -24,11 +25,11 @@ namespace cl
         SlabAllocator *old_allocator = local_allocator;
         SlabAllocator *new_allocator = global_heap->make_new_slab();
         local_allocator = new_allocator;
-        add_allocator_reclaim_blocker(local_allocator);
-        drop_allocator_reclaim_blocker(old_allocator);
+        add_active_allocator_pin(local_allocator);
+        drop_active_allocator_pin(old_allocator);
+        global_heap->release_slab_if_empty(old_allocator);
         char *memory = local_allocator->allocate(n_bytes);
         assert(memory != nullptr);
-        local_allocator->add_reclaim_blocker();
         return memory;
     }
 
@@ -36,7 +37,8 @@ namespace cl
     {
         SlabAllocator *old_allocator = local_allocator;
         local_allocator = global_heap->make_new_slab();
-        add_allocator_reclaim_blocker(local_allocator);
-        drop_allocator_reclaim_blocker(old_allocator);
+        add_active_allocator_pin(local_allocator);
+        drop_active_allocator_pin(old_allocator);
+        global_heap->release_slab_if_empty(old_allocator);
     }
 }  // namespace cl

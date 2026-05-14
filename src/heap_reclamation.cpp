@@ -57,10 +57,28 @@ namespace cl
                 SlabAllocator *slab =
                     refcounted_heap.slab_for_object_unlocked(obj);
                 obj->lifecycle_state = HeapLifecycleState::Dead;
-                slab->drop_reclaim_blocker();
+                slab->clear_valid_object(obj);
+                remember_touched_slab(slab);
+            }
+
+            void release_empty_touched_slabs()
+            {
+                for(SlabAllocator *slab: touched_slabs)
+                {
+                    refcounted_heap.release_slab_if_empty(slab);
+                }
             }
 
         private:
+            void remember_touched_slab(SlabAllocator *slab)
+            {
+                bool inserted = touched_slab_set.insert(slab).second;
+                if(inserted)
+                {
+                    touched_slabs.push_back(slab);
+                }
+            }
+
             void add_to_current_zero_count_table_if_needed(HeapObject *obj)
             {
                 assert(obj != nullptr);
@@ -105,6 +123,8 @@ namespace cl
 
             GlobalHeap &refcounted_heap;
             std::vector<HeapObject *> &current_zct;
+            absl::flat_hash_set<SlabAllocator *> touched_slab_set;
+            std::vector<SlabAllocator *> touched_slabs;
         };
     }  // namespace
 
@@ -206,6 +226,7 @@ namespace cl
         }
 
         zero_count_table.resize(keep);
+        reclamation_context.release_empty_touched_slabs();
     }
 
     void run_heap_reclamation(const ThreadStateList &threads)

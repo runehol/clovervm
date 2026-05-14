@@ -43,8 +43,9 @@ namespace cl
 
         char *allocate(size_t n_bytes) { return allocate_global(n_bytes); }
         char *allocate_global(size_t n_bytes);
-        void drop_reclaim_blocker_for_failed_construction(char *memory);
+        void release_for_failed_construction(char *memory);
         void mark_valid_object(HeapObject *obj);
+        bool release_slab_if_empty(SlabAllocator *slab);
 
         template <typename T, typename... Args>
         T *make_global_internal_raw(Args &&...args)
@@ -79,15 +80,14 @@ namespace cl
             return slab_for_address_unlocked(obj);
         }
         uint64_t total_reclaim_blockers_for_testing() const;
+        uint64_t count_valid_objects_slow() const;
         bool has_slab_for_address_for_testing(const void *ptr) const;
 
     private:
-        friend class SlabAllocator;
-
         void register_slab_pages_locked(SlabAllocator *slab);
         void unregister_slab_pages_locked(SlabAllocator *slab);
         SlabAllocator *make_new_slab(size_t actual_slab_size);
-        void reclaim_slab(SlabAllocator *slab);
+        void release_slab_locked(SlabAllocator *slab);
 
         mutable std::mutex heap_mutex;
         std::deque<std::unique_ptr<SlabAllocator>> slabs;

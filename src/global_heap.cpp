@@ -29,8 +29,8 @@ namespace cl
         const std::lock_guard<std::mutex> lock(heap_mutex);
         SlabAllocator *slab =
             slabs
-                .emplace_front(std::make_unique<SlabAllocator>(
-                    this, offset, actual_slab_size))
+                .emplace_front(
+                    std::make_unique<SlabAllocator>(offset, actual_slab_size))
                 .get();
         register_slab_pages_locked(slab);
         return slab;
@@ -72,9 +72,8 @@ namespace cl
         return it->second;
     }
 
-    void GlobalHeap::reclaim_slab(SlabAllocator *slab)
+    void GlobalHeap::release_slab_locked(SlabAllocator *slab)
     {
-        const std::lock_guard<std::mutex> lock(heap_mutex);
         unregister_slab_pages_locked(slab);
         auto it = std::find_if(
             slabs.begin(), slabs.end(),
@@ -85,6 +84,19 @@ namespace cl
         slabs.erase(it);
     }
 
+    bool GlobalHeap::release_slab_if_empty(SlabAllocator *slab)
+    {
+        assert(slab != nullptr);
+        const std::lock_guard<std::mutex> lock(heap_mutex);
+        if(slab->has_reclaim_blockers())
+        {
+            return false;
+        }
+
+        release_slab_locked(slab);
+        return true;
+    }
+
     char *GlobalHeap::allocate_large_object(size_t n_bytes)
     {
         size_t required_slab_size =
@@ -93,7 +105,6 @@ namespace cl
         SlabAllocator *single_allocator = make_new_slab(required_slab_size);
         char *memory = single_allocator->allocate(n_bytes);
         assert(memory != nullptr);
-        single_allocator->add_reclaim_blocker();
         return memory;
     }
 
@@ -105,9 +116,9 @@ namespace cl
         return global_allocator->allocate(n_bytes);
     }
 
-    void GlobalHeap::drop_reclaim_blocker_for_failed_construction(char *memory)
+    void GlobalHeap::release_for_failed_construction(char *memory)
     {
-        slab_for_address_unlocked(memory)->drop_reclaim_blocker();
+        release_slab_if_empty(slab_for_address_unlocked(memory));
     }
 
     void GlobalHeap::mark_valid_object(HeapObject *obj)
@@ -121,7 +132,18 @@ namespace cl
         uint64_t total = 0;
         for(const std::unique_ptr<SlabAllocator> &slab: slabs)
         {
-            total += slab->reclaim_blocker_count();
+            total += slab->count_reclaim_blockers_slow();
+        }
+        return total;
+    }
+
+    uint64_t GlobalHeap::count_valid_objects_slow() const
+    {
+        const std::lock_guard<std::mutex> lock(heap_mutex);
+        uint64_t total = 0;
+        for(const std::unique_ptr<SlabAllocator> &slab: slabs)
+        {
+            total += slab->count_valid_objects_slow();
         }
         return total;
     }

@@ -41,6 +41,18 @@ namespace cl
             }
             return nullptr;
         }
+
+        bool slab_has_valid_object(SlabAllocator *slab, HeapObject *target)
+        {
+            bool found = false;
+            slab->for_each_valid_object([&](HeapObject *obj) {
+                if(obj == target)
+                {
+                    found = true;
+                }
+            });
+            return found;
+        }
     }  // namespace
 
     TEST(HeapReclamation, RootCollectionIncludesFrameSlotRoot)
@@ -187,18 +199,25 @@ namespace cl
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
         uint64_t blockers_before_alloc =
             heap.total_reclaim_blockers_for_testing();
+        uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
         ReclamationTestObject *object =
             thread->make_internal_raw<ReclamationTestObject>();
+        SlabAllocator *slab = heap.slab_for_object_unlocked(object);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(object));
         uint64_t blockers_after_alloc =
             heap.total_reclaim_blockers_for_testing();
         ASSERT_EQ(blockers_before_alloc + 1, blockers_after_alloc);
+        uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
+        ASSERT_EQ(valid_objects_before_alloc + 1, valid_objects_after_alloc);
+        ASSERT_TRUE(slab_has_valid_object(slab, object));
 
         ReclamationRootSet roots;
         process_zero_count_table_for_reclamation(*thread, roots);
 
         EXPECT_EQ(blockers_after_alloc - 1,
                   heap.total_reclaim_blockers_for_testing());
+        EXPECT_EQ(valid_objects_after_alloc - 1,
+                  heap.count_valid_objects_slow());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(object));
     }
 
@@ -211,6 +230,7 @@ namespace cl
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
         uint64_t blockers_before_alloc =
             heap.total_reclaim_blockers_for_testing();
+        uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
         ReclamationTestObject *child =
             thread->make_internal_raw<ReclamationTestObject>();
         ReclamationTestObject *owner =
@@ -220,15 +240,23 @@ namespace cl
         ASSERT_EQ(1, child->refcount);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(owner));
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(child));
+        SlabAllocator *owner_slab = heap.slab_for_object_unlocked(owner);
+        SlabAllocator *child_slab = heap.slab_for_object_unlocked(child);
+        ASSERT_TRUE(slab_has_valid_object(owner_slab, owner));
+        ASSERT_TRUE(slab_has_valid_object(child_slab, child));
         uint64_t blockers_after_alloc =
             heap.total_reclaim_blockers_for_testing();
         ASSERT_EQ(blockers_before_alloc + 2, blockers_after_alloc);
+        uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
+        ASSERT_EQ(valid_objects_before_alloc + 2, valid_objects_after_alloc);
 
         ReclamationRootSet roots;
         process_zero_count_table_for_reclamation(*thread, roots);
 
         EXPECT_EQ(blockers_after_alloc - 2,
                   heap.total_reclaim_blockers_for_testing());
+        EXPECT_EQ(valid_objects_after_alloc - 2,
+                  heap.count_valid_objects_slow());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(owner));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(child));
     }
@@ -242,6 +270,7 @@ namespace cl
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
         uint64_t blockers_before_alloc =
             heap.total_reclaim_blockers_for_testing();
+        uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
         String *child = thread->make_object_raw<String>(L"tuple-child");
         Tuple *owner = thread->make_object_raw<Tuple>(1);
         ASSERT_FALSE(layout_is_expanded(owner->layout));
@@ -249,15 +278,23 @@ namespace cl
         ASSERT_EQ(1, child->refcount);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(owner));
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(child));
+        SlabAllocator *owner_slab = heap.slab_for_object_unlocked(owner);
+        SlabAllocator *child_slab = heap.slab_for_object_unlocked(child);
+        ASSERT_TRUE(slab_has_valid_object(owner_slab, owner));
+        ASSERT_TRUE(slab_has_valid_object(child_slab, child));
         uint64_t blockers_after_alloc =
             heap.total_reclaim_blockers_for_testing();
         ASSERT_EQ(blockers_before_alloc + 2, blockers_after_alloc);
+        uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
+        ASSERT_EQ(valid_objects_before_alloc + 2, valid_objects_after_alloc);
 
         ReclamationRootSet roots;
         process_zero_count_table_for_reclamation(*thread, roots);
 
         EXPECT_EQ(blockers_after_alloc - 2,
                   heap.total_reclaim_blockers_for_testing());
+        EXPECT_EQ(valid_objects_after_alloc - 2,
+                  heap.count_valid_objects_slow());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(owner));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(child));
     }
@@ -269,17 +306,27 @@ namespace cl
         ThreadState::ActivationScope active_thread(thread);
         thread->drain_zero_count_table_for_testing();
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+        uint64_t blockers_before_alloc =
+            heap.total_reclaim_blockers_for_testing();
+        uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
         Tuple *tuple = thread->make_object_raw<Tuple>(object_layout_count_mask);
         ASSERT_TRUE(layout_is_expanded(tuple->layout));
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
+        SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
+        ASSERT_TRUE(slab_has_valid_object(slab, tuple));
         uint64_t blockers_after_alloc =
             heap.total_reclaim_blockers_for_testing();
+        ASSERT_EQ(blockers_before_alloc + 1, blockers_after_alloc);
+        uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
+        ASSERT_EQ(valid_objects_before_alloc + 1, valid_objects_after_alloc);
 
         ReclamationRootSet roots;
         process_zero_count_table_for_reclamation(*thread, roots);
 
         EXPECT_EQ(blockers_after_alloc - 1,
                   heap.total_reclaim_blockers_for_testing());
+        EXPECT_EQ(valid_objects_after_alloc - 1,
+                  heap.count_valid_objects_slow());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
     }
 
@@ -334,16 +381,20 @@ namespace cl
         void *tuple_address = tuple;
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
         ASSERT_TRUE(heap.has_slab_for_address_for_testing(tuple_address));
-        EXPECT_EQ(
-            1u, heap.slab_for_object_unlocked(tuple)->reclaim_blocker_count());
+        SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
+        EXPECT_EQ(0u, slab->slab_pin_count());
+        ASSERT_EQ(1u, slab->count_valid_objects_slow());
         uint64_t blockers_after_alloc =
             heap.total_reclaim_blockers_for_testing();
+        uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
 
         ReclamationRootSet roots;
         process_zero_count_table_for_reclamation(*thread, roots);
 
         EXPECT_EQ(blockers_after_alloc - 1,
                   heap.total_reclaim_blockers_for_testing());
+        EXPECT_EQ(valid_objects_after_alloc - 1,
+                  heap.count_valid_objects_slow());
         EXPECT_FALSE(heap.has_slab_for_address_for_testing(tuple_address));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
     }
