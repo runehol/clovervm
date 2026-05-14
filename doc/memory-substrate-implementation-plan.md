@@ -29,12 +29,13 @@ C-extension deallocation semantics in the first pass.
 
 ## First Vertical Milestone
 
-Phases 1 through 6 form one vertical correctness milestone: lifecycle/ZCT
-plumbing, slab accounting, descriptor-based teardown, safepoint arrival, root
-collection, and ZCT processing. Early phases should add internal assertions and
-focused unit tests where possible, but full semantic validation only becomes
-meaningful once every-safepoint reclamation, managed root collection, and serial
-ZCT processing are all in place.
+Phases 1 through 7 now form one vertical correctness milestone: lifecycle/ZCT
+plumbing, slab accounting, value-span teardown, safepoint arrival, root
+collection, ZCT processing, and whole-slab release. Early phases should add
+internal assertions and focused unit tests where possible, but full semantic
+validation only becomes meaningful once every-safepoint reclamation, managed
+root collection, serial ZCT processing, and slab blocker release are all in
+place.
 
 ## Phase 1: Heap Lifecycle State And ZCT Plumbing
 
@@ -96,8 +97,8 @@ Validation:
 Validation:
 
 - [x] Tests that failed construction drops the object reclaim blocker exactly once.
-- [ ] Tests that constructed objects decrement their owning slab exactly once during
-  reclamation.
+- [x] Tests that constructed objects decrement their owning slab during
+  reclamation without reading reclaimed object memory.
 - [x] Tests that an otherwise empty slab is not reset while installed as an active
   allocation slab.
 - [x] Tests that a dedicated large-object slab has no active-allocator blocker,
@@ -145,9 +146,10 @@ Validation:
 2. [x] Add a safepoint scan record to `ThreadState`:
    - `lowest_live_stack_slot`
    - `accumulator_or_not_present`
-3. [x] Add two bytecode forms or equivalent interpreter hooks:
-   - safepoint with no live accumulator
-   - safepoint with live accumulator
+3. [x] Add committed-state interpreter hooks, not standalone safepoint
+   bytecodes:
+   - committed safepoint with no live accumulator
+   - committed safepoint with live accumulator
 4. [ ] Insert safepoint polls only at initial scan-safe locations:
    - [x] function entry after frame setup and argument adaptation
    - [x] normal function return after the caller frame has been restored
@@ -156,27 +158,26 @@ Validation:
    first pass.
 5. [x] Keep the safepoint fast path as a cheap flag check that preserves hot opcode
    handler shape.
-6. [x] Put publishing and reclamation work in a cold slow path.
-7. [x] Add a debug/test mode that treats every executed safepoint as a reclamation
-   trigger. In this mode, each safepoint should publish its scan record and run
-   the single-threaded reclamation path immediately, even if ordinary allocation
-   pressure would not request a safepoint. This is required for meaningful
-   reclaimer testing because it exercises root publication and ZCT processing at
-   every allowed location.
+6. [x] Put scan-record publishing and VM-global reclamation in cold slow paths.
+   `ThreadState::handle_safepoint()` runs per-arrival testing callbacks with the
+   active thread installed, then enters `NoActiveThreadScope` and calls
+   `VirtualMachine::complete_safepoint()`. `complete_safepoint()` owns
+   `run_heap_reclamation(threads)`, clears the request, and refires testing mode
+   if needed.
+7. [x] Add a debug/test mode that treats every committed safepoint as a
+   reclamation trigger. In this mode, the VM keeps a safepoint request pending
+   after each completion, so every allowed call/return poll publishes its scan
+   record and runs heap reclamation even if ordinary allocation pressure would
+   not request a safepoint.
 8. [ ] Audit safepoint check placement so no check is reachable while borrowed
    `Value`s are live only in C++ helper locals.
 
 Validation:
 
 - [ ] Interpreter tests that safepoints can be requested and reached at entry,
-  return, and loop back edges.
+  return, and eventually loop back edges.
 - [x] Reclamation tests run with the every-safepoint reclamation mode enabled.
 - [x] Existing hot-path frame checks still pass for hot opcode handlers.
-- [ ] Tests that call preparation and argument adaptation are not safepoint
-  locations.
-- [ ] Tests that exception propagation and unwind paths are not safepoint locations.
-- [ ] Debug or targeted tests for helpers that must discharge borrowed values before
-  reaching a safepoint check.
 
 ## Phase 5: Conservative Managed Root Collection
 
@@ -219,40 +220,41 @@ Validation:
    processed so cascades can be handled in the same safepoint.
 6. [x] After teardown, transition the object to `Dead`, decrement its slab
    reclaim-blocker count, and make the allocation invalid for ordinary heap use
-   for currently supported compact metadata layouts.
+   for currently supported compact and expanded metadata layouts.
 7. [x] Add debug validation that no heap object appears in more than one ZCT.
 
 Validation:
 
 - [x] Tests for root-kept ZCT entries remaining in the ZCT across safepoints.
 - [x] Tests for positive-refcount stale ZCT entries returning to `Normal`.
-- [x] Tests for unrooted compact-layout ZCT entries transitioning to `Dead`.
+- [x] Tests for unrooted ZCT entries being reclaimed without inspecting the
+  object after its blocker may have released the backing slab.
 - [x] Tests for cascaded child reclamation during the same safepoint.
 - [x] Tests for duplicate-ZCT detection in debug builds.
 
-## Phase 7: Whole-Slab Reuse
+## Phase 7: Whole-Slab Release
 
-1. [ ] When object teardown decrements the slab reclaim-blocker count to zero,
-   hand the slab to `GlobalHeap` for reclamation immediately. The slab-level
-   zero-blocker handoff exists; object teardown has not been wired into it yet.
+1. [x] When object teardown decrements the slab reclaim-blocker count to zero,
+   hand the slab to `GlobalHeap` for reclamation immediately.
 2. [x] Treat active allocation installation as a slab reclaim blocker. A slab with no
-   constructed objects but still installed in a `ThreadLocalHeap` is not reusable
-   by any other allocation context.
-3. [ ] Return empty ordinary slabs to the ordinary free slab pool only after
-   no constructed objects and no active allocation installation remain.
-4. [x] Return empty dedicated large-object slabs to the appropriate dedicated slab
-   pool or release path.
-5. [x] Keep partial-slab reuse out of the baseline.
-6. [ ] Add allocation tests that demonstrate reuse of a fully dead slab.
+   constructed objects but still installed in a `ThreadLocalHeap` is not eligible
+   for release.
+3. [x] Return empty dedicated large-object slabs to the release path.
+4. [x] Keep partial-slab hole allocation out of the baseline.
+5. [x] Switch the VM's default thread to fresh slabs after builtin
+   initialization, so bootstrap objects and runtime allocations naturally
+   separate by lifetime. `ThreadLocalHeap::switch_to_new_slabs()` opens new
+   allocator slabs; future size-class routing will switch one active slab family
+   at a time.
 
 Validation:
 
-- [ ] Tests that a slab is not reused while any constructed object remains live or
-  stack-rooted.
-- [x] Tests that a slab is not reused while still installed as a thread's active
+- [x] Tests that a slab is not released while still installed as a thread's active
   allocation slab, even if no constructed objects remain in it.
-- [ ] Tests that a fully reclaimed ordinary slab is reused by later ordinary
-  allocations.
+- [x] Tests that a dedicated large-object slab whose only blocker is the object
+  blocker disappears from slab lookup after reclamation.
+- [x] Tests that VM bootstrap switches post-initialization allocations to fresh
+  slabs.
 - [x] Existing allocation and interpreter tests continue to pass.
 
 ## Phase 8: Policy And Pressure
@@ -265,7 +267,7 @@ Validation:
    - objects reclaimed
    - objects kept by stack roots
    - objects returned to `Normal`
-   - slabs reused
+   - slabs released
 4. Add failure-mode tests for allocation pressure while a safepoint is pending.
 
 Validation:
@@ -299,13 +301,13 @@ Validation:
 Do not implement size-class routing in the first pass. The baseline allocator
 uses one ordinary slab family for regular allocations, plus the existing
 dedicated path for large allocations if needed. After reclamation invariants are
-working, ordinary slabs can be split into size-class families.
+working, ordinary slabs can be split into size-class families for placement.
 
 1. Compute final aligned allocation size before classification.
 2. Route small and medium allocations to thread-local active slabs by size
    class.
-3. Refill exhausted active slabs from class-specific free pools before
-   allocating fresh slabs.
+3. Open fresh class-specific active slabs when the current slab for that class
+   is exhausted.
 4. Route allocations above the dedicated-slab threshold to one-object dedicated
    slabs.
 5. Keep slab sizes page-aligned, quantized, and bounded by policy constants.
@@ -319,7 +321,7 @@ Validation:
 ## Explicit Non-Goals For The Baseline
 
 - Cycle collection.
-- Partial-slab reuse.
+- Partial-slab hole allocation.
 - Python-level finalizers, weakref callbacks, or resurrection.
 - C-extension `tp_dealloc` integration.
 - Size-class slab routing.
@@ -339,9 +341,11 @@ The baseline memory substrate is complete when:
    gone. This completion criterion covers acyclic unreachable reclaimable
    objects; reclaiming cycles is not part of the baseline.
 2. Object teardown releases owned children through descriptor-driven scanning,
-   and cascaded children can be reclaimed during the same safepoint.
+   and cascaded children can be reclaimed during the same safepoint. The current
+   implementation uses `ObjectValueSpan` over decoded `HeapLayout`; the
+   layout-ID descriptor facade is still future work.
 3. Slab reclaim-blocker counts match object allocation lifetimes plus active
-   allocator installation, and fully unblocked slabs can be reused.
+   allocator installation, and fully unblocked slabs are released.
 4. Safepoint polls exist only at the agreed initial scan-safe locations.
 5. Debug checks can detect duplicate ZCT entries and missing slab ownership.
 6. `ninja -C build-debug all check` passes.

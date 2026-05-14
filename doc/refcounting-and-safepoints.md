@@ -8,8 +8,9 @@ This is safe, because there's no way for the heap to point at the stack.
 
 We'll also have non-reclaimable immortal/interned values. These are marked in
 the value so you don't have to dereference them, and the refcount itself will be
-`-1`. The `INCREF` and `DECREF` operations will be performed using atomic
-operations for reclaimable heap references.
+`-1`. The current single-threaded implementation keeps refcounts as plain fields
+behind helper APIs. The no-GIL version should make `INCREF` and `DECREF` atomic
+for reclaimable heap references.
 
 Reclaimability is determined by allocation heap and pointer tag, not by the
 semantic type of the object. Objects allocated from a `ThreadState`'s
@@ -213,11 +214,11 @@ false positive ZCT hits.
 
 The scanner should not infer liveness from frame shape, bytecode, or
 `CodeObject` metadata. When the interpreter arrives at a safepoint, the
-safepoint check instruction writes a normalized stack-scan record into
-`ThreadState`. The safepoint instruction encodes the lowest live stack slot as
-a signed offset relative to the current `fp`. Use two opcode forms: one
-safepoint instruction publishes the accumulator as live, and the other publishes
-`Value::not_present()`. The record contains:
+committed call/return slow path writes a normalized stack-scan record into
+`ThreadState`. The explicit safepoint bytecodes were removed; safepoint polling
+now lives in places where the interpreter has already committed to a stable
+frame state. There are two cold helper paths: one publishes the accumulator as
+live, and the other publishes `Value::not_present()`. The record contains:
 
 - the lowest live stack slot for that safepoint;
 - `accumulator_or_not_present`.
@@ -235,8 +236,8 @@ Debug builds should validate that `lowest_live_stack_slot` is within the managed
 stack bounds and does not scan past the sentinel.
 
 The initial scanner does not need to walk frame headers as a linked frame chain.
-If a future scanner needs frame-structured traversal, the safepoint check
-instruction can also checkpoint the current `fp`, but that is not part of the
+If a future scanner needs frame-structured traversal, the safepoint slow path
+can also checkpoint the current `fp`, but that is not part of the
 first root-scanning contract. One likely reason to add this later is support for
 a mixed native/managed stack model where the scanner must recognize transition
 frames between native and managed execution.
@@ -255,34 +256,29 @@ outgoing argument area does not need to be scanned.
 
 These safepoint locations also give useful liveness facts:
 
-- At function entry, the callee's locals and temporaries are dead or
-  uninitialized. Parameters and frame headers are live. The safepoint encodes
-  `lowest_live_stack_slot = fp` and uses the no-accumulator opcode form.
+- At function entry, the callee frame has been established and argument
+  adaptation has completed. The current implementation publishes the
+  frame-owned scan slice computed from the `CodeObject`'s below-frame and
+  outgoing-call slot counts, and uses the no-accumulator helper path.
 - At normal function return, the safepoint occurs while the returning frame is
-  still installed. The returning frame's locals and temporaries are dead, and the
-  return value lives in the accumulator carried by the published interpreter
-  state. The safepoint can conservatively publish the returning frame's `fp` as
-  the lowest live stack slot, scanning upward through its header/parameters and
-  caller frames, without reconstructing the caller's live extent. The safepoint
-  encodes `lowest_live_stack_slot = fp` and uses the accumulator-live opcode
-  form.
-  Scanning the callee's arguments at this point is acceptable even though they
-  died logically at return; they died immediately before the safepoint, and the
-  conservative retention is preferable to reconstructing caller state.
-  This keeps return safepoints centralized next to `Return`-style opcodes
-  instead of requiring every opcode that may indirectly call Python code, such as
-  arithmetic or descriptor operations, to identify and safepoint all possible
-  return PCs.
+  committed: the caller frame has been restored, and the return value lives in
+  the accumulator carried by the published interpreter state. The implementation
+  again publishes the restored current frame's conservative scan slice and uses
+  the accumulator-live helper path. This keeps return safepoints centralized
+  next to `Return`-style opcodes instead of requiring every opcode that may
+  indirectly call Python code, such as arithmetic or descriptor operations, to
+  identify and safepoint all possible return PCs.
 - At codegen-marked loop back edges, expression temporaries are dead. Locals and
-  frame headers remain live. Codegen knows where it emits loops and inserts a
-  safepoint instruction with the appropriate lowest live local/header boundary.
-  The safepoint encodes the lowest live local slot and uses the no-accumulator
-  opcode form.
+  frame headers remain live. Loop safepoints are intentionally deferred; when
+  they are added, codegen should mark loop back edges and publish the
+  appropriate lowest live local/header boundary through the no-accumulator
+  helper path.
 
 Only normal function-return safepoints normally publish the accumulator as live.
-Function-entry and loop-back safepoints normally publish `Value::not_present()`
-for `accumulator_or_not_present`; the instruction encoding still makes
-accumulator liveness explicit rather than something the scanner guesses.
+Function-entry and future loop-back safepoints normally publish
+`Value::not_present()` for `accumulator_or_not_present`; the committed helper
+selection makes accumulator liveness explicit rather than something the scanner
+guesses.
 
 The first implementation may still conservatively scan broader frame-owned
 storage if that is simpler, but these liveness facts define where eager clearing
@@ -343,11 +339,11 @@ executing, allocating, and mutating their stacks and ZCTs. Once a thread reaches
 the safepoint slow path, publishes its scan record, and enters `GC`, it must stop
 allocation and stack/ZCT mutation until the coordinator releases it.
 
-The safepoint instruction fast path should be a hot-path poll: check the global
-pending-safepoint flag and continue immediately if it is clear. This fast path
-must not set up a stack frame. When the flag is set, the instruction branches to
-a slow path that publishes the safepoint's stack-scan record and enters
-coordination/reclamation.
+The safepoint fast path is a hot-path poll embedded in committed call/return
+paths: check the global pending-safepoint flag and continue immediately if it is
+clear. This fast path must not set up a stack frame. When the flag is set, the
+opcode handler tail-calls a cold helper that publishes the stack-scan record and
+enters coordination/reclamation.
 
 The first implementation can be single-threaded, but the API shape should leave
 room for a global coordinator that iterates the registered `ThreadState`s tracked
@@ -405,17 +401,22 @@ point.
 
 ### 2. Arrival
 
-Attached threads poll the global flag at allowed safepoint instructions:
-function entry, normal function return, and codegen-marked loop back edges. If
-the flag is clear, the hot path continues. If the flag is set, the slow path
+Attached threads poll the global flag at allowed committed interpreter states:
+function entry and normal function return today, and codegen-marked loop back
+edges later. If the flag is clear, the hot path continues. If the flag is set,
+the slow path
 publishes the thread's stack-scan record:
 
 - `lowest_live_stack_slot`;
 - `accumulator_or_not_present`;
 - any future fields needed by the scanner.
 
-The thread then enters `GC` state and stops mutating managed stacks, ZCTs, and
-heap ownership until reclamation is complete.
+The multi-threaded design has the thread enter `GC` state and stop mutating
+managed stacks, ZCTs, and heap ownership until reclamation is complete. The
+current single-threaded implementation instead runs the per-arrival testing
+callback with the active thread still installed, then enters
+`ThreadState::NoActiveThreadScope` and calls
+`VirtualMachine::complete_safepoint()`.
 
 Detached threads do not need to execute an arrival slow path, but they must have
 left behind a stable scan record at detach time. If the detached thread has no
@@ -463,13 +464,14 @@ kept prefix. Zero-refcount objects not found in roots transition to
 `Reclaiming`, are torn down, and eventually transition to `Dead`.
 
 While a ZCT is being processed, object teardown uses explicit reclamation
-scanning code rather than ordinary hot-path `decref()` calls. That reclamation
-context is passed the ZCT or thread state to use for newly-zero children. Child
-references that reach zero should append to the same ZCT currently being walked.
-This improves locality and, more importantly, lets the dynamic scan process
-cascaded children in the same safepoint sweep. If a cascaded child is
-stack-rooted, it is copied into the kept prefix and remains in that ZCT for the
-next safepoint.
+scanning code rather than ordinary hot-path `decref()` calls. The current
+implementation decodes an `ObjectValueSpan` for the concrete heap object from
+its `HeapLayout`, clears each owned slot, and releases the copied child value
+through the reclamation context. Child references that reach zero append to the
+same ZCT currently being walked. This improves locality and, more importantly,
+lets the dynamic scan process cascaded children in the same safepoint sweep. If
+a cascaded child is stack-rooted, it is copied into the kept prefix and remains
+in that ZCT for the next safepoint.
 
 ZCT processing should be serial in the first multi-thread-capable design. Unlike
 root scanning, it mutates lifecycle state, compacts ZCTs, runs teardown, appends
@@ -508,7 +510,7 @@ duplicate ZCT enqueue.
 After all ZCTs have been processed and slab accounting is complete, the
 coordinator clears the global pending-safepoint flag and releases arrived
 threads. Threads that were attached before the pause resume from their safepoint
-instructions. Detached threads remain detached and must reattach before touching
+poll sites. Detached threads remain detached and must reattach before touching
 Python/Clover objects again.
 
 clovervm will only implement the limited API.

@@ -2,6 +2,12 @@
 
 ## Context
 
+The current heap reclaimer has an interim object-specific value-span helper:
+`ObjectValueSpan` is derived from the concrete `HeapObject`'s `HeapLayout`, and
+reclamation clears those slots before releasing copied child values. That is
+good enough for the acyclic deferred-refcount baseline, including compact and
+expanded dynamic layouts, but it is not the final descriptor facade.
+
 Today, heap object metadata encodes three scanning/deallocation facts per object:
 
 - total object size
@@ -140,7 +146,7 @@ Place `NativeLayoutId` in `HeapObject` (not only `Object`) so every heap entity
 uses one dispatch mechanism. This avoids bifurcated paths for non-`Object`
 records and keeps scanning logic uniform.
 
-## 2. Define `LayoutDescriptor`
+## 2. Define The Descriptor Facade
 
 ```cpp
 struct LayoutDescriptor {
@@ -213,7 +219,9 @@ At startup (or in debug builds):
 ## Migration Plan
 
 1. **Introduce the descriptor-shaped API without deleting current metadata.**
-   Reclamation should call this API from the start.
+   Reclamation should call this API instead of open-coding `HeapLayout`
+   decoding. The existing `ObjectValueSpan` helper is the useful nucleus, but
+   it should move behind the facade rather than become the facade itself.
 2. **Implement the normalized metadata-descriptor path.**
    Use it for layouts that can be described by size plus scanned `Value` spans.
    Bridge still-unmigrated layouts through existing `HeapLayout` decoding as a

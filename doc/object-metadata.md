@@ -84,16 +84,16 @@ It contains:
 The compact bit split is:
 
 - 1 bit for `expanded`
-- 3 bits for `value_offset_in_words`
-- 14 bits for `value_count`
+- 4 bits for `value_offset_in_words`
+- 13 bits for `value_count`
 - 14 bits for `object_size_in_16byte_units`
 
-This is a `1:3:14:14` layout.
+This is a `1:4:13:14` layout.
 
 In compact form this gives:
 
-- `value_offset_in_words` in the range `0..7`
-- `value_count` in the range `0..16383`
+- `value_offset_in_words` in the range `0..15`
+- `value_count` in the range `0..8191`
 - `object_size_in_16byte_units` in the range `0..16383`
 
 So compact objects can be up to `16383 * 16` bytes, just under 256 KiB.
@@ -101,9 +101,9 @@ So compact objects can be up to `16383 * 16` bytes, just under 256 KiB.
 A suitable conceptual packing is:
 
 ```text
-31            28            14             0
+31            27            14             0
 +-------------+-------------+--------------+
-| expanded:1  | offset:3    | count:14     |
+| expanded:1  | offset:4    | count:13     |
 +-------------+-------------+--------------+
 | object_size_in_16byte_units:14           |
 +------------------------------------------+
@@ -112,8 +112,8 @@ A suitable conceptual packing is:
 Equivalently:
 
 - bit 31: `expanded`
-- bits 28..30: `value_offset_in_words`
-- bits 14..27: `value_count`
+- bits 27..30: `value_offset_in_words`
+- bits 14..26: `value_count`
 - bits 0..13: `object_size_in_16byte_units`
 
 The expected usage is:

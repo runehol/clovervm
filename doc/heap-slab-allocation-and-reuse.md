@@ -6,16 +6,17 @@ This document describes the heap slab allocation and reuse part of CloverVM's
 memory substrate. The design combines:
 
 - Thread-local bump allocation
-- Atomic reference counting (RC)
+- Heap reference counting (RC), with atomic operations reserved for the
+  multi-threaded/no-GIL version
 - Deferred reclamation via safepoints
-- Whole-slab reuse
+- Whole-slab release, with reuse as the next pooling step
 
 The system is explicitly non-moving to preserve object address stability, which is required for compatibility with C extensions and direct pointer usage.
 
 The design is structured so that:
 
 - object liveness is determined by RC + ZCT + safepoint validation
-- memory reuse initially occurs at slab granularity
+- memory is released initially at slab granularity
 - allocation remains fast by routing requests to thread-local active slabs
 
 The first implementation uses one ordinary slab family for regular allocations.
@@ -33,8 +34,12 @@ allocator:
 
 - Allocation is performed via bump pointer within the current slab.
 - This path is lock-free and extremely fast.
-- When the slab is exhausted, it is closed for allocation and a new slab is
-  requested from the global heap or reused from the ordinary free slab pool.
+- When the slab is exhausted, the slow path opens a fresh slab, transfers the
+  active-allocator blocker, and allocates from the new slab. Ordinary free-slab
+  reuse is the next policy step.
+- `switch_to_new_slabs()` explicitly opens fresh active slabs. VM startup uses
+  this after builtin initialization so long-lived bootstrap allocations do not
+  share ordinary slabs with later runtime allocations.
 
 This preserves the fast-path property of the original design. Later size-class
 routing can improve packing and reduce fragmentation caused by mixing very
@@ -46,7 +51,8 @@ The `GlobalHeap` is responsible for:
 
 - Allocating new slabs (via OS-backed allocation)
 - Allocating large objects (see below)
-- Maintaining pools of free slabs for reuse
+- Maintaining the slab lookup table
+- Eventually maintaining pools of free slabs for reuse
 - Serving slab refill requests from thread-local heaps
 
 It is not involved in per-object allocation on the fast path.
@@ -133,7 +139,9 @@ keep the threshold consistent with its slab sizing strategy.
 
 ### Reference Counting
 
-- Heap references use atomic `INCREF` / `DECREF` operations.
+- Heap references use `INCREF` / `DECREF` helper operations. The current
+  single-threaded implementation uses plain refcount fields behind those
+  helpers; the multi-threaded/no-GIL version should make the operations atomic.
 - When `DECREF` reduces the reference count to zero, the object is not immediately reclaimed.
 
 ### Zero Count Table (ZCT)
@@ -143,11 +151,11 @@ keep the threshold consistent with its slab sizing strategy.
 
 ### Safepoint Validation
 
-Reclamation occurs only at safepoints:
+Reclamation occurs only after safepoint arrival:
 
 1. All threads reach a safepoint.
 2. Stack and register roots are scanned.
-3. Objects in the ZCT that are still reachable are removed.
+3. Objects in the ZCT that are still reachable remain in the ZCT.
 4. Remaining objects are considered truly dead and are reclaimed.
 
 This ensures correctness in the presence of:
@@ -210,13 +218,13 @@ See [Refcounting and Safepoints](refcounting-and-safepoints.md) for the
 At safepoint:
 
 - each truly dead object is:
-  - finalized (destructor / field `DECREF`)
+  - torn down by clearing owned `Value` slots and releasing copied child values
   - accounted for by decrementing its slab’s `n_reclaim_blockers`
 
-Finalization may `DECREF` child objects. If those children reach zero, they are
-added to the active ZCT and may be processed during the same safepoint.
+Teardown may release child objects. If those children reach zero, they are added
+to the active ZCT and may be processed during the same safepoint.
 
-### Whole-Slab Reuse
+### Whole-Slab Release And Later Reuse
 
 - when `slab->n_reclaim_blockers == 0`, the slab calls back to its owning
   `GlobalHeap` immediately for reclamation
@@ -225,7 +233,9 @@ added to the active ZCT and may be processed during the same safepoint.
 - a later policy may retain fully reclaimed slabs on a free list instead of
   immediately unmapping them
 
-At this stage, memory reuse occurs only at whole-slab granularity.
+At this stage, ordinary slabs are not reused; they are released when fully
+unblocked. The reuse design remains whole-slab granularity when the free-slab
+pool is added.
 
 ### Slab Lookup
 
@@ -295,12 +305,11 @@ follows:
 
 1. Compute final aligned allocation size.
 2. Attempt bump allocation from the thread’s current ordinary slab.
-3. If exhausted, close the current slab for allocation, dropping the allocator's
-   reclaim blocker.
-4. Refill from the ordinary free slab pool or allocate a fresh slab from the
-   global heap.
-5. If the allocation exceeds the dedicated-slab threshold, bypass the ordinary
+3. If the fast path cannot satisfy the request, call the non-inlined slow path.
+4. If the allocation exceeds the dedicated-slab threshold, bypass the ordinary
    slab path and allocate a dedicated slab.
+5. Otherwise open a fresh ordinary slab, add the new allocator blocker, drop the
+   old allocator blocker, then reserve the object and add its object blocker.
 
 This preserves a simple fast path while avoiding general-purpose free-list allocation.
 
@@ -310,7 +319,9 @@ This preserves a simple fast path while avoiding general-purpose free-list alloc
 
 ### Reference Counts
 
-- Object reference counts are atomic, as references may be modified by multiple threads.
+- Object reference counts are plain fields in the first single-threaded design.
+- Future multi-threading should make refcount transitions atomic, because
+  references may be modified by multiple threads.
 
 ### Slab Counters
 
@@ -322,7 +333,7 @@ This preserves a simple fast path while avoiding general-purpose free-list alloc
 
 ### Global Structures
 
-- Free slab pools are synchronized.
+- Future free slab pools are synchronized.
 - The global heap is only accessed on slow paths.
 
 ---
@@ -350,7 +361,7 @@ during reclamation.
 
 - Fast allocation path (bump pointer, thread-local)
 - No object movement (stable addresses)
-- Simple whole-slab reuse path
+- Simple whole-slab release path now, with whole-slab reuse as a later policy
 - Simple reclamation model
 - Low synchronization overhead
 
@@ -358,9 +369,11 @@ during reclamation.
 
 - No partial slab reuse (fragmentation from mixed lifetimes remains possible)
 - Cyclic garbage is not reclaimed
-- Reclamation is delayed until safepoints
+- Reclamation is delayed until safepoint completion
 - Size-class routing is deferred, so early placement may mix object sizes within
   ordinary slabs
+- Ordinary free-slab reuse is deferred; fully unblocked slabs are currently
+  unregistered and unmapped
 
 ---
 
