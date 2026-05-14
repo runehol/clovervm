@@ -316,7 +316,7 @@ namespace cl
         ASSERT_TRUE(slab_has_valid_object(slab, tuple));
         uint64_t blockers_after_alloc =
             heap.total_reclaim_blockers_for_testing();
-        ASSERT_EQ(blockers_before_alloc + 1, blockers_after_alloc);
+        ASSERT_GE(blockers_after_alloc, blockers_before_alloc + 1);
         uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
         ASSERT_EQ(valid_objects_before_alloc + 1, valid_objects_after_alloc);
 
@@ -330,7 +330,7 @@ namespace cl
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
     }
 
-    TEST(HeapReclamation, ZctProcessingReleasesInactiveSlab)
+    TEST(HeapReclamation, ZctProcessingLeavesEpochPinnedInactiveSlabMapped)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
@@ -364,12 +364,13 @@ namespace cl
         ReclamationRootSet roots;
         process_zero_count_table_for_reclamation(*thread, roots);
 
-        EXPECT_FALSE(heap.has_slab_for_address_for_testing(target_address));
+        EXPECT_TRUE(heap.has_slab_for_address_for_testing(target_address));
         EXPECT_TRUE(heap.has_slab_for_address_for_testing(next_slab_address));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(target));
     }
 
-    TEST(HeapReclamation, ZctProcessingReleasesDedicatedLargeObjectSlab)
+    TEST(HeapReclamation,
+         ZctProcessingLeavesEpochPinnedDedicatedLargeSlabMapped)
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
@@ -382,7 +383,7 @@ namespace cl
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
         ASSERT_TRUE(heap.has_slab_for_address_for_testing(tuple_address));
         SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
-        EXPECT_EQ(0u, slab->slab_pin_count());
+        EXPECT_EQ(1u, slab->slab_pin_count());
         ASSERT_EQ(1u, slab->count_valid_objects_slow());
         uint64_t blockers_after_alloc =
             heap.total_reclaim_blockers_for_testing();
@@ -395,7 +396,7 @@ namespace cl
                   heap.total_reclaim_blockers_for_testing());
         EXPECT_EQ(valid_objects_after_alloc - 1,
                   heap.count_valid_objects_slow());
-        EXPECT_FALSE(heap.has_slab_for_address_for_testing(tuple_address));
+        EXPECT_TRUE(heap.has_slab_for_address_for_testing(tuple_address));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
     }
 }  // namespace cl

@@ -72,7 +72,10 @@ TEST(GlobalHeap, ThreadLocalHeapPinsActiveAllocatorSlab)
         memory = local_heap.allocate(sizeof(HeapObject));
         SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
 
-        EXPECT_EQ(1u, slab->slab_pin_count());
+        EXPECT_EQ(2u, slab->slab_pin_count());
+        EXPECT_EQ(1u, local_heap.ordinary_epoch_slab_count());
+        EXPECT_EQ(0u,
+                  local_heap.ordinary_inactive_slabs_since_reclamation_count());
     }
 
     EXPECT_FALSE(heap.has_slab_for_address_for_testing(memory));
@@ -86,7 +89,7 @@ TEST(GlobalHeap, OrdinaryRawAllocationDoesNotPinObject)
     char *memory = local_heap.allocate(sizeof(HeapObject));
     SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
 
-    EXPECT_EQ(1u, slab->slab_pin_count());
+    EXPECT_EQ(2u, slab->slab_pin_count());
     EXPECT_EQ(0u, slab->count_valid_objects_slow());
 }
 
@@ -97,14 +100,17 @@ TEST(GlobalHeap, OpeningNewOrdinarySlabDropsPreviousActivePin)
 
     char *first = local_heap.allocate(SlabLookupGranuleSize / 2);
     SlabAllocator *first_slab = heap.slab_for_address_unlocked(first);
-    ASSERT_EQ(1u, first_slab->slab_pin_count());
+    ASSERT_EQ(2u, first_slab->slab_pin_count());
 
     char *second = local_heap.allocate(SlabLookupGranuleSize / 2);
     SlabAllocator *second_slab = heap.slab_for_address_unlocked(second);
 
     EXPECT_NE(first_slab, second_slab);
-    EXPECT_FALSE(heap.has_slab_for_address_for_testing(first));
-    EXPECT_EQ(1u, second_slab->slab_pin_count());
+    EXPECT_TRUE(heap.has_slab_for_address_for_testing(first));
+    EXPECT_EQ(1u, first_slab->slab_pin_count());
+    EXPECT_EQ(2u, second_slab->slab_pin_count());
+    EXPECT_EQ(2u, local_heap.ordinary_epoch_slab_count());
+    EXPECT_EQ(1u, local_heap.ordinary_inactive_slabs_since_reclamation_count());
 }
 
 TEST(GlobalHeap, SwitchingThreadLocalHeapToNewSlabsDropsPreviousActivePin)
@@ -113,15 +119,18 @@ TEST(GlobalHeap, SwitchingThreadLocalHeapToNewSlabsDropsPreviousActivePin)
     ThreadLocalHeap local_heap(&heap);
     char *first = local_heap.allocate(sizeof(HeapObject));
     SlabAllocator *first_slab = heap.slab_for_address_unlocked(first);
-    ASSERT_EQ(1u, first_slab->slab_pin_count());
+    ASSERT_EQ(2u, first_slab->slab_pin_count());
 
     local_heap.switch_to_new_slabs();
     char *second = local_heap.allocate(sizeof(HeapObject));
     SlabAllocator *second_slab = heap.slab_for_address_unlocked(second);
 
     EXPECT_NE(first_slab, second_slab);
-    EXPECT_FALSE(heap.has_slab_for_address_for_testing(first));
-    EXPECT_EQ(1u, second_slab->slab_pin_count());
+    EXPECT_TRUE(heap.has_slab_for_address_for_testing(first));
+    EXPECT_EQ(1u, first_slab->slab_pin_count());
+    EXPECT_EQ(2u, second_slab->slab_pin_count());
+    EXPECT_EQ(2u, local_heap.ordinary_epoch_slab_count());
+    EXPECT_EQ(1u, local_heap.ordinary_inactive_slabs_since_reclamation_count());
 }
 
 TEST(GlobalHeap, VmBootstrapSwitchesDefaultThreadToFreshSlab)
@@ -134,11 +143,11 @@ TEST(GlobalHeap, VmBootstrapSwitchesDefaultThreadToFreshSlab)
         context.vm().get_refcounted_global_heap().slab_for_object_unlocked(
             object);
 
-    EXPECT_EQ(1u, slab->slab_pin_count());
+    EXPECT_EQ(2u, slab->slab_pin_count());
     EXPECT_EQ(1u, slab->count_valid_objects_slow());
 }
 
-TEST(GlobalHeap, DedicatedLargeRawAllocationHasNoActivePin)
+TEST(GlobalHeap, DedicatedLargeRawAllocationHasEpochPin)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
@@ -146,9 +155,14 @@ TEST(GlobalHeap, DedicatedLargeRawAllocationHasNoActivePin)
     char *memory = local_heap.allocate(LargeAllocationSize);
     SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
 
-    EXPECT_EQ(0u, slab->slab_pin_count());
+    EXPECT_EQ(1u, slab->slab_pin_count());
     EXPECT_EQ(0u, slab->count_valid_objects_slow());
+    EXPECT_EQ(1u, local_heap.dedicated_epoch_slab_count());
+    EXPECT_EQ(LargeAllocationSize,
+              local_heap.dedicated_large_bytes_since_reclamation_count());
     local_heap.release_for_failed_construction(memory);
+    EXPECT_EQ(0u, local_heap.dedicated_epoch_slab_count());
+    EXPECT_EQ(0u, local_heap.dedicated_large_bytes_since_reclamation_count());
 }
 
 TEST(GlobalHeap, DedicatedLargeAllocationConstructionFailureReleasesEmptySlab)
@@ -171,7 +185,7 @@ TEST(GlobalHeap, FailedOrdinaryConstructionLeavesActiveSlabUnmarked)
 
     char *memory = local_heap.allocate(sizeof(HeapObject));
     SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
-    EXPECT_EQ(1u, slab->slab_pin_count());
+    EXPECT_EQ(2u, slab->slab_pin_count());
     EXPECT_EQ(0u, slab->count_valid_objects_slow());
 }
 
@@ -227,6 +241,7 @@ TEST(GlobalHeap, DedicatedLargeObjectMarksOnlyBitZero)
     ASSERT_EQ(1u, objects.size());
     EXPECT_EQ(object, objects[0]);
     EXPECT_EQ(slab->first_object_slot(), reinterpret_cast<char *>(object));
+    EXPECT_EQ(1u, slab->slab_pin_count());
 }
 
 TEST(GlobalHeap, InternedHeapTracksSlabPins)
@@ -237,7 +252,7 @@ TEST(GlobalHeap, InternedHeapTracksSlabPins)
     char *memory = local_heap.allocate(sizeof(HeapObject));
     SlabAllocator *slab = heap.slab_for_address_unlocked(memory);
 
-    EXPECT_EQ(1u, slab->slab_pin_count());
+    EXPECT_EQ(2u, slab->slab_pin_count());
 }
 
 TEST(GlobalHeap, ExpandedDynamicAllocationPreservesPointerTag)

@@ -25,6 +25,7 @@
 #include "tuple_iterator.h"
 #include "value_string.h"
 #include "virtual_machine.h"
+#include <cstdint>
 #include <cstdio>
 #include <cwchar>
 #include <fmt/xchar.h>
@@ -307,6 +308,7 @@ static Value native_base_exception_with_message()
 }
 
 static void *g_every_safepoint_reclamation_target_address = nullptr;
+static uint64_t g_every_safepoint_reclamation_valid_objects = 0;
 
 static Value native_large_tuple_for_every_safepoint_reclamation()
 {
@@ -322,6 +324,8 @@ static Value native_capture_every_safepoint_reclamation_target(Value value)
     ThreadState *thread = active_thread();
     GlobalHeap &heap = thread->get_machine()->get_refcounted_global_heap();
     g_every_safepoint_reclamation_target_address = value.as.ptr;
+    g_every_safepoint_reclamation_valid_objects =
+        heap.count_valid_objects_slow();
     assert(heap.has_slab_for_address_for_testing(value.as.ptr));
     return Value::from_smi(0);
 }
@@ -1726,6 +1730,7 @@ TEST(Interpreter, call_native_zero_arg_function)
 TEST(Interpreter, every_safepoint_reclamation_reclaims_unrooted_object)
 {
     g_every_safepoint_reclamation_target_address = nullptr;
+    g_every_safepoint_reclamation_valid_objects = 0;
 
     test::VmTestContext test_context;
     ThreadState *thread = test_context.thread();
@@ -1756,7 +1761,9 @@ TEST(Interpreter, every_safepoint_reclamation_reclaims_unrooted_object)
 
     ASSERT_FALSE(result.is_exception_marker());
     ASSERT_NE(nullptr, g_every_safepoint_reclamation_target_address);
-    EXPECT_FALSE(heap.has_slab_for_address_for_testing(
+    EXPECT_LT(heap.count_valid_objects_slow(),
+              g_every_safepoint_reclamation_valid_objects);
+    EXPECT_TRUE(heap.has_slab_for_address_for_testing(
         g_every_safepoint_reclamation_target_address));
     EXPECT_FALSE(
         thread->zero_count_table_contains_for_testing(static_cast<HeapObject *>(
