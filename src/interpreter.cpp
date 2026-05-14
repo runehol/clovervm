@@ -3029,50 +3029,6 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_safepoint_slow(PARAMS)
-    {
-        int8_t lowest_live_stack_slot_offset = int8_t(pc[1]);
-        Value *lowest_live_stack_slot = fp + lowest_live_stack_slot_offset;
-        pc += 2;
-        thread->publish_safepoint_scan_record(lowest_live_stack_slot,
-                                              Value::not_present());
-        thread->handle_safepoint(accumulator, fp, pc, code_object);
-        START(0);
-        COMPLETE();
-    }
-
-    static Value op_safepoint(PARAMS)
-    {
-        if(unlikely(thread->safepoint_requested()))
-        {
-            MUSTTAIL return op_safepoint_slow(ARGS);
-        }
-        START(2);
-        COMPLETE();
-    }
-
-    NOINLINE static Value op_safepoint_with_accumulator_slow(PARAMS)
-    {
-        int8_t lowest_live_stack_slot_offset = int8_t(pc[1]);
-        Value *lowest_live_stack_slot = fp + lowest_live_stack_slot_offset;
-        pc += 2;
-        thread->publish_safepoint_scan_record(lowest_live_stack_slot,
-                                              accumulator);
-        thread->handle_safepoint(accumulator, fp, pc, code_object);
-        START(0);
-        COMPLETE();
-    }
-
-    static Value op_safepoint_with_accumulator(PARAMS)
-    {
-        if(unlikely(thread->safepoint_requested()))
-        {
-            MUSTTAIL return op_safepoint_with_accumulator_slow(ARGS);
-        }
-        START(2);
-        COMPLETE();
-    }
-
     DispatchTable make_dispatch_table()
     {
         DispatchTable tbl;
@@ -3171,9 +3127,6 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::ReturnToNative, op_return_to_native);
         SET_TABLE_ENTRY(Bytecode::ReturnPendingExceptionToNative,
                         op_return_pending_exception_to_native);
-        SET_TABLE_ENTRY(Bytecode::Safepoint, op_safepoint);
-        SET_TABLE_ENTRY(Bytecode::SafepointWithAccumulator,
-                        op_safepoint_with_accumulator);
         SET_TABLE_ENTRY(Bytecode::LdaActiveException, op_lda_active_exception);
         SET_TABLE_ENTRY(Bytecode::ActiveExceptionIsInstance,
                         op_active_exception_is_instance);

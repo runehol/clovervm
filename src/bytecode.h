@@ -162,8 +162,6 @@ namespace cl
         ReturnOrRaiseException,
         ReturnToNative,
         ReturnPendingExceptionToNative,
-        Safepoint,
-        SafepointWithAccumulator,
         LdaActiveException,
         ActiveExceptionIsInstance,
         DrainActiveExceptionInto,

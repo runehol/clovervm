@@ -234,11 +234,6 @@ namespace cl
         uint32_t emit_return_to_native(uint32_t source_offset);
         uint32_t
         emit_return_pending_exception_to_native(uint32_t source_offset);
-        uint32_t emit_safepoint(uint32_t source_offset,
-                                int8_t lowest_live_stack_slot_offset);
-        uint32_t
-        emit_safepoint_with_accumulator(uint32_t source_offset,
-                                        int8_t lowest_live_stack_slot_offset);
         uint32_t emit_lda_active_exception(uint32_t source_offset);
         uint32_t emit_active_exception_is_instance(uint32_t source_offset);
         uint32_t emit_drain_active_exception_into(uint32_t source_offset,

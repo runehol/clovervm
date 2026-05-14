@@ -276,25 +276,6 @@ namespace cl
     }
 
     uint32_t
-    CodeObjectBuilder::emit_safepoint(uint32_t source_offset,
-                                      int8_t lowest_live_stack_slot_offset)
-    {
-        uint32_t result =
-            emplace_back(source_offset, uint8_t(Bytecode::Safepoint));
-        emplace_back(source_offset, lowest_live_stack_slot_offset);
-        return result;
-    }
-
-    uint32_t CodeObjectBuilder::emit_safepoint_with_accumulator(
-        uint32_t source_offset, int8_t lowest_live_stack_slot_offset)
-    {
-        uint32_t result = emplace_back(
-            source_offset, uint8_t(Bytecode::SafepointWithAccumulator));
-        emplace_back(source_offset, lowest_live_stack_slot_offset);
-        return result;
-    }
-
-    uint32_t
     CodeObjectBuilder::emit_lda_active_exception(uint32_t source_offset)
     {
         return emit_opcode(source_offset, Bytecode::LdaActiveException);

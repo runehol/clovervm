@@ -336,10 +336,6 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "ReturnToNative");
             case cl::Bytecode::ReturnPendingExceptionToNative:
                 return format_to(out, "ReturnPendingExceptionToNative");
-            case cl::Bytecode::Safepoint:
-                return format_to(out, "Safepoint");
-            case cl::Bytecode::SafepointWithAccumulator:
-                return format_to(out, "SafepointWithAccumulator");
             case cl::Bytecode::LdaActiveException:
                 return format_to(out, "LdaActiveException");
             case cl::Bytecode::ActiveExceptionIsInstance:
@@ -784,12 +780,6 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::ReturnOrRaiseException:
             case cl::Bytecode::ReturnToNative:
             case cl::Bytecode::ReturnPendingExceptionToNative:
-                break;
-
-            case cl::Bytecode::Safepoint:
-            case cl::Bytecode::SafepointWithAccumulator:
-                format_to(out, " ");
-                disassemble_smi8(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::LdaActiveException:

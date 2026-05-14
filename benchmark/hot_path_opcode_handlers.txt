@@ -51,8 +51,6 @@ op_return
 op_return_or_raise_exception
 op_right_shift
 op_right_shift_smi
-op_safepoint
-op_safepoint_with_accumulator
 op_sta_global
 op_star
 op_star0
