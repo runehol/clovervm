@@ -145,7 +145,6 @@ namespace cl
         String *new_string = thread->make_object_raw<String>(L"new-owned");
         OwnedValue owner(Value::from_oop(old_string));
         OwnedValue keep_new(Value::from_oop(new_string));
-        thread->drain_zero_count_table_for_testing();
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
         ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);
 
@@ -166,7 +165,6 @@ namespace cl
         String *new_string = thread->make_object_raw<String>(L"new-member");
         MemberValue member(Value::from_oop(old_string));
         OwnedValue keep_new(Value::from_oop(new_string));
-        thread->drain_zero_count_table_for_testing();
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
         ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);
 

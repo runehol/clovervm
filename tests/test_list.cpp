@@ -108,7 +108,6 @@ TEST(List, SetItemUncheckedEnqueuesOverwrittenObject)
     OwnedValue keep_list(Value::from_oop(list));
     OwnedValue keep_new(Value::from_oop(new_string));
     list->append(Value::from_oop(old_string));
-    thread->drain_zero_count_table_for_testing();
     ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
     ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);
 

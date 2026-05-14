@@ -86,7 +86,6 @@ TEST(Dict, SetItemOverwriteEnqueuesOverwrittenObject)
     HeapObject *old_object = old_value.as.ptr;
     HeapObject *new_object = new_value.as.ptr;
     dict->set_item(key, old_value);
-    thread->drain_zero_count_table_for_testing();
     ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_object));
     ASSERT_EQ(HeapLifecycleState::Normal, old_object->lifecycle_state);
 

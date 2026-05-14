@@ -353,7 +353,6 @@ namespace cl
         HeapObject *fresh_slab_object =
             allocate_until_slab_changes(thread, heap, initial_slab);
         ASSERT_NE(nullptr, fresh_slab_object);
-        thread->drain_zero_count_table_for_testing();
 
         ReclamationTestObject *target =
             thread->make_internal_raw<ReclamationTestObject>();
