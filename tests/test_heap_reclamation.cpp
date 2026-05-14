@@ -409,4 +409,70 @@ namespace cl
         EXPECT_EQ(HeapLifecycleState::InZct, tuple->lifecycle_state);
         EXPECT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
     }
+
+    TEST(HeapReclamation, EpochScanIgnoresPositiveRefcountObject)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+        context.vm().run_heap_reclamation();
+        uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
+
+        ReclamationTestObject *object =
+            thread->make_internal_raw<ReclamationTestObject>();
+        incref_heap_ptr(object);
+        ASSERT_FALSE(thread->zero_count_table_contains_for_testing(object));
+        ASSERT_EQ(1, object->refcount);
+        ASSERT_EQ(HeapLifecycleState::Normal, object->lifecycle_state);
+        ASSERT_EQ(valid_objects_before_alloc + 1,
+                  heap.count_valid_objects_slow());
+
+        context.vm().run_heap_reclamation();
+
+        EXPECT_EQ(1, object->refcount);
+        EXPECT_EQ(HeapLifecycleState::Normal, object->lifecycle_state);
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(object));
+        EXPECT_EQ(valid_objects_before_alloc + 1,
+                  heap.count_valid_objects_slow());
+
+        decref_heap_ptr(object);
+        context.vm().run_heap_reclamation();
+    }
+
+    TEST(HeapReclamation, EpochScanIgnoresNonNormalYoungObjects)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+        context.vm().run_heap_reclamation();
+        uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
+
+        ReclamationTestObject *in_zct =
+            thread->make_internal_raw<ReclamationTestObject>();
+        ReclamationTestObject *reclaiming =
+            thread->make_internal_raw<ReclamationTestObject>();
+        ReclamationTestObject *dead =
+            thread->make_internal_raw<ReclamationTestObject>();
+        in_zct->lifecycle_state = HeapLifecycleState::InZct;
+        reclaiming->lifecycle_state = HeapLifecycleState::Reclaiming;
+        dead->lifecycle_state = HeapLifecycleState::Dead;
+        ASSERT_EQ(valid_objects_before_alloc + 3,
+                  heap.count_valid_objects_slow());
+
+        context.vm().run_heap_reclamation();
+
+        EXPECT_EQ(0, in_zct->refcount);
+        EXPECT_EQ(0, reclaiming->refcount);
+        EXPECT_EQ(0, dead->refcount);
+        EXPECT_EQ(HeapLifecycleState::InZct, in_zct->lifecycle_state);
+        EXPECT_EQ(HeapLifecycleState::Reclaiming, reclaiming->lifecycle_state);
+        EXPECT_EQ(HeapLifecycleState::Dead, dead->lifecycle_state);
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(in_zct));
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(reclaiming));
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(dead));
+        EXPECT_EQ(valid_objects_before_alloc + 3,
+                  heap.count_valid_objects_slow());
+    }
 }  // namespace cl
