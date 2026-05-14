@@ -48,6 +48,10 @@ namespace cl
                                                const ThreadState &thread);
     ReclamationRootSet
     collect_reclamation_roots_from_threads(const ThreadStateList &threads);
+#ifndef NDEBUG
+    void
+    validate_zero_count_tables_for_reclamation(const ThreadStateList &threads);
+#endif
     void
     process_zero_count_table_for_reclamation(ThreadState &thread,
                                              const ReclamationRootSet &roots);

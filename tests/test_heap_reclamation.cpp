@@ -116,6 +116,52 @@ namespace cl
         decref_heap_ptr(string);
     }
 
+#ifndef NDEBUG
+    TEST(HeapReclamation, ZctProcessingRejectsDuplicateZctEntry)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        drain_supported_zct_entries(thread);
+        ReclamationTestObject *object =
+            thread->make_internal_raw<ReclamationTestObject>();
+        ASSERT_TRUE(thread->zero_count_table_contains_for_testing(object));
+
+        object->lifecycle_state = HeapLifecycleState::Normal;
+        thread->add_to_zero_count_table_if_needed(object);
+        ASSERT_EQ(2u, thread->zero_count_table_size());
+
+        EXPECT_DEATH(
+            {
+                ReclamationRootSet roots;
+                process_zero_count_table_for_reclamation(*thread, roots);
+            },
+            "duplicate heap object in zero count table");
+    }
+
+    TEST(HeapReclamation, ReclamationRejectsDuplicateEntryAcrossThreadZcts)
+    {
+        EXPECT_DEATH(
+            {
+                VirtualMachine vm;
+                ThreadStateList threads;
+                threads.push_back(std::make_unique<ThreadState>(&vm));
+                threads.push_back(std::make_unique<ThreadState>(&vm));
+
+                ThreadState *first_thread = threads[0].get();
+                ThreadState *second_thread = threads[1].get();
+                ThreadState::ActivationScope active_thread(first_thread);
+                ReclamationTestObject *object =
+                    first_thread->make_internal_raw<ReclamationTestObject>();
+                object->lifecycle_state = HeapLifecycleState::Normal;
+                second_thread->add_to_zero_count_table_if_needed(object);
+
+                validate_zero_count_tables_for_reclamation(threads);
+            },
+            "duplicate heap object in zero count table");
+    }
+#endif
+
     TEST(HeapReclamation, ZctProcessingKeepsStackRootedZeroEntry)
     {
         test::VmTestContext context;

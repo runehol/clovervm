@@ -66,7 +66,7 @@ ZCT processing are all in place.
 Validation:
 
 - [x] Unit tests for duplicate enqueue prevention.
-- [ ] Debug-only checks that every ZCT entry has lifecycle state `InZct`.
+- [x] Debug-only checks that every ZCT entry has lifecycle state `InZct`.
 - [ ] Tests for `OwnedValue`, `MemberValue`, and container/object stores that
   exercise zero-refcount enqueue rather than immediate recursive destruction.
 - [ ] Cross-phase validation after Phases 4 and 5: tests showing a newly allocated
@@ -222,7 +222,7 @@ Validation:
 6. [x] After teardown, transition the object to `Dead`, decrement its slab
    reclaim-blocker count, and make the allocation invalid for ordinary heap use
    for currently supported compact metadata layouts.
-7. Add debug validation that no heap object appears in more than one ZCT.
+7. [x] Add debug validation that no heap object appears in more than one ZCT.
 
 Validation:
 
@@ -230,7 +230,7 @@ Validation:
 - [x] Tests for positive-refcount stale ZCT entries returning to `Normal`.
 - [x] Tests for unrooted compact-layout ZCT entries transitioning to `Dead`.
 - [x] Tests for cascaded child reclamation during the same safepoint.
-- Tests for duplicate-ZCT detection in debug builds.
+- [x] Tests for duplicate-ZCT detection in debug builds.
 
 ## Phase 7: Whole-Slab Reuse
 

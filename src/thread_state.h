@@ -30,6 +30,11 @@ namespace cl
     void
     process_zero_count_table_for_reclamation(ThreadState &thread,
                                              const ReclamationRootSet &roots);
+#ifndef NDEBUG
+    void validate_zero_count_table_for_reclamation(const ThreadState &thread);
+    void validate_zero_count_tables_for_reclamation(
+        const std::vector<std::unique_ptr<ThreadState>> &threads);
+#endif
 
     ClassObject *class_for_native_layout(VirtualMachine *vm, NativeLayoutId id);
 
@@ -262,6 +267,12 @@ namespace cl
 
         friend void process_zero_count_table_for_reclamation(
             ThreadState &thread, const ReclamationRootSet &roots);
+#ifndef NDEBUG
+        friend void
+        validate_zero_count_table_for_reclamation(const ThreadState &thread);
+        friend void validate_zero_count_tables_for_reclamation(
+            const std::vector<std::unique_ptr<ThreadState>> &threads);
+#endif
 
         VirtualMachine *machine;
         bool *safepoint_requested_ptr;

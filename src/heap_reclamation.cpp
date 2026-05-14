@@ -139,10 +139,42 @@ namespace cl
         return roots;
     }
 
+#ifndef NDEBUG
+    void validate_zero_count_table_for_reclamation(const ThreadState &thread)
+    {
+        absl::flat_hash_set<HeapObject *> seen;
+        for(HeapObject *obj: thread.zero_count_table)
+        {
+            assert(obj != nullptr);
+            assert(obj->lifecycle_state == HeapLifecycleState::InZct);
+            bool inserted = seen.insert(obj).second;
+            assert(inserted && "duplicate heap object in zero count table");
+        }
+    }
+
+    void
+    validate_zero_count_tables_for_reclamation(const ThreadStateList &threads)
+    {
+        absl::flat_hash_set<HeapObject *> seen;
+        for(const std::unique_ptr<ThreadState> &thread: threads)
+        {
+            validate_zero_count_table_for_reclamation(*thread);
+            for(HeapObject *obj: thread->zero_count_table)
+            {
+                bool inserted = seen.insert(obj).second;
+                assert(inserted && "duplicate heap object in zero count table");
+            }
+        }
+    }
+#endif
+
     void
     process_zero_count_table_for_reclamation(ThreadState &thread,
                                              const ReclamationRootSet &roots)
     {
+#ifndef NDEBUG
+        validate_zero_count_table_for_reclamation(thread);
+#endif
         std::vector<HeapObject *> &zero_count_table = thread.zero_count_table;
         ReclamationContext reclamation_context(
             thread.get_machine()->get_refcounted_global_heap(),
@@ -178,6 +210,9 @@ namespace cl
 
     void run_heap_reclamation(const ThreadStateList &threads)
     {
+#ifndef NDEBUG
+        validate_zero_count_tables_for_reclamation(threads);
+#endif
         ReclamationRootSet roots =
             collect_reclamation_roots_from_threads(threads);
         for(const std::unique_ptr<ThreadState> &thread: threads)
