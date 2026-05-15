@@ -5,6 +5,7 @@
 #include "code_object.h"
 #include "dict.h"
 #include "exception_object.h"
+#include "float.h"
 #include "function.h"
 #include "instance.h"
 #include "list.h"
@@ -27,6 +28,7 @@
     V(ListIterator);                                                           \
     V(ExceptionObject);                                                        \
     V(StopIterationObject);                                                    \
+    V(Float);                                                                  \
     V(Function);                                                               \
     V(Dict);                                                                   \
     V(String);                                                                 \

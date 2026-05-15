@@ -7,33 +7,35 @@ work sprawl into constructors, imports, or a general numeric tower.
 
 ## Stage 1: Heap Float Type And Builtin Class
 
+Status: complete.
+
 Goal: create a Python-visible heap type that can exist in the VM, without
 literal parsing or arithmetic yet.
 
 Implementation pieces:
 
-- add `Float` in `src/float.h` and `src/float.cpp`;
-- store one `double value`;
-- use `CL_DECLARE_EMPTY_VALUE_SPAN(Float)`;
-- use `CL_DECLARE_STATIC_OBJECT_SIZE(Float)`;
-- add `NativeLayoutId::Float`;
-- add `Float` to the native layout registry;
-- add `make_float_class` and `install_float_class_methods`;
-- add `VirtualMachine::float_class()`;
-- register the builtin class during VM bootstrap;
-- expose `float` in builtin scope through the existing builtin class loop.
+- [x] add `Float` in `src/float.h` and `src/float.cpp`;
+- [x] store one `double value`;
+- [x] include only the inherited `Object` value span;
+- [x] use `CL_DECLARE_STATIC_OBJECT_SIZE(Float)`;
+- [x] add `NativeLayoutId::Float`;
+- [x] add `Float` to the native layout registry;
+- [x] add `make_float_class` and `install_float_class_methods`;
+- [x] add `VirtualMachine::float_class()`;
+- [x] register the builtin class during VM bootstrap;
+- [x] expose `float` in builtin scope through the existing builtin class loop.
 
 Initial methods:
 
-- `float.__str__`;
-- `float.__repr__`.
+- [x] `float.__str__`;
+- [x] `float.__repr__`.
 
 Tests:
 
-- VM bootstrap exposes builtin `float`;
-- a directly allocated `Float` has native layout `Float`;
-- `__class__` of a float object is the VM's `float` class;
-- `repr` and `str` work for direct C++-created float objects if convenient.
+- [x] VM bootstrap exposes builtin `float`;
+- [x] a directly allocated `Float` has native layout `Float`;
+- [x] `__class__` of a float object is the VM's `float` class;
+- [x] `repr` and `str` work for direct C++-created float objects.
 
 Non-goals:
 
@@ -44,7 +46,7 @@ Non-goals:
 
 Validation:
 
-- `ninja -C build-debug all check`.
+- [x] `ninja -C build-debug all check`.
 
 ## Stage 2: Float Literal Tokenization And Parsing
 

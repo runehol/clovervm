@@ -49,15 +49,15 @@ public:
 
     double value;
 
-    CL_DECLARE_EMPTY_VALUE_SPAN(Float);
+    CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(Float, Object, 0);
     CL_DECLARE_STATIC_OBJECT_SIZE(Float);
 };
 ```
 
-The object has no owned child `Value`s, so reclamation can use an empty static
-value span. The class object should be registered like other builtin classes and
-inserted into the builtin scope as `float`, but calling that class is not part of
-the first feature.
+The object has no float-specific child `Value`s, so the native release span only
+extends the inherited `Object` span. The class object should be registered like
+other builtin classes and inserted into the builtin scope as `float`, but
+calling that class is not part of the first feature.
 
 `Value::is_integer()` should remain SMI-only. A float is a pointer value whose
 native layout is `NativeLayoutId::Float`.

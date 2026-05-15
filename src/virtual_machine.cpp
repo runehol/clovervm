@@ -6,6 +6,7 @@
 #include "dict.h"
 #include "exception_object.h"
 #include "exception_propagation.h"
+#include "float.h"
 #include "function.h"
 #include "heap_reclamation.h"
 #include "instance.h"
@@ -305,6 +306,7 @@ namespace cl
             0, 0, fixed_attribute_shape_flags());
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_dict_class(this));
+        register_builtin_class(make_float_class(this));
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));
@@ -345,6 +347,7 @@ namespace cl
         install_list_class_methods(this);
         install_tuple_class_methods(this);
         install_dict_class_methods(this);
+        install_float_class_methods(this);
     }
 
     void VirtualMachine::initialize_builtin_scope()

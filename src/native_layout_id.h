@@ -13,6 +13,7 @@ namespace cl
         List,
         Tuple,
         Dict,
+        Float,
         Function,
         RangeIterator,
         TupleIterator,

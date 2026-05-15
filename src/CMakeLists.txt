@@ -37,6 +37,8 @@ add_library(libclovervm STATIC
     exception_object.cpp
     exception_object.h
     exception_propagation.h
+    float.cpp
+    float.h
     function.cpp
     global_heap.cpp
     global_heap.h

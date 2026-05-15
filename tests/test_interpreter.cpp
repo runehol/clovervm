@@ -6,6 +6,7 @@
 #include "compilation_unit.h"
 #include "dict.h"
 #include "exception_object.h"
+#include "float.h"
 #include "function.h"
 #include "instance.h"
 #include "interpreter.h"
@@ -3148,6 +3149,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         {NativeLayoutId::List, L"list"},
         {NativeLayoutId::Tuple, L"tuple"},
         {NativeLayoutId::Dict, L"dict"},
+        {NativeLayoutId::Float, L"float"},
         {NativeLayoutId::Function, L"function"},
         {NativeLayoutId::CodeObject, L"code"},
         {NativeLayoutId::RangeIterator, L"range_iterator"},
@@ -3270,6 +3272,38 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
               load_attr(add_method, dunder_doc_name));
     EXPECT_FALSE(
         str_class->set_own_property(dunder_str_name, Value::from_smi(99)));
+}
+
+TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    Value value = test_context.thread()->make_object_value<Float>(1.5);
+    ASSERT_TRUE(can_convert_to<Float>(value));
+    EXPECT_EQ(NativeLayoutId::Float,
+              value.get_ptr<Object>()->native_layout_id());
+    EXPECT_EQ(test_context.vm().float_class(),
+              value.get_ptr<Object>()->get_shape()->get_class());
+
+    TValue<String> dunder_str_name =
+        test_context.vm().get_or_create_interned_string_value(L"__str__");
+    TValue<String> dunder_repr_name =
+        test_context.vm().get_or_create_interned_string_value(L"__repr__");
+
+    Value str_result =
+        test_context.thread()->call_clovervm_method(value, dunder_str_name);
+    ASSERT_TRUE(can_convert_to<String>(str_result));
+    EXPECT_TRUE(string_eq(
+        TValue<String>::from_value_unchecked(str_result),
+        test_context.vm().get_or_create_interned_string_value(L"1.5")));
+
+    Value repr_result =
+        test_context.thread()->call_clovervm_method(value, dunder_repr_name);
+    ASSERT_TRUE(can_convert_to<String>(repr_result));
+    EXPECT_TRUE(string_eq(
+        TValue<String>::from_value_unchecked(repr_result),
+        test_context.vm().get_or_create_interned_string_value(L"1.5")));
 }
 
 TEST(Interpreter, range_builtin_returns_range_iterator)

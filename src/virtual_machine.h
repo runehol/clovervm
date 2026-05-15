@@ -129,6 +129,10 @@ namespace cl
         {
             return class_for_native_layout(NativeLayoutId::Dict);
         }
+        ClassObject *float_class() const
+        {
+            return class_for_native_layout(NativeLayoutId::Float);
+        }
         ClassObject *function_class() const
         {
             return class_for_native_layout(NativeLayoutId::Function);
