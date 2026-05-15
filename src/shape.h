@@ -2,6 +2,7 @@
 #define CL_SHAPE_H
 
 #include "heap_object.h"
+#include "native_layout_declarations.h"
 #include "owned.h"
 #include "owned_typed_value.h"
 #include "shape_descriptor.h"
@@ -138,6 +139,11 @@ namespace cl
                    sizeof(Value) + sizeof(DescriptorInfo) * property_count;
         }
 
+        static size_t object_size_in_bytes(const Shape *shape)
+        {
+            return size_for(shape->property_count());
+        }
+
         static DynamicLayoutSpec layout_spec_for(Value class_value,
                                                  Shape *previous_shape,
                                                  int32_t next_slot_index,
@@ -257,6 +263,10 @@ namespace cl
         Value descriptor_names[1];
 
     public:
+        static void dealloc(HeapObject *obj);
+
+        CL_DECLARE_CUSTOM_DEALLOC(Shape, dealloc);
+        CL_DECLARE_CUSTOM_OBJECT_SIZE(Shape, Shape::object_size_in_bytes);
         CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(Shape, class_value);
     };
 

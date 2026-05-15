@@ -11,6 +11,7 @@
 #include "list_iterator.h"
 #include "range_iterator.h"
 #include "scope.h"
+#include "shape.h"
 #include "str.h"
 #include "tuple.h"
 #include "tuple_iterator.h"
@@ -31,6 +32,7 @@
     V(CodeObject);                                                             \
     V(ValidityCell);                                                           \
     V(Scope);                                                                  \
+    V(Shape);                                                                  \
     V(ClassObject);
 
 #endif  // CL_NATIVE_LAYOUT_REGISTRY_H

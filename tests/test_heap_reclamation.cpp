@@ -3,6 +3,7 @@
 #include "global_heap.h"
 #include "heap_reclamation.h"
 #include "refcount.h"
+#include "shape.h"
 #include "tuple.h"
 
 #include <gtest/gtest.h>
@@ -282,6 +283,40 @@ namespace cl
         EXPECT_FALSE(
             thread->zero_count_table_contains_for_testing(code_object));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(child));
+    }
+
+    TEST(HeapReclamation, ShapeCustomDeallocReclaimsTransitionTarget)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+        context.vm().run_heap_reclamation();
+        uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
+
+        TValue<String> a_name(
+            context.vm().get_or_create_interned_string_value(L"a"));
+        Shape *root_shape = thread->make_internal_raw<Shape>(
+            Value::from_oop(context.vm().object_class()), nullptr, 0, 0,
+            shape_flag(ShapeFlag::None), 0);
+        Shape *child_shape =
+            root_shape->derive_transition(a_name, ShapeTransitionVerb::Add);
+        ASSERT_EQ(1, child_shape->refcount);
+
+        thread->add_to_zero_count_table_if_needed(root_shape);
+        ASSERT_TRUE(thread->zero_count_table_contains_for_testing(root_shape));
+        ASSERT_FALSE(
+            thread->zero_count_table_contains_for_testing(child_shape));
+        uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
+        ASSERT_EQ(valid_objects_before_alloc + 2, valid_objects_after_alloc);
+
+        context.vm().run_heap_reclamation();
+
+        EXPECT_EQ(valid_objects_after_alloc - 2,
+                  heap.count_valid_objects_slow());
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(root_shape));
+        EXPECT_FALSE(
+            thread->zero_count_table_contains_for_testing(child_shape));
     }
 
     TEST(HeapReclamation, FullReclamationReclaimsCompactDynamicObject)

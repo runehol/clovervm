@@ -199,7 +199,7 @@ spans have explicit custom teardown.
       on `HeapObject`.
 - [x] Migrate `ValidityCell`.
 - [x] Migrate `Scope`.
-- [ ] Migrate `Shape`, likely with custom dealloc because of transition vector
+- [x] Migrate `Shape`, likely with custom dealloc because of transition vector
       ownership.
 - [ ] Migrate `OverflowSlots`.
 - [ ] Erase template backing records into concrete native-layout types where

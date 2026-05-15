@@ -7,8 +7,10 @@
 #include "list_iterator.h"
 #include "native_layout_descriptor.h"
 #include "object.h"
+#include "overflow_slots.h"
 #include "range_iterator.h"
 #include "scope.h"
+#include "shape.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -457,10 +459,36 @@ TEST(NativeLayoutDescriptor, CodeObjectUsesCustomDeallocDescriptor)
     EXPECT_EQ(sizeof(CodeObject), object_size.static_size_in_bytes);
 }
 
+TEST(NativeLayoutDescriptor, ShapeUsesCustomDeallocAndCustomObjectSize)
+{
+    const ReleaseDescriptor &release =
+        release_descriptor_for(Shape::native_layout);
+
+    EXPECT_EQ(ReleaseKind::Custom, release.kind);
+    EXPECT_EQ(Shape::dealloc, release.custom_dealloc);
+
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptor_for(Shape::native_layout);
+
+    EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
+    ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
+}
+
+TEST(NativeLayoutDescriptor, ShapeNativeObjectSizeUsesPropertyCount)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    ClassObject *cls = context.vm().object_class();
+    Shape *shape = context.thread()->make_internal_raw<Shape>(
+        Value::from_oop(cls), nullptr, 0, 3, shape_flag(ShapeFlag::None), 0);
+
+    EXPECT_EQ(Shape::size_for(3), object_size_in_bytes(shape));
+}
+
 TEST(NativeLayoutDescriptor, UnmigratedLayoutsStillUseLegacyReleaseDescriptor)
 {
     EXPECT_EQ(ReleaseKind::LegacyHeapLayout,
-              release_descriptor_for(NativeLayoutId::Shape).kind);
+              release_descriptor_for(NativeLayoutId::OverflowSlots).kind);
 }
 
 TEST(NativeLayoutDescriptor, LegacyObjectSizeQueryUsesHeapLayout)

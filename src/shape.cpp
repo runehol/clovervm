@@ -1,5 +1,6 @@
 #include "shape.h"
 #include "class_object.h"
+#include "refcount.h"
 #include "str.h"
 #include "thread_state.h"
 #include "virtual_machine.h"
@@ -14,6 +15,24 @@ namespace cl
         : name(_name), verb(_verb), descriptor_flags(_descriptor_flags),
           next_shape(_next_shape)
     {
+    }
+
+    void Shape::dealloc(HeapObject *obj)
+    {
+        assert(obj->native_layout_id() == native_layout);
+        Shape *shape = static_cast<Shape *>(obj);
+
+        shape->transitions.clear();
+
+        decref(shape->class_value.release());
+        for(uint32_t idx = 0; idx < shape->property_count_; ++idx)
+        {
+            Value name = shape->descriptor_names[idx];
+            shape->descriptor_names[idx] = Value::not_present();
+            decref(name);
+        }
+
+        shape->~Shape();
     }
 
     Shape::Shape(HeapLayout layout, Value _class_value, Shape *_previous_shape,
