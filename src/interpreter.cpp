@@ -599,7 +599,8 @@ namespace cl
                     "InternalError: active exception required");
         }
 
-        accumulator = is_subclass_of(exception_class, handler_class)
+        accumulator = exception_class == handler_class ||
+                              is_subclass_of(exception_class, handler_class)
                           ? Value::True()
                           : Value::False();
         START(1);
