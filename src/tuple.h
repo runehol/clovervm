@@ -16,6 +16,10 @@ namespace cl
 {
     class ClassObject;
 
+    struct TupleFromFrameArgumentsTag
+    {
+    };
+
     class Tuple : public Object
     {
     public:
@@ -23,6 +27,18 @@ namespace cl
 
         Tuple(BootstrapObjectTag, size_t size);
         Tuple(ClassObject *cls, size_t size);
+        Tuple(ClassObject *cls, TupleFromFrameArgumentsTag, Value *fp,
+              int8_t first_arg_reg, uint32_t n_args)
+            : Object(cls, native_layout),
+              size_value(Value::from_smi(static_cast<int64_t>(n_args)))
+        {
+            for(uint32_t idx = 0; idx < n_args; ++idx)
+            {
+                Value value = fp[int32_t(first_arg_reg) - int32_t(idx)];
+                value.assert_not_vm_sentinel();
+                elements[idx] = incref(value);
+            }
+        }
 
         size_t size() const
         {
@@ -47,13 +63,8 @@ namespace cl
         static ALWAYSINLINE TValue<Tuple>
         from_frame_arguments(Value *fp, int8_t first_arg_reg, uint32_t n_args)
         {
-            TValue<Tuple> tuple = make_object_value<Tuple>(n_args);
-            for(uint32_t idx = 0; idx < n_args; ++idx)
-            {
-                tuple.extract()->initialize_item_unchecked(
-                    idx, fp[int32_t(first_arg_reg) - int32_t(idx)]);
-            }
-            return tuple;
+            return make_object_value<Tuple>(TupleFromFrameArgumentsTag{}, fp,
+                                            first_arg_reg, n_args);
         }
 
         static size_t size_for(size_t size)
@@ -68,6 +79,11 @@ namespace cl
         static size_t size_for(ClassObject *, size_t size)
         {
             return size_for(size);
+        }
+        static size_t size_for(ClassObject *, TupleFromFrameArgumentsTag,
+                               Value *, int8_t, uint32_t n_args)
+        {
+            return size_for(n_args);
         }
         static size_t object_size_in_bytes(const Tuple *tuple)
         {
