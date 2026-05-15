@@ -59,6 +59,10 @@ namespace cl
         ValueArray<Value> items;
 
     public:
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
+            List, Object, ValueArray<Value>::embedded_value_count);
+        CL_DECLARE_STATIC_OBJECT_SIZE(List);
+
         CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(
             List, Object, ValueArray<Value>::embedded_value_count);
     };

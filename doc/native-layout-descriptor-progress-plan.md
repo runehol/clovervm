@@ -87,27 +87,29 @@ legacy descriptor entries.
 
 Migrate fixed layouts first, in small groups.
 
-- [ ] Add class-local native descriptor declarations for static layouts using
+- [x] Add class-local native descriptor declarations for static layouts using
       the documented macros, independent of the legacy `CL_DECLARE_*LAYOUT*`
       macros.
-- [ ] Add `CL_DECLARE_EMPTY_VALUE_SPAN` and
+- [x] Add `CL_DECLARE_EMPTY_VALUE_SPAN` and
       `CL_DECLARE_STATIC_VALUE_SPAN` for static release descriptors.
-- [ ] Add `CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS`,
+- [x] Add `CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS`,
       `CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN_EXTENDS`, and
       `CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS` so derived layouts inherit
       base owned cells such as `Object::shape` and `Object::overflow_storage`.
-- [ ] Add `CL_DECLARE_STATIC_OBJECT_SIZE` for fixed opaque object-size
+- [x] Add `CL_DECLARE_STATIC_OBJECT_SIZE` for fixed opaque object-size
       descriptors.
-- [ ] Add namespace-scope `CL_DECLARE_NATIVE_LAYOUT(type)` registrations that
+- [x] Add namespace-scope `CL_DECLARE_NATIVE_LAYOUT(type)` registrations that
       consume the new class-local descriptor declarations, not the legacy
       packed-layout helpers.
-- [ ] Add `NativeLayoutTraits`, `NativeLayoutReleaseDescriptorBuilder`, and
+- [x] Add `NativeLayoutTraits`, `NativeLayoutReleaseDescriptorBuilder`, and
       `NativeLayoutObjectSizeDescriptorBuilder` so descriptor tables consume
       type-local native metadata mechanically.
-- [ ] During migration only, validate descriptor offset/count/size parity
-      against current `HeapLayout` metadata so mistakes are caught before the
-      legacy macros are removed.
-- [ ] Migrate `List`.
+- [ ] During migration only, use legacy `HeapLayout` parity as a compatibility
+      check for layouts whose legacy value region already covers all releasable
+      cells. Native release descriptors are the source of truth; `Object`
+      subclasses that include inherited `Object` cells will intentionally
+      diverge from legacy value-span counts.
+- [x] Migrate `List`.
 - [ ] Migrate `Dict`.
 - [ ] Migrate `Function`.
 - [ ] Migrate `RangeIterator`.
@@ -129,7 +131,7 @@ protecting the migration until the legacy heap-layout macros can be retired.
 - [ ] Add `DynamicSmiSpan` release support.
 - [ ] Use `Tuple::size_value` as the dynamic count source.
 - [ ] Start the tuple release span at `size_value`.
-- [ ] Set tuple `additional_value_count` to include fixed owned cells in the
+- [ ] Set tuple `additional_release_count` to include fixed owned cells in the
       same contiguous span, including the count cell itself.
 - [ ] Add tuple descriptor parity tests for compact dynamic layouts.
 - [ ] Add tuple descriptor parity tests for expanded dynamic layouts.
@@ -148,7 +150,7 @@ move to the aux field.
       `Shape::property_count()` or any other semantic descriptor count.
 - [ ] Use the class-declared first owned value offset as the instance release
       span start.
-- [ ] Set instance `additional_value_count` to the fixed owned fields before the
+- [ ] Set instance `additional_release_count` to the fixed owned fields before the
       inline slot payload in the current C++ layout.
 - [ ] Replace instance release dependence on `HeapLayout` value count with the
       descriptor's aux-count path.

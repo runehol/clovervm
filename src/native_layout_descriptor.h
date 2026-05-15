@@ -2,7 +2,9 @@
 #define CL_NATIVE_LAYOUT_DESCRIPTOR_H
 
 #include "heap_object.h"
+#include "native_layout_declarations.h"
 #include "native_layout_id.h"
+#include "native_layout_registry.h"
 #include "value.h"
 
 #include <array>
@@ -44,7 +46,7 @@ namespace cl
         uint16_t value_offset_words;
         uint32_t static_release_count;
         uint16_t count_offset_words;
-        uint32_t additional_value_count;
+        uint32_t additional_release_count;
         void (*custom_release)(HeapObject *);
 
         static constexpr ReleaseDescriptor missing()
@@ -57,12 +59,52 @@ namespace cl
             return ReleaseDescriptor{
                 ReleaseKind::LegacyHeapLayout, 0, 0, 0, 0, nullptr};
         }
+
+        static constexpr ReleaseDescriptor
+        static_span(uint16_t value_offset_words, uint32_t release_count)
+        {
+            return ReleaseDescriptor{ReleaseKind::StaticSpan,
+                                     value_offset_words,
+                                     release_count,
+                                     0,
+                                     0,
+                                     nullptr};
+        }
+
+        static constexpr ReleaseDescriptor
+        dynamic_smi_span(uint16_t count_offset_words,
+                         uint16_t value_offset_words,
+                         uint32_t additional_release_count)
+        {
+            return ReleaseDescriptor{
+                ReleaseKind::DynamicSmiSpan, value_offset_words,       0,
+                count_offset_words,          additional_release_count, nullptr};
+        }
+
+        static constexpr ReleaseDescriptor
+        dynamic_aux_span(uint16_t value_offset_words,
+                         uint32_t additional_release_count)
+        {
+            return ReleaseDescriptor{ReleaseKind::DynamicAuxSpan,
+                                     value_offset_words,
+                                     0,
+                                     0,
+                                     additional_release_count,
+                                     nullptr};
+        }
+
+        static constexpr ReleaseDescriptor
+        custom(void (*custom_release)(HeapObject *))
+        {
+            return ReleaseDescriptor{ReleaseKind::Custom, 0, 0, 0, 0,
+                                     custom_release};
+        }
     };
 
     struct ObjectSizeDescriptor
     {
         ObjectSizeKind kind;
-        uint32_t static_size_in_16byte_units;
+        size_t static_size_in_bytes;
         uint16_t count_offset_words;
         uint32_t element_size_in_bytes;
         size_t (*custom_size_in_bytes)(const HeapObject *);
@@ -78,6 +120,19 @@ namespace cl
             return ObjectSizeDescriptor{ObjectSizeKind::LegacyHeapLayout, 0, 0,
                                         0, nullptr};
         }
+
+        static constexpr ObjectSizeDescriptor static_size(size_t size_in_bytes)
+        {
+            return ObjectSizeDescriptor{ObjectSizeKind::StaticSize,
+                                        size_in_bytes, 0, 0, nullptr};
+        }
+
+        static constexpr ObjectSizeDescriptor
+        custom(size_t (*custom_size_in_bytes)(const HeapObject *))
+        {
+            return ObjectSizeDescriptor{ObjectSizeKind::Custom, 0, 0, 0,
+                                        custom_size_in_bytes};
+        }
     };
 
     constexpr size_t native_layout_descriptor_count()
@@ -87,6 +142,78 @@ namespace cl
 
     namespace native_layout_descriptor_detail
     {
+        template <NativeLayoutId native_layout> struct NativeLayoutTraits;
+
+        template <typename T> struct NativeLayoutReleaseDescriptorBuilder
+        {
+            static constexpr ReleaseDescriptor build()
+            {
+                if constexpr(T::native_value_span_kind ==
+                             NativeValueSpanKind::Empty)
+                {
+                    return ReleaseDescriptor::static_span(0, 0);
+                }
+                else if constexpr(T::native_value_span_kind ==
+                                  NativeValueSpanKind::Static)
+                {
+                    return ReleaseDescriptor::static_span(
+                        T::native_value_offset_in_words(),
+                        T::native_static_release_count());
+                }
+                else if constexpr(T::native_value_span_kind ==
+                                  NativeValueSpanKind::DynamicSmi)
+                {
+                    return ReleaseDescriptor::dynamic_smi_span(
+                        T::native_value_count_offset_in_words(),
+                        T::native_value_offset_in_words(),
+                        T::native_additional_release_count());
+                }
+                else if constexpr(T::native_value_span_kind ==
+                                  NativeValueSpanKind::DynamicAux)
+                {
+                    return ReleaseDescriptor::dynamic_aux_span(
+                        T::native_value_offset_in_words(),
+                        T::native_additional_release_count());
+                }
+                else
+                {
+                    return ReleaseDescriptor::custom(T::native_custom_release);
+                }
+            }
+        };
+
+        template <typename T> struct NativeLayoutObjectSizeDescriptorBuilder
+        {
+            static constexpr ObjectSizeDescriptor build()
+            {
+                if constexpr(T::native_object_size_kind ==
+                             NativeObjectSizeKind::Static)
+                {
+                    return ObjectSizeDescriptor::static_size(
+                        T::native_static_object_size_in_bytes());
+                }
+                else
+                {
+                    return ObjectSizeDescriptor::custom(
+                        T::native_object_size_in_bytes);
+                }
+            }
+        };
+
+#define CL_DECLARE_NATIVE_LAYOUT(type)                                         \
+    template <> struct NativeLayoutTraits<type::native_layout>                 \
+    {                                                                          \
+        using object_type = type;                                              \
+        static constexpr NativeLayoutId native_layout = type::native_layout;   \
+        static constexpr const char *cpp_name = #type;                         \
+        static constexpr ReleaseDescriptor release =                           \
+            NativeLayoutReleaseDescriptorBuilder<type>::build();               \
+        static constexpr ObjectSizeDescriptor object_size =                    \
+            NativeLayoutObjectSizeDescriptorBuilder<type>::build();            \
+    }
+
+        CL_NATIVE_LAYOUT_REGISTRY(CL_DECLARE_NATIVE_LAYOUT);
+
         constexpr size_t native_layout_index(NativeLayoutId native_layout)
         {
             return static_cast<size_t>(native_layout);
@@ -129,7 +256,7 @@ namespace cl
             descriptors[native_layout_index(NativeLayoutId::String)] =
                 legacy_release_descriptor();
             descriptors[native_layout_index(NativeLayoutId::List)] =
-                legacy_release_descriptor();
+                NativeLayoutTraits<NativeLayoutId::List>::release;
             descriptors[native_layout_index(NativeLayoutId::Tuple)] =
                 legacy_release_descriptor();
             descriptors[native_layout_index(NativeLayoutId::Dict)] =
@@ -184,7 +311,7 @@ namespace cl
             descriptors[native_layout_index(NativeLayoutId::String)] =
                 legacy_object_size_descriptor();
             descriptors[native_layout_index(NativeLayoutId::List)] =
-                legacy_object_size_descriptor();
+                NativeLayoutTraits<NativeLayoutId::List>::object_size;
             descriptors[native_layout_index(NativeLayoutId::Tuple)] =
                 legacy_object_size_descriptor();
             descriptors[native_layout_index(NativeLayoutId::Dict)] =

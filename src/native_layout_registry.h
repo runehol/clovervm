@@ -1,0 +1,8 @@
+#ifndef CL_NATIVE_LAYOUT_REGISTRY_H
+#define CL_NATIVE_LAYOUT_REGISTRY_H
+
+#include "list.h"
+
+#define CL_NATIVE_LAYOUT_REGISTRY(V) V(List);
+
+#endif  // CL_NATIVE_LAYOUT_REGISTRY_H
