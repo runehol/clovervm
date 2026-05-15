@@ -212,3 +212,10 @@ The important split is:
 - unusual construction remains correct and contained in a generic protocol path.
 
 This keeps the hot path engineered and the slow path honest.
+
+Do not precompute a single post-constructor instance Shape from observed
+`__init__` stores. Different control-flow paths inside `__init__` can assign the
+same attributes in different orders, and that order is observable through the
+eventual instance dictionary view. Executed `StoreAttr` transitions should
+remain the source of truth; inline caches and future JIT code can optimize
+observed Shape paths locally.

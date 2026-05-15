@@ -800,6 +800,20 @@ dispatch. `cache_blockers` records why otherwise-successful lookups were not
 cache-friendly, but the interpreter does not separately consult it on the
 inline-cache path.
 
+Attribute lookup and mutation are split into two stages:
+
+1. **Resolution** returns a read or mutation descriptor.
+2. **Execution** runs the descriptor's successful plan against the current
+   receiver.
+
+That split is intentional. Cached execution must be reusable for another object
+with the same receiver Shape, so receiver-local plans use receiver-relative
+storage (`storage_owner == nullptr`), while class-chain plans may point at the
+class object that owns the resolved slot. Descriptor `__get__`, `__set__`, and
+`__delete__` calls must remain interpreter/VM-controlled execution steps rather
+than hidden work inside inlineable lookup helpers, because they may run Python
+bytecode, allocate, or raise.
+
 Object and class implementations should emit these descriptors directly:
 `Object` owns receiver-slot descriptors, while `ClassObject` owns
 instance-chain, class-chain, and metaclass-chain descriptors. The

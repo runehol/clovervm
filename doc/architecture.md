@@ -150,7 +150,6 @@ Detailed docs:
 
 - [Object Model](unified-object-model.md), especially "Inline Caches and Lookup
   Validity Cells"
-- [Unified Object Model Transition Plan](unified-object-model-transition-plan.md)
 
 ## Deferred Refcounting And Safepoints
 
