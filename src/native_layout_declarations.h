@@ -17,9 +17,10 @@ namespace cl
         CustomDealloc,
     };
 
-    enum class NativeObjectSizeKind : uint8_t
+    enum class ObjectSizeKind : uint8_t
     {
-        Static,
+        Missing,
+        StaticSize,
         Custom,
     };
 
@@ -143,16 +144,16 @@ namespace cl
     static constexpr auto native_dealloc = function;
 
 #define CL_DECLARE_STATIC_OBJECT_SIZE(type)                                    \
-    static constexpr NativeObjectSizeKind native_object_size_kind =            \
-        NativeObjectSizeKind::Static;                                          \
+    static constexpr ObjectSizeKind native_object_size_kind =                  \
+        ObjectSizeKind::StaticSize;                                            \
     static constexpr size_t native_static_object_size_in_bytes()               \
     {                                                                          \
         return sizeof(type);                                                   \
     }
 
 #define CL_DECLARE_CUSTOM_OBJECT_SIZE(type, function)                          \
-    static constexpr NativeObjectSizeKind native_object_size_kind =            \
-        NativeObjectSizeKind::Custom;                                          \
+    static constexpr ObjectSizeKind native_object_size_kind =                  \
+        ObjectSizeKind::Custom;                                                \
     static size_t native_object_size_in_bytes(const HeapObject *obj)           \
     {                                                                          \
         return function(static_cast<const type *>(obj));                       \

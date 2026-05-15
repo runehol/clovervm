@@ -14,15 +14,6 @@
 
 namespace cl
 {
-    enum class ObjectSizeKind : uint8_t
-    {
-        Missing,
-        StaticSize,
-        DynamicSmiSize,
-        DynamicAuxSize,
-        Custom,
-    };
-
     struct ReleaseDescriptor
     {
         ReleaseKind kind;
@@ -82,26 +73,23 @@ namespace cl
     {
         ObjectSizeKind kind;
         size_t static_size_in_bytes;
-        uint16_t count_offset_words;
-        uint32_t element_size_in_bytes;
         size_t (*custom_size_in_bytes)(const HeapObject *);
 
         static constexpr ObjectSizeDescriptor missing()
         {
-            return ObjectSizeDescriptor{ObjectSizeKind::Missing, 0, 0, 0,
-                                        nullptr};
+            return ObjectSizeDescriptor{ObjectSizeKind::Missing, 0, nullptr};
         }
 
         static constexpr ObjectSizeDescriptor static_size(size_t size_in_bytes)
         {
             return ObjectSizeDescriptor{ObjectSizeKind::StaticSize,
-                                        size_in_bytes, 0, 0, nullptr};
+                                        size_in_bytes, nullptr};
         }
 
         static constexpr ObjectSizeDescriptor
         custom(size_t (*custom_size_in_bytes)(const HeapObject *))
         {
-            return ObjectSizeDescriptor{ObjectSizeKind::Custom, 0, 0, 0,
+            return ObjectSizeDescriptor{ObjectSizeKind::Custom, 0,
                                         custom_size_in_bytes};
         }
     };
@@ -152,7 +140,7 @@ namespace cl
             static constexpr ObjectSizeDescriptor build()
             {
                 if constexpr(T::native_object_size_kind ==
-                             NativeObjectSizeKind::Static)
+                             ObjectSizeKind::StaticSize)
                 {
                     return ObjectSizeDescriptor::static_size(
                         T::native_static_object_size_in_bytes());

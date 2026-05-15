@@ -18,8 +18,6 @@ namespace cl
                 assert(descriptor.custom_size_in_bytes != nullptr);
                 return descriptor.custom_size_in_bytes(obj);
             case ObjectSizeKind::Missing:
-            case ObjectSizeKind::DynamicSmiSize:
-            case ObjectSizeKind::DynamicAuxSize:
                 break;
         }
 

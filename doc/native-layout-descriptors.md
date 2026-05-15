@@ -93,10 +93,11 @@ The hot release table should stay small:
 
 ```cpp
 enum class ReleaseKind : uint8_t {
+    Missing,
     StaticSpan,
     DynamicSmiSpan,
     DynamicAuxSpan,
-    Custom,
+    CustomDealloc,
 };
 
 struct ReleaseDescriptor {
@@ -116,10 +117,10 @@ each cell, and releases the copied value through the reclamation context's
 direct zero-count-table path. It does not call `decref()` or look up the active
 thread through TLS.
 
-`Custom` means the type owns its whole `tp_dealloc`-style procedure. A custom
-deallocator must release owned references in the correct order and run any
-required native teardown, including non-trivial C++ payload destruction. It runs
-while heap reclamation has installed the owning `ThreadState` as the active
+`CustomDealloc` means the type owns its whole `tp_dealloc`-style procedure. A
+custom deallocator must release owned references in the correct order and run
+any required native teardown, including non-trivial C++ payload destruction. It
+runs while heap reclamation has installed the owning `ThreadState` as the active
 thread, so it may use ordinary `decref()`/`Py_DecRef()` and route cascaded
 zero-count objects into that thread's zero-count table.
 
@@ -597,9 +598,9 @@ CL_DECLARE_STATIC_OBJECT_SIZE(type)
 CL_DECLARE_CUSTOM_OBJECT_SIZE(type, function)
 ```
 
-Static size expands to `NativeObjectSizeKind::Static` and
+Static size expands to `ObjectSizeKind::StaticSize` and
 `static_object_size_in_bytes() { return sizeof(type); }`. Custom size expands
-to `NativeObjectSizeKind::Custom` and a type-local
+to `ObjectSizeKind::Custom` and a type-local
 `native_object_size_in_bytes(const HeapObject *)` wrapper around the supplied
 function.
 
@@ -666,10 +667,10 @@ struct NativeLayoutObjectSizeDescriptorBuilder
     static constexpr ObjectSizeDescriptor build()
     {
         if constexpr(T::native_object_size_kind ==
-                     NativeObjectSizeKind::Static)
+                     ObjectSizeKind::StaticSize)
         {
             return ObjectSizeDescriptor::static_size(
-                T::static_object_size_in_bytes());
+                T::native_static_object_size_in_bytes());
         }
         else
         {
