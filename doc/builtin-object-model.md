@@ -55,12 +55,15 @@ The runtime deliberately separates:
 
 Python-visible identity is represented by `ClassObject` and Shape-backed
 `__class__` metadata. Native layout identity is an implementation detail used
-for casts, allocation, fast dispatch, and value scanning.
+for casts, allocation, fast dispatch, reclamation, and object-size queries.
 
-`Object` therefore stores both:
+The runtime keeps these facts on the appropriate base:
 
-- `Shape *shape`
-- `NativeLayoutId native_layout`
+- `HeapObject` stores `NativeLayoutId native_layout_id_` for native layout
+  dispatch.
+- `Object` stores `Shape *shape` for Python-visible class identity.
+- `SlotObject` stores overflow-slot state for layouts that physically support
+  inline or overflow attributes.
 
 Code that needs Python semantics should ask for the object's class/Shape. Code
 that needs native layout should use `native_layout_id()` or typed conversion
@@ -131,19 +134,24 @@ behavior, not Python-visible attributes directly.
 
 ## Runtime Layout Metadata
 
-The heap layout header still records:
+Heap-object release and opaque size queries are described by native-layout
+descriptors keyed by `NativeLayoutId`. The old packed heap-layout header is gone.
 
-- object size
-- value-region offset
-- value count
+Release descriptors describe one of:
 
-That offset remains useful. Some internal non-`Object` records have raw native
-prefixes and should not be forced to carry the full Python-visible `Object`
-header merely to describe their scanned `Value` fields.
+- an empty or fixed contiguous owned-`Value` span
+- a dynamic span counted from an SMI field
+- a dynamic span counted from `HeapObject`'s auxiliary count
+- a custom deallocator
 
-For Python-visible `Object` subclasses, inherited static layout macros compose
-the fixed scanned value region from the base class. Variable-sized records use
-dynamic layout specs.
+Object-size descriptors provide the cold
+`object_size_in_bytes(const HeapObject *)` query. Allocation itself remains
+type-directed through `sizeof(T)` for static layouts or `T::size_for(...)` for
+dynamic layouts.
+
+Some internal non-`Object` records still have native fields and custom value
+offsets, but they participate in the same descriptor system without carrying the
+full Python-visible `Object` header.
 
 ## Bootstrap Outline
 

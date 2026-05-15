@@ -83,7 +83,7 @@ Classification must be performed using the final aligned allocation size, not th
 
 - object header size
 - alignment padding
-- any expanded-header or layout-dependent size adjustments
+- dynamic payload bytes from type-local `size_for(...)` helpers
 
 ### Purpose
 
@@ -214,7 +214,8 @@ See [Refcounting and Safepoints](refcounting-and-safepoints.md) for the
 At safepoint:
 
 - each truly dead object is:
-  - torn down by clearing owned `Value` slots and releasing copied child values
+  - torn down through native-layout descriptors, clearing owned cells before
+    releasing copied child values
   - accounted for by clearing its valid-object bit and remembering the slab for
     a later release check
 
@@ -251,9 +252,9 @@ pool is added.
 ### Slab Lookup
 
 Reclamation needs to find the owning slab for a dead `HeapObject *` so it can
-decrement the slab's reclaim-blocker count and eventually recycle the slab. The
-object header should not carry a per-object slab pointer. Instead, slab
-ownership is allocator metadata.
+clear the object's valid bit and eventually release the slab if it becomes
+empty and unpinned. The object header should not carry a per-object slab
+pointer. Instead, slab ownership is allocator metadata.
 
 The global heap maintains a lookup table from heap lookup granules to slab
 metadata:
@@ -361,9 +362,9 @@ To maintain correctness:
 - The reserved bump memory is abandoned; whole-slab reclamation eventually
   recovers it.
 
-This keeps the normal construction path simple while ensuring every object
-allocation blocker gets exactly one decrement, either on construction failure or
-during reclamation.
+This keeps the normal construction path simple: failed construction never marks
+an object as valid, and successful construction has exactly one valid-object bit
+to clear during reclamation.
 
 ---
 

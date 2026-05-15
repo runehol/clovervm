@@ -6,8 +6,12 @@ The runtime has mostly crossed from the old split model to the unified object
 model described in [doc/unified-object-model.md](./unified-object-model.md).
 The important completed pieces are:
 
-- `Object` owns Python-visible class identity, current Shape, overflow storage,
-  native layout id, and the shared own-property operations.
+- `HeapObject` owns refcount/lifecycle/native-layout metadata for every
+  reclaimable heap record.
+- `Object` owns Python-visible class identity and current Shape, and keeps the
+  shared own-property operations.
+- `SlotObject` owns the physical inline and overflow storage used by
+  slot-bearing Python-visible layouts.
 - User instances and class objects both use Shape-backed storage.
 - `ClassObject` stores `__class__`, `__name__`, `__bases__`, and `__mro__` in
   predefined Shape-backed slots, with 48 fixed inline class slots for class
@@ -221,13 +225,16 @@ Remaining work:
 
 ### Runtime Scanning And Lifetime
 
-Heap layout metadata is cleaned up enough for current object families, but
-runtime object scanning and reclamation remain a separate unfinished slice.
+Heap layout metadata has been replaced by `NativeLayoutId` keyed release and
+object-size descriptors. Runtime reclamation uses those descriptors for owned
+reference release and custom teardown, while valid-object bitmaps discover young
+zero-refcount objects in slabs.
 
 Remaining work:
 
-- implement runtime scanning of `HeapLayout` value regions
 - verify inline-cache side arrays and validity cells keep referenced heap
   objects alive
 - continue keeping internal non-`Object` heap records free to use custom value
   offsets when a full Python-visible object header would be wasteful
+- tune production reclamation policy and heap placement as described in the
+  memory substrate plan

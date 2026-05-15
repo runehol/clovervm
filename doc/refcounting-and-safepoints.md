@@ -107,8 +107,8 @@ The runtime should prevent duplicate ZCT entries with an explicit heap object
 lifecycle state. This is a correctness invariant, not merely an optimization:
 duplicate ZCT entries can lead to double reclamation.
 
-Initial implementation can add the field directly to `HeapObject` and worry
-about tighter packing during the later layout-ID refactor.
+The current implementation stores this state directly in `HeapObject`, next to
+the refcount and native layout metadata.
 
 ```c++
 enum class HeapLifecycleState : uint8_t {
@@ -136,9 +136,12 @@ non-reclaimable pointer storage class do not participate in this
 reclaimable-object lifecycle.
 
 Any allocation entry point that creates reclaimable objects must take or recover
-the owning `ThreadState` reclamation context so allocation-time ZCT enqueue has a
-well-defined destination. Allocation entry points for the global immortal heap do
-not enqueue ZCT entries.
+the owning `ThreadState` reclamation context so zero-count children discovered
+during later teardown have a well-defined ZCT destination. Newly allocated
+objects are not eagerly enqueued in the ZCT; valid-object bitmap discovery finds
+young zero-refcount objects that never received a heap `DECREF`. Allocation
+entry points for the global immortal heap do not participate in this
+reclaimable-object lifecycle.
 
 For the current single-threaded implementation, refcount and lifecycle state may
 be plain fields. The GIL-less design should treat them as one logical atomic
@@ -173,10 +176,11 @@ Known cycle to resolve: `ClassObject` and `Shape` already form a strong
 metadata cycle. A class object owns its own shape and instance-root shape, while
 those shapes store `class_value` so normal class discovery can go through
 `Shape::get_class()`. That `class_value` cannot simply be weak without replacing
-the class-discovery invariant. Cycle collection or a class/shape-specific
-ownership rule must eventually break this cycle; Phase 1 keeps the conservative
-`if(refcount == 0)` allocation-time ZCT enqueue so objects retained during
-construction are not treated as zero-count candidates.
+the class-discovery invariant. Cycle collection, immortal bootstrap ownership,
+or a class/shape-specific ownership rule must eventually break this cycle. The
+current young-object bitmap discovery keeps newly allocated zero-refcount
+objects visible without allocation-time ZCT enqueue, but it does not solve
+cycles.
 
 ## Stack Root Collection
 
@@ -480,20 +484,26 @@ ZCT entries and slab-discovered young objects are two candidate sources feeding
 one reclamation mechanism. They must not become separate collectors with
 different liveness rules.
 
-While a ZCT is being processed, object teardown uses explicit reclamation
-scanning code rather than ordinary hot-path `decref()` calls. The current
-implementation decodes an `ObjectValueSpan` for the concrete heap object from
-its `HeapLayout`, clears each owned slot, and releases the copied child value
-through the reclamation context. Child references that reach zero append to the
-same ZCT currently being walked. This improves locality and, more importantly,
-lets the dynamic scan process cascaded children in the same safepoint sweep. If
-a cascaded child is stack-rooted, it is copied into the kept prefix and remains
-in that ZCT for the next safepoint.
+While a ZCT is being processed, ordinary static and dynamic span teardown uses
+explicit reclamation scanning code rather than ordinary hot-path `decref()`
+calls. The current implementation looks up the object's `NativeLayoutId`,
+processes its release descriptor, clears each owned cell, and releases the
+copied child value through the reclamation context. Child references that reach
+zero append to the same ZCT currently being walked. This improves locality and,
+more importantly, lets the dynamic scan process cascaded children in the same
+safepoint sweep. If a cascaded child is stack-rooted, it is copied into the kept
+prefix and remains in that ZCT for the next safepoint.
+
+Layouts with `CustomDealloc` descriptors are cold paths. Reclamation installs
+the reclaimed thread as active before invoking the custom deallocator, so that
+deallocator may use ordinary `decref()` and still route cascaded zero-count
+children to the correct thread's ZCT.
 
 ZCT processing should be serial in the first multi-thread-capable design. Unlike
 root scanning, it mutates lifecycle state, compacts ZCTs, runs teardown, appends
-cascaded zero-count children, and updates slab reclaim-blocker counts. These
-operations are too subtle to parallelize before the basic invariants are proven.
+cascaded zero-count children, clears slab valid-object bits, and records slabs
+for release checks. These operations are too subtle to parallelize before the
+basic invariants are proven.
 
 A single heap object must appear in at most one ZCT across the whole VM. This is
 enforced by the object lifecycle state: only the transition `Normal -> InZct`
@@ -510,10 +520,12 @@ lifecycle bugs.
 
 ### 6. Slab Accounting And Reuse
 
-When object teardown is complete, the owning slab's reclaim-blocker count is
-decremented. If it reaches zero, the slab is handed to `GlobalHeap` for
-reclamation. Slab lookup uses the global slab lookup granule map described in
-[Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md).
+When object teardown is complete, the object's valid bit is cleared in the
+owning slab's valid-object bitmap, and that slab is remembered for a later
+release check. Slab lookup uses the global slab lookup granule map described in
+[Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md). Slabs are
+released only at explicit batch points after candidate processing and epoch-list
+scanning are complete.
 
 Teardown may process owned child fields word-by-word. For each owned field, it
 should copy the child value, clear the field's ownership in the object, and then

@@ -20,24 +20,7 @@ JIT, language, and runtime work.
 
 ## Priority Order
 
-1. **Memory substrate: root scanning, heap scanning, and deallocation**
-
-   Deferred reference counting depends on a reliable way to discover live
-   managed roots, validate zero-count candidates, scan heap references, and tear
-   down objects. This should reach at least a correct single-threaded baseline
-   before JIT work begins. The design should remain compatible with later
-   safepoint coordination, explicit native-transition roots, and multi-threaded
-   execution.
-
-2. **Layout-ID-driven scanning and deallocation descriptors**
-
-   Treat this as the implementation path for the memory substrate, not as a
-   broad object-layout rewrite for its own sake. Introduce a `NativeLayoutId`
-   keyed descriptor table, validate it against current layout metadata, migrate
-   fixed layouts first, then dynamic layouts, and keep common static paths
-   data-driven and fast.
-
-3. **Fast iterator protocol**
+1. **Fast iterator protocol**
 
    Finish the iterator protocol in a way that preserves the current loop
    performance direction. Important pieces include a reusable `range` object,
@@ -46,41 +29,41 @@ JIT, language, and runtime work.
    exhaustion should continue to integrate with the managed exception-table
    machinery.
 
-4. **Specific VM exceptions**
+2. **Specific VM exceptions**
 
    Replace generic runtime failures with specific VM exceptions for overflow,
    type errors, unsupported operations, descriptor failures, and other slow
    paths. This is a prerequisite for making later object-model and language
    features behave predictably without hiding failures in C++ helpers.
 
-5. **Interpreter-controlled descriptor execution**
+3. **Interpreter-controlled descriptor execution**
 
    Lookup already classifies descriptor work into plans. The next step is to
    execute `__get__`, `__set__`, and `__delete__` through explicit interpreter
    or VM-controlled dispatch so Python-visible execution, allocation, and
    exceptions are not hidden inside lookup/classification helpers.
 
-6. **Keyword calls and richer call adaptation**
+4. **Keyword calls and richer call adaptation**
 
    Add keyword call support for ordinary functions and constructors, then
    extend toward `**kwargs` and richer call forms. This should extend the
    existing call-plan model rather than turning `CallSimple` into one generic
    slow path.
 
-7. **Constructor semantics beyond tier-1 thunks**
+5. **Constructor semantics beyond tier-1 thunks**
 
    Expand constructor behavior past the current ordinary-class path. Remaining
    work includes keyword constructor calls, custom `__new__`, custom metaclass
    `__call__`, and normalization of constructor failures into specific VM
    exceptions.
 
-8. **Full Python dict hashing and equality**
+6. **Full Python dict hashing and equality**
 
    Python `dict` needs arbitrary-key hashing and equality semantics rather than
    the current string-key-oriented internal assumptions. This matters for real
    Python code, imports, module namespaces, mappings, and future library work.
 
-9. **Module objects and import system**
+7. **Module objects and import system**
 
    Imports are a major usability milestone, but should be built on a coherent
    module/global namespace model. One attractive direction is shape-backed
@@ -103,39 +86,45 @@ JIT, language, and runtime work.
    semantics, cache invalidation needs, JIT/root-map needs, or measured
    complexity rather than by aesthetic unification alone.
 
-10. **Attribute hooks and escaped bound methods**
+8. **Attribute hooks and escaped bound methods**
 
     Implement `__getattribute__`, `__getattr__`, `__setattr__`, and
     `__delattr__`, and add observable bound-method objects for escaped method
     values such as `f = obj.m`. Direct method-call fast paths should remain
     allocation-free when the bound method does not escape.
 
-11. **Slices**
+9. **Slices**
 
     Add parse, lowering, and runtime support for `a[i:j:k]`, including
     list/tuple/string slicing and slice assignment/deletion where appropriate.
     This is useful and contained, but less foundational than memory, iteration,
     call, descriptor, and module work.
 
-12. **Range object completeness**
+10. **Range object completeness**
 
     If not completed as part of the fast iterator protocol, finish `range` as a
     proper reusable object with length, indexing, containment, representation,
     and iteration semantics.
 
-13. **Generators, `yield`, and `yield from`**
+11. **Memory substrate policy and placement**
+
+    Deferred reference counting now has a correct single-threaded baseline:
+    safepoint root filtering, ZCT processing, bitmap-discovered young objects,
+    descriptor-driven teardown, and slab release are in place. Remaining memory
+    work is important but no longer the main roadmap blocker: production
+    reclamation triggers, useful counters, threshold tuning, and size-partitioned
+    thread-local heaps should proceed when memory growth, fragmentation, or
+    benchmark evidence makes them urgent. The design should remain compatible
+    with later explicit native-transition roots, multi-threaded safepoint
+    coordination, and no-GIL atomic refcount/lifecycle state.
+
+12. **Generators, `yield`, and `yield from`**
 
     Generators create long-lived suspended frames, so they should wait until the
     memory/root model is reliable. `yield from` also needs careful interaction
     with `StopIteration.value` and internal no-value sentinels.
 
-14. **`with` statement and context managers**
-
-    Context managers are attractive once exception propagation and descriptor
-    execution are less provisional. The existing `try` / `finally` machinery
-    should make the eventual lowering tractable.
-
-15. **Comprehensions and richer syntax**
+13. **Comprehensions and richer syntax**
 
     Add list/dict/set comprehensions, generator expressions, more assignment
     targets, richer string syntax, and other surface-area features after the
@@ -143,34 +132,38 @@ JIT, language, and runtime work.
 
 ## Near-Term Track
 
-The recommended next major track is the memory substrate:
+The recommended next major track is language/runtime behavior, starting with the
+fast iterator protocol. It is high impact, mostly interpreter-local, and does not
+require beginning JIT implementation.
 
-1. Establish root scanning over managed frames and any explicit native
-   transition roots needed by current runtime helpers.
-2. Add heap object scanning and teardown using current metadata.
-3. Introduce layout descriptors and validate them against the current metadata
-   path.
-4. Route fixed native layouts through descriptors.
-5. Add dynamic layout handlers for variable-size builtins.
-6. Add a minimal zero-count/reclamation policy that favors correctness over
-   slab-reuse sophistication.
+Near-term order:
 
-Fast iterator protocol work is the best parallel or immediately-following
-language/runtime track because it is high impact, mostly interpreter-local, and
-does not require beginning JIT implementation.
+1. Finish `range` object reuse and fresh `iter(range_obj)` behavior.
+2. Keep range/list/tuple fast iteration paths aligned with the generic
+   `iter()` / `next()` fallback.
+3. Replace generic runtime failures with specific VM exceptions where current
+   slow paths still blur Python-visible behavior.
+4. Continue moving descriptor execution into explicit interpreter/VM-controlled
+   paths rather than hidden lookup helpers.
+5. Add keyword calls for ordinary functions and constructors.
+
+Memory substrate follow-ups are still tracked in
+[Memory Substrate Implementation Plan](memory-substrate-implementation-plan.md),
+but they should not outrank the language/runtime work unless measurements show
+memory growth, reclamation policy, or slab fragmentation has become the limiting
+problem.
 
 ## Revisit Triggers
 
 Revisit this ordering when:
 
-- root scanning, heap scanning, and deallocation have a working baseline;
-- layout descriptors cover fixed and dynamic native layouts;
 - range/list/tuple/generic iterator paths are semantically complete enough for
   normal loops;
 - keyword calls land for ordinary functions and constructors;
 - module/import work becomes necessary to run broader Python source;
 - module/global scope behavior starts duplicating enough shape/cache machinery
   that moving global lookups onto shape-backed ICs would simplify the runtime;
-  or
+- memory measurements show that reclamation policy or ordinary slab mixing has
+  become a practical limiter; or
 - performance measurements show that a lower-priority item has become a
   bottleneck for existing benchmarks.

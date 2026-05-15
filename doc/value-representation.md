@@ -146,14 +146,15 @@ and [Native Layout Descriptors](native-layout-descriptors.md).
 ## Relationship To Object Layouts
 
 The `Value` representation does not describe object fields by itself. Heap
-records use layout metadata to tell the runtime which contiguous words are
-scanned `Value` fields and how large the allocation is.
+records use native-layout descriptors to tell reclamation which owned `Value`
+cells to release, and to answer cold opaque object-size queries for already
+allocated objects.
 
 This separation matters:
 
 - `Value` answers "what kind of runtime word is this?"
-- heap layout metadata answers "where are the child `Value`s inside this heap
-  object?"
+- native layout descriptors answer "where are the owned child `Value`s inside
+  this heap object, and how large is this already-allocated object?"
 - shapes answer "what Python-level property does this slot represent?"
 
 Those three layers should stay distinct.

@@ -242,7 +242,7 @@ the object.
 
 ZCT processing and young-slab discovery are candidate producers for one
 reclamation mechanism. They must share lifecycle transitions, root filtering,
-owned-value scanning, and slab release batching.
+native descriptor teardown, and slab release batching.
 
 ## Root Filtering
 
@@ -255,18 +255,21 @@ and bitmap-discovered young candidates.
 
 ## Teardown
 
-Native-layout descriptors are currently needed for owned-value scanning and
-native teardown. They are not required for slab walking when the valid-object
-bitmap enumerates object starts.
+Native-layout descriptors release owned values and run any native teardown. They
+are not required for slab walking when the valid-object bitmap enumerates object
+starts.
 
 When reclaiming an object:
 
 ```text
-derive owned-value scan recipe from native layout / current HeapLayout bridge
-for each owned Value slot:
-    copy value
-    clear slot to not_present
-    release copied value through reclamation path
+look up the object's release descriptor by NativeLayoutId
+if descriptor is StaticSpan/DynamicSmiSpan/DynamicAuxSpan:
+    for each described owned Value cell:
+        copy value
+        clear cell to not_present
+        release copied value through reclamation path
+else if descriptor is CustomDealloc:
+    call the custom deallocator with the reclaimed thread installed as active
 clear valid-object bit
 remember owning slab in reclaimed_slabs
 Reclaiming -> Dead
@@ -288,18 +291,9 @@ The release-check set includes slabs whose valid-object bits were cleared and
 epoch slabs whose discovery pins were dropped. Reclamation must not unmap slabs
 while candidate sources are still being scanned.
 
-## Descriptor Direction
-
-The immediate descriptor facade should focus on:
-
-- owned `Value` scanning
-- optional native teardown hooks
-- future C-extension teardown boundaries
-
-Object extent can still be a future descriptor concern. It may be useful for
-debug validation, allocation accounting, size-class policies, or non-bitmap
-iteration strategies. It is not required for young-object slab discovery in the
-bitmap design.
+Object extent is descriptor-driven through
+`object_size_in_bytes(const HeapObject *)`, but bitmap discovery does not need
+to query object extent. The bitmap enumerates candidate object starts directly.
 
 ## Policy
 

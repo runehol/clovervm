@@ -1,400 +1,110 @@
 # Object Metadata Layout
 
-## Goal
+This document describes the current heap object metadata shape. The older
+packed `HeapLayout` word and expanded-header scheme have been removed.
 
-We want a fixed-size object header that stays small in the common case, while
-still supporting:
+## HeapObject Header
 
-- exact location of the GC-visible `Value` region
-- exact count of `Value` cells
-- exact overall object size for allocation and teardown
-- very large objects when compact metadata is not enough
-
-Heap object pointers currently need 32-byte granularity because of the 5-bit
-tagged pointer scheme in `Value`. The metadata format still measures object
-sizes in 16-byte units so the fixed object header and expanded metadata header
-stay compact and naturally aligned.
-
-## Fixed Object Header
-
-The base heap-object header remains 16 bytes:
+All VM heap records derive from `HeapObject`, whether or not they are
+Python-visible objects:
 
 ```cpp
-struct HeapObject
-{
+class HeapObject {
+public:
     int32_t refcount;
-    uint32_t layout;
-    // plus padding/alignment in the concrete representation
+    HeapLifecycleState lifecycle_state;
+    NativeLayoutId native_layout_id_;
+    uint16_t native_layout_aux_count;
 };
 ```
 
-Python-visible `Object` subclasses add native layout id, Shape, overflow
-storage, and the fixed `__class__` slot after this base heap header. Native
-layout identity no longer lives in a static `Klass` pointer; it is represented
-by `NativeLayoutId` on `Object`.
+The header is currently 8 bytes. Its fields mean:
 
-The `layout` word describes the scanned heap layout in either:
+- `refcount`: heap-owned reference count. Stack/register values are borrowed and
+  do not increment this count.
+- `lifecycle_state`: `Normal`, `InZct`, `Reclaiming`, or `Dead`; this prevents
+  duplicate zero-count table entries and double reclamation.
+- `native_layout_id_`: descriptor dispatch key for release and opaque size
+  queries.
+- `native_layout_aux_count`: small physical count field used by dynamic native
+  layouts, such as `Instance` inline slot count and array backing cell counts.
 
-- compact form, encoded directly in `layout`
-- expanded form, indicated by a tag bit and described by a 16-byte prefix
+The auxiliary count is physical layout metadata. Semantic information, such as
+which attributes exist on an object, remains in `Shape`.
 
-## Common Layout Model
+## Python-Visible Object Header
 
-Both compact and expanded metadata describe the same three logical quantities:
-
-- `object_size_in_16byte_units`
-  The size of the heap object plus payload, in 16-byte units.
-
-- `value_offset_in_words`
-  The offset from the start of the heap object header to the first scanned
-  `Value`, measured in 64-bit words.
-
-- `value_count`
-  The exact number of consecutive `Value` cells to scan.
-
-This supports heap records with the following shape:
-
-- optional raw prefix before the first scanned `Value`
-- exact contiguous `Value` region
-- optional raw suffix after the last scanned `Value`
-
-The offset is measured in 64-bit words because the start of the scanned
-`Value` region needs 8-byte precision. This remains useful for internal
-non-`Object` records that have native fields before their scanned values.
-Python-visible `Object` subclasses share inherited static layout declarations
-so their value regions compose from the `Object` base. The object size is
-measured in 16-byte units. Current allocations are rounded to the wider
-`Value` pointer granularity, but 16-byte units keep layout metadata compact and
-are sufficient for object size and expanded-header placement.
-
-For expanded objects, the 16-byte `ExpandedHeader` prefix is allocator
-overhead and is not included in `object_size_in_16byte_units`.
-
-## Compact Metadata
-
-Compact metadata is stored directly in the 32-bit `layout` word.
-
-It contains:
-
-- `expanded`
-- compact `object_size_in_16byte_units`
-- compact `value_offset_in_words`
-- compact `value_count`
-
-The compact bit split is:
-
-- 1 bit for `expanded`
-- 4 bits for `value_offset_in_words`
-- 13 bits for `value_count`
-- 14 bits for `object_size_in_16byte_units`
-
-This is a `1:4:13:14` layout.
-
-In compact form this gives:
-
-- `value_offset_in_words` in the range `0..15`
-- `value_count` in the range `0..8191`
-- `object_size_in_16byte_units` in the range `0..16383`
-
-So compact objects can be up to `16383 * 16` bytes, just under 256 KiB.
-
-A suitable conceptual packing is:
-
-```text
-31            27            14             0
-+-------------+-------------+--------------+
-| expanded:1  | offset:4    | count:13     |
-+-------------+-------------+--------------+
-| object_size_in_16byte_units:14           |
-+------------------------------------------+
-```
-
-Equivalently:
-
-- bit 31: `expanded`
-- bits 27..30: `value_offset_in_words`
-- bits 14..26: `value_count`
-- bits 0..13: `object_size_in_16byte_units`
-
-The expected usage is:
-
-- `value_offset_in_words` is usually `0`
-- nonzero offsets are expected to be rare and small
-- compact metadata should cover ordinary objects, instances, shapes, and
-  medium-sized container objects
-
-If any of the three logical quantities does not fit the compact encoding, the
-object uses expanded metadata instead.
-
-## Expanded Metadata
-
-Expanded metadata uses:
-
-- bit 31 of `layout` as the `expanded` tag
-- bits 0..30 of `layout` as `value_offset_in_words`
-- a 16-byte prefix immediately before the heap-object header for
-  `object_size_in_16byte_units` and `value_count`
-
-The expanded prefix header is:
+Python-visible heap records derive from `Object`:
 
 ```cpp
-struct ExpandedHeader
-{
-    uint64_t object_size_in_16byte_units;
-    uint64_t value_count;
+class Object : public HeapObject {
+public:
+    Shape *shape;
 };
 ```
 
-The memory layout for an expanded object is therefore:
+`Object` carries Python class identity and own-property shape metadata. It does
+not physically carry inline attribute slots or overflow slot storage.
 
-```text
-[ ExpandedHeader ][ HeapObject / Object ][ payload... ]
-```
-
-The heap-object pointer still points to the fixed heap-object header, not to
-the beginning of the allocation.
-
-The expanded form uses:
-
-- `object_size_in_16byte_units` as the size of the heap object plus payload
-- `value_count` as the exact count of scanned `Value`s
-- bits 0..30 of `layout` as the exact `value_offset_in_words`
-
-This gives:
-
-- `value_offset_in_words` in the range `0..2^31 - 1`
-- `value_count` in the range `0..2^64 - 1`
-
-That preserves a 16-byte expanded header while still allowing extremely large
-scanned objects.
-
-The expanded `layout` word is interpreted as:
-
-```text
-31 30                                      0
-+--+----------------------------------------+
-|E | value_offset_in_words:31               |
-+--+----------------------------------------+
-```
-
-Equivalently:
-
-- bit 31: `expanded`
-- bits 0..30: `value_offset_in_words`
-
-For expanded objects, the base header contains:
-
-- the refcount in the fixed `refcount` field
-- an `expanded` tag in the `layout` word
-
-The expanded header is found by stepping back one `ExpandedHeader` from the
-heap-object pointer.
-
-## Why The Expanded Header Is Before The Object
-
-Placing expanded metadata before the heap-object header avoids needing:
-
-- a pointer to out-of-line metadata in `layout`
-- allocator-side reverse lookup to find the end of the object
-- a trailer search to find metadata at object teardown time
-
-It also keeps the C++ object layout simple:
-
-- fixed heap-object header at a stable address
-- payload immediately after the heap object
-- optional expanded metadata in a fixed position just before the heap object
-
-## Decoding Rules
-
-The object metadata API should expose one shared logical view regardless of
-encoding:
-
-- total object size in 16-byte units
-- offset of the scanned `Value` region in 64-bit words
-- exact count of scanned `Value`s
-
-Decoding logic should be:
-
-1. Read the `expanded` bit from the `layout` word.
-2. If not expanded, decode the compact fields from `layout`.
-3. If expanded, read `ExpandedHeader` from immediately before the `Object`.
-
-The rest of the runtime should not need to care which encoding was used.
-
-## Design Intent
-
-This design keeps the common case compact while preserving an escape hatch for:
-
-- very large strings or raw buffers
-- very large `PyList`-like scanned objects
-- unusual layouts with a larger raw prefix
-
-The important invariant is that the metadata always describes:
-
-- where the scanned `Value` run begins
-- how many `Value`s it contains
-- how large the heap object plus payload is
-
-For expanded objects, the `ExpandedHeader` prefix is extra allocation overhead
-and is not counted as part of the object size stored in metadata.
-
-## Class Declaration Helpers
-
-Object types should expose their layout facts as static class members so the
-allocators can pick them up automatically.
-
-The intended split is:
-
-- fixed-size objects expose a precomputed `compact_layout`
-- dynamic-layout objects expose their fixed structural invariants and provide
-  the remaining values at allocation time
-
-In all cases, classes should also expose:
-
-- `has_dynamic_layout`
-- `static_value_offset_in_words`
-
-For fixed-size objects they should additionally expose:
-
-- `static_value_count`
-- `static_size_in_16byte_units`
-- `compact_layout`
-
-The current declaration helper family is:
+Slot-backed Python-visible objects derive from `SlotObject`:
 
 ```cpp
-CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(MyClass, first_value_member, value_count)
-CL_DECLARE_STATIC_LAYOUT_NO_VALUES(MyClass)
-CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(MyClass, BaseClass, own_value_count)
-
-CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(MyClass, first_value_member)
-CL_DECLARE_DYNAMIC_LAYOUT_NO_VALUES(MyClass)
-CL_DECLARE_DYNAMIC_LAYOUT_EXTENDS_WITH_VALUES(
-    MyClass, BaseClass, fixed_own_value_count)
+class SlotObject : public Object {
+public:
+    OverflowSlots *overflow_storage;
+    // inline Value slots follow the SlotObject header for slot-bearing layouts
+};
 ```
 
-These should define the following class members.
+`Object` still exposes storage APIs such as `read_storage_location()` and
+`inline_slot_base()`, but those APIs assert that the native layout is
+slot-bearing and delegate to `SlotObject`.
 
-### `CL_DECLARE_STATIC_LAYOUT_WITH_VALUES`
+Current slot-bearing layouts are `Instance`, `ClassObject`, `Function`,
+`Exception`, and `StopIteration`.
 
-This form is for fixed-size objects with a scanned `Value` run.
+## Release Metadata
 
-It should define:
+Owned-reference release is not encoded in the heap object header. It is described
+by native-layout release descriptors keyed by `NativeLayoutId`:
 
-- `static constexpr bool has_dynamic_layout = false`
-- `static constexpr uint32_t static_value_offset_in_words`
-- `static constexpr uint64_t static_value_count`
-- `static constexpr uint64_t static_size_in_16byte_units`
-- `static constexpr uint32_t compact_layout`
+- `StaticSpan`
+- `DynamicSmiSpan`
+- `DynamicAuxSpan`
+- `CustomDealloc`
 
-The macro should derive:
+Static and dynamic spans describe one contiguous `Value` cell range to clear and
+release. Custom deallocators handle layouts whose ownership cannot be described
+as a simple span, such as `CodeObject` and `Shape`.
 
-- `static_value_offset_in_words` from
-  `offsetof(MyClass, first_value_member) / sizeof(Value)`
-- `static_size_in_16byte_units` from `sizeof(MyClass)`, rounded up to 16-byte
-  units
+See [Native Layout Descriptors](native-layout-descriptors.md) for the descriptor
+contracts and declaration macros.
 
-The caller provides:
+## Object Size Metadata
 
-- `first_value_member`
-- `value_count`
+Allocation size is computed by concrete type:
 
-### `CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES`
+```cpp
+sizeof(T)          // static-size layouts
+T::size_for(...)   // dynamic/custom-size layouts
+```
 
-This form is for fixed-size objects that inherit a scanned `Value` run from a
-static-layout base class and append additional fixed `Value` fields.
+For already-allocated opaque objects, the runtime can call:
 
-It should define the same members as `CL_DECLARE_STATIC_LAYOUT_WITH_VALUES`.
-The macro:
+```cpp
+object_size_in_bytes(const HeapObject *obj)
+```
 
-- asserts that the named base has static layout
-- asserts that the named base is a C++ base class
-- reuses the base class `static_value_offset_in_words`
-- adds `own_value_count` to the base class `static_value_count`
+That query dispatches by native layout ID through the object-size descriptor
+table. It is intended for validation, accounting, debugging, and future policy
+work, not for hot allocation.
 
-This is the normal form for Python-visible `Object` subclasses such as
-`ClassObject`: the scanned region starts in `Object`, and subclasses extend the
-count.
+## Slab Visibility
 
-### `CL_DECLARE_STATIC_LAYOUT_NO_VALUES`
+Constructed object presence is tracked by each slab's valid-object bitmap.
+Successful construction marks the object's bit. Failed construction leaves the
+reserved bump memory unmarked. Reclamation clears the bit after object teardown
+and later asks the `GlobalHeap` to release empty, unpinned slabs.
 
-This form is for fixed-size objects with no scanned `Value`s.
-
-It should define:
-
-- `static constexpr bool has_dynamic_layout = false`
-- `static constexpr uint32_t static_value_offset_in_words = 0`
-- `static constexpr uint64_t static_value_count = 0`
-- `static constexpr uint64_t static_size_in_16byte_units`
-- `static constexpr uint32_t compact_layout`
-
-The macro should derive `static_size_in_16byte_units` from `sizeof(MyClass)`,
-rounded up to 16-byte units.
-
-### `CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES`
-
-This form is for variable-sized objects with a fixed starting offset for the
-scanned `Value` region.
-
-It should define:
-
-- `static constexpr bool has_dynamic_layout = true`
-- `static constexpr uint32_t static_value_offset_in_words`
-
-The macro should derive `static_value_offset_in_words` from
-`offsetof(MyClass, first_value_member) / sizeof(Value)`.
-
-Runtime allocation supplies:
-
-- a `DynamicLayoutSpec`
-
-The dynamic layout spec contains:
-
-- `object_size_in_16byte_units`
-- `value_count`
-
-### `CL_DECLARE_DYNAMIC_LAYOUT_NO_VALUES`
-
-This form is for variable-sized objects with no scanned `Value`s.
-
-It should define:
-
-- `static constexpr bool has_dynamic_layout = true`
-- `static constexpr uint32_t static_value_offset_in_words = 0`
-
-Runtime allocation supplies:
-
-- a `DynamicLayoutSpec` with `value_count = 0`
-
-### `CL_DECLARE_DYNAMIC_LAYOUT_EXTENDS_WITH_VALUES`
-
-This form is for variable-sized objects that inherit a static scanned prefix
-from a base class and add a dynamic tail. It:
-
-- asserts that the named base has static layout
-- asserts that the named base is a C++ base class
-- reuses the base `static_value_offset_in_words`
-- exposes `static_fixed_value_count()` for the fixed scanned prefix
-
-Runtime allocation supplies the final dynamic value count through the layout
-spec.
-
-## Allocator Hookup
-
-The allocator interface should use the class metadata directly.
-
-For fixed-size objects:
-
-- allocate `sizeof(T)`
-- initialize `layout` from `T::compact_layout`
-
-For dynamic-layout objects:
-
-- read `T::static_value_offset_in_words`
-- combine that with the runtime `DynamicLayoutSpec`
-- choose compact or expanded encoding
-- initialize `layout`
-- write `ExpandedHeader` if needed
-
-This keeps the per-type structural facts attached to the type, while leaving
-the compact-versus-expanded encoding decision inside the allocator.
+The object header does not store a slab pointer. Slab ownership is found through
+the global slab lookup table.
