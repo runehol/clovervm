@@ -712,7 +712,7 @@ TEST(Interpreter, class_call_allocates_instance)
         actual.get_ptr<Instance>()->get_shape()->get_class();
     ASSERT_NE(nullptr, actual_class);
     EXPECT_EQ(NativeLayoutId::ClassObject,
-              actual_class->Object::native_layout_id());
+              actual_class->HeapObject::native_layout_id());
 }
 
 TEST(Interpreter, class_constructor_rejects_non_none_init_return)

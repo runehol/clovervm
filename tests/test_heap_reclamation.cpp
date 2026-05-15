@@ -14,10 +14,14 @@ namespace cl
         class ReclamationTestObject : public HeapObject
         {
         public:
+            static constexpr NativeLayoutId native_layout_id =
+                NativeLayoutId::TestOnly;
+
             CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(ReclamationTestObject, values,
                                                  2);
 
-            ReclamationTestObject() : HeapObject(compact_layout())
+            ReclamationTestObject()
+                : HeapObject(native_layout_id, compact_layout())
             {
                 values[0] = Value::not_present();
                 values[1] = Value::not_present();

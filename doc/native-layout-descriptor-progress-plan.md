@@ -29,31 +29,31 @@ truth.
 
 ## Stage 1: HeapObject Native Layout Identity
 
-- [ ] Add `NativeLayoutId native_layout` to `HeapObject`.
-- [ ] Add a small auxiliary count field to `HeapObject`, initially intended as
+- [x] Add `NativeLayoutId native_layout` to `HeapObject`.
+- [x] Add a small auxiliary count field to `HeapObject`, initially intended as
       `uint16_t`.
-- [ ] Choose field ordering so `HeapObject` stays compact if possible.
-- [ ] Add `HeapObject::native_layout_id()` and aux count accessors.
-- [ ] Remove `Object::native_layout` as a separate field.
-- [ ] Move `Object::native_layout_id()` to `HeapObject` rather than leaving a
+- [x] Choose field ordering so `HeapObject` stays compact if possible.
+- [x] Add `HeapObject::native_layout_id()` and aux count accessors.
+- [x] Remove `Object::native_layout` as a separate field.
+- [x] Move `Object::native_layout_id()` to `HeapObject` rather than leaving a
       delegating `Object` wrapper.
-- [ ] Update native-layout checks at object call sites to use the inherited
+- [x] Update native-layout checks at object call sites to use the inherited
       `HeapObject::native_layout_id()` accessor.
-- [ ] Keep `HeapLayout layout` during the transition.
+- [x] Keep `HeapLayout layout` during the transition.
 
 Deliverable: every heap record can carry a native layout identity, while release
 still behaves as it does today.
 
 ## Stage 2: Construction Plumbing
 
-- [ ] Thread native layout ID initialization through static object
+- [x] Thread native layout ID initialization through static object
       construction.
-- [ ] Thread native layout ID initialization through dynamic object
+- [x] Thread native layout ID initialization through dynamic object
       construction.
-- [ ] Initialize the aux count to zero for all objects at first.
-- [ ] Keep object constructors and allocation helpers using existing
+- [x] Initialize the aux count to zero for all objects at first.
+- [x] Keep object constructors and allocation helpers using existing
       `HeapLayout` metadata for size and value-span data.
-- [ ] Add assertions that constructed heap objects do not retain
+- [x] Add assertions that constructed heap objects do not retain
       `NativeLayoutId::Invalid`.
 
 Deliverable: all allocated heap objects have a valid native layout ID, with no

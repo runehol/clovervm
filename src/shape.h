@@ -72,6 +72,9 @@ namespace cl
     class Shape : public HeapObject
     {
     public:
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::Shape;
+
         class Transition
         {
         public:

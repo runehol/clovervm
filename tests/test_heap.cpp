@@ -15,9 +15,12 @@ namespace
     class ThrowingHeapObject : public HeapObject
     {
     public:
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::TestOnly;
+
         CL_DECLARE_STATIC_LAYOUT_NO_VALUES(ThrowingHeapObject);
 
-        ThrowingHeapObject() : HeapObject(compact_layout())
+        ThrowingHeapObject() : HeapObject(native_layout_id, compact_layout())
         {
             throw std::runtime_error("construction failed");
         }
@@ -26,17 +29,25 @@ namespace
     class SimpleHeapObject : public HeapObject
     {
     public:
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::TestOnly;
+
         CL_DECLARE_STATIC_LAYOUT_NO_VALUES(SimpleHeapObject);
 
-        SimpleHeapObject() : HeapObject(compact_layout()) {}
+        SimpleHeapObject() : HeapObject(native_layout_id, compact_layout()) {}
     };
 
     class LargeSimpleHeapObject : public HeapObject
     {
     public:
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::TestOnly;
+
         CL_DECLARE_STATIC_LAYOUT_NO_VALUES(LargeSimpleHeapObject);
 
-        LargeSimpleHeapObject() : HeapObject(compact_layout()) {}
+        LargeSimpleHeapObject() : HeapObject(native_layout_id, compact_layout())
+        {
+        }
 
     private:
         [[maybe_unused]] char payload[LargeAllocationSize] = {};

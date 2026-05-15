@@ -8,7 +8,13 @@ namespace cl
     class ValidityCell : public HeapObject
     {
     public:
-        ValidityCell() : HeapObject(compact_layout()), valid(true) {}
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::ValidityCell;
+
+        ValidityCell()
+            : HeapObject(native_layout_id, compact_layout()), valid(true)
+        {
+        }
 
         bool is_valid() const { return valid; }
         void invalidate() { valid = false; }

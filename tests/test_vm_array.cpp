@@ -15,7 +15,10 @@ namespace
 
     struct HeapPtrArrayItem : public HeapObject
     {
-        HeapPtrArrayItem() : HeapObject(compact_layout()) {}
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::TestOnly;
+
+        HeapPtrArrayItem() : HeapObject(native_layout_id, compact_layout()) {}
 
         CL_DECLARE_STATIC_LAYOUT_NO_VALUES(HeapPtrArrayItem);
     };
@@ -26,7 +29,10 @@ namespace
 
     struct ArrayOwner : public HeapObject
     {
-        ArrayOwner() : HeapObject(compact_layout()) {}
+        static constexpr NativeLayoutId native_layout_id =
+            NativeLayoutId::TestOnly;
+
+        ArrayOwner() : HeapObject(native_layout_id, compact_layout()) {}
 
         RawArray<int32_t> raw_values;
         ValueArray<TValue<String>> typed_values;

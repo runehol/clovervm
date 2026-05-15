@@ -2,7 +2,6 @@
 #define CL_OBJECT_H
 
 #include "heap_object.h"
-#include "native_layout_id.h"
 #include "shape_descriptor.h"
 
 #include <cassert>
@@ -36,22 +35,21 @@ namespace cl
     public:
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id,
                HeapLayout _layout)
-            : HeapObject(_layout), native_layout(_native_layout_id),
-              shape(nullptr), overflow_storage(nullptr)
+            : HeapObject(_native_layout_id, _layout), shape(nullptr),
+              overflow_storage(nullptr)
         {
             initialize_shape_for_class(_cls);
         }
 
         Object(BootstrapObjectTag, NativeLayoutId _native_layout_id,
                HeapLayout _layout)
-            : HeapObject(_layout), native_layout(_native_layout_id),
-              shape(nullptr), overflow_storage(nullptr)
+            : HeapObject(_native_layout_id, _layout), shape(nullptr),
+              overflow_storage(nullptr)
         {
         }
 
         void install_bootstrap_class(ClassObject *new_cls);
 
-        NativeLayoutId native_layout_id() const { return native_layout; }
         bool is_class_bootstrapped() const { return shape != nullptr; }
         Shape *get_shape() const { return shape; }
         void set_shape(Shape *new_shape);
@@ -85,7 +83,6 @@ namespace cl
                 static_value_offset_in_words());
         }
         static void validate_inline_slot_layout();
-        NativeLayoutId native_layout;
         Shape *shape;
         OverflowSlots *overflow_storage;
 

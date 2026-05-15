@@ -1,6 +1,8 @@
 #ifndef CL_HEAP_OBJECT_H
 #define CL_HEAP_OBJECT_H
 
+#include "native_layout_id.h"
+
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -251,20 +253,36 @@ namespace cl
     class HeapObject
     {
     public:
-        explicit HeapObject(HeapLayout _layout)
+        HeapObject(NativeLayoutId _native_layout_id, HeapLayout _layout,
+                   uint16_t _native_layout_aux_count = 0)
             : refcount(0), lifecycle_state(HeapLifecycleState::Normal),
-              layout(_layout)
+              native_layout(_native_layout_id),
+              native_layout_aux_count(_native_layout_aux_count), layout(_layout)
         {
+            assert(native_layout != NativeLayoutId::Invalid);
         }
 
         HeapObject()
             : refcount(0), lifecycle_state(HeapLifecycleState::Normal),
-              layout(0)
+              native_layout(NativeLayoutId::Invalid),
+              native_layout_aux_count(0), layout(0)
         {
+        }
+
+        NativeLayoutId native_layout_id() const { return native_layout; }
+        uint16_t native_layout_aux_count_value() const
+        {
+            return native_layout_aux_count;
+        }
+        void set_native_layout_aux_count(uint16_t count)
+        {
+            native_layout_aux_count = count;
         }
 
         int32_t refcount;
         HeapLifecycleState lifecycle_state;
+        NativeLayoutId native_layout;
+        uint16_t native_layout_aux_count;
         HeapLayout layout;
     };
 

@@ -22,6 +22,14 @@ namespace cl
         Exception,
         StopIteration,
         Instance,
+        Scope,
+        Shape,
+        ValidityCell,
+        OverflowSlots,
+        RawArrayBacking,
+        ValueArrayBacking,
+        HeapPtrArrayBacking,
+        TestOnly,
 
         Count,
     };
