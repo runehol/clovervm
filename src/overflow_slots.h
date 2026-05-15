@@ -1,9 +1,11 @@
 #ifndef CL_OVERFLOW_SLOTS_H
 #define CL_OVERFLOW_SLOTS_H
 
+#include "native_layout_declarations.h"
 #include "value.h"
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 
 namespace cl
 {
@@ -15,11 +17,22 @@ namespace cl
 
         OverflowSlots(HeapLayout layout, uint32_t size, uint32_t capacity);
 
+        static uint16_t native_aux_count_for_capacity(uint32_t capacity)
+        {
+            assert(capacity <= std::numeric_limits<uint16_t>::max());
+            return static_cast<uint16_t>(capacity);
+        }
+
         static size_t size_for(uint32_t capacity)
         {
             return sizeof(OverflowSlots) +
                    sizeof(Value) * std::max<uint32_t>(capacity, 1) -
                    sizeof(Value);
+        }
+
+        static size_t object_size_in_bytes(const OverflowSlots *overflow_slots)
+        {
+            return size_for(overflow_slots->get_capacity());
         }
 
         static DynamicLayoutSpec layout_spec_for(uint32_t size,
@@ -54,6 +67,9 @@ namespace cl
         Value slots[1];
 
     public:
+        CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(OverflowSlots, slots, 0);
+        CL_DECLARE_CUSTOM_OBJECT_SIZE(OverflowSlots,
+                                      OverflowSlots::object_size_in_bytes);
         CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(OverflowSlots, slots);
     };
 

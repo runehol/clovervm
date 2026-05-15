@@ -9,6 +9,7 @@
 #include "instance.h"
 #include "list.h"
 #include "list_iterator.h"
+#include "overflow_slots.h"
 #include "range_iterator.h"
 #include "scope.h"
 #include "shape.h"
@@ -33,6 +34,7 @@
     V(ValidityCell);                                                           \
     V(Scope);                                                                  \
     V(Shape);                                                                  \
+    V(OverflowSlots);                                                          \
     V(ClassObject);
 
 #endif  // CL_NATIVE_LAYOUT_REGISTRY_H

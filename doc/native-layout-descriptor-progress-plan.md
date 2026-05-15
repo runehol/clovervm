@@ -201,7 +201,7 @@ spans have explicit custom teardown.
 - [x] Migrate `Scope`.
 - [x] Migrate `Shape`, likely with custom dealloc because of transition vector
       ownership.
-- [ ] Migrate `OverflowSlots`.
+- [x] Migrate `OverflowSlots`.
 - [ ] Erase template backing records into concrete native-layout types where
       needed, such as `ValueArrayBacking` and `RawArrayBacking`.
 - [ ] Store normalized dynamic value-cell counts in backing records, not element

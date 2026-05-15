@@ -485,10 +485,53 @@ TEST(NativeLayoutDescriptor, ShapeNativeObjectSizeUsesPropertyCount)
     EXPECT_EQ(Shape::size_for(3), object_size_in_bytes(shape));
 }
 
+TEST(NativeLayoutDescriptor, OverflowSlotsUsesDynamicAuxReleaseDescriptor)
+{
+    const ReleaseDescriptor &release =
+        release_descriptor_for(OverflowSlots::native_layout);
+
+    EXPECT_EQ(ReleaseKind::DynamicAuxSpan, release.kind);
+    EXPECT_EQ(OverflowSlots::native_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(0u, release.additional_release_count);
+
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptor_for(OverflowSlots::native_layout);
+
+    EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
+    ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
+}
+
+TEST(NativeLayoutDescriptor, OverflowSlotsNativeReleaseSpanUsesCapacity)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    OverflowSlots *overflow_slots =
+        context.thread()->make_internal_raw<OverflowSlots>(2, 5);
+
+    NativeValueSpan span = value_span_for_release(overflow_slots);
+
+    EXPECT_EQ(reinterpret_cast<Value *>(overflow_slots) +
+                  OverflowSlots::native_value_offset_in_words(),
+              span.slots);
+    EXPECT_EQ(5u, overflow_slots->native_layout_aux_count_value());
+    EXPECT_EQ(5u, span.count);
+}
+
+TEST(NativeLayoutDescriptor, OverflowSlotsNativeObjectSizeUsesCapacity)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    OverflowSlots *overflow_slots =
+        context.thread()->make_internal_raw<OverflowSlots>(2, 5);
+
+    EXPECT_EQ(OverflowSlots::size_for(5), object_size_in_bytes(overflow_slots));
+}
+
 TEST(NativeLayoutDescriptor, UnmigratedLayoutsStillUseLegacyReleaseDescriptor)
 {
     EXPECT_EQ(ReleaseKind::LegacyHeapLayout,
-              release_descriptor_for(NativeLayoutId::OverflowSlots).kind);
+              release_descriptor_for(NativeLayoutId::RawArrayBacking).kind);
 }
 
 TEST(NativeLayoutDescriptor, LegacyObjectSizeQueryUsesHeapLayout)
