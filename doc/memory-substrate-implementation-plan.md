@@ -14,6 +14,7 @@ Background design documents:
 - [Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md)
 - [Valid-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md)
 - [Native Layout Descriptors](native-layout-descriptors.md)
+- [Native Layout Descriptor Progress Plan](native-layout-descriptor-progress-plan.md)
 
 ## Current Baseline
 
