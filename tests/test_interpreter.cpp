@@ -31,6 +31,7 @@
 #include <cwchar>
 #include <fmt/xchar.h>
 #include <gtest/gtest.h>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -3327,6 +3328,36 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
         test_context.vm().get_or_create_interned_string_value(L"1.5")));
 }
 
+TEST(Interpreter, float_string_methods_format_special_values)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> dunder_str_name =
+        test_context.vm().get_or_create_interned_string_value(L"__str__");
+    TValue<String> dunder_repr_name =
+        test_context.vm().get_or_create_interned_string_value(L"__repr__");
+
+    auto expect_method_result = [&](double value, TValue<String> method_name,
+                                    const wchar_t *expected) {
+        Value float_value =
+            test_context.thread()->make_object_value<Float>(value);
+        Value result = test_context.thread()->call_clovervm_method(float_value,
+                                                                   method_name);
+        ASSERT_TRUE(can_convert_to<String>(result));
+        EXPECT_STREQ(expected, string_as_wchar_t(
+                                   TValue<String>::from_value_checked(result)));
+    };
+
+    expect_method_result(-0.0, dunder_str_name, L"-0.0");
+    expect_method_result(std::numeric_limits<double>::infinity(),
+                         dunder_str_name, L"inf");
+    expect_method_result(-std::numeric_limits<double>::infinity(),
+                         dunder_str_name, L"-inf");
+    expect_method_result(std::numeric_limits<double>::quiet_NaN(),
+                         dunder_repr_name, L"nan");
+}
+
 TEST(Interpreter, range_builtin_returns_range_iterator)
 {
     test::VmTestContext test_context;
@@ -3571,6 +3602,22 @@ TEST(Interpreter, python_defined_repr_builtin_calls_dunder_repr)
                  string_as_wchar_t(TValue<String>::from_value_checked(actual)));
 }
 
+TEST(Interpreter, python_defined_repr_builtin_formats_float_literals)
+{
+    test::VmTestContext test_context;
+
+    auto expect_repr = [&](const wchar_t *source, const wchar_t *expected) {
+        Value actual = test_context.run_file(source);
+        ASSERT_TRUE(can_convert_to<String>(actual));
+        EXPECT_STREQ(expected, string_as_wchar_t(
+                                   TValue<String>::from_value_checked(actual)));
+    };
+
+    expect_repr(L"repr(1.5)\n", L"1.5");
+    expect_repr(L"repr(1.0)\n", L"1.0");
+    expect_repr(L"repr(1e20)\n", L"1e+20");
+}
+
 TEST(Interpreter, python_defined_len_builtin_calls_dunder_len)
 {
     test::VmTestContext test_context;
@@ -3597,6 +3644,15 @@ TEST(Interpreter, python_defined_print_builtin_writes_values_to_stdout)
 
     EXPECT_EQ(Value::None(), run.return_value);
     EXPECT_EQ(L"1 True None ok\n", run.stdout_text);
+}
+
+TEST(Interpreter, python_defined_print_builtin_formats_float_literals)
+{
+    CapturedStdoutRun run =
+        run_file_with_captured_stdout(L"print(1.5, 1.0, 1e20)\n");
+
+    EXPECT_EQ(Value::None(), run.return_value);
+    EXPECT_EQ(L"1.5 1.0 1e+20\n", run.stdout_text);
 }
 
 TEST(Interpreter, python_defined_print_builtin_writes_blank_line_for_no_args)

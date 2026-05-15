@@ -97,6 +97,8 @@ Validation:
 
 ## Stage 3: Float Printing
 
+Status: complete.
+
 Goal: `print`, `str`, and `repr` are useful for float literals and test output.
 
 This can be folded into Stage 1 if direct formatting is trivial, but it is a
@@ -104,19 +106,20 @@ separate stage if shortest-representation formatting needs iteration.
 
 Implementation pieces:
 
-- implement stable compact formatting for finite values;
-- ensure integer-valued finite floats include `.0`;
-- preserve negative zero as `-0.0`;
-- print infinities and NaN as `inf`, `-inf`, and `nan`;
-- avoid `std::to_wstring` fixed-width output.
+- [x] implement stable compact formatting for finite values;
+- [x] ensure integer-valued finite floats include `.0`;
+- [x] preserve negative zero as `-0.0`;
+- [x] print infinities and NaN as `inf`, `-inf`, and `nan`;
+- [x] avoid `std::to_wstring` fixed-width output.
 
 Tests:
 
-- `str(1.5) == "1.5"`;
-- `repr(1.5) == "1.5"`;
-- `str(1.0) == "1.0"`;
-- `str(-0.0) == "-0.0"`;
-- representative exponent output if exponent formatting is implemented.
+- [x] `str(1.5) == "1.5"` through the float `__str__` method;
+- [x] `repr(1.5) == "1.5"`;
+- [x] float literal `print` output uses `__str__`;
+- [x] `str(1.0) == "1.0"`;
+- [x] `str(-0.0) == "-0.0"`;
+- [x] representative exponent output if exponent formatting is implemented.
 
 Non-goals:
 
@@ -126,7 +129,7 @@ Non-goals:
 
 Validation:
 
-- `ninja -C build-debug all check`.
+- [x] `ninja -C build-debug all check`.
 
 ## Stage 4: Float Truthiness
 

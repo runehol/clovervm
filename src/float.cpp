@@ -5,6 +5,7 @@
 #include "str.h"
 #include "thread_state.h"
 #include "virtual_machine.h"
+#include <cmath>
 #include <fmt/format.h>
 #include <iterator>
 #include <string>
@@ -13,6 +14,15 @@ namespace cl
 {
     static std::wstring format_float_value(double value)
     {
+        if(std::isnan(value))
+        {
+            return L"nan";
+        }
+        if(std::isinf(value))
+        {
+            return std::signbit(value) ? L"-inf" : L"inf";
+        }
+
         std::string text = fmt::format("{}", value);
         if(text.find_first_of(".eE") == std::string::npos)
         {
@@ -27,6 +37,17 @@ namespace cl
         {
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"float.__str__ expects a float receiver");
+        }
+        return active_thread()->make_object_value<String>(
+            format_float_value(self.get_ptr<Float>()->value));
+    }
+
+    static Value native_float_repr(Value self)
+    {
+        if(!can_convert_to<Float>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"float.__repr__ expects a float receiver");
         }
         return active_thread()->make_object_value<String>(
             format_float_value(self.get_ptr<Float>()->value));
@@ -48,7 +69,7 @@ namespace cl
         BuiltinNativeMethod methods[] = {
             builtin_native_method(L"__str__", native_float_str,
                                   L"Return str(self)."),
-            builtin_native_method(L"__repr__", native_float_str,
+            builtin_native_method(L"__repr__", native_float_repr,
                                   L"Return repr(self)."),
         };
         install_builtin_native_methods(vm, vm->float_class(), methods,
