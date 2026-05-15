@@ -21,15 +21,15 @@ namespace cl
         drop_epoch_discovery_pins_and_release_slabs();
     }
 
-    char *ThreadLocalHeap::allocate_slow(size_t n_bytes)
+    HeapAllocation ThreadLocalHeap::allocate_slow(size_t n_bytes)
     {
         if(n_bytes >= LargeAllocationSize)
         {
-            char *memory = global_heap->allocate_large_object(n_bytes);
-            remember_dedicated_epoch_slab(
-                global_heap->slab_for_address_unlocked(memory), n_bytes);
+            HeapAllocation allocation =
+                global_heap->allocate_large_object(n_bytes);
+            remember_dedicated_epoch_slab(allocation.slab, n_bytes);
             request_reclamation_if_policy_triggers();
-            return memory;
+            return allocation;
         }
 
         SlabAllocator *old_allocator = local_allocator;
@@ -42,7 +42,7 @@ namespace cl
         request_reclamation_if_policy_triggers();
         char *memory = local_allocator->allocate(n_bytes);
         assert(memory != nullptr);
-        return memory;
+        return {memory, local_allocator};
     }
 
     void ThreadLocalHeap::switch_to_new_slabs()

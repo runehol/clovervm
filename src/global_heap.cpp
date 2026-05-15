@@ -145,7 +145,7 @@ namespace cl
         return true;
     }
 
-    char *GlobalHeap::allocate_large_object(size_t n_bytes)
+    HeapAllocation GlobalHeap::allocate_large_object(size_t n_bytes)
     {
         size_t required_slab_size =
             n_bytes + value_ptr_granularity -
@@ -153,10 +153,10 @@ namespace cl
         SlabAllocator *single_allocator = make_new_slab(required_slab_size);
         char *memory = single_allocator->allocate(n_bytes);
         assert(memory != nullptr);
-        return memory;
+        return {memory, single_allocator};
     }
 
-    char *GlobalHeap::allocate_global(size_t n_bytes)
+    HeapAllocation GlobalHeap::allocate_global(size_t n_bytes)
     {
         const std::lock_guard<std::mutex> lock(global_allocator_mutex);
         if(global_allocator == nullptr)

@@ -2,6 +2,7 @@
 #define CL_HEAP_CONSTRUCTION_H
 
 #include "native_layout_declarations.h"
+#include "slab_allocator.h"
 #include "value.h"
 #include <new>
 #include <type_traits>
@@ -9,6 +10,12 @@
 
 namespace cl
 {
+    struct HeapAllocation
+    {
+        char *memory;
+        SlabAllocator *slab;
+    };
+
     template <typename T, typename = void>
     struct HasHeapNativeLayoutId : std::false_type
     {
@@ -53,10 +60,10 @@ namespace cl
     {
         size_t object_size_in_bytes =
             allocation_size_for<T>(std::forward<Args>(args)...);
-        char *memory = heap->allocate(object_size_in_bytes);
-        T *obj = new(memory) T(std::forward<Args>(args)...);
+        HeapAllocation allocation = heap->allocate(object_size_in_bytes);
+        T *obj = new(allocation.memory) T(std::forward<Args>(args)...);
         assert(obj->HeapObject::native_layout_id() == T::native_layout);
-        heap->mark_valid_object(obj);
+        allocation.slab->mark_valid_object(obj);
         return obj;
     }
 }  // namespace cl

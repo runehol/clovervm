@@ -38,11 +38,14 @@ namespace cl
             return GlobalHeap(value_interned_ptr_tag, slab_size);
         }
 
-        char *allocate_large_object(
+        HeapAllocation allocate_large_object(
             size_t n_bytes);  // slow path allocation for large objects
 
-        char *allocate(size_t n_bytes) { return allocate_global(n_bytes); }
-        char *allocate_global(size_t n_bytes);
+        HeapAllocation allocate(size_t n_bytes)
+        {
+            return allocate_global(n_bytes);
+        }
+        HeapAllocation allocate_global(size_t n_bytes);
         void mark_valid_object(HeapObject *obj);
         bool release_slab_if_empty(SlabAllocator *slab);
 

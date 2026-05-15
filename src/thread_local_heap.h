@@ -26,14 +26,14 @@ namespace cl
         ~ThreadLocalHeap();
 
         // allocation fast path
-        char *allocate(size_t n_bytes)
+        HeapAllocation allocate(size_t n_bytes)
         {
             if(likely(n_bytes < LargeAllocationSize))
             {
                 char *result = local_allocator->allocate(n_bytes);
                 if(likely(result != nullptr))
                 {
-                    return result;
+                    return {result, local_allocator};
                 }
             }
 
@@ -82,7 +82,7 @@ namespace cl
         }
 
     private:
-        NOINLINE char *allocate_slow(size_t n_bytes);
+        NOINLINE HeapAllocation allocate_slow(size_t n_bytes);
         void add_active_allocator_pin(SlabAllocator *allocator)
         {
             allocator->add_active_allocator_pin();
