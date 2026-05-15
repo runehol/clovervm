@@ -6,6 +6,23 @@ namespace cl
 {
     namespace
     {
+        size_t legacy_heap_layout_object_size_in_bytes(const HeapObject *obj)
+        {
+            assert(obj != nullptr);
+            uint64_t size_in_16byte_units;
+            if(layout_is_expanded(obj->layout))
+            {
+                size_in_16byte_units = expanded_header_for_object(obj)
+                                           ->object_size_in_16byte_units;
+            }
+            else
+            {
+                size_in_16byte_units = obj->layout & object_layout_size_mask;
+            }
+
+            return size_t(size_in_16byte_units) * 16;
+        }
+
         NativeValueSpan legacy_heap_layout_value_span(HeapObject *obj)
         {
             assert(obj != nullptr);
@@ -86,6 +103,31 @@ namespace cl
 
         assert(false && "release descriptor kind not implemented yet");
         return NativeValueSpan{nullptr, 0};
+    }
+
+    size_t object_size_in_bytes(const HeapObject *obj)
+    {
+        assert(obj != nullptr);
+        const ObjectSizeDescriptor &descriptor =
+            object_size_descriptor_for(obj->native_layout_id());
+
+        switch(descriptor.kind)
+        {
+            case ObjectSizeKind::LegacyHeapLayout:
+                return legacy_heap_layout_object_size_in_bytes(obj);
+            case ObjectSizeKind::StaticSize:
+                return descriptor.static_size_in_bytes;
+            case ObjectSizeKind::Custom:
+                assert(descriptor.custom_size_in_bytes != nullptr);
+                return descriptor.custom_size_in_bytes(obj);
+            case ObjectSizeKind::Missing:
+            case ObjectSizeKind::DynamicSmiSize:
+            case ObjectSizeKind::DynamicAuxSize:
+                break;
+        }
+
+        assert(false && "object-size descriptor kind not implemented yet");
+        return 0;
     }
 
 }  // namespace cl

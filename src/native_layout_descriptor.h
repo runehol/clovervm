@@ -406,6 +406,7 @@ namespace cl
     }
 
     NativeValueSpan value_span_for_release(HeapObject *obj);
+    size_t object_size_in_bytes(const HeapObject *obj);
 
 }  // namespace cl
 

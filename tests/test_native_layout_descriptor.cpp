@@ -20,6 +20,56 @@ using namespace cl;
 
 namespace
 {
+    class LegacySizeTestObject : public HeapObject
+    {
+    public:
+        static constexpr NativeLayoutId native_layout =
+            NativeLayoutId::TestOnly;
+
+        LegacySizeTestObject() : HeapObject(native_layout, compact_layout())
+        {
+            values[0] = Value::not_present();
+        }
+
+        Value values[1];
+
+        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(LegacySizeTestObject, values, 1);
+    };
+
+    class LegacyDynamicSizeTestObject : public HeapObject
+    {
+    public:
+        static constexpr NativeLayoutId native_layout =
+            NativeLayoutId::TestOnly;
+
+        LegacyDynamicSizeTestObject(HeapLayout layout, size_t size)
+            : HeapObject(native_layout, layout), size_(size)
+        {
+            for(size_t idx = 0; idx < size_; ++idx)
+            {
+                values[idx] = Value::not_present();
+            }
+        }
+
+        static size_t size_for(size_t size)
+        {
+            return sizeof(LegacyDynamicSizeTestObject) +
+                   (size - 1) * sizeof(Value);
+        }
+
+        static DynamicLayoutSpec layout_spec_for(size_t size)
+        {
+            return DynamicLayoutSpec{round_up_to_16byte_units(size_for(size)),
+                                     size};
+        }
+
+        size_t size_;
+        Value values[1];
+
+        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(LegacyDynamicSizeTestObject,
+                                              values);
+    };
+
     template <typename T> void expect_static_native_layout_descriptor()
     {
         const ReleaseDescriptor &release =
@@ -98,6 +148,51 @@ TEST(NativeLayoutDescriptor, StringUsesStaticReleaseAndCustomObjectSize)
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
 }
 
+TEST(NativeLayoutDescriptor, StaticObjectSizeQueryUsesDescriptorConstant)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    List *list = context.thread()->make_object_raw<List>();
+
+    EXPECT_EQ(sizeof(List), object_size_in_bytes(list));
+}
+
+TEST(NativeLayoutDescriptor,
+     NewObjectSizeMatchesAllocatedObjectSizeAcrossNativeTypes)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    size_t expected_list_size = sizeof(List);
+    List *list = context.thread()->make_object_raw<List>();
+    EXPECT_EQ(expected_list_size, object_size_in_bytes(list));
+
+    size_t expected_range_iterator_size = sizeof(RangeIterator);
+    RangeIterator *range_iterator =
+        context.thread()->make_object_raw<RangeIterator>(
+            TValue<CLInt>::from_smi(0), TValue<CLInt>::from_smi(3),
+            TValue<CLInt>::from_smi(1));
+    EXPECT_EQ(expected_range_iterator_size,
+              object_size_in_bytes(range_iterator));
+
+    size_t expected_string_size = String::size_for(5);
+    String *str = context.thread()->make_object_raw<String>(L"hello");
+    EXPECT_EQ(expected_string_size, object_size_in_bytes(str));
+
+    size_t expected_tuple_size = Tuple::size_for(5);
+    Tuple *tuple = context.thread()->make_object_raw<Tuple>(5);
+    EXPECT_EQ(expected_tuple_size, object_size_in_bytes(tuple));
+
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"SizedInstance"));
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        cls_name, 4, context.vm().object_class());
+    size_t expected_instance_size =
+        Instance::size_for(Instance::inline_slot_count_for_class(cls));
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
+    EXPECT_EQ(expected_instance_size, object_size_in_bytes(instance));
+}
+
 TEST(NativeLayoutDescriptor, StringCustomObjectSizeUsesStoredCount)
 {
     test::VmTestContext context;
@@ -110,6 +205,7 @@ TEST(NativeLayoutDescriptor, StringCustomObjectSizeUsesStoredCount)
     ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
     EXPECT_EQ(String::size_for(5), object_size.custom_size_in_bytes(str));
+    EXPECT_EQ(String::size_for(5), object_size_in_bytes(str));
 }
 
 TEST(NativeLayoutDescriptor,
@@ -194,6 +290,7 @@ TEST(NativeLayoutDescriptor, TupleCustomObjectSizeUsesStoredCount)
     ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
     EXPECT_EQ(Tuple::size_for(5), object_size.custom_size_in_bytes(tuple));
+    EXPECT_EQ(Tuple::size_for(5), object_size_in_bytes(tuple));
 }
 
 TEST(NativeLayoutDescriptor, InstanceUsesDynamicAuxReleaseAndCustomObjectSize)
@@ -267,6 +364,7 @@ TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesAuxCount)
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
     EXPECT_EQ(Instance::size_for(4),
               object_size.custom_size_in_bytes(instance));
+    EXPECT_EQ(Instance::size_for(4), object_size_in_bytes(instance));
 }
 
 TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
@@ -302,4 +400,35 @@ TEST(NativeLayoutDescriptor, UnmigratedLayoutsStillUseLegacyReleaseDescriptor)
 {
     EXPECT_EQ(ReleaseKind::LegacyHeapLayout,
               release_descriptor_for(NativeLayoutId::CodeObject).kind);
+}
+
+TEST(NativeLayoutDescriptor, LegacyObjectSizeQueryUsesHeapLayout)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    LegacySizeTestObject *obj =
+        context.thread()->make_internal_raw<LegacySizeTestObject>();
+
+    ASSERT_EQ(ObjectSizeKind::LegacyHeapLayout,
+              object_size_descriptor_for(NativeLayoutId::TestOnly).kind);
+    EXPECT_EQ(size_t(LegacySizeTestObject::static_size_in_16byte_units()) * 16,
+              object_size_in_bytes(obj));
+}
+
+TEST(NativeLayoutDescriptor, ExpandedLegacyObjectSizeQueryUsesHeapLayout)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    size_t value_count = object_layout_count_mask + 1;
+    LegacyDynamicSizeTestObject *obj =
+        context.thread()->make_internal_raw<LegacyDynamicSizeTestObject>(
+            value_count);
+
+    ASSERT_TRUE(layout_is_expanded(obj->layout));
+    ASSERT_EQ(ObjectSizeKind::LegacyHeapLayout,
+              object_size_descriptor_for(NativeLayoutId::TestOnly).kind);
+    EXPECT_EQ(round_up_to_16byte_units(
+                  LegacyDynamicSizeTestObject::size_for(value_count)) *
+                  16,
+              object_size_in_bytes(obj));
 }

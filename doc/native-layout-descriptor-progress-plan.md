@@ -161,14 +161,15 @@ object header, while `Shape` remains responsible for semantic storage.
 
 ## Stage 7: Opaque Object Size Query
 
-- [ ] Add `object_size_in_bytes(const HeapObject *)`.
-- [ ] Add static object-size descriptors for fixed-size layouts.
-- [ ] Add dynamic object-size descriptors for tuple and instance.
-- [ ] Derive tuple opaque size from tuple length.
-- [ ] Derive instance opaque size from `HeapObject` aux count.
-- [ ] Keep allocation on concrete `T::object_size_in_bytes(args...)` or existing
+- [x] Add `object_size_in_bytes(const HeapObject *)`.
+- [x] Add static object-size descriptors for fixed-size layouts.
+- [x] Represent dynamic object-size descriptors as custom functions that
+      delegate to type-local sizing helpers.
+- [x] Derive tuple opaque size from tuple length.
+- [x] Derive instance opaque size from `HeapObject` aux count.
+- [x] Keep allocation on concrete `T::object_size_in_bytes(args...)` or existing
       type-local helpers rather than dispatching by native layout ID.
-- [ ] Use the opaque query only for validation, accounting, debugging, or other
+- [x] Use the opaque query only for validation, accounting, debugging, or other
       already-allocated-object paths.
 
 Deliverable: size queries no longer need to decode packed `HeapLayout`, but
