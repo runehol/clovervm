@@ -169,10 +169,16 @@ namespace cl
     void Object::initialize_shape(Shape *instance_root_shape)
     {
         assert(shape == nullptr);
-        set_shape(instance_root_shape);
+        assert(instance_root_shape != nullptr);
+
+        shape = incref(instance_root_shape);
+        if(native_layout_has_slots(native_layout_id()))
+        {
+            ensure_storage_for_shape(instance_root_shape);
+        }
 
         uint32_t instance_default_inline_slot_count =
-            get_shape()->get_instance_default_inline_slot_count();
+            instance_root_shape->get_instance_default_inline_slot_count();
         if(!native_layout_has_slots(native_layout_id()) ||
            native_layout_id() == NativeLayoutId::Instance)
         {
