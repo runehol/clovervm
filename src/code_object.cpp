@@ -52,7 +52,8 @@ namespace cl
             NativeLayoutId::CodeObject};
         ClassObject *cls = ClassObject::make_builtin_class(
             vm->get_or_create_interned_string_value(L"code"),
-            CodeObject::static_value_count(), nullptr, 0, vm->object_class());
+            CodeObject::native_static_release_count(), nullptr, 0,
+            vm->object_class());
         return builtin_class_definition(cls, native_layout_ids);
     }
 }  // namespace cl

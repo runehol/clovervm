@@ -2,9 +2,9 @@
 
 ## Goal
 
-Move owned-value release and opaque object-size queries from packed
-`HeapLayout` metadata to `NativeLayoutId` keyed descriptors, while preserving
-the current reclamation behavior during migration.
+Move owned-value release, opaque object-size queries, and allocation sizing
+from packed `HeapLayout` metadata to `NativeLayoutId` keyed descriptors and
+concrete type-local size helpers.
 
 The target design is described in
 [Native Layout Descriptors](native-layout-descriptors.md). This file tracks the
@@ -24,10 +24,8 @@ truth.
 - Allocation continues to use concrete type-local size helpers. The
   `object_size_in_bytes(const HeapObject *)` query is for already-allocated
   opaque objects.
-- Native descriptor declarations must be parallel to the legacy
-  `CL_DECLARE_*LAYOUT*` macros, not layered on top of them. The old macros
-  describe packed `HeapLayout` metadata and should become removable once
-  descriptor migration is complete.
+- Native descriptor declarations replaced the legacy `CL_DECLARE_*LAYOUT*`
+  macros. The old packed `HeapLayout` encoding is removed.
 - The `SlotObject` split is deferred. Native-layout descriptors must work with
   the current `Object` / `Instance` layout first.
 
@@ -43,7 +41,7 @@ truth.
       delegating `Object` wrapper.
 - [x] Update native-layout checks at object call sites to use the inherited
       `HeapObject::native_layout_id()` accessor.
-- [x] Keep `HeapLayout layout` during the transition.
+- [x] Keep `HeapLayout layout` during the initial transition.
 
 Deliverable: every heap record can carry a native layout identity, while release
 still behaves as it does today.
@@ -55,7 +53,7 @@ still behaves as it does today.
 - [x] Thread native layout ID initialization through dynamic object
       construction.
 - [x] Initialize the aux count to zero for all objects at first.
-- [x] Keep object constructors and allocation helpers using existing
+- [x] Initially keep object constructors and allocation helpers using existing
       `HeapLayout` metadata for size and value-span data.
 - [x] Add assertions that constructed heap objects do not retain
       `NativeLayoutId::Invalid`.
@@ -105,9 +103,7 @@ Migrate fixed layouts first, in small groups.
       `NativeLayoutObjectSizeDescriptorBuilder` so descriptor tables consume
       type-local native metadata mechanically.
 - [x] During migration only, use legacy `HeapLayout` parity as a compatibility
-      check for migrated layouts. `Object`'s legacy value span includes its
-      owned heap references; inline slot access uses `sizeof(Object)` directly
-      instead of reusing the release span offset.
+      check for migrated layouts. This parity scaffolding has now been removed.
 - [x] Migrate `List`.
 - [x] Migrate `Dict`.
 - [x] Migrate `Function`.
@@ -122,8 +118,7 @@ Migrate fixed layouts first, in small groups.
       refactor remains deferred.
 
 Deliverable: the common fixed object layouts release through descriptor table
-entries declared by the new native descriptor hierarchy, with parity checks
-protecting the migration until the legacy heap-layout macros can be retired.
+entries declared by the new native descriptor hierarchy.
 
 ## Stage 5: Tuple DynamicSmiSpan
 
@@ -220,9 +215,11 @@ ID, not just Python-visible objects.
 - [x] Remove packed value-count and value-offset dependence from reclamation.
 - [x] Remove `DynamicLayoutSpec` and expanded-layout allocation metadata; dynamic
       allocation now uses concrete `size_for(...)` helpers directly.
-- [x] Keep any remaining size metadata only where still needed by allocation or
-      transitional validation.
-- [ ] Update reclamation and heap tests to assert descriptor-driven release.
+- [x] Collapse heap construction to one allocation path keyed by
+      `ObjectSizeKind`.
+- [x] Remove legacy `CL_DECLARE_*LAYOUT*` macros, compact `HeapLayout` encoding
+      helpers, and parity tests.
+- [x] Update reclamation and heap tests to assert descriptor-driven release.
 
 Deliverable: owned-value release is fully descriptor-driven.
 

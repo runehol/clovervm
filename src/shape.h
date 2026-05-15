@@ -258,7 +258,6 @@ namespace cl
 
         CL_DECLARE_CUSTOM_DEALLOC(Shape, dealloc);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(Shape, Shape::object_size_in_bytes);
-        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(Shape, class_value);
     };
 
 }  // namespace cl

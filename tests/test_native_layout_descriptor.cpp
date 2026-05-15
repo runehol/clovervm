@@ -39,9 +39,8 @@ namespace
             release_descriptor_for(T::native_layout);
 
         EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
-        EXPECT_EQ(T::static_value_offset_in_words(),
+        EXPECT_EQ(T::native_value_offset_in_words(),
                   release.value_offset_words);
-        EXPECT_EQ(T::static_value_count(), release.static_release_count);
         EXPECT_EQ(T::native_static_release_count(),
                   release.static_release_count);
 
@@ -73,7 +72,6 @@ TEST(NativeLayoutDescriptor, ListNativeReleaseCountIncludesInheritedObjectCells)
     EXPECT_EQ(Object::native_static_release_count() +
                   ValueArray<Value>::embedded_value_count,
               List::native_static_release_count());
-    EXPECT_EQ(List::static_value_count(), List::native_static_release_count());
 }
 
 TEST(NativeLayoutDescriptor, ListNativeReleaseSpanStartsAtInheritedObjectCells)
@@ -119,7 +117,6 @@ TEST(NativeLayoutDescriptor, ScopeNativeReleaseSpanStartsAtParentScope)
               release.value_offset_words);
     EXPECT_EQ(Scope::native_static_release_count(),
               release.static_release_count);
-    EXPECT_EQ(Scope::static_value_count(), release.static_release_count);
 }
 
 TEST(NativeLayoutDescriptor, StringUsesStaticReleaseAndCustomObjectSize)
@@ -128,9 +125,8 @@ TEST(NativeLayoutDescriptor, StringUsesStaticReleaseAndCustomObjectSize)
         release_descriptor_for(String::native_layout);
 
     EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
-    EXPECT_EQ(String::static_value_offset_in_words(),
+    EXPECT_EQ(String::native_value_offset_in_words(),
               release.value_offset_words);
-    EXPECT_EQ(String::static_fixed_value_count(), release.static_release_count);
     EXPECT_EQ(String::native_static_release_count(),
               release.static_release_count);
 
@@ -221,7 +217,7 @@ TEST(NativeLayoutDescriptor, TupleUsesDynamicSmiReleaseAndCustomObjectSize)
     EXPECT_EQ(ReleaseKind::DynamicSmiSpan, release.kind);
     EXPECT_EQ(Tuple::native_value_count_offset_in_words(),
               release.count_offset_words);
-    EXPECT_EQ(Tuple::static_value_offset_in_words(),
+    EXPECT_EQ(Tuple::native_value_offset_in_words(),
               release.value_offset_words);
     EXPECT_EQ(Tuple::native_additional_release_count(),
               release.additional_release_count);
@@ -274,7 +270,7 @@ TEST(NativeLayoutDescriptor, InstanceUsesDynamicAuxReleaseAndCustomObjectSize)
         release_descriptor_for(Instance::native_layout);
 
     EXPECT_EQ(ReleaseKind::DynamicAuxSpan, release.kind);
-    EXPECT_EQ(Instance::static_value_offset_in_words(),
+    EXPECT_EQ(Instance::native_value_offset_in_words(),
               release.value_offset_words);
     EXPECT_EQ(Instance::native_additional_release_count(),
               release.additional_release_count);

@@ -36,8 +36,6 @@ namespace cl
     public:
         CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(Instance, Object, 0);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(Instance, Instance::object_size_in_bytes);
-
-        CL_DECLARE_DYNAMIC_LAYOUT_EXTENDS_WITH_VALUES(Instance, Object, 0);
     };
 
 }  // namespace cl

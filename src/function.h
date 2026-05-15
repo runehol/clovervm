@@ -109,8 +109,6 @@ namespace cl
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(Function, Object, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(Function);
 
-        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(Function, Object, 3);
-
     private:
         static uint32_t min_arity_for_code(TValue<CodeObject> code_object,
                                            TValue<Tuple> default_parameters)

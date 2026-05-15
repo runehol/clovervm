@@ -87,8 +87,6 @@ namespace cl
         CL_DECLARE_STATIC_VALUE_SPAN(Object, shape, 2);
         CL_DECLARE_STATIC_OBJECT_SIZE(Object);
 
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Object, shape, 2);
-
     private:
         void initialize_shape_for_class(ClassObject *class_object);
         void initialize_shape(Shape *instance_root_shape);

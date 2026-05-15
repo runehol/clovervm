@@ -19,7 +19,6 @@ namespace cl
 
         CL_DECLARE_EMPTY_VALUE_SPAN(ValidityCell);
         CL_DECLARE_STATIC_OBJECT_SIZE(ValidityCell);
-        CL_DECLARE_STATIC_LAYOUT_NO_VALUES(ValidityCell);
 
     private:
         bool valid;

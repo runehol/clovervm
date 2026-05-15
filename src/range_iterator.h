@@ -30,8 +30,6 @@ namespace cl
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(RangeIterator, Object, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(RangeIterator);
-
-        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(RangeIterator, Object, 3);
     };
 
     static_assert(std::is_trivially_destructible_v<RangeIterator>);

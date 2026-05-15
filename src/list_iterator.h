@@ -28,8 +28,6 @@ namespace cl
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ListIterator, Object, 2);
         CL_DECLARE_STATIC_OBJECT_SIZE(ListIterator);
-
-        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(ListIterator, Object, 2);
     };
 
     static_assert(std::is_trivially_destructible_v<ListIterator>);

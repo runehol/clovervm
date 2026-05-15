@@ -8,6 +8,8 @@
 
 namespace cl
 {
+#define CL_OFFSETOF(type, member) offsetof(type, member)
+
     enum class ReleaseKind : uint8_t
     {
         CustomDealloc,

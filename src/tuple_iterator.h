@@ -32,8 +32,6 @@ namespace cl
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(TupleIterator, Object, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(TupleIterator);
-
-        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(TupleIterator, Object, 3);
     };
 
     static_assert(std::is_trivially_destructible_v<TupleIterator>);

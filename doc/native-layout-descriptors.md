@@ -2,11 +2,10 @@
 
 ## Context
 
-The current heap reclaimer has an interim object-specific value-span helper:
-`ObjectValueSpan` is derived from the concrete `HeapObject`'s `HeapLayout`, and
-reclamation clears those slots before releasing copied child values. That is
-good enough for the acyclic deferred-refcount baseline, including compact and
-expanded dynamic layouts, but it is not the final descriptor facade.
+The heap reclaimer releases owned values through native-layout descriptors
+keyed by each `HeapObject`'s `NativeLayoutId`. Reclamation clears described
+slots before releasing copied child values, and custom deallocators handle
+layouts that do not fit a contiguous span.
 
 The next slab discovery step is described in
 [Committed-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md).
@@ -423,9 +422,8 @@ The design uses three declarations:
   the trait
 
 The namespace-scope macro should have little logic in it. It should not name
-private members, compute offsets, decide classifications, or depend on the old
-`HeapLayout` helpers. It should simply connect `type::native_layout` to the
-metadata builders for that C++ type.
+private members, compute offsets, or decide classifications. It should simply
+connect `type::native_layout` to the metadata builders for that C++ type.
 
 For example, a static span object should look like:
 
@@ -774,14 +772,13 @@ release moved cells. This keeps the hot release loop free of scale factors.
 ## Migration Plan
 
 1. **Introduce the descriptor-shaped API without deleting current metadata.**
-   Reclamation should call this API instead of open-coding `HeapLayout`
-   decoding. The existing `ObjectValueSpan` helper is the useful nucleus for
-   owned-value release, but it should move behind the facade rather than become
-   the facade itself.
+   Reclamation should call this API instead of open-coding layout decoding. The
+   existing `ObjectValueSpan` helper was the useful nucleus for owned-value
+   release, but moved behind the facade rather than becoming the facade itself.
 2. **Implement the normalized release descriptor path.**
    Use it for layouts that can be described by static or dynamic spans.
-   Bridge still-unmigrated layouts through existing `HeapLayout` decoding as a
-   compatibility path, not as the main reclamation interface.
+   Bridge still-unmigrated layouts through legacy decoding as a compatibility
+   path, not as the main reclamation interface.
 3. **Migrate fixed native layouts in small groups.**
    Use legacy metadata parity only where the old value region already covers
    all releasable cells. Native release descriptors are the source of truth.
@@ -797,7 +794,7 @@ release moved cells. This keeps the hot release loop free of scale factors.
    release table model.
 7. **Introduce C-extension descriptor kind + bridge.**
    Gate with focused extension lifecycle tests.
-8. **Remove legacy `HeapLayout` release dependence once parity is proven.**
+8. **Remove legacy release dependence once parity is proven.**
 
 ## Decision
 

@@ -103,11 +103,6 @@ namespace cl
             decltype(hash_table)::embedded_value_count +
                 decltype(entries)::embedded_value_count);
         CL_DECLARE_STATIC_OBJECT_SIZE(Dict);
-
-        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(
-            Dict, Object,
-            decltype(hash_table)::embedded_value_count +
-                decltype(entries)::embedded_value_count);
     };
 
     class VirtualMachine;

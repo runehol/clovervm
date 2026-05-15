@@ -42,7 +42,6 @@ namespace cl
         CL_DECLARE_EMPTY_VALUE_SPAN(RawArrayBacking);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(RawArrayBacking,
                                       RawArrayBacking::object_size_in_bytes);
-        CL_DECLARE_DYNAMIC_LAYOUT_NO_VALUES(RawArrayBacking);
     };
 
     class ValueArrayBacking : public HeapObject
@@ -80,7 +79,6 @@ namespace cl
         CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(ValueArrayBacking, elements, 0);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(ValueArrayBacking,
                                       ValueArrayBacking::object_size_in_bytes);
-        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(ValueArrayBacking, elements);
     };
 
     class HeapPtrArrayBacking : public HeapObject
@@ -121,7 +119,6 @@ namespace cl
         CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(HeapPtrArrayBacking, elements, 0);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(
             HeapPtrArrayBacking, HeapPtrArrayBacking::object_size_in_bytes);
-        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(HeapPtrArrayBacking, elements);
     };
 
 }  // namespace cl

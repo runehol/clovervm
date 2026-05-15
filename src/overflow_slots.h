@@ -68,7 +68,6 @@ namespace cl
         CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(OverflowSlots, slots, 0);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(OverflowSlots,
                                       OverflowSlots::object_size_in_bytes);
-        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(OverflowSlots, slots);
     };
 
 }  // namespace cl

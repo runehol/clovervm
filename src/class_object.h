@@ -213,11 +213,6 @@ namespace cl
             3 + class_extra_inline_attribute_slot_count + 2 +
                 2 * HeapPtrArray<ValidityCell>::embedded_value_count + 2);
         CL_DECLARE_STATIC_OBJECT_SIZE(ClassObject);
-
-        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(
-            ClassObject, Object,
-            3 + class_extra_inline_attribute_slot_count + 2 +
-                2 * HeapPtrArray<ValidityCell>::embedded_value_count + 2);
     };
 
     class VirtualMachine;

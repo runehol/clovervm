@@ -29,9 +29,6 @@ namespace cl
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ExceptionObject, Object, 1);
         CL_DECLARE_STATIC_OBJECT_SIZE(ExceptionObject);
 
-        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(ExceptionObject, Object,
-                                                     1);
-
     protected:
         ExceptionObject(ClassObject *cls, NativeLayoutId layout_id,
                         TValue<String> message)
@@ -63,9 +60,6 @@ namespace cl
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(StopIterationObject,
                                              ExceptionObject, 1);
         CL_DECLARE_STATIC_OBJECT_SIZE(StopIterationObject);
-
-        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(StopIterationObject,
-                                                     ExceptionObject, 1);
     };
 
     static_assert(CL_OFFSETOF(StopIterationObject, value) ==

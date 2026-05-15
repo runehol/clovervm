@@ -257,7 +257,6 @@ namespace cl
 
         CL_DECLARE_CUSTOM_DEALLOC(CodeObject, dealloc);
         CL_DECLARE_STATIC_OBJECT_SIZE(CodeObject);
-        CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(CodeObject, Object, 4);
     };
 
     BuiltinClassDefinition make_code_object_class(VirtualMachine *vm);

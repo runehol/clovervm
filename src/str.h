@@ -118,8 +118,6 @@ namespace cl
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(String, Object, 1);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(String, String::object_size_in_bytes);
-
-        CL_DECLARE_DYNAMIC_LAYOUT_EXTENDS_WITH_VALUES(String, Object, 1);
     };
 
     static inline bool operator==(const String &a, const std::wstring &b)

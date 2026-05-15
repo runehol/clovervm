@@ -74,8 +74,8 @@ namespace cl
         };
         ClassObject *cls = ClassObject::make_builtin_class(
             vm->get_or_create_interned_string_value(L"range_iterator"),
-            RangeIterator::static_value_count(), methods, std::size(methods),
-            vm->object_class());
+            RangeIterator::native_static_release_count(), methods,
+            std::size(methods), vm->object_class());
         return builtin_class_definition(cls, native_layout_ids);
     }
 }  // namespace cl

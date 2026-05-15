@@ -184,14 +184,6 @@ namespace cl
                 decltype(slot_names)::embedded_value_count +
                 decltype(slot_current_entry_indices)::embedded_value_count);
         CL_DECLARE_STATIC_OBJECT_SIZE(Scope);
-
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(
-            Scope, parent_scope,
-            1 + decltype(name_table)::embedded_value_count +
-                decltype(entries)::embedded_value_count +
-                decltype(slot_values)::embedded_value_count +
-                decltype(slot_names)::embedded_value_count +
-                decltype(slot_current_entry_indices)::embedded_value_count);
     };
 
 }  // namespace cl
