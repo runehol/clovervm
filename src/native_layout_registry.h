@@ -8,6 +8,7 @@
 #include "list.h"
 #include "list_iterator.h"
 #include "range_iterator.h"
+#include "str.h"
 #include "tuple_iterator.h"
 
 #define CL_NATIVE_LAYOUT_REGISTRY(V)                                           \
@@ -19,6 +20,7 @@
     V(StopIterationObject);                                                    \
     V(Function);                                                               \
     V(Dict);                                                                   \
+    V(String);                                                                 \
     V(ClassObject);
 
 #endif  // CL_NATIVE_LAYOUT_REGISTRY_H

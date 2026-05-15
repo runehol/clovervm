@@ -96,6 +96,10 @@ namespace cl
         {
             return sizeof(String) + n_chars * sizeof(cl_wchar);
         }
+        static size_t object_size_in_bytes(const String *str)
+        {
+            return size_for(size_t(str->count.extract()));
+        }
 
         static DynamicLayoutSpec layout_spec_for(TValue<SMI> count)
         {
@@ -133,6 +137,9 @@ namespace cl
         {
             return layout_spec_for(str);
         }
+
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(String, Object, 1);
+        CL_DECLARE_CUSTOM_OBJECT_SIZE(String, String::object_size_in_bytes);
 
         CL_DECLARE_DYNAMIC_LAYOUT_EXTENDS_WITH_VALUES(String, Object, 1);
     };

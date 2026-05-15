@@ -7,6 +7,7 @@
 #include "native_layout_descriptor.h"
 #include "object.h"
 #include "range_iterator.h"
+#include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
 #include "tuple_iterator.h"
@@ -74,6 +75,54 @@ TEST(NativeLayoutDescriptor, FixedObjectSubclassesUseNativeStaticDescriptors)
     expect_static_native_layout_descriptor<Function>();
     expect_static_native_layout_descriptor<Dict>();
     expect_static_native_layout_descriptor<ClassObject>();
+}
+
+TEST(NativeLayoutDescriptor, StringUsesStaticReleaseAndCustomObjectSize)
+{
+    const ReleaseDescriptor &release =
+        release_descriptor_for(String::native_layout);
+
+    EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
+    EXPECT_EQ(String::static_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(String::static_fixed_value_count(), release.static_release_count);
+    EXPECT_EQ(String::native_static_release_count(),
+              release.static_release_count);
+
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptor_for(String::native_layout);
+
+    EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
+    ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
+}
+
+TEST(NativeLayoutDescriptor, StringCustomObjectSizeUsesStoredCount)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    String *str = context.thread()->make_object_raw<String>(L"hello");
+
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptor_for(String::native_layout);
+
+    ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
+    ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
+    EXPECT_EQ(String::size_for(5), object_size.custom_size_in_bytes(str));
+}
+
+TEST(NativeLayoutDescriptor,
+     StringNativeReleaseSpanStartsAtInheritedObjectCells)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    String *str = context.thread()->make_object_raw<String>(L"hello");
+
+    NativeValueSpan span = value_span_for_release(str);
+
+    EXPECT_EQ(reinterpret_cast<Value *>(str) +
+                  Object::native_value_offset_in_words(),
+              span.slots);
+    EXPECT_EQ(String::native_static_release_count(), span.count);
 }
 
 TEST(NativeLayoutDescriptor, UnmigratedLayoutsStillUseLegacyReleaseDescriptor)

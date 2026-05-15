@@ -116,7 +116,7 @@ Migrate fixed layouts first, in small groups.
 - [x] Migrate `ListIterator`.
 - [x] Migrate `Exception`.
 - [x] Migrate `StopIteration`.
-- [ ] Migrate `String` after confirming its static release span and dynamic
+- [x] Migrate `String` after confirming its static release span and dynamic
       size query are represented cleanly.
 - [x] Migrate `ClassObject` as a static release span while the `SlotObject`
       refactor remains deferred.
