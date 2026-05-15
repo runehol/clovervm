@@ -25,7 +25,7 @@ TEST(NativeLayoutDescriptor, ListNativeReleaseCountIncludesInheritedObjectCells)
     EXPECT_EQ(Object::native_static_release_count() +
                   ValueArray<Value>::embedded_value_count,
               List::native_static_release_count());
-    EXPECT_NE(List::static_value_count(), List::native_static_release_count());
+    EXPECT_EQ(List::static_value_count(), List::native_static_release_count());
 }
 
 TEST(NativeLayoutDescriptor, ListNativeReleaseSpanStartsAtInheritedObjectCells)

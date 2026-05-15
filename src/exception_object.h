@@ -38,7 +38,7 @@ namespace cl
     };
 
     static_assert(CL_OFFSETOF(ExceptionObject, message) ==
-                  Object::static_value_offset_in_words() * sizeof(Value) +
+                  sizeof(Object) +
                       ExceptionObject::kMessageSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<ExceptionObject>);
 
@@ -62,7 +62,7 @@ namespace cl
     };
 
     static_assert(CL_OFFSETOF(StopIterationObject, value) ==
-                  Object::static_value_offset_in_words() * sizeof(Value) +
+                  sizeof(Object) +
                       StopIterationObject::kValueSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<StopIterationObject>);
 

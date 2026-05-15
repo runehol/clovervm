@@ -364,9 +364,7 @@ namespace cl
     {
         static_assert(sizeof(MemberTValue<String>) == sizeof(Value));
         static_assert(sizeof(MemberValue) == sizeof(Value));
-        static_assert(CL_OFFSETOF(ClassObject, name) ==
-                      ClassObject::static_value_offset_in_words() *
-                          sizeof(Value));
+        static_assert(CL_OFFSETOF(ClassObject, name) == sizeof(Object));
         static_assert(CL_OFFSETOF(ClassObject, bases) ==
                       CL_OFFSETOF(ClassObject, name) +
                           kClassMetadataSlotBases * sizeof(Value));

@@ -105,10 +105,9 @@ Migrate fixed layouts first, in small groups.
       `NativeLayoutObjectSizeDescriptorBuilder` so descriptor tables consume
       type-local native metadata mechanically.
 - [ ] During migration only, use legacy `HeapLayout` parity as a compatibility
-      check for layouts whose legacy value region already covers all releasable
-      cells. Native release descriptors are the source of truth; `Object`
-      subclasses that include inherited `Object` cells will intentionally
-      diverge from legacy value-span counts.
+      check for migrated layouts. `Object`'s legacy value span includes its
+      owned heap references; inline slot access uses `sizeof(Object)` directly
+      instead of reusing the release span offset.
 - [x] Migrate `List`.
 - [ ] Migrate `Dict`.
 - [ ] Migrate `Function`.

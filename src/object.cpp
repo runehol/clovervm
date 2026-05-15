@@ -82,17 +82,10 @@ namespace cl
 
     }  // namespace
 
-    void Object::validate_inline_slot_layout()
-    {
-        static_assert(sizeof(Object) ==
-                      Object::static_value_offset_in_words() * sizeof(Value));
-    }
-
     BuiltinClassDefinition make_object_class(VirtualMachine *vm)
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::Instance};
-        Object::validate_inline_slot_layout();
         ClassObject *cls = ClassObject::make_bootstrap_builtin_class(
             vm->get_or_create_interned_string_value(L"object"), 0, nullptr, 0);
         return builtin_class_definition(cls, native_layout_ids);

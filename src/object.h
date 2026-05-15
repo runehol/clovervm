@@ -75,22 +75,21 @@ namespace cl
         {
             return reinterpret_cast<Value *>(
                 reinterpret_cast<uint64_t *>(this) +
-                static_value_offset_in_words());
+                sizeof(Object) / sizeof(uint64_t));
         }
         __attribute__((always_inline)) const Value *inline_slot_base() const
         {
             return reinterpret_cast<const Value *>(
                 reinterpret_cast<const uint64_t *>(this) +
-                static_value_offset_in_words());
+                sizeof(Object) / sizeof(uint64_t));
         }
-        static void validate_inline_slot_layout();
         Shape *shape;
         OverflowSlots *overflow_storage;
 
         CL_DECLARE_STATIC_VALUE_SPAN(Object, shape, 2);
         CL_DECLARE_STATIC_OBJECT_SIZE(Object);
 
-        CL_DECLARE_STATIC_LAYOUT_BASE_NO_VALUES(Object);
+        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(Object, shape, 2);
 
     private:
         void initialize_shape_for_class(ClassObject *class_object);
