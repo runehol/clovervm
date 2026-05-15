@@ -95,46 +95,25 @@ namespace cl
         {
             return sizeof(String) + n_chars * sizeof(cl_wchar);
         }
+        static size_t size_for(TValue<SMI> count)
+        {
+            return size_for(size_t(count.extract()));
+        }
+        static size_t size_for(ClassObject *, TValue<SMI> count)
+        {
+            return size_for(count);
+        }
+        static size_t size_for(ClassObject *, const cl_wchar *str)
+        {
+            return size_for(str);
+        }
+        static size_t size_for(ClassObject *, const std::wstring &str)
+        {
+            return size_for(str);
+        }
         static size_t object_size_in_bytes(const String *str)
         {
             return size_for(size_t(str->count.extract()));
-        }
-
-        static DynamicLayoutSpec layout_spec_for(TValue<SMI> count)
-        {
-            return DynamicLayoutSpec{
-                round_up_to_16byte_units(size_for(size_t(count.extract()))),
-                static_fixed_value_count()};
-        }
-
-        static DynamicLayoutSpec layout_spec_for(ClassObject *,
-                                                 TValue<SMI> count)
-        {
-            return layout_spec_for(count);
-        }
-
-        static DynamicLayoutSpec layout_spec_for(const cl_wchar *str)
-        {
-            return DynamicLayoutSpec{round_up_to_16byte_units(size_for(str)),
-                                     static_fixed_value_count()};
-        }
-
-        static DynamicLayoutSpec layout_spec_for(ClassObject *,
-                                                 const cl_wchar *str)
-        {
-            return layout_spec_for(str);
-        }
-
-        static DynamicLayoutSpec layout_spec_for(const std::wstring &str)
-        {
-            return DynamicLayoutSpec{round_up_to_16byte_units(size_for(str)),
-                                     static_fixed_value_count()};
-        }
-
-        static DynamicLayoutSpec layout_spec_for(ClassObject *,
-                                                 const std::wstring &str)
-        {
-            return layout_spec_for(str);
         }
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(String, Object, 1);

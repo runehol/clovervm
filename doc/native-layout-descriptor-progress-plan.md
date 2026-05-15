@@ -167,8 +167,9 @@ object header, while `Shape` remains responsible for semantic storage.
       delegate to type-local sizing helpers.
 - [x] Derive tuple opaque size from tuple length.
 - [x] Derive instance opaque size from `HeapObject` aux count.
-- [x] Keep allocation on concrete `T::object_size_in_bytes(args...)` or existing
-      type-local helpers rather than dispatching by native layout ID.
+- [x] Keep allocation on concrete `sizeof(T)` for native static-size layouts and
+      `T::size_for(args...)` for dynamic/custom-size layouts, rather than
+      dispatching by native layout ID.
 - [x] Use the opaque query only for validation, accounting, debugging, or other
       already-allocated-object paths.
 
@@ -217,6 +218,8 @@ ID, not just Python-visible objects.
 - [x] Verify there are no remaining `LegacyHeapLayout` release descriptors.
 - [x] Remove the `LegacyHeapLayout` release kind from reclamation release.
 - [x] Remove packed value-count and value-offset dependence from reclamation.
+- [x] Remove `DynamicLayoutSpec` and expanded-layout allocation metadata; dynamic
+      allocation now uses concrete `size_for(...)` helpers directly.
 - [x] Keep any remaining size metadata only where still needed by allocation or
       transitional validation.
 - [ ] Update reclamation and heap tests to assert descriptor-driven release.

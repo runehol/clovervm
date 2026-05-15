@@ -176,7 +176,8 @@ Two paths should exist:
 
 ```cpp
 // Hot allocation path. Concrete type and constructor arguments are known.
-T::object_size_in_bytes(args...);
+sizeof(T);          // for native static-size layouts
+T::size_for(args...);  // for dynamic/custom-size layouts
 
 // Colder opaque path. The object already exists.
 object_size_in_bytes(const HeapObject *obj);

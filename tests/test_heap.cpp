@@ -20,6 +20,7 @@ namespace
             NativeLayoutId::TestOnly;
 
         CL_DECLARE_STATIC_LAYOUT_NO_VALUES(ThrowingHeapObject);
+        CL_DECLARE_STATIC_OBJECT_SIZE(ThrowingHeapObject);
 
         ThrowingHeapObject() : HeapObject(native_layout)
         {

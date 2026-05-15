@@ -61,20 +61,17 @@ namespace cl
             size_t storage_count = storage_count_for(size);
             return sizeof(Tuple) + (storage_count - 1) * sizeof(Value);
         }
+        static size_t size_for(BootstrapObjectTag, size_t size)
+        {
+            return size_for(size);
+        }
+        static size_t size_for(ClassObject *, size_t size)
+        {
+            return size_for(size);
+        }
         static size_t object_size_in_bytes(const Tuple *tuple)
         {
             return size_for(tuple->size());
-        }
-
-        static DynamicLayoutSpec layout_spec_for(BootstrapObjectTag,
-                                                 size_t size)
-        {
-            return layout_spec_for_size(size);
-        }
-
-        static DynamicLayoutSpec layout_spec_for(ClassObject *, size_t size)
-        {
-            return layout_spec_for_size(size);
         }
 
         CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN_EXTENDS(Tuple, Object, size_value, 1);
@@ -86,12 +83,6 @@ namespace cl
         static size_t storage_count_for(size_t size)
         {
             return size == 0 ? 1 : size;
-        }
-
-        static DynamicLayoutSpec layout_spec_for_size(size_t size)
-        {
-            return DynamicLayoutSpec{round_up_to_16byte_units(size_for(size)),
-                                     static_fixed_value_count() + size};
         }
 
         size_t wrap_index(int64_t py_idx) const;

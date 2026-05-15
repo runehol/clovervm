@@ -137,41 +137,33 @@ namespace cl
             return sizeof(Shape) + sizeof(Value) * property_count -
                    sizeof(Value) + sizeof(DescriptorInfo) * property_count;
         }
-
+        static size_t size_for(Value class_value, Shape *previous_shape,
+                               int32_t next_slot_index, uint32_t property_count)
+        {
+            (void)class_value;
+            (void)previous_shape;
+            (void)next_slot_index;
+            return size_for(property_count);
+        }
+        static size_t size_for(Value class_value, Shape *previous_shape,
+                               int32_t next_slot_index, uint32_t property_count,
+                               ShapeFlags shape_flags)
+        {
+            (void)shape_flags;
+            return size_for(class_value, previous_shape, next_slot_index,
+                            property_count);
+        }
+        static size_t size_for(Value class_value, Shape *previous_shape,
+                               int32_t next_slot_index, uint32_t property_count,
+                               ShapeFlags shape_flags, uint32_t present_count)
+        {
+            (void)present_count;
+            return size_for(class_value, previous_shape, next_slot_index,
+                            property_count, shape_flags);
+        }
         static size_t object_size_in_bytes(const Shape *shape)
         {
             return size_for(shape->property_count());
-        }
-
-        static DynamicLayoutSpec layout_spec_for(Value class_value,
-                                                 Shape *previous_shape,
-                                                 int32_t next_slot_index,
-                                                 uint32_t property_count)
-        {
-            return layout_spec_for(class_value, previous_shape, next_slot_index,
-                                   property_count, shape_flag(ShapeFlag::None));
-        }
-
-        static DynamicLayoutSpec layout_spec_for(Value class_value,
-                                                 Shape *previous_shape,
-                                                 int32_t next_slot_index,
-                                                 uint32_t property_count,
-                                                 ShapeFlags shape_flags)
-        {
-            return layout_spec_for(class_value, previous_shape, next_slot_index,
-                                   property_count, shape_flags, property_count);
-        }
-
-        static DynamicLayoutSpec
-        layout_spec_for(Value class_value, Shape *previous_shape,
-                        int32_t next_slot_index, uint32_t property_count,
-                        ShapeFlags shape_flags, uint32_t present_count)
-        {
-            (void)shape_flags;
-            (void)present_count;
-            return DynamicLayoutSpec{
-                round_up_to_16byte_units(size_for(property_count)),
-                uint64_t(1 + property_count)};
         }
 
         ClassObject *get_class() const;

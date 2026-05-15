@@ -10,18 +10,6 @@
 
 namespace cl
 {
-    struct ExpandedHeader
-    {
-        uint64_t object_size_in_16byte_units;
-        uint64_t value_count;
-    };
-
-    struct DynamicLayoutSpec
-    {
-        uint64_t object_size_in_16byte_units;
-        uint64_t value_count;
-    };
-
     using HeapLayout = uint32_t;
 
     enum class HeapLifecycleState : uint8_t
@@ -73,17 +61,6 @@ namespace cl
         return (value_offset_in_words << object_layout_offset_shift) |
                (uint32_t(value_count) << object_layout_count_shift) |
                uint32_t(object_size_in_16byte_units);
-    }
-
-    constexpr bool expanded_layout_fits(uint32_t value_offset_in_words)
-    {
-        return value_offset_in_words <= ~object_layout_expanded_bit;
-    }
-
-    constexpr HeapLayout
-    encode_expanded_layout_unchecked(uint32_t value_offset_in_words)
-    {
-        return object_layout_expanded_bit | value_offset_in_words;
     }
 
     constexpr bool layout_is_expanded(HeapLayout layout)
@@ -279,8 +256,6 @@ namespace cl
         uint16_t native_layout_aux_count;
     };
 
-    static_assert(sizeof(DynamicLayoutSpec) == 16);
-    static_assert(sizeof(ExpandedHeader) == 16);
     static_assert(sizeof(HeapObject) == 8);
     static_assert(std::is_trivially_destructible_v<HeapObject>);
 

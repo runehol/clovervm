@@ -34,12 +34,6 @@ namespace cl
             return size_for(backing->storage_bytes);
         }
 
-        static DynamicLayoutSpec layout_spec_for(size_t storage_bytes)
-        {
-            return DynamicLayoutSpec{
-                round_up_to_16byte_units(size_for(storage_bytes)), 0};
-        }
-
         size_t storage_bytes;
         size_t storage_size_in_bytes() const { return storage_bytes; }
 
@@ -81,14 +75,6 @@ namespace cl
             return size_for(backing->native_layout_aux_count_value());
         }
 
-        static DynamicLayoutSpec layout_spec_for(size_t value_cell_count)
-        {
-            native_aux_count_for_value_cell_count(value_cell_count);
-            return DynamicLayoutSpec{
-                round_up_to_16byte_units(size_for(value_cell_count)),
-                value_cell_count};
-        }
-
         Value elements[1];
 
         CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(ValueArrayBacking, elements, 0);
@@ -125,14 +111,6 @@ namespace cl
         static size_t object_size_in_bytes(const HeapPtrArrayBacking *backing)
         {
             return size_for(backing->native_layout_aux_count_value());
-        }
-
-        static DynamicLayoutSpec layout_spec_for(size_t value_cell_count)
-        {
-            native_aux_count_for_value_cell_count(value_cell_count);
-            return DynamicLayoutSpec{
-                round_up_to_16byte_units(size_for(value_cell_count)),
-                value_cell_count};
         }
 
         HeapObject *elements[1];

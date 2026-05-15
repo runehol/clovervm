@@ -29,17 +29,15 @@ namespace cl
                    sizeof(Value) * std::max<uint32_t>(capacity, 1) -
                    sizeof(Value);
         }
+        static size_t size_for(uint32_t size, uint32_t capacity)
+        {
+            (void)size;
+            return size_for(capacity);
+        }
 
         static size_t object_size_in_bytes(const OverflowSlots *overflow_slots)
         {
             return size_for(overflow_slots->get_capacity());
-        }
-
-        static DynamicLayoutSpec layout_spec_for(uint32_t size,
-                                                 uint32_t capacity)
-        {
-            return DynamicLayoutSpec{
-                round_up_to_16byte_units(size_for(capacity)), capacity};
         }
 
         uint32_t get_size() const { return size; }
