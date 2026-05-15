@@ -64,7 +64,7 @@ descriptor-driven release yet.
 - [x] Add release descriptor types:
       `StaticSpan`, `DynamicSmiSpan`, `DynamicAuxSpan`, `Custom`, and
       transitional `LegacyHeapLayout`.
-- [ ] Add object-size descriptor types separately from release descriptors.
+- [x] Add object-size descriptor types separately from release descriptors.
 - [x] Add a reclamation-facing owned-value release facade.
 - [x] Route reclamation through the facade instead of open-coding
       `HeapLayout` decoding at the call site.
