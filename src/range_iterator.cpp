@@ -58,7 +58,7 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"UnimplementedError", L"integer overflow");
         }
-        iterator->current = Value::from_smi(next_smi);
+        iterator->current = TValue<SMI>::from_smi(next_smi);
         return current;
     }
 

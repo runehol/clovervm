@@ -3115,7 +3115,7 @@ namespace cl
                 MUSTTAIL return overflow_path(ARGS);
             }
             accumulator = current;
-            iterator->current = Value::from_smi(next_smi);
+            iterator->current = TValue<SMI>::from_smi(next_smi);
         }
 
         START(0);

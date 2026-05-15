@@ -170,8 +170,8 @@ TEST(NativeLayoutDescriptor, NewObjectSizeReportsCurrentLayoutExtent)
     size_t expected_range_iterator_size = sizeof(RangeIterator);
     RangeIterator *range_iterator =
         context.thread()->make_object_raw<RangeIterator>(
-            TValue<CLInt>::from_smi(0), TValue<CLInt>::from_smi(3),
-            TValue<CLInt>::from_smi(1));
+            TValue<SMI>::from_smi(0), TValue<SMI>::from_smi(3),
+            TValue<SMI>::from_smi(1));
     EXPECT_EQ(expected_range_iterator_size,
               object_size_in_bytes(range_iterator));
 
