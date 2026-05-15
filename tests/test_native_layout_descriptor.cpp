@@ -17,6 +17,7 @@
 #include "tuple.h"
 #include "tuple_iterator.h"
 #include "validity_cell.h"
+#include "vm_array_backing.h"
 
 #include <gtest/gtest.h>
 
@@ -528,10 +529,106 @@ TEST(NativeLayoutDescriptor, OverflowSlotsNativeObjectSizeUsesCapacity)
     EXPECT_EQ(OverflowSlots::size_for(5), object_size_in_bytes(overflow_slots));
 }
 
+TEST(NativeLayoutDescriptor, RawArrayBackingUsesEmptyReleaseDescriptor)
+{
+    const ReleaseDescriptor &release =
+        release_descriptor_for(RawArrayBacking::native_layout);
+
+    EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
+    EXPECT_EQ(0u, release.static_release_count);
+
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptor_for(RawArrayBacking::native_layout);
+
+    EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
+    ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
+}
+
+TEST(NativeLayoutDescriptor, RawArrayBackingNativeObjectSizeUsesStorageBytes)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    RawArrayBacking *backing =
+        context.thread()->make_internal_raw<RawArrayBacking>(27);
+
+    EXPECT_EQ(RawArrayBacking::size_for(27), object_size_in_bytes(backing));
+}
+
+TEST(NativeLayoutDescriptor, ValueArrayBackingUsesDynamicSmiReleaseDescriptor)
+{
+    const ReleaseDescriptor &release =
+        release_descriptor_for(ValueArrayBacking::native_layout);
+
+    EXPECT_EQ(ReleaseKind::DynamicSmiSpan, release.kind);
+    EXPECT_EQ(ValueArrayBacking::native_value_count_offset_in_words(),
+              release.count_offset_words);
+    EXPECT_EQ(ValueArrayBacking::native_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(0u, release.additional_release_count);
+
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptor_for(ValueArrayBacking::native_layout);
+
+    EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
+    ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
+}
+
+TEST(NativeLayoutDescriptor, ValueArrayBackingNativeReleaseSpanUsesCellCount)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    ValueArrayBacking *backing =
+        context.thread()->make_internal_raw<ValueArrayBacking>(7);
+
+    NativeValueSpan span = value_span_for_release(backing);
+
+    EXPECT_EQ(reinterpret_cast<Value *>(backing) +
+                  ValueArrayBacking::native_value_offset_in_words(),
+              span.slots);
+    EXPECT_EQ(7u, span.count);
+    EXPECT_EQ(ValueArrayBacking::size_for(7), object_size_in_bytes(backing));
+}
+
+TEST(NativeLayoutDescriptor, HeapPtrArrayBackingUsesDynamicSmiReleaseDescriptor)
+{
+    const ReleaseDescriptor &release =
+        release_descriptor_for(HeapPtrArrayBacking::native_layout);
+
+    EXPECT_EQ(ReleaseKind::DynamicSmiSpan, release.kind);
+    EXPECT_EQ(HeapPtrArrayBacking::native_value_count_offset_in_words(),
+              release.count_offset_words);
+    EXPECT_EQ(HeapPtrArrayBacking::native_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(0u, release.additional_release_count);
+
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptor_for(HeapPtrArrayBacking::native_layout);
+
+    EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
+    ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
+}
+
+TEST(NativeLayoutDescriptor, HeapPtrArrayBackingNativeReleaseSpanUsesCellCount)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    HeapPtrArrayBacking *backing =
+        context.thread()->make_internal_raw<HeapPtrArrayBacking>(3);
+
+    NativeValueSpan span = value_span_for_release(backing);
+
+    EXPECT_EQ(reinterpret_cast<Value *>(backing) +
+                  HeapPtrArrayBacking::native_value_offset_in_words(),
+              span.slots);
+    EXPECT_EQ(reinterpret_cast<Value *>(backing->elements), span.slots);
+    EXPECT_EQ(3u, span.count);
+    EXPECT_EQ(HeapPtrArrayBacking::size_for(3), object_size_in_bytes(backing));
+}
+
 TEST(NativeLayoutDescriptor, UnmigratedLayoutsStillUseLegacyReleaseDescriptor)
 {
     EXPECT_EQ(ReleaseKind::LegacyHeapLayout,
-              release_descriptor_for(NativeLayoutId::RawArrayBacking).kind);
+              release_descriptor_for(NativeLayoutId::TestOnly).kind);
 }
 
 TEST(NativeLayoutDescriptor, LegacyObjectSizeQueryUsesHeapLayout)

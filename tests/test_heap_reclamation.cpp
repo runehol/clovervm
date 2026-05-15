@@ -5,6 +5,7 @@
 #include "refcount.h"
 #include "shape.h"
 #include "tuple.h"
+#include "vm_array_backing.h"
 
 #include <gtest/gtest.h>
 
@@ -317,6 +318,36 @@ namespace cl
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(root_shape));
         EXPECT_FALSE(
             thread->zero_count_table_contains_for_testing(child_shape));
+    }
+
+    TEST(HeapReclamation, HeapPtrArrayBackingReclaimsFakeValuePointerCell)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+        context.vm().run_heap_reclamation();
+        uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
+
+        ReclamationTestObject *child =
+            thread->make_internal_raw<ReclamationTestObject>();
+        HeapPtrArrayBacking *backing =
+            thread->make_internal_raw<HeapPtrArrayBacking>(1);
+        backing->elements[0] = incref_heap_ptr(child);
+        ASSERT_EQ(1, child->refcount);
+
+        thread->add_to_zero_count_table_if_needed(backing);
+        ASSERT_TRUE(thread->zero_count_table_contains_for_testing(backing));
+        ASSERT_FALSE(thread->zero_count_table_contains_for_testing(child));
+        uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
+        ASSERT_EQ(valid_objects_before_alloc + 2, valid_objects_after_alloc);
+
+        context.vm().run_heap_reclamation();
+
+        EXPECT_EQ(valid_objects_after_alloc - 2,
+                  heap.count_valid_objects_slow());
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(backing));
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(child));
     }
 
     TEST(HeapReclamation, FullReclamationReclaimsCompactDynamicObject)

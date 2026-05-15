@@ -202,11 +202,11 @@ spans have explicit custom teardown.
 - [x] Migrate `Shape`, likely with custom dealloc because of transition vector
       ownership.
 - [x] Migrate `OverflowSlots`.
-- [ ] Erase template backing records into concrete native-layout types where
+- [x] Erase template backing records into concrete native-layout types where
       needed, such as `ValueArrayBacking` and `RawArrayBacking`.
-- [ ] Store normalized dynamic value-cell counts in backing records, not element
+- [x] Store normalized dynamic value-cell counts in backing records, not element
       counts that require release-loop scaling.
-- [ ] Decide and document the `HeapPtrArrayBacking` release representation.
+- [x] Decide and document the `HeapPtrArrayBacking` release representation.
 
 Deliverable: every heap record can be discovered and released by native layout
 ID, not just Python-visible objects.

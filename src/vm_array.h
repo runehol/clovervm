@@ -8,6 +8,7 @@
 #include "thread_state.h"
 #include "typed_value.h"
 #include "value.h"
+#include "vm_array_backing.h"
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -45,40 +46,16 @@ namespace cl
         static_assert(std::is_standard_layout_v<T>);
         static_assert(std::is_trivially_copyable_v<T>);
         static_assert(std::is_trivially_destructible_v<T>);
+        static_assert(alignof(T) <= alignof(std::max_align_t));
 
-        class Backing : public HeapObject
-        {
-        public:
-            static constexpr NativeLayoutId native_layout =
-                NativeLayoutId::RawArrayBacking;
-
-            using Storage = std::aligned_storage_t<sizeof(T), alignof(T)>;
-
-            Backing(HeapLayout layout, size_t capacity)
-                : HeapObject(native_layout, layout)
-            {
-                (void)capacity;
-            }
-
-            static size_t size_for(size_t capacity)
-            {
-                assert(capacity >= 1);
-                return sizeof(Backing) + sizeof(Storage) * capacity -
-                       sizeof(Storage);
-            }
-
-            static DynamicLayoutSpec layout_spec_for(size_t capacity)
-            {
-                return DynamicLayoutSpec{
-                    round_up_to_16byte_units(size_for(capacity)), 0};
-            }
-
-            Storage elements[1];
-
-            CL_DECLARE_DYNAMIC_LAYOUT_NO_VALUES(Backing);
-        };
-
+        using Backing = RawArrayBacking;
         static_assert(std::is_trivially_destructible_v<Backing>);
+
+        static size_t storage_size_for_capacity(size_t capacity)
+        {
+            assert(capacity >= 1);
+            return sizeof(T) * capacity;
+        }
 
     public:
         static constexpr uint64_t embedded_value_count = 3;
@@ -124,14 +101,14 @@ namespace cl
         {
             return backing == nullptr
                        ? nullptr
-                       : reinterpret_cast<T *>(backing_ptr()->elements);
+                       : reinterpret_cast<T *>(backing_ptr()->bytes);
         }
 
         const T *data() const
         {
             return backing == nullptr
                        ? nullptr
-                       : reinterpret_cast<const T *>(backing_ptr()->elements);
+                       : reinterpret_cast<const T *>(backing_ptr()->bytes);
         }
 
         iterator begin() { return data(); }
@@ -188,9 +165,9 @@ namespace cl
                 return;
             }
 
-            Backing *new_backing =
-                make_internal_raw<Backing>(requested_capacity);
-            T *new_data = reinterpret_cast<T *>(new_backing->elements);
+            Backing *new_backing = make_internal_raw<Backing>(
+                storage_size_for_capacity(requested_capacity));
+            T *new_data = reinterpret_cast<T *>(new_backing->bytes);
             size_t current_size = size();
             for(size_t idx = 0; idx < current_size; ++idx)
             {
@@ -284,40 +261,13 @@ namespace cl
         static_assert(sizeof(T) % sizeof(Value) == 0);
 
         static constexpr size_t values_per_element = sizeof(T) / sizeof(Value);
-
-        class Backing : public HeapObject
-        {
-        public:
-            static constexpr NativeLayoutId native_layout =
-                NativeLayoutId::ValueArrayBacking;
-
-            Backing(HeapLayout layout, size_t capacity)
-                : HeapObject(native_layout, layout)
-            {
-                (void)capacity;
-            }
-
-            static size_t size_for(size_t capacity)
-            {
-                assert(capacity >= 1);
-                return sizeof(Backing) +
-                       sizeof(Value) * values_per_element * capacity -
-                       sizeof(Value);
-            }
-
-            static DynamicLayoutSpec layout_spec_for(size_t capacity)
-            {
-                return DynamicLayoutSpec{
-                    round_up_to_16byte_units(size_for(capacity)),
-                    uint64_t(capacity) * values_per_element};
-            }
-
-            Value elements[1];
-
-            CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(Backing, elements);
-        };
-
+        using Backing = ValueArrayBacking;
         static_assert(std::is_trivially_destructible_v<Backing>);
+
+        static size_t value_cell_count_for_capacity(size_t capacity)
+        {
+            return capacity * values_per_element;
+        }
 
     public:
         static constexpr uint64_t embedded_value_count = 3;
@@ -403,11 +353,11 @@ namespace cl
                 return;
             }
 
-            Backing *new_backing =
-                make_internal_raw<Backing>(requested_capacity);
+            Backing *new_backing = make_internal_raw<Backing>(
+                value_cell_count_for_capacity(requested_capacity));
             std::memset(new_backing->elements, 0,
-                        sizeof(Value) * requested_capacity *
-                            values_per_element);
+                        sizeof(Value) *
+                            value_cell_count_for_capacity(requested_capacity));
 
             T *new_data = reinterpret_cast<T *>(new_backing->elements);
             size_t current_size = size();
@@ -579,37 +529,7 @@ namespace cl
     private:
         static_assert(std::is_base_of_v<HeapObject, T>);
 
-        class Backing : public HeapObject
-        {
-        public:
-            static constexpr NativeLayoutId native_layout =
-                NativeLayoutId::HeapPtrArrayBacking;
-
-            Backing(HeapLayout layout, size_t capacity)
-                : HeapObject(native_layout, layout)
-            {
-                (void)capacity;
-            }
-
-            static size_t size_for(size_t capacity)
-            {
-                assert(capacity >= 1);
-                return sizeof(Backing) + sizeof(HeapObject *) * capacity -
-                       sizeof(HeapObject *);
-            }
-
-            static DynamicLayoutSpec layout_spec_for(size_t capacity)
-            {
-                return DynamicLayoutSpec{
-                    round_up_to_16byte_units(size_for(capacity)),
-                    uint64_t(capacity)};
-            }
-
-            T *elements[1];
-
-            CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(Backing, elements);
-        };
-
+        using Backing = HeapPtrArrayBacking;
         static_assert(std::is_trivially_destructible_v<Backing>);
 
     public:
@@ -648,7 +568,9 @@ namespace cl
 
         T *const *data() const
         {
-            return backing == nullptr ? nullptr : backing_ptr()->elements;
+            return backing == nullptr
+                       ? nullptr
+                       : reinterpret_cast<T *const *>(backing_ptr()->elements);
         }
 
         const_iterator begin() const { return data(); }
@@ -694,7 +616,7 @@ namespace cl
             std::memset(new_backing->elements, 0,
                         sizeof(HeapObject *) * requested_capacity);
 
-            T **new_data = new_backing->elements;
+            T **new_data = reinterpret_cast<T **>(new_backing->elements);
             size_t current_size = size();
             for(size_t idx = 0; idx < current_size; ++idx)
             {
@@ -753,7 +675,9 @@ namespace cl
     private:
         T **mutable_data()
         {
-            return backing == nullptr ? nullptr : backing_ptr()->elements;
+            return backing == nullptr
+                       ? nullptr
+                       : reinterpret_cast<T **>(backing_ptr()->elements);
         }
 
         void clear_elements(size_t start_idx, size_t end_idx)

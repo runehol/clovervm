@@ -17,6 +17,7 @@
 #include "tuple.h"
 #include "tuple_iterator.h"
 #include "validity_cell.h"
+#include "vm_array_backing.h"
 
 #define CL_NATIVE_LAYOUT_REGISTRY(V)                                           \
     V(List);                                                                   \
@@ -35,6 +36,9 @@
     V(Scope);                                                                  \
     V(Shape);                                                                  \
     V(OverflowSlots);                                                          \
+    V(RawArrayBacking);                                                        \
+    V(ValueArrayBacking);                                                      \
+    V(HeapPtrArrayBacking);                                                    \
     V(ClassObject);
 
 #endif  // CL_NATIVE_LAYOUT_REGISTRY_H
