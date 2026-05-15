@@ -1,6 +1,7 @@
 #include "heap_reclamation.h"
 
 #include "global_heap.h"
+#include "native_layout_descriptor.h"
 #include "slab_allocator.h"
 #include "thread_state.h"
 #include "virtual_machine.h"
@@ -12,35 +13,6 @@ namespace cl
 {
     namespace
     {
-        struct ObjectValueSpan
-        {
-            Value *slots;
-            uint64_t count;
-        };
-
-        ObjectValueSpan object_value_span_for(HeapObject *obj)
-        {
-            assert(obj != nullptr);
-            uint32_t first_value_offset_in_words;
-            uint64_t value_count;
-            if(layout_is_expanded(obj->layout))
-            {
-                first_value_offset_in_words =
-                    obj->layout & ~object_layout_expanded_bit;
-                value_count = expanded_header_for_object(obj)->value_count;
-            }
-            else
-            {
-                first_value_offset_in_words =
-                    compact_layout_value_offset_in_words(obj->layout);
-                value_count = compact_layout_value_count(obj->layout);
-            }
-
-            return ObjectValueSpan{reinterpret_cast<Value *>(obj) +
-                                       first_value_offset_in_words,
-                                   value_count};
-        }
-
         class ReclamationContext
         {
         public:
@@ -49,7 +21,7 @@ namespace cl
             {
             }
 
-            void reclaim_object(HeapObject *obj, ObjectValueSpan value_span)
+            void reclaim_object(HeapObject *obj, NativeValueSpan value_span)
             {
                 assert(obj != nullptr);
                 assert(obj->lifecycle_state == HeapLifecycleState::Reclaiming);
@@ -63,7 +35,7 @@ namespace cl
 
             void reclaim_object(HeapObject *obj)
             {
-                reclaim_object(obj, object_value_span_for(obj));
+                reclaim_object(obj, value_span_for_release(obj));
             }
 
             void remember_release_candidate(SlabAllocator *slab)
@@ -116,7 +88,7 @@ namespace cl
                 }
             }
 
-            void reclaim_object_value_slots(ObjectValueSpan value_span)
+            void reclaim_object_value_slots(NativeValueSpan value_span)
             {
                 for(uint64_t idx = 0; idx < value_span.count; ++idx)
                 {
@@ -159,7 +131,7 @@ namespace cl
                     zero_count_table[keep++] = obj;
                     continue;
                 }
-                ObjectValueSpan value_span = object_value_span_for(obj);
+                NativeValueSpan value_span = value_span_for_release(obj);
 
                 obj->lifecycle_state = HeapLifecycleState::Reclaiming;
                 context.reclaim_object(obj, value_span);

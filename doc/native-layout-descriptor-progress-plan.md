@@ -61,19 +61,19 @@ descriptor-driven release yet.
 
 ## Stage 3: Descriptor Facade With Explicit Legacy Entries
 
-- [ ] Add release descriptor types:
+- [x] Add release descriptor types:
       `StaticSpan`, `DynamicSmiSpan`, `DynamicAuxSpan`, `Custom`, and
       transitional `LegacyHeapLayout`.
 - [ ] Add object-size descriptor types separately from release descriptors.
-- [ ] Add a reclamation-facing owned-value release facade.
-- [ ] Route reclamation through the facade instead of open-coding
+- [x] Add a reclamation-facing owned-value release facade.
+- [x] Route reclamation through the facade instead of open-coding
       `HeapLayout` decoding at the call site.
-- [ ] Represent not-yet-migrated layouts with explicit `LegacyHeapLayout`
+- [x] Represent not-yet-migrated layouts with explicit `LegacyHeapLayout`
       descriptor entries, not an implicit missing-entry fallback.
-- [ ] Make debug/startup validation require every native layout ID to have a
+- [x] Make debug/startup validation require every native layout ID to have a
       descriptor entry, including explicit `LegacyHeapLayout` entries.
-- [ ] Add a way to list or assert remaining `LegacyHeapLayout` entries so
-      migration progress is easy to track.
+- [x] Keep remaining `LegacyHeapLayout` entries explicit in the descriptor
+      table so migration progress is visible in one place.
 
 Deliverable: reclamation has one descriptor-shaped entry point, even though most
 unmigrated layouts may still read the old packed metadata through explicit
