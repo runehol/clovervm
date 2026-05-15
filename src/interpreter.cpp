@@ -32,8 +32,9 @@ namespace cl
     Value accumulator, Value *fp, const uint8_t *pc, void *dispatch,           \
         CodeObject *code_object, ThreadState *thread
 #define ARGS accumulator, fp, pc, dispatch, code_object, thread
+#define INTERP_CC __attribute__((preserve_none))
 
-    using DispatchTableEntry = Value (*)(PARAMS);
+    using DispatchTableEntry = Value(INTERP_CC *)(PARAMS);
 
     [[maybe_unused]] static ALWAYSINLINE bool is_stack_frame_aligned(Value *fp)
     {
@@ -103,12 +104,12 @@ namespace cl
         return result;
     }
 
-    NOINLINE Value raise_generic_exception(PARAMS)
+    NOINLINE INTERP_CC Value raise_generic_exception(PARAMS)
     {
         throw std::runtime_error("Clovervm exception");
     }
 
-    NOINLINE Value raise_unknown_opcode_exception(PARAMS)
+    NOINLINE INTERP_CC Value raise_unknown_opcode_exception(PARAMS)
     {
         throw std::runtime_error("Unknown opcode");
     }
@@ -134,7 +135,7 @@ namespace cl
         return resolve_exceptional_frame_exit(thread, fp, pc, code_object);
     }
 
-    NOINLINE Value raise_value_error_negative_shift_count(PARAMS)
+    NOINLINE INTERP_CC Value raise_value_error_negative_shift_count(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             thread, fp, pc, code_object, L"ValueError",
@@ -146,7 +147,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value zero_division_error(PARAMS)
+    NOINLINE INTERP_CC Value zero_division_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             thread, fp, pc, code_object, L"ZeroDivisionError",
@@ -158,7 +159,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value unsupported_division_error(PARAMS)
+    NOINLINE INTERP_CC Value unsupported_division_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             thread, fp, pc, code_object, L"TypeError",
@@ -170,7 +171,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value local_name_error(PARAMS)
+    NOINLINE INTERP_CC Value local_name_error(PARAMS)
     {
         int8_t reg = pc[1];
         uint32_t slot_idx = code_object->decode_reg(reg);
@@ -186,7 +187,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value global_name_error(PARAMS)
+    NOINLINE INTERP_CC Value global_name_error(PARAMS)
     {
         int32_t slot_idx = read_uint32_le(&pc[1]);
         ExceptionalTarget target = set_name_error_and_resolve_frame_exit(
@@ -200,7 +201,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value not_callable_error(PARAMS)
+    NOINLINE INTERP_CC Value not_callable_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             thread, fp, pc, code_object, L"TypeError",
@@ -212,17 +213,17 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value attribute_error(PARAMS)
+    NOINLINE INTERP_CC Value attribute_error(PARAMS)
     {
         throw std::runtime_error("AttributeError");
     }
 
-    NOINLINE Value attribute_assignment_error(PARAMS)
+    NOINLINE INTERP_CC Value attribute_assignment_error(PARAMS)
     {
         throw std::runtime_error("AttributeError: cannot assign attribute");
     }
 
-    NOINLINE Value subscript_error(PARAMS)
+    NOINLINE INTERP_CC Value subscript_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             thread, fp, pc, code_object, L"TypeError",
@@ -234,7 +235,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value propagate_pending_exception(PARAMS)
+    NOINLINE INTERP_CC Value propagate_pending_exception(PARAMS)
     {
         assert(thread->has_pending_exception());
         ExceptionalTarget target =
@@ -246,18 +247,18 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value method_lookup_error(PARAMS)
+    NOINLINE INTERP_CC Value method_lookup_error(PARAMS)
     {
         throw std::runtime_error("AttributeError");
     }
 
-    NOINLINE Value descriptor_dispatch_error(PARAMS)
+    NOINLINE INTERP_CC Value descriptor_dispatch_error(PARAMS)
     {
         throw std::runtime_error(
             "TypeError: descriptor __get__ requires interpreter dispatch");
     }
 
-    NOINLINE Value wrong_arity_error(PARAMS)
+    NOINLINE INTERP_CC Value wrong_arity_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             thread, fp, pc, code_object, L"TypeError",
@@ -313,7 +314,7 @@ namespace cl
         return fp - int32_t(n_below_frame_slots);
     }
 
-    NOINLINE static Value op_committed_safepoint_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_committed_safepoint_slow(PARAMS)
     {
         thread->publish_safepoint_scan_record(
             lowest_live_stack_slot_for_current_frame(fp, code_object),
@@ -324,7 +325,8 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_committed_safepoint_with_accumulator_slow(PARAMS)
+    NOINLINE static INTERP_CC Value
+    op_committed_safepoint_with_accumulator_slow(PARAMS)
     {
         thread->publish_safepoint_scan_record(
             lowest_live_stack_slot_for_current_frame(fp, code_object),
@@ -453,7 +455,7 @@ namespace cl
         return Value::from_oop(cls.extract());
     }
 
-    NOINLINE Value not_iterator_error(PARAMS)
+    NOINLINE INTERP_CC Value not_iterator_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             thread, fp, pc, code_object, L"TypeError",
@@ -465,7 +467,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value range_integer_argument_error(PARAMS)
+    NOINLINE INTERP_CC Value range_integer_argument_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             thread, fp, pc, code_object, L"TypeError",
@@ -477,7 +479,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value range_zero_step_error(PARAMS)
+    NOINLINE INTERP_CC Value range_zero_step_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             thread, fp, pc, code_object, L"ValueError",
@@ -489,7 +491,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value init_returned_non_none_error(PARAMS)
+    NOINLINE INTERP_CC Value init_returned_non_none_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             thread, fp, pc, code_object, L"TypeError",
@@ -501,7 +503,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value assertion_error(PARAMS)
+    NOINLINE INTERP_CC Value assertion_error(PARAMS)
     {
         (void)thread->set_pending_builtin_exception_none(L"AssertionError");
         ExceptionalTarget target =
@@ -513,7 +515,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value assertion_error_with_message(PARAMS)
+    NOINLINE INTERP_CC Value assertion_error_with_message(PARAMS)
     {
         (void)thread->set_pending_exception_object(make_exception_object(
             thread,
@@ -540,7 +542,7 @@ namespace cl
             TValue<ExceptionObject>::from_value_checked(exception.as_value()));
     }
 
-    static Value op_lda_active_exception(PARAMS)
+    static INTERP_CC Value op_lda_active_exception(PARAMS)
     {
         if(!thread->has_pending_exception())
         {
@@ -564,7 +566,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_active_exception_is_instance(PARAMS)
+    static INTERP_CC Value op_active_exception_is_instance(PARAMS)
     {
         if(!thread->has_pending_exception())
         {
@@ -604,7 +606,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_drain_active_exception_into(PARAMS)
+    static INTERP_CC Value op_drain_active_exception_into(PARAMS)
     {
         if(!thread->has_pending_exception())
         {
@@ -630,14 +632,14 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_clear_active_exception(PARAMS)
+    static INTERP_CC Value op_clear_active_exception(PARAMS)
     {
         thread->clear_pending_exception();
         START(1);
         COMPLETE();
     }
 
-    static Value op_reraise_active_exception(PARAMS)
+    static INTERP_CC Value op_reraise_active_exception(PARAMS)
     {
         if(!thread->has_pending_exception())
         {
@@ -704,7 +706,7 @@ namespace cl
         assert(ok);
     }
 
-    NOINLINE Value raise_unwind(PARAMS)
+    NOINLINE INTERP_CC Value raise_unwind(PARAMS)
     {
         (void)thread->set_pending_exception_object(
             make_raise_exception_object(thread, accumulator));
@@ -718,7 +720,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value raise_unwind_with_context(PARAMS)
+    NOINLINE INTERP_CC Value raise_unwind_with_context(PARAMS)
     {
         int8_t context_reg = pc[1];
         TValue<ExceptionObject> raised =
@@ -735,7 +737,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE Value raise_bare(PARAMS)
+    NOINLINE INTERP_CC Value raise_bare(PARAMS)
     {
         (void)thread->set_pending_builtin_exception_string(
             L"RuntimeError", L"No active exception to reraise");
@@ -749,16 +751,16 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value slow_path(PARAMS)
+    NOINLINE static INTERP_CC Value slow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
     }
-    NOINLINE static Value overflow_path(PARAMS)
+    NOINLINE static INTERP_CC Value overflow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
     }
 
-    NOINLINE static Value op_not_float_truthiness(PARAMS)
+    NOINLINE static INTERP_CC Value op_not_float_truthiness(PARAMS)
     {
         START(1);
         if(!can_convert_to<Float>(accumulator))
@@ -772,7 +774,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_jump_if_true_float_truthiness(PARAMS)
+    NOINLINE static INTERP_CC Value op_jump_if_true_float_truthiness(PARAMS)
     {
         int16_t rel_target = read_int16_le(&pc[1]);
         if(!can_convert_to<Float>(accumulator))
@@ -790,7 +792,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_jump_if_false_float_truthiness(PARAMS)
+    NOINLINE static INTERP_CC Value op_jump_if_false_float_truthiness(PARAMS)
     {
         int16_t rel_target = read_int16_le(&pc[1]);
         if(!can_convert_to<Float>(accumulator))
@@ -828,7 +830,7 @@ namespace cl
         return try_get_exact_float(value, out);
     }
 
-    NOINLINE static Value op_add_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_add_float_arithmetic(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -843,7 +845,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_add_smi_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_add_smi_float_arithmetic(PARAMS)
     {
         START_BINARY_ACC_SMI();
 
@@ -858,7 +860,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_sub_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_sub_float_arithmetic(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -873,7 +875,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_sub_smi_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_sub_smi_float_arithmetic(PARAMS)
     {
         START_BINARY_ACC_SMI();
 
@@ -888,7 +890,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_mul_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_mul_float_arithmetic(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -903,7 +905,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_mul_smi_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_mul_smi_float_arithmetic(PARAMS)
     {
         START_BINARY_ACC_SMI();
 
@@ -918,7 +920,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_test_less_float_comparison(PARAMS)
+    NOINLINE static INTERP_CC Value op_test_less_float_comparison(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -933,7 +935,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_test_less_equal_float_comparison(PARAMS)
+    NOINLINE static INTERP_CC Value op_test_less_equal_float_comparison(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -948,7 +950,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_test_greater_float_comparison(PARAMS)
+    NOINLINE static INTERP_CC Value op_test_greater_float_comparison(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -963,7 +965,8 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_test_greater_equal_float_comparison(PARAMS)
+    NOINLINE static INTERP_CC Value
+    op_test_greater_equal_float_comparison(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -978,7 +981,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_test_equal_float_comparison(PARAMS)
+    NOINLINE static INTERP_CC Value op_test_equal_float_comparison(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -993,7 +996,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_test_not_equal_float_comparison(PARAMS)
+    NOINLINE static INTERP_CC Value op_test_not_equal_float_comparison(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -1008,7 +1011,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_div(PARAMS)
+    NOINLINE static INTERP_CC Value op_div(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -1027,7 +1030,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_negate_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_negate_float_arithmetic(PARAMS)
     {
         START_UNARY_ACC();
 
@@ -1041,7 +1044,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_plus_float_arithmetic(PARAMS)
+    NOINLINE static INTERP_CC Value op_plus_float_arithmetic(PARAMS)
     {
         START_UNARY_ACC();
 
@@ -1511,7 +1514,7 @@ namespace cl
                                                     callable_out, self_out);
     }
 
-    NOINLINE static Value op_load_attr_cache_miss(PARAMS)
+    NOINLINE static INTERP_CC Value op_load_attr_cache_miss(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -1550,7 +1553,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_store_attr_cache_miss(PARAMS)
+    NOINLINE static INTERP_CC Value op_store_attr_cache_miss(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -1608,7 +1611,7 @@ namespace cl
         MUSTTAIL return attribute_assignment_error(ARGS);
     }
 
-    NOINLINE static Value op_del_attr_cache_miss(PARAMS)
+    NOINLINE static INTERP_CC Value op_del_attr_cache_miss(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -1633,7 +1636,7 @@ namespace cl
         MUSTTAIL return attribute_error(ARGS);
     }
 
-    static Value op_lda_constant(PARAMS)
+    static INTERP_CC Value op_lda_constant(PARAMS)
     {
         START(2);
         uint8_t const_offset = pc[1];
@@ -1641,7 +1644,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_lda_smi(PARAMS)
+    static INTERP_CC Value op_lda_smi(PARAMS)
     {
         START(2);
         int8_t smi = pc[1];
@@ -1649,28 +1652,28 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_lda_true(PARAMS)
+    static INTERP_CC Value op_lda_true(PARAMS)
     {
         START(1);
         accumulator = Value::True();
         COMPLETE();
     }
 
-    static Value op_lda_false(PARAMS)
+    static INTERP_CC Value op_lda_false(PARAMS)
     {
         START(1);
         accumulator = Value::False();
         COMPLETE();
     }
 
-    static Value op_lda_none(PARAMS)
+    static INTERP_CC Value op_lda_none(PARAMS)
     {
         START(1);
         accumulator = Value::None();
         COMPLETE();
     }
 
-    static Value op_ldar(PARAMS)
+    static INTERP_CC Value op_ldar(PARAMS)
     {
         START(2);
         int8_t reg = pc[1];
@@ -1678,7 +1681,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_load_local_checked(PARAMS)
+    static INTERP_CC Value op_load_local_checked(PARAMS)
     {
         START(2);
         int8_t reg = pc[1];
@@ -1690,7 +1693,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_clear_local(PARAMS)
+    static INTERP_CC Value op_clear_local(PARAMS)
     {
         START(2);
         int8_t reg = pc[1];
@@ -1698,7 +1701,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_star(PARAMS)
+    static INTERP_CC Value op_star(PARAMS)
     {
         START(2);
         int8_t reg = pc[1];
@@ -1707,7 +1710,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_del_local(PARAMS)
+    static INTERP_CC Value op_del_local(PARAMS)
     {
         START(2);
         int8_t reg = pc[1];
@@ -1720,14 +1723,14 @@ namespace cl
     }
 
 #define LDAR_STAR_FASTPATH(idx)                                                \
-    static Value op_ldar##idx(PARAMS)                                          \
+    static INTERP_CC Value op_ldar##idx(PARAMS)                                \
     {                                                                          \
         START(1);                                                              \
         int8_t reg = -idx - cl::FrameHeaderSizeBelowFp - 1;                    \
         accumulator = fp[reg];                                                 \
         COMPLETE();                                                            \
     }                                                                          \
-    static Value op_star##idx(PARAMS)                                          \
+    static INTERP_CC Value op_star##idx(PARAMS)                                \
     {                                                                          \
         START(1);                                                              \
         int8_t reg = -idx - cl::FrameHeaderSizeBelowFp - 1;                    \
@@ -1753,7 +1756,7 @@ namespace cl
     LDAR_STAR_FASTPATH(15);
 #undef LDAR_STAR_FASTPATH
 
-    NOINLINE static Value op_lda_global_slow_path(PARAMS)
+    NOINLINE static INTERP_CC Value op_lda_global_slow_path(PARAMS)
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
@@ -1767,7 +1770,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_lda_global(PARAMS)
+    static INTERP_CC Value op_lda_global(PARAMS)
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
@@ -1781,7 +1784,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_sta_global_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_sta_global_slow(PARAMS)
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
@@ -1790,7 +1793,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_sta_global(PARAMS)
+    static INTERP_CC Value op_sta_global(PARAMS)
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
@@ -1809,7 +1812,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_del_global(PARAMS)
+    static INTERP_CC Value op_del_global(PARAMS)
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
@@ -1822,7 +1825,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_load_attr(PARAMS)
+    static INTERP_CC Value op_load_attr(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -1848,7 +1851,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_store_attr_cached_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_store_attr_cached_slow(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -1870,7 +1873,7 @@ namespace cl
         MUSTTAIL return op_store_attr_cache_miss(ARGS);
     }
 
-    static Value op_store_attr(PARAMS)
+    static INTERP_CC Value op_store_attr(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -1890,7 +1893,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_del_attr(PARAMS)
+    static INTERP_CC Value op_del_attr(PARAMS)
     {
         START(4);
         int8_t reg = pc[1];
@@ -1910,7 +1913,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_load_subscript(PARAMS)
+    static INTERP_CC Value op_load_subscript(PARAMS)
     {
         START(2);
         int8_t reg = pc[1];
@@ -1926,7 +1929,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_store_subscript(PARAMS)
+    static INTERP_CC Value op_store_subscript(PARAMS)
     {
         START(3);
         int8_t receiver_reg = pc[1];
@@ -1945,7 +1948,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_del_subscript(PARAMS)
+    static INTERP_CC Value op_del_subscript(PARAMS)
     {
         START(3);
         int8_t receiver_reg = pc[1];
@@ -1963,7 +1966,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_add_smi(PARAMS)
+    static INTERP_CC Value op_add_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -1980,7 +1983,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_add(PARAMS)
+    static INTERP_CC Value op_add(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -1997,7 +2000,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_sub_smi(PARAMS)
+    static INTERP_CC Value op_sub_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -2014,7 +2017,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_sub(PARAMS)
+    static INTERP_CC Value op_sub(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -2031,7 +2034,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_mul(PARAMS)
+    static INTERP_CC Value op_mul(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -2049,7 +2052,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_mul_smi(PARAMS)
+    static INTERP_CC Value op_mul_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -2067,7 +2070,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_left_shift(PARAMS)
+    static INTERP_CC Value op_left_shift(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -2091,7 +2094,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_left_shift_smi(PARAMS)
+    static INTERP_CC Value op_left_shift_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -2114,7 +2117,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_right_shift(PARAMS)
+    static INTERP_CC Value op_right_shift(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -2131,7 +2134,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_right_shift_smi(PARAMS)
+    static INTERP_CC Value op_right_shift_smi(PARAMS)
     {
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
@@ -2147,7 +2150,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_test_is(PARAMS)
+    static INTERP_CC Value op_test_is(PARAMS)
     {
         START_BINARY_REG_ACC();
 
@@ -2156,7 +2159,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_test_is_not(PARAMS)
+    static INTERP_CC Value op_test_is_not(PARAMS)
     {
         START_BINARY_REG_ACC();
         accumulator =
@@ -2164,7 +2167,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_test_less(PARAMS)
+    static INTERP_CC Value op_test_less(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -2176,7 +2179,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_test_less_equal(PARAMS)
+    static INTERP_CC Value op_test_less_equal(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -2188,7 +2191,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_test_greater_equal(PARAMS)
+    static INTERP_CC Value op_test_greater_equal(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -2200,7 +2203,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_test_greater(PARAMS)
+    static INTERP_CC Value op_test_greater(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
@@ -2212,7 +2215,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_test_equal(PARAMS)
+    static INTERP_CC Value op_test_equal(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_REFCOUNTED_PTR()))
@@ -2228,7 +2231,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_test_not_equal(PARAMS)
+    static INTERP_CC Value op_test_not_equal(PARAMS)
     {
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_REFCOUNTED_PTR()))
@@ -2244,7 +2247,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_negate(PARAMS)
+    static INTERP_CC Value op_negate(PARAMS)
     {
         START_UNARY_ACC();
         if(unlikely(A_NOT_SMI()))
@@ -2262,7 +2265,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_plus(PARAMS)
+    static INTERP_CC Value op_plus(PARAMS)
     {
         START_UNARY_ACC();
         if(unlikely(A_NOT_SMI()))
@@ -2273,7 +2276,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_write_stdout(PARAMS)
+    static INTERP_CC Value op_write_stdout(PARAMS)
     {
         START(1);
         if(!can_convert_to<String>(accumulator))
@@ -2289,7 +2292,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_not(PARAMS)
+    static INTERP_CC Value op_not(PARAMS)
     {
         START_UNARY_ACC();
         if(unlikely((a.as.integer & value_ptr_mask) != 0))
@@ -2310,7 +2313,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_create_function(PARAMS)
+    static INTERP_CC Value op_create_function(PARAMS)
     {
         START(2);
         uint8_t const_offset = pc[1];
@@ -2323,7 +2326,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_create_function_with_defaults(PARAMS)
+    static INTERP_CC Value op_create_function_with_defaults(PARAMS)
     {
         START(3);
         uint8_t const_offset = pc[1];
@@ -2339,7 +2342,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_create_instance_known_class(PARAMS)
+    static INTERP_CC Value op_create_instance_known_class(PARAMS)
     {
         START(2);
         uint8_t const_offset = pc[1];
@@ -2350,7 +2353,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_create_list(PARAMS)
+    static INTERP_CC Value op_create_list(PARAMS)
     {
         START(3);
         int8_t reg = pc[1];
@@ -2366,7 +2369,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_create_tuple(PARAMS)
+    static INTERP_CC Value op_create_tuple(PARAMS)
     {
         START(3);
         int8_t reg = pc[1];
@@ -2383,7 +2386,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_create_dict(PARAMS)
+    static INTERP_CC Value op_create_dict(PARAMS)
     {
         START(3);
         int8_t reg = pc[1];
@@ -2401,7 +2404,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_create_class(PARAMS)
+    static INTERP_CC Value op_create_class(PARAMS)
     {
         static constexpr uint32_t create_class_instr_len = 3;
         uint8_t body_const_offset = pc[1];
@@ -2426,7 +2429,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_build_class(PARAMS)
+    static INTERP_CC Value op_build_class(PARAMS)
     {
         accumulator = build_class_from_frame(thread, fp, code_object);
 
@@ -2436,7 +2439,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_check_init_returned_none(PARAMS)
+    static INTERP_CC Value op_check_init_returned_none(PARAMS)
     {
         START(1);
         if(unlikely(accumulator != Value::None()))
@@ -2447,7 +2450,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_jump(PARAMS)
+    static INTERP_CC Value op_jump(PARAMS)
     {
         int16_t rel_target = read_int16_le(&pc[1]);
         pc += 3;
@@ -2457,7 +2460,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_jump_if_true(PARAMS)
+    static INTERP_CC Value op_jump_if_true(PARAMS)
     {
         int16_t rel_target = read_int16_le(&pc[1]);
         if(unlikely((accumulator.as.integer & value_ptr_mask) != 0))
@@ -2475,7 +2478,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_jump_if_false(PARAMS)
+    static INTERP_CC Value op_jump_if_false(PARAMS)
     {
         int16_t rel_target = read_int16_le(&pc[1]);
         if(unlikely((accumulator.as.integer & value_ptr_mask) != 0))
@@ -2493,26 +2496,32 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_raise_assertion_error(PARAMS)
+    static INTERP_CC Value op_raise_assertion_error(PARAMS)
     {
         MUSTTAIL return assertion_error(ARGS);
     }
 
-    static Value op_raise_assertion_error_with_message(PARAMS)
+    static INTERP_CC Value op_raise_assertion_error_with_message(PARAMS)
     {
         MUSTTAIL return assertion_error_with_message(ARGS);
     }
 
-    static Value op_raise_unwind(PARAMS) { MUSTTAIL return raise_unwind(ARGS); }
+    static INTERP_CC Value op_raise_unwind(PARAMS)
+    {
+        MUSTTAIL return raise_unwind(ARGS);
+    }
 
-    static Value op_raise_unwind_with_context(PARAMS)
+    static INTERP_CC Value op_raise_unwind_with_context(PARAMS)
     {
         MUSTTAIL return raise_unwind_with_context(ARGS);
     }
 
-    static Value op_raise_bare(PARAMS) { MUSTTAIL return raise_bare(ARGS); }
+    static INTERP_CC Value op_raise_bare(PARAMS)
+    {
+        MUSTTAIL return raise_bare(ARGS);
+    }
 
-    NOINLINE static Value op_call_simple_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_call_simple_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 5;
         int8_t callable_reg = pc[1];
@@ -2587,7 +2596,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_call_simple_cached_adapt(PARAMS)
+    NOINLINE static INTERP_CC Value op_call_simple_cached_adapt(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 5;
         int8_t first_arg_reg = pc[2];
@@ -2608,7 +2617,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_call_code_object(PARAMS)
+    static INTERP_CC Value op_call_code_object(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 4;
         uint8_t const_offset = pc[1];
@@ -2626,7 +2635,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_call_simple(PARAMS)
+    static INTERP_CC Value op_call_simple(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 5;
         int8_t callable_reg = pc[1];
@@ -2669,7 +2678,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_call_method_attr_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_call_method_attr_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 6;
         int32_t receiver_reg = int8_t(pc[1]);
@@ -2771,7 +2780,7 @@ namespace cl
         }
     }
 
-    static Value op_call_method_attr(PARAMS)
+    static INTERP_CC Value op_call_method_attr(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 6;
         int32_t receiver_reg = int8_t(pc[1]);
@@ -2828,7 +2837,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_call_special_method_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_call_special_method_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 8;
         int32_t receiver_reg = int8_t(pc[1]);
@@ -2946,7 +2955,7 @@ namespace cl
         }
     }
 
-    static Value op_call_special_method(PARAMS)
+    static INTERP_CC Value op_call_special_method(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 8;
         int32_t receiver_reg = int8_t(pc[1]);
@@ -3011,7 +3020,7 @@ namespace cl
         return fp[reg];
     }
 
-    static Value op_call_native0(PARAMS)
+    static INTERP_CC Value op_call_native0(PARAMS)
     {
         START(2);
         uint8_t target_idx = pc[1];
@@ -3020,7 +3029,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_call_native1(PARAMS)
+    static INTERP_CC Value op_call_native1(PARAMS)
     {
         START(2);
         uint8_t target_idx = pc[1];
@@ -3030,7 +3039,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_call_native2(PARAMS)
+    static INTERP_CC Value op_call_native2(PARAMS)
     {
         START(2);
         uint8_t target_idx = pc[1];
@@ -3041,7 +3050,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_call_native3(PARAMS)
+    static INTERP_CC Value op_call_native3(PARAMS)
     {
         START(2);
         uint8_t target_idx = pc[1];
@@ -3053,7 +3062,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_for_iter(PARAMS)
+    static INTERP_CC Value op_for_iter(PARAMS)
     {
         int8_t reg = pc[1];
         int16_t rel_target = read_int16_le(&pc[2]);
@@ -3113,7 +3122,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_for_prep_range1(PARAMS)
+    static INTERP_CC Value op_for_prep_range1(PARAMS)
     {
         int8_t reg = pc[1];
         int16_t rel_target = read_int16_le(&pc[2]);
@@ -3137,7 +3146,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_for_prep_range2(PARAMS)
+    static INTERP_CC Value op_for_prep_range2(PARAMS)
     {
         int8_t reg = pc[1];
         int16_t rel_target = read_int16_le(&pc[2]);
@@ -3163,7 +3172,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_for_prep_range3(PARAMS)
+    static INTERP_CC Value op_for_prep_range3(PARAMS)
     {
         int8_t reg = pc[1];
         int16_t rel_target = read_int16_le(&pc[2]);
@@ -3196,7 +3205,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_for_iter_range1(PARAMS)
+    static INTERP_CC Value op_for_iter_range1(PARAMS)
     {
         int8_t reg = pc[1];
         int16_t rel_target = read_int16_le(&pc[2]);
@@ -3230,7 +3239,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_for_iter_range_step(PARAMS)
+    static INTERP_CC Value op_for_iter_range_step(PARAMS)
     {
         int8_t reg = pc[1];
         int16_t rel_target = read_int16_le(&pc[2]);
@@ -3274,7 +3283,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_return(PARAMS)
+    static INTERP_CC Value op_return(PARAMS)
     {
         restore_frame_header(fp, pc, code_object);
         if(unlikely(thread->safepoint_requested()))
@@ -3286,7 +3295,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_return_or_raise_exception_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_return_or_raise_exception_slow(PARAMS)
     {
         if(!thread->has_pending_exception())
         {
@@ -3315,7 +3324,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_return_or_raise_exception(PARAMS)
+    static INTERP_CC Value op_return_or_raise_exception(PARAMS)
     {
         if(unlikely(accumulator.is_exception_marker()))
         {
@@ -3331,7 +3340,7 @@ namespace cl
         COMPLETE();
     }
 
-    static Value op_return_to_native(PARAMS)
+    static INTERP_CC Value op_return_to_native(PARAMS)
     {
         START(1);
         Value *restored_fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
@@ -3340,14 +3349,15 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static Value op_return_pending_exception_to_native_slow(PARAMS)
+    NOINLINE static INTERP_CC Value
+    op_return_pending_exception_to_native_slow(PARAMS)
     {
         throw std::runtime_error(
             "InternalError: pending exception native return without pending "
             "exception");
     }
 
-    static Value op_return_pending_exception_to_native(PARAMS)
+    static INTERP_CC Value op_return_pending_exception_to_native(PARAMS)
     {
         START(1);
         if(unlikely(!thread->has_pending_exception()))
