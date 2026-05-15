@@ -21,41 +21,38 @@ namespace cl
     };
 
     template <typename T, typename = void>
-    struct HasObjectLayout : std::false_type
+    struct HasNativeObjectSize : std::false_type
     {
     };
 
     template <typename T>
-    struct HasObjectLayout<
-        T, std::void_t<decltype(T::has_dynamic_layout),
-                       decltype(T::static_value_offset_in_words)>>
-        : std::true_type
+    struct HasNativeObjectSize<
+        T, std::void_t<decltype(T::native_object_size_kind)>> : std::true_type
     {
     };
 
-    template <typename Heap, typename T, typename... Args>
-    T *construct_static_object(Heap *heap, Args &&...args)
+    template <typename T, typename... Args>
+    size_t allocation_size_for(Args &&...args)
     {
         static_assert(std::is_base_of_v<HeapObject, T>);
         static_assert(HasHeapNativeLayoutId<T>::value);
-        static_assert(T::native_object_size_kind == ObjectSizeKind::StaticSize);
+        static_assert(HasNativeObjectSize<T>::value);
 
-        char *memory = heap->allocate(sizeof(T));
-        T *obj = new(memory) T(std::forward<Args>(args)...);
-        assert(obj->HeapObject::native_layout_id() == T::native_layout);
-        heap->mark_valid_object(obj);
-        return obj;
+        if constexpr(T::native_object_size_kind == ObjectSizeKind::StaticSize)
+        {
+            return sizeof(T);
+        }
+        else
+        {
+            return T::size_for(std::forward<Args>(args)...);
+        }
     }
 
     template <typename T, typename Heap, typename... Args>
-    T *construct_dynamic_object(Heap *heap, Args &&...args)
+    T *construct_object(Heap *heap, Args &&...args)
     {
-        static_assert(std::is_base_of_v<HeapObject, T>);
-        static_assert(HasHeapNativeLayoutId<T>::value);
-        static_assert(HasObjectLayout<T>::value && T::has_dynamic_layout);
-        static_assert(T::native_object_size_kind == ObjectSizeKind::Custom);
-
-        size_t object_size_in_bytes = T::size_for(args...);
+        size_t object_size_in_bytes =
+            allocation_size_for<T>(std::forward<Args>(args)...);
         char *memory = heap->allocate(object_size_in_bytes);
         T *obj = new(memory) T(std::forward<Args>(args)...);
         assert(obj->HeapObject::native_layout_id() == T::native_layout);

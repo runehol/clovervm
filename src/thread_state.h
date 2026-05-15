@@ -195,7 +195,7 @@ namespace cl
         T *make_internal_raw(Args &&...args)
         {
             static_assert(std::is_base_of_v<HeapObject, T>);
-            static_assert(HasObjectLayout<T>::value);
+            static_assert(HasNativeObjectSize<T>::value);
             return refcounted_heap.make<T>(std::forward<Args>(args)...);
         }
 

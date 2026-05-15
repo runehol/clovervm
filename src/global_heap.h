@@ -50,16 +50,8 @@ namespace cl
         T *make_global_internal_raw(Args &&...args)
         {
             static_assert(std::is_base_of_v<HeapObject, T>);
-            if constexpr(HasObjectLayout<T>::value && T::has_dynamic_layout)
-            {
-                return construct_dynamic_object<T>(this,
-                                                   std::forward<Args>(args)...);
-            }
-            else
-            {
-                return construct_static_object<GlobalHeap, T>(
-                    this, std::forward<Args>(args)...);
-            }
+            static_assert(HasNativeObjectSize<T>::value);
+            return construct_object<T>(this, std::forward<Args>(args)...);
         }
 
         template <typename T, typename... Args>

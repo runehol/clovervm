@@ -77,17 +77,8 @@ namespace cl
         template <typename T, typename... Args> T *make(Args &&...args)
         {
             static_assert(std::is_base_of_v<HeapObject, T>);
-            static_assert(HasObjectLayout<T>::value);
-            if constexpr(T::has_dynamic_layout)
-            {
-                return construct_dynamic_object<T>(this,
-                                                   std::forward<Args>(args)...);
-            }
-            else
-            {
-                return construct_static_object<ThreadLocalHeap, T>(
-                    this, std::forward<Args>(args)...);
-            }
+            static_assert(HasNativeObjectSize<T>::value);
+            return construct_object<T>(this, std::forward<Args>(args)...);
         }
 
     private:
