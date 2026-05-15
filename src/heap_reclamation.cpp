@@ -55,7 +55,7 @@ namespace cl
                             obj->native_layout_aux_count_value() +
                                 descriptor.additional_release_count);
                         break;
-                    case ReleaseKind::Custom:
+                    case ReleaseKind::CustomDealloc:
                         assert(descriptor.custom_dealloc != nullptr);
                         descriptor.custom_dealloc(obj);
                         break;

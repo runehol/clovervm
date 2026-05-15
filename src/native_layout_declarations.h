@@ -8,13 +8,13 @@
 
 namespace cl
 {
-    enum class NativeValueSpanKind : uint8_t
+    enum class ReleaseKind : uint8_t
     {
-        Empty,
-        Static,
-        DynamicSmi,
-        DynamicAux,
-        Custom,
+        Missing,
+        StaticSpan,
+        DynamicSmiSpan,
+        DynamicAuxSpan,
+        CustomDealloc,
     };
 
     enum class NativeObjectSizeKind : uint8_t
@@ -24,14 +24,14 @@ namespace cl
     };
 
 #define CL_DECLARE_EMPTY_VALUE_SPAN(type)                                      \
-    static constexpr NativeValueSpanKind native_value_span_kind =              \
-        NativeValueSpanKind::Empty;                                            \
+    static constexpr ReleaseKind native_release_kind =                         \
+        ReleaseKind::StaticSpan;                                               \
     static constexpr uint32_t native_value_offset_in_words() { return 0; }     \
     static constexpr uint64_t native_static_release_count() { return 0; }
 
 #define CL_DECLARE_STATIC_VALUE_SPAN(type, first_value_member, count_expr)     \
-    static constexpr NativeValueSpanKind native_value_span_kind =              \
-        NativeValueSpanKind::Static;                                           \
+    static constexpr ReleaseKind native_release_kind =                         \
+        ReleaseKind::StaticSpan;                                               \
     static constexpr uint32_t native_value_offset_in_words()                   \
     {                                                                          \
         static_assert(                                                         \
@@ -45,13 +45,11 @@ namespace cl
     }
 
 #define CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(type, base_type, own_count_expr)  \
-    static_assert(                                                             \
-        base_type::native_value_span_kind == NativeValueSpanKind::Static ||    \
-            base_type::native_value_span_kind == NativeValueSpanKind::Empty,   \
-        "Static inherited native value spans require a static "                \
-        "base span");                                                          \
-    static constexpr NativeValueSpanKind native_value_span_kind =              \
-        NativeValueSpanKind::Static;                                           \
+    static_assert(base_type::native_release_kind == ReleaseKind::StaticSpan,   \
+                  "Static inherited native value spans require a static "      \
+                  "base span");                                                \
+    static constexpr ReleaseKind native_release_kind =                         \
+        ReleaseKind::StaticSpan;                                               \
     static constexpr uint32_t native_value_offset_in_words()                   \
     {                                                                          \
         return base_type::native_value_offset_in_words();                      \
@@ -63,8 +61,8 @@ namespace cl
 
 #define CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN(                                     \
     type, count_member, first_value_member, additional_release_count_expr)     \
-    static constexpr NativeValueSpanKind native_value_span_kind =              \
-        NativeValueSpanKind::DynamicSmi;                                       \
+    static constexpr ReleaseKind native_release_kind =                         \
+        ReleaseKind::DynamicSmiSpan;                                           \
     static constexpr uint32_t native_value_count_offset_in_words()             \
     {                                                                          \
         static_assert(CL_OFFSETOF(type, count_member) % sizeof(uint64_t) == 0, \
@@ -85,13 +83,11 @@ namespace cl
 
 #define CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN_EXTENDS(                             \
     type, base_type, count_member, own_additional_release_count_expr)          \
-    static_assert(                                                             \
-        base_type::native_value_span_kind == NativeValueSpanKind::Static ||    \
-            base_type::native_value_span_kind == NativeValueSpanKind::Empty,   \
-        "Dynamic inherited native value spans require a static "               \
-        "base span");                                                          \
-    static constexpr NativeValueSpanKind native_value_span_kind =              \
-        NativeValueSpanKind::DynamicSmi;                                       \
+    static_assert(base_type::native_release_kind == ReleaseKind::StaticSpan,   \
+                  "Dynamic inherited native value spans require a static "     \
+                  "base span");                                                \
+    static constexpr ReleaseKind native_release_kind =                         \
+        ReleaseKind::DynamicSmiSpan;                                           \
     static constexpr uint32_t native_value_count_offset_in_words()             \
     {                                                                          \
         static_assert(CL_OFFSETOF(type, count_member) % sizeof(uint64_t) == 0, \
@@ -110,8 +106,8 @@ namespace cl
 
 #define CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(type, first_value_member,            \
                                           additional_release_count_expr)       \
-    static constexpr NativeValueSpanKind native_value_span_kind =              \
-        NativeValueSpanKind::DynamicAux;                                       \
+    static constexpr ReleaseKind native_release_kind =                         \
+        ReleaseKind::DynamicAuxSpan;                                           \
     static constexpr uint32_t native_value_offset_in_words()                   \
     {                                                                          \
         static_assert(                                                         \
@@ -126,13 +122,11 @@ namespace cl
 
 #define CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(                             \
     type, base_type, own_additional_release_count_expr)                        \
-    static_assert(                                                             \
-        base_type::native_value_span_kind == NativeValueSpanKind::Static ||    \
-            base_type::native_value_span_kind == NativeValueSpanKind::Empty,   \
-        "Dynamic inherited native value spans require a static "               \
-        "base span");                                                          \
-    static constexpr NativeValueSpanKind native_value_span_kind =              \
-        NativeValueSpanKind::DynamicAux;                                       \
+    static_assert(base_type::native_release_kind == ReleaseKind::StaticSpan,   \
+                  "Dynamic inherited native value spans require a static "     \
+                  "base span");                                                \
+    static constexpr ReleaseKind native_release_kind =                         \
+        ReleaseKind::DynamicAuxSpan;                                           \
     static constexpr uint32_t native_value_offset_in_words()                   \
     {                                                                          \
         return base_type::native_value_offset_in_words();                      \
@@ -144,8 +138,8 @@ namespace cl
     }
 
 #define CL_DECLARE_CUSTOM_DEALLOC(type, function)                              \
-    static constexpr NativeValueSpanKind native_value_span_kind =              \
-        NativeValueSpanKind::Custom;                                           \
+    static constexpr ReleaseKind native_release_kind =                         \
+        ReleaseKind::CustomDealloc;                                            \
     static constexpr auto native_dealloc = function;
 
 #define CL_DECLARE_STATIC_OBJECT_SIZE(type)                                    \

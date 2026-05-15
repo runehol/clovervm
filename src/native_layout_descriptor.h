@@ -14,15 +14,6 @@
 
 namespace cl
 {
-    enum class ReleaseKind : uint8_t
-    {
-        Missing,
-        StaticSpan,
-        DynamicSmiSpan,
-        DynamicAuxSpan,
-        Custom,
-    };
-
     enum class ObjectSizeKind : uint8_t
     {
         Missing,
@@ -82,8 +73,8 @@ namespace cl
         static constexpr ReleaseDescriptor
         custom(void (*custom_dealloc)(HeapObject *))
         {
-            return ReleaseDescriptor{ReleaseKind::Custom, 0, 0, 0, 0,
-                                     custom_dealloc};
+            return ReleaseDescriptor{
+                ReleaseKind::CustomDealloc, 0, 0, 0, 0, custom_dealloc};
         }
     };
 
@@ -128,28 +119,22 @@ namespace cl
         {
             static constexpr ReleaseDescriptor build()
             {
-                if constexpr(T::native_value_span_kind ==
-                             NativeValueSpanKind::Empty)
-                {
-                    return ReleaseDescriptor::static_span(0, 0);
-                }
-                else if constexpr(T::native_value_span_kind ==
-                                  NativeValueSpanKind::Static)
+                if constexpr(T::native_release_kind == ReleaseKind::StaticSpan)
                 {
                     return ReleaseDescriptor::static_span(
                         T::native_value_offset_in_words(),
                         T::native_static_release_count());
                 }
-                else if constexpr(T::native_value_span_kind ==
-                                  NativeValueSpanKind::DynamicSmi)
+                else if constexpr(T::native_release_kind ==
+                                  ReleaseKind::DynamicSmiSpan)
                 {
                     return ReleaseDescriptor::dynamic_smi_span(
                         T::native_value_count_offset_in_words(),
                         T::native_value_offset_in_words(),
                         T::native_additional_release_count());
                 }
-                else if constexpr(T::native_value_span_kind ==
-                                  NativeValueSpanKind::DynamicAux)
+                else if constexpr(T::native_release_kind ==
+                                  ReleaseKind::DynamicAuxSpan)
                 {
                     return ReleaseDescriptor::dynamic_aux_span(
                         T::native_value_offset_in_words(),

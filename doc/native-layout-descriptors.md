@@ -503,7 +503,7 @@ CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN(type, count, first, additional)
 CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN_EXTENDS(type, base, count, own_additional)
 CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(type, first, additional)
 CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(type, base, own_additional)
-CL_DECLARE_CUSTOM_DEALLOC(type, function)          // Custom
+CL_DECLARE_CUSTOM_DEALLOC(type, function)          // CustomDealloc
 ```
 
 These macros expand inside the class body, so they may safely compute offsets
@@ -514,8 +514,8 @@ or decode `HeapLayout`.
 additional_release_count_expr)` expands roughly to:
 
 ```cpp
-static constexpr NativeValueSpanKind native_value_span_kind =
-    NativeValueSpanKind::DynamicSmi;
+static constexpr ReleaseKind native_release_kind =
+    ReleaseKind::DynamicSmiSpan;
 
 static constexpr uint32_t native_value_count_offset_in_words()
 {
@@ -539,11 +539,11 @@ static constexpr uint64_t native_additional_release_count()
 
 `CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(type, first_value_member,
 additional_release_count_expr)` is similar, but declares
-`NativeValueSpanKind::DynamicAux` and does not need a count-member offset. The
+`ReleaseKind::DynamicAuxSpan` and does not need a count-member offset. The
 dynamic count comes from `HeapObject`'s auxiliary count field.
 
 `CL_DECLARE_STATIC_VALUE_SPAN(type, first_value_member, count_expr)` declares
-`NativeValueSpanKind::Static`, `native_value_offset_in_words()`, and
+`ReleaseKind::StaticSpan`, `native_value_offset_in_words()`, and
 `native_static_release_count()`.
 
 The `EXTENDS` variants mirror the current legacy layout inheritance shape, but
@@ -556,12 +556,12 @@ roughly to:
 ```cpp
 static_assert(std::is_base_of_v<base_type, type>,
               "Native layout base must be a C++ base class");
-static_assert(base_type::native_value_span_kind ==
-              NativeValueSpanKind::Static,
+static_assert(base_type::native_release_kind ==
+              ReleaseKind::StaticSpan,
               "Static inherited value spans require a static base span");
 
-static constexpr NativeValueSpanKind native_value_span_kind =
-    NativeValueSpanKind::Static;
+static constexpr ReleaseKind native_release_kind =
+    ReleaseKind::StaticSpan;
 
 static constexpr uint32_t native_value_offset_in_words()
 {
@@ -627,23 +627,23 @@ struct NativeLayoutReleaseDescriptorBuilder
 {
     static constexpr ReleaseDescriptor build()
     {
-        if constexpr(T::native_value_span_kind ==
-                     NativeValueSpanKind::Static)
+        if constexpr(T::native_release_kind ==
+                     ReleaseKind::StaticSpan)
         {
             return ReleaseDescriptor::static_span(
                 T::native_value_offset_in_words(),
                 T::native_static_release_count());
         }
-        else if constexpr(T::native_value_span_kind ==
-                          NativeValueSpanKind::DynamicSmi)
+        else if constexpr(T::native_release_kind ==
+                          ReleaseKind::DynamicSmiSpan)
         {
             return ReleaseDescriptor::dynamic_smi_span(
                 T::native_value_count_offset_in_words(),
                 T::native_value_offset_in_words(),
                 T::native_additional_release_count());
         }
-        else if constexpr(T::native_value_span_kind ==
-                          NativeValueSpanKind::DynamicAux)
+        else if constexpr(T::native_release_kind ==
+                          ReleaseKind::DynamicAuxSpan)
         {
             return ReleaseDescriptor::dynamic_aux_span(
                 T::native_value_offset_in_words(),

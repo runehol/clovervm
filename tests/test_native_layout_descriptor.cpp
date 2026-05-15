@@ -64,7 +64,7 @@ TEST(NativeLayoutDescriptor, CustomDeallocDeclarationBuildsDescriptor)
         native_layout_descriptor_detail::NativeLayoutReleaseDescriptorBuilder<
             CustomDeallocTestObject>::build();
 
-    EXPECT_EQ(ReleaseKind::Custom, release.kind);
+    EXPECT_EQ(ReleaseKind::CustomDealloc, release.kind);
     EXPECT_EQ(CustomDeallocTestObject::dealloc, release.custom_dealloc);
 }
 
@@ -392,7 +392,7 @@ TEST(NativeLayoutDescriptor, CodeObjectUsesCustomDeallocDescriptor)
     const ReleaseDescriptor &release =
         release_descriptor_for(CodeObject::native_layout);
 
-    EXPECT_EQ(ReleaseKind::Custom, release.kind);
+    EXPECT_EQ(ReleaseKind::CustomDealloc, release.kind);
     EXPECT_EQ(CodeObject::dealloc, release.custom_dealloc);
 
     const ObjectSizeDescriptor &object_size =
@@ -407,7 +407,7 @@ TEST(NativeLayoutDescriptor, ShapeUsesCustomDeallocAndCustomObjectSize)
     const ReleaseDescriptor &release =
         release_descriptor_for(Shape::native_layout);
 
-    EXPECT_EQ(ReleaseKind::Custom, release.kind);
+    EXPECT_EQ(ReleaseKind::CustomDealloc, release.kind);
     EXPECT_EQ(Shape::dealloc, release.custom_dealloc);
 
     const ObjectSizeDescriptor &object_size =
