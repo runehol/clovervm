@@ -59,8 +59,7 @@ namespace cl
             TValue<List>::from_value_checked(self));
     }
 
-    List::List(ClassObject *cls, size_t size)
-        : Object(cls, native_layout, compact_layout())
+    List::List(ClassObject *cls, size_t size) : Object(cls, native_layout)
     {
         items.resize(size, Value::not_present());
     }

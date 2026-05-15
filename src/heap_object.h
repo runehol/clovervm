@@ -247,13 +247,12 @@ namespace cl
     class HeapObject
     {
     public:
-        HeapObject(NativeLayoutId _native_layout_id, HeapLayout _layout,
-                   uint16_t _native_layout_aux_count = 0)
+        explicit HeapObject(NativeLayoutId _native_layout_id,
+                            uint16_t _native_layout_aux_count = 0)
             : refcount(0), lifecycle_state(HeapLifecycleState::Normal),
               native_layout_id_(_native_layout_id),
               native_layout_aux_count(_native_layout_aux_count)
         {
-            (void)_layout;
             assert(native_layout_id_ != NativeLayoutId::Invalid);
         }
 

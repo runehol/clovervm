@@ -19,8 +19,7 @@ namespace cl
             NativeLayoutId::ListIterator;
 
         ListIterator(ClassObject *cls, TValue<List> _list)
-            : Object(cls, native_layout, compact_layout()), list(_list),
-              index(Value::from_smi(0))
+            : Object(cls, native_layout), list(_list), index(Value::from_smi(0))
         {
         }
 

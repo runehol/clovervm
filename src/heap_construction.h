@@ -61,11 +61,8 @@ namespace cl
         if(compact_layout_fits(spec.object_size_in_16byte_units,
                                value_offset_in_words, spec.value_count))
         {
-            HeapLayout layout = encode_compact_layout_unchecked(
-                spec.object_size_in_16byte_units, value_offset_in_words,
-                spec.value_count);
             char *memory = heap->allocate(object_size_in_bytes);
-            T *obj = new(memory) T(layout, std::forward<Args>(args)...);
+            T *obj = new(memory) T(std::forward<Args>(args)...);
             assert(obj->HeapObject::native_layout_id() == T::native_layout);
             heap->mark_valid_object(obj);
             return obj;
@@ -81,9 +78,7 @@ namespace cl
         header->object_size_in_16byte_units = spec.object_size_in_16byte_units;
         header->value_count = spec.value_count;
 
-        HeapLayout layout =
-            encode_expanded_layout_unchecked(value_offset_in_words);
-        T *obj = new(object_memory) T(layout, std::forward<Args>(args)...);
+        T *obj = new(object_memory) T(std::forward<Args>(args)...);
         assert(obj->HeapObject::native_layout_id() == T::native_layout);
         heap->mark_valid_object(obj);
         return obj;

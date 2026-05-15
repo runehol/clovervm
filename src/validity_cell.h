@@ -12,10 +12,7 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::ValidityCell;
 
-        ValidityCell()
-            : HeapObject(native_layout, compact_layout()), valid(true)
-        {
-        }
+        ValidityCell() : HeapObject(native_layout), valid(true) {}
 
         bool is_valid() const { return valid; }
         void invalidate() { valid = false; }

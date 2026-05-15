@@ -96,14 +96,13 @@ namespace cl
             OwnedHeapPtr<Shape> next_shape;
         };
 
-        Shape(HeapLayout layout, Value class_value, Shape *previous_shape,
-              int32_t next_slot_index, uint32_t property_count);
-        Shape(HeapLayout layout, Value class_value, Shape *previous_shape,
-              int32_t next_slot_index, uint32_t property_count,
-              ShapeFlags shape_flags);
-        Shape(HeapLayout layout, Value class_value, Shape *previous_shape,
-              int32_t next_slot_index, uint32_t property_count,
-              ShapeFlags shape_flags, uint32_t present_count);
+        Shape(Value class_value, Shape *previous_shape, int32_t next_slot_index,
+              uint32_t property_count);
+        Shape(Value class_value, Shape *previous_shape, int32_t next_slot_index,
+              uint32_t property_count, ShapeFlags shape_flags);
+        Shape(Value class_value, Shape *previous_shape, int32_t next_slot_index,
+              uint32_t property_count, ShapeFlags shape_flags,
+              uint32_t present_count);
 
         static Shape *make_root_with_single_descriptor(
             Value class_value, TValue<String> name, DescriptorInfo info,

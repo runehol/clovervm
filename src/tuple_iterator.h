@@ -19,7 +19,7 @@ namespace cl
             NativeLayoutId::TupleIterator;
 
         TupleIterator(ClassObject *cls, TValue<Tuple> _tuple)
-            : Object(cls, native_layout, compact_layout()), tuple(_tuple),
+            : Object(cls, native_layout), tuple(_tuple),
               index(TValue<SMI>::from_smi(0)),
               length(TValue<SMI>::from_smi(
                   static_cast<int64_t>(_tuple.extract()->size())))

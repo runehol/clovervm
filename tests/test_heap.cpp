@@ -21,7 +21,7 @@ namespace
 
         CL_DECLARE_STATIC_LAYOUT_NO_VALUES(ThrowingHeapObject);
 
-        ThrowingHeapObject() : HeapObject(native_layout, compact_layout())
+        ThrowingHeapObject() : HeapObject(native_layout)
         {
             throw std::runtime_error("construction failed");
         }

@@ -15,7 +15,7 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::OverflowSlots;
 
-        OverflowSlots(HeapLayout layout, uint32_t size, uint32_t capacity);
+        OverflowSlots(uint32_t size, uint32_t capacity);
 
         static uint16_t native_aux_count_for_capacity(uint32_t capacity)
         {

@@ -34,17 +34,15 @@ namespace cl
     class Object : public HeapObject
     {
     public:
-        Object(ClassObject *_cls, NativeLayoutId _native_layout_id,
-               HeapLayout _layout)
-            : HeapObject(_native_layout_id, _layout), shape(nullptr),
+        Object(ClassObject *_cls, NativeLayoutId _native_layout_id)
+            : HeapObject(_native_layout_id), shape(nullptr),
               overflow_storage(nullptr)
         {
             initialize_shape_for_class(_cls);
         }
 
-        Object(BootstrapObjectTag, NativeLayoutId _native_layout_id,
-               HeapLayout _layout)
-            : HeapObject(_native_layout_id, _layout), shape(nullptr),
+        Object(BootstrapObjectTag, NativeLayoutId _native_layout_id)
+            : HeapObject(_native_layout_id), shape(nullptr),
               overflow_storage(nullptr)
         {
         }

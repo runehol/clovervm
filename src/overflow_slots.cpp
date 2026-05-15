@@ -3,10 +3,8 @@
 
 namespace cl
 {
-    OverflowSlots::OverflowSlots(HeapLayout layout, uint32_t _size,
-                                 uint32_t _capacity)
-        : HeapObject(native_layout, layout,
-                     native_aux_count_for_capacity(_capacity)),
+    OverflowSlots::OverflowSlots(uint32_t _size, uint32_t _capacity)
+        : HeapObject(native_layout, native_aux_count_for_capacity(_capacity)),
           size(_size), capacity(_capacity)
     {
         assert(size <= capacity);

@@ -26,9 +26,8 @@ namespace cl
         static constexpr uint32_t kInlineSlotCount = 3;
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object)
-            : Object(cls, native_layout, compact_layout()),
-              code_object(_code_object), default_parameters(Value::None()),
-              docstring(Value::None()),
+            : Object(cls, native_layout), code_object(_code_object),
+              default_parameters(Value::None()), docstring(Value::None()),
               min_positional_arity(
                   _code_object.extract()->n_positional_parameters),
               max_positional_arity(max_arity_for_code(_code_object)),
@@ -41,9 +40,8 @@ namespace cl
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object,
                  Value _docstring)
-            : Object(cls, native_layout, compact_layout()),
-              code_object(_code_object), default_parameters(Value::None()),
-              docstring(_docstring),
+            : Object(cls, native_layout), code_object(_code_object),
+              default_parameters(Value::None()), docstring(_docstring),
               min_positional_arity(
                   _code_object.extract()->n_positional_parameters),
               max_positional_arity(max_arity_for_code(_code_object)),
@@ -56,8 +54,7 @@ namespace cl
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object,
                  TValue<Tuple> _default_parameters)
-            : Object(cls, native_layout, compact_layout()),
-              code_object(_code_object),
+            : Object(cls, native_layout), code_object(_code_object),
               default_parameters(_default_parameters), docstring(Value::None()),
               min_positional_arity(
                   min_arity_for_code(_code_object, _default_parameters)),
@@ -74,8 +71,7 @@ namespace cl
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object,
                  TValue<Tuple> _default_parameters, Value _docstring)
-            : Object(cls, native_layout, compact_layout()),
-              code_object(_code_object),
+            : Object(cls, native_layout), code_object(_code_object),
               default_parameters(_default_parameters), docstring(_docstring),
               min_positional_arity(
                   min_arity_for_code(_code_object, _default_parameters)),

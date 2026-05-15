@@ -63,15 +63,15 @@ namespace cl
             static_cast<int64_t>(self.get_ptr<Tuple>()->size()));
     }
 
-    Tuple::Tuple(HeapLayout layout, BootstrapObjectTag, size_t size)
-        : Object(BootstrapObjectTag{}, native_layout, layout),
+    Tuple::Tuple(BootstrapObjectTag, size_t size)
+        : Object(BootstrapObjectTag{}, native_layout),
           size_value(Value::from_smi(static_cast<int64_t>(size)))
     {
         initialize_items(size);
     }
 
-    Tuple::Tuple(HeapLayout layout, ClassObject *cls, size_t size)
-        : Object(cls, native_layout, layout),
+    Tuple::Tuple(ClassObject *cls, size_t size)
+        : Object(cls, native_layout),
           size_value(Value::from_smi(static_cast<int64_t>(size)))
     {
         initialize_items(size);

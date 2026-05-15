@@ -132,9 +132,8 @@ namespace cl
 
         CodeObject(ClassObject *cls, const CompilationUnit *_compilation_unit,
                    Scope *_module_scope, Scope *_local_scope, Value _name)
-            : Object(cls, native_layout, compact_layout()),
-              module_scope(_module_scope), local_scope(_local_scope),
-              name(_name), docstring(Value::None()),
+            : Object(cls, native_layout), module_scope(_module_scope),
+              local_scope(_local_scope), name(_name), docstring(Value::None()),
               compilation_unit(_compilation_unit)
         {
         }

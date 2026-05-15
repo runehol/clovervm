@@ -21,8 +21,8 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout = NativeLayoutId::Tuple;
 
-        Tuple(HeapLayout layout, BootstrapObjectTag, size_t size);
-        Tuple(HeapLayout layout, ClassObject *cls, size_t size);
+        Tuple(BootstrapObjectTag, size_t size);
+        Tuple(ClassObject *cls, size_t size);
 
         size_t size() const
         {

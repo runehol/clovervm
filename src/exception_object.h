@@ -20,7 +20,7 @@ namespace cl
         static constexpr uint32_t kInlineSlotCount = 1;
 
         ExceptionObject(ClassObject *cls, TValue<String> message)
-            : ExceptionObject(cls, native_layout, compact_layout(), message)
+            : ExceptionObject(cls, native_layout, message)
         {
         }
 
@@ -34,8 +34,8 @@ namespace cl
 
     protected:
         ExceptionObject(ClassObject *cls, NativeLayoutId layout_id,
-                        HeapLayout layout, TValue<String> message)
-            : Object(cls, layout_id, layout), message(message)
+                        TValue<String> message)
+            : Object(cls, layout_id), message(message)
         {
         }
     };

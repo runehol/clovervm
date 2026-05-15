@@ -18,8 +18,8 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::RawArrayBacking;
 
-        RawArrayBacking(HeapLayout layout, size_t storage_bytes)
-            : HeapObject(native_layout, layout), storage_bytes(storage_bytes)
+        explicit RawArrayBacking(size_t storage_bytes)
+            : HeapObject(native_layout), storage_bytes(storage_bytes)
         {
         }
 
@@ -57,10 +57,9 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::ValueArrayBacking;
 
-        ValueArrayBacking(HeapLayout layout, size_t value_cell_count)
-            : HeapObject(
-                  native_layout, layout,
-                  native_aux_count_for_value_cell_count(value_cell_count))
+        explicit ValueArrayBacking(size_t value_cell_count)
+            : HeapObject(native_layout, native_aux_count_for_value_cell_count(
+                                            value_cell_count))
         {
         }
 
@@ -104,10 +103,9 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::HeapPtrArrayBacking;
 
-        HeapPtrArrayBacking(HeapLayout layout, size_t value_cell_count)
-            : HeapObject(
-                  native_layout, layout,
-                  native_aux_count_for_value_cell_count(value_cell_count))
+        explicit HeapPtrArrayBacking(size_t value_cell_count)
+            : HeapObject(native_layout, native_aux_count_for_value_cell_count(
+                                            value_cell_count))
         {
         }
 

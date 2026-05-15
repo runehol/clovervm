@@ -19,8 +19,7 @@ namespace cl
     StopIterationObject::StopIterationObject(ClassObject *cls,
                                              TValue<String> message,
                                              Value value)
-        : ExceptionObject(cls, native_layout, compact_layout(), message),
-          value(value)
+        : ExceptionObject(cls, native_layout, message), value(value)
     {
     }
 
