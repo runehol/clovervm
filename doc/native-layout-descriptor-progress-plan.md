@@ -198,7 +198,7 @@ spans have explicit custom teardown.
 - [x] Give internal heap records native layout IDs after `NativeLayoutId` lives
       on `HeapObject`.
 - [x] Migrate `ValidityCell`.
-- [ ] Migrate `Scope`.
+- [x] Migrate `Scope`.
 - [ ] Migrate `Shape`, likely with custom dealloc because of transition vector
       ownership.
 - [ ] Migrate `OverflowSlots`.

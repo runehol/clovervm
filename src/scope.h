@@ -1,6 +1,7 @@
 #ifndef CL_SCOPE_H
 #define CL_SCOPE_H
 
+#include "native_layout_declarations.h"
 #include "object.h"
 #include "str.h"
 #include "typed_value.h"
@@ -175,6 +176,15 @@ namespace cl
         RawArray<int32_t> slot_current_entry_indices;
 
     public:
+        CL_DECLARE_STATIC_VALUE_SPAN(
+            Scope, parent_scope,
+            1 + decltype(name_table)::embedded_value_count +
+                decltype(entries)::embedded_value_count +
+                decltype(slot_values)::embedded_value_count +
+                decltype(slot_names)::embedded_value_count +
+                decltype(slot_current_entry_indices)::embedded_value_count);
+        CL_DECLARE_STATIC_OBJECT_SIZE(Scope);
+
         CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(
             Scope, parent_scope,
             1 + decltype(name_table)::embedded_value_count +

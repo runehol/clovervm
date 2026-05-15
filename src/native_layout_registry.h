@@ -10,6 +10,7 @@
 #include "list.h"
 #include "list_iterator.h"
 #include "range_iterator.h"
+#include "scope.h"
 #include "str.h"
 #include "tuple.h"
 #include "tuple_iterator.h"
@@ -29,6 +30,7 @@
     V(Instance);                                                               \
     V(CodeObject);                                                             \
     V(ValidityCell);                                                           \
+    V(Scope);                                                                  \
     V(ClassObject);
 
 #endif  // CL_NATIVE_LAYOUT_REGISTRY_H

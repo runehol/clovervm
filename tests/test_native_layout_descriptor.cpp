@@ -8,6 +8,7 @@
 #include "native_layout_descriptor.h"
 #include "object.h"
 #include "range_iterator.h"
+#include "scope.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -152,6 +153,26 @@ TEST(NativeLayoutDescriptor, ValidityCellUsesEmptyStaticDescriptor)
 {
     expect_static_native_layout_descriptor<ValidityCell>();
     EXPECT_EQ(0u, ValidityCell::native_static_release_count());
+}
+
+TEST(NativeLayoutDescriptor, ScopeUsesNativeStaticReleaseDescriptor)
+{
+    expect_static_native_layout_descriptor<Scope>();
+}
+
+TEST(NativeLayoutDescriptor, ScopeNativeReleaseSpanStartsAtParentScope)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Scope *scope = context.thread()->make_internal_raw<Scope>(nullptr);
+
+    NativeValueSpan span = value_span_for_release(scope);
+
+    EXPECT_EQ(reinterpret_cast<Value *>(scope) +
+                  Scope::native_value_offset_in_words(),
+              span.slots);
+    EXPECT_EQ(Scope::native_static_release_count(), span.count);
+    EXPECT_EQ(Scope::static_value_count(), span.count);
 }
 
 TEST(NativeLayoutDescriptor, StringUsesStaticReleaseAndCustomObjectSize)
@@ -439,7 +460,7 @@ TEST(NativeLayoutDescriptor, CodeObjectUsesCustomDeallocDescriptor)
 TEST(NativeLayoutDescriptor, UnmigratedLayoutsStillUseLegacyReleaseDescriptor)
 {
     EXPECT_EQ(ReleaseKind::LegacyHeapLayout,
-              release_descriptor_for(NativeLayoutId::Scope).kind);
+              release_descriptor_for(NativeLayoutId::Shape).kind);
 }
 
 TEST(NativeLayoutDescriptor, LegacyObjectSizeQueryUsesHeapLayout)
