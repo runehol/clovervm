@@ -15,7 +15,9 @@ op_for_iter_range1
 op_for_iter_range_step
 op_jump
 op_jump_if_false
+op_jump_if_false_float_truthiness
 op_jump_if_true
+op_jump_if_true_float_truthiness
 op_lda_constant
 op_lda_false
 op_lda_global
@@ -47,6 +49,7 @@ op_mul
 op_mul_smi
 op_negate
 op_not
+op_not_float_truthiness
 op_return
 op_return_or_raise_exception
 op_right_shift

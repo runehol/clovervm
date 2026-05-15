@@ -133,24 +133,28 @@ Validation:
 
 ## Stage 4: Float Truthiness
 
+Status: complete.
+
 Goal: `if`, `while`, `and`, `or`, `not`, and `assert` can use float values.
 
 Implementation pieces:
 
-- add a cold truthiness continuation behind pointer cases in `JumpIfTrue` and
+- [x] add a cold truthiness continuation behind pointer cases in `JumpIfTrue` and
   `JumpIfFalse`;
-- recognize exact `Float`;
-- classify `value != 0.0` as true;
-- keep `0.0` and `-0.0` false;
-- tail-call onward for non-float pointer truthiness misses.
+- [x] add the same float truthiness continuation behind pointer cases in `Not`;
+- [x] recognize exact `Float`;
+- [x] classify `value != 0.0` as true;
+- [x] keep `0.0` false;
+- [x] keep direct heap `Float(-0.0)` false by using double zero comparison;
+- [x] tail-call onward for non-float pointer truthiness misses.
 
 Tests:
 
-- `assert 1.0`;
-- `assert not 0.0`;
-- `assert not -0.0`;
-- `if 1.0: ...`;
-- `while` with a float guard if that exposes a different path.
+- [x] `assert 1.0`;
+- [x] `assert not 0.0`;
+- [x] `if 1.0: ...`;
+- [x] `if 0.0: ... else: ...`;
+- [x] `while` with a float guard if that exposes a different path.
 
 Non-goals:
 
@@ -161,7 +165,7 @@ Non-goals:
 
 Validation:
 
-- `ninja -C build-debug all check`.
+- [x] `ninja -C build-debug all check`.
 
 ## Stage 5: Pure Float Arithmetic Tier
 
@@ -193,6 +197,7 @@ Tests:
 - float/int arithmetic for `+`, `-`, `*`;
 - unary `-1.5`;
 - unary `+1.5`;
+- `assert not -0.0` once source-level float unary negation exists;
 - all-SMI integer arithmetic still returns SMI where it did before.
 
 Non-goals:

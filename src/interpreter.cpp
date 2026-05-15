@@ -7,6 +7,7 @@
 #include "dict.h"
 #include "exception_handling.h"
 #include "exception_object.h"
+#include "float.h"
 #include "function.h"
 #include "instance.h"
 #include "list.h"
@@ -731,6 +732,56 @@ namespace cl
     NOINLINE static Value overflow_path(PARAMS)
     {
         MUSTTAIL return raise_generic_exception(ARGS);
+    }
+
+    NOINLINE static Value op_not_float_truthiness(PARAMS)
+    {
+        START(1);
+        if(!can_convert_to<Float>(accumulator))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator = accumulator.get_ptr<Float>()->value != 0.0
+                          ? Value::False()
+                          : Value::True();
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_jump_if_true_float_truthiness(PARAMS)
+    {
+        int16_t rel_target = read_int16_le(&pc[1]);
+        if(!can_convert_to<Float>(accumulator))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        pc += 3;
+        if(accumulator.get_ptr<Float>()->value != 0.0)
+        {
+            pc += rel_target;
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_jump_if_false_float_truthiness(PARAMS)
+    {
+        int16_t rel_target = read_int16_le(&pc[1]);
+        if(!can_convert_to<Float>(accumulator))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        pc += 3;
+        if(accumulator.get_ptr<Float>()->value == 0.0)
+        {
+            pc += rel_target;
+        }
+
+        START(0);
+        COMPLETE();
     }
 
     static ALWAYSINLINE void enter_function_frame_at_new_fp(
@@ -1961,8 +2012,7 @@ namespace cl
         START_UNARY_ACC();
         if(unlikely((a.as.integer & value_ptr_mask) != 0))
         {
-            // this is not an inlined type, go to the slow path
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_not_float_truthiness(ARGS);
         }
         // however, if this is an inlined type, we can simply test for
         // truthiness using a mask and negate
@@ -2130,8 +2180,7 @@ namespace cl
         int16_t rel_target = read_int16_le(&pc[1]);
         if(unlikely((accumulator.as.integer & value_ptr_mask) != 0))
         {
-            // this is not an inlined type, go to the slow path
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_jump_if_true_float_truthiness(ARGS);
         }
 
         pc += 3;
@@ -2149,8 +2198,7 @@ namespace cl
         int16_t rel_target = read_int16_le(&pc[1]);
         if(unlikely((accumulator.as.integer & value_ptr_mask) != 0))
         {
-            // this is not an inlined type, go to the slow path
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_jump_if_false_float_truthiness(ARGS);
         }
 
         pc += 3;

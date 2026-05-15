@@ -455,6 +455,45 @@ TEST(Interpreter, assert_statement_unwinds_nested_frames)
                         L"AssertionError");
 }
 
+TEST(Interpreter, float_truthiness_asserts)
+{
+    test::VmTestContext test_context;
+
+    Value truthy_result = test_context.run_file(L"assert 1.0\n");
+    ASSERT_TRUE(can_convert_to<Float>(truthy_result));
+    EXPECT_DOUBLE_EQ(1.0, truthy_result.get_ptr<Float>()->value);
+    EXPECT_EQ(Value::True(), test_context.run_file(L"assert not 0.0\n"));
+}
+
+TEST(Interpreter, float_truthiness_if_statements)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"if 1.0:\n"
+                                                        L"    result = 1\n"
+                                                        L"else:\n"
+                                                        L"    result = 2\n"
+                                                        L"result\n"));
+    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"if 0.0:\n"
+                                                        L"    result = 1\n"
+                                                        L"else:\n"
+                                                        L"    result = 2\n"
+                                                        L"result\n"));
+}
+
+TEST(Interpreter, float_truthiness_while_statement)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(1),
+              test_context.run_file(L"guard = 1.0\n"
+                                    L"count = 0\n"
+                                    L"while guard:\n"
+                                    L"    count = count + 1\n"
+                                    L"    guard = 0.0\n"
+                                    L"count\n"));
+}
+
 TEST(Interpreter, raise_statement_raises_exception_class)
 {
     expect_python_error(L"raise ValueError\n", L"ValueError");
