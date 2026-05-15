@@ -5,6 +5,7 @@
 #include "dict.h"
 #include "exception_object.h"
 #include "function.h"
+#include "instance.h"
 #include "list.h"
 #include "list_iterator.h"
 #include "range_iterator.h"
@@ -23,6 +24,7 @@
     V(Function);                                                               \
     V(Dict);                                                                   \
     V(String);                                                                 \
+    V(Instance);                                                               \
     V(ClassObject);
 
 #endif  // CL_NATIVE_LAYOUT_REGISTRY_H

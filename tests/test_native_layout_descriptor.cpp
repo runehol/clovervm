@@ -2,6 +2,7 @@
 #include "dict.h"
 #include "exception_object.h"
 #include "function.h"
+#include "instance.h"
 #include "list.h"
 #include "list_iterator.h"
 #include "native_layout_descriptor.h"
@@ -193,6 +194,108 @@ TEST(NativeLayoutDescriptor, TupleCustomObjectSizeUsesStoredCount)
     ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
     EXPECT_EQ(Tuple::size_for(5), object_size.custom_size_in_bytes(tuple));
+}
+
+TEST(NativeLayoutDescriptor, InstanceUsesDynamicAuxReleaseAndCustomObjectSize)
+{
+    const ReleaseDescriptor &release =
+        release_descriptor_for(Instance::native_layout);
+
+    EXPECT_EQ(ReleaseKind::DynamicAuxSpan, release.kind);
+    EXPECT_EQ(Instance::static_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(Instance::native_additional_release_count(),
+              release.additional_release_count);
+    EXPECT_EQ(Object::native_static_release_count(),
+              release.additional_release_count);
+
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptor_for(Instance::native_layout);
+
+    EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
+    ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
+}
+
+TEST(NativeLayoutDescriptor, InstanceAuxCountStoresPhysicalInlineSlotCount)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TValue<String> small_name(
+        context.vm().get_or_create_interned_string_value(L"Small"));
+    TValue<String> large_name(
+        context.vm().get_or_create_interned_string_value(L"Large"));
+    ClassObject *small_cls = context.thread()->make_internal_raw<ClassObject>(
+        small_name, 1, context.vm().object_class());
+    ClassObject *large_cls = context.thread()->make_internal_raw<ClassObject>(
+        large_name, 7, context.vm().object_class());
+
+    Instance *small = context.thread()->make_internal_raw<Instance>(small_cls);
+    Instance *large = context.thread()->make_internal_raw<Instance>(large_cls);
+
+    EXPECT_EQ(1u, small->native_layout_aux_count_value());
+    EXPECT_EQ(7u, large->native_layout_aux_count_value());
+
+    NativeValueSpan small_span = value_span_for_release(small);
+    NativeValueSpan large_span = value_span_for_release(large);
+
+    EXPECT_EQ(reinterpret_cast<Value *>(small) +
+                  Object::native_value_offset_in_words(),
+              small_span.slots);
+    EXPECT_EQ(reinterpret_cast<Value *>(large) +
+                  Object::native_value_offset_in_words(),
+              large_span.slots);
+    EXPECT_EQ(Instance::native_additional_release_count() + 1,
+              small_span.count);
+    EXPECT_EQ(Instance::native_additional_release_count() + 7,
+              large_span.count);
+}
+
+TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesAuxCount)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"SizedInstance"));
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        cls_name, 4, context.vm().object_class());
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
+
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptor_for(Instance::native_layout);
+
+    ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
+    ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
+    EXPECT_EQ(Instance::size_for(4),
+              object_size.custom_size_in_bytes(instance));
+}
+
+TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"Transitioned"));
+    TValue<String> a_name(
+        context.vm().get_or_create_interned_string_value(L"a"));
+    TValue<String> b_name(
+        context.vm().get_or_create_interned_string_value(L"b"));
+    TValue<String> c_name(
+        context.vm().get_or_create_interned_string_value(L"c"));
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        cls_name, 1, context.vm().object_class());
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
+
+    ASSERT_EQ(1u, instance->native_layout_aux_count_value());
+    ASSERT_TRUE(instance->set_own_property(a_name, Value::from_smi(1)));
+    ASSERT_TRUE(instance->set_own_property(b_name, Value::from_smi(2)));
+    ASSERT_TRUE(instance->set_own_property(c_name, Value::from_smi(3)));
+
+    EXPECT_EQ(Value::from_smi(1), instance->get_own_property(a_name));
+    EXPECT_EQ(Value::from_smi(2), instance->get_own_property(b_name));
+    EXPECT_EQ(Value::from_smi(3), instance->get_own_property(c_name));
+    EXPECT_EQ(1u, instance->native_layout_aux_count_value());
+    EXPECT_EQ(Instance::native_additional_release_count() + 1,
+              value_span_for_release(instance).count);
 }
 
 TEST(NativeLayoutDescriptor, UnmigratedLayoutsStillUseLegacyReleaseDescriptor)

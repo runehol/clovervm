@@ -141,20 +141,20 @@ move to the aux field.
 
 ## Stage 6: Instance DynamicAuxSpan
 
-- [ ] Add `DynamicAuxSpan` release support.
-- [ ] Store each instance's physical inline slot allocation count in
+- [x] Add `DynamicAuxSpan` release support.
+- [x] Store each instance's physical inline slot allocation count in
       `HeapObject` aux count during dynamic construction.
-- [ ] Keep the aux count equal to the physical allocation count, not
+- [x] Keep the aux count equal to the physical allocation count, not
       `Shape::property_count()` or any other semantic descriptor count.
-- [ ] Use the class-declared first owned value offset as the instance release
+- [x] Use the class-declared first owned value offset as the instance release
       span start.
-- [ ] Set instance `additional_release_count` to the fixed owned fields before the
+- [x] Set instance `additional_release_count` to the fixed owned fields before the
       inline slot payload in the current C++ layout.
-- [ ] Replace instance release dependence on `HeapLayout` value count with the
+- [x] Replace instance release dependence on `HeapLayout` value count with the
       descriptor's aux-count path.
-- [ ] Add tests that instances with different class default inline slot counts
+- [x] Add tests that instances with different class default inline slot counts
       release exactly their allocated slot payload.
-- [ ] Add tests that later shape transitions do not change the aux count.
+- [x] Add tests that later shape transitions do not change the aux count.
 
 Deliverable: instance release and future opaque instance sizing are local to the
 object header, while `Shape` remains responsible for semantic storage.

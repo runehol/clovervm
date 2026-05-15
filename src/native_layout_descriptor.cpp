@@ -51,6 +51,16 @@ namespace cl
                                    static_cast<uint64_t>(dynamic_count) +
                                        descriptor.additional_release_count};
         }
+
+        NativeValueSpan
+        dynamic_aux_value_span(HeapObject *obj,
+                               const ReleaseDescriptor &descriptor)
+        {
+            return NativeValueSpan{reinterpret_cast<Value *>(obj) +
+                                       descriptor.value_offset_words,
+                                   obj->native_layout_aux_count_value() +
+                                       descriptor.additional_release_count};
+        }
     }  // namespace
 
     NativeValueSpan value_span_for_release(HeapObject *obj)
@@ -67,8 +77,9 @@ namespace cl
                 return static_value_span(obj, descriptor);
             case ReleaseKind::DynamicSmiSpan:
                 return dynamic_smi_value_span(obj, descriptor);
-            case ReleaseKind::Missing:
             case ReleaseKind::DynamicAuxSpan:
+                return dynamic_aux_value_span(obj, descriptor);
+            case ReleaseKind::Missing:
             case ReleaseKind::Custom:
                 break;
         }
