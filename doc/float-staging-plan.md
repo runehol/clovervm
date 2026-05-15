@@ -339,30 +339,34 @@ Validation:
 
 ## Stage 9: Adapted NBody Benchmark
 
+Status: complete.
+
 Goal: add a repo-local benchmark that exercises the float implementation.
 
 Implementation pieces:
 
-- add `benchmark/nbody.py`;
-- add `benchmark/nbody.cpp` if maintaining C++ comparison remains useful;
-- register `BM_NBody`;
-- avoid imports, `sys.argv`, and formatting dependencies;
-- call builtin `sqrt`;
-- keep benchmark source shaped like existing `def run(n): ...` benchmarks.
+- [x] add `benchmark/nbody.py`;
+- [x] add `benchmark/nbody.cpp` if maintaining C++ comparison remains useful;
+- [x] register `BM_NBody`;
+- [x] avoid imports, `sys.argv`, and formatting dependencies;
+- [x] call builtin `sqrt`;
+- [x] keep benchmark source shaped like existing `def run(n): ...`
+  benchmarks.
 
 Harness decision:
 
-- decide whether `run(n)` should return a `Value`, return a trivial integer
-  sentinel, or use benchmark-specific validation;
-- do not let the existing integer-result harness constraint affect float
+- [x] return an integer validation sentinel while the benchmark harness remains
+  integer-result based;
+- [x] do not let the existing integer-result harness constraint affect float
   runtime semantics.
 
 Tests and validation:
 
-- compile and run adapted `nbody` with a small `n`;
-- compare against a known result if the harness supports float validation;
-- run `ninja -C build-debug all check`;
-- run release benchmark only after debug correctness is stable.
+- [x] compile and run adapted `nbody` with a small `n`;
+- [x] validate final energy through the integer sentinel while the harness is
+  integer-result based;
+- [x] run `ninja -C build-debug all check`;
+- [x] run release benchmark only after debug correctness is stable.
 
 ## Suggested Commit Boundaries
 

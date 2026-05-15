@@ -83,6 +83,9 @@ namespace benchmark_cpp
     int64_t memory_reclamation_run(int64_t n);
     int64_t memory_reclamation_items(int64_t n);
 
+    int64_t nbody_run(int64_t n);
+    int64_t nbody_items(int64_t n);
+
     int64_t pystone_lite_run(int64_t n);
     int64_t pystone_lite_items(int64_t n);
 

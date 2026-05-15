@@ -110,6 +110,8 @@ namespace
             {"benchmark/memory_reclamation.py",
              {benchmark_cpp::memory_reclamation_run,
               benchmark_cpp::memory_reclamation_items}},
+            {"benchmark/nbody.py",
+             {benchmark_cpp::nbody_run, benchmark_cpp::nbody_items}},
             {"benchmark/pystone_lite.py",
              {benchmark_cpp::pystone_lite_run,
               benchmark_cpp::pystone_lite_items}},
@@ -749,6 +751,12 @@ static void BM_MemoryReclamation(benchmark::State &state)
 BENCHMARK_TEMPLATE(BM_MemoryReclamation, CloverProgram)
     ->Name("BM_MemoryReclamation")
     ->Arg(100000);
+
+template <typename Program> static void BM_NBody(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/nbody.py", state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_NBody, CloverProgram)->Name("BM_NBody")->Arg(1000);
 
 template <typename Program> static void BM_PystoneLite(benchmark::State &state)
 {
