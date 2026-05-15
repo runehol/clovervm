@@ -50,6 +50,7 @@ op_mul_smi
 op_negate
 op_not
 op_not_float_truthiness
+op_plus
 op_return
 op_return_or_raise_exception
 op_right_shift

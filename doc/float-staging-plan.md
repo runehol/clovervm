@@ -169,36 +169,40 @@ Validation:
 
 ## Stage 5: Pure Float Arithmetic Tier
 
+Status: complete.
+
 Goal: add the semi-hot numeric continuation for float arithmetic while leaving
 SMI fast paths clear.
 
 Implementation pieces:
 
-- for `Add`, `Sub`, and `Mul`, keep all-SMI fast paths inline;
-- on non-SMI, tail-call an operator-specific numeric continuation;
-- in the continuation, accept only:
-  - `float op float`;
-  - `float op int`;
-  - `int op float`;
-- promote both operands to `double`;
-- compute as pure double arithmetic;
-- return a new heap `Float`;
-- tail-call onward on numeric miss.
+- [x] for `Add`, `Sub`, and `Mul`, keep all-SMI fast paths inline;
+- [x] on non-SMI, tail-call an operator-specific numeric continuation;
+- [x] add immediate-SMI continuations for `AddSmi`, `SubSmi`, and `MulSmi`;
+- [x] in the regular binary continuation, accept only:
+  - [x] `float op float`;
+  - [x] `float op int`;
+  - [x] `int op float`;
+- [x] in the immediate-SMI continuation, accept only `float op immediate-int`;
+- [x] promote accepted operands to `double`;
+- [x] compute as pure double arithmetic;
+- [x] return a new heap `Float`;
+- [x] tail-call onward on numeric miss.
 
 Unary:
 
-- unary `-` accepts `Float` and returns `Float`;
-- unary `+` accepts `Float` and returns `Float`.
+- [x] unary `-` accepts `Float` and returns `Float`;
+- [x] unary `+` accepts `Float` and returns `Float`.
 
 Tests:
 
-- float/float arithmetic for `+`, `-`, `*`;
-- int/float arithmetic for `+`, `-`, `*`;
-- float/int arithmetic for `+`, `-`, `*`;
-- unary `-1.5`;
-- unary `+1.5`;
-- `assert not -0.0` once source-level float unary negation exists;
-- all-SMI integer arithmetic still returns SMI where it did before.
+- [x] float/float arithmetic for `+`, `-`, `*`;
+- [x] int/float arithmetic for `+`, `-`, `*`;
+- [x] float/int arithmetic for `+`, `-`, `*`;
+- [x] unary `-1.5`;
+- [x] unary `+1.5`;
+- [x] `assert not -0.0` once source-level float unary negation exists;
+- [x] all-SMI integer arithmetic still returns SMI where it did before.
 
 Non-goals:
 
@@ -210,7 +214,7 @@ Non-goals:
 
 Validation:
 
-- `ninja -C build-debug all check`;
+- [x] `ninja -C build-debug all check`;
 - consider a focused microbenchmark only after correctness lands.
 
 ## Stage 6: True Division

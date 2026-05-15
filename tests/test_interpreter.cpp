@@ -807,6 +807,33 @@ TEST(Interpreter, float_literal_values)
     expect_float_literal(L"1_2.3_4\n", 12.34);
 }
 
+TEST(Interpreter, float_arithmetic_values)
+{
+    test::VmTestContext test_context;
+
+    auto expect_float_result = [&](const wchar_t *source, double expected) {
+        Value actual = test_context.run_file(source);
+        ASSERT_TRUE(can_convert_to<Float>(actual));
+        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
+    };
+
+    expect_float_result(L"1.5 + 2.25\n", 3.75);
+    expect_float_result(L"1.5 + 2\n", 3.5);
+    expect_float_result(L"2 + 1.5\n", 3.5);
+    expect_float_result(L"5.5 - 2.0\n", 3.5);
+    expect_float_result(L"5.5 - 2\n", 3.5);
+    expect_float_result(L"5 - 1.5\n", 3.5);
+    expect_float_result(L"1.5 * 2.0\n", 3.0);
+    expect_float_result(L"1.5 * 2\n", 3.0);
+    expect_float_result(L"2 * 1.5\n", 3.0);
+    expect_float_result(L"-1.5\n", -1.5);
+    expect_float_result(L"+1.5\n", 1.5);
+    EXPECT_EQ(Value::True(), test_context.run_file(L"assert not -0.0\n"));
+    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"1 + 2\n"));
+    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"5 - 2\n"));
+    EXPECT_EQ(Value::from_smi(6), test_context.run_file(L"2 * 3\n"));
+}
+
 TEST(Interpreter, string_dunder_add_calls_native_function)
 {
     test::VmTestContext test_context;

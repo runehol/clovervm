@@ -784,6 +784,144 @@ namespace cl
         COMPLETE();
     }
 
+    static ALWAYSINLINE bool try_get_exact_float(Value value, double *out)
+    {
+        if(can_convert_to<Float>(value))
+        {
+            *out = value.get_ptr<Float>()->value;
+            return true;
+        }
+        return false;
+    }
+
+    static ALWAYSINLINE bool try_get_float_or_smi(Value value, double *out)
+    {
+        if(unlikely(value.is_smi()))
+        {
+            *out = static_cast<double>(value.get_smi());
+            return true;
+        }
+        return try_get_exact_float(value, out);
+    }
+
+    NOINLINE static Value op_add_float_arithmetic(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+
+        double left;
+        double right;
+        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator = thread->make_object_value<Float>(left + right);
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_add_smi_float_arithmetic(PARAMS)
+    {
+        START_BINARY_ACC_SMI();
+
+        double left;
+        if(!try_get_exact_float(a, &left))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator =
+            thread->make_object_value<Float>(left + double(b.get_smi()));
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_sub_float_arithmetic(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+
+        double left;
+        double right;
+        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator = thread->make_object_value<Float>(left - right);
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_sub_smi_float_arithmetic(PARAMS)
+    {
+        START_BINARY_ACC_SMI();
+
+        double left;
+        if(!try_get_exact_float(a, &left))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator =
+            thread->make_object_value<Float>(left - double(b.get_smi()));
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_mul_float_arithmetic(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+
+        double left;
+        double right;
+        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator = thread->make_object_value<Float>(left * right);
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_mul_smi_float_arithmetic(PARAMS)
+    {
+        START_BINARY_ACC_SMI();
+
+        double left;
+        if(!try_get_exact_float(a, &left))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator =
+            thread->make_object_value<Float>(left * double(b.get_smi()));
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_negate_float_arithmetic(PARAMS)
+    {
+        START_UNARY_ACC();
+
+        double value;
+        if(!try_get_exact_float(a, &value))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator = thread->make_object_value<Float>(-value);
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_plus_float_arithmetic(PARAMS)
+    {
+        START_UNARY_ACC();
+
+        double value;
+        if(!try_get_exact_float(a, &value))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator = thread->make_object_value<Float>(value);
+        COMPLETE();
+    }
+
     static ALWAYSINLINE void enter_function_frame_at_new_fp(
         Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
         TValue<Function> fun, Value *new_fp, uint32_t instr_len)
@@ -1697,7 +1835,7 @@ namespace cl
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_add_smi_float_arithmetic(ARGS);
         }
         if(unlikely(__builtin_add_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
@@ -1714,7 +1852,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_add_float_arithmetic(ARGS);
         }
         if(unlikely(__builtin_add_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
@@ -1731,7 +1869,7 @@ namespace cl
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_sub_smi_float_arithmetic(ARGS);
         }
         if(unlikely(__builtin_sub_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
@@ -1748,7 +1886,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_sub_float_arithmetic(ARGS);
         }
         if(unlikely(__builtin_sub_overflow(a.as.integer, b.as.integer,
                                            &accumulator.as.integer)))
@@ -1765,7 +1903,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_mul_float_arithmetic(ARGS);
         }
         Value dest;
         if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(),
@@ -1783,7 +1921,7 @@ namespace cl
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_mul_smi_float_arithmetic(ARGS);
         }
         Value dest;
         if(unlikely(__builtin_smulll_overflow(a.as.integer, b.get_smi(),
@@ -1978,7 +2116,7 @@ namespace cl
         START_UNARY_ACC();
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_negate_float_arithmetic(ARGS);
         }
 
         if(unlikely(__builtin_sub_overflow(0, a.as.integer,
@@ -1986,6 +2124,17 @@ namespace cl
         {
             accumulator.as.integer = -accumulator.as.integer;
             MUSTTAIL return overflow_path(ARGS);
+        }
+
+        COMPLETE();
+    }
+
+    static Value op_plus(PARAMS)
+    {
+        START_UNARY_ACC();
+        if(unlikely(A_NOT_SMI()))
+        {
+            MUSTTAIL return op_plus_float_arithmetic(ARGS);
         }
 
         COMPLETE();
@@ -3131,6 +3280,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CallSpecialMethod, op_call_special_method);
 
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
+        SET_TABLE_ENTRY(Bytecode::Plus, op_plus);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
 
         SET_TABLE_ENTRY(Bytecode::CreateDict, op_create_dict);
