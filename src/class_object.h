@@ -208,6 +208,12 @@ namespace cl
         uint32_t instance_default_inline_slot_count;
 
     public:
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
+            ClassObject, Object,
+            3 + kClassExtraInlineAttributeSlotCount + 2 +
+                2 * HeapPtrArray<ValidityCell>::embedded_value_count + 2);
+        CL_DECLARE_STATIC_OBJECT_SIZE(ClassObject);
+
         CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(
             ClassObject, Object,
             3 + kClassExtraInlineAttributeSlotCount + 2 +

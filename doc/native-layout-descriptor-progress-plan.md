@@ -118,7 +118,7 @@ Migrate fixed layouts first, in small groups.
 - [x] Migrate `StopIteration`.
 - [ ] Migrate `String` after confirming its static release span and dynamic
       size query are represented cleanly.
-- [ ] Migrate `ClassObject` as a static release span while the `SlotObject`
+- [x] Migrate `ClassObject` as a static release span while the `SlotObject`
       refactor remains deferred.
 
 Deliverable: the common fixed object layouts release through descriptor table

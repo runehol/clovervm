@@ -1,3 +1,4 @@
+#include "class_object.h"
 #include "dict.h"
 #include "exception_object.h"
 #include "function.h"
@@ -72,6 +73,7 @@ TEST(NativeLayoutDescriptor, FixedObjectSubclassesUseNativeStaticDescriptors)
     expect_static_native_layout_descriptor<StopIterationObject>();
     expect_static_native_layout_descriptor<Function>();
     expect_static_native_layout_descriptor<Dict>();
+    expect_static_native_layout_descriptor<ClassObject>();
 }
 
 TEST(NativeLayoutDescriptor, UnmigratedLayoutsStillUseLegacyReleaseDescriptor)

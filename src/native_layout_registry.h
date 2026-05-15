@@ -1,6 +1,7 @@
 #ifndef CL_NATIVE_LAYOUT_REGISTRY_H
 #define CL_NATIVE_LAYOUT_REGISTRY_H
 
+#include "class_object.h"
 #include "dict.h"
 #include "exception_object.h"
 #include "function.h"
@@ -17,6 +18,7 @@
     V(ExceptionObject);                                                        \
     V(StopIterationObject);                                                    \
     V(Function);                                                               \
-    V(Dict);
+    V(Dict);                                                                   \
+    V(ClassObject);
 
 #endif  // CL_NATIVE_LAYOUT_REGISTRY_H
