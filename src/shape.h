@@ -97,40 +97,27 @@ namespace cl
         };
 
         Shape(Value class_value, Shape *previous_shape, int32_t next_slot_index,
-              uint32_t property_count);
-        Shape(Value class_value, Shape *previous_shape, int32_t next_slot_index,
-              uint32_t property_count, ShapeFlags shape_flags);
-        Shape(Value class_value, Shape *previous_shape, int32_t next_slot_index,
-              uint32_t property_count, ShapeFlags shape_flags,
-              uint32_t present_count);
+              uint32_t property_count, uint32_t inline_slot_capacity,
+              ShapeFlags shape_flags, uint32_t present_count);
 
         static Shape *make_root_with_single_descriptor(
             Value class_value, TValue<String> name, DescriptorInfo info,
-            int32_t next_slot_index,
-            ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
+            int32_t next_slot_index, uint32_t inline_slot_capacity,
+            ShapeFlags shape_flags);
         static Shape *make_immortal_root_with_single_descriptor(
             VirtualMachine *vm, Value class_value, TValue<String> name,
             DescriptorInfo info, int32_t next_slot_index,
-            ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
+            uint32_t inline_slot_capacity, ShapeFlags shape_flags);
         static Shape *make_root_with_descriptors(
             Value class_value, const ShapeRootDescriptor *descriptors,
             uint32_t descriptor_count, int32_t next_slot_index,
-            ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
-        static Shape *make_immortal_root_with_descriptors(
-            VirtualMachine *vm, Value class_value,
-            const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
-            int32_t next_slot_index,
-            ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
-        static Shape *make_root_with_descriptors(
-            Value class_value, const ShapeRootDescriptor *descriptors,
-            uint32_t descriptor_count, int32_t next_slot_index,
-            uint32_t present_count,
-            ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
+            uint32_t present_count, uint32_t inline_slot_capacity,
+            ShapeFlags shape_flags);
         static Shape *make_immortal_root_with_descriptors(
             VirtualMachine *vm, Value class_value,
             const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
             int32_t next_slot_index, uint32_t present_count,
-            ShapeFlags shape_flags = shape_flag(ShapeFlag::None));
+            uint32_t inline_slot_capacity, ShapeFlags shape_flags);
 
         static size_t size_for(uint32_t property_count)
         {
@@ -138,28 +125,17 @@ namespace cl
                    sizeof(Value) + sizeof(DescriptorInfo) * property_count;
         }
         static size_t size_for(Value class_value, Shape *previous_shape,
-                               int32_t next_slot_index, uint32_t property_count)
+                               int32_t next_slot_index, uint32_t property_count,
+                               uint32_t inline_slot_capacity,
+                               ShapeFlags shape_flags, uint32_t present_count)
         {
             (void)class_value;
             (void)previous_shape;
             (void)next_slot_index;
-            return size_for(property_count);
-        }
-        static size_t size_for(Value class_value, Shape *previous_shape,
-                               int32_t next_slot_index, uint32_t property_count,
-                               ShapeFlags shape_flags)
-        {
+            (void)inline_slot_capacity;
             (void)shape_flags;
-            return size_for(class_value, previous_shape, next_slot_index,
-                            property_count);
-        }
-        static size_t size_for(Value class_value, Shape *previous_shape,
-                               int32_t next_slot_index, uint32_t property_count,
-                               ShapeFlags shape_flags, uint32_t present_count)
-        {
             (void)present_count;
-            return size_for(class_value, previous_shape, next_slot_index,
-                            property_count, shape_flags);
+            return size_for(property_count);
         }
         static size_t object_size_in_bytes(const Shape *shape)
         {
@@ -170,7 +146,10 @@ namespace cl
         Shape *get_previous_shape() const;
         int32_t get_next_slot_index() const { return next_slot_index; }
         uint32_t get_inline_slot_count() const;
-        uint32_t get_instance_default_inline_slot_count() const;
+        uint32_t get_instance_default_inline_slot_count() const
+        {
+            return inline_slot_capacity;
+        }
 
         uint32_t property_count() const { return property_count_; }
         uint32_t present_count() const { return present_count_; }
@@ -248,6 +227,7 @@ namespace cl
         int32_t next_slot_index;
         uint32_t property_count_;
         uint32_t present_count_;
+        uint32_t inline_slot_capacity;
         ShapeFlags shape_flags;
         std::vector<Transition> transitions;
         MemberValue class_value;

@@ -194,7 +194,7 @@ namespace cl
             Value::from_oop(this), dunder_class_name,
             DescriptorInfo::make(StorageLocation::not_found(),
                                  instance_class_flags),
-            1, instance_shape_flags);
+            1, instance_default_inline_slot_count, instance_shape_flags);
 
         TValue<String> dunder_name_name = interned_string(L"__name__");
         TValue<String> dunder_bases_name = interned_string(L"__bases__");
@@ -243,7 +243,8 @@ namespace cl
         set_shape(Shape::make_root_with_descriptors(
             Value::from_oop(this), descriptors,
             class_predefined_descriptor_count, class_predefined_slot_count,
-            class_metadata_slot_count + 1, class_shape_flags));
+            class_metadata_slot_count + 1, class_inline_storage_slot_count,
+            class_shape_flags));
 
         for(uint32_t slot_idx = 0;
             slot_idx < class_extra_inline_attribute_slot_count; ++slot_idx)
@@ -438,7 +439,8 @@ namespace cl
     {
         instance_root_shape = Shape::make_root_with_descriptors(
             Value::from_oop(this), descriptors, descriptor_count,
-            next_slot_index, shape_flags);
+            next_slot_index, descriptor_count,
+            instance_default_inline_slot_count, shape_flags);
     }
 
     void ClassObject::install_bootstrap_inheritance(Value bases_tuple,

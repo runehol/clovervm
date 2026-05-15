@@ -36,27 +36,14 @@ namespace cl
     }
 
     Shape::Shape(Value _class_value, Shape *_previous_shape,
-                 int32_t _next_slot_index, uint32_t _property_count)
-        : Shape(_class_value, _previous_shape, _next_slot_index,
-                _property_count, shape_flag(ShapeFlag::None))
-    {
-    }
-
-    Shape::Shape(Value _class_value, Shape *_previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count,
-                 ShapeFlags _shape_flags)
-        : Shape(_class_value, _previous_shape, _next_slot_index,
-                _property_count, _shape_flags, _property_count)
-    {
-    }
-
-    Shape::Shape(Value _class_value, Shape *_previous_shape,
-                 int32_t _next_slot_index, uint32_t _property_count,
-                 ShapeFlags _shape_flags, uint32_t _present_count)
+                 uint32_t _inline_slot_capacity, ShapeFlags _shape_flags,
+                 uint32_t _present_count)
         : HeapObject(native_layout), previous_shape(_previous_shape),
           next_slot_index(_next_slot_index), property_count_(_property_count),
-          present_count_(_present_count), shape_flags(_shape_flags),
-          transitions(), class_value(_class_value)
+          present_count_(_present_count),
+          inline_slot_capacity(_inline_slot_capacity),
+          shape_flags(_shape_flags), transitions(), class_value(_class_value)
     {
         assert(valid_shape_flags(shape_flags));
         assert(present_count_ <= property_count_);
@@ -67,54 +54,37 @@ namespace cl
         }
     }
 
-    Shape *Shape::make_root_with_single_descriptor(Value class_value,
-                                                   TValue<String> name,
-                                                   DescriptorInfo info,
-                                                   int32_t next_slot_index,
-                                                   ShapeFlags shape_flags)
+    Shape *Shape::make_root_with_single_descriptor(
+        Value class_value, TValue<String> name, DescriptorInfo info,
+        int32_t next_slot_index, uint32_t inline_slot_capacity,
+        ShapeFlags shape_flags)
     {
         ShapeRootDescriptor descriptor{name, info};
         return make_root_with_descriptors(class_value, &descriptor, 1,
-                                          next_slot_index, shape_flags);
+                                          next_slot_index, 1,
+                                          inline_slot_capacity, shape_flags);
     }
 
     Shape *Shape::make_immortal_root_with_single_descriptor(
         VirtualMachine *vm, Value class_value, TValue<String> name,
-        DescriptorInfo info, int32_t next_slot_index, ShapeFlags shape_flags)
+        DescriptorInfo info, int32_t next_slot_index,
+        uint32_t inline_slot_capacity, ShapeFlags shape_flags)
     {
         ShapeRootDescriptor descriptor{name, info};
         return make_immortal_root_with_descriptors(
-            vm, class_value, &descriptor, 1, next_slot_index, shape_flags);
+            vm, class_value, &descriptor, 1, next_slot_index, 1,
+            inline_slot_capacity, shape_flags);
     }
 
     Shape *Shape::make_root_with_descriptors(
         Value class_value, const ShapeRootDescriptor *descriptors,
         uint32_t descriptor_count, int32_t next_slot_index,
+        uint32_t present_count, uint32_t inline_slot_capacity,
         ShapeFlags shape_flags)
-    {
-        return make_root_with_descriptors(class_value, descriptors,
-                                          descriptor_count, next_slot_index,
-                                          descriptor_count, shape_flags);
-    }
-
-    Shape *Shape::make_immortal_root_with_descriptors(
-        VirtualMachine *vm, Value class_value,
-        const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
-        int32_t next_slot_index, ShapeFlags shape_flags)
-    {
-        return make_immortal_root_with_descriptors(
-            vm, class_value, descriptors, descriptor_count, next_slot_index,
-            descriptor_count, shape_flags);
-    }
-
-    Shape *Shape::make_root_with_descriptors(
-        Value class_value, const ShapeRootDescriptor *descriptors,
-        uint32_t descriptor_count, int32_t next_slot_index,
-        uint32_t present_count, ShapeFlags shape_flags)
     {
         Shape *shape = make_internal_raw<Shape>(
             class_value, nullptr, next_slot_index, descriptor_count,
-            shape_flags, present_count);
+            inline_slot_capacity, shape_flags, present_count);
         shape->initialize_root_descriptors(descriptors, descriptor_count);
         return shape;
     }
@@ -122,11 +92,12 @@ namespace cl
     Shape *Shape::make_immortal_root_with_descriptors(
         VirtualMachine *vm, Value class_value,
         const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
-        int32_t next_slot_index, uint32_t present_count, ShapeFlags shape_flags)
+        int32_t next_slot_index, uint32_t present_count,
+        uint32_t inline_slot_capacity, ShapeFlags shape_flags)
     {
         Shape *shape = vm->make_immortal_internal_raw<Shape>(
             class_value, nullptr, next_slot_index, descriptor_count,
-            shape_flags, present_count);
+            inline_slot_capacity, shape_flags, present_count);
         shape->initialize_root_descriptors(descriptors, descriptor_count);
         return shape;
     }
@@ -154,17 +125,7 @@ namespace cl
 
     uint32_t Shape::get_inline_slot_count() const
     {
-        if(has_flag(ShapeFlag::IsClassObject))
-        {
-            return get_class()->get_class_inline_storage_slot_count();
-        }
-
-        return get_instance_default_inline_slot_count();
-    }
-
-    uint32_t Shape::get_instance_default_inline_slot_count() const
-    {
-        return get_class()->get_instance_default_inline_slot_count();
+        return inline_slot_capacity;
     }
 
     int32_t Shape::lookup_descriptor_index(TValue<String> name) const
@@ -294,7 +255,8 @@ namespace cl
 
         Shape *next_shape = make_internal_raw<Shape>(
             class_value.as_value(), this, next_slot_index_for_shape,
-            next_property_count, shape_flags, present_count_ + 1);
+            next_property_count, inline_slot_capacity, shape_flags,
+            present_count_ + 1);
         uint32_t next_property_idx = 0;
         for(uint32_t property_idx = 0; property_idx < present_count_;
             ++property_idx)
@@ -340,7 +302,7 @@ namespace cl
             keep_latent ? property_count_ : property_count_ - 1;
         Shape *next_shape = make_internal_raw<Shape>(
             class_value.as_value(), this, next_slot_index, next_property_count,
-            shape_flags, present_count_ - 1);
+            inline_slot_capacity, shape_flags, present_count_ - 1);
         uint32_t next_property_idx = 0;
         for(uint32_t property_idx = 0; property_idx < present_count_;
             ++property_idx)
@@ -381,7 +343,8 @@ namespace cl
         assert(valid_shape_flags(new_shape_flags));
         Shape *cloned_shape = make_internal_raw<Shape>(
             class_value.as_value(), previous_shape, next_slot_index,
-            property_count_, new_shape_flags, present_count_);
+            property_count_, inline_slot_capacity, new_shape_flags,
+            present_count_);
         for(uint32_t property_idx = 0; property_idx < property_count_;
             ++property_idx)
         {
@@ -397,7 +360,7 @@ namespace cl
     {
         Shape *cloned_shape = make_internal_raw<Shape>(
             new_class, previous_shape, next_slot_index, property_count_,
-            shape_flags, present_count_);
+            inline_slot_capacity, shape_flags, present_count_);
         for(uint32_t property_idx = 0; property_idx < property_count_;
             ++property_idx)
         {

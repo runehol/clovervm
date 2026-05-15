@@ -284,7 +284,7 @@ namespace cl
             this, Value::from_oop(int_class_), dunder_class_name(),
             DescriptorInfo::make(StorageLocation::not_found(),
                                  inline_class_flags),
-            0, fixed_attribute_shape_flags());
+            0, 0, fixed_attribute_shape_flags());
         BuiltinClassDefinition bool_definition =
             make_bool_class(this, int_class_);
         bool_class_ = bool_definition.cls;
@@ -293,7 +293,7 @@ namespace cl
             this, Value::from_oop(bool_class_), dunder_class_name(),
             DescriptorInfo::make(StorageLocation::not_found(),
                                  inline_class_flags),
-            0, fixed_attribute_shape_flags());
+            0, 0, fixed_attribute_shape_flags());
         BuiltinClassDefinition none_type_definition =
             make_none_type_class(this);
         none_type_class_ = none_type_definition.cls;
@@ -302,7 +302,7 @@ namespace cl
             this, Value::from_oop(none_type_class_), dunder_class_name(),
             DescriptorInfo::make(StorageLocation::not_found(),
                                  inline_class_flags),
-            0, fixed_attribute_shape_flags());
+            0, 0, fixed_attribute_shape_flags());
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_function_class(this));
