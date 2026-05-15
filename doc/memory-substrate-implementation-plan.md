@@ -1,12 +1,12 @@
 # Memory Substrate Implementation Plan
 
 This document is the current forward plan for CloverVM's memory substrate. The
-historical lifecycle/ZCT/safepoint baseline and bitmap-discovered young-object
-reclamation are implemented; this plan now tracks the remaining design arc:
+historical lifecycle/ZCT/safepoint baseline, bitmap-discovered young-object
+reclamation, and native-layout descriptor migration are implemented. This plan
+now tracks the remaining design arc:
 
-1. native-layout-id based release and teardown;
-2. production reclamation policy;
-3. size-partitioned thread-local heaps.
+1. production reclamation policy;
+2. size-partitioned thread-local heaps.
 
 Background design documents:
 
@@ -14,7 +14,6 @@ Background design documents:
 - [Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md)
 - [Valid-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md)
 - [Native Layout Descriptors](native-layout-descriptors.md)
-- [Native Layout Descriptor Progress Plan](native-layout-descriptor-progress-plan.md)
 
 ## Current Baseline
 
@@ -31,8 +30,18 @@ baseline:
 - Conservative stack root collection from published safepoint scan records.
 - Safepoints embedded in committed call/return paths, not explicit bytecodes.
 - VM-global `run_heap_reclamation()` over registered `ThreadState`s.
-- Reclamation clears owned `Value` slots before releasing copied child values.
+- Reclamation releases owned cells through `NativeLayoutId` keyed release
+  descriptors.
+- Reclamation clears owned `Value` cells before releasing copied child values.
+- Custom dealloc descriptors run with the reclaimed thread installed as active,
+  so deallocators may call ordinary `decref()`.
 - Child releases that reach zero append to the ZCT currently being processed.
+- `object_size_in_bytes(const HeapObject *)` provides descriptor-driven opaque
+  size queries for already-allocated objects.
+- Allocation uses concrete type-local `sizeof(T)` or `T::size_for(...)` helpers;
+  it does not dispatch allocation sizing by native layout ID.
+- `Object` carries Python class identity. Slot-backed Python-visible objects use
+  `SlotObject` for inline and overflow attribute storage.
 - Slab lookup by 4 KiB granule.
 - Active allocator and epoch-discovery ownership are represented by slab pins.
   Valid object headers are represented by per-slab valid-object bitmap bits.
@@ -46,12 +55,9 @@ baseline:
 
 Near-term order:
 
-1. Remove the biggest remaining temporary shape: ad hoc `HeapLayout` value-span
-   decoding inside reclamation. Do the native-layout descriptor refactor before
-   deeper reclamation policy work, so policy counters and hooks attach to the
-   final owned-value scanning boundary instead of today's temporary span bridge.
-2. Return to reclamation policy after the descriptor facade is stable.
-3. Split ordinary heaps into size partitions. Partial-slab hole reuse, if it
+1. Add production reclamation triggers and counters on top of the descriptor
+   teardown boundary.
+2. Split ordinary heaps into size partitions. Partial-slab hole reuse, if it
    ever happens, belongs after size classes make hole sizes predictable.
 
 ## Ground Rules
@@ -67,39 +73,10 @@ Near-term order:
 - Keep allocation fast paths small. Per-allocation work must be justified by
   removing equal or greater existing work.
 - Keep no-GIL atomic refcount/lifecycle state, cycle collection, Python
-  finalizers, weakrefs, C-extension `tp_dealloc`, partial-slab hole allocation,
-  and native stack scanning out of this milestone.
+  finalizers, weakrefs, public C-extension `tp_dealloc`, partial-slab hole
+  allocation, and native stack scanning out of this milestone.
 
-## Phase 1: Native-ID Owned-Value Scanning
-
-Move reclamation owned-value scanning and teardown behind a native-layout-id
-descriptor facade.
-
-1. [ ] Define the descriptor facade around owned-value scanning and teardown.
-   Object extent is not required for bitmap slab walks; it can be added later for
-   validation, accounting, or allocation policy.
-2. [ ] Implement a normalized metadata descriptor path for layouts described by
-   scanned `Value` spans.
-3. [ ] Bridge current `HeapLayout` decoding behind the descriptor facade only as
-   a migration path.
-4. [ ] Route reclamation teardown through the descriptor facade, not through
-   open-coded `HeapLayout` decoding at the reclamation call site.
-5. [ ] Add startup or debug validation that descriptor entries match current C++
-   layout facts for migrated types.
-6. [ ] Add custom dynamic descriptor handlers only for layouts that cannot be
-   expressed by ordinary value-span metadata.
-7. [ ] Keep C-extension descriptor kind reserved, but do not implement
-   `tp_dealloc` semantics in this milestone.
-
-Validation:
-
-- Descriptor parity tests for migrated static layouts.
-- Descriptor parity tests for migrated dynamic layouts.
-- Tests that reclaimed objects clear owned values through the descriptor facade.
-- Tests that compact and expanded dynamic tuple layouts still reclaim correctly.
-- Tests that descriptor scanning and bitmap header discovery remain independent.
-
-## Phase 2: Reclamation Policy
+## Phase 1: Reclamation Policy
 
 Add production reclamation triggers after bitmap discovery and descriptor
 scanning are stable. The initial slab-pressure hook is intentionally small:
@@ -127,7 +104,7 @@ Validation:
   triggers.
 - Counter sanity checks in debug builds.
 
-## Phase 3: Size-Partitioned Thread-Local Heaps
+## Phase 2: Size-Partitioned Thread-Local Heaps
 
 Split ordinary allocations into size partitions after bitmap reclamation is
 stable. The goal is better lifetime and size locality, not partial-slab hole
