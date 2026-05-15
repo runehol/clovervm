@@ -306,3 +306,8 @@ triggers include:
 - total committed slab bytes
 
 Every-safepoint reclamation remains a testing mode, not a production policy.
+
+Policy tests should prove that each trigger requests safepoint reclamation
+without reclaiming at arbitrary program points, multiple pending requests
+coalesce into one safepoint, repeated allocate/drop/safepoint cycles remain
+stable under the policy triggers, and debug counters stay internally consistent.

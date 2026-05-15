@@ -113,6 +113,29 @@ Slab sizes should therefore be:
 
 Very large objects remain outside the size-class slab system and use dedicated slabs.
 
+### Future Implementation Checklist
+
+When size classes are introduced:
+
+1. Compute the final aligned allocation size before classifying.
+2. Define a small initial set of size classes.
+3. Replace the single ordinary active slab with active slabs by size class in
+   `ThreadLocalHeap`.
+4. Route small and medium allocations to the active slab for their size class.
+5. On exhaustion, open a fresh slab for that size class and remember it in
+   `epoch_slabs_since_reclamation`.
+6. Keep dedicated large-object slabs outside ordinary size classes.
+7. Reset active-since-reclamation lists after reclamation to all currently
+   active size-class slabs.
+8. Preserve the post-bootstrap `switch_to_new_slabs()` behavior across all
+   active size classes.
+
+Validation should prove that classification uses final aligned allocation size,
+each size class has independent active slab switching, slab switches update the
+active-since-reclamation list, bitmap young-object discovery scans all active
+size-class slabs after post-reclamation reset, and allocation/interpreter tests
+continue to pass.
+
 ---
 
 ## Large Object Allocation

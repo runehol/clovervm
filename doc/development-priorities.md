@@ -147,11 +147,10 @@ Near-term order:
    paths rather than hidden lookup helpers.
 5. Add keyword calls for ordinary functions and constructors.
 
-Memory substrate follow-ups are still tracked in
-[Memory Substrate Implementation Plan](memory-substrate-implementation-plan.md),
-but they should not outrank the language/runtime work unless measurements show
-memory growth, reclamation policy, or slab fragmentation has become the limiting
-problem.
+Memory substrate follow-ups are still tracked in the refcounting, slab, bitmap,
+and native-layout docs, but they should not outrank the language/runtime work
+unless measurements show memory growth, reclamation policy, or slab
+fragmentation has become the limiting problem.
 
 ## Revisit Triggers
 
