@@ -2,6 +2,7 @@
 #include "test_helpers.h"
 #include "thread_local_heap.h"
 #include "tuple.h"
+#include "validity_cell.h"
 
 #include <gtest/gtest.h>
 #include <new>
@@ -24,31 +25,6 @@ namespace
         {
             throw std::runtime_error("construction failed");
         }
-    };
-
-    class SimpleHeapObject : public HeapObject
-    {
-    public:
-        static constexpr NativeLayoutId native_layout =
-            NativeLayoutId::TestOnly;
-
-        CL_DECLARE_STATIC_LAYOUT_NO_VALUES(SimpleHeapObject);
-
-        SimpleHeapObject() : HeapObject(native_layout, compact_layout()) {}
-    };
-
-    class LargeSimpleHeapObject : public HeapObject
-    {
-    public:
-        static constexpr NativeLayoutId native_layout =
-            NativeLayoutId::TestOnly;
-
-        CL_DECLARE_STATIC_LAYOUT_NO_VALUES(LargeSimpleHeapObject);
-
-        LargeSimpleHeapObject() : HeapObject(native_layout, compact_layout()) {}
-
-    private:
-        [[maybe_unused]] char payload[LargeAllocationSize] = {};
     };
 
     std::vector<HeapObject *> valid_objects_in(SlabAllocator *slab)
@@ -159,7 +135,7 @@ TEST(GlobalHeap, VmBootstrapSwitchesDefaultThreadToFreshSlab)
     test::VmTestContext context;
     ThreadState *thread = context.thread();
     ThreadState::ActivationScope active_thread(thread);
-    SimpleHeapObject *object = thread->make_internal_raw<SimpleHeapObject>();
+    ValidityCell *object = thread->make_internal_raw<ValidityCell>();
     SlabAllocator *slab =
         context.vm().get_refcounted_global_heap().slab_for_object_unlocked(
             object);
@@ -304,7 +280,7 @@ TEST(GlobalHeap, SuccessfulConstructionMarksValidObject)
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
-    SimpleHeapObject *object = local_heap.make<SimpleHeapObject>();
+    ValidityCell *object = local_heap.make<ValidityCell>();
     SlabAllocator *slab = heap.slab_for_object_unlocked(object);
 
     std::vector<HeapObject *> objects = valid_objects_in(slab);
@@ -331,7 +307,7 @@ TEST(GlobalHeap, ValidObjectIterationSkipsAbandonedBumpGaps)
     ThreadLocalHeap local_heap(&heap);
 
     EXPECT_THROW(local_heap.make<ThrowingHeapObject>(), std::runtime_error);
-    SimpleHeapObject *object = local_heap.make<SimpleHeapObject>();
+    ValidityCell *object = local_heap.make<ValidityCell>();
     SlabAllocator *slab = heap.slab_for_object_unlocked(object);
 
     std::vector<HeapObject *> objects = valid_objects_in(slab);
@@ -344,7 +320,8 @@ TEST(GlobalHeap, DedicatedLargeObjectMarksOnlyBitZero)
     GlobalHeap heap = GlobalHeap::refcounted_heap();
     ThreadLocalHeap local_heap(&heap);
 
-    LargeSimpleHeapObject *object = local_heap.make<LargeSimpleHeapObject>();
+    Tuple *object = local_heap.make<Tuple>(BootstrapObjectTag{},
+                                           LargeAllocationSize / sizeof(Value));
     SlabAllocator *slab = heap.slab_for_object_unlocked(object);
 
     std::vector<HeapObject *> objects = valid_objects_in(slab);
