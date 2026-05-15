@@ -33,7 +33,7 @@ namespace cl
         return Value::None();
     }
 
-    Value load_subscript(Value obj, Value key)
+    Value load_subscript_slow(Value obj, Value key)
     {
         if(!obj.is_ptr())
         {
@@ -63,7 +63,7 @@ namespace cl
         return Value::not_present();
     }
 
-    Value store_subscript(Value obj, Value key, Value value)
+    Value store_subscript_slow(Value obj, Value key, Value value)
     {
         value.assert_not_vm_sentinel();
 
