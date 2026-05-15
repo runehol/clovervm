@@ -21,9 +21,9 @@ exit = type(manager).__exit__
 value = type(manager).__enter__(manager)
 ```
 
-The initial clovervm `with` implementation is expected to call `__exit__` later
-through `CallSpecialMethod` on the manager. That means mutations between
-`__enter__` and block exit may affect which `__exit__` implementation runs.
+The current clovervm `with` implementation calls `__exit__` later through
+`CallSpecialMethod` on the manager. That means mutations between `__enter__` and
+block exit may affect which `__exit__` implementation runs.
 
 Reason: clovervm currently does not have a separate method-load primitive that
 preserves the callable plus receiver binding, and `LoadAttr` does not

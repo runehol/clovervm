@@ -558,6 +558,49 @@ exit.
 This keeps exception transport as the semantic bridge, while iteration plans are
 the primary performance mechanism for hot `for` loops.
 
+## Current For Loop Implementation
+
+Current `for` loop support covers simple name targets, optional `else`,
+`break`, `continue`, nonlocal exit through active `finally` blocks, generic
+iterator protocol calls through `iter()` and `__next__`, and optimized direct
+builtin `range(...)` loops. Tuple targets and other destructuring assignment
+targets are still future work.
+
+Generic loops lower through the normal managed call machinery:
+
+1. Evaluate the iterable.
+2. Call `iter(iterable)` once.
+3. Store the iterator in a temporary register.
+4. At the loop header, call `iterator.__next__()`.
+5. Protect the `__next__` call with a synthetic exception-table range.
+6. If `StopIteration` is caught, clear it and jump to the loop `else` / exit
+   target.
+7. If any other exception is caught, reraise it.
+8. Assign the yielded value to the loop target and run the body.
+9. Route fallthrough and `continue` back to the loop header.
+10. Route `break` past the optional `else` block.
+
+Direct calls to the exact builtin `range` object still use specialized
+bytecodes:
+
+- `ForPrepRange1`
+- `ForPrepRange2`
+- `ForPrepRange3`
+- `ForIterRange1`
+- `ForIterRangeStep`
+
+The prep opcodes guard that the resolved callable is still the builtin
+`range`. If the guard fails, codegen falls back to the generic iterator-protocol
+path so shadowing `range` preserves Python lookup behavior.
+
+On the fast path, iteration state lives in registers instead of a public
+iterator object. Exhaustion is an internal branch to the loop exit / `else`
+target, not a Python-visible `StopIteration`.
+
+The runtime still exposes `range()` as returning a `RangeIterator` directly.
+That is not final Python semantics; a real reusable range object remains future
+work.
+
 ## Lowering Direction
 
 The current direct `range(...)` frontend fast path can eventually be replaced by

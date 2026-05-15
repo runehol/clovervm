@@ -230,12 +230,14 @@ next(it)         raises StopIteration as a real exception
 
 ## Iterator Code Objects
 
-Stop-returning support uses the same iterator object with two code-object
-conventions. `iter(range_obj)` still returns a `RangeIterator`; it does not
-return a separate `FastRangeIterator` depending on who will consume it.
+Future stop-returning support should use the same iterator object with two
+code-object conventions. `iter(range_obj)` should still return a
+`RangeIterator`; it should not return a separate `FastRangeIterator` depending
+on who will consume it.
 
-Every `Function` has `ordinary_code_object`. A few iterator/generator protocol
-functions also have optional `stop_returning_code_object`:
+The proposed representation would give every `Function` an
+`ordinary_code_object`. A few iterator/generator protocol functions would also
+have an optional `stop_returning_code_object`:
 
 ```text
 ordinary_code_object:
@@ -392,10 +394,9 @@ This lets stop-returning iterators avoid materialization while preserving ordina
 Python semantics for generic `__next__` calls. The same loop exit/else target is
 used by both paths.
 
-Until generic `__next__`, exception tables, and generators exist, the first
-implementation can remain narrow: `RangeIterator` participates in the
-stop-returning loop path, and unsupported iterator objects keep the current
-explicit error path.
+Current generic loops already use explicit `iter()` / `__next__` calls protected
+by synthetic exception-table handlers. Stop-returning iterator work is therefore
+an optional later optimization, not the correctness path for ordinary loops.
 
 ## Iterator Exhaustion Versus StopIteration
 
@@ -741,31 +742,35 @@ ReturnOrRaiseException:
 
 ## Staging
 
-Recommended implementation order:
+Completed foundation:
 
-1. Add pending exception state to `ThreadState`.
-2. Add an exceptional frame-exit path distinct from normal `Return`.
-3. Add `ReturnOrRaiseException` for managed thunks/adapters.
-4. Convert native thunk bodies to normalize explicit native VM-exception results
-   through `ReturnOrRaiseException`.
-5. Add the compact pending `StopIteration` representation and helpers.
-6. Add parser/codegen/runtime support for `raise`, initially emitting
-   `RaiseUnwind`.
-7. Promote compact pending `StopIteration` to a real `StopIterationObject` in
-   managed adapters that expose completion as an ordinary exception.
-8. Add exception tables and local handler metadata, then user-visible
-   `try` / `except` support.
-9. Add synthetic `for` loop handlers so real `StopIteration` from generic
-   `__next__` exits the loop through the ordinary exception path.
-10. Treat stop-returning iterator work as an optional later experiment: it may
-    add a stop-returning path for `RangeIterator`, split `FOR_ITER` into a
-    protocol call/continuation shape, or be superseded in hot paths by
-    iterator-plan specialization.
-11. Add Python generators and mark eligible generator code objects as
-    stop-returning participants only when codegen can distinguish their own
-    protocol completion from ordinary exceptions and callee failures.
-12. Add reraise support that preserves the existing traceback chain and starts a
-    fresh lazy traceback segment.
+- pending exception state on `ThreadState`
+- exceptional frame exit distinct from normal `Return`
+- `ReturnOrRaiseException` for managed thunks/adapters
+- compact pending `StopIteration` plus materialization helpers
+- parser/codegen/runtime support for Python-authored `raise`
+- exception tables and local handler metadata
+- user-visible `try` / `except`, `else`, `finally`, `except ... as e`, and bare
+  reraise from active handlers
+- nonlocal `return`, `break`, and `continue` through active `finally` blocks
+- synthetic `for` loop handlers so real `StopIteration` from generic `__next__`
+  exits through the ordinary exception path
+
+Remaining durable work:
+
+1. Replace remaining generic runtime failures with specific VM exceptions and
+   marker-aware helper contracts.
+2. Add lazy traceback metadata to pending exception state.
+3. Preserve existing traceback chains on reraise and start fresh lazy traceback
+   segments at reraise sites.
+4. Add Python generators and `yield from`; delegation is where
+   `StopIteration.value` becomes semantically important.
+5. Treat stop-returning iterator work as an optional later experiment. It may
+   add a stop-returning path for selected iterator/generator bodies, or it may
+   be superseded in hot loops by iterator-plan specialization.
+6. Audit remaining runtime `throw`, `try`, and `catch` use, then separate
+   Python-visible VM exception transport from parser/compiler diagnostics,
+   test-only helpers, tooling, and fatal internal panic paths.
 
 ## Invariants
 
