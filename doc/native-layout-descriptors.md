@@ -414,13 +414,21 @@ metadata builders for that C++ type.
 For example, a static span object should look like:
 
 ```cpp
+class Object : public HeapObject {
+public:
+    ...
+
+    CL_DECLARE_STATIC_VALUE_SPAN(Object, shape, 2);
+    CL_DECLARE_STATIC_OBJECT_SIZE(Object);
+};
+
 class Dict : public Object {
 public:
     static constexpr NativeLayoutId native_layout_id = NativeLayoutId::Dict;
     ...
 
-    CL_DECLARE_STATIC_VALUE_SPAN(
-        Dict, hash_table,
+    CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
+        Dict, Object,
         decltype(hash_table)::embedded_value_count +
             decltype(entries)::embedded_value_count);
     CL_DECLARE_STATIC_OBJECT_SIZE(Dict);
@@ -437,16 +445,18 @@ public:
     static constexpr NativeLayoutId native_layout_id = NativeLayoutId::Tuple;
     ...
 
-    CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN(Tuple, size_value, size_value, 1);
+    CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN_EXTENDS(
+        Tuple, Object, size_value, 1);
     CL_DECLARE_DYNAMIC_OBJECT_SIZE(Tuple, Tuple::object_size_in_bytes);
 };
 
 CL_DECLARE_NATIVE_LAYOUT(Tuple);
 ```
 
-The first member is the SMI count field, the second is the first cell in the
-contiguous release span, and the final argument is
-`additional_value_count`.
+The count member is the SMI count field, and the final argument is the
+subclass's additional fixed owned-cell count. The inherited form takes the
+contiguous release-span start from the base class and adds the base owned-cell
+count into `additional_value_count`.
 
 For `Instance`, the declaration would use the heap-object auxiliary count as
 the dynamic count and the class-local first owned value as the release-span
@@ -473,8 +483,11 @@ The class-local value-span macros choose the release classification:
 ```cpp
 CL_DECLARE_EMPTY_VALUE_SPAN(type)                  // StaticSpan, count 0
 CL_DECLARE_STATIC_VALUE_SPAN(type, first, count)   // StaticSpan
+CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(type, base, own_count)
 CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN(type, count, first, additional)
+CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN_EXTENDS(type, base, count, own_additional)
 CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(type, first, additional)
+CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(type, base, own_additional)
 CL_DECLARE_CUSTOM_VALUE_RELEASE(type, function)    // Custom
 ```
 
@@ -517,6 +530,50 @@ dynamic count comes from `HeapObject`'s auxiliary count field.
 `CL_DECLARE_STATIC_VALUE_SPAN(type, first_value_member, count_expr)` declares
 `NativeValueSpanKind::Static`, `native_value_offset_in_words()`, and
 `native_static_value_count()`.
+
+The `EXTENDS` variants mirror the current legacy layout inheritance shape, but
+use only native descriptor helpers. They do not call the old
+`CL_DECLARE_*LAYOUT*` helpers.
+
+`CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(type, base_type, own_count_expr)` expands
+roughly to:
+
+```cpp
+static_assert(std::is_base_of_v<base_type, type>,
+              "Native layout base must be a C++ base class");
+static_assert(base_type::native_value_span_kind ==
+              NativeValueSpanKind::Static,
+              "Static inherited value spans require a static base span");
+
+static constexpr NativeValueSpanKind native_value_span_kind =
+    NativeValueSpanKind::Static;
+
+static constexpr uint32_t native_value_offset_in_words()
+{
+    return base_type::native_value_offset_in_words();
+}
+
+static constexpr uint64_t native_static_value_count()
+{
+    return base_type::native_static_value_count() + own_count_expr;
+}
+```
+
+`CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN_EXTENDS(type, base_type, count_member,
+own_additional_value_count_expr)` and
+`CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(type, base_type,
+own_additional_value_count_expr)` also inherit
+`base_type::native_value_offset_in_words()`. Their
+`native_additional_value_count()` is:
+
+```cpp
+base_type::native_static_value_count() + own_additional_value_count_expr
+```
+
+This is how `Object`'s owned cells, currently `shape` and `overflow_storage`,
+are included in every concrete `Object` subclass. A subclass declares only the
+owned cells it adds; the inherited macro keeps the release span contiguous from
+the base start.
 
 The class-local object-size macros choose the opaque object-size policy:
 

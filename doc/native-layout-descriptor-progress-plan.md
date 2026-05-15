@@ -24,6 +24,10 @@ truth.
 - Allocation continues to use concrete type-local size helpers. The
   `object_size_in_bytes(const HeapObject *)` query is for already-allocated
   opaque objects.
+- Native descriptor declarations must be parallel to the legacy
+  `CL_DECLARE_*LAYOUT*` macros, not layered on top of them. The old macros
+  describe packed `HeapLayout` metadata and should become removable once
+  descriptor migration is complete.
 - The `SlotObject` split is deferred. Native-layout descriptors must work with
   the current `Object` / `Instance` layout first.
 
@@ -83,10 +87,26 @@ legacy descriptor entries.
 
 Migrate fixed layouts first, in small groups.
 
-- [ ] Add class-local value-span declarations for easy static layouts.
-- [ ] Add namespace-scope native-layout trait registrations for those layouts.
-- [ ] Validate descriptor offset/count parity against current `HeapLayout`
-      metadata.
+- [ ] Add class-local native descriptor declarations for static layouts using
+      the documented macros, independent of the legacy `CL_DECLARE_*LAYOUT*`
+      macros.
+- [ ] Add `CL_DECLARE_EMPTY_VALUE_SPAN` and
+      `CL_DECLARE_STATIC_VALUE_SPAN` for static release descriptors.
+- [ ] Add `CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS`,
+      `CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN_EXTENDS`, and
+      `CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS` so derived layouts inherit
+      base owned cells such as `Object::shape` and `Object::overflow_storage`.
+- [ ] Add `CL_DECLARE_STATIC_OBJECT_SIZE` for fixed opaque object-size
+      descriptors.
+- [ ] Add namespace-scope `CL_DECLARE_NATIVE_LAYOUT(type)` registrations that
+      consume the new class-local descriptor declarations, not the legacy
+      packed-layout helpers.
+- [ ] Add `NativeLayoutTraits`, `NativeLayoutReleaseDescriptorBuilder`, and
+      `NativeLayoutObjectSizeDescriptorBuilder` so descriptor tables consume
+      type-local native metadata mechanically.
+- [ ] During migration only, validate descriptor offset/count/size parity
+      against current `HeapLayout` metadata so mistakes are caught before the
+      legacy macros are removed.
 - [ ] Migrate `List`.
 - [ ] Migrate `Dict`.
 - [ ] Migrate `Function`.
@@ -101,7 +121,8 @@ Migrate fixed layouts first, in small groups.
       refactor remains deferred.
 
 Deliverable: the common fixed object layouts release through descriptor table
-entries, with parity tests protecting the migration.
+entries declared by the new native descriptor hierarchy, with parity checks
+protecting the migration until the legacy heap-layout macros can be retired.
 
 ## Stage 5: Tuple DynamicSmiSpan
 
