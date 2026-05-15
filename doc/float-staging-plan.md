@@ -50,36 +50,40 @@ Validation:
 
 ## Stage 2: Float Literal Tokenization And Parsing
 
+Status: complete.
+
 Goal: source literals can create heap `Float` constants.
 
 Implementation pieces:
 
-- extend numeric tokenization to recognize Python float forms needed by
+- [x] extend numeric tokenization to recognize Python float forms needed by
   `nbody`;
-- update parser `NUMBER` handling to distinguish integer and float literal
-  text;
-- parse float literals with C++ conversion to `double`;
-- allocate `Float` constants;
-- keep integer literals on the existing SMI path;
-- keep codegen using `LdaConstant` for heap float constants.
+- [x] split numeric tokens into `INT_NUMBER` and `FLOAT_NUMBER`;
+- [x] update parser literal handling to use token kind instead of reclassifying
+  numeric text;
+- [x] parse float literals with C++ conversion to `double`;
+- [x] allocate `Float` constants;
+- [x] keep integer literals on the existing SMI path;
+- [x] keep codegen using `LdaConstant` for heap float constants.
 
 Required literal forms:
 
-- `1.0`;
-- `1.`;
-- `.5`;
-- `1e3`;
-- `1E3`;
-- `1.2e-3`;
-- valid underscore forms if underscore support is extended in the same change.
+- [x] `1.0`;
+- [x] `1.`;
+- [x] `.5`;
+- [x] `1e3`;
+- [x] `1E3`;
+- [x] `1.2e-3`;
+- [x] valid underscore forms if underscore support is extended in the same
+  change.
 
 Tests:
 
-- tokenizer recognizes the required forms as `NUMBER`;
-- parser/codegen can load representative float constants;
-- evaluating a float literal returns a `Float`;
-- `1` still returns an SMI;
-- invalid numeric boundaries are pinned where practical.
+- [x] tokenizer recognizes the required forms as `FLOAT_NUMBER`;
+- [x] parser/codegen can load representative float constants;
+- [x] evaluating a float literal returns a `Float`;
+- [x] `1` still returns an SMI;
+- [x] invalid numeric boundaries are pinned where practical.
 
 Non-goals:
 
@@ -89,7 +93,7 @@ Non-goals:
 
 Validation:
 
-- `ninja -C build-debug all check`.
+- [x] `ninja -C build-debug all check`.
 
 ## Stage 3: Float Printing
 

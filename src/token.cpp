@@ -12,8 +12,10 @@ namespace cl
                 return "ENDMARKER";
             case Token::NAME:
                 return "NAME";
-            case Token::NUMBER:
-                return "NUMBER";
+            case Token::INT_NUMBER:
+                return "INT_NUMBER";
+            case Token::FLOAT_NUMBER:
+                return "FLOAT_NUMBER";
             case Token::STRING:
                 return "STRING";
             case Token::NEWLINE:

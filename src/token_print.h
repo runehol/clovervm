@@ -46,7 +46,8 @@ template <> struct fmt::formatter<cl::TokenVector>
                               narrow_wstring_view(string_for_name_token(
                                   *tv.compilation_unit, tv.source_offsets[i])));
                     break;
-                case cl::Token::NUMBER:
+                case cl::Token::INT_NUMBER:
+                case cl::Token::FLOAT_NUMBER:
                     format_to(out, " {}",
                               narrow_wstring_view(string_for_number_token(
                                   *tv.compilation_unit, tv.source_offsets[i])));

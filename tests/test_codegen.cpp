@@ -1,6 +1,7 @@
 #include "code_object.h"
 #include "code_object_print.h"
 #include "codegen.h"
+#include "float.h"
 #include "parser.h"
 #include "str.h"
 #include "test_helpers.h"
@@ -570,6 +571,17 @@ TEST(Codegen, string_literal_constant_value)
                            "    2 Return\n"
                            "Constant 0: \"abc\"\n";
     EXPECT_EQ(expected, fmt::to_string(*code_obj));
+}
+
+TEST(Codegen, float_literal_constant_value)
+{
+    test::VmTestContext test_context;
+    CodeObject *code_obj = test_context.compile_file(L"1.5\n");
+
+    ASSERT_EQ(size_t(1), code_obj->constant_table.size());
+    Value constant = code_obj->constant_table[0].as_value();
+    ASSERT_TRUE(can_convert_to<Float>(constant));
+    EXPECT_DOUBLE_EQ(1.5, constant.get_ptr<Float>()->value);
 }
 
 TEST(Codegen, attribute_load_uses_register_receiver)

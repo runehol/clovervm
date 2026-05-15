@@ -16,7 +16,8 @@ static void expect_number_spellings(const wchar_t *source,
     std::vector<std::wstring> actual;
     for(size_t i = 0; i < tv.tokens.size(); ++i)
     {
-        if(tv.tokens[i] == Token::NUMBER)
+        if(tv.tokens[i] == Token::INT_NUMBER ||
+           tv.tokens[i] == Token::FLOAT_NUMBER)
         {
             actual.emplace_back(
                 string_for_number_token(input, tv.source_offsets[i]));
@@ -55,8 +56,8 @@ TEST(Tokenizer, simple)
 TEST(Tokenizer, simple2)
 {
     CompilationUnit input(L"12 + 345");
-    std::vector<Token> expected_tokens = {Token::NUMBER, Token::PLUS,
-                                          Token::NUMBER, Token::NEWLINE,
+    std::vector<Token> expected_tokens = {Token::INT_NUMBER, Token::PLUS,
+                                          Token::INT_NUMBER, Token::NEWLINE,
                                           Token::ENDMARKER};
 
     TokenVector tv = tokenize(input);
@@ -100,8 +101,8 @@ TEST(Tokenizer, open_bracket_at_eof_emits_error_token)
 {
     CompilationUnit input(L"x = (1 +\n");
     std::vector<Token> expected_tokens = {
-        Token::NAME,     Token::EQUAL, Token::LPAR,
-        Token::NUMBER,   Token::PLUS,  Token::ERRORTOKEN_OPEN_BRACKET_EOF,
+        Token::NAME,       Token::EQUAL, Token::LPAR,
+        Token::INT_NUMBER, Token::PLUS,  Token::ERRORTOKEN_OPEN_BRACKET_EOF,
         Token::ENDMARKER};
 
     TokenVector tv = tokenize(input);
@@ -112,14 +113,35 @@ TEST(Tokenizer, number_formats)
 {
     CompilationUnit input(L"0xff + 0b1010 + 0o77 + 1_000_000");
     std::vector<Token> expected_tokens = {
-        Token::NUMBER, Token::PLUS,    Token::NUMBER,
-        Token::PLUS,   Token::NUMBER,  Token::PLUS,
-        Token::NUMBER, Token::NEWLINE, Token::ENDMARKER};
+        Token::INT_NUMBER, Token::PLUS,       Token::INT_NUMBER,
+        Token::PLUS,       Token::INT_NUMBER, Token::PLUS,
+        Token::INT_NUMBER, Token::NEWLINE,    Token::ENDMARKER};
 
     TokenVector tv = tokenize(input);
     EXPECT_EQ(tv.tokens, expected_tokens);
     expect_number_spellings(L"0xff + 0b1010 + 0o77 + 1_000_000",
                             {L"0xff", L"0b1010", L"0o77", L"1_000_000"});
+}
+
+TEST(Tokenizer, float_number_formats)
+{
+    CompilationUnit input(L"1.0 + 1. + .5 + 1e3 + 1E3 + 1.2e-3 + 1_2.3_4");
+    std::vector<Token> expected_tokens = {
+        Token::FLOAT_NUMBER, Token::PLUS,    Token::FLOAT_NUMBER, Token::PLUS,
+        Token::FLOAT_NUMBER, Token::PLUS,    Token::FLOAT_NUMBER, Token::PLUS,
+        Token::FLOAT_NUMBER, Token::PLUS,    Token::FLOAT_NUMBER, Token::PLUS,
+        Token::FLOAT_NUMBER, Token::NEWLINE, Token::ENDMARKER};
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+    expect_number_spellings(
+        L"1.0 + 1. + .5 + 1e3 + 1E3 + 1.2e-3 + 1_2.3_4",
+        {L"1.0", L"1.", L".5", L"1e3", L"1E3", L"1.2e-3", L"1_2.3_4"});
+}
+
+TEST(Tokenizer, invalid_float_exponent_does_not_extend_number_token)
+{
+    expect_number_spellings(L"1e+", {L"1"});
 }
 
 TEST(Tokenizer, factorial)
@@ -132,15 +154,15 @@ TEST(Tokenizer, factorial)
 
     CompilationUnit input(source);
     std::vector<Token> expected_tokens = {
-        Token::DEF,     Token::NAME,    Token::LPAR,    Token::NAME,
-        Token::RPAR,    Token::COLON,   Token::NEWLINE, Token::INDENT,
-        Token::IF,      Token::NAME,    Token::EQEQUAL, Token::NUMBER,
-        Token::COLON,   Token::NEWLINE, Token::INDENT,  Token::RETURN,
-        Token::NAME,    Token::NEWLINE, Token::DEDENT,  Token::ELSE,
-        Token::COLON,   Token::NEWLINE, Token::INDENT,  Token::RETURN,
-        Token::NAME,    Token::STAR,    Token::NAME,    Token::LPAR,
-        Token::NAME,    Token::MINUS,   Token::NUMBER,  Token::RPAR,
-        Token::NEWLINE, Token::DEDENT,  Token::DEDENT,  Token::ENDMARKER};
+        Token::DEF,     Token::NAME,    Token::LPAR,       Token::NAME,
+        Token::RPAR,    Token::COLON,   Token::NEWLINE,    Token::INDENT,
+        Token::IF,      Token::NAME,    Token::EQEQUAL,    Token::INT_NUMBER,
+        Token::COLON,   Token::NEWLINE, Token::INDENT,     Token::RETURN,
+        Token::NAME,    Token::NEWLINE, Token::DEDENT,     Token::ELSE,
+        Token::COLON,   Token::NEWLINE, Token::INDENT,     Token::RETURN,
+        Token::NAME,    Token::STAR,    Token::NAME,       Token::LPAR,
+        Token::NAME,    Token::MINUS,   Token::INT_NUMBER, Token::RPAR,
+        Token::NEWLINE, Token::DEDENT,  Token::DEDENT,     Token::ENDMARKER};
 
     TokenVector tv = tokenize(input);
     EXPECT_EQ(tv.tokens, expected_tokens);
@@ -157,15 +179,15 @@ TEST(Tokenizer, factorial_with_comments)
 
     CompilationUnit input(source);
     std::vector<Token> expected_tokens = {
-        Token::NEWLINE,  Token::DEF,     Token::NAME,    Token::LPAR,
-        Token::NAME,     Token::RPAR,    Token::COLON,   Token::NEWLINE,
-        Token::INDENT,   Token::IF,      Token::NAME,    Token::EQEQUAL,
-        Token::NUMBER,   Token::COLON,   Token::NEWLINE, Token::INDENT,
-        Token::RETURN,   Token::NAME,    Token::NEWLINE, Token::DEDENT,
-        Token::ELSE,     Token::COLON,   Token::NEWLINE, Token::INDENT,
-        Token::RETURN,   Token::NAME,    Token::STAR,    Token::NAME,
-        Token::LPAR,     Token::NAME,    Token::MINUS,   Token::NUMBER,
-        Token::RPAR,     Token::NEWLINE, Token::DEDENT,  Token::DEDENT,
+        Token::NEWLINE,    Token::DEF,     Token::NAME,    Token::LPAR,
+        Token::NAME,       Token::RPAR,    Token::COLON,   Token::NEWLINE,
+        Token::INDENT,     Token::IF,      Token::NAME,    Token::EQEQUAL,
+        Token::INT_NUMBER, Token::COLON,   Token::NEWLINE, Token::INDENT,
+        Token::RETURN,     Token::NAME,    Token::NEWLINE, Token::DEDENT,
+        Token::ELSE,       Token::COLON,   Token::NEWLINE, Token::INDENT,
+        Token::RETURN,     Token::NAME,    Token::STAR,    Token::NAME,
+        Token::LPAR,       Token::NAME,    Token::MINUS,   Token::INT_NUMBER,
+        Token::RPAR,       Token::NEWLINE, Token::DEDENT,  Token::DEDENT,
         Token::ENDMARKER};
 
     TokenVector tv = tokenize(input);
@@ -249,12 +271,12 @@ TEST(Tokenizer, comment_issue)
     ;
     CompilationUnit input(source);
     std::vector<Token> expected_tokens = {
-        Token::NEWLINE, Token::NAME,   Token::EQUAL,   Token::NAME,
-        Token::LPAR,    Token::NAME,   Token::LPAR,    Token::STRING,
-        Token::RPAR,    Token::RPAR,   Token::NEWLINE, Token::NAME,
-        Token::COMMA,   Token::NAME,   Token::EQUAL,   Token::NUMBER,
-        Token::COMMA,   Token::NUMBER, Token::NEWLINE, Token::NAME,
-        Token::EQUAL,   Token::NUMBER, Token::NEWLINE, Token::ENDMARKER};
+        Token::NEWLINE, Token::NAME,       Token::EQUAL,   Token::NAME,
+        Token::LPAR,    Token::NAME,       Token::LPAR,    Token::STRING,
+        Token::RPAR,    Token::RPAR,       Token::NEWLINE, Token::NAME,
+        Token::COMMA,   Token::NAME,       Token::EQUAL,   Token::INT_NUMBER,
+        Token::COMMA,   Token::INT_NUMBER, Token::NEWLINE, Token::NAME,
+        Token::EQUAL,   Token::INT_NUMBER, Token::NEWLINE, Token::ENDMARKER};
 
     TokenVector tv = tokenize(input);
     EXPECT_EQ(tv.tokens, expected_tokens);
@@ -267,7 +289,7 @@ TEST(Tokenizer, leading_comment_and_blank_lines_collapse_to_one_newline)
                           L"   # second comment\n"
                           L"value = 1\n");
     std::vector<Token> expected_tokens = {Token::NEWLINE, Token::NAME,
-                                          Token::EQUAL,   Token::NUMBER,
+                                          Token::EQUAL,   Token::INT_NUMBER,
                                           Token::NEWLINE, Token::ENDMARKER};
 
     TokenVector tv = tokenize(input);
@@ -282,9 +304,9 @@ TEST(Tokenizer, interior_comment_and_blank_lines_collapse_to_one_newline)
                           L"  # indented comment between statements\n"
                           L"b = 2\n");
     std::vector<Token> expected_tokens = {
-        Token::NAME,    Token::EQUAL,   Token::NUMBER,
-        Token::NEWLINE, Token::NAME,    Token::EQUAL,
-        Token::NUMBER,  Token::NEWLINE, Token::ENDMARKER};
+        Token::NAME,       Token::EQUAL,   Token::INT_NUMBER,
+        Token::NEWLINE,    Token::NAME,    Token::EQUAL,
+        Token::INT_NUMBER, Token::NEWLINE, Token::ENDMARKER};
 
     TokenVector tv = tokenize(input);
     EXPECT_EQ(tv.tokens, expected_tokens);
@@ -299,8 +321,8 @@ TEST(Tokenizer, blank_line_inside_block_emits_newline_without_indent_changes)
                           L"    b = 2\n");
     std::vector<Token> expected_tokens = {
         Token::IF,      Token::TRUE,   Token::COLON,    Token::NEWLINE,
-        Token::INDENT,  Token::NAME,   Token::EQUAL,    Token::NUMBER,
-        Token::NEWLINE, Token::NAME,   Token::EQUAL,    Token::NUMBER,
+        Token::INDENT,  Token::NAME,   Token::EQUAL,    Token::INT_NUMBER,
+        Token::NEWLINE, Token::NAME,   Token::EQUAL,    Token::INT_NUMBER,
         Token::NEWLINE, Token::DEDENT, Token::ENDMARKER};
 
     TokenVector tv = tokenize(input);
@@ -315,10 +337,10 @@ TEST(Tokenizer, newlines_inside_brackets_do_not_emit_newline_or_indent_tokens)
                           L"    {3: 4}\n"
                           L")\n");
     std::vector<Token> expected_tokens = {
-        Token::NAME,    Token::EQUAL,    Token::NAME,   Token::LPAR,
-        Token::LSQB,    Token::NUMBER,   Token::COMMA,  Token::NUMBER,
-        Token::RSQB,    Token::COMMA,    Token::LBRACE, Token::NUMBER,
-        Token::COLON,   Token::NUMBER,   Token::RBRACE, Token::RPAR,
+        Token::NAME,    Token::EQUAL,      Token::NAME,   Token::LPAR,
+        Token::LSQB,    Token::INT_NUMBER, Token::COMMA,  Token::INT_NUMBER,
+        Token::RSQB,    Token::COMMA,      Token::LBRACE, Token::INT_NUMBER,
+        Token::COLON,   Token::INT_NUMBER, Token::RBRACE, Token::RPAR,
         Token::NEWLINE, Token::ENDMARKER};
 
     TokenVector tv = tokenize(input);
@@ -332,9 +354,9 @@ TEST(Tokenizer, comments_inside_brackets_do_not_end_statement)
                           L"    2\n"
                           L")\n");
     std::vector<Token> expected_tokens = {
-        Token::NAME,   Token::EQUAL,   Token::LPAR,
-        Token::NUMBER, Token::COMMA,   Token::NUMBER,
-        Token::RPAR,   Token::NEWLINE, Token::ENDMARKER};
+        Token::NAME,       Token::EQUAL,   Token::LPAR,
+        Token::INT_NUMBER, Token::COMMA,   Token::INT_NUMBER,
+        Token::RPAR,       Token::NEWLINE, Token::ENDMARKER};
 
     TokenVector tv = tokenize(input);
     EXPECT_EQ(tv.tokens, expected_tokens);

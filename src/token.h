@@ -18,7 +18,8 @@ namespace cl
 
         // metaclasses
         NAME,
-        NUMBER,
+        INT_NUMBER,
+        FLOAT_NUMBER,
         STRING,
 
         // indentation handling

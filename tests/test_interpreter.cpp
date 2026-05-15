@@ -746,6 +746,27 @@ TEST(Interpreter, string_literal_value)
                  string_as_wchar_t(TValue<String>::from_value_checked(actual)));
 }
 
+TEST(Interpreter, float_literal_values)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"1\n"));
+
+    auto expect_float_literal = [&](const wchar_t *source, double expected) {
+        Value actual = test_context.run_file(source);
+        ASSERT_TRUE(can_convert_to<Float>(actual));
+        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
+    };
+
+    expect_float_literal(L"1.0\n", 1.0);
+    expect_float_literal(L"1.\n", 1.0);
+    expect_float_literal(L".5\n", 0.5);
+    expect_float_literal(L"1e3\n", 1000.0);
+    expect_float_literal(L"1E3\n", 1000.0);
+    expect_float_literal(L"1.2e-3\n", 0.0012);
+    expect_float_literal(L"1_2.3_4\n", 12.34);
+}
+
 TEST(Interpreter, string_dunder_add_calls_native_function)
 {
     test::VmTestContext test_context;

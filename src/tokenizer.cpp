@@ -25,6 +25,13 @@ namespace cl
         "(?:0(?:_?0)*|[1-9](?:_?[0-9])*)"
         ")"_ctre;
 
+    static constexpr auto float_number_re =
+        "^("
+        "((?:[0-9](?:_?[0-9])*)?\\.[0-9](?:_?[0-9])*|"
+        "[0-9](?:_?[0-9])*\\.)(?:[eE](?:\\+|-)?[0-9](?:_?[0-9])*)?"
+        "|"
+        "[0-9](?:_?[0-9])*[eE](?:\\+|-)?[0-9](?:_?[0-9])*)"_ctre;
+
     static constexpr auto string_prefix_re = "^[rRuU]{0,2}"_ctre;
 
     static bool is_string_prefix(std::wstring_view prefix)
@@ -179,8 +186,8 @@ namespace cl
         return std::wstring_view();
     }
 
-    std::wstring_view string_for_number_token(const CompilationUnit &cu,
-                                              uint32_t offset)
+    std::wstring_view string_for_int_number_token(const CompilationUnit &cu,
+                                                  uint32_t offset)
     {
         std::wstring_view s = cu.get_source_view().substr(offset);
         auto m = int_number_re.search(s);
@@ -189,6 +196,29 @@ namespace cl
             return std::wstring_view(m);
         }
         return std::wstring_view();
+    }
+
+    std::wstring_view string_for_float_number_token(const CompilationUnit &cu,
+                                                    uint32_t offset)
+    {
+        std::wstring_view s = cu.get_source_view().substr(offset);
+        auto m = float_number_re.search(s);
+        if(m)
+        {
+            return std::wstring_view(m);
+        }
+        return std::wstring_view();
+    }
+
+    std::wstring_view string_for_number_token(const CompilationUnit &cu,
+                                              uint32_t offset)
+    {
+        std::wstring_view m = string_for_float_number_token(cu, offset);
+        if(!m.empty())
+        {
+            return m;
+        }
+        return string_for_int_number_token(cu, offset);
     }
 
     std::wstring_view string_for_string_token(const CompilationUnit &cu,
@@ -569,6 +599,14 @@ namespace cl
                                     tokens.emplace_back(Token::ELLIPSIS, pos);
                                     pos += 3;
                                 }
+                                else if(c2 >= L'0' && c2 <= L'9')
+                                {
+                                    std::wstring_view m =
+                                        string_for_float_number_token(cu, pos);
+                                    tokens.emplace_back(Token::FLOAT_NUMBER,
+                                                        pos);
+                                    pos += m.size();
+                                }
                                 else
                                 {
                                     tokens.emplace_back(Token::DOT, pos++);
@@ -727,11 +765,25 @@ namespace cl
 
                                     {
                                         std::wstring_view m =
-                                            string_for_number_token(cu, pos);
+                                            string_for_float_number_token(cu,
+                                                                          pos);
                                         if(!m.empty())
                                         {
-                                            tokens.emplace_back(Token::NUMBER,
-                                                                pos);
+                                            tokens.emplace_back(
+                                                Token::FLOAT_NUMBER, pos);
+                                            pos += m.size();
+                                            break;
+                                        }
+                                    }
+
+                                    {
+                                        std::wstring_view m =
+                                            string_for_int_number_token(cu,
+                                                                        pos);
+                                        if(!m.empty())
+                                        {
+                                            tokens.emplace_back(
+                                                Token::INT_NUMBER, pos);
                                             pos += m.size();
                                             break;
                                         }

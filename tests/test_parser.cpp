@@ -1,5 +1,6 @@
 #include "ast_print.h"
 #include "compilation_unit.h"
+#include "float.h"
 #include "parser.h"
 #include "str.h"
 #include "test_helpers.h"
@@ -451,6 +452,28 @@ TEST(Parser, string_literal_stores_constant_value)
                 AstOperatorKind::STRING);
     EXPECT_STREQ(L"abc", string_as_wchar_t(TValue<String>::from_value_checked(
                              parsed.ast.constants[literal_idx])));
+}
+
+TEST(Parser, float_literal_stores_constant_value)
+{
+    test::ParsedFile parsed(L"1.5\n");
+
+    ASSERT_TRUE(parsed.ast.kinds[parsed.ast.root_node].node_kind ==
+                AstNodeKind::STATEMENT_SEQUENCE);
+
+    int32_t stmt_idx = parsed.ast.children[parsed.ast.root_node][0];
+    ASSERT_TRUE(parsed.ast.kinds[stmt_idx].node_kind ==
+                AstNodeKind::STATEMENT_EXPRESSION);
+
+    int32_t literal_idx = parsed.ast.children[stmt_idx][0];
+    EXPECT_TRUE(parsed.ast.kinds[literal_idx].node_kind ==
+                AstNodeKind::EXPRESSION_LITERAL);
+    EXPECT_TRUE(parsed.ast.kinds[literal_idx].operator_kind ==
+                AstOperatorKind::NUMBER);
+
+    Value constant = parsed.ast.constants[literal_idx].as_value();
+    ASSERT_TRUE(can_convert_to<Float>(constant));
+    EXPECT_DOUBLE_EQ(1.5, constant.get_ptr<Float>()->value);
 }
 
 TEST(Parser, string_literal_decodes_escapes_and_prefixes)

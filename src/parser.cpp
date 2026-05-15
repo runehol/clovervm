@@ -2,6 +2,8 @@
 
 #include "ast.h"
 #include "compilation_unit.h"
+#include "float.h"
+#include "thread_state.h"
 #include "token.h"
 #include "tokenizer.h"
 #include "virtual_machine.h"
@@ -13,6 +15,20 @@
 
 namespace cl
 {
+    static std::wstring remove_number_separators(std::wstring_view token)
+    {
+        std::wstring result;
+        result.reserve(token.size());
+        for(wchar_t c: token)
+        {
+            if(c != L'_')
+            {
+                result.push_back(c);
+            }
+        }
+        return result;
+    }
+
     static bool is_hex_digit(wchar_t c)
     {
         return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f') ||
@@ -980,12 +996,24 @@ namespace cl
                             source_pos_and_advance(), v);
                     }
 
-                case Token::NUMBER:
+                case Token::INT_NUMBER:
                     {
-                        int64_t iv = std::stoll(std::wstring(
-                            string_for_number_token(*ast.compilation_unit,
-                                                    source_pos_for_token())));
+                        std::wstring_view token = string_for_int_number_token(
+                            *ast.compilation_unit, source_pos_for_token());
+                        int64_t iv = std::stoll(std::wstring(token));
                         Value v = Value::from_smi(iv);
+                        return ast.emplace_back(
+                            AstKind(AstNodeKind::EXPRESSION_LITERAL,
+                                    AstOperatorKind::NUMBER),
+                            source_pos_and_advance(), v);
+                    }
+                case Token::FLOAT_NUMBER:
+                    {
+                        std::wstring_view token = string_for_float_number_token(
+                            *ast.compilation_unit, source_pos_for_token());
+                        double value =
+                            std::stod(remove_number_separators(token));
+                        Value v = make_object_value<Float>(value);
                         return ast.emplace_back(
                             AstKind(AstNodeKind::EXPRESSION_LITERAL,
                                     AstOperatorKind::NUMBER),
