@@ -6,7 +6,6 @@
 #include "owned_typed_value.h"
 #include "refcount.h"
 #include "runtime_helpers.h"
-#include "thread_state.h"
 #include "value.h"
 #include <cstddef>
 #include <cstdint>
@@ -61,10 +60,11 @@ namespace cl
         [[nodiscard]] Value get_item(int64_t py_idx) const;
 
         static ALWAYSINLINE TValue<Tuple>
-        from_frame_arguments(Value *fp, int8_t first_arg_reg, uint32_t n_args)
+        from_frame_arguments(ThreadState *thread, Value *fp,
+                             int8_t first_arg_reg, uint32_t n_args)
         {
-            return make_object_value<Tuple>(TupleFromFrameArgumentsTag{}, fp,
-                                            first_arg_reg, n_args);
+            return thread->make_object_value<Tuple>(
+                TupleFromFrameArgumentsTag{}, fp, first_arg_reg, n_args);
         }
 
         static size_t size_for(size_t size)

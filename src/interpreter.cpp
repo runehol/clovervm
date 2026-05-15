@@ -845,7 +845,8 @@ namespace cl
         }
     }
 
-    static ALWAYSINLINE void initialize_varargs_argument(Value *new_fp,
+    static ALWAYSINLINE void initialize_varargs_argument(ThreadState *thread,
+                                                         Value *new_fp,
                                                          TValue<Function> fun,
                                                          uint32_t n_args)
     {
@@ -856,7 +857,8 @@ namespace cl
                                     : 0;
         CodeObject *target_code_object = fun.extract()->code_object.extract();
         TValue<Tuple> varargs_tuple = Tuple::from_frame_arguments(
-            new_fp, target_code_object->encode_reg(n_positional_parameters),
+            thread, new_fp,
+            target_code_object->encode_reg(n_positional_parameters),
             n_extra_args);
         new_fp[target_code_object->encode_reg(n_positional_parameters)] =
             varargs_tuple;
@@ -903,9 +905,9 @@ namespace cl
     }
 
     static ALWAYSINLINE void enter_function_frame_from_positional_args(
-        Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
-        TValue<Function> fun, int32_t first_arg_reg, uint32_t n_args,
-        uint32_t instr_len, FunctionCallAdaptation adaptation)
+        ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        CodeObject *&code_object, TValue<Function> fun, int32_t first_arg_reg,
+        uint32_t n_args, uint32_t instr_len, FunctionCallAdaptation adaptation)
     {
         Value *new_fp =
             new_frame_pointer_from_first_arg(fp, fun, first_arg_reg);
@@ -925,7 +927,7 @@ namespace cl
 
         assert(adaptation == FunctionCallAdaptation::Varargs);
         initialize_missing_default_arguments(new_fp, fun, n_args);
-        initialize_varargs_argument(new_fp, fun, n_args);
+        initialize_varargs_argument(thread, new_fp, fun, n_args);
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                        instr_len);
     }
@@ -2217,7 +2219,7 @@ namespace cl
                 code_object->function_call_caches[cache_idx], cls, thunk,
                 constructor.lookup_cell, n_args, adaptation);
             enter_function_frame_from_positional_args(
-                fp, pc, code_object, thunk, first_arg_reg, n_args,
+                thread, fp, pc, code_object, thunk, first_arg_reg, n_args,
                 call_instr_len, adaptation);
             if(unlikely(thread->safepoint_requested()))
             {
@@ -2243,9 +2245,9 @@ namespace cl
         populate_function_call_cache(
             code_object->function_call_caches[cache_idx], function, n_args,
             adaptation);
-        enter_function_frame_from_positional_args(fp, pc, code_object, function,
-                                                  first_arg_reg, n_args,
-                                                  call_instr_len, adaptation);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object, function, first_arg_reg, n_args,
+            call_instr_len, adaptation);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -2265,7 +2267,7 @@ namespace cl
             code_object->function_call_caches[cache_idx];
         TValue<Function> function = TValue<Function>::from_oop(cache.function);
         enter_function_frame_from_positional_args(
-            fp, pc, code_object, function, first_arg_reg, n_args,
+            thread, fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, cache.adaptation);
         if(unlikely(thread->safepoint_requested()))
         {
@@ -2406,8 +2408,8 @@ namespace cl
             TValue<Function> cached_function =
                 TValue<Function>::from_oop(call_cache.function);
             enter_function_frame_from_positional_args(
-                fp, pc, code_object, cached_function, first_arg_reg, n_args,
-                call_instr_len, call_cache.adaptation);
+                thread, fp, pc, code_object, cached_function, first_arg_reg,
+                n_args, call_instr_len, call_cache.adaptation);
             if(unlikely(thread->safepoint_requested()))
             {
                 MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -2425,9 +2427,9 @@ namespace cl
         FunctionCallAdaptation adaptation =
             classify_function_call_adaptation(function);
         populate_function_call_cache(call_cache, function, n_args, adaptation);
-        enter_function_frame_from_positional_args(fp, pc, code_object, function,
-                                                  first_arg_reg, n_args,
-                                                  call_instr_len, adaptation);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object, function, first_arg_reg, n_args,
+            call_instr_len, adaptation);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -2485,7 +2487,7 @@ namespace cl
         TValue<Function> function =
             TValue<Function>::from_oop(call_cache.function);
         enter_function_frame_from_positional_args(
-            fp, pc, code_object, function, first_arg_reg, n_args,
+            thread, fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, FunctionCallAdaptation::FixedArity);
         if(unlikely(thread->safepoint_requested()))
         {
@@ -2581,8 +2583,8 @@ namespace cl
             TValue<Function> cached_function =
                 TValue<Function>::from_oop(call_cache.function);
             enter_function_frame_from_positional_args(
-                fp, pc, code_object, cached_function, first_arg_reg, n_args,
-                call_instr_len, call_cache.adaptation);
+                thread, fp, pc, code_object, cached_function, first_arg_reg,
+                n_args, call_instr_len, call_cache.adaptation);
             if(unlikely(thread->safepoint_requested()))
             {
                 MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -2600,9 +2602,9 @@ namespace cl
         FunctionCallAdaptation adaptation =
             classify_function_call_adaptation(function);
         populate_function_call_cache(call_cache, function, n_args, adaptation);
-        enter_function_frame_from_positional_args(fp, pc, code_object, function,
-                                                  first_arg_reg, n_args,
-                                                  call_instr_len, adaptation);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object, function, first_arg_reg, n_args,
+            call_instr_len, adaptation);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -2660,7 +2662,7 @@ namespace cl
         TValue<Function> function =
             TValue<Function>::from_oop(call_cache.function);
         enter_function_frame_from_positional_args(
-            fp, pc, code_object, function, first_arg_reg, n_args,
+            thread, fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, FunctionCallAdaptation::FixedArity);
         if(unlikely(thread->safepoint_requested()))
         {
