@@ -756,7 +756,7 @@ template <typename Program> static void BM_NBody(benchmark::State &state)
 {
     run_benchmark_case<Program>(state, "benchmark/nbody.py", state.range(0));
 }
-BENCHMARK_TEMPLATE(BM_NBody, CloverProgram)->Name("BM_NBody")->Arg(1000);
+BENCHMARK_TEMPLATE(BM_NBody, CloverProgram)->Name("BM_NBody")->Arg(100000);
 
 template <typename Program> static void BM_PystoneLite(benchmark::State &state)
 {
