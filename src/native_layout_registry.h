@@ -9,10 +9,12 @@
 #include "list_iterator.h"
 #include "range_iterator.h"
 #include "str.h"
+#include "tuple.h"
 #include "tuple_iterator.h"
 
 #define CL_NATIVE_LAYOUT_REGISTRY(V)                                           \
     V(List);                                                                   \
+    V(Tuple);                                                                  \
     V(RangeIterator);                                                          \
     V(TupleIterator);                                                          \
     V(ListIterator);                                                           \

@@ -10,6 +10,7 @@
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
+#include "tuple.h"
 #include "tuple_iterator.h"
 
 #include <gtest/gtest.h>
@@ -125,8 +126,77 @@ TEST(NativeLayoutDescriptor,
     EXPECT_EQ(String::native_static_release_count(), span.count);
 }
 
+TEST(NativeLayoutDescriptor, TupleUsesDynamicSmiReleaseAndCustomObjectSize)
+{
+    const ReleaseDescriptor &release =
+        release_descriptor_for(Tuple::native_layout);
+
+    EXPECT_EQ(ReleaseKind::DynamicSmiSpan, release.kind);
+    EXPECT_EQ(Tuple::native_value_count_offset_in_words(),
+              release.count_offset_words);
+    EXPECT_EQ(Tuple::static_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(Tuple::native_additional_release_count(),
+              release.additional_release_count);
+    EXPECT_EQ(Object::native_static_release_count() + 1,
+              release.additional_release_count);
+
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptor_for(Tuple::native_layout);
+
+    EXPECT_EQ(ObjectSizeKind::Custom, object_size.kind);
+    ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
+}
+
+TEST(NativeLayoutDescriptor, CompactTupleDynamicSmiReleaseSpanUsesStoredCount)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Tuple *tuple = context.thread()->make_object_raw<Tuple>(3);
+
+    ASSERT_FALSE(layout_is_expanded(tuple->layout));
+    NativeValueSpan span = value_span_for_release(tuple);
+
+    EXPECT_EQ(reinterpret_cast<Value *>(tuple) +
+                  Object::native_value_offset_in_words(),
+              span.slots);
+    EXPECT_EQ(Tuple::native_additional_release_count() + 3, span.count);
+}
+
+TEST(NativeLayoutDescriptor, ExpandedTupleDynamicSmiReleaseSpanUsesStoredCount)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Tuple *tuple =
+        context.thread()->make_object_raw<Tuple>(object_layout_count_mask);
+
+    ASSERT_TRUE(layout_is_expanded(tuple->layout));
+    NativeValueSpan span = value_span_for_release(tuple);
+
+    EXPECT_EQ(reinterpret_cast<Value *>(tuple) +
+                  Object::native_value_offset_in_words(),
+              span.slots);
+    EXPECT_EQ(Tuple::native_additional_release_count() +
+                  object_layout_count_mask,
+              span.count);
+}
+
+TEST(NativeLayoutDescriptor, TupleCustomObjectSizeUsesStoredCount)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Tuple *tuple = context.thread()->make_object_raw<Tuple>(5);
+
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptor_for(Tuple::native_layout);
+
+    ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
+    ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
+    EXPECT_EQ(Tuple::size_for(5), object_size.custom_size_in_bytes(tuple));
+}
+
 TEST(NativeLayoutDescriptor, UnmigratedLayoutsStillUseLegacyReleaseDescriptor)
 {
     EXPECT_EQ(ReleaseKind::LegacyHeapLayout,
-              release_descriptor_for(NativeLayoutId::Tuple).kind);
+              release_descriptor_for(NativeLayoutId::CodeObject).kind);
 }

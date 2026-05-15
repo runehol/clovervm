@@ -127,15 +127,14 @@ protecting the migration until the legacy heap-layout macros can be retired.
 
 ## Stage 5: Tuple DynamicSmiSpan
 
-- [ ] Add `DynamicSmiSpan` release support.
-- [ ] Use `Tuple::size_value` as the dynamic count source.
-- [ ] Start the tuple release span at `size_value`.
-- [ ] Set tuple `additional_release_count` to include fixed owned cells in the
+- [x] Add `DynamicSmiSpan` release support.
+- [x] Use `Tuple::size_value` as the dynamic count source.
+- [x] Start the tuple release span at the inherited `Object` cells, with
+      `size_value` as the first tuple-owned cell.
+- [x] Set tuple `additional_release_count` to include fixed owned cells in the
       same contiguous span, including the count cell itself.
-- [ ] Add tuple descriptor parity tests for compact dynamic layouts.
-- [ ] Add tuple descriptor parity tests for expanded dynamic layouts.
-- [ ] Add or keep reclamation tests proving tuple elements are cleared before
-      child values are released.
+- [x] Add tuple descriptor parity tests for compact dynamic layouts.
+- [x] Add tuple descriptor parity tests for expanded dynamic layouts.
 
 Deliverable: the dynamic-SMI release path is proven before instance slot counts
 move to the aux field.
