@@ -110,6 +110,9 @@ namespace cl
         uint32_t n_positional_parameters;
         FunctionParameterFlags parameter_flags;
 
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(Function, Object, 3);
+        CL_DECLARE_STATIC_OBJECT_SIZE(Function);
+
         CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(Function, Object, 3);
 
     private:

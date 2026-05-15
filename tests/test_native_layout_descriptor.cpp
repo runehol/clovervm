@@ -1,4 +1,6 @@
+#include "dict.h"
 #include "exception_object.h"
+#include "function.h"
 #include "list.h"
 #include "list_iterator.h"
 #include "native_layout_descriptor.h"
@@ -68,6 +70,8 @@ TEST(NativeLayoutDescriptor, FixedObjectSubclassesUseNativeStaticDescriptors)
     expect_static_native_layout_descriptor<ListIterator>();
     expect_static_native_layout_descriptor<ExceptionObject>();
     expect_static_native_layout_descriptor<StopIterationObject>();
+    expect_static_native_layout_descriptor<Function>();
+    expect_static_native_layout_descriptor<Dict>();
 }
 
 TEST(NativeLayoutDescriptor, UnmigratedLayoutsStillUseLegacyReleaseDescriptor)

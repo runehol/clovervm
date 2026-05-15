@@ -109,8 +109,8 @@ Migrate fixed layouts first, in small groups.
       owned heap references; inline slot access uses `sizeof(Object)` directly
       instead of reusing the release span offset.
 - [x] Migrate `List`.
-- [ ] Migrate `Dict`.
-- [ ] Migrate `Function`.
+- [x] Migrate `Dict`.
+- [x] Migrate `Function`.
 - [x] Migrate `RangeIterator`.
 - [x] Migrate `TupleIterator`.
 - [x] Migrate `ListIterator`.
