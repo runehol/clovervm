@@ -34,7 +34,7 @@ namespace cl
     Shape::Shape(HeapLayout layout, Value _class_value, Shape *_previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count,
                  ShapeFlags _shape_flags, uint32_t _present_count)
-        : HeapObject(native_layout_id, layout), previous_shape(_previous_shape),
+        : HeapObject(native_layout, layout), previous_shape(_previous_shape),
           next_slot_index(_next_slot_index), property_count_(_property_count),
           present_count_(_present_count), shape_flags(_shape_flags),
           transitions(), class_value(_class_value)

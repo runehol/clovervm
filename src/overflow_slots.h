@@ -10,7 +10,7 @@ namespace cl
     class OverflowSlots : public HeapObject
     {
     public:
-        static constexpr NativeLayoutId native_layout_id =
+        static constexpr NativeLayoutId native_layout =
             NativeLayoutId::OverflowSlots;
 
         OverflowSlots(HeapLayout layout, uint32_t size, uint32_t capacity);

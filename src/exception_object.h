@@ -14,13 +14,13 @@ namespace cl
     class ExceptionObject : public Object
     {
     public:
-        static constexpr NativeLayoutId native_layout_id =
+        static constexpr NativeLayoutId native_layout =
             NativeLayoutId::Exception;
         static constexpr uint32_t kMessageSlot = 0;
         static constexpr uint32_t kInlineSlotCount = 1;
 
         ExceptionObject(ClassObject *cls, TValue<String> message)
-            : ExceptionObject(cls, native_layout_id, compact_layout(), message)
+            : ExceptionObject(cls, native_layout, compact_layout(), message)
         {
         }
 
@@ -45,7 +45,7 @@ namespace cl
     class StopIterationObject : public ExceptionObject
     {
     public:
-        static constexpr NativeLayoutId native_layout_id =
+        static constexpr NativeLayoutId native_layout =
             NativeLayoutId::StopIteration;
         static constexpr uint32_t kValueSlot = 1;
         static constexpr uint32_t kInlineSlotCount = 2;

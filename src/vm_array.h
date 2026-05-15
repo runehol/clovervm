@@ -49,13 +49,13 @@ namespace cl
         class Backing : public HeapObject
         {
         public:
-            static constexpr NativeLayoutId native_layout_id =
+            static constexpr NativeLayoutId native_layout =
                 NativeLayoutId::RawArrayBacking;
 
             using Storage = std::aligned_storage_t<sizeof(T), alignof(T)>;
 
             Backing(HeapLayout layout, size_t capacity)
-                : HeapObject(native_layout_id, layout)
+                : HeapObject(native_layout, layout)
             {
                 (void)capacity;
             }
@@ -288,11 +288,11 @@ namespace cl
         class Backing : public HeapObject
         {
         public:
-            static constexpr NativeLayoutId native_layout_id =
+            static constexpr NativeLayoutId native_layout =
                 NativeLayoutId::ValueArrayBacking;
 
             Backing(HeapLayout layout, size_t capacity)
-                : HeapObject(native_layout_id, layout)
+                : HeapObject(native_layout, layout)
             {
                 (void)capacity;
             }
@@ -582,11 +582,11 @@ namespace cl
         class Backing : public HeapObject
         {
         public:
-            static constexpr NativeLayoutId native_layout_id =
+            static constexpr NativeLayoutId native_layout =
                 NativeLayoutId::HeapPtrArrayBacking;
 
             Backing(HeapLayout layout, size_t capacity)
-                : HeapObject(native_layout_id, layout)
+                : HeapObject(native_layout, layout)
             {
                 (void)capacity;
             }

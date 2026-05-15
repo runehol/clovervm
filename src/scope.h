@@ -13,8 +13,7 @@ namespace cl
     class Scope : public HeapObject
     {
     public:
-        static constexpr NativeLayoutId native_layout_id =
-            NativeLayoutId::Scope;
+        static constexpr NativeLayoutId native_layout = NativeLayoutId::Scope;
 
         Scope(Scope *_parent_scope);
 

@@ -132,7 +132,7 @@ TEST(Dict, CopyConstructorPreservesLiveEntriesOnly)
     dict->set_item(second, Value::from_smi(20));
     EXPECT_EQ(Value::None(), dict->del_item(first));
 
-    Dict copy(context.thread()->class_for_native_layout(Dict::native_layout_id),
+    Dict copy(context.thread()->class_for_native_layout(Dict::native_layout),
               *dict);
 
     EXPECT_EQ(1u, copy.size());

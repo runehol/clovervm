@@ -19,8 +19,7 @@ namespace cl
     class Tuple : public Object
     {
     public:
-        static constexpr NativeLayoutId native_layout_id =
-            NativeLayoutId::Tuple;
+        static constexpr NativeLayoutId native_layout = NativeLayoutId::Tuple;
 
         Tuple(HeapLayout layout, BootstrapObjectTag, size_t size);
         Tuple(HeapLayout layout, ClassObject *cls, size_t size);

@@ -200,7 +200,7 @@ namespace cl
         {
             static_assert(std::is_base_of_v<Object, T>);
             static_assert(HasNativeLayoutId<T>::value);
-            ClassObject *cls = class_for_native_layout(T::native_layout_id);
+            ClassObject *cls = class_for_native_layout(T::native_layout);
             assert(cls != nullptr);
             T *object = interned_global_heap.make_global_internal_raw<T>(
                 cls, std::forward<Args>(args)...);

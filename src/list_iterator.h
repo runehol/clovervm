@@ -15,11 +15,11 @@ namespace cl
     class ListIterator : public Object
     {
     public:
-        static constexpr NativeLayoutId native_layout_id =
+        static constexpr NativeLayoutId native_layout =
             NativeLayoutId::ListIterator;
 
         ListIterator(ClassObject *cls, TValue<List> _list)
-            : Object(cls, native_layout_id, compact_layout()), list(_list),
+            : Object(cls, native_layout, compact_layout()), list(_list),
               index(Value::from_smi(0))
         {
         }

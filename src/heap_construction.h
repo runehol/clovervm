@@ -14,7 +14,7 @@ namespace cl
     };
 
     template <typename T>
-    struct HasHeapNativeLayoutId<T, std::void_t<decltype(T::native_layout_id)>>
+    struct HasHeapNativeLayoutId<T, std::void_t<decltype(T::native_layout)>>
         : std::true_type
     {
     };
@@ -40,7 +40,7 @@ namespace cl
 
         char *memory = heap->allocate(sizeof(T));
         T *obj = new(memory) T(std::forward<Args>(args)...);
-        assert(obj->HeapObject::native_layout_id() == T::native_layout_id);
+        assert(obj->HeapObject::native_layout_id() == T::native_layout);
         heap->mark_valid_object(obj);
         return obj;
     }
@@ -66,7 +66,7 @@ namespace cl
                 spec.value_count);
             char *memory = heap->allocate(object_size_in_bytes);
             T *obj = new(memory) T(layout, std::forward<Args>(args)...);
-            assert(obj->HeapObject::native_layout_id() == T::native_layout_id);
+            assert(obj->HeapObject::native_layout_id() == T::native_layout);
             heap->mark_valid_object(obj);
             return obj;
         }
@@ -84,7 +84,7 @@ namespace cl
         HeapLayout layout =
             encode_expanded_layout_unchecked(value_offset_in_words);
         T *obj = new(object_memory) T(layout, std::forward<Args>(args)...);
-        assert(obj->HeapObject::native_layout_id() == T::native_layout_id);
+        assert(obj->HeapObject::native_layout_id() == T::native_layout);
         heap->mark_valid_object(obj);
         return obj;
     }

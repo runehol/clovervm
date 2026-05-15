@@ -13,7 +13,7 @@ namespace cl
     class Instance : public Object
     {
     public:
-        static constexpr NativeLayoutId native_layout_id =
+        static constexpr NativeLayoutId native_layout =
             NativeLayoutId::Instance;
 
         Instance(HeapLayout layout, ClassObject *cls);

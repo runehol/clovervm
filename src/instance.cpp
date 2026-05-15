@@ -7,7 +7,7 @@ namespace cl
 {
 
     Instance::Instance(HeapLayout layout, ClassObject *_cls)
-        : Object(_cls, native_layout_id, layout)
+        : Object(_cls, native_layout, layout)
     {
     }
 

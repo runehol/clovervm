@@ -14,13 +14,13 @@ namespace cl
     class RangeIterator : public Object
     {
     public:
-        static constexpr NativeLayoutId native_layout_id =
+        static constexpr NativeLayoutId native_layout =
             NativeLayoutId::RangeIterator;
 
         RangeIterator(ClassObject *cls, TValue<CLInt> _current,
                       TValue<CLInt> _stop, TValue<CLInt> _step)
-            : Object(cls, native_layout_id, compact_layout()),
-              current(_current), stop(_stop), step(_step)
+            : Object(cls, native_layout, compact_layout()), current(_current),
+              stop(_stop), step(_step)
         {
         }
 

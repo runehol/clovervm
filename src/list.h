@@ -14,10 +14,10 @@ namespace cl
     class List : public Object
     {
     public:
-        static constexpr NativeLayoutId native_layout_id = NativeLayoutId::List;
+        static constexpr NativeLayoutId native_layout = NativeLayoutId::List;
 
         explicit List(ClassObject *cls)
-            : Object(cls, native_layout_id, compact_layout())
+            : Object(cls, native_layout, compact_layout())
         {
         }
         List(ClassObject *cls, size_t size);

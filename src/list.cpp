@@ -60,7 +60,7 @@ namespace cl
     }
 
     List::List(ClassObject *cls, size_t size)
-        : Object(cls, native_layout_id, compact_layout())
+        : Object(cls, native_layout, compact_layout())
     {
         items.resize(size, Value::not_present());
     }

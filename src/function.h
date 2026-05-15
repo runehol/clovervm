@@ -19,14 +19,14 @@ namespace cl
     class Function : public Object
     {
     public:
-        static constexpr NativeLayoutId native_layout_id =
+        static constexpr NativeLayoutId native_layout =
             NativeLayoutId::Function;
         static constexpr uint32_t VarArgs = UINT32_MAX;
         static constexpr uint32_t kDocstringSlot = 2;
         static constexpr uint32_t kInlineSlotCount = 3;
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object)
-            : Object(cls, native_layout_id, compact_layout()),
+            : Object(cls, native_layout, compact_layout()),
               code_object(_code_object), default_parameters(Value::None()),
               docstring(Value::None()),
               min_positional_arity(
@@ -41,7 +41,7 @@ namespace cl
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object,
                  Value _docstring)
-            : Object(cls, native_layout_id, compact_layout()),
+            : Object(cls, native_layout, compact_layout()),
               code_object(_code_object), default_parameters(Value::None()),
               docstring(_docstring),
               min_positional_arity(
@@ -56,7 +56,7 @@ namespace cl
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object,
                  TValue<Tuple> _default_parameters)
-            : Object(cls, native_layout_id, compact_layout()),
+            : Object(cls, native_layout, compact_layout()),
               code_object(_code_object),
               default_parameters(_default_parameters), docstring(Value::None()),
               min_positional_arity(
@@ -74,7 +74,7 @@ namespace cl
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object,
                  TValue<Tuple> _default_parameters, Value _docstring)
-            : Object(cls, native_layout_id, compact_layout()),
+            : Object(cls, native_layout, compact_layout()),
               code_object(_code_object),
               default_parameters(_default_parameters), docstring(_docstring),
               min_positional_arity(

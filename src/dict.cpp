@@ -29,13 +29,13 @@ namespace cl
     }
 
     Dict::Dict(ClassObject *cls)
-        : Object(cls, native_layout_id, compact_layout()),
+        : Object(cls, native_layout, compact_layout()),
           hash_table(min_table_size, not_present), n_valid_entries(0)
     {
     }
 
     Dict::Dict(ClassObject *cls, const Dict &other)
-        : Object(cls, native_layout_id, compact_layout()),
+        : Object(cls, native_layout, compact_layout()),
           hash_table(min_table_size, not_present), n_valid_entries(0)
     {
         for(const Entry &e: other.entries)

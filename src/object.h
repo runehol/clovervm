@@ -102,7 +102,7 @@ namespace cl
     };
 
     template <typename T>
-    struct HasNativeLayoutId<T, std::void_t<decltype(T::native_layout_id)>>
+    struct HasNativeLayoutId<T, std::void_t<decltype(T::native_layout)>>
         : std::true_type
     {
     };
@@ -112,7 +112,7 @@ namespace cl
         static_assert(std::is_base_of_v<Object, T>);
         static_assert(HasNativeLayoutId<T>::value);
         return object != nullptr &&
-               object->native_layout_id() == T::native_layout_id;
+               object->native_layout_id() == T::native_layout;
     }
 
     template <typename T> T *try_convert_to(Object *object)

@@ -256,20 +256,20 @@ namespace cl
         HeapObject(NativeLayoutId _native_layout_id, HeapLayout _layout,
                    uint16_t _native_layout_aux_count = 0)
             : refcount(0), lifecycle_state(HeapLifecycleState::Normal),
-              native_layout(_native_layout_id),
+              native_layout_id_(_native_layout_id),
               native_layout_aux_count(_native_layout_aux_count), layout(_layout)
         {
-            assert(native_layout != NativeLayoutId::Invalid);
+            assert(native_layout_id_ != NativeLayoutId::Invalid);
         }
 
         HeapObject()
             : refcount(0), lifecycle_state(HeapLifecycleState::Normal),
-              native_layout(NativeLayoutId::Invalid),
+              native_layout_id_(NativeLayoutId::Invalid),
               native_layout_aux_count(0), layout(0)
         {
         }
 
-        NativeLayoutId native_layout_id() const { return native_layout; }
+        NativeLayoutId native_layout_id() const { return native_layout_id_; }
         uint16_t native_layout_aux_count_value() const
         {
             return native_layout_aux_count;
@@ -281,7 +281,7 @@ namespace cl
 
         int32_t refcount;
         HeapLifecycleState lifecycle_state;
-        NativeLayoutId native_layout;
+        NativeLayoutId native_layout_id_;
         uint16_t native_layout_aux_count;
         HeapLayout layout;
     };

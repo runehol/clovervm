@@ -22,7 +22,7 @@ namespace cl
     {
         static constexpr NativeLayoutId expected_native_layout_id()
         {
-            return T::native_layout_id;
+            return T::native_layout;
         }
     };
 

@@ -174,7 +174,7 @@ namespace cl
                              ClassObject *single_base,
                              ShapeFlags class_shape_flags,
                              ShapeFlags instance_shape_flags)
-        : Object(BootstrapObjectTag{}, native_layout_id, compact_layout()),
+        : Object(BootstrapObjectTag{}, native_layout, compact_layout()),
           name(_name), bases(Value::not_present()), mro(Value::not_present()),
           mro_shape_and_contents_validity_cell(nullptr),
           mro_shape_and_metaclass_mro_shape_and_contents_validity_cell(nullptr),

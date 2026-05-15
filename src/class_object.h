@@ -48,7 +48,7 @@ namespace cl
     class ClassObject : public Object
     {
     public:
-        static constexpr NativeLayoutId native_layout_id =
+        static constexpr NativeLayoutId native_layout =
             NativeLayoutId::ClassObject;
         static constexpr uint32_t kClassMetadataSlotName = 0;
         static constexpr uint32_t kClassMetadataSlotBases = 1;

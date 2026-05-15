@@ -6,7 +6,7 @@ namespace cl
 {
 
     Scope::Scope(Scope *_parent_scope)
-        : HeapObject(native_layout_id, compact_layout()),
+        : HeapObject(native_layout, compact_layout()),
           parent_scope(_parent_scope), name_table(16, hash_not_present)
     {
     }

@@ -33,7 +33,7 @@ namespace cl
         };
 
     public:
-        static constexpr NativeLayoutId native_layout_id = NativeLayoutId::Dict;
+        static constexpr NativeLayoutId native_layout = NativeLayoutId::Dict;
 
         struct EntryView
         {

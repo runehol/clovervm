@@ -8,11 +8,11 @@ namespace cl
     class ValidityCell : public HeapObject
     {
     public:
-        static constexpr NativeLayoutId native_layout_id =
+        static constexpr NativeLayoutId native_layout =
             NativeLayoutId::ValidityCell;
 
         ValidityCell()
-            : HeapObject(native_layout_id, compact_layout()), valid(true)
+            : HeapObject(native_layout, compact_layout()), valid(true)
         {
         }
 
