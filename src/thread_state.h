@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 
+#include "exception_object.h"
 #include "owned.h"
 #include "owned_typed_value.h"
 #include "shape.h"
@@ -163,11 +164,28 @@ namespace cl
             return safepoint_scan_record_;
         }
 
-        bool has_pending_exception() const;
-        PendingExceptionKind pending_exception_kind() const;
-        void clear_pending_exception();
+        bool has_pending_exception() const
+        {
+            return pending_exception.kind != PendingExceptionKind::None;
+        }
+        PendingExceptionKind pending_exception_kind() const
+        {
+            return pending_exception.kind;
+        }
+        void clear_pending_exception()
+        {
+            pending_exception.kind = PendingExceptionKind::None;
+            pending_exception.object.clear();
+            pending_exception.stop_iteration_value = Value::not_present();
+        }
         [[nodiscard]] Value
-        set_pending_exception_object(TValue<ExceptionObject> exception);
+        set_pending_exception_object(TValue<ExceptionObject> exception)
+        {
+            pending_exception.object = exception;
+            pending_exception.stop_iteration_value = Value::not_present();
+            pending_exception.kind = PendingExceptionKind::Object;
+            return Value::exception_marker();
+        }
         [[nodiscard]] Value
         set_pending_exception_string(TValue<ClassObject> type,
                                      TValue<String> message);
@@ -184,10 +202,25 @@ namespace cl
                                              const wchar_t *message);
         [[nodiscard]] Value
         set_pending_builtin_exception_none(const wchar_t *type_name);
-        [[nodiscard]] Value set_pending_stop_iteration_no_value();
+        [[nodiscard]] Value set_pending_stop_iteration_no_value()
+        {
+            pending_exception.object.clear();
+            pending_exception.stop_iteration_value = Value::not_present();
+            pending_exception.kind = PendingExceptionKind::StopIteration;
+            return Value::exception_marker();
+        }
         [[nodiscard]] Value set_pending_stop_iteration_value(Value value);
-        Value pending_exception_object() const;
-        Value pending_stop_iteration_value() const;
+        Value pending_exception_object() const
+        {
+            assert(pending_exception.kind == PendingExceptionKind::Object);
+            return pending_exception.object.as_value();
+        }
+        Value pending_stop_iteration_value() const
+        {
+            assert(pending_exception.kind ==
+                   PendingExceptionKind::StopIteration);
+            return pending_exception.stop_iteration_value;
+        }
 
         static ThreadState *get_active()
         {

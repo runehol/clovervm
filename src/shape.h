@@ -142,7 +142,11 @@ namespace cl
             return size_for(shape->property_count());
         }
 
-        ClassObject *get_class() const;
+        ClassObject *get_class() const
+        {
+            return reinterpret_cast<ClassObject *>(
+                class_value.as_value().as.ptr);
+        }
         Shape *get_previous_shape() const;
         int32_t get_next_slot_index() const { return next_slot_index; }
         uint32_t get_inline_slot_count() const;

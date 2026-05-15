@@ -116,11 +116,6 @@ namespace cl
         }
     }
 
-    ClassObject *Shape::get_class() const
-    {
-        return class_value.as_value().get_ptr<ClassObject>();
-    }
-
     Shape *Shape::get_previous_shape() const { return previous_shape; }
 
     uint32_t Shape::get_inline_slot_count() const

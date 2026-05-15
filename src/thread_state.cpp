@@ -245,32 +245,6 @@ namespace cl
         return call_clovervm_method_with_args(receiver, name, args, 3);
     }
 
-    bool ThreadState::has_pending_exception() const
-    {
-        return pending_exception.kind != PendingExceptionKind::None;
-    }
-
-    PendingExceptionKind ThreadState::pending_exception_kind() const
-    {
-        return pending_exception.kind;
-    }
-
-    void ThreadState::clear_pending_exception()
-    {
-        pending_exception.kind = PendingExceptionKind::None;
-        pending_exception.object.clear();
-        pending_exception.stop_iteration_value = Value::not_present();
-    }
-
-    Value
-    ThreadState::set_pending_exception_object(TValue<ExceptionObject> exception)
-    {
-        pending_exception.object = exception;
-        pending_exception.stop_iteration_value = Value::not_present();
-        pending_exception.kind = PendingExceptionKind::Object;
-        return Value::exception_marker();
-    }
-
     Value ThreadState::set_pending_exception_string(TValue<ClassObject> type,
                                                     TValue<String> message)
     {
@@ -313,32 +287,12 @@ namespace cl
         return set_pending_builtin_exception_string(type_name, L"");
     }
 
-    Value ThreadState::set_pending_stop_iteration_no_value()
-    {
-        pending_exception.object.clear();
-        pending_exception.stop_iteration_value = Value::not_present();
-        pending_exception.kind = PendingExceptionKind::StopIteration;
-        return Value::exception_marker();
-    }
-
     Value ThreadState::set_pending_stop_iteration_value(Value value)
     {
         pending_exception.object.clear();
         pending_exception.stop_iteration_value = value;
         pending_exception.kind = PendingExceptionKind::StopIteration;
         return Value::exception_marker();
-    }
-
-    Value ThreadState::pending_exception_object() const
-    {
-        assert(pending_exception.kind == PendingExceptionKind::Object);
-        return pending_exception.object.as_value();
-    }
-
-    Value ThreadState::pending_stop_iteration_value() const
-    {
-        assert(pending_exception.kind == PendingExceptionKind::StopIteration);
-        return pending_exception.stop_iteration_value;
     }
 
     Shape *ThreadState::shape_of_inline_value(Value value) const
