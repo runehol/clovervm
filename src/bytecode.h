@@ -107,7 +107,6 @@ namespace cl
         AddSmi,
         SubSmi,
         MulSmi,
-        DivSmi,
         IntDivSmi,
         PowSmi,
         LeftShiftSmi,

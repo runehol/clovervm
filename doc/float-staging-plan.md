@@ -219,33 +219,38 @@ Validation:
 
 ## Stage 6: True Division
 
+Status: complete.
+
 Goal: implement Python 3 `/`.
 
 Implementation pieces:
 
-- implement `Div` as true division;
-- return `Float` for all accepted numeric combinations, including `int / int`;
-- accept:
-  - `int / int`;
-  - `float / float`;
-  - `float / int`;
-  - `int / float`;
-- promote both operands to `double`;
-- detect zero divisor before computing;
-- add builtin `ZeroDivisionError` if missing;
-- raise `ZeroDivisionError` for numeric division by zero;
-- tail-call onward for unsupported operand kinds.
+- [x] implement `Div` as true division;
+- [x] do not define a `DivSmi` opcode; the operator table lowers `/` only to
+  `Div`;
+- [x] return `Float` for all accepted numeric combinations, including
+  `int / int`;
+- [x] accept:
+  - [x] `int / int`;
+  - [x] `float / float`;
+  - [x] `float / int`;
+  - [x] `int / float`;
+- [x] promote both operands to `double`;
+- [x] detect zero divisor before computing;
+- [x] add builtin `ZeroDivisionError` if missing;
+- [x] raise `ZeroDivisionError` for numeric division by zero;
+- [x] report unsupported operand kinds as `TypeError`.
 
 Tests:
 
-- `1 / 2 == 0.5`;
-- `1.0 / 2 == 0.5`;
-- `1 / 2.0 == 0.5`;
-- `1.0 / 2.0 == 0.5`;
-- division by integer zero;
-- division by float positive zero;
-- division by float negative zero;
-- unsupported division reports a Python exception rather than generic C++
+- [x] `1 / 2 == 0.5`;
+- [x] `1.0 / 2 == 0.5`;
+- [x] `1 / 2.0 == 0.5`;
+- [x] `1.0 / 2.0 == 0.5`;
+- [x] division by integer zero;
+- [x] division by float positive zero;
+- [x] division by float negative zero;
+- [x] unsupported division reports a Python exception rather than generic C++
   failure.
 
 Non-goals:
@@ -256,7 +261,7 @@ Non-goals:
 
 Validation:
 
-- `ninja -C build-debug all check`.
+- [x] `ninja -C build-debug all check`.
 
 ## Stage 7: Float Comparisons
 

@@ -834,6 +834,37 @@ TEST(Interpreter, float_arithmetic_values)
     EXPECT_EQ(Value::from_smi(6), test_context.run_file(L"2 * 3\n"));
 }
 
+TEST(Interpreter, true_division_values)
+{
+    test::VmTestContext test_context;
+
+    auto expect_float_result = [&](const wchar_t *source, double expected) {
+        Value actual = test_context.run_file(source);
+        ASSERT_TRUE(can_convert_to<Float>(actual));
+        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
+    };
+
+    expect_float_result(L"1 / 2\n", 0.5);
+    expect_float_result(L"1.0 / 2\n", 0.5);
+    expect_float_result(L"1 / 2.0\n", 0.5);
+    expect_float_result(L"1.0 / 2.0\n", 0.5);
+}
+
+TEST(Interpreter, true_division_reports_zero_division)
+{
+    expect_python_error(L"1 / 0\n", L"ZeroDivisionError: division by zero");
+    expect_python_error(L"1 / 0.0\n", L"ZeroDivisionError: division by zero");
+    expect_python_error(L"1 / -0.0\n", L"ZeroDivisionError: division by zero");
+}
+
+TEST(Interpreter, true_division_reports_unsupported_operands)
+{
+    expect_python_error(L"\"a\" / 1\n",
+                        L"TypeError: unsupported operand type(s) for /");
+    expect_python_error(L"1 / \"a\"\n",
+                        L"TypeError: unsupported operand type(s) for /");
+}
+
 TEST(Interpreter, string_dunder_add_calls_native_function)
 {
     test::VmTestContext test_context;

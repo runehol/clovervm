@@ -42,7 +42,7 @@ namespace cl
         t.table[size_t(AstOperatorKind::MULTIPLY)] =
             OpTableEntry(Bytecode::Mul, Bytecode::MulSmi);
         t.table[size_t(AstOperatorKind::DIVIDE)] =
-            OpTableEntry(Bytecode::Div, Bytecode::DivSmi);
+            OpTableEntry(Bytecode::Div);
         t.table[size_t(AstOperatorKind::INT_DIVIDE)] =
             OpTableEntry(Bytecode::IntDiv, Bytecode::IntDivSmi);
         t.table[size_t(AstOperatorKind::POWER)] =

@@ -235,8 +235,6 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "SubSmi");
             case cl::Bytecode::MulSmi:
                 return format_to(out, "MulSmi");
-            case cl::Bytecode::DivSmi:
-                return format_to(out, "DivSmi");
             case cl::Bytecode::IntDivSmi:
                 return format_to(out, "IntDivSmi");
             case cl::Bytecode::PowSmi:
@@ -650,7 +648,6 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::AddSmi:
             case cl::Bytecode::SubSmi:
             case cl::Bytecode::MulSmi:
-            case cl::Bytecode::DivSmi:
             case cl::Bytecode::IntDivSmi:
             case cl::Bytecode::PowSmi:
             case cl::Bytecode::LeftShiftSmi:

@@ -146,6 +146,30 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE Value zero_division_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"ZeroDivisionError",
+            L"division by zero");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE Value unsupported_division_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"unsupported operand type(s) for /");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE Value local_name_error(PARAMS)
     {
         int8_t reg = pc[1];
@@ -891,6 +915,25 @@ namespace cl
 
         accumulator =
             thread->make_object_value<Float>(left * double(b.get_smi()));
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_div(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+
+        double left;
+        double right;
+        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        {
+            MUSTTAIL return unsupported_division_error(ARGS);
+        }
+        if(unlikely(right == 0.0))
+        {
+            MUSTTAIL return zero_division_error(ARGS);
+        }
+
+        accumulator = thread->make_object_value<Float>(left / right);
         COMPLETE();
     }
 
@@ -3251,6 +3294,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::SubSmi, op_sub_smi);
         SET_TABLE_ENTRY(Bytecode::Mul, op_mul);
         SET_TABLE_ENTRY(Bytecode::MulSmi, op_mul_smi);
+        SET_TABLE_ENTRY(Bytecode::Div, op_div);
 
         SET_TABLE_ENTRY(Bytecode::LeftShift, op_left_shift);
         SET_TABLE_ENTRY(Bytecode::LeftShiftSmi, op_left_shift_smi);
