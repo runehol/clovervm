@@ -10,9 +10,8 @@ namespace cl
 
     Instance::Instance(ClassObject *_cls) : SlotObject(_cls, native_layout)
     {
-        uint32_t inline_slot_count = inline_slot_count_for_class(_cls);
-        assert(inline_slot_count <= UINT16_MAX);
-        set_native_layout_aux_count(static_cast<uint16_t>(inline_slot_count));
+        assert(inline_slot_count_for_class(_cls) <= UINT16_MAX);
+        (void)_cls;
     }
 
     uint32_t Instance::inline_slot_count_for_class(ClassObject *cls)

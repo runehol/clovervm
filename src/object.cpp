@@ -173,7 +173,8 @@ namespace cl
 
         uint32_t instance_default_inline_slot_count =
             get_shape()->get_instance_default_inline_slot_count();
-        if(!native_layout_has_slots(native_layout_id()))
+        if(!native_layout_has_slots(native_layout_id()) ||
+           native_layout_id() == NativeLayoutId::Instance)
         {
             return;
         }
@@ -248,7 +249,7 @@ namespace cl
         StorageLocation new_location =
             next_shape->resolve_present_property(name);
         assert(new_location.is_found());
-        write_storage_location(new_location, value);
+        write_empty_storage_location(new_location, value);
         return true;
     }
 
@@ -275,7 +276,7 @@ namespace cl
         StorageLocation new_location =
             next_shape->resolve_present_property(name);
         assert(new_location.is_found());
-        write_storage_location(new_location, value);
+        write_empty_storage_location(new_location, value);
         return true;
     }
 
@@ -332,6 +333,56 @@ namespace cl
                     Value old_value = slots[location.physical_idx];
                     slots[location.physical_idx] = incref(value);
                     decref(old_value);
+                    return;
+                }
+            case StorageKind::Overflow:
+                {
+                    OverflowSlots *overflow_slots = get_overflow_slots();
+                    assert(overflow_slots != nullptr);
+                    assert(uint32_t(location.physical_idx) <
+                           overflow_slots->get_size());
+                    overflow_slots->set(location.physical_idx, value);
+                    return;
+                }
+        }
+        __builtin_unreachable();
+    }
+
+    void Object::write_empty_storage_location(StorageLocation location,
+                                              Value value)
+    {
+        switch(location.kind)
+        {
+            case StorageKind::Inline:
+                {
+                    Value *slots = inline_slot_base();
+                    uint32_t physical_idx =
+                        static_cast<uint32_t>(location.physical_idx);
+                    if(native_layout_id() == NativeLayoutId::Instance)
+                    {
+                        uint16_t initialized_slot_count =
+                            native_layout_aux_count_value();
+                        if(physical_idx >= initialized_slot_count)
+                        {
+                            assert(physical_idx < UINT16_MAX);
+                            for(uint32_t slot_idx = initialized_slot_count;
+                                slot_idx < physical_idx; ++slot_idx)
+                            {
+                                slots[slot_idx] = Value::not_present();
+                            }
+                            set_native_layout_aux_count(
+                                static_cast<uint16_t>(physical_idx + 1));
+                        }
+                        else
+                        {
+                            assert(slots[physical_idx].is_not_present());
+                        }
+                    }
+                    else
+                    {
+                        assert(slots[physical_idx].is_not_present());
+                    }
+                    slots[physical_idx] = incref(value);
                     return;
                 }
             case StorageKind::Overflow:

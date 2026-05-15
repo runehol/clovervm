@@ -71,6 +71,12 @@ namespace cl
         Value read_storage_location(StorageLocation location) const;
         void write_existing_storage_location(StorageLocation location,
                                              Value value);
+        // Writes a storage location whose previous logical value is known to
+        // be absent. Instance inline writes may initialize slots up to and
+        // including this location; existing-value overwrites and deletes must
+        // use write_storage_location instead so the old value is released.
+        void write_empty_storage_location(StorageLocation location,
+                                          Value value);
         void write_storage_location(StorageLocation location, Value value);
         ALWAYSINLINE Value *inline_slot_base();
         ALWAYSINLINE const Value *inline_slot_base() const;

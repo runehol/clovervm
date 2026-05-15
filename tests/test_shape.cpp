@@ -67,7 +67,7 @@ TEST(Shape, InstanceRootShapeCarriesPresentedClass)
         DescriptorFlag::StableSlot));
     EXPECT_TRUE(root_shape->get_descriptor_info(0).has_flag(
         DescriptorFlag::ShapeClassValue));
-    EXPECT_EQ(1, root_shape->get_next_slot_index());
+    EXPECT_EQ(0, root_shape->get_next_slot_index());
     EXPECT_EQ(2u, root_shape->get_instance_default_inline_slot_count());
 }
 
@@ -143,10 +143,10 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
     EXPECT_STREQ(L"a", shape_with_a->get_property_name(1).extract()->data);
     EXPECT_EQ(StorageKind::Inline,
               shape_with_a->get_property_storage_location(1).kind);
-    EXPECT_EQ(1, shape_with_a->get_property_storage_location(1).physical_idx);
+    EXPECT_EQ(0, shape_with_a->get_property_storage_location(1).physical_idx);
     EXPECT_FALSE(shape_with_a->get_descriptor_info(1).has_flag(
         DescriptorFlag::ReadOnly));
-    EXPECT_EQ(2, shape_with_a->get_next_slot_index());
+    EXPECT_EQ(1, shape_with_a->get_next_slot_index());
 
     ASSERT_EQ(3u, shape_with_ab->property_count());
     EXPECT_EQ(3u, shape_with_ab->present_count());
@@ -155,11 +155,11 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
                  shape_with_ab->get_property_name(0).extract()->data);
     EXPECT_STREQ(L"a", shape_with_ab->get_property_name(1).extract()->data);
     EXPECT_STREQ(L"b", shape_with_ab->get_property_name(2).extract()->data);
-    EXPECT_EQ(StorageKind::Overflow,
+    EXPECT_EQ(StorageKind::Inline,
               shape_with_ab->get_property_storage_location(2).kind);
-    EXPECT_EQ(0, shape_with_ab->get_property_storage_location(2).physical_idx);
+    EXPECT_EQ(1, shape_with_ab->get_property_storage_location(2).physical_idx);
     EXPECT_EQ(shape_with_a, shape_with_ab->get_previous_shape());
-    EXPECT_EQ(3, shape_with_ab->get_next_slot_index());
+    EXPECT_EQ(2, shape_with_ab->get_next_slot_index());
 
     ASSERT_EQ(2u, shape_with_b->property_count());
     EXPECT_EQ(2u, shape_with_b->present_count());
@@ -168,7 +168,7 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
                  shape_with_b->get_property_name(0).extract()->data);
     EXPECT_STREQ(L"b", shape_with_b->get_property_name(1).extract()->data);
     EXPECT_EQ(shape_with_ab, shape_with_b->get_previous_shape());
-    EXPECT_EQ(3, shape_with_b->get_next_slot_index());
+    EXPECT_EQ(2, shape_with_b->get_next_slot_index());
 }
 
 TEST(Shape, DescriptorLookupReportsPresentAndAbsentProperties)
@@ -315,8 +315,8 @@ TEST(Shape, StableSlotDeleteMovesDescriptorToLatentAndReAddReusesSlot)
     DescriptorLookup latent_lookup =
         shape_without_a->lookup_descriptor_including_latent(a_name);
     EXPECT_TRUE(latent_lookup.is_latent());
-    EXPECT_EQ(1, latent_lookup.info.physical_idx);
-    EXPECT_EQ(2, shape_without_a->get_next_slot_index());
+    EXPECT_EQ(0, latent_lookup.info.physical_idx);
+    EXPECT_EQ(1, shape_without_a->get_next_slot_index());
     EXPECT_FALSE(shape_without_a->resolve_present_property(a_name).is_found());
 
     Shape *shape_with_a_again =
@@ -324,11 +324,11 @@ TEST(Shape, StableSlotDeleteMovesDescriptorToLatentAndReAddReusesSlot)
     DescriptorLookup present_lookup =
         shape_with_a_again->lookup_descriptor_including_latent(a_name);
     EXPECT_TRUE(present_lookup.is_present());
-    EXPECT_EQ(1, present_lookup.info.physical_idx);
+    EXPECT_EQ(0, present_lookup.info.physical_idx);
     EXPECT_EQ(2u, shape_with_a_again->property_count());
     EXPECT_EQ(2u, shape_with_a_again->present_count());
     EXPECT_EQ(0u, shape_with_a_again->latent_count());
-    EXPECT_EQ(2, shape_with_a_again->get_next_slot_index());
+    EXPECT_EQ(1, shape_with_a_again->get_next_slot_index());
 }
 
 TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
@@ -362,8 +362,8 @@ TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
     EXPECT_STREQ(L"a", shape_with_ba->get_property_name(2).extract()->data);
     EXPECT_EQ(StorageKind::Overflow,
               shape_with_ba->get_property_storage_location(2).kind);
-    EXPECT_EQ(2, shape_with_ba->get_property_storage_location(2).physical_idx);
-    EXPECT_EQ(4, shape_with_ba->get_next_slot_index());
+    EXPECT_EQ(1, shape_with_ba->get_property_storage_location(2).physical_idx);
+    EXPECT_EQ(3, shape_with_ba->get_next_slot_index());
     EXPECT_EQ(1u, shape_with_ba->get_instance_default_inline_slot_count());
 }
 
@@ -431,7 +431,7 @@ TEST(Shape, InstanceStoresAndLoadsInlineOwnProperty)
 
     EXPECT_EQ(Value::from_smi(7), instance->get_own_property(a_name));
     EXPECT_EQ(2u, instance->get_shape()->property_count());
-    EXPECT_EQ(2, instance->get_shape()->get_next_slot_index());
+    EXPECT_EQ(1, instance->get_shape()->get_next_slot_index());
 }
 
 TEST(Shape, InstanceSpillsIntoGeometricallyGrowingOverflowStorage)
@@ -493,7 +493,7 @@ TEST(Shape, DeleteClearsSlotAndAllowsFreshReAdd)
 
     instance->set_own_property(a_name, Value::from_smi(12));
     EXPECT_EQ(Value::from_smi(12), instance->get_own_property(a_name));
-    EXPECT_EQ(4, instance->get_shape()->get_next_slot_index());
+    EXPECT_EQ(3, instance->get_shape()->get_next_slot_index());
 }
 
 TEST(Shape, TwoInstancesShareShapeTransitionsButHoldDistinctValues)

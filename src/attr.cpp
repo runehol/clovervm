@@ -652,7 +652,7 @@ namespace cl
         assert(plan.storage_kind == StorageKind::Inline);
         Object *object = receiver.get_ptr<Object>();
         object->set_shape(plan.next_shape);
-        object->write_storage_location(plan.storage_location(), value);
+        object->write_empty_storage_location(plan.storage_location(), value);
         return true;
     }
 

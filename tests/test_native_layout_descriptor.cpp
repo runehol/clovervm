@@ -158,8 +158,7 @@ TEST(NativeLayoutDescriptor, StaticObjectSizeQueryUsesDescriptorConstant)
     EXPECT_EQ(sizeof(List), object_size_in_bytes(list));
 }
 
-TEST(NativeLayoutDescriptor,
-     NewObjectSizeMatchesAllocatedObjectSizeAcrossNativeTypes)
+TEST(NativeLayoutDescriptor, NewObjectSizeReportsCurrentLayoutExtent)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -188,10 +187,8 @@ TEST(NativeLayoutDescriptor,
         context.vm().get_or_create_interned_string_value(L"SizedInstance"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 4, context.vm().object_class());
-    size_t expected_instance_size =
-        Instance::size_for(Instance::inline_slot_count_for_class(cls));
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
-    EXPECT_EQ(expected_instance_size, object_size_in_bytes(instance));
+    EXPECT_EQ(Instance::size_for(uint32_t{0}), object_size_in_bytes(instance));
 }
 
 TEST(NativeLayoutDescriptor, StringCustomObjectSizeUsesStoredCount)
@@ -296,7 +293,7 @@ TEST(NativeLayoutDescriptor, InstanceUsesDynamicAuxReleaseAndCustomObjectSize)
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
 }
 
-TEST(NativeLayoutDescriptor, InstanceAuxCountStoresPhysicalInlineSlotCount)
+TEST(NativeLayoutDescriptor, InstanceAuxCountTracksInitializedInlineSlots)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -312,8 +309,8 @@ TEST(NativeLayoutDescriptor, InstanceAuxCountStoresPhysicalInlineSlotCount)
     Instance *small = context.thread()->make_internal_raw<Instance>(small_cls);
     Instance *large = context.thread()->make_internal_raw<Instance>(large_cls);
 
-    EXPECT_EQ(1u, small->native_layout_aux_count_value());
-    EXPECT_EQ(7u, large->native_layout_aux_count_value());
+    EXPECT_EQ(0u, small->native_layout_aux_count_value());
+    EXPECT_EQ(0u, large->native_layout_aux_count_value());
 
     const ReleaseDescriptor &release =
         release_descriptor_for(Instance::native_layout);
@@ -324,7 +321,7 @@ TEST(NativeLayoutDescriptor, InstanceAuxCountStoresPhysicalInlineSlotCount)
               release.additional_release_count);
 }
 
-TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesAuxCount)
+TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesInitializedInlineSlots)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -339,9 +336,10 @@ TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesAuxCount)
 
     ASSERT_EQ(ObjectSizeKind::Custom, object_size.kind);
     ASSERT_NE(nullptr, object_size.custom_size_in_bytes);
-    EXPECT_EQ(Instance::size_for(4),
+    EXPECT_EQ(0u, instance->native_layout_aux_count_value());
+    EXPECT_EQ(Instance::size_for(uint32_t{0}),
               object_size.custom_size_in_bytes(instance));
-    EXPECT_EQ(Instance::size_for(4), object_size_in_bytes(instance));
+    EXPECT_EQ(Instance::size_for(uint32_t{0}), object_size_in_bytes(instance));
 }
 
 TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
@@ -360,8 +358,9 @@ TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
         cls_name, 1, context.vm().object_class());
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
-    ASSERT_EQ(1u, instance->native_layout_aux_count_value());
+    ASSERT_EQ(0u, instance->native_layout_aux_count_value());
     ASSERT_TRUE(instance->set_own_property(a_name, Value::from_smi(1)));
+    EXPECT_EQ(1u, instance->native_layout_aux_count_value());
     ASSERT_TRUE(instance->set_own_property(b_name, Value::from_smi(2)));
     ASSERT_TRUE(instance->set_own_property(c_name, Value::from_smi(3)));
 
@@ -369,6 +368,25 @@ TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
     EXPECT_EQ(Value::from_smi(2), instance->get_own_property(b_name));
     EXPECT_EQ(Value::from_smi(3), instance->get_own_property(c_name));
     EXPECT_EQ(1u, instance->native_layout_aux_count_value());
+}
+
+TEST(NativeLayoutDescriptor,
+     InstanceOverflowPropertiesDoNotInitializeInlineSlots)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TValue<String> cls_name(
+        context.vm().get_or_create_interned_string_value(L"OverflowOnly"));
+    TValue<String> attr_name(
+        context.vm().get_or_create_interned_string_value(L"attr"));
+    ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
+        cls_name, 0, context.vm().object_class());
+    Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
+
+    ASSERT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));
+
+    EXPECT_EQ(Value::from_smi(1), instance->get_own_property(attr_name));
+    EXPECT_EQ(0u, instance->native_layout_aux_count_value());
 }
 
 TEST(NativeLayoutDescriptor, CodeObjectUsesCustomDeallocDescriptor)

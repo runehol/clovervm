@@ -194,7 +194,7 @@ namespace cl
             Value::from_oop(this), dunder_class_name,
             DescriptorInfo::make(StorageLocation::not_found(),
                                  instance_class_flags),
-            1, instance_default_inline_slot_count, instance_shape_flags);
+            0, instance_default_inline_slot_count, instance_shape_flags);
 
         TValue<String> dunder_name_name = interned_string(L"__name__");
         TValue<String> dunder_bases_name = interned_string(L"__bases__");
