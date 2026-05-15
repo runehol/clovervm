@@ -172,21 +172,19 @@ namespace cl
         assert(instance_root_shape != nullptr);
 
         shape = incref(instance_root_shape);
-        if(native_layout_has_slots(native_layout_id()))
-        {
-            ensure_storage_for_shape(instance_root_shape);
-        }
-
-        uint32_t instance_default_inline_slot_count =
-            instance_root_shape->get_instance_default_inline_slot_count();
         if(!native_layout_has_slots(native_layout_id()) ||
            native_layout_id() == NativeLayoutId::Instance)
         {
             return;
         }
 
-        for(uint32_t slot_idx = 0;
-            slot_idx < instance_default_inline_slot_count; ++slot_idx)
+        int32_t next_slot_index = instance_root_shape->get_next_slot_index();
+        assert(next_slot_index >= 0);
+        assert(uint32_t(next_slot_index) <=
+               instance_root_shape->get_inline_slot_count());
+
+        for(uint32_t slot_idx = 0; slot_idx < uint32_t(next_slot_index);
+            ++slot_idx)
         {
             inline_slot_base()[slot_idx] = Value::not_present();
         }
