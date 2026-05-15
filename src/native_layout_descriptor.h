@@ -256,7 +256,7 @@ namespace cl
             descriptors[native_layout_index(NativeLayoutId::String)] =
                 legacy_release_descriptor();
             descriptors[native_layout_index(NativeLayoutId::List)] =
-                NativeLayoutTraits<NativeLayoutId::List>::release;
+                legacy_release_descriptor();
             descriptors[native_layout_index(NativeLayoutId::Tuple)] =
                 legacy_release_descriptor();
             descriptors[native_layout_index(NativeLayoutId::Dict)] =
@@ -297,6 +297,13 @@ namespace cl
                 legacy_release_descriptor();
             descriptors[native_layout_index(NativeLayoutId::TestOnly)] =
                 legacy_release_descriptor();
+
+#define CL_SET_NATIVE_RELEASE_DESCRIPTOR(type)                                 \
+    descriptors[native_layout_index(type::native_layout)] =                    \
+        NativeLayoutTraits<type::native_layout>::release
+            CL_NATIVE_LAYOUT_REGISTRY(CL_SET_NATIVE_RELEASE_DESCRIPTOR);
+#undef CL_SET_NATIVE_RELEASE_DESCRIPTOR
+
             return descriptors;
         }
 
@@ -311,7 +318,7 @@ namespace cl
             descriptors[native_layout_index(NativeLayoutId::String)] =
                 legacy_object_size_descriptor();
             descriptors[native_layout_index(NativeLayoutId::List)] =
-                NativeLayoutTraits<NativeLayoutId::List>::object_size;
+                legacy_object_size_descriptor();
             descriptors[native_layout_index(NativeLayoutId::Tuple)] =
                 legacy_object_size_descriptor();
             descriptors[native_layout_index(NativeLayoutId::Dict)] =
@@ -352,6 +359,13 @@ namespace cl
                 legacy_object_size_descriptor();
             descriptors[native_layout_index(NativeLayoutId::TestOnly)] =
                 legacy_object_size_descriptor();
+
+#define CL_SET_NATIVE_OBJECT_SIZE_DESCRIPTOR(type)                             \
+    descriptors[native_layout_index(type::native_layout)] =                    \
+        NativeLayoutTraits<type::native_layout>::object_size
+            CL_NATIVE_LAYOUT_REGISTRY(CL_SET_NATIVE_OBJECT_SIZE_DESCRIPTOR);
+#undef CL_SET_NATIVE_OBJECT_SIZE_DESCRIPTOR
+
             return descriptors;
         }
 

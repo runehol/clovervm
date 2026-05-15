@@ -104,18 +104,18 @@ Migrate fixed layouts first, in small groups.
 - [x] Add `NativeLayoutTraits`, `NativeLayoutReleaseDescriptorBuilder`, and
       `NativeLayoutObjectSizeDescriptorBuilder` so descriptor tables consume
       type-local native metadata mechanically.
-- [ ] During migration only, use legacy `HeapLayout` parity as a compatibility
+- [x] During migration only, use legacy `HeapLayout` parity as a compatibility
       check for migrated layouts. `Object`'s legacy value span includes its
       owned heap references; inline slot access uses `sizeof(Object)` directly
       instead of reusing the release span offset.
 - [x] Migrate `List`.
 - [ ] Migrate `Dict`.
 - [ ] Migrate `Function`.
-- [ ] Migrate `RangeIterator`.
-- [ ] Migrate `TupleIterator`.
-- [ ] Migrate `ListIterator`.
-- [ ] Migrate `Exception`.
-- [ ] Migrate `StopIteration`.
+- [x] Migrate `RangeIterator`.
+- [x] Migrate `TupleIterator`.
+- [x] Migrate `ListIterator`.
+- [x] Migrate `Exception`.
+- [x] Migrate `StopIteration`.
 - [ ] Migrate `String` after confirming its static release span and dynamic
       size query are represented cleanly.
 - [ ] Migrate `ClassObject` as a static release span while the `SlotObject`

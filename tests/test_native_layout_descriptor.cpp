@@ -1,23 +1,42 @@
+#include "exception_object.h"
 #include "list.h"
+#include "list_iterator.h"
 #include "native_layout_descriptor.h"
 #include "object.h"
+#include "range_iterator.h"
 #include "test_helpers.h"
 #include "thread_state.h"
+#include "tuple_iterator.h"
 
 #include <gtest/gtest.h>
 
 using namespace cl;
 
+namespace
+{
+    template <typename T> void expect_static_native_layout_descriptor()
+    {
+        const ReleaseDescriptor &release =
+            release_descriptor_for(T::native_layout);
+
+        EXPECT_EQ(ReleaseKind::StaticSpan, release.kind);
+        EXPECT_EQ(T::static_value_offset_in_words(),
+                  release.value_offset_words);
+        EXPECT_EQ(T::static_value_count(), release.static_release_count);
+        EXPECT_EQ(T::native_static_release_count(),
+                  release.static_release_count);
+
+        const ObjectSizeDescriptor &object_size =
+            object_size_descriptor_for(T::native_layout);
+
+        EXPECT_EQ(ObjectSizeKind::StaticSize, object_size.kind);
+        EXPECT_EQ(sizeof(T), object_size.static_size_in_bytes);
+    }
+}  // namespace
+
 TEST(NativeLayoutDescriptor, ListUsesNativeStaticReleaseDescriptor)
 {
-    const ReleaseDescriptor &descriptor =
-        release_descriptor_for(NativeLayoutId::List);
-
-    EXPECT_EQ(ReleaseKind::StaticSpan, descriptor.kind);
-    EXPECT_EQ(Object::native_value_offset_in_words(),
-              descriptor.value_offset_words);
-    EXPECT_EQ(List::native_static_release_count(),
-              descriptor.static_release_count);
+    expect_static_native_layout_descriptor<List>();
 }
 
 TEST(NativeLayoutDescriptor, ListNativeReleaseCountIncludesInheritedObjectCells)
@@ -42,13 +61,13 @@ TEST(NativeLayoutDescriptor, ListNativeReleaseSpanStartsAtInheritedObjectCells)
     EXPECT_EQ(List::native_static_release_count(), span.count);
 }
 
-TEST(NativeLayoutDescriptor, ListUsesNativeStaticObjectSizeDescriptor)
+TEST(NativeLayoutDescriptor, FixedObjectSubclassesUseNativeStaticDescriptors)
 {
-    const ObjectSizeDescriptor &descriptor =
-        object_size_descriptor_for(NativeLayoutId::List);
-
-    EXPECT_EQ(ObjectSizeKind::StaticSize, descriptor.kind);
-    EXPECT_EQ(sizeof(List), descriptor.static_size_in_bytes);
+    expect_static_native_layout_descriptor<RangeIterator>();
+    expect_static_native_layout_descriptor<TupleIterator>();
+    expect_static_native_layout_descriptor<ListIterator>();
+    expect_static_native_layout_descriptor<ExceptionObject>();
+    expect_static_native_layout_descriptor<StopIterationObject>();
 }
 
 TEST(NativeLayoutDescriptor, UnmigratedLayoutsStillUseLegacyReleaseDescriptor)

@@ -28,6 +28,9 @@ namespace cl
         MemberTValue<CLInt> stop;
         MemberTValue<CLInt> step;
 
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(RangeIterator, Object, 3);
+        CL_DECLARE_STATIC_OBJECT_SIZE(RangeIterator);
+
         CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(RangeIterator, Object, 3);
     };
 
