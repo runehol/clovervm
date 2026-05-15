@@ -172,11 +172,6 @@ namespace cl
         }
     }
 
-    ClassObject *class_for_native_layout(VirtualMachine *vm, NativeLayoutId id)
-    {
-        return vm->class_for_native_layout(id);
-    }
-
     void VirtualMachine::write_stdout(TValue<String> value)
     {
         String *string = value.extract();
@@ -217,6 +212,11 @@ namespace cl
                        native_layout_id)] == nullptr);
             class_for_native_layouts[static_cast<size_t>(native_layout_id)] =
                 definition.cls;
+            for(const std::unique_ptr<ThreadState> &thread: threads)
+            {
+                thread->cache_class_for_native_layout(native_layout_id,
+                                                      definition.cls);
+            }
         }
     }
 
@@ -382,6 +382,7 @@ namespace cl
     void VirtualMachine::initialize_builtin_scope()
     {
         initialize_builtin_types();
+        get_default_thread()->refresh_class_for_native_layout_cache();
 
         builtin_scope = HeapPtr<Scope>(
             get_default_thread()->make_internal_raw<Scope>(nullptr));

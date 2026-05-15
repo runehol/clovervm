@@ -1,6 +1,7 @@
 #ifndef CL_THREAD_STATE_H
 #define CL_THREAD_STATE_H
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -34,8 +35,6 @@ namespace cl
     void validate_zero_count_tables_for_reclamation(
         const std::vector<std::unique_ptr<ThreadState>> &threads);
 #endif
-
-    ClassObject *class_for_native_layout(VirtualMachine *vm, NativeLayoutId id);
 
     enum class PendingExceptionKind
     {
@@ -99,6 +98,11 @@ namespace cl
 
         ThreadState(VirtualMachine *_machine);
 
+        void refresh_class_for_native_layout_cache();
+        void cache_class_for_native_layout(NativeLayoutId id, ClassObject *cls)
+        {
+            class_for_native_layouts[static_cast<size_t>(id)] = cls;
+        }
         static void add_to_active_zero_count_table_if_needed(HeapObject *obj);
         void add_to_zero_count_table_if_needed(HeapObject *obj);
         void adopt_reclamation_state_from(ThreadState &child);
@@ -208,7 +212,10 @@ namespace cl
 
         ClassObject *class_for_native_layout(NativeLayoutId id) const
         {
-            return cl::class_for_native_layout(machine, id);
+            ClassObject *cls =
+                class_for_native_layouts[static_cast<size_t>(id)];
+            assert(cls != nullptr);
+            return cls;
         }
         ALWAYSINLINE Shape *shape_of_value(Value value) const
         {
@@ -278,6 +285,8 @@ namespace cl
         bool *safepoint_requested_ptr;
 
         ThreadLocalHeap refcounted_heap;
+        std::array<ClassObject *, static_cast<size_t>(NativeLayoutId::Count)>
+            class_for_native_layouts = {};
 
         std::vector<Value> stack;
         std::vector<HeapObject *> zero_count_table;

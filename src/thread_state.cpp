@@ -71,6 +71,16 @@ namespace cl
         initialize_clover_frame_sentinel(sentinel_fp);
         set_clover_frame_frontier(sentinel_fp);
         publish_safepoint_scan_record(sentinel_fp, Value::not_present());
+        refresh_class_for_native_layout_cache();
+    }
+
+    void ThreadState::refresh_class_for_native_layout_cache()
+    {
+        for(size_t idx = 0; idx < class_for_native_layouts.size(); ++idx)
+        {
+            class_for_native_layouts[idx] = machine->class_for_native_layout(
+                static_cast<NativeLayoutId>(idx));
+        }
     }
 
     void
