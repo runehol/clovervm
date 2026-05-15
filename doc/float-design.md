@@ -5,6 +5,10 @@ initial target is not complete Python numeric behavior. The target is enough
 correct, explicit float support to run an adapted Benchmarks Game `nbody`
 benchmark while preserving the existing small-integer fast paths.
 
+Status: this design has been implemented through the adapted `nbody` benchmark.
+This document is retained as rationale and future-work context; the completed
+execution checklist lives in `doc/float-staging-plan.md`.
+
 ## Goals
 
 - Represent Python `float` values as heap objects backed by C++ `double`.
@@ -294,30 +298,9 @@ convenience, not a VM constraint. We can later decide whether `nbody` returns a
 `Value`, returns no meaningful result and uses `benchmark::DoNotOptimize`, or
 uses a benchmark-specific validation path.
 
-## Testing Plan
-
-Interpreter tests should cover:
-
-- float literal creation and class identity;
-- `repr` and `str`;
-- truthiness for `0.0`, `-0.0`, nonzero finite values, and NaN if a NaN source
-  exists;
-- `+`, `-`, `*`, `/` for float/float, int/float, and float/int;
-- true division for int/int;
-- division by zero raising `ZeroDivisionError`;
-- comparison operations across float/float and mixed int/float cases;
-- unsupported operations raising a Python exception rather than a generic C++
-  failure.
-
-Tokenizer/parser tests should cover the accepted literal forms and invalid
-boundaries.
-
-Benchmark tests should wait until the adapted `nbody` source exists. The float
-runtime should not be shaped around temporary harness limitations.
-
 ## Future Work
 
-After the literal-backed float type is working, later steps can add:
+Future steps can add:
 
 - `float.__new__` once general `__new__` semantics are implemented;
 - `float(...)` conversions;
