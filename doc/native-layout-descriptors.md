@@ -93,11 +93,10 @@ The hot release table should stay small:
 
 ```cpp
 enum class ReleaseKind : uint8_t {
-    Missing,
+    CustomDealloc,
     StaticSpan,
     DynamicSmiSpan,
     DynamicAuxSpan,
-    CustomDealloc,
 };
 
 struct ReleaseDescriptor {
@@ -109,6 +108,11 @@ struct ReleaseDescriptor {
     void (*custom_dealloc)(HeapObject *);
 };
 ```
+
+`CustomDealloc` is intentionally the zero value. A default-initialized release
+descriptor is encoded as `CustomDealloc` with `custom_dealloc == nullptr`,
+which validation treats as an unfilled table entry. Public descriptor lookup
+asserts that the selected entry is valid before returning it.
 
 `StaticSpan`, `DynamicSmiSpan`, and `DynamicAuxSpan` are the fast forms
 for trivially destructible objects whose owned references are represented as one
@@ -603,6 +607,12 @@ Static size expands to `ObjectSizeKind::StaticSize` and
 to `ObjectSizeKind::Custom` and a type-local
 `native_object_size_in_bytes(const HeapObject *)` wrapper around the supplied
 function.
+
+`ObjectSizeKind::Custom` is the zero value for the same reason as
+`CustomDealloc`: a default-initialized object-size descriptor has a null custom
+size callback and is invalid until a registered native layout fills the table
+entry. `TestOnly` is intentionally left in that invalid state while the
+remaining test-only layouts are parked.
 
 The final namespace-scope macro is intentionally boring:
 

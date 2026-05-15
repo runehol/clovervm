@@ -17,8 +17,6 @@ namespace cl
             case ObjectSizeKind::Custom:
                 assert(descriptor.custom_size_in_bytes != nullptr);
                 return descriptor.custom_size_in_bytes(obj);
-            case ObjectSizeKind::Missing:
-                break;
         }
 
         assert(false && "object-size descriptor kind not implemented yet");

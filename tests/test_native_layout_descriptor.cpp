@@ -571,10 +571,22 @@ TEST(NativeLayoutDescriptor, HeapPtrArrayBackingNativeReleaseSpanUsesCellCount)
     EXPECT_EQ(HeapPtrArrayBacking::size_for(3), object_size_in_bytes(backing));
 }
 
-TEST(NativeLayoutDescriptor, TestOnlyDescriptorsAreMissing)
+TEST(NativeLayoutDescriptor, TestOnlyDescriptorsAreInvalid)
 {
-    EXPECT_EQ(ReleaseKind::Missing,
-              release_descriptor_for(NativeLayoutId::TestOnly).kind);
-    EXPECT_EQ(ObjectSizeKind::Missing,
-              object_size_descriptor_for(NativeLayoutId::TestOnly).kind);
+    size_t test_only_index =
+        native_layout_descriptor_detail::native_layout_index(
+            NativeLayoutId::TestOnly);
+    const auto &release_descriptors =
+        native_layout_descriptor_detail::release_descriptors;
+    const auto &object_size_descriptors =
+        native_layout_descriptor_detail::object_size_descriptors;
+    const ReleaseDescriptor &release = release_descriptors[test_only_index];
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptors[test_only_index];
+
+    EXPECT_FALSE(
+        native_layout_descriptor_detail::release_descriptor_is_valid(release));
+    EXPECT_FALSE(
+        native_layout_descriptor_detail::object_size_descriptor_is_valid(
+            object_size));
 }

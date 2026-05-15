@@ -23,11 +23,6 @@ namespace cl
         uint32_t additional_release_count;
         void (*custom_dealloc)(HeapObject *);
 
-        static constexpr ReleaseDescriptor missing()
-        {
-            return ReleaseDescriptor{ReleaseKind::Missing, 0, 0, 0, 0, nullptr};
-        }
-
         static constexpr ReleaseDescriptor
         static_span(uint16_t value_offset_words, uint32_t release_count)
         {
@@ -74,11 +69,6 @@ namespace cl
         ObjectSizeKind kind;
         size_t static_size_in_bytes;
         size_t (*custom_size_in_bytes)(const HeapObject *);
-
-        static constexpr ObjectSizeDescriptor missing()
-        {
-            return ObjectSizeDescriptor{ObjectSizeKind::Missing, 0, nullptr};
-        }
 
         static constexpr ObjectSizeDescriptor static_size(size_t size_in_bytes)
         {
@@ -172,11 +162,37 @@ namespace cl
             return static_cast<size_t>(native_layout);
         }
 
-        template <typename Descriptor, typename Kind>
-        constexpr bool descriptor_table_is_complete(
-            const std::array<Descriptor, native_layout_descriptor_count()>
-                &descriptors,
-            Kind missing_kind)
+        constexpr bool
+        release_descriptor_is_valid(const ReleaseDescriptor &descriptor)
+        {
+            switch(descriptor.kind)
+            {
+                case ReleaseKind::CustomDealloc:
+                    return descriptor.custom_dealloc != nullptr;
+                case ReleaseKind::StaticSpan:
+                case ReleaseKind::DynamicSmiSpan:
+                case ReleaseKind::DynamicAuxSpan:
+                    return true;
+            }
+            return false;
+        }
+
+        constexpr bool
+        object_size_descriptor_is_valid(const ObjectSizeDescriptor &descriptor)
+        {
+            switch(descriptor.kind)
+            {
+                case ObjectSizeKind::Custom:
+                    return descriptor.custom_size_in_bytes != nullptr;
+                case ObjectSizeKind::StaticSize:
+                    return true;
+            }
+            return false;
+        }
+
+        constexpr bool release_descriptor_table_is_complete(
+            const std::array<ReleaseDescriptor,
+                             native_layout_descriptor_count()> &descriptors)
         {
             for(size_t idx = native_layout_index(NativeLayoutId::Invalid) + 1;
                 idx < native_layout_descriptor_count(); ++idx)
@@ -185,7 +201,26 @@ namespace cl
                 {
                     continue;
                 }
-                if(descriptors[idx].kind == missing_kind)
+                if(!release_descriptor_is_valid(descriptors[idx]))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        constexpr bool object_size_descriptor_table_is_complete(
+            const std::array<ObjectSizeDescriptor,
+                             native_layout_descriptor_count()> &descriptors)
+        {
+            for(size_t idx = native_layout_index(NativeLayoutId::Invalid) + 1;
+                idx < native_layout_descriptor_count(); ++idx)
+            {
+                if(idx == native_layout_index(NativeLayoutId::TestOnly))
+                {
+                    continue;
+                }
+                if(!object_size_descriptor_is_valid(descriptors[idx]))
                 {
                     return false;
                 }
@@ -227,15 +262,13 @@ namespace cl
 
         inline constexpr std::array release_descriptors =
             make_release_descriptors();
-        static_assert(descriptor_table_is_complete(release_descriptors,
-                                                   ReleaseKind::Missing),
+        static_assert(release_descriptor_table_is_complete(release_descriptors),
                       "Every native layout ID must have a release descriptor");
 
         inline constexpr std::array object_size_descriptors =
             make_object_size_descriptors();
         static_assert(
-            descriptor_table_is_complete(object_size_descriptors,
-                                         ObjectSizeKind::Missing),
+            object_size_descriptor_table_is_complete(object_size_descriptors),
             "Every native layout ID must have an object-size descriptor");
     }  // namespace native_layout_descriptor_detail
 
@@ -245,9 +278,13 @@ namespace cl
         assert(native_layout != NativeLayoutId::Invalid);
         assert(native_layout_descriptor_detail::native_layout_index(
                    native_layout) < native_layout_descriptor_count());
-        return native_layout_descriptor_detail::release_descriptors
-            [native_layout_descriptor_detail::native_layout_index(
-                native_layout)];
+        const ReleaseDescriptor &descriptor =
+            native_layout_descriptor_detail::release_descriptors
+                [native_layout_descriptor_detail::native_layout_index(
+                    native_layout)];
+        assert(native_layout_descriptor_detail::release_descriptor_is_valid(
+            descriptor));
+        return descriptor;
     }
 
     inline const ObjectSizeDescriptor &
@@ -256,9 +293,13 @@ namespace cl
         assert(native_layout != NativeLayoutId::Invalid);
         assert(native_layout_descriptor_detail::native_layout_index(
                    native_layout) < native_layout_descriptor_count());
-        return native_layout_descriptor_detail::object_size_descriptors
-            [native_layout_descriptor_detail::native_layout_index(
-                native_layout)];
+        const ObjectSizeDescriptor &descriptor =
+            native_layout_descriptor_detail::object_size_descriptors
+                [native_layout_descriptor_detail::native_layout_index(
+                    native_layout)];
+        assert(native_layout_descriptor_detail::object_size_descriptor_is_valid(
+            descriptor));
+        return descriptor;
     }
 
     size_t object_size_in_bytes(const HeapObject *obj);

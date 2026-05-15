@@ -59,9 +59,6 @@ namespace cl
                         assert(descriptor.custom_dealloc != nullptr);
                         descriptor.custom_dealloc(obj);
                         break;
-                    case ReleaseKind::Missing:
-                        assert(false && "missing native release descriptor");
-                        __builtin_unreachable();
                 }
 
                 finish_reclaim_object(obj);

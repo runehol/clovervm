@@ -10,18 +10,16 @@ namespace cl
 {
     enum class ReleaseKind : uint8_t
     {
-        Missing,
+        CustomDealloc,
         StaticSpan,
         DynamicSmiSpan,
         DynamicAuxSpan,
-        CustomDealloc,
     };
 
     enum class ObjectSizeKind : uint8_t
     {
-        Missing,
-        StaticSize,
         Custom,
+        StaticSize,
     };
 
 #define CL_DECLARE_EMPTY_VALUE_SPAN(type)                                      \
