@@ -240,7 +240,10 @@ namespace cl
         uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
         ASSERT_EQ(valid_objects_before_alloc + 2, valid_objects_after_alloc);
 
-        context.vm().run_heap_reclamation();
+        {
+            ThreadState::NoActiveThreadScope no_active_thread;
+            context.vm().run_heap_reclamation();
+        }
 
         EXPECT_EQ(valid_objects_after_alloc - 2,
                   heap.count_valid_objects_slow());

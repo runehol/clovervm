@@ -47,7 +47,7 @@ namespace cl
         uint32_t static_release_count;
         uint16_t count_offset_words;
         uint32_t additional_release_count;
-        void (*custom_release)(HeapObject *);
+        void (*custom_dealloc)(HeapObject *);
 
         static constexpr ReleaseDescriptor missing()
         {
@@ -94,10 +94,10 @@ namespace cl
         }
 
         static constexpr ReleaseDescriptor
-        custom(void (*custom_release)(HeapObject *))
+        custom(void (*custom_dealloc)(HeapObject *))
         {
             return ReleaseDescriptor{ReleaseKind::Custom, 0, 0, 0, 0,
-                                     custom_release};
+                                     custom_dealloc};
         }
     };
 
@@ -177,7 +177,7 @@ namespace cl
                 }
                 else
                 {
-                    return ReleaseDescriptor::custom(T::native_custom_release);
+                    return ReleaseDescriptor::custom(T::native_dealloc);
                 }
             }
         };

@@ -175,13 +175,18 @@ object header, while `Shape` remains responsible for semantic storage.
 Deliverable: size queries no longer need to decode packed `HeapLayout`, but
 allocation remains type-directed.
 
-## Stage 8: Custom Release Layouts
+## Stage 8: Custom Dealloc Layouts
 
-- [ ] Add custom release descriptor support.
-- [ ] Migrate `CodeObject` to custom release.
-- [ ] Ensure custom release clears owned cells before releasing copied values
-      where applicable.
-- [ ] Keep custom release entries cold and explicit.
+- [ ] Install the reclaimed `ThreadState` as active while processing that
+      thread's zero-count table and young slabs, for custom deallocators that
+      call `decref()`/`Py_DecRef()`.
+- [ ] Keep static and dynamic span reclamation on the direct current-ZCT path;
+      do not route those hot paths through active-thread lookup.
+- [ ] Add custom `tp_dealloc`-style descriptor support.
+- [ ] Migrate `CodeObject` to custom dealloc.
+- [ ] Ensure custom dealloc clears owned cells before releasing copied values
+      where applicable, then runs required native C++ payload teardown.
+- [ ] Keep custom dealloc entries cold and explicit.
 - [ ] Do not use custom callbacks for layouts that fit the static or dynamic
       span forms.
 
@@ -194,7 +199,7 @@ spans have explicit custom teardown.
       on `HeapObject`.
 - [ ] Migrate `ValidityCell`.
 - [ ] Migrate `Scope`.
-- [ ] Migrate `Shape`, likely with custom release because of transition vector
+- [ ] Migrate `Shape`, likely with custom dealloc because of transition vector
       ownership.
 - [ ] Migrate `OverflowSlots`.
 - [ ] Erase template backing records into concrete native-layout types where

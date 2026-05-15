@@ -65,12 +65,12 @@ a normalized release descriptor:
   a fixed offset from the object header
 - a dynamic contiguous `Value` span whose count is stored in the heap object's
   small auxiliary count field
-- a cold custom release function
+- a cold custom dealloc function
 
 Objects with no owned cells should use `StaticSpan` with count zero. This keeps
 the release path from needing a separate no-values branch.
 
-Custom callbacks are escape hatches for layouts that cannot be described by this
+Custom dealloc callbacks are escape hatches for layouts that cannot be described by this
 normal form, such as `CodeObject` or objects with non-trivial C++ destructors.
 This keeps reclamation friendly to branch prediction: most heap objects flow
 through one predictable metadata-descriptor path instead of a large,
@@ -105,18 +105,27 @@ struct ReleaseDescriptor {
     uint32_t static_release_count;
     uint16_t count_offset_words;
     uint32_t additional_release_count;
-    void (*custom_release)(HeapObject *, ReclamationContext &);
+    void (*custom_dealloc)(HeapObject *);
 };
 ```
 
 `StaticSpan`, `DynamicSmiSpan`, and `DynamicAuxSpan` are the fast forms
 for trivially destructible objects whose owned references are represented as one
 contiguous `Value` span. The generic release loop visits cells in order, clears
-each cell, and releases the copied value through the reclamation path.
+each cell, and releases the copied value through the reclamation context's
+direct zero-count-table path. It does not call `decref()` or look up the active
+thread through TLS.
 
-`Custom` means the type owns its whole release procedure. A custom release
-function must release owned references in the correct order and run any required
-native teardown, including a non-trivial C++ destructor.
+`Custom` means the type owns its whole `tp_dealloc`-style procedure. A custom
+deallocator must release owned references in the correct order and run any
+required native teardown, including non-trivial C++ payload destruction. It runs
+while heap reclamation has installed the owning `ThreadState` as the active
+thread, so it may use ordinary `decref()`/`Py_DecRef()` and route cascaded
+zero-count objects into that thread's zero-count table.
+
+C++ destructors should stay context-free. If a custom deallocator invokes a C++
+destructor, it must first drain VM references that would otherwise decref from
+that destructor implicitly.
 
 For dynamic spans, the dynamic count source is either:
 
@@ -197,7 +206,7 @@ decoding one packed header format.
 - Mechanism: refcount/safepoint engine asks “how do I release this object's
   owned contents?”
 - Policy: release entry answers with exact static data, a dynamic local count
-  load, or an explicit cold custom release function
+  load, or an explicit cold custom dealloc function
 
 This can simplify future features (layout specialization, inline storage
 variants, extension shims).
@@ -212,7 +221,7 @@ For hot paths, this is likely acceptable if:
 - static entries are fully inlineable via small IDs + contiguous table
 - the normalized static and dynamic span paths handle most native objects,
   including zero-cell objects as `StaticSpan`
-- custom release functions are rare/cold compared to descriptor objects
+- custom dealloc functions are rare/cold compared to descriptor objects
 
 Still, this is a measurable tradeoff vs reading packed fields directly.
 
@@ -237,9 +246,10 @@ based release. During migration, mixed modes can complicate debugging.
 
 Delegating to `tp_dealloc` requires strict guardrails:
 
+- install the reclaimed thread as active before the call
 - ensure object is in valid terminal state before call
 - prevent double-destruction in mixed ownership flows
-- define exactly when VM decrefs child references vs when extension does
+- define that custom deallocators own both child decrefs and native teardown
 
 Without clear contracts, bugs here can be catastrophic.
 
@@ -462,7 +472,7 @@ For `Instance`, the declaration would use the heap-object auxiliary count as
 the dynamic count and the class-local first owned value as the release-span
 start. It does not require `SlotObject` to exist first.
 
-For a custom release object:
+For a custom dealloc object:
 
 ```cpp
 class CodeObject : public Object {
@@ -471,7 +481,7 @@ public:
         NativeLayoutId::CodeObject;
     ...
 
-    CL_DECLARE_CUSTOM_VALUE_RELEASE(CodeObject, release_contents);
+    CL_DECLARE_CUSTOM_DEALLOC(CodeObject, dealloc);
     CL_DECLARE_STATIC_OBJECT_SIZE(CodeObject);
 };
 
@@ -493,7 +503,7 @@ CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN(type, count, first, additional)
 CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN_EXTENDS(type, base, count, own_additional)
 CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(type, first, additional)
 CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(type, base, own_additional)
-CL_DECLARE_CUSTOM_VALUE_RELEASE(type, function)    // Custom
+CL_DECLARE_CUSTOM_DEALLOC(type, function)          // Custom
 ```
 
 These macros expand inside the class body, so they may safely compute offsets
@@ -641,7 +651,7 @@ struct NativeLayoutReleaseDescriptorBuilder
         }
         else
         {
-            return ReleaseDescriptor::custom(T::native_custom_release);
+            return ReleaseDescriptor::custom(T::native_dealloc);
         }
     }
 };
@@ -679,7 +689,7 @@ their owning object's static span. Their backing heap records should be erased
 into concrete native-layout types, such as `ValueArrayBacking` and
 `RawArrayBacking`, so one native ID describes one actual heap layout.
 
-`CodeObject` should be an explicit cold custom release case. Code objects
+`CodeObject` should be an explicit cold custom dealloc case. Code objects
 are rarely reclaimed, and their `std::vector<OwnedValue>` storage does not fit
 the normal contiguous object-local span model. This is an acceptable tradeoff as
 long as the descriptor says `Custom` rather than pretending the fixed inline
@@ -764,7 +774,7 @@ number of `Entry` objects. This keeps the hot release loop free of scale factors
    In particular, use the heap-object auxiliary count for dynamic-size
    `Instance` layouts, and make array backing records remember their physical
    dynamic counts directly.
-5. **Add custom release functions only where descriptors are insufficient.**
+5. **Add custom dealloc functions only where descriptors are insufficient.**
    `CodeObject` is expected to use this path.
 6. **Optionally refactor slot-bearing objects into `SlotObject`.**
    This can happen after descriptors are in place. The class-local offset
@@ -789,7 +799,7 @@ In short:
   backing records and the heap-object auxiliary count for hot slot objects.
 - **Yes** to deferring the `SlotObject` refactor; descriptors should not depend
   on it.
-- **Yes** to explicit cold custom release functions where the normal metadata form is
+- **Yes** to explicit cold custom dealloc functions where the normal metadata form is
   insufficient, especially `CodeObject`.
 - **Yes** to `NativeLayoutTraits<NativeLayoutId::...>` definitions near class
   definitions.

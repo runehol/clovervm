@@ -70,6 +70,14 @@ namespace
                                               values);
     };
 
+    class CustomDeallocTestObject : public HeapObject
+    {
+    public:
+        static void dealloc(HeapObject *) {}
+
+        CL_DECLARE_CUSTOM_DEALLOC(CustomDeallocTestObject, dealloc);
+    };
+
     template <typename T> void expect_static_native_layout_descriptor()
     {
         const ReleaseDescriptor &release =
@@ -93,6 +101,16 @@ namespace
 TEST(NativeLayoutDescriptor, ListUsesNativeStaticReleaseDescriptor)
 {
     expect_static_native_layout_descriptor<List>();
+}
+
+TEST(NativeLayoutDescriptor, CustomDeallocDeclarationBuildsDescriptor)
+{
+    const ReleaseDescriptor release =
+        native_layout_descriptor_detail::NativeLayoutReleaseDescriptorBuilder<
+            CustomDeallocTestObject>::build();
+
+    EXPECT_EQ(ReleaseKind::Custom, release.kind);
+    EXPECT_EQ(CustomDeallocTestObject::dealloc, release.custom_dealloc);
 }
 
 TEST(NativeLayoutDescriptor, ListNativeReleaseCountIncludesInheritedObjectCells)

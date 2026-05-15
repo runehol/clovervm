@@ -143,10 +143,10 @@ namespace cl
                own_additional_release_count_expr;                              \
     }
 
-#define CL_DECLARE_CUSTOM_VALUE_RELEASE(type, function)                        \
+#define CL_DECLARE_CUSTOM_DEALLOC(type, function)                              \
     static constexpr NativeValueSpanKind native_value_span_kind =              \
         NativeValueSpanKind::Custom;                                           \
-    static constexpr auto native_custom_release = function;
+    static constexpr auto native_dealloc = function;
 
 #define CL_DECLARE_STATIC_OBJECT_SIZE(type)                                    \
     static constexpr NativeObjectSizeKind native_object_size_kind =            \

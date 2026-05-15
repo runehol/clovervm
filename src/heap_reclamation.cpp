@@ -35,6 +35,22 @@ namespace cl
 
             void reclaim_object(HeapObject *obj)
             {
+                assert(obj != nullptr);
+                assert(obj->lifecycle_state == HeapLifecycleState::Reclaiming);
+                const ReleaseDescriptor &descriptor =
+                    release_descriptor_for(obj->native_layout_id());
+                if(descriptor.kind == ReleaseKind::Custom)
+                {
+                    assert(descriptor.custom_dealloc != nullptr);
+                    SlabAllocator *slab =
+                        refcounted_heap.slab_for_object_unlocked(obj);
+                    descriptor.custom_dealloc(obj);
+                    obj->lifecycle_state = HeapLifecycleState::Dead;
+                    slab->clear_valid_object(obj);
+                    remember_release_candidate(slab);
+                    return;
+                }
+
                 reclaim_object(obj, value_span_for_release(obj));
             }
 
@@ -131,10 +147,8 @@ namespace cl
                     zero_count_table[keep++] = obj;
                     continue;
                 }
-                NativeValueSpan value_span = value_span_for_release(obj);
-
                 obj->lifecycle_state = HeapLifecycleState::Reclaiming;
-                context.reclaim_object(obj, value_span);
+                context.reclaim_object(obj);
             }
 
             zero_count_table.resize(keep);
@@ -240,6 +254,7 @@ namespace cl
         ReclamationContext reclamation_context(
             thread.get_machine()->get_refcounted_global_heap(),
             zero_count_table);
+        ThreadState::ActivationScope active_thread(&thread);
         process_zero_count_table_entries(zero_count_table, thread, roots,
                                          reclamation_context);
         scan_epoch_slab_bitmaps(thread.refcounted_heap, zero_count_table, roots,
