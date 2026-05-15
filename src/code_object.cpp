@@ -1,9 +1,51 @@
 #include "code_object.h"
 #include "class_object.h"
+#include "overflow_slots.h"
+#include "refcount.h"
+#include "shape.h"
 #include "virtual_machine.h"
+
+#include <cassert>
 
 namespace cl
 {
+    void CodeObject::dealloc(HeapObject *obj)
+    {
+        assert(obj->native_layout_id() == native_layout);
+        CodeObject *code_object = static_cast<CodeObject *>(obj);
+
+        decref_heap_ptr(code_object->shape);
+        code_object->shape = nullptr;
+        decref_heap_ptr(code_object->overflow_storage);
+        code_object->overflow_storage = nullptr;
+
+        decref_heap_ptr(code_object->module_scope.release());
+        decref_heap_ptr(code_object->local_scope.release());
+        decref(code_object->name.release());
+        decref(code_object->docstring.release());
+
+        for(OwnedValue &constant: code_object->constant_table)
+        {
+            decref(constant.release());
+        }
+
+        for(AttributeReadInlineCache &cache: code_object->attribute_read_caches)
+        {
+            cache.clear();
+        }
+        for(AttributeMutationInlineCache &cache:
+            code_object->attribute_mutation_caches)
+        {
+            cache.clear();
+        }
+        for(FunctionCallInlineCache &cache: code_object->function_call_caches)
+        {
+            cache = FunctionCallInlineCache{};
+        }
+
+        code_object->~CodeObject();
+    }
+
     BuiltinClassDefinition make_code_object_class(VirtualMachine *vm)
     {
         static constexpr NativeLayoutId native_layout_ids[] = {

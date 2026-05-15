@@ -414,10 +414,25 @@ TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
               value_span_for_release(instance).count);
 }
 
+TEST(NativeLayoutDescriptor, CodeObjectUsesCustomDeallocDescriptor)
+{
+    const ReleaseDescriptor &release =
+        release_descriptor_for(CodeObject::native_layout);
+
+    EXPECT_EQ(ReleaseKind::Custom, release.kind);
+    EXPECT_EQ(CodeObject::dealloc, release.custom_dealloc);
+
+    const ObjectSizeDescriptor &object_size =
+        object_size_descriptor_for(CodeObject::native_layout);
+
+    EXPECT_EQ(ObjectSizeKind::StaticSize, object_size.kind);
+    EXPECT_EQ(sizeof(CodeObject), object_size.static_size_in_bytes);
+}
+
 TEST(NativeLayoutDescriptor, UnmigratedLayoutsStillUseLegacyReleaseDescriptor)
 {
     EXPECT_EQ(ReleaseKind::LegacyHeapLayout,
-              release_descriptor_for(NativeLayoutId::CodeObject).kind);
+              release_descriptor_for(NativeLayoutId::Scope).kind);
 }
 
 TEST(NativeLayoutDescriptor, LegacyObjectSizeQueryUsesHeapLayout)

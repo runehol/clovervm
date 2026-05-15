@@ -2,6 +2,7 @@
 #define CL_NATIVE_LAYOUT_REGISTRY_H
 
 #include "class_object.h"
+#include "code_object.h"
 #include "dict.h"
 #include "exception_object.h"
 #include "function.h"
@@ -25,6 +26,7 @@
     V(Dict);                                                                   \
     V(String);                                                                 \
     V(Instance);                                                               \
+    V(CodeObject);                                                             \
     V(ClassObject);
 
 #endif  // CL_NATIVE_LAYOUT_REGISTRY_H

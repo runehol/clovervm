@@ -177,17 +177,17 @@ allocation remains type-directed.
 
 ## Stage 8: Custom Dealloc Layouts
 
-- [ ] Install the reclaimed `ThreadState` as active while processing that
+- [x] Install the reclaimed `ThreadState` as active while processing that
       thread's zero-count table and young slabs, for custom deallocators that
       call `decref()`/`Py_DecRef()`.
-- [ ] Keep static and dynamic span reclamation on the direct current-ZCT path;
+- [x] Keep static and dynamic span reclamation on the direct current-ZCT path;
       do not route those hot paths through active-thread lookup.
-- [ ] Add custom `tp_dealloc`-style descriptor support.
-- [ ] Migrate `CodeObject` to custom dealloc.
-- [ ] Ensure custom dealloc clears owned cells before releasing copied values
+- [x] Add custom `tp_dealloc`-style descriptor support.
+- [x] Migrate `CodeObject` to custom dealloc.
+- [x] Ensure custom dealloc clears owned cells before releasing copied values
       where applicable, then runs required native C++ payload teardown.
-- [ ] Keep custom dealloc entries cold and explicit.
-- [ ] Do not use custom callbacks for layouts that fit the static or dynamic
+- [x] Keep custom dealloc entries cold and explicit.
+- [x] Do not use custom callbacks for layouts that fit the static or dynamic
       span forms.
 
 Deliverable: layouts that cannot honestly be represented as contiguous value

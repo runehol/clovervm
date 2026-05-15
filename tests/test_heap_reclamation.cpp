@@ -251,6 +251,39 @@ namespace cl
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(child));
     }
 
+    TEST(HeapReclamation, CodeObjectCustomDeallocReclaimsConstantTableChild)
+    {
+        test::VmTestContext context;
+        ThreadState *thread = context.thread();
+        ThreadState::ActivationScope active_thread(thread);
+        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
+        context.vm().run_heap_reclamation();
+        uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
+
+        String *child = thread->make_object_raw<String>(L"code-constant");
+        CodeObject *code_object = thread->make_object_raw<CodeObject>(
+            nullptr, nullptr, nullptr, Value::None());
+        code_object->constant_table.emplace_back(Value::from_oop(child));
+        code_object->function_call_caches.push_back(FunctionCallInlineCache{});
+        code_object->function_call_caches.back().guard_value =
+            Value::from_oop(child);
+        ASSERT_EQ(1, child->refcount);
+
+        thread->add_to_zero_count_table_if_needed(code_object);
+        ASSERT_TRUE(thread->zero_count_table_contains_for_testing(code_object));
+        ASSERT_FALSE(thread->zero_count_table_contains_for_testing(child));
+        uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
+        ASSERT_EQ(valid_objects_before_alloc + 2, valid_objects_after_alloc);
+
+        context.vm().run_heap_reclamation();
+
+        EXPECT_EQ(valid_objects_after_alloc - 2,
+                  heap.count_valid_objects_slow());
+        EXPECT_FALSE(
+            thread->zero_count_table_contains_for_testing(code_object));
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(child));
+    }
+
     TEST(HeapReclamation, FullReclamationReclaimsCompactDynamicObject)
     {
         test::VmTestContext context;
