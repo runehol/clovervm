@@ -13,6 +13,7 @@
 #include "thread_state.h"
 #include "tuple.h"
 #include "tuple_iterator.h"
+#include "validity_cell.h"
 
 #include <gtest/gtest.h>
 
@@ -145,6 +146,12 @@ TEST(NativeLayoutDescriptor, FixedObjectSubclassesUseNativeStaticDescriptors)
     expect_static_native_layout_descriptor<Function>();
     expect_static_native_layout_descriptor<Dict>();
     expect_static_native_layout_descriptor<ClassObject>();
+}
+
+TEST(NativeLayoutDescriptor, ValidityCellUsesEmptyStaticDescriptor)
+{
+    expect_static_native_layout_descriptor<ValidityCell>();
+    EXPECT_EQ(0u, ValidityCell::native_static_release_count());
 }
 
 TEST(NativeLayoutDescriptor, StringUsesStaticReleaseAndCustomObjectSize)

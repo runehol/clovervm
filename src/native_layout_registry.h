@@ -13,6 +13,7 @@
 #include "str.h"
 #include "tuple.h"
 #include "tuple_iterator.h"
+#include "validity_cell.h"
 
 #define CL_NATIVE_LAYOUT_REGISTRY(V)                                           \
     V(List);                                                                   \
@@ -27,6 +28,7 @@
     V(String);                                                                 \
     V(Instance);                                                               \
     V(CodeObject);                                                             \
+    V(ValidityCell);                                                           \
     V(ClassObject);
 
 #endif  // CL_NATIVE_LAYOUT_REGISTRY_H

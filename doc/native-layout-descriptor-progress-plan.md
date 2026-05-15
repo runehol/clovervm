@@ -195,9 +195,9 @@ spans have explicit custom teardown.
 
 ## Stage 9: Internal Heap Records
 
-- [ ] Give internal heap records native layout IDs after `NativeLayoutId` lives
+- [x] Give internal heap records native layout IDs after `NativeLayoutId` lives
       on `HeapObject`.
-- [ ] Migrate `ValidityCell`.
+- [x] Migrate `ValidityCell`.
 - [ ] Migrate `Scope`.
 - [ ] Migrate `Shape`, likely with custom dealloc because of transition vector
       ownership.
