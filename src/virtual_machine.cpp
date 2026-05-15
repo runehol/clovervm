@@ -231,12 +231,13 @@ namespace cl
         for(ClassObject *cls: builtin_classes)
         {
             install_bootstrap_tuple_class_on_value(
-                cls->read_storage_location(StorageLocation{
-                    ClassObject::kClassMetadataSlotBases, StorageKind::Inline}),
+                cls->read_storage_location(
+                    StorageLocation{ClassObject::class_metadata_slot_bases,
+                                    StorageKind::Inline}),
                 tuple);
             install_bootstrap_tuple_class_on_value(
                 cls->read_storage_location(StorageLocation{
-                    ClassObject::kClassMetadataSlotMro, StorageKind::Inline}),
+                    ClassObject::class_metadata_slot_mro, StorageKind::Inline}),
                 tuple);
         }
     }

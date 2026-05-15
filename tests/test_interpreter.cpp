@@ -619,11 +619,11 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
         shape->resolve_present_property(value_name);
     ASSERT_TRUE(value_location.is_found());
     EXPECT_EQ(StorageKind::Inline, value_location.kind);
-    EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotCount),
+    EXPECT_EQ(int32_t(ClassObject::class_predefined_slot_count),
               value_location.physical_idx);
     EXPECT_EQ(Value::from_smi(7), cls->read_storage_location(value_location));
     constexpr uint32_t class_metadata_descriptor_count =
-        ClassObject::kClassMetadataSlotCount + 1;
+        ClassObject::class_metadata_slot_count + 1;
     ASSERT_EQ(class_metadata_descriptor_count + 1, shape->present_count());
     EXPECT_STREQ(L"value",
                  shape->get_property_name(class_metadata_descriptor_count)
@@ -659,7 +659,7 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
 
     TValue<String> names[] = {first_name, second_name, third_name};
     constexpr uint32_t class_metadata_descriptor_count =
-        ClassObject::kClassMetadataSlotCount + 1;
+        ClassObject::class_metadata_slot_count + 1;
     for(uint32_t idx = 0; idx < 3; ++idx)
     {
         EXPECT_STREQ(string_as_wchar_t(names[idx]),
@@ -670,7 +670,7 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
             cls->get_shape()->resolve_present_property(names[idx]);
         ASSERT_TRUE(location.is_found());
         EXPECT_EQ(StorageKind::Inline, location.kind);
-        EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotCount + idx),
+        EXPECT_EQ(int32_t(ClassObject::class_predefined_slot_count + idx),
                   location.physical_idx);
         EXPECT_EQ(Value::from_smi(idx + 1),
                   cls->read_storage_location(location));

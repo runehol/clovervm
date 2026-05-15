@@ -17,7 +17,7 @@ using namespace cl;
 static uint32_t class_property_count(ClassObject *cls)
 {
     constexpr uint32_t class_metadata_descriptor_count =
-        ClassObject::kClassMetadataSlotCount + 1;
+        ClassObject::class_metadata_slot_count + 1;
     Shape *shape = cls->get_shape();
     assert(shape->present_count() >= class_metadata_descriptor_count);
     return shape->present_count() - class_metadata_descriptor_count;
@@ -26,7 +26,7 @@ static uint32_t class_property_count(ClassObject *cls)
 static TValue<String> class_property_name(ClassObject *cls, uint32_t idx)
 {
     constexpr uint32_t class_metadata_descriptor_count =
-        ClassObject::kClassMetadataSlotCount + 1;
+        ClassObject::class_metadata_slot_count + 1;
     return cls->get_shape()->get_property_name(class_metadata_descriptor_count +
                                                idx);
 }
@@ -34,7 +34,7 @@ static TValue<String> class_property_name(ClassObject *cls, uint32_t idx)
 static Value class_property_value(ClassObject *cls, uint32_t idx)
 {
     constexpr uint32_t class_metadata_descriptor_count =
-        ClassObject::kClassMetadataSlotCount + 1;
+        ClassObject::class_metadata_slot_count + 1;
     DescriptorInfo info = cls->get_shape()->get_descriptor_info(
         class_metadata_descriptor_count + idx);
     return cls->read_storage_location(info.storage_location());
@@ -567,8 +567,8 @@ TEST(ClassObject, ClassPropertiesUseShapeBackedInlineAndOverflowStorage)
         context.vm().get_or_create_interned_string_value(L"Cls"));
     std::vector<TValue<String>> names;
     constexpr uint32_t property_count =
-        ClassObject::kClassInlineStorageSlotCount -
-        ClassObject::kClassPredefinedSlotCount + 1;
+        ClassObject::class_inline_storage_slot_count -
+        ClassObject::class_predefined_slot_count + 1;
     for(uint32_t idx = 0; idx < property_count; ++idx)
     {
         std::wstring name = L"p" + std::to_wstring(idx);
@@ -584,15 +584,15 @@ TEST(ClassObject, ClassPropertiesUseShapeBackedInlineAndOverflowStorage)
 
     Shape *shape = cls->get_shape();
     constexpr uint32_t class_metadata_descriptor_count =
-        ClassObject::kClassMetadataSlotCount + 1;
-    ASSERT_EQ(ClassObject::kClassPredefinedDescriptorCount + property_count,
+        ClassObject::class_metadata_slot_count + 1;
+    ASSERT_EQ(ClassObject::class_predefined_descriptor_count + property_count,
               shape->property_count());
     EXPECT_EQ(class_metadata_descriptor_count + property_count,
               shape->present_count());
-    EXPECT_EQ(ClassObject::kClassPredefinedDescriptorCount -
+    EXPECT_EQ(ClassObject::class_predefined_descriptor_count -
                   class_metadata_descriptor_count,
               shape->latent_count());
-    EXPECT_EQ(int32_t(ClassObject::kClassInlineStorageSlotCount + 1),
+    EXPECT_EQ(int32_t(ClassObject::class_inline_storage_slot_count + 1),
               shape->get_next_slot_index());
     EXPECT_EQ(property_count, class_property_count(cls));
     EXPECT_EQ(Value::from_smi(1), class_property_value(cls, 0));
@@ -602,7 +602,7 @@ TEST(ClassObject, ClassPropertiesUseShapeBackedInlineAndOverflowStorage)
     StorageLocation first_location = shape->resolve_present_property(names[0]);
     ASSERT_TRUE(first_location.is_found());
     EXPECT_EQ(StorageKind::Inline, first_location.kind);
-    EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotCount),
+    EXPECT_EQ(int32_t(ClassObject::class_predefined_slot_count),
               first_location.physical_idx);
     EXPECT_EQ(Value::from_smi(1), cls->read_storage_location(first_location));
 
@@ -647,14 +647,14 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     EXPECT_EQ(4u, shape->present_count());
     EXPECT_EQ(2u, shape->latent_count());
     EXPECT_EQ(5, shape->get_next_slot_index());
-    EXPECT_EQ(ClassObject::kClassInlineStorageSlotCount,
+    EXPECT_EQ(ClassObject::class_inline_storage_slot_count,
               shape->get_inline_slot_count());
 
     const cl_wchar *expected_names[] = {L"__class__", L"__name__", L"__bases__",
                                         L"__mro__"};
-    const int32_t expected_slots[] = {-1, ClassObject::kClassMetadataSlotName,
-                                      ClassObject::kClassMetadataSlotBases,
-                                      ClassObject::kClassMetadataSlotMro};
+    const int32_t expected_slots[] = {-1, ClassObject::class_metadata_slot_name,
+                                      ClassObject::class_metadata_slot_bases,
+                                      ClassObject::class_metadata_slot_mro};
     for(uint32_t idx = 0; idx < std::size(expected_names); ++idx)
     {
         EXPECT_STREQ(expected_names[idx],
@@ -689,7 +689,7 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     DescriptorLookup new_lookup =
         shape->lookup_descriptor_including_latent(dunder_new_name);
     ASSERT_TRUE(new_lookup.is_latent());
-    EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotNew),
+    EXPECT_EQ(int32_t(ClassObject::class_predefined_slot_new),
               new_lookup.info.physical_idx);
     EXPECT_TRUE(new_lookup.info.has_flag(DescriptorFlag::StableSlot));
     EXPECT_FALSE(new_lookup.info.has_flag(DescriptorFlag::ReadOnly));
@@ -700,7 +700,7 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     DescriptorLookup init_lookup =
         shape->lookup_descriptor_including_latent(dunder_init_name);
     ASSERT_TRUE(init_lookup.is_latent());
-    EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotInit),
+    EXPECT_EQ(int32_t(ClassObject::class_predefined_slot_init),
               init_lookup.info.physical_idx);
     EXPECT_TRUE(init_lookup.info.has_flag(DescriptorFlag::StableSlot));
     EXPECT_FALSE(init_lookup.info.has_flag(DescriptorFlag::ReadOnly));
@@ -761,7 +761,7 @@ TEST(ClassObject, PredefinedConstructorSlotsAreReadWriteStableSlots)
     DescriptorLookup latent_lookup =
         cls->get_shape()->lookup_descriptor_including_latent(dunder_init_name);
     ASSERT_TRUE(latent_lookup.is_latent());
-    EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotInit),
+    EXPECT_EQ(int32_t(ClassObject::class_predefined_slot_init),
               latent_lookup.info.physical_idx);
     EXPECT_EQ(Value::not_present(), cls->get_own_property(dunder_init_name));
 
@@ -769,7 +769,7 @@ TEST(ClassObject, PredefinedConstructorSlotsAreReadWriteStableSlots)
     DescriptorLookup present_lookup =
         cls->get_shape()->lookup_descriptor_including_latent(dunder_init_name);
     ASSERT_TRUE(present_lookup.is_present());
-    EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotInit),
+    EXPECT_EQ(int32_t(ClassObject::class_predefined_slot_init),
               present_lookup.info.physical_idx);
     EXPECT_EQ(Value::from_smi(42), cls->get_own_property(dunder_init_name));
     EXPECT_EQ(Value::from_smi(42), cls->read_storage_location(
@@ -779,7 +779,7 @@ TEST(ClassObject, PredefinedConstructorSlotsAreReadWriteStableSlots)
     DescriptorLookup deleted_lookup =
         cls->get_shape()->lookup_descriptor_including_latent(dunder_init_name);
     ASSERT_TRUE(deleted_lookup.is_latent());
-    EXPECT_EQ(int32_t(ClassObject::kClassPredefinedSlotInit),
+    EXPECT_EQ(int32_t(ClassObject::class_predefined_slot_init),
               deleted_lookup.info.physical_idx);
     EXPECT_EQ(Value::not_present(), cls->get_own_property(dunder_init_name));
     EXPECT_EQ(
@@ -816,7 +816,7 @@ TEST(ClassObject, BuiltinClassRegistersReadonlyFixedMethods)
     EXPECT_EQ(Value::from_smi(11), class_property_value(cls, 0));
     EXPECT_EQ(Value::from_smi(23), class_property_value(cls, 1));
 
-    for(uint32_t idx = ClassObject::kClassMetadataSlotCount;
+    for(uint32_t idx = ClassObject::class_metadata_slot_count;
         idx < shape->present_count(); ++idx)
     {
         DescriptorInfo info = shape->get_descriptor_info(idx);

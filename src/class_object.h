@@ -50,15 +50,15 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::ClassObject;
-        static constexpr uint32_t kClassMetadataSlotName = 0;
-        static constexpr uint32_t kClassMetadataSlotBases = 1;
-        static constexpr uint32_t kClassMetadataSlotMro = 2;
-        static constexpr uint32_t kClassMetadataSlotCount = 3;
-        static constexpr uint32_t kClassPredefinedSlotNew = 3;
-        static constexpr uint32_t kClassPredefinedSlotInit = 4;
-        static constexpr uint32_t kClassPredefinedSlotCount = 5;
-        static constexpr uint32_t kClassPredefinedDescriptorCount = 6;
-        static constexpr uint32_t kClassInlineStorageSlotCount = 48;
+        static constexpr uint32_t class_metadata_slot_name = 0;
+        static constexpr uint32_t class_metadata_slot_bases = 1;
+        static constexpr uint32_t class_metadata_slot_mro = 2;
+        static constexpr uint32_t class_metadata_slot_count = 3;
+        static constexpr uint32_t class_predefined_slot_new = 3;
+        static constexpr uint32_t class_predefined_slot_init = 4;
+        static constexpr uint32_t class_predefined_slot_count = 5;
+        static constexpr uint32_t class_predefined_descriptor_count = 6;
+        static constexpr uint32_t class_inline_storage_slot_count = 48;
 
         ClassObject(
             BootstrapObjectTag, TValue<String> name,
@@ -104,7 +104,7 @@ namespace cl
         }
         uint32_t get_class_inline_storage_slot_count() const
         {
-            return kClassInlineStorageSlotCount;
+            return class_inline_storage_slot_count;
         }
         static void validate_inline_slot_layout();
         void install_bootstrap_inheritance(Value bases_tuple, Value mro_tuple);
@@ -173,8 +173,8 @@ namespace cl
         }
 
     private:
-        static constexpr uint32_t kClassExtraInlineAttributeSlotCount =
-            kClassInlineStorageSlotCount - kClassMetadataSlotCount;
+        static constexpr uint32_t class_extra_inline_attribute_slot_count =
+            class_inline_storage_slot_count - class_metadata_slot_count;
 
         Value make_bases_tuple(ClassObject *single_base) const;
         static void validate_bases(TValue<Tuple> bases);
@@ -195,7 +195,7 @@ namespace cl
         MemberValue bases;
         MemberValue mro;
         MemberValue class_extra_inline_attribute_slots
-            [kClassExtraInlineAttributeSlotCount];
+            [class_extra_inline_attribute_slot_count];
         mutable MemberHeapPtr<ValidityCell>
             mro_shape_and_contents_validity_cell;
         mutable MemberHeapPtr<ValidityCell>
@@ -210,13 +210,13 @@ namespace cl
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
             ClassObject, Object,
-            3 + kClassExtraInlineAttributeSlotCount + 2 +
+            3 + class_extra_inline_attribute_slot_count + 2 +
                 2 * HeapPtrArray<ValidityCell>::embedded_value_count + 2);
         CL_DECLARE_STATIC_OBJECT_SIZE(ClassObject);
 
         CL_DECLARE_STATIC_LAYOUT_EXTENDS_WITH_VALUES(
             ClassObject, Object,
-            3 + kClassExtraInlineAttributeSlotCount + 2 +
+            3 + class_extra_inline_attribute_slot_count + 2 +
                 2 * HeapPtrArray<ValidityCell>::embedded_value_count + 2);
     };
 
