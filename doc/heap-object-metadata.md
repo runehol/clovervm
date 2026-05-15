@@ -1,4 +1,4 @@
-# Object Metadata Layout
+# Heap Object Metadata
 
 This document describes the current heap object metadata shape. The older
 packed `HeapLayout` word and expanded-header scheme have been removed.

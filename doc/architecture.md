@@ -66,7 +66,7 @@ refcounting and safepoint root scanning.
 Detailed docs:
 
 - [Value Representation](value-representation.md)
-- [Object Metadata Layout](object-metadata.md)
+- [Heap Object Metadata](heap-object-metadata.md)
 - [Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md)
 
 ## Bytecode And Calling
@@ -126,7 +126,7 @@ shape check alone cannot express.
 
 Detailed docs:
 
-- [Object Model](unified-object-model.md)
+- [Object Model](object-model.md)
 - [Builtin Object Model](builtin-object-model.md)
 
 ## Inline Caches And Validity Cells
@@ -148,7 +148,7 @@ future JIT code.
 
 Detailed docs:
 
-- [Object Model](unified-object-model.md), especially "Inline Caches and Lookup
+- [Object Model](object-model.md), especially "Inline Caches and Lookup
   Validity Cells"
 
 ## Deferred Refcounting And Safepoints
@@ -166,7 +166,7 @@ C++ stack frames as if they were Clover `Value` slots.
 
 Detailed docs:
 
-- [Refcounting and Safepoints](refcounting-and-safepoints.md)
+- [Refcounting and Reclamation](refcounting-and-reclamation.md)
 - [Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md)
 
 ## Exceptions And Control Flow
@@ -218,7 +218,7 @@ Detailed docs:
 - [Optimization Ideas](optimization-ideas.md)
 - [Exception Transport And Protocols](exception-transport-and-protocols.md),
   especially "JIT Direction"
-- [Refcounting and Safepoints](refcounting-and-safepoints.md)
+- [Refcounting and Reclamation](refcounting-and-reclamation.md)
 
 ## Core Invariants
 

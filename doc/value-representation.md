@@ -140,7 +140,7 @@ The two pointer storage classes are:
 The pointer tag lets `Value::storage_class()` decide whether a value is inline,
 interned, or refcounted without dereferencing the pointer.
 
-Detailed heap metadata is covered in [Object Metadata Layout](object-metadata.md)
+Detailed heap metadata is covered in [Heap Object Metadata](heap-object-metadata.md)
 and [Native Layout Descriptors](native-layout-descriptors.md).
 
 ## Relationship To Object Layouts
@@ -172,7 +172,7 @@ This is why the representation is paired with deferred refcounting:
 - heap-to-heap stores are the places that retain and release references;
 - safepoints must be able to discover all live frame values before reclamation.
 
-See [Refcounting and Safepoints](refcounting-and-safepoints.md) for the full
+See [Refcounting and Reclamation](refcounting-and-reclamation.md) for the full
 lifetime model.
 
 ## Native Exception Transport

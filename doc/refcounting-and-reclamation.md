@@ -1,4 +1,4 @@
-# Refcounting and Safepoints
+# Refcounting and Reclamation
 
 We want to have a GIL-less implementation. However, we still want Python C extension compatibility, so we need to do something here.
 
@@ -88,10 +88,10 @@ must be discoverable by reclamation.
 
 The implementation discovers those young objects through slab metadata rather
 than eager allocation-time ZCT enqueue. As described in
-[Valid-Object Bitmap Reclamation](committed-object-bitmap-reclamation.md),
-thread-local heaps remember slabs that have been active since the previous
-reclamation, and reclamation scans those slabs' valid-object bitmaps to discover
-young `refcount == 0 && lifecycle_state == Normal` candidates. The ZCT primarily
+[Heap Slab Allocation and Reuse](heap-slab-allocation-and-reuse.md), thread-local
+heaps remember slabs that have been active since the previous reclamation, and
+reclamation scans those slabs' valid-object bitmaps to discover young
+`refcount == 0 && lifecycle_state == Normal` candidates. The ZCT primarily
 tracks older zero-refcount objects whose stack-root protection survived a
 previous reclamation, plus objects that reached zero through heap `DECREF`.
 
