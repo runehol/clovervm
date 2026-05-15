@@ -23,6 +23,7 @@
 #include "tuple.h"
 #include "tuple_iterator.h"
 #include <cassert>
+#include <cmath>
 #include <cwchar>
 #include <initializer_list>
 #include <stdexcept>
@@ -92,6 +93,32 @@ namespace cl
             TValue<CLInt>::from_value_unchecked(start),
             TValue<CLInt>::from_value_unchecked(stop),
             TValue<CLInt>::from_value_unchecked(step));
+    }
+
+    static Value builtin_sqrt(Value arg)
+    {
+        double value;
+        if(arg.is_smi())
+        {
+            value = static_cast<double>(arg.get_smi());
+        }
+        else if(can_convert_to<Float>(arg))
+        {
+            value = arg.get_ptr<Float>()->value;
+        }
+        else
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"sqrt() argument must be int or float");
+        }
+
+        if(value < 0.0)
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"ValueError", L"math domain error");
+        }
+
+        return active_thread()->make_object_value<Float>(std::sqrt(value));
     }
 
     VirtualMachine::VirtualMachine()
@@ -384,6 +411,10 @@ namespace cl
         range_builtin =
             make_native_function(this, builtin_range, range_defaults);
         builtin_scope.extract()->set_by_name(range_name, range_builtin);
+
+        TValue<String> sqrt_name = get_or_create_interned_string_value(L"sqrt");
+        builtin_scope.extract()->set_by_name(
+            sqrt_name, make_native_function(this, builtin_sqrt));
 
         ThreadState *thread = get_default_thread();
         CodeObject *builtins_code = thread->compile_in_scope(

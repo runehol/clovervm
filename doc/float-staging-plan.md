@@ -306,24 +306,26 @@ Validation:
 
 ## Stage 8: Builtin `sqrt`
 
+Status: complete.
+
 Goal: provide the primitive needed by adapted `nbody` without implementing
 imports or the `math` module.
 
 Implementation pieces:
 
-- add builtin native function `sqrt`;
-- accept `int` and `float`;
-- promote to `double`;
-- reject negative inputs with `ValueError`;
-- return heap `Float`;
-- expose `sqrt` in builtin scope.
+- [x] add builtin native function `sqrt`;
+- [x] accept `int` and `float`;
+- [x] promote to `double`;
+- [x] reject negative inputs with `ValueError`;
+- [x] return heap `Float`;
+- [x] expose `sqrt` in builtin scope.
 
 Tests:
 
-- `sqrt(4) == 2.0`;
-- `sqrt(2.25) == 1.5`;
-- `sqrt(0.0) == 0.0`;
-- `sqrt(-1.0)` raises `ValueError`.
+- [x] `sqrt(4) == 2.0`;
+- [x] `sqrt(2.25) == 1.5`;
+- [x] `sqrt(0.0) == 0.0`;
+- [x] `sqrt(-1.0)` raises `ValueError`.
 
 Non-goals:
 
@@ -333,7 +335,7 @@ Non-goals:
 
 Validation:
 
-- `ninja -C build-debug all check`.
+- [x] `ninja -C build-debug all check`.
 
 ## Stage 9: Adapted NBody Benchmark
 

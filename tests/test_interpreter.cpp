@@ -865,6 +865,28 @@ TEST(Interpreter, true_division_reports_unsupported_operands)
                         L"TypeError: unsupported operand type(s) for /");
 }
 
+TEST(Interpreter, sqrt_builtin_values)
+{
+    test::VmTestContext test_context;
+
+    auto expect_float_result = [&](const wchar_t *source, double expected) {
+        Value actual = test_context.run_file(source);
+        ASSERT_TRUE(can_convert_to<Float>(actual));
+        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
+    };
+
+    expect_float_result(L"sqrt(4)\n", 2.0);
+    expect_float_result(L"sqrt(2.25)\n", 1.5);
+    expect_float_result(L"sqrt(0.0)\n", 0.0);
+}
+
+TEST(Interpreter, sqrt_builtin_reports_errors)
+{
+    expect_python_error(L"sqrt(-1.0)\n", L"ValueError: math domain error");
+    expect_python_error(L"sqrt(\"x\")\n",
+                        L"TypeError: sqrt() argument must be int or float");
+}
+
 TEST(Interpreter, float_comparison_values)
 {
     test::VmTestContext test_context;
