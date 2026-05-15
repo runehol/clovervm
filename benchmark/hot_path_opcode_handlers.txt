@@ -77,10 +77,16 @@ op_store_attr
 op_sub
 op_sub_smi
 op_test_equal
+op_test_equal_float_comparison
 op_test_greater
+op_test_greater_float_comparison
 op_test_greater_equal
+op_test_greater_equal_float_comparison
 op_test_is
 op_test_is_not
 op_test_less
+op_test_less_float_comparison
 op_test_less_equal
+op_test_less_equal_float_comparison
 op_test_not_equal
+op_test_not_equal_float_comparison

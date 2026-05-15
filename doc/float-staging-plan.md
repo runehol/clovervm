@@ -265,33 +265,35 @@ Validation:
 
 ## Stage 7: Float Comparisons
 
+Status: complete.
+
 Goal: make float values usable in numeric guards and benchmark computations.
 
 Implementation pieces:
 
-- add semi-hot numeric comparison continuations for:
-  - `<`;
-  - `<=`;
-  - `>`;
-  - `>=`;
-  - `==`;
-  - `!=`;
-- accept:
-  - `float cmp float`;
-  - `float cmp int`;
-  - `int cmp float`;
-- promote operands to `double`;
-- return `True` or `False`;
-- preserve existing SMI/bool equality behavior on the current fast path;
-- tail-call onward for comparison misses.
+- [x] add semi-hot numeric comparison continuations for:
+  - [x] `<`;
+  - [x] `<=`;
+  - [x] `>`;
+  - [x] `>=`;
+  - [x] `==`;
+  - [x] `!=`;
+- [x] accept:
+  - [x] `float cmp float`;
+  - [x] `float cmp int`;
+  - [x] `int cmp float`;
+- [x] promote operands to `double`;
+- [x] return `True` or `False`;
+- [x] preserve existing SMI/bool equality behavior on the current fast path;
+- [x] tail-call onward for comparison misses.
 
 Tests:
 
-- each comparison for float/float;
-- each comparison for int/float;
-- each comparison for float/int;
-- equality around `0.0` and `-0.0`;
-- NaN comparison behavior if a NaN source exists by this point.
+- [x] each comparison for float/float;
+- [x] each comparison for int/float;
+- [x] each comparison for float/int;
+- [x] equality around `0.0` and `-0.0`;
+- [x] NaN comparison behavior through `inf / inf`.
 
 Non-goals:
 
@@ -300,7 +302,7 @@ Non-goals:
 
 Validation:
 
-- `ninja -C build-debug all check`.
+- [x] `ninja -C build-debug all check`.
 
 ## Stage 8: Builtin `sqrt`
 

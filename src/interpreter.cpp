@@ -918,6 +918,96 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static Value op_test_less_float_comparison(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+
+        double left;
+        double right;
+        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator = left < right ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_test_less_equal_float_comparison(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+
+        double left;
+        double right;
+        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator = left <= right ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_test_greater_float_comparison(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+
+        double left;
+        double right;
+        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator = left > right ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_test_greater_equal_float_comparison(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+
+        double left;
+        double right;
+        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator = left >= right ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_test_equal_float_comparison(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+
+        double left;
+        double right;
+        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator = left == right ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
+    NOINLINE static Value op_test_not_equal_float_comparison(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+
+        double left;
+        double right;
+        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        {
+            MUSTTAIL return slow_path(ARGS);
+        }
+
+        accumulator = left != right ? Value::True() : Value::False();
+        COMPLETE();
+    }
+
     NOINLINE static Value op_div(PARAMS)
     {
         START_BINARY_REG_ACC();
@@ -2079,7 +2169,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_test_less_float_comparison(ARGS);
         }
         accumulator =
             (a.as.integer < b.as.integer) ? Value::True() : Value::False();
@@ -2091,7 +2181,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_test_less_equal_float_comparison(ARGS);
         }
         accumulator =
             (a.as.integer <= b.as.integer) ? Value::True() : Value::False();
@@ -2103,7 +2193,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_test_greater_equal_float_comparison(ARGS);
         }
         accumulator =
             (a.as.integer >= b.as.integer) ? Value::True() : Value::False();
@@ -2115,7 +2205,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_test_greater_float_comparison(ARGS);
         }
         accumulator =
             (a.as.integer > b.as.integer) ? Value::True() : Value::False();
@@ -2127,7 +2217,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_REFCOUNTED_PTR()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_test_equal_float_comparison(ARGS);
         }
         // see if we have a bit difference after we clear the bit that promotes
         // booleans to 0/1 integers
@@ -2143,7 +2233,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_REFCOUNTED_PTR()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return op_test_not_equal_float_comparison(ARGS);
         }
         // see if we have a bit difference after we clear the bit that promotes
         // booleans to 0/1 integers

@@ -865,6 +865,84 @@ TEST(Interpreter, true_division_reports_unsupported_operands)
                         L"TypeError: unsupported operand type(s) for /");
 }
 
+TEST(Interpreter, float_comparison_values)
+{
+    test::VmTestContext test_context;
+
+    auto expect_bool_result = [&](const wchar_t *source, Value expected) {
+        EXPECT_EQ(expected, test_context.run_file(source));
+    };
+
+    expect_bool_result(L"1.0 < 2.0\n", Value::True());
+    expect_bool_result(L"2.0 < 1.0\n", Value::False());
+    expect_bool_result(L"1.0 <= 1.0\n", Value::True());
+    expect_bool_result(L"2.0 <= 1.0\n", Value::False());
+    expect_bool_result(L"2.0 > 1.0\n", Value::True());
+    expect_bool_result(L"1.0 > 2.0\n", Value::False());
+    expect_bool_result(L"2.0 >= 2.0\n", Value::True());
+    expect_bool_result(L"1.0 >= 2.0\n", Value::False());
+    expect_bool_result(L"1.0 == 1.0\n", Value::True());
+    expect_bool_result(L"1.0 == 2.0\n", Value::False());
+    expect_bool_result(L"1.0 != 2.0\n", Value::True());
+    expect_bool_result(L"1.0 != 1.0\n", Value::False());
+
+    expect_bool_result(L"1 < 2.0\n", Value::True());
+    expect_bool_result(L"2 < 1.0\n", Value::False());
+    expect_bool_result(L"1 <= 1.0\n", Value::True());
+    expect_bool_result(L"2 <= 1.0\n", Value::False());
+    expect_bool_result(L"2 > 1.0\n", Value::True());
+    expect_bool_result(L"1 > 2.0\n", Value::False());
+    expect_bool_result(L"2 >= 2.0\n", Value::True());
+    expect_bool_result(L"1 >= 2.0\n", Value::False());
+    expect_bool_result(L"1 == 1.0\n", Value::True());
+    expect_bool_result(L"1 == 2.0\n", Value::False());
+    expect_bool_result(L"1 != 2.0\n", Value::True());
+    expect_bool_result(L"1 != 1.0\n", Value::False());
+
+    expect_bool_result(L"1.0 < 2\n", Value::True());
+    expect_bool_result(L"2.0 < 1\n", Value::False());
+    expect_bool_result(L"1.0 <= 1\n", Value::True());
+    expect_bool_result(L"2.0 <= 1\n", Value::False());
+    expect_bool_result(L"2.0 > 1\n", Value::True());
+    expect_bool_result(L"1.0 > 2\n", Value::False());
+    expect_bool_result(L"2.0 >= 2\n", Value::True());
+    expect_bool_result(L"1.0 >= 2\n", Value::False());
+    expect_bool_result(L"1.0 == 1\n", Value::True());
+    expect_bool_result(L"1.0 == 2\n", Value::False());
+    expect_bool_result(L"1.0 != 2\n", Value::True());
+    expect_bool_result(L"1.0 != 1\n", Value::False());
+
+    expect_bool_result(L"0.0 == -0.0\n", Value::True());
+    expect_bool_result(L"0.0 != -0.0\n", Value::False());
+    expect_bool_result(L"0.0 <= -0.0\n", Value::True());
+    expect_bool_result(L"0.0 >= -0.0\n", Value::True());
+
+    expect_bool_result(L"inf = 1e300 * 1e300\n"
+                       L"nan = inf / inf\n"
+                       L"nan < nan\n",
+                       Value::False());
+    expect_bool_result(L"inf = 1e300 * 1e300\n"
+                       L"nan = inf / inf\n"
+                       L"nan <= nan\n",
+                       Value::False());
+    expect_bool_result(L"inf = 1e300 * 1e300\n"
+                       L"nan = inf / inf\n"
+                       L"nan > nan\n",
+                       Value::False());
+    expect_bool_result(L"inf = 1e300 * 1e300\n"
+                       L"nan = inf / inf\n"
+                       L"nan >= nan\n",
+                       Value::False());
+    expect_bool_result(L"inf = 1e300 * 1e300\n"
+                       L"nan = inf / inf\n"
+                       L"nan == nan\n",
+                       Value::False());
+    expect_bool_result(L"inf = 1e300 * 1e300\n"
+                       L"nan = inf / inf\n"
+                       L"nan != nan\n",
+                       Value::True());
+}
+
 TEST(Interpreter, string_dunder_add_calls_native_function)
 {
     test::VmTestContext test_context;
