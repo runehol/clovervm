@@ -45,7 +45,7 @@ namespace cl
         bool is_found() const { return thunk != nullptr; }
     };
 
-    class ClassObject : public Object
+    class ClassObject : public SlotObject
     {
     public:
         static constexpr NativeLayoutId native_layout =
@@ -209,7 +209,7 @@ namespace cl
 
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
-            ClassObject, Object,
+            ClassObject, SlotObject,
             3 + class_extra_inline_attribute_slot_count + 2 +
                 2 * HeapPtrArray<ValidityCell>::embedded_value_count + 2);
         CL_DECLARE_STATIC_OBJECT_SIZE(ClassObject);

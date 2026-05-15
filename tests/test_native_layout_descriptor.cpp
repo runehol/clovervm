@@ -74,6 +74,18 @@ TEST(NativeLayoutDescriptor, ListNativeReleaseCountIncludesInheritedObjectCells)
               List::native_static_release_count());
 }
 
+TEST(NativeLayoutDescriptor, SlotObjectCarriesAttributeStorageCells)
+{
+    EXPECT_TRUE(native_layout_has_slots(NativeLayoutId::Instance));
+    EXPECT_TRUE(native_layout_has_slots(NativeLayoutId::ClassObject));
+    EXPECT_TRUE(native_layout_has_slots(NativeLayoutId::Function));
+    EXPECT_TRUE(native_layout_has_slots(NativeLayoutId::Exception));
+    EXPECT_TRUE(native_layout_has_slots(NativeLayoutId::StopIteration));
+    EXPECT_FALSE(native_layout_has_slots(NativeLayoutId::List));
+    EXPECT_EQ(Object::native_static_release_count() + 1,
+              SlotObject::native_static_release_count());
+}
+
 TEST(NativeLayoutDescriptor, ListNativeReleaseSpanStartsAtInheritedObjectCells)
 {
     const ReleaseDescriptor &release =
@@ -274,7 +286,7 @@ TEST(NativeLayoutDescriptor, InstanceUsesDynamicAuxReleaseAndCustomObjectSize)
               release.value_offset_words);
     EXPECT_EQ(Instance::native_additional_release_count(),
               release.additional_release_count);
-    EXPECT_EQ(Object::native_static_release_count(),
+    EXPECT_EQ(SlotObject::native_static_release_count(),
               release.additional_release_count);
 
     const ObjectSizeDescriptor &object_size =

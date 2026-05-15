@@ -8,7 +8,7 @@
 namespace cl
 {
 
-    Instance::Instance(ClassObject *_cls) : Object(_cls, native_layout)
+    Instance::Instance(ClassObject *_cls) : SlotObject(_cls, native_layout)
     {
         uint32_t inline_slot_count = inline_slot_count_for_class(_cls);
         assert(inline_slot_count <= UINT16_MAX);

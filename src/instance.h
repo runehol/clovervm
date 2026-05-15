@@ -10,7 +10,7 @@ namespace cl
 {
     class VirtualMachine;
 
-    class Instance : public Object
+    class Instance : public SlotObject
     {
     public:
         static constexpr NativeLayoutId native_layout =
@@ -34,7 +34,7 @@ namespace cl
         static uint32_t inline_slot_count_for_class(ClassObject *cls);
 
     public:
-        CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(Instance, Object, 0);
+        CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN_EXTENDS(Instance, SlotObject, 0);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(Instance, Instance::object_size_in_bytes);
     };
 

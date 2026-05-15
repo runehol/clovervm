@@ -9,6 +9,10 @@
 #include <cstdint>
 #include <type_traits>
 
+#ifndef ALWAYSINLINE
+#define ALWAYSINLINE __attribute__((always_inline))
+#endif
+
 namespace cl
 {
     class AttributeDeleteDescriptor;
@@ -18,6 +22,7 @@ namespace cl
     class ClassObject;
     class OverflowSlots;
     class Shape;
+    class SlotObject;
     class VirtualMachine;
     class String;
     class Value;
@@ -35,15 +40,13 @@ namespace cl
     {
     public:
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id)
-            : HeapObject(_native_layout_id), shape(nullptr),
-              overflow_storage(nullptr)
+            : HeapObject(_native_layout_id), shape(nullptr)
         {
             initialize_shape_for_class(_cls);
         }
 
         Object(BootstrapObjectTag, NativeLayoutId _native_layout_id)
-            : HeapObject(_native_layout_id), shape(nullptr),
-              overflow_storage(nullptr)
+            : HeapObject(_native_layout_id), shape(nullptr)
         {
         }
 
@@ -69,31 +72,112 @@ namespace cl
         void write_existing_storage_location(StorageLocation location,
                                              Value value);
         void write_storage_location(StorageLocation location, Value value);
-        __attribute__((always_inline)) Value *inline_slot_base()
-        {
-            return reinterpret_cast<Value *>(
-                reinterpret_cast<uint64_t *>(this) +
-                sizeof(Object) / sizeof(uint64_t));
-        }
-        __attribute__((always_inline)) const Value *inline_slot_base() const
-        {
-            return reinterpret_cast<const Value *>(
-                reinterpret_cast<const uint64_t *>(this) +
-                sizeof(Object) / sizeof(uint64_t));
-        }
+        ALWAYSINLINE Value *inline_slot_base();
+        ALWAYSINLINE const Value *inline_slot_base() const;
         Shape *shape;
-        OverflowSlots *overflow_storage;
 
-        CL_DECLARE_STATIC_VALUE_SPAN(Object, shape, 2);
+        CL_DECLARE_STATIC_VALUE_SPAN(Object, shape, 1);
         CL_DECLARE_STATIC_OBJECT_SIZE(Object);
 
     private:
-        void initialize_shape_for_class(ClassObject *class_object);
         void initialize_shape(Shape *instance_root_shape);
-        OverflowSlots *get_overflow_slots() const { return overflow_storage; }
+        ALWAYSINLINE SlotObject *as_slot_object();
+        ALWAYSINLINE const SlotObject *as_slot_object() const;
+        ALWAYSINLINE OverflowSlots *get_overflow_slots() const;
         void ensure_storage_for_shape(Shape *new_shape);
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
+
+    protected:
+        void initialize_shape_for_class(ClassObject *class_object);
     };
+
+    constexpr bool native_layout_has_slots(NativeLayoutId native_layout)
+    {
+        return native_layout == NativeLayoutId::Instance ||
+               native_layout == NativeLayoutId::ClassObject ||
+               native_layout == NativeLayoutId::Function ||
+               native_layout == NativeLayoutId::Exception ||
+               native_layout == NativeLayoutId::StopIteration;
+    }
+
+    class SlotObject : public Object
+    {
+    public:
+        SlotObject(ClassObject *cls, NativeLayoutId native_layout_id)
+            : Object(BootstrapObjectTag{}, native_layout_id),
+              overflow_storage(nullptr)
+        {
+            initialize_shape_for_class(cls);
+        }
+
+        SlotObject(BootstrapObjectTag tag, NativeLayoutId native_layout_id)
+            : Object(tag, native_layout_id), overflow_storage(nullptr)
+        {
+        }
+
+        ALWAYSINLINE Value *inline_slot_base()
+        {
+            return reinterpret_cast<Value *>(
+                reinterpret_cast<uint64_t *>(this) +
+                sizeof(SlotObject) / sizeof(uint64_t));
+        }
+
+        ALWAYSINLINE const Value *inline_slot_base() const
+        {
+            return reinterpret_cast<const Value *>(
+                reinterpret_cast<const uint64_t *>(this) +
+                sizeof(SlotObject) / sizeof(uint64_t));
+        }
+
+        ALWAYSINLINE OverflowSlots *get_overflow_slots() const
+        {
+            return overflow_storage;
+        }
+        void ensure_storage_for_shape(Shape *new_shape);
+        OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
+
+        OverflowSlots *overflow_storage;
+
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(SlotObject, Object, 1);
+        CL_DECLARE_STATIC_OBJECT_SIZE(SlotObject);
+    };
+
+    inline ALWAYSINLINE SlotObject *Object::as_slot_object()
+    {
+        assert(native_layout_has_slots(native_layout_id()));
+        return static_cast<SlotObject *>(this);
+    }
+
+    inline ALWAYSINLINE const SlotObject *Object::as_slot_object() const
+    {
+        assert(native_layout_has_slots(native_layout_id()));
+        return static_cast<const SlotObject *>(this);
+    }
+
+    inline ALWAYSINLINE Value *Object::inline_slot_base()
+    {
+        return as_slot_object()->SlotObject::inline_slot_base();
+    }
+
+    inline ALWAYSINLINE const Value *Object::inline_slot_base() const
+    {
+        return as_slot_object()->SlotObject::inline_slot_base();
+    }
+
+    inline ALWAYSINLINE OverflowSlots *Object::get_overflow_slots() const
+    {
+        return as_slot_object()->SlotObject::get_overflow_slots();
+    }
+
+    inline void Object::ensure_storage_for_shape(Shape *new_shape)
+    {
+        as_slot_object()->SlotObject::ensure_storage_for_shape(new_shape);
+    }
+
+    inline OverflowSlots *Object::ensure_overflow_slot(int32_t physical_idx)
+    {
+        return as_slot_object()->SlotObject::ensure_overflow_slot(physical_idx);
+    }
 
     template <typename T, typename = void>
     struct HasNativeLayoutId : std::false_type
@@ -137,8 +221,10 @@ namespace cl
         return static_cast<const T *>(object);
     }
 
-    static_assert(sizeof(Object) == 24);
+    static_assert(sizeof(Object) == 16);
+    static_assert(sizeof(SlotObject) == 24);
     static_assert(std::is_trivially_destructible_v<Object>);
+    static_assert(std::is_trivially_destructible_v<SlotObject>);
 
     BuiltinClassDefinition make_object_class(VirtualMachine *vm);
     void install_object_class_methods(VirtualMachine *vm);

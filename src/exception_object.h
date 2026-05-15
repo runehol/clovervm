@@ -11,7 +11,7 @@ namespace cl
     class ThreadState;
     class VirtualMachine;
 
-    class ExceptionObject : public Object
+    class ExceptionObject : public SlotObject
     {
     public:
         static constexpr NativeLayoutId native_layout =
@@ -26,19 +26,19 @@ namespace cl
 
         MemberTValue<String> message;
 
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ExceptionObject, Object, 1);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ExceptionObject, SlotObject, 1);
         CL_DECLARE_STATIC_OBJECT_SIZE(ExceptionObject);
 
     protected:
         ExceptionObject(ClassObject *cls, NativeLayoutId layout_id,
                         TValue<String> message)
-            : Object(cls, layout_id), message(message)
+            : SlotObject(cls, layout_id), message(message)
         {
         }
     };
 
     static_assert(CL_OFFSETOF(ExceptionObject, message) ==
-                  sizeof(Object) +
+                  sizeof(SlotObject) +
                       ExceptionObject::kMessageSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<ExceptionObject>);
 
@@ -63,7 +63,7 @@ namespace cl
     };
 
     static_assert(CL_OFFSETOF(StopIterationObject, value) ==
-                  sizeof(Object) +
+                  sizeof(SlotObject) +
                       StopIterationObject::kValueSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<StopIterationObject>);
 

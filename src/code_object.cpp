@@ -1,6 +1,5 @@
 #include "code_object.h"
 #include "class_object.h"
-#include "overflow_slots.h"
 #include "refcount.h"
 #include "shape.h"
 #include "virtual_machine.h"
@@ -16,8 +15,6 @@ namespace cl
 
         decref_heap_ptr(code_object->shape);
         code_object->shape = nullptr;
-        decref_heap_ptr(code_object->overflow_storage);
-        code_object->overflow_storage = nullptr;
 
         decref_heap_ptr(code_object->module_scope.release());
         decref_heap_ptr(code_object->local_scope.release());

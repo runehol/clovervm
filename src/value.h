@@ -33,11 +33,21 @@ namespace cl
 
 
 */
+#ifndef likely
 #define likely(x) __builtin_expect((x), 1)
+#endif
+#ifndef unlikely
 #define unlikely(x) __builtin_expect((x), 0)
+#endif
+#ifndef ALWAYSINLINE
 #define ALWAYSINLINE __attribute__((always_inline))
+#endif
+#ifndef NOINLINE
 #define NOINLINE __attribute__((noinline))
+#endif
+#ifndef MUSTTAIL
 #define MUSTTAIL __attribute__((musttail))
+#endif
 
     static constexpr uint64_t value_tag_bits = 5;
     static constexpr uint64_t value_tag_mask = 0x1f;
@@ -288,7 +298,7 @@ namespace cl
 
 namespace cl
 {
-    inline __attribute__((always_inline)) Value
+    inline ALWAYSINLINE Value
     Object::read_storage_location(StorageLocation location) const
     {
         switch(location.kind)
@@ -307,7 +317,7 @@ namespace cl
         __builtin_unreachable();
     }
 
-    inline __attribute__((always_inline)) void
+    inline ALWAYSINLINE void
     Object::write_existing_storage_location(StorageLocation location,
                                             Value value)
     {
