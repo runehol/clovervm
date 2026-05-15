@@ -23,6 +23,9 @@ namespace cl
         SlabAllocator(size_t offset, size_t slab_size);
         ~SlabAllocator();
 
+        size_t size() const { return slab_size; }
+        void reset();
+
         void add_active_allocator_pin() { ++n_slab_pins; }
         void drop_active_allocator_pin()
         {
@@ -146,6 +149,7 @@ namespace cl
         char *curr_ptr;
         char *end_ptr;
         char *first_object_header;
+        size_t slab_size;
         std::array<uint64_t, ValidObjectBitmapWords> valid_object_bitmap = {};
         uint32_t n_slab_pins = 0;
     };

@@ -174,6 +174,65 @@ TEST(GlobalHeap, DedicatedLargeAbandonedAllocationReleasesAfterEpochFinish)
     EXPECT_EQ(0u, local_heap.dedicated_large_bytes_since_reclamation_count());
 }
 
+TEST(GlobalHeap, EmptyOrdinarySlabIsCachedAndReused)
+{
+    GlobalHeap heap = GlobalHeap::refcounted_heap();
+    char *first = nullptr;
+    char *second = nullptr;
+
+    {
+        ThreadLocalHeap local_heap(&heap);
+        first = local_heap.allocate(sizeof(HeapObject));
+    }
+
+    EXPECT_FALSE(heap.has_slab_for_address_for_testing(first));
+    EXPECT_EQ(1u, heap.empty_slab_cache_size_for_testing());
+
+    {
+        ThreadLocalHeap local_heap(&heap);
+        second = local_heap.allocate(sizeof(HeapObject));
+        EXPECT_TRUE(heap.has_slab_for_address_for_testing(second));
+    }
+
+    EXPECT_EQ(first, second);
+}
+
+TEST(GlobalHeap, EmptyCustomSizedOrdinarySlabIsCachedAndReused)
+{
+    constexpr size_t CustomSlabSize = SlabLookupGranuleSize;
+    GlobalHeap heap = GlobalHeap::refcounted_heap(CustomSlabSize);
+    char *first = nullptr;
+    char *second = nullptr;
+
+    {
+        ThreadLocalHeap local_heap(&heap);
+        first = local_heap.allocate(sizeof(HeapObject));
+    }
+
+    EXPECT_FALSE(heap.has_slab_for_address_for_testing(first));
+    EXPECT_EQ(1u, heap.empty_slab_cache_size_for_testing());
+
+    {
+        ThreadLocalHeap local_heap(&heap);
+        second = local_heap.allocate(sizeof(HeapObject));
+        EXPECT_TRUE(heap.has_slab_for_address_for_testing(second));
+    }
+
+    EXPECT_EQ(first, second);
+}
+
+TEST(GlobalHeap, DedicatedLargeAbandonedAllocationIsNotCached)
+{
+    GlobalHeap heap = GlobalHeap::refcounted_heap();
+    ThreadLocalHeap local_heap(&heap);
+
+    char *memory = local_heap.allocate(LargeAllocationSize);
+    finish_epoch_and_release_empty_slabs(local_heap, heap);
+
+    EXPECT_FALSE(heap.has_slab_for_address_for_testing(memory));
+    EXPECT_EQ(0u, heap.empty_slab_cache_size_for_testing());
+}
+
 TEST(GlobalHeap, ThreadLocalHeapAdoptsEpochStateByMove)
 {
     GlobalHeap heap = GlobalHeap::refcounted_heap();

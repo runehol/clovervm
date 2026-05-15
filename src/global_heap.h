@@ -73,15 +73,22 @@ namespace cl
         uint64_t total_reclaim_blockers_for_testing() const;
         uint64_t count_valid_objects_slow() const;
         bool has_slab_for_address_for_testing(const void *ptr) const;
+        size_t empty_slab_cache_size_for_testing() const;
 
     private:
+        static constexpr size_t EmptySlabCacheCapacity = 10;
+
         void register_slab_pages_locked(SlabAllocator *slab);
         void unregister_slab_pages_locked(SlabAllocator *slab);
         SlabAllocator *make_new_slab(size_t actual_slab_size);
         void release_slab_locked(SlabAllocator *slab);
+        void erase_slab_locked(SlabAllocator *slab);
+        void cache_empty_slab_locked(SlabAllocator *slab);
+        SlabAllocator *try_take_cached_empty_slab_locked();
 
         mutable std::mutex heap_mutex;
         std::deque<std::unique_ptr<SlabAllocator>> slabs;
+        std::deque<SlabAllocator *> empty_slab_cache;
         std::unordered_map<uintptr_t, SlabAllocator *> slab_lookup;
         size_t offset;
         size_t slab_size;

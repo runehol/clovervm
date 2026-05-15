@@ -27,6 +27,16 @@ namespace cl
     SlabAllocator *GlobalHeap::make_new_slab(size_t actual_slab_size)
     {
         const std::lock_guard<std::mutex> lock(heap_mutex);
+        if(actual_slab_size == slab_size)
+        {
+            SlabAllocator *cached_slab = try_take_cached_empty_slab_locked();
+            if(cached_slab != nullptr)
+            {
+                register_slab_pages_locked(cached_slab);
+                return cached_slab;
+            }
+        }
+
         SlabAllocator *slab =
             slabs
                 .emplace_front(
@@ -75,6 +85,11 @@ namespace cl
     void GlobalHeap::release_slab_locked(SlabAllocator *slab)
     {
         unregister_slab_pages_locked(slab);
+        erase_slab_locked(slab);
+    }
+
+    void GlobalHeap::erase_slab_locked(SlabAllocator *slab)
+    {
         auto it = std::find_if(
             slabs.begin(), slabs.end(),
             [slab](const std::unique_ptr<SlabAllocator> &owned_slab) {
@@ -84,6 +99,33 @@ namespace cl
         slabs.erase(it);
     }
 
+    void GlobalHeap::cache_empty_slab_locked(SlabAllocator *slab)
+    {
+        assert(slab != nullptr);
+        assert(slab->size() == slab_size);
+        unregister_slab_pages_locked(slab);
+        slab->reset();
+        empty_slab_cache.push_back(slab);
+        if(empty_slab_cache.size() > EmptySlabCacheCapacity)
+        {
+            SlabAllocator *oldest = empty_slab_cache.front();
+            empty_slab_cache.pop_front();
+            erase_slab_locked(oldest);
+        }
+    }
+
+    SlabAllocator *GlobalHeap::try_take_cached_empty_slab_locked()
+    {
+        if(empty_slab_cache.empty())
+        {
+            return nullptr;
+        }
+
+        SlabAllocator *slab = empty_slab_cache.back();
+        empty_slab_cache.pop_back();
+        return slab;
+    }
+
     bool GlobalHeap::release_slab_if_empty(SlabAllocator *slab)
     {
         assert(slab != nullptr);
@@ -91,6 +133,12 @@ namespace cl
         if(slab->has_reclaim_blockers())
         {
             return false;
+        }
+
+        if(slab->size() == slab_size)
+        {
+            cache_empty_slab_locked(slab);
+            return true;
         }
 
         release_slab_locked(slab);
@@ -148,6 +196,12 @@ namespace cl
         const std::lock_guard<std::mutex> lock(heap_mutex);
         return slab_lookup.find(slab_lookup_key_for_address(ptr)) !=
                slab_lookup.end();
+    }
+
+    size_t GlobalHeap::empty_slab_cache_size_for_testing() const
+    {
+        const std::lock_guard<std::mutex> lock(heap_mutex);
+        return empty_slab_cache.size();
     }
 
     GlobalHeap::~GlobalHeap() = default;

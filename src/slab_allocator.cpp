@@ -5,7 +5,8 @@
 
 namespace cl
 {
-    SlabAllocator::SlabAllocator(size_t offset, size_t slab_size)
+    SlabAllocator::SlabAllocator(size_t offset, size_t _slab_size)
+        : slab_size(_slab_size)
     {
         void *addr = mmap(nullptr, slab_size, PROT_READ | PROT_WRITE,
                           MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -20,6 +21,14 @@ namespace cl
         end_ptr = start_ptr + slab_size;
         first_object_header = curr_ptr;
     }
-    SlabAllocator::~SlabAllocator() { munmap(start_ptr, end_ptr - start_ptr); }
+
+    SlabAllocator::~SlabAllocator() { munmap(start_ptr, slab_size); }
+
+    void SlabAllocator::reset()
+    {
+        assert(!has_reclaim_blockers());
+        curr_ptr = first_object_header;
+        valid_object_bitmap = {};
+    }
 
 }  // namespace cl
