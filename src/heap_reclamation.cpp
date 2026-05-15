@@ -21,37 +21,50 @@ namespace cl
             {
             }
 
-            void reclaim_object(HeapObject *obj, NativeValueSpan value_span)
-            {
-                assert(obj != nullptr);
-                assert(obj->lifecycle_state == HeapLifecycleState::Reclaiming);
-                reclaim_object_value_slots(value_span);
-                SlabAllocator *slab =
-                    refcounted_heap.slab_for_object_unlocked(obj);
-                obj->lifecycle_state = HeapLifecycleState::Dead;
-                slab->clear_valid_object(obj);
-                remember_release_candidate(slab);
-            }
-
             void reclaim_object(HeapObject *obj)
             {
                 assert(obj != nullptr);
                 assert(obj->lifecycle_state == HeapLifecycleState::Reclaiming);
                 const ReleaseDescriptor &descriptor =
                     release_descriptor_for(obj->native_layout_id());
-                if(descriptor.kind == ReleaseKind::Custom)
+
+                switch(descriptor.kind)
                 {
-                    assert(descriptor.custom_dealloc != nullptr);
-                    SlabAllocator *slab =
-                        refcounted_heap.slab_for_object_unlocked(obj);
-                    descriptor.custom_dealloc(obj);
-                    obj->lifecycle_state = HeapLifecycleState::Dead;
-                    slab->clear_valid_object(obj);
-                    remember_release_candidate(slab);
-                    return;
+                    case ReleaseKind::StaticSpan:
+                        reclaim_object_value_slots(
+                            obj, descriptor.value_offset_words,
+                            descriptor.static_release_count);
+                        break;
+                    case ReleaseKind::DynamicSmiSpan:
+                        {
+                            Value count_value =
+                                *(reinterpret_cast<Value *>(obj) +
+                                  descriptor.count_offset_words);
+                            assert(count_value.is_smi());
+                            int64_t dynamic_count = count_value.get_smi();
+                            assert(dynamic_count >= 0);
+                            reclaim_object_value_slots(
+                                obj, descriptor.value_offset_words,
+                                static_cast<uint64_t>(dynamic_count) +
+                                    descriptor.additional_release_count);
+                            break;
+                        }
+                    case ReleaseKind::DynamicAuxSpan:
+                        reclaim_object_value_slots(
+                            obj, descriptor.value_offset_words,
+                            obj->native_layout_aux_count_value() +
+                                descriptor.additional_release_count);
+                        break;
+                    case ReleaseKind::Custom:
+                        assert(descriptor.custom_dealloc != nullptr);
+                        descriptor.custom_dealloc(obj);
+                        break;
+                    case ReleaseKind::Missing:
+                        assert(false && "missing native release descriptor");
+                        __builtin_unreachable();
                 }
 
-                reclaim_object(obj, value_span_for_release(obj));
+                finish_reclaim_object(obj);
             }
 
             void remember_release_candidate(SlabAllocator *slab)
@@ -104,14 +117,27 @@ namespace cl
                 }
             }
 
-            void reclaim_object_value_slots(NativeValueSpan value_span)
+            void reclaim_object_value_slots(HeapObject *obj,
+                                            uint16_t value_offset_words,
+                                            uint64_t value_count)
             {
-                for(uint64_t idx = 0; idx < value_span.count; ++idx)
+                Value *slots =
+                    reinterpret_cast<Value *>(obj) + value_offset_words;
+                for(uint64_t idx = 0; idx < value_count; ++idx)
                 {
-                    Value value = value_span.slots[idx];
-                    value_span.slots[idx] = Value::not_present();
+                    Value value = slots[idx];
+                    slots[idx] = Value::not_present();
                     release_value(value);
                 }
+            }
+
+            void finish_reclaim_object(HeapObject *obj)
+            {
+                SlabAllocator *slab =
+                    refcounted_heap.slab_for_object_unlocked(obj);
+                obj->lifecycle_state = HeapLifecycleState::Dead;
+                slab->clear_valid_object(obj);
+                remember_release_candidate(slab);
             }
 
             GlobalHeap &refcounted_heap;

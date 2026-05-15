@@ -78,16 +78,13 @@ TEST(NativeLayoutDescriptor, ListNativeReleaseCountIncludesInheritedObjectCells)
 
 TEST(NativeLayoutDescriptor, ListNativeReleaseSpanStartsAtInheritedObjectCells)
 {
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-    List *list = context.thread()->make_object_raw<List>();
+    const ReleaseDescriptor &release =
+        release_descriptor_for(List::native_layout);
 
-    NativeValueSpan span = value_span_for_release(list);
-
-    EXPECT_EQ(reinterpret_cast<Value *>(list) +
-                  Object::native_value_offset_in_words(),
-              span.slots);
-    EXPECT_EQ(List::native_static_release_count(), span.count);
+    EXPECT_EQ(Object::native_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(List::native_static_release_count(),
+              release.static_release_count);
 }
 
 TEST(NativeLayoutDescriptor, FixedObjectSubclassesUseNativeStaticDescriptors)
@@ -115,17 +112,14 @@ TEST(NativeLayoutDescriptor, ScopeUsesNativeStaticReleaseDescriptor)
 
 TEST(NativeLayoutDescriptor, ScopeNativeReleaseSpanStartsAtParentScope)
 {
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-    Scope *scope = context.thread()->make_internal_raw<Scope>(nullptr);
+    const ReleaseDescriptor &release =
+        release_descriptor_for(Scope::native_layout);
 
-    NativeValueSpan span = value_span_for_release(scope);
-
-    EXPECT_EQ(reinterpret_cast<Value *>(scope) +
-                  Scope::native_value_offset_in_words(),
-              span.slots);
-    EXPECT_EQ(Scope::native_static_release_count(), span.count);
-    EXPECT_EQ(Scope::static_value_count(), span.count);
+    EXPECT_EQ(Scope::native_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(Scope::native_static_release_count(),
+              release.static_release_count);
+    EXPECT_EQ(Scope::static_value_count(), release.static_release_count);
 }
 
 TEST(NativeLayoutDescriptor, StringUsesStaticReleaseAndCustomObjectSize)
@@ -210,16 +204,13 @@ TEST(NativeLayoutDescriptor, StringCustomObjectSizeUsesStoredCount)
 TEST(NativeLayoutDescriptor,
      StringNativeReleaseSpanStartsAtInheritedObjectCells)
 {
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-    String *str = context.thread()->make_object_raw<String>(L"hello");
+    const ReleaseDescriptor &release =
+        release_descriptor_for(String::native_layout);
 
-    NativeValueSpan span = value_span_for_release(str);
-
-    EXPECT_EQ(reinterpret_cast<Value *>(str) +
-                  Object::native_value_offset_in_words(),
-              span.slots);
-    EXPECT_EQ(String::native_static_release_count(), span.count);
+    EXPECT_EQ(Object::native_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(String::native_static_release_count(),
+              release.static_release_count);
 }
 
 TEST(NativeLayoutDescriptor, TupleUsesDynamicSmiReleaseAndCustomObjectSize)
@@ -249,14 +240,19 @@ TEST(NativeLayoutDescriptor, CompactTupleDynamicSmiReleaseSpanUsesStoredCount)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
     Tuple *tuple = context.thread()->make_object_raw<Tuple>(3);
+    const ReleaseDescriptor &release =
+        release_descriptor_for(Tuple::native_layout);
 
     ASSERT_FALSE(layout_is_expanded(tuple->layout));
-    NativeValueSpan span = value_span_for_release(tuple);
 
-    EXPECT_EQ(reinterpret_cast<Value *>(tuple) +
-                  Object::native_value_offset_in_words(),
-              span.slots);
-    EXPECT_EQ(Tuple::native_additional_release_count() + 3, span.count);
+    Value count_value =
+        *(reinterpret_cast<Value *>(tuple) + release.count_offset_words);
+    ASSERT_TRUE(count_value.is_smi());
+    EXPECT_EQ(3, count_value.get_smi());
+    EXPECT_EQ(Object::native_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(Tuple::native_additional_release_count(),
+              release.additional_release_count);
 }
 
 TEST(NativeLayoutDescriptor, ExpandedTupleDynamicSmiReleaseSpanUsesStoredCount)
@@ -265,16 +261,20 @@ TEST(NativeLayoutDescriptor, ExpandedTupleDynamicSmiReleaseSpanUsesStoredCount)
     ThreadState::ActivationScope activation_scope(context.thread());
     Tuple *tuple =
         context.thread()->make_object_raw<Tuple>(object_layout_count_mask);
+    const ReleaseDescriptor &release =
+        release_descriptor_for(Tuple::native_layout);
 
     ASSERT_TRUE(layout_is_expanded(tuple->layout));
-    NativeValueSpan span = value_span_for_release(tuple);
 
-    EXPECT_EQ(reinterpret_cast<Value *>(tuple) +
-                  Object::native_value_offset_in_words(),
-              span.slots);
-    EXPECT_EQ(Tuple::native_additional_release_count() +
-                  object_layout_count_mask,
-              span.count);
+    Value count_value =
+        *(reinterpret_cast<Value *>(tuple) + release.count_offset_words);
+    ASSERT_TRUE(count_value.is_smi());
+    EXPECT_EQ(static_cast<int64_t>(object_layout_count_mask),
+              count_value.get_smi());
+    EXPECT_EQ(Object::native_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(Tuple::native_additional_release_count(),
+              release.additional_release_count);
 }
 
 TEST(NativeLayoutDescriptor, TupleCustomObjectSizeUsesStoredCount)
@@ -331,19 +331,13 @@ TEST(NativeLayoutDescriptor, InstanceAuxCountStoresPhysicalInlineSlotCount)
     EXPECT_EQ(1u, small->native_layout_aux_count_value());
     EXPECT_EQ(7u, large->native_layout_aux_count_value());
 
-    NativeValueSpan small_span = value_span_for_release(small);
-    NativeValueSpan large_span = value_span_for_release(large);
+    const ReleaseDescriptor &release =
+        release_descriptor_for(Instance::native_layout);
 
-    EXPECT_EQ(reinterpret_cast<Value *>(small) +
-                  Object::native_value_offset_in_words(),
-              small_span.slots);
-    EXPECT_EQ(reinterpret_cast<Value *>(large) +
-                  Object::native_value_offset_in_words(),
-              large_span.slots);
-    EXPECT_EQ(Instance::native_additional_release_count() + 1,
-              small_span.count);
-    EXPECT_EQ(Instance::native_additional_release_count() + 7,
-              large_span.count);
+    EXPECT_EQ(Object::native_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(Instance::native_additional_release_count(),
+              release.additional_release_count);
 }
 
 TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesAuxCount)
@@ -391,8 +385,6 @@ TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
     EXPECT_EQ(Value::from_smi(2), instance->get_own_property(b_name));
     EXPECT_EQ(Value::from_smi(3), instance->get_own_property(c_name));
     EXPECT_EQ(1u, instance->native_layout_aux_count_value());
-    EXPECT_EQ(Instance::native_additional_release_count() + 1,
-              value_span_for_release(instance).count);
 }
 
 TEST(NativeLayoutDescriptor, CodeObjectUsesCustomDeallocDescriptor)
@@ -459,14 +451,13 @@ TEST(NativeLayoutDescriptor, OverflowSlotsNativeReleaseSpanUsesCapacity)
     ThreadState::ActivationScope activation_scope(context.thread());
     OverflowSlots *overflow_slots =
         context.thread()->make_internal_raw<OverflowSlots>(2, 5);
+    const ReleaseDescriptor &release =
+        release_descriptor_for(OverflowSlots::native_layout);
 
-    NativeValueSpan span = value_span_for_release(overflow_slots);
-
-    EXPECT_EQ(reinterpret_cast<Value *>(overflow_slots) +
-                  OverflowSlots::native_value_offset_in_words(),
-              span.slots);
+    EXPECT_EQ(OverflowSlots::native_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(0u, release.additional_release_count);
     EXPECT_EQ(5u, overflow_slots->native_layout_aux_count_value());
-    EXPECT_EQ(5u, span.count);
 }
 
 TEST(NativeLayoutDescriptor, OverflowSlotsNativeObjectSizeUsesCapacity)
@@ -529,13 +520,15 @@ TEST(NativeLayoutDescriptor, ValueArrayBackingNativeReleaseSpanUsesCellCount)
     ThreadState::ActivationScope activation_scope(context.thread());
     ValueArrayBacking *backing =
         context.thread()->make_internal_raw<ValueArrayBacking>(7);
+    const ReleaseDescriptor &release =
+        release_descriptor_for(ValueArrayBacking::native_layout);
 
-    NativeValueSpan span = value_span_for_release(backing);
-
-    EXPECT_EQ(reinterpret_cast<Value *>(backing) +
-                  ValueArrayBacking::native_value_offset_in_words(),
-              span.slots);
-    EXPECT_EQ(7u, span.count);
+    Value count_value =
+        *(reinterpret_cast<Value *>(backing) + release.count_offset_words);
+    ASSERT_TRUE(count_value.is_smi());
+    EXPECT_EQ(7, count_value.get_smi());
+    EXPECT_EQ(ValueArrayBacking::native_value_offset_in_words(),
+              release.value_offset_words);
     EXPECT_EQ(ValueArrayBacking::size_for(7), object_size_in_bytes(backing));
 }
 
@@ -564,14 +557,17 @@ TEST(NativeLayoutDescriptor, HeapPtrArrayBackingNativeReleaseSpanUsesCellCount)
     ThreadState::ActivationScope activation_scope(context.thread());
     HeapPtrArrayBacking *backing =
         context.thread()->make_internal_raw<HeapPtrArrayBacking>(3);
+    const ReleaseDescriptor &release =
+        release_descriptor_for(HeapPtrArrayBacking::native_layout);
 
-    NativeValueSpan span = value_span_for_release(backing);
-
-    EXPECT_EQ(reinterpret_cast<Value *>(backing) +
-                  HeapPtrArrayBacking::native_value_offset_in_words(),
-              span.slots);
-    EXPECT_EQ(reinterpret_cast<Value *>(backing->elements), span.slots);
-    EXPECT_EQ(3u, span.count);
+    Value count_value =
+        *(reinterpret_cast<Value *>(backing) + release.count_offset_words);
+    ASSERT_TRUE(count_value.is_smi());
+    EXPECT_EQ(3, count_value.get_smi());
+    EXPECT_EQ(HeapPtrArrayBacking::native_value_offset_in_words(),
+              release.value_offset_words);
+    EXPECT_EQ(reinterpret_cast<Value *>(backing) + release.value_offset_words,
+              reinterpret_cast<Value *>(backing->elements));
     EXPECT_EQ(HeapPtrArrayBacking::size_for(3), object_size_in_bytes(backing));
 }
 

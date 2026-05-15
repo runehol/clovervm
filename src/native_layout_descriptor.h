@@ -32,12 +32,6 @@ namespace cl
         Custom,
     };
 
-    struct NativeValueSpan
-    {
-        Value *slots;
-        uint64_t count;
-    };
-
     struct ReleaseDescriptor
     {
         ReleaseKind kind;
@@ -294,7 +288,6 @@ namespace cl
                 native_layout)];
     }
 
-    NativeValueSpan value_span_for_release(HeapObject *obj);
     size_t object_size_in_bytes(const HeapObject *obj);
 
 }  // namespace cl
