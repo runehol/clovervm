@@ -1,5 +1,6 @@
 #include "string_builder.h"
 
+#include "class_object.h"
 #include "exception_propagation.h"
 #include "thread_state.h"
 #include "value_string.h"

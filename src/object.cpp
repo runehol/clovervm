@@ -160,36 +160,6 @@ namespace cl
         }
     }
 
-    void Object::initialize_shape_for_class(ClassObject *class_object)
-    {
-        assert(class_object != nullptr);
-        initialize_shape(class_object->get_instance_root_shape());
-    }
-
-    void Object::initialize_shape(Shape *instance_root_shape)
-    {
-        assert(shape == nullptr);
-        assert(instance_root_shape != nullptr);
-
-        shape = incref(instance_root_shape);
-        if(!native_layout_has_slots(native_layout_id()) ||
-           native_layout_id() == NativeLayoutId::Instance)
-        {
-            return;
-        }
-
-        int32_t next_slot_index = instance_root_shape->get_next_slot_index();
-        assert(next_slot_index >= 0);
-        assert(uint32_t(next_slot_index) <=
-               instance_root_shape->get_inline_slot_count());
-
-        for(uint32_t slot_idx = 0; slot_idx < uint32_t(next_slot_index);
-            ++slot_idx)
-        {
-            inline_slot_base()[slot_idx] = Value::not_present();
-        }
-    }
-
     Value Object::get_own_property(TValue<String> name) const
     {
         StorageLocation location = get_shape()->resolve_present_property(name);

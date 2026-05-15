@@ -7,6 +7,7 @@
 #include "object.h"
 #include "owned.h"
 #include "owned_typed_value.h"
+#include "refcount.h"
 #include "shape.h"
 #include "typed_value.h"
 #include "validity_cell.h"
@@ -104,7 +105,10 @@ namespace cl
         }
         static void validate_inline_slot_layout();
         void install_bootstrap_inheritance(Value bases_tuple, Value mro_tuple);
-        Shape *get_instance_root_shape() const;
+        Shape *get_instance_root_shape() const
+        {
+            return instance_root_shape.extract();
+        }
         void install_builtin_instance_root_shape(
             const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
             int32_t next_slot_index, ShapeFlags shape_flags);
@@ -212,6 +216,41 @@ namespace cl
     };
 
     class VirtualMachine;
+    inline ALWAYSINLINE void
+    Object::initialize_shape_for_class(ClassObject *class_object,
+                                       NativeLayoutId native_layout_id)
+    {
+        assert(class_object != nullptr);
+        initialize_shape(class_object->get_instance_root_shape(),
+                         native_layout_id);
+    }
+
+    inline ALWAYSINLINE void
+    Object::initialize_shape(Shape *instance_root_shape,
+                             NativeLayoutId native_layout_id)
+    {
+        assert(shape == nullptr);
+        assert(instance_root_shape != nullptr);
+
+        shape = incref(instance_root_shape);
+        if(!native_layout_has_slots(native_layout_id) ||
+           native_layout_id == NativeLayoutId::Instance)
+        {
+            return;
+        }
+
+        int32_t next_slot_index = instance_root_shape->get_next_slot_index();
+        assert(next_slot_index >= 0);
+        assert(uint32_t(next_slot_index) <=
+               instance_root_shape->get_inline_slot_count());
+
+        for(uint32_t slot_idx = 0; slot_idx < uint32_t(next_slot_index);
+            ++slot_idx)
+        {
+            inline_slot_base()[slot_idx] = Value::not_present();
+        }
+    }
+
     bool is_subclass_of(ClassObject *cls, ClassObject *base);
     bool is_instance_of(Object *obj, ClassObject *cls);
     BuiltinClassDefinition make_type_class(VirtualMachine *vm);

@@ -42,7 +42,7 @@ namespace cl
         Object(ClassObject *_cls, NativeLayoutId _native_layout_id)
             : HeapObject(_native_layout_id), shape(nullptr)
         {
-            initialize_shape_for_class(_cls);
+            initialize_shape_for_class(_cls, _native_layout_id);
         }
 
         Object(BootstrapObjectTag, NativeLayoutId _native_layout_id)
@@ -86,7 +86,8 @@ namespace cl
         CL_DECLARE_STATIC_OBJECT_SIZE(Object);
 
     private:
-        void initialize_shape(Shape *instance_root_shape);
+        ALWAYSINLINE void initialize_shape(Shape *instance_root_shape,
+                                           NativeLayoutId native_layout_id);
         ALWAYSINLINE SlotObject *as_slot_object();
         ALWAYSINLINE const SlotObject *as_slot_object() const;
         ALWAYSINLINE OverflowSlots *get_overflow_slots() const;
@@ -94,7 +95,9 @@ namespace cl
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
 
     protected:
-        void initialize_shape_for_class(ClassObject *class_object);
+        ALWAYSINLINE void
+        initialize_shape_for_class(ClassObject *class_object,
+                                   NativeLayoutId native_layout_id);
     };
 
     constexpr bool native_layout_has_slots(NativeLayoutId native_layout)
@@ -113,7 +116,7 @@ namespace cl
             : Object(BootstrapObjectTag{}, native_layout_id),
               overflow_storage(nullptr)
         {
-            initialize_shape_for_class(cls);
+            initialize_shape_for_class(cls, native_layout_id);
         }
 
         SlotObject(BootstrapObjectTag tag, NativeLayoutId native_layout_id)

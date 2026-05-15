@@ -428,11 +428,6 @@ namespace cl
         return builtin_class_definition(cls, native_layout_ids);
     }
 
-    Shape *ClassObject::get_instance_root_shape() const
-    {
-        return instance_root_shape.extract();
-    }
-
     void ClassObject::install_builtin_instance_root_shape(
         const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
         int32_t next_slot_index, ShapeFlags shape_flags)
