@@ -755,8 +755,8 @@ The intended offsets are:
 |---|---|---|---:|---:|---:|
 | `Tuple` | `size_value` | `MemberTValue<SMI>` | 32 bytes / 4 words | `size_value`: 32 bytes / 4 words | fixed fields including count |
 | `Instance` | heap-object auxiliary count | `uint16_t` header field | n/a | class-declared first owned value | fixed owned fields before inline slots |
-| `ValueArrayBacking` | proposed `value_count` | `MemberTValue<SMI>` | 16 bytes / 2 words | `value_count`: 16 bytes / 2 words | count field |
-| `HeapPtrArrayBacking` | proposed pointer-cell count | `MemberTValue<SMI>` | 16 bytes / 2 words | count field: 16 bytes / 2 words | count field |
+| `ValueArrayBacking` | heap-object auxiliary count | `uint16_t` header field | n/a | `elements` | none |
+| `HeapPtrArrayBacking` | heap-object auxiliary count | `uint16_t` header field | n/a | `elements` | none |
 | `OverflowSlots` | current `capacity`, or future SMI count | currently `uint32_t`; prefer `MemberTValue<SMI>` for `DynamicSmiSpan` | current capacity: 16 bytes / 2 words | count/capacity field | fixed fields included in contiguous span |
 
 `String::count` is also a `MemberTValue<SMI>` and is part of a static release
@@ -765,7 +765,10 @@ span. It also participates in `object_size_in_bytes()`.
 For backing objects, the stored count should be the already-normalized number
 of cells the release loop sees. For example, a backing used by `ValueArray<Entry>`
 should store the number of `Value` cells in all allocated entries, not the
-number of `Entry` objects. This keeps the hot release loop free of scale factors.
+number of `Entry` objects. The backing records store that physical cell count in
+the heap-object auxiliary count. When backing ownership is transferred during
+growth, the old backing's auxiliary count is set to zero so reclamation does not
+release moved cells. This keeps the hot release loop free of scale factors.
 
 ## Migration Plan
 

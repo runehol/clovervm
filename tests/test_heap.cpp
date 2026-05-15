@@ -342,19 +342,6 @@ TEST(GlobalHeap, InternedHeapTracksSlabPins)
     EXPECT_EQ(2u, slab->slab_pin_count());
 }
 
-TEST(GlobalHeap, ExpandedDynamicAllocationPreservesPointerTag)
-{
-    GlobalHeap heap = GlobalHeap::refcounted_heap();
-    ThreadLocalHeap local_heap(&heap);
-
-    Tuple *tuple =
-        local_heap.make<Tuple>(BootstrapObjectTag{}, object_layout_count_mask);
-
-    EXPECT_TRUE(layout_is_expanded(tuple->layout));
-    EXPECT_TRUE(heap_ptr_is_refcounted(tuple));
-    EXPECT_NE(nullptr, heap.slab_for_object_unlocked(tuple));
-}
-
 TEST(HeapLayout, CompactLayoutSupportsOffsetUpToFifteen)
 {
     HeapLayout layout = encode_compact_layout_unchecked(1, 15, 1);

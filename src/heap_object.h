@@ -102,12 +102,6 @@ namespace cl
                object_layout_offset_mask;
     }
 
-    constexpr HeapLayout compact_layout_without_value_count(HeapLayout layout)
-    {
-        return layout &
-               ~(object_layout_count_mask << object_layout_count_shift);
-    }
-
 #define CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(type, first_value_member,         \
                                              value_count_expr)                 \
     static constexpr bool has_dynamic_layout = false;                          \
@@ -257,15 +251,16 @@ namespace cl
                    uint16_t _native_layout_aux_count = 0)
             : refcount(0), lifecycle_state(HeapLifecycleState::Normal),
               native_layout_id_(_native_layout_id),
-              native_layout_aux_count(_native_layout_aux_count), layout(_layout)
+              native_layout_aux_count(_native_layout_aux_count)
         {
+            (void)_layout;
             assert(native_layout_id_ != NativeLayoutId::Invalid);
         }
 
         HeapObject()
             : refcount(0), lifecycle_state(HeapLifecycleState::Normal),
               native_layout_id_(NativeLayoutId::Invalid),
-              native_layout_aux_count(0), layout(0)
+              native_layout_aux_count(0)
         {
         }
 
@@ -283,38 +278,11 @@ namespace cl
         HeapLifecycleState lifecycle_state;
         NativeLayoutId native_layout_id_;
         uint16_t native_layout_aux_count;
-        HeapLayout layout;
     };
-
-    inline ExpandedHeader *expanded_header_for_object(HeapObject *obj)
-    {
-        assert(layout_is_expanded(obj->layout));
-        return reinterpret_cast<ExpandedHeader *>(
-            reinterpret_cast<char *>(obj) - sizeof(ExpandedHeader));
-    }
-
-    inline const ExpandedHeader *
-    expanded_header_for_object(const HeapObject *obj)
-    {
-        assert(layout_is_expanded(obj->layout));
-        return reinterpret_cast<const ExpandedHeader *>(
-            reinterpret_cast<const char *>(obj) - sizeof(ExpandedHeader));
-    }
-
-    inline void object_clear_value_ownership(HeapObject *obj)
-    {
-        if(layout_is_expanded(obj->layout))
-        {
-            expanded_header_for_object(obj)->value_count = 0;
-            return;
-        }
-
-        obj->layout = compact_layout_without_value_count(obj->layout);
-    }
 
     static_assert(sizeof(DynamicLayoutSpec) == 16);
     static_assert(sizeof(ExpandedHeader) == 16);
-    static_assert(sizeof(HeapObject) == 12);
+    static_assert(sizeof(HeapObject) == 8);
     static_assert(std::is_trivially_destructible_v<HeapObject>);
 
 }  // namespace cl

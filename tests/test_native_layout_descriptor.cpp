@@ -243,34 +243,10 @@ TEST(NativeLayoutDescriptor, CompactTupleDynamicSmiReleaseSpanUsesStoredCount)
     const ReleaseDescriptor &release =
         release_descriptor_for(Tuple::native_layout);
 
-    ASSERT_FALSE(layout_is_expanded(tuple->layout));
-
     Value count_value =
         *(reinterpret_cast<Value *>(tuple) + release.count_offset_words);
     ASSERT_TRUE(count_value.is_smi());
     EXPECT_EQ(3, count_value.get_smi());
-    EXPECT_EQ(Object::native_value_offset_in_words(),
-              release.value_offset_words);
-    EXPECT_EQ(Tuple::native_additional_release_count(),
-              release.additional_release_count);
-}
-
-TEST(NativeLayoutDescriptor, ExpandedTupleDynamicSmiReleaseSpanUsesStoredCount)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-    Tuple *tuple =
-        context.thread()->make_object_raw<Tuple>(object_layout_count_mask);
-    const ReleaseDescriptor &release =
-        release_descriptor_for(Tuple::native_layout);
-
-    ASSERT_TRUE(layout_is_expanded(tuple->layout));
-
-    Value count_value =
-        *(reinterpret_cast<Value *>(tuple) + release.count_offset_words);
-    ASSERT_TRUE(count_value.is_smi());
-    EXPECT_EQ(static_cast<int64_t>(object_layout_count_mask),
-              count_value.get_smi());
     EXPECT_EQ(Object::native_value_offset_in_words(),
               release.value_offset_words);
     EXPECT_EQ(Tuple::native_additional_release_count(),
@@ -495,14 +471,12 @@ TEST(NativeLayoutDescriptor, RawArrayBackingNativeObjectSizeUsesStorageBytes)
     EXPECT_EQ(RawArrayBacking::size_for(27), object_size_in_bytes(backing));
 }
 
-TEST(NativeLayoutDescriptor, ValueArrayBackingUsesDynamicSmiReleaseDescriptor)
+TEST(NativeLayoutDescriptor, ValueArrayBackingUsesDynamicAuxReleaseDescriptor)
 {
     const ReleaseDescriptor &release =
         release_descriptor_for(ValueArrayBacking::native_layout);
 
-    EXPECT_EQ(ReleaseKind::DynamicSmiSpan, release.kind);
-    EXPECT_EQ(ValueArrayBacking::native_value_count_offset_in_words(),
-              release.count_offset_words);
+    EXPECT_EQ(ReleaseKind::DynamicAuxSpan, release.kind);
     EXPECT_EQ(ValueArrayBacking::native_value_offset_in_words(),
               release.value_offset_words);
     EXPECT_EQ(0u, release.additional_release_count);
@@ -523,23 +497,18 @@ TEST(NativeLayoutDescriptor, ValueArrayBackingNativeReleaseSpanUsesCellCount)
     const ReleaseDescriptor &release =
         release_descriptor_for(ValueArrayBacking::native_layout);
 
-    Value count_value =
-        *(reinterpret_cast<Value *>(backing) + release.count_offset_words);
-    ASSERT_TRUE(count_value.is_smi());
-    EXPECT_EQ(7, count_value.get_smi());
+    EXPECT_EQ(7u, backing->native_layout_aux_count_value());
     EXPECT_EQ(ValueArrayBacking::native_value_offset_in_words(),
               release.value_offset_words);
     EXPECT_EQ(ValueArrayBacking::size_for(7), object_size_in_bytes(backing));
 }
 
-TEST(NativeLayoutDescriptor, HeapPtrArrayBackingUsesDynamicSmiReleaseDescriptor)
+TEST(NativeLayoutDescriptor, HeapPtrArrayBackingUsesDynamicAuxReleaseDescriptor)
 {
     const ReleaseDescriptor &release =
         release_descriptor_for(HeapPtrArrayBacking::native_layout);
 
-    EXPECT_EQ(ReleaseKind::DynamicSmiSpan, release.kind);
-    EXPECT_EQ(HeapPtrArrayBacking::native_value_count_offset_in_words(),
-              release.count_offset_words);
+    EXPECT_EQ(ReleaseKind::DynamicAuxSpan, release.kind);
     EXPECT_EQ(HeapPtrArrayBacking::native_value_offset_in_words(),
               release.value_offset_words);
     EXPECT_EQ(0u, release.additional_release_count);
@@ -560,10 +529,7 @@ TEST(NativeLayoutDescriptor, HeapPtrArrayBackingNativeReleaseSpanUsesCellCount)
     const ReleaseDescriptor &release =
         release_descriptor_for(HeapPtrArrayBacking::native_layout);
 
-    Value count_value =
-        *(reinterpret_cast<Value *>(backing) + release.count_offset_words);
-    ASSERT_TRUE(count_value.is_smi());
-    EXPECT_EQ(3, count_value.get_smi());
+    EXPECT_EQ(3u, backing->native_layout_aux_count_value());
     EXPECT_EQ(HeapPtrArrayBacking::native_value_offset_in_words(),
               release.value_offset_words);
     EXPECT_EQ(reinterpret_cast<Value *>(backing) + release.value_offset_words,

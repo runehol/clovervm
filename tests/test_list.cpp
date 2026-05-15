@@ -80,6 +80,20 @@ TEST(List, SizedConstructorInitializesEntriesToNotPresent)
     EXPECT_TRUE(list->item_unchecked(2).is_not_present());
 }
 
+TEST(List, ReserveTransfersBackingElementOwnership)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    List *list = context.thread()->make_object_raw<List>();
+    String *item = make_string(context, L"kept");
+
+    list->append(Value::from_oop(item));
+    list->reserve(8);
+
+    EXPECT_EQ(Value::from_oop(item), list->item_unchecked(0));
+    EXPECT_EQ(1, item->refcount);
+}
+
 TEST(List, CheckedIndexingSupportsNegativeIndices)
 {
     test::VmTestContext context;

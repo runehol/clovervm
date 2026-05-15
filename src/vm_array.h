@@ -364,13 +364,13 @@ namespace cl
             for(size_t idx = 0; idx < current_size; ++idx)
             {
                 new(new_data + idx) T((*this)[idx]);
-                incref_element(new_data + idx);
             }
 
             if(backing != nullptr)
             {
-                object_clear_value_ownership(backing.extract());
+                backing.extract()->set_native_layout_aux_count(0);
             }
+
             backing = new_backing;
             set_capacity(requested_capacity);
         }
@@ -625,7 +625,7 @@ namespace cl
 
             if(backing != nullptr)
             {
-                object_clear_value_ownership(backing.extract());
+                backing.extract()->set_native_layout_aux_count(0);
             }
             backing = new_backing;
             set_capacity(requested_capacity);

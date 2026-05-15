@@ -141,7 +141,7 @@ namespace cl
         return static_cast<const T *>(object);
     }
 
-    static_assert(sizeof(Object) == 32);
+    static_assert(sizeof(Object) == 24);
     static_assert(std::is_trivially_destructible_v<Object>);
 
     BuiltinClassDefinition make_object_class(VirtualMachine *vm);

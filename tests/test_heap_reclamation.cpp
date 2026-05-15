@@ -335,7 +335,6 @@ namespace cl
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
         String *child = thread->make_object_raw<String>(L"tuple-child");
         Tuple *owner = thread->make_object_raw<Tuple>(1);
-        ASSERT_FALSE(layout_is_expanded(owner->layout));
         owner->initialize_item_unchecked(0, Value::from_oop(child));
         ASSERT_EQ(1, child->refcount);
         thread->add_to_zero_count_table_if_needed(owner);
@@ -354,30 +353,6 @@ namespace cl
                   heap.count_valid_objects_slow());
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(owner));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(child));
-    }
-
-    TEST(HeapReclamation, FullReclamationReclaimsExpandedDynamicObject)
-    {
-        test::VmTestContext context;
-        ThreadState *thread = context.thread();
-        ThreadState::ActivationScope active_thread(thread);
-        GlobalHeap &heap = context.vm().get_refcounted_global_heap();
-        context.vm().run_heap_reclamation();
-        uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
-        Tuple *tuple = thread->make_object_raw<Tuple>(object_layout_count_mask);
-        ASSERT_TRUE(layout_is_expanded(tuple->layout));
-        thread->add_to_zero_count_table_if_needed(tuple);
-        ASSERT_TRUE(thread->zero_count_table_contains_for_testing(tuple));
-        SlabAllocator *slab = heap.slab_for_object_unlocked(tuple);
-        ASSERT_TRUE(slab_has_valid_object(slab, tuple));
-        uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
-        ASSERT_EQ(valid_objects_before_alloc + 1, valid_objects_after_alloc);
-
-        context.vm().run_heap_reclamation();
-
-        EXPECT_EQ(valid_objects_after_alloc - 1,
-                  heap.count_valid_objects_slow());
-        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(tuple));
     }
 
     TEST(HeapReclamation, FullReclamationReleasesInactiveSlab)

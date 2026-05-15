@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace cl
 {
@@ -57,10 +58,17 @@ namespace cl
             NativeLayoutId::ValueArrayBacking;
 
         ValueArrayBacking(HeapLayout layout, size_t value_cell_count)
-            : HeapObject(native_layout, layout),
-              value_cell_count(
-                  Value::from_smi(static_cast<int64_t>(value_cell_count)))
+            : HeapObject(
+                  native_layout, layout,
+                  native_aux_count_for_value_cell_count(value_cell_count))
         {
+        }
+
+        static uint16_t
+        native_aux_count_for_value_cell_count(size_t value_cell_count)
+        {
+            assert(value_cell_count <= std::numeric_limits<uint16_t>::max());
+            return static_cast<uint16_t>(value_cell_count);
         }
 
         static size_t size_for(size_t value_cell_count)
@@ -71,22 +79,20 @@ namespace cl
 
         static size_t object_size_in_bytes(const ValueArrayBacking *backing)
         {
-            return size_for(
-                static_cast<size_t>(backing->value_cell_count.get_smi()));
+            return size_for(backing->native_layout_aux_count_value());
         }
 
         static DynamicLayoutSpec layout_spec_for(size_t value_cell_count)
         {
+            native_aux_count_for_value_cell_count(value_cell_count);
             return DynamicLayoutSpec{
                 round_up_to_16byte_units(size_for(value_cell_count)),
                 value_cell_count};
         }
 
-        Value value_cell_count;
         Value elements[1];
 
-        CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN(ValueArrayBacking, value_cell_count,
-                                          elements, 0);
+        CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(ValueArrayBacking, elements, 0);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(ValueArrayBacking,
                                       ValueArrayBacking::object_size_in_bytes);
         CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(ValueArrayBacking, elements);
@@ -99,10 +105,17 @@ namespace cl
             NativeLayoutId::HeapPtrArrayBacking;
 
         HeapPtrArrayBacking(HeapLayout layout, size_t value_cell_count)
-            : HeapObject(native_layout, layout),
-              value_cell_count(
-                  Value::from_smi(static_cast<int64_t>(value_cell_count)))
+            : HeapObject(
+                  native_layout, layout,
+                  native_aux_count_for_value_cell_count(value_cell_count))
         {
+        }
+
+        static uint16_t
+        native_aux_count_for_value_cell_count(size_t value_cell_count)
+        {
+            assert(value_cell_count <= std::numeric_limits<uint16_t>::max());
+            return static_cast<uint16_t>(value_cell_count);
         }
 
         static size_t size_for(size_t value_cell_count)
@@ -113,25 +126,23 @@ namespace cl
 
         static size_t object_size_in_bytes(const HeapPtrArrayBacking *backing)
         {
-            return size_for(
-                static_cast<size_t>(backing->value_cell_count.get_smi()));
+            return size_for(backing->native_layout_aux_count_value());
         }
 
         static DynamicLayoutSpec layout_spec_for(size_t value_cell_count)
         {
+            native_aux_count_for_value_cell_count(value_cell_count);
             return DynamicLayoutSpec{
                 round_up_to_16byte_units(size_for(value_cell_count)),
                 value_cell_count};
         }
 
-        Value value_cell_count;
         HeapObject *elements[1];
 
         static_assert(sizeof(HeapObject *) == sizeof(Value));
         static_assert(alignof(HeapObject *) == alignof(Value));
 
-        CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN(HeapPtrArrayBacking, value_cell_count,
-                                          elements, 0);
+        CL_DECLARE_DYNAMIC_AUX_VALUE_SPAN(HeapPtrArrayBacking, elements, 0);
         CL_DECLARE_CUSTOM_OBJECT_SIZE(
             HeapPtrArrayBacking, HeapPtrArrayBacking::object_size_in_bytes);
         CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(HeapPtrArrayBacking, elements);
