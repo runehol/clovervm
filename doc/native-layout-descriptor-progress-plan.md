@@ -213,11 +213,11 @@ ID, not just Python-visible objects.
 
 ## Stage 10: Remove Legacy Release Dependence
 
-- [ ] Verify every live heap object kind has a descriptor entry.
-- [ ] Verify there are no remaining `LegacyHeapLayout` release descriptors.
-- [ ] Remove the `LegacyHeapLayout` release kind from reclamation release.
-- [ ] Remove packed value-count and value-offset dependence from reclamation.
-- [ ] Keep any remaining size metadata only where still needed by allocation or
+- [x] Verify every live heap object kind has a descriptor entry.
+- [x] Verify there are no remaining `LegacyHeapLayout` release descriptors.
+- [x] Remove the `LegacyHeapLayout` release kind from reclamation release.
+- [x] Remove packed value-count and value-offset dependence from reclamation.
+- [x] Keep any remaining size metadata only where still needed by allocation or
       transitional validation.
 - [ ] Update reclamation and heap tests to assert descriptor-driven release.
 

@@ -17,7 +17,6 @@ namespace cl
     enum class ReleaseKind : uint8_t
     {
         Missing,
-        LegacyHeapLayout,
         StaticSpan,
         DynamicSmiSpan,
         DynamicAuxSpan,
@@ -27,7 +26,6 @@ namespace cl
     enum class ObjectSizeKind : uint8_t
     {
         Missing,
-        LegacyHeapLayout,
         StaticSize,
         DynamicSmiSize,
         DynamicAuxSize,
@@ -52,12 +50,6 @@ namespace cl
         static constexpr ReleaseDescriptor missing()
         {
             return ReleaseDescriptor{ReleaseKind::Missing, 0, 0, 0, 0, nullptr};
-        }
-
-        static constexpr ReleaseDescriptor legacy_heap_layout()
-        {
-            return ReleaseDescriptor{
-                ReleaseKind::LegacyHeapLayout, 0, 0, 0, 0, nullptr};
         }
 
         static constexpr ReleaseDescriptor
@@ -113,12 +105,6 @@ namespace cl
         {
             return ObjectSizeDescriptor{ObjectSizeKind::Missing, 0, 0, 0,
                                         nullptr};
-        }
-
-        static constexpr ObjectSizeDescriptor legacy_heap_layout()
-        {
-            return ObjectSizeDescriptor{ObjectSizeKind::LegacyHeapLayout, 0, 0,
-                                        0, nullptr};
         }
 
         static constexpr ObjectSizeDescriptor static_size(size_t size_in_bytes)
@@ -219,24 +205,19 @@ namespace cl
             return static_cast<size_t>(native_layout);
         }
 
-        constexpr ReleaseDescriptor legacy_release_descriptor()
-        {
-            return ReleaseDescriptor::legacy_heap_layout();
-        }
-
-        constexpr ObjectSizeDescriptor legacy_object_size_descriptor()
-        {
-            return ObjectSizeDescriptor::legacy_heap_layout();
-        }
-
         template <typename Descriptor, typename Kind>
         constexpr bool descriptor_table_is_complete(
             const std::array<Descriptor, native_layout_descriptor_count()>
                 &descriptors,
             Kind missing_kind)
         {
-            for(size_t idx = 0; idx < native_layout_descriptor_count(); ++idx)
+            for(size_t idx = native_layout_index(NativeLayoutId::Invalid) + 1;
+                idx < native_layout_descriptor_count(); ++idx)
             {
+                if(idx == native_layout_index(NativeLayoutId::TestOnly))
+                {
+                    continue;
+                }
                 if(descriptors[idx].kind == missing_kind)
                 {
                     return false;
@@ -251,52 +232,6 @@ namespace cl
         {
             std::array<ReleaseDescriptor, native_layout_descriptor_count()>
                 descriptors{};
-            descriptors[native_layout_index(NativeLayoutId::Invalid)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::String)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::List)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Tuple)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Dict)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Function)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::RangeIterator)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::TupleIterator)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::ListIterator)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::CodeObject)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::ClassObject)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Exception)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::StopIteration)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Instance)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Scope)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Shape)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::ValidityCell)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::OverflowSlots)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::RawArrayBacking)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(
-                NativeLayoutId::ValueArrayBacking)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(
-                NativeLayoutId::HeapPtrArrayBacking)] =
-                legacy_release_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::TestOnly)] =
-                legacy_release_descriptor();
 
 #define CL_SET_NATIVE_RELEASE_DESCRIPTOR(type)                                 \
     descriptors[native_layout_index(type::native_layout)] =                    \
@@ -313,52 +248,6 @@ namespace cl
         {
             std::array<ObjectSizeDescriptor, native_layout_descriptor_count()>
                 descriptors{};
-            descriptors[native_layout_index(NativeLayoutId::Invalid)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::String)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::List)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Tuple)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Dict)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Function)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::RangeIterator)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::TupleIterator)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::ListIterator)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::CodeObject)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::ClassObject)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Exception)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::StopIteration)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Instance)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Scope)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::Shape)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::ValidityCell)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::OverflowSlots)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::RawArrayBacking)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(
-                NativeLayoutId::ValueArrayBacking)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(
-                NativeLayoutId::HeapPtrArrayBacking)] =
-                legacy_object_size_descriptor();
-            descriptors[native_layout_index(NativeLayoutId::TestOnly)] =
-                legacy_object_size_descriptor();
 
 #define CL_SET_NATIVE_OBJECT_SIZE_DESCRIPTOR(type)                             \
     descriptors[native_layout_index(type::native_layout)] =                    \

@@ -6,46 +6,6 @@ namespace cl
 {
     namespace
     {
-        size_t legacy_heap_layout_object_size_in_bytes(const HeapObject *obj)
-        {
-            assert(obj != nullptr);
-            uint64_t size_in_16byte_units;
-            if(layout_is_expanded(obj->layout))
-            {
-                size_in_16byte_units = expanded_header_for_object(obj)
-                                           ->object_size_in_16byte_units;
-            }
-            else
-            {
-                size_in_16byte_units = obj->layout & object_layout_size_mask;
-            }
-
-            return size_t(size_in_16byte_units) * 16;
-        }
-
-        NativeValueSpan legacy_heap_layout_value_span(HeapObject *obj)
-        {
-            assert(obj != nullptr);
-            uint32_t first_value_offset_in_words;
-            uint64_t value_count;
-            if(layout_is_expanded(obj->layout))
-            {
-                first_value_offset_in_words =
-                    obj->layout & ~object_layout_expanded_bit;
-                value_count = expanded_header_for_object(obj)->value_count;
-            }
-            else
-            {
-                first_value_offset_in_words =
-                    compact_layout_value_offset_in_words(obj->layout);
-                value_count = compact_layout_value_count(obj->layout);
-            }
-
-            return NativeValueSpan{reinterpret_cast<Value *>(obj) +
-                                       first_value_offset_in_words,
-                                   value_count};
-        }
-
         NativeValueSpan static_value_span(HeapObject *obj,
                                           const ReleaseDescriptor &descriptor)
         {
@@ -88,8 +48,6 @@ namespace cl
 
         switch(descriptor.kind)
         {
-            case ReleaseKind::LegacyHeapLayout:
-                return legacy_heap_layout_value_span(obj);
             case ReleaseKind::StaticSpan:
                 return static_value_span(obj, descriptor);
             case ReleaseKind::DynamicSmiSpan:
@@ -113,8 +71,6 @@ namespace cl
 
         switch(descriptor.kind)
         {
-            case ObjectSizeKind::LegacyHeapLayout:
-                return legacy_heap_layout_object_size_in_bytes(obj);
             case ObjectSizeKind::StaticSize:
                 return descriptor.static_size_in_bytes;
             case ObjectSizeKind::Custom:

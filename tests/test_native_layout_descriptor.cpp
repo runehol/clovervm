@@ -25,56 +25,6 @@ using namespace cl;
 
 namespace
 {
-    class LegacySizeTestObject : public HeapObject
-    {
-    public:
-        static constexpr NativeLayoutId native_layout =
-            NativeLayoutId::TestOnly;
-
-        LegacySizeTestObject() : HeapObject(native_layout, compact_layout())
-        {
-            values[0] = Value::not_present();
-        }
-
-        Value values[1];
-
-        CL_DECLARE_STATIC_LAYOUT_WITH_VALUES(LegacySizeTestObject, values, 1);
-    };
-
-    class LegacyDynamicSizeTestObject : public HeapObject
-    {
-    public:
-        static constexpr NativeLayoutId native_layout =
-            NativeLayoutId::TestOnly;
-
-        LegacyDynamicSizeTestObject(HeapLayout layout, size_t size)
-            : HeapObject(native_layout, layout), size_(size)
-        {
-            for(size_t idx = 0; idx < size_; ++idx)
-            {
-                values[idx] = Value::not_present();
-            }
-        }
-
-        static size_t size_for(size_t size)
-        {
-            return sizeof(LegacyDynamicSizeTestObject) +
-                   (size - 1) * sizeof(Value);
-        }
-
-        static DynamicLayoutSpec layout_spec_for(size_t size)
-        {
-            return DynamicLayoutSpec{round_up_to_16byte_units(size_for(size)),
-                                     size};
-        }
-
-        size_t size_;
-        Value values[1];
-
-        CL_DECLARE_DYNAMIC_LAYOUT_WITH_VALUES(LegacyDynamicSizeTestObject,
-                                              values);
-    };
-
     class CustomDeallocTestObject : public HeapObject
     {
     public:
@@ -625,39 +575,10 @@ TEST(NativeLayoutDescriptor, HeapPtrArrayBackingNativeReleaseSpanUsesCellCount)
     EXPECT_EQ(HeapPtrArrayBacking::size_for(3), object_size_in_bytes(backing));
 }
 
-TEST(NativeLayoutDescriptor, UnmigratedLayoutsStillUseLegacyReleaseDescriptor)
+TEST(NativeLayoutDescriptor, TestOnlyDescriptorsAreMissing)
 {
-    EXPECT_EQ(ReleaseKind::LegacyHeapLayout,
+    EXPECT_EQ(ReleaseKind::Missing,
               release_descriptor_for(NativeLayoutId::TestOnly).kind);
-}
-
-TEST(NativeLayoutDescriptor, LegacyObjectSizeQueryUsesHeapLayout)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-    LegacySizeTestObject *obj =
-        context.thread()->make_internal_raw<LegacySizeTestObject>();
-
-    ASSERT_EQ(ObjectSizeKind::LegacyHeapLayout,
+    EXPECT_EQ(ObjectSizeKind::Missing,
               object_size_descriptor_for(NativeLayoutId::TestOnly).kind);
-    EXPECT_EQ(size_t(LegacySizeTestObject::static_size_in_16byte_units()) * 16,
-              object_size_in_bytes(obj));
-}
-
-TEST(NativeLayoutDescriptor, ExpandedLegacyObjectSizeQueryUsesHeapLayout)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-    size_t value_count = object_layout_count_mask + 1;
-    LegacyDynamicSizeTestObject *obj =
-        context.thread()->make_internal_raw<LegacyDynamicSizeTestObject>(
-            value_count);
-
-    ASSERT_TRUE(layout_is_expanded(obj->layout));
-    ASSERT_EQ(ObjectSizeKind::LegacyHeapLayout,
-              object_size_descriptor_for(NativeLayoutId::TestOnly).kind);
-    EXPECT_EQ(round_up_to_16byte_units(
-                  LegacyDynamicSizeTestObject::size_for(value_count)) *
-                  16,
-              object_size_in_bytes(obj));
 }
