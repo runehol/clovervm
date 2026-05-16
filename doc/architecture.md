@@ -128,6 +128,7 @@ Detailed docs:
 
 - [Object Model](object-model.md)
 - [Builtin Object Model](builtin-object-model.md)
+- [Module Global Namespace Design Sketch](module-global-namespace-design.md)
 
 ## Inline Caches And Validity Cells
 

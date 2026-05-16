@@ -373,6 +373,10 @@ behavior from dominating the local-variable fast path.
 
 ## Future Module Objects And Global Lookup
 
+See also [Module Global Namespace Design Sketch](module-global-namespace-design.md)
+for the newer direction that separates module runtime namespaces from lexical
+`Scope` objects.
+
 Module objects should eventually become the primary home for module globals.
 
 The attractive long-term direction is for a module to be a normal shape-backed
@@ -399,7 +403,12 @@ Reads, writes, and deletes deliberately use different parts of that chain:
 - `LOAD_GLOBAL x`: module namespace, then builtins namespace
 - `STORE_GLOBAL x`: module namespace only
 - `DEL_GLOBAL x`: module namespace only
-- `module.x`: module namespace only
+
+Module attribute access is related but not identical. It should use object
+attribute semantics on the module object, with the module namespace as the
+module's own-property storage. It should not use builtin fallback, but it may
+eventually involve the module object's class, descriptor behavior, and module
+attribute hooks.
 
 This means builtin fallback is a lookup rule, not a storage rule. A missing
 module binding should not be represented as a module attribute whose value is a
