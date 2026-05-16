@@ -933,6 +933,12 @@ TEST(Interpreter, float_comparison_values)
     expect_bool_result(L"1.0 == 2\n", Value::False());
     expect_bool_result(L"1.0 != 2\n", Value::True());
     expect_bool_result(L"1.0 != 1\n", Value::False());
+    expect_bool_result(L"True == 1.0\n", Value::True());
+    expect_bool_result(L"False == 0.0\n", Value::True());
+    expect_bool_result(L"True != 1.0\n", Value::False());
+    expect_bool_result(L"False != 0.0\n", Value::False());
+    expect_bool_result(L"True < 2.0\n", Value::True());
+    expect_bool_result(L"False >= 0.0\n", Value::True());
 
     expect_bool_result(L"0.0 == -0.0\n", Value::True());
     expect_bool_result(L"0.0 != -0.0\n", Value::False());

@@ -821,11 +821,15 @@ namespace cl
         return false;
     }
 
-    static ALWAYSINLINE bool try_get_float_or_smi(Value value, double *out)
+    static ALWAYSINLINE bool try_get_float_or_smi_or_bool(Value value,
+                                                          double *out)
     {
-        if(unlikely(value.is_smi()))
+        if(unlikely((value.as.integer & value_not_smi_or_boolean_mask) == 0))
         {
-            *out = static_cast<double>(value.get_smi());
+            Value integer_value;
+            integer_value.as.integer =
+                value.as.integer & value_boolean_to_integer_mask;
+            *out = static_cast<double>(integer_value.get_smi());
             return true;
         }
         return try_get_exact_float(value, out);
@@ -837,7 +841,8 @@ namespace cl
 
         double left;
         double right;
-        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        if(!try_get_float_or_smi_or_bool(a, &left) ||
+           !try_get_float_or_smi_or_bool(b, &right))
         {
             MUSTTAIL return slow_path(ARGS);
         }
@@ -867,7 +872,8 @@ namespace cl
 
         double left;
         double right;
-        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        if(!try_get_float_or_smi_or_bool(a, &left) ||
+           !try_get_float_or_smi_or_bool(b, &right))
         {
             MUSTTAIL return slow_path(ARGS);
         }
@@ -897,7 +903,8 @@ namespace cl
 
         double left;
         double right;
-        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        if(!try_get_float_or_smi_or_bool(a, &left) ||
+           !try_get_float_or_smi_or_bool(b, &right))
         {
             MUSTTAIL return slow_path(ARGS);
         }
@@ -927,7 +934,8 @@ namespace cl
 
         double left;
         double right;
-        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        if(!try_get_float_or_smi_or_bool(a, &left) ||
+           !try_get_float_or_smi_or_bool(b, &right))
         {
             MUSTTAIL return slow_path(ARGS);
         }
@@ -942,7 +950,8 @@ namespace cl
 
         double left;
         double right;
-        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        if(!try_get_float_or_smi_or_bool(a, &left) ||
+           !try_get_float_or_smi_or_bool(b, &right))
         {
             MUSTTAIL return slow_path(ARGS);
         }
@@ -957,7 +966,8 @@ namespace cl
 
         double left;
         double right;
-        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        if(!try_get_float_or_smi_or_bool(a, &left) ||
+           !try_get_float_or_smi_or_bool(b, &right))
         {
             MUSTTAIL return slow_path(ARGS);
         }
@@ -973,7 +983,8 @@ namespace cl
 
         double left;
         double right;
-        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        if(!try_get_float_or_smi_or_bool(a, &left) ||
+           !try_get_float_or_smi_or_bool(b, &right))
         {
             MUSTTAIL return slow_path(ARGS);
         }
@@ -988,7 +999,8 @@ namespace cl
 
         double left;
         double right;
-        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        if(!try_get_float_or_smi_or_bool(a, &left) ||
+           !try_get_float_or_smi_or_bool(b, &right))
         {
             MUSTTAIL return slow_path(ARGS);
         }
@@ -1003,7 +1015,8 @@ namespace cl
 
         double left;
         double right;
-        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        if(!try_get_float_or_smi_or_bool(a, &left) ||
+           !try_get_float_or_smi_or_bool(b, &right))
         {
             MUSTTAIL return slow_path(ARGS);
         }
@@ -1018,7 +1031,8 @@ namespace cl
 
         double left;
         double right;
-        if(!try_get_float_or_smi(a, &left) || !try_get_float_or_smi(b, &right))
+        if(!try_get_float_or_smi_or_bool(a, &left) ||
+           !try_get_float_or_smi_or_bool(b, &right))
         {
             MUSTTAIL return unsupported_division_error(ARGS);
         }
