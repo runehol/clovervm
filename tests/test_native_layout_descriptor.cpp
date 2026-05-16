@@ -21,6 +21,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 using namespace cl;
 
 namespace
@@ -497,12 +499,14 @@ TEST(NativeLayoutDescriptor, RawArrayBackingNativeObjectSizeUsesStorageBytes)
     EXPECT_EQ(RawArrayBacking::size_for(27), object_size_in_bytes(backing));
 }
 
-TEST(NativeLayoutDescriptor, ValueArrayBackingUsesDynamicAuxReleaseDescriptor)
+TEST(NativeLayoutDescriptor, ValueArrayBackingUsesDynamicSmiReleaseDescriptor)
 {
     const ReleaseDescriptor &release =
         release_descriptor_for(ValueArrayBacking::native_layout);
 
-    EXPECT_EQ(ReleaseKind::DynamicAuxSpan, release.kind);
+    EXPECT_EQ(ReleaseKind::DynamicSmiSpan, release.kind);
+    EXPECT_EQ(ValueArrayBacking::native_value_count_offset_in_words(),
+              release.count_offset_words);
     EXPECT_EQ(ValueArrayBacking::native_value_offset_in_words(),
               release.value_offset_words);
     EXPECT_EQ(0u, release.additional_release_count);
@@ -523,18 +527,35 @@ TEST(NativeLayoutDescriptor, ValueArrayBackingNativeReleaseSpanUsesCellCount)
     const ReleaseDescriptor &release =
         release_descriptor_for(ValueArrayBacking::native_layout);
 
-    EXPECT_EQ(7u, backing->native_layout_aux_count_value());
+    EXPECT_EQ(7u, backing->value_cell_count());
     EXPECT_EQ(ValueArrayBacking::native_value_offset_in_words(),
               release.value_offset_words);
     EXPECT_EQ(ValueArrayBacking::size_for(7), object_size_in_bytes(backing));
 }
 
-TEST(NativeLayoutDescriptor, HeapPtrArrayBackingUsesDynamicAuxReleaseDescriptor)
+TEST(NativeLayoutDescriptor, ValueArrayBackingStoresLargeCellCount)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    size_t cell_count =
+        static_cast<size_t>(std::numeric_limits<uint16_t>::max()) + 1;
+    ValueArrayBacking *backing =
+        context.thread()->make_internal_raw<ValueArrayBacking>(cell_count);
+
+    EXPECT_EQ(cell_count, backing->value_cell_count());
+    EXPECT_EQ(0u, backing->native_layout_aux_count_value());
+    EXPECT_EQ(ValueArrayBacking::size_for(cell_count),
+              object_size_in_bytes(backing));
+}
+
+TEST(NativeLayoutDescriptor, HeapPtrArrayBackingUsesDynamicSmiReleaseDescriptor)
 {
     const ReleaseDescriptor &release =
         release_descriptor_for(HeapPtrArrayBacking::native_layout);
 
-    EXPECT_EQ(ReleaseKind::DynamicAuxSpan, release.kind);
+    EXPECT_EQ(ReleaseKind::DynamicSmiSpan, release.kind);
+    EXPECT_EQ(HeapPtrArrayBacking::native_value_count_offset_in_words(),
+              release.count_offset_words);
     EXPECT_EQ(HeapPtrArrayBacking::native_value_offset_in_words(),
               release.value_offset_words);
     EXPECT_EQ(0u, release.additional_release_count);
@@ -555,12 +576,27 @@ TEST(NativeLayoutDescriptor, HeapPtrArrayBackingNativeReleaseSpanUsesCellCount)
     const ReleaseDescriptor &release =
         release_descriptor_for(HeapPtrArrayBacking::native_layout);
 
-    EXPECT_EQ(3u, backing->native_layout_aux_count_value());
+    EXPECT_EQ(3u, backing->value_cell_count());
     EXPECT_EQ(HeapPtrArrayBacking::native_value_offset_in_words(),
               release.value_offset_words);
     EXPECT_EQ(reinterpret_cast<Value *>(backing) + release.value_offset_words,
               reinterpret_cast<Value *>(backing->elements));
     EXPECT_EQ(HeapPtrArrayBacking::size_for(3), object_size_in_bytes(backing));
+}
+
+TEST(NativeLayoutDescriptor, HeapPtrArrayBackingStoresLargeCellCount)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    size_t cell_count =
+        static_cast<size_t>(std::numeric_limits<uint16_t>::max()) + 1;
+    HeapPtrArrayBacking *backing =
+        context.thread()->make_internal_raw<HeapPtrArrayBacking>(cell_count);
+
+    EXPECT_EQ(cell_count, backing->value_cell_count());
+    EXPECT_EQ(0u, backing->native_layout_aux_count_value());
+    EXPECT_EQ(HeapPtrArrayBacking::size_for(cell_count),
+              object_size_in_bytes(backing));
 }
 
 TEST(NativeLayoutDescriptor, TestOnlyDescriptorsAreInvalid)
