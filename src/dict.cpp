@@ -287,16 +287,27 @@ namespace cl
         hash_table.resize(0);
         hash_table.resize(new_size, -1);
 
-        // and then just insert all the keys again
-        for(size_t idx = 0; idx < entries.size(); ++idx)
+        size_t write_idx = 0;
+        for(size_t read_idx = 0; read_idx < entries.size(); ++read_idx)
         {
-            if(entries[idx].valid())
+            Entry entry = entries[read_idx];
+            if(!entry.valid())
             {
-                int32_t *entry = find_entry_with_provided_hash(
-                    entries[idx].key, entries[idx].hash);
-                *entry = idx;
+                continue;
             }
+
+            if(write_idx != read_idx)
+            {
+                entries.set(write_idx, entry);
+            }
+            int32_t *hash_entry = find_entry_with_provided_hash(
+                entries[write_idx].key, entries[write_idx].hash);
+            *hash_entry = static_cast<int32_t>(write_idx);
+            ++write_idx;
         }
+        entries.resize(write_idx, Entry(Value::not_present(), Value::None(),
+                                        TValue<SMI>::from_smi(0)));
+        assert(entries.size() == n_valid_entries);
     }
 
 }  // namespace cl

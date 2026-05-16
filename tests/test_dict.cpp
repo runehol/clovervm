@@ -5,6 +5,8 @@
 #include "test_helpers.h"
 #include "thread_state.h"
 #include <gtest/gtest.h>
+#include <string>
+#include <vector>
 
 using namespace cl;
 
@@ -172,6 +174,67 @@ TEST(Dict, IteratorVisitsLiveEntriesInInsertionOrder)
         ++idx;
     }
     EXPECT_EQ(2u, idx);
+}
+
+TEST(Dict, GrowCompactsDeletedEntriesAndPreservesLiveEntries)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    Dict *dict = context.thread()->make_object_raw<Dict>();
+
+    std::vector<Value> keys;
+    keys.reserve(16);
+    for(int64_t idx = 0; idx < 16; ++idx)
+    {
+        keys.push_back(
+            make_string(context, (L"key-" + std::to_wstring(idx)).c_str()));
+        dict->set_item(keys.back(), Value::from_smi(idx));
+    }
+
+    EXPECT_EQ(Value::None(), dict->del_item(keys[0]));
+    EXPECT_EQ(Value::None(), dict->del_item(keys[2]));
+    EXPECT_EQ(Value::None(), dict->del_item(keys[4]));
+    EXPECT_EQ(Value::None(), dict->del_item(keys[6]));
+
+    std::vector<Value> new_keys;
+    new_keys.reserve(13);
+    for(int64_t idx = 0; idx < 13; ++idx)
+    {
+        new_keys.push_back(
+            make_string(context, (L"new-key-" + std::to_wstring(idx)).c_str()));
+        dict->set_item(new_keys.back(), Value::from_smi(100 + idx));
+    }
+
+    EXPECT_EQ(25u, dict->size());
+    for(size_t idx = 0; idx < keys.size(); ++idx)
+    {
+        if(idx % 2 == 0 && idx < 8)
+        {
+            EXPECT_FALSE(dict->contains(keys[idx]));
+            continue;
+        }
+        EXPECT_EQ(Value::from_smi(static_cast<int64_t>(idx)),
+                  dict->get_item(keys[idx]));
+    }
+    for(size_t idx = 0; idx < new_keys.size(); ++idx)
+    {
+        EXPECT_EQ(Value::from_smi(100 + static_cast<int64_t>(idx)),
+                  dict->get_item(new_keys[idx]));
+    }
+
+    std::vector<Value> expected_keys = {keys[1],  keys[3],  keys[5],  keys[7],
+                                        keys[8],  keys[9],  keys[10], keys[11],
+                                        keys[12], keys[13], keys[14], keys[15]};
+    expected_keys.insert(expected_keys.end(), new_keys.begin(), new_keys.end());
+
+    size_t idx = 0;
+    for(Dict::EntryView entry: *dict)
+    {
+        ASSERT_LT(idx, expected_keys.size());
+        EXPECT_EQ(expected_keys[idx], entry.key);
+        ++idx;
+    }
+    EXPECT_EQ(expected_keys.size(), idx);
 }
 
 TEST(Dict, EmptyIteratorEqualsEnd)
