@@ -368,7 +368,7 @@ namespace cl
 
             if(backing != nullptr)
             {
-                backing.extract()->set_native_layout_aux_count(0);
+                backing.extract()->set_value_cell_count(0);
             }
 
             backing = new_backing;
@@ -625,7 +625,7 @@ namespace cl
 
             if(backing != nullptr)
             {
-                backing.extract()->set_native_layout_aux_count(0);
+                backing.extract()->set_value_cell_count(0);
             }
             backing = new_backing;
             set_capacity(requested_capacity);
