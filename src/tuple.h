@@ -3,10 +3,12 @@
 
 #include "builtin_class_registry.h"
 #include "object.h"
+#include "owned2.h"
 #include "owned_typed_value.h"
 #include "refcount.h"
 #include "runtime_helpers.h"
 #include "value.h"
+#include "value_state.h"
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -29,7 +31,7 @@ namespace cl
         Tuple(ClassObject *cls, TupleFromFrameArgumentsTag, Value *fp,
               int8_t first_arg_reg, uint32_t n_args)
             : Object(cls, native_layout),
-              size_value(Value::from_smi(static_cast<int64_t>(n_args)))
+              size_value(TValue2<SMI>::from_smi(static_cast<int64_t>(n_args)))
         {
             for(uint32_t idx = 0; idx < n_args; ++idx)
             {
@@ -103,7 +105,7 @@ namespace cl
         [[nodiscard]] Value check_index(size_t idx) const;
         void initialize_items(size_t size);
 
-        MemberTValue<SMI> size_value;
+        Member2<TValue2<SMI>> size_value;
         Value elements[1];
     };
 
