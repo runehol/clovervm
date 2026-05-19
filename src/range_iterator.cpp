@@ -8,37 +8,24 @@ namespace cl
 {
     static Value native_range_iterator_iter(Value self)
     {
-        if(!can_convert_to<RangeIterator>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError",
-                L"range_iterator.__iter__ expects a range_iterator receiver");
-        }
+        (void)CL_TRY(TValue2<RangeIterator>::from_value_or_raise(
+            self, L"TypeError",
+            L"range_iterator.__iter__ expects a range_iterator receiver"));
         return self;
     }
 
     static Value native_range_iterator_next(Value self)
     {
-        if(!can_convert_to<RangeIterator>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError",
-                L"range_iterator.__next__ expects a range_iterator receiver");
-        }
+        TValue2<RangeIterator> iterator_value =
+            CL_TRY(TValue2<RangeIterator>::from_value_or_raise(
+                self, L"TypeError",
+                L"range_iterator.__next__ expects a range_iterator receiver"));
 
-        RangeIterator *iterator = self.get_ptr<RangeIterator>();
-        Value current = iterator->current;
-        Value stop = iterator->stop;
-        Value step = iterator->step;
-        if(!current.is_smi() || !stop.is_smi() || !step.is_smi())
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"range iterator values must be small integers");
-        }
-
-        int64_t current_smi = current.get_smi();
-        int64_t stop_smi = stop.get_smi();
-        int64_t step_smi = step.get_smi();
+        RangeIterator *iterator = iterator_value.extract();
+        Value current = iterator->current.raw_value();
+        int64_t current_smi = iterator->current.extract();
+        int64_t stop_smi = iterator->stop.extract();
+        int64_t step_smi = iterator->step.extract();
         if(step_smi == 0)
         {
             return active_thread()->set_pending_builtin_exception_string(
@@ -58,7 +45,7 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"UnimplementedError", L"integer overflow");
         }
-        iterator->current = TValue<SMI>::from_smi(next_smi);
+        iterator->current = TValue2<SMI>::from_smi(next_smi);
         return current;
     }
 

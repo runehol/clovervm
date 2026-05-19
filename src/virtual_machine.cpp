@@ -90,9 +90,9 @@ namespace cl
         }
 
         return make_object_value<RangeIterator>(
-            TValue<SMI>::from_value_unchecked(start),
-            TValue<SMI>::from_value_unchecked(stop),
-            TValue<SMI>::from_value_unchecked(step));
+            TValue2<SMI>::from_value_assumed(start),
+            TValue2<SMI>::from_value_assumed(stop),
+            TValue2<SMI>::from_value_assumed(step));
     }
 
     static Value builtin_sqrt(Value arg)

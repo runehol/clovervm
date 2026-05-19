@@ -3,8 +3,9 @@
 
 #include "builtin_class_registry.h"
 #include "object.h"
-#include "owned_typed_value.h"
+#include "owned2.h"
 #include "value.h"
+#include "value_state.h"
 
 namespace cl
 {
@@ -17,16 +18,16 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::RangeIterator;
 
-        RangeIterator(ClassObject *cls, TValue<SMI> _current, TValue<SMI> _stop,
-                      TValue<SMI> _step)
+        RangeIterator(ClassObject *cls, TValue2<SMI> _current,
+                      TValue2<SMI> _stop, TValue2<SMI> _step)
             : Object(cls, native_layout), current(_current), stop(_stop),
               step(_step)
         {
         }
 
-        MemberTValue<SMI> current;
-        MemberTValue<SMI> stop;
-        MemberTValue<SMI> step;
+        Member2<TValue2<SMI>> current;
+        Member2<TValue2<SMI>> stop;
+        Member2<TValue2<SMI>> step;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(RangeIterator, Object, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(RangeIterator);

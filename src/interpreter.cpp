@@ -3096,9 +3096,9 @@ namespace cl
         }
 
         RangeIterator *iterator = static_cast<RangeIterator *>(iterator_object);
-        Value current = iterator->current;
-        Value stop = iterator->stop;
-        Value step = iterator->step;
+        Value current = iterator->current.raw_value();
+        Value stop = iterator->stop.raw_value();
+        Value step = iterator->step.raw_value();
 
         if(unlikely(!current.is_smi() || !stop.is_smi() || !step.is_smi()))
         {
@@ -3130,7 +3130,7 @@ namespace cl
                 MUSTTAIL return overflow_path(ARGS);
             }
             accumulator = current;
-            iterator->current = TValue<SMI>::from_smi(next_smi);
+            iterator->current = TValue2<SMI>::from_smi(next_smi);
         }
 
         START(0);

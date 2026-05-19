@@ -583,8 +583,8 @@ TEST(Attr, BuiltinInstancesExposeDunderClassThroughAttributeLookup)
         TValue<CodeObject>::from_oop(code));
     RangeIterator *range_iterator =
         context.thread()->make_object_raw<RangeIterator>(
-            TValue<SMI>::from_smi(0), TValue<SMI>::from_smi(3),
-            TValue<SMI>::from_smi(1));
+            TValue2<SMI>::from_smi(0), TValue2<SMI>::from_smi(3),
+            TValue2<SMI>::from_smi(1));
 
     struct BuiltinInstance
     {
@@ -669,8 +669,8 @@ TEST(Attr, BuiltinInstancesRejectUnsupportedAttributeWrites)
         TValue<CodeObject>::from_oop(code));
     RangeIterator *range_iterator =
         context.thread()->make_object_raw<RangeIterator>(
-            TValue<SMI>::from_smi(0), TValue<SMI>::from_smi(3),
-            TValue<SMI>::from_smi(1));
+            TValue2<SMI>::from_smi(0), TValue2<SMI>::from_smi(3),
+            TValue2<SMI>::from_smi(1));
 
     Value instances[] = {
         string_value.as_value(),   Value::from_oop(list),
