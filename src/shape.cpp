@@ -8,12 +8,21 @@
 
 namespace cl
 {
-    Shape::Transition::Transition(TValue<String> _name,
+    static TValue2<String> string_value_state(TValue<String> name)
+    {
+        return TValue2<String>::from_value_unchecked(name.as_value());
+    }
+
+    static TValue<String> old_typed_string(TValue2<String> name)
+    {
+        return TValue<String>::from_value_unchecked(name.raw_value());
+    }
+
+    Shape::Transition::Transition(TValue2<String> _name,
                                   ShapeTransitionVerb _verb,
                                   DescriptorFlags _descriptor_flags,
                                   Shape *_next_shape)
-        : name(TValue2<String>::from_value_unchecked(_name.as_value())),
-          verb(_verb), descriptor_flags(_descriptor_flags),
+        : name(_name), verb(_verb), descriptor_flags(_descriptor_flags),
           next_shape(_next_shape)
     {
     }
@@ -180,7 +189,7 @@ namespace cl
         {
             if(transition.get_verb() == verb &&
                transition.get_descriptor_flags() == descriptor_flags &&
-               string_eq(name, transition.get_name()))
+               string_eq(name, old_typed_string(transition.get_name())))
             {
                 return transition.get_next_shape();
             }
@@ -208,7 +217,8 @@ namespace cl
                 break;
         }
 
-        transitions.emplace_back(name, verb, descriptor_flags, next_shape);
+        transitions.emplace_back(string_value_state(name), verb,
+                                 descriptor_flags, next_shape);
         return next_shape;
     }
 

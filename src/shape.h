@@ -79,13 +79,10 @@ namespace cl
         class Transition
         {
         public:
-            Transition(TValue<String> name, ShapeTransitionVerb verb,
+            Transition(TValue2<String> name, ShapeTransitionVerb verb,
                        DescriptorFlags descriptor_flags, Shape *next_shape);
 
-            TValue<String> get_name() const
-            {
-                return TValue<String>::from_value_unchecked(name.raw_value());
-            }
+            TValue2<String> get_name() const { return name.value(); }
             ShapeTransitionVerb get_verb() const { return verb; }
             DescriptorFlags get_descriptor_flags() const
             {
