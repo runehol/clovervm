@@ -580,7 +580,7 @@ TEST(Attr, BuiltinInstancesExposeDunderClassThroughAttributeLookup)
                                                  L"    return 1\n",
                                                  StartRule::File);
     Function *function = context.thread()->make_object_raw<Function>(
-        TValue<CodeObject>::from_oop(code));
+        TValue2<CodeObject>::from_oop(code));
     RangeIterator *range_iterator =
         context.thread()->make_object_raw<RangeIterator>(
             TValue2<SMI>::from_smi(0), TValue2<SMI>::from_smi(3),
@@ -666,7 +666,7 @@ TEST(Attr, BuiltinInstancesRejectUnsupportedAttributeWrites)
                                                  L"    return 1\n",
                                                  StartRule::File);
     Function *function = context.thread()->make_object_raw<Function>(
-        TValue<CodeObject>::from_oop(code));
+        TValue2<CodeObject>::from_oop(code));
     RangeIterator *range_iterator =
         context.thread()->make_object_raw<RangeIterator>(
             TValue2<SMI>::from_smi(0), TValue2<SMI>::from_smi(3),

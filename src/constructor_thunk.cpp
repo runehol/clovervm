@@ -129,7 +129,7 @@ namespace cl
         if(init.is_not_present())
         {
             return make_object_value<Function>(
-                TValue<CodeObject>::from_oop(code));
+                TValue2<CodeObject>::from_oop(code));
         }
 
         TValue<Function> init_function =
@@ -138,7 +138,7 @@ namespace cl
         if(defaults.is_not_present() || defaults == Value::None())
         {
             return make_object_value<Function>(
-                TValue<CodeObject>::from_oop(code));
+                TValue2<CodeObject>::from_oop(code));
         }
 
         TValue<Tuple> default_tuple =
@@ -150,14 +150,14 @@ namespace cl
         if(thunk_defaults.extract()->empty())
         {
             return make_object_value<Function>(
-                TValue<CodeObject>::from_oop(code));
+                TValue2<CodeObject>::from_oop(code));
         }
         if(thunk_defaults.extract()->size() > code->n_positional_parameters)
         {
             throw std::runtime_error(
                 "TypeError: unsupported __init__ default parameter layout");
         }
-        return make_object_value<Function>(TValue<CodeObject>::from_oop(code),
+        return make_object_value<Function>(TValue2<CodeObject>::from_oop(code),
                                            thunk_defaults);
     }
 }  // namespace cl

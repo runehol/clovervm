@@ -22,8 +22,8 @@ namespace cl
         uint32_t target_idx = builder.add_native_function_target(target);
         builder.emit_call_native(0, call_opcode, uint8_t(target_idx));
         builder.emit_return_or_raise_exception(0);
-        TValue<CodeObject> code =
-            TValue<CodeObject>::from_oop(builder.finalize());
+        TValue2<CodeObject> code =
+            TValue2<CodeObject>::from_oop(builder.finalize());
         if(default_parameters.as_value() != Value::None())
         {
             return vm->make_immortal_object_value<Function>(

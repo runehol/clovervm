@@ -2332,7 +2332,7 @@ namespace cl
     {
         START(2);
         uint8_t const_offset = pc[1];
-        TValue<CodeObject> code_obj = TValue<CodeObject>::from_value_assumed(
+        TValue2<CodeObject> code_obj = TValue2<CodeObject>::from_value_assumed(
             code_object->constant_table[const_offset].as_value());
 
         accumulator = thread->make_object_value<Function>(
@@ -2346,7 +2346,7 @@ namespace cl
         START(3);
         uint8_t const_offset = pc[1];
         int8_t defaults_reg = pc[2];
-        TValue<CodeObject> code_obj = TValue<CodeObject>::from_value_assumed(
+        TValue2<CodeObject> code_obj = TValue2<CodeObject>::from_value_assumed(
             code_object->constant_table[const_offset].as_value());
         TValue<Tuple> defaults =
             TValue<Tuple>::from_value_assumed(fp[defaults_reg]);

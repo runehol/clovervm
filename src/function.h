@@ -28,10 +28,8 @@ namespace cl
         static constexpr uint32_t kDocstringSlot = 2;
         static constexpr uint32_t kInlineSlotCount = 3;
 
-        Function(ClassObject *cls, TValue<CodeObject> _code_object)
-            : SlotObject(cls, native_layout),
-              code_object(TValue2<CodeObject>::from_value_unchecked(
-                  _code_object.as_value())),
+        Function(ClassObject *cls, TValue2<CodeObject> _code_object)
+            : SlotObject(cls, native_layout), code_object(_code_object),
               default_parameters(Value::None()), docstring(Value::None()),
               min_positional_arity(
                   _code_object.extract()->n_positional_parameters),
@@ -43,11 +41,9 @@ namespace cl
             assert_parameter_layout(_code_object);
         }
 
-        Function(ClassObject *cls, TValue<CodeObject> _code_object,
+        Function(ClassObject *cls, TValue2<CodeObject> _code_object,
                  Value _docstring)
-            : SlotObject(cls, native_layout),
-              code_object(TValue2<CodeObject>::from_value_unchecked(
-                  _code_object.as_value())),
+            : SlotObject(cls, native_layout), code_object(_code_object),
               default_parameters(Value::None()), docstring(_docstring),
               min_positional_arity(
                   _code_object.extract()->n_positional_parameters),
@@ -59,11 +55,9 @@ namespace cl
             assert_parameter_layout(_code_object);
         }
 
-        Function(ClassObject *cls, TValue<CodeObject> _code_object,
+        Function(ClassObject *cls, TValue2<CodeObject> _code_object,
                  TValue<Tuple> _default_parameters)
-            : SlotObject(cls, native_layout),
-              code_object(TValue2<CodeObject>::from_value_unchecked(
-                  _code_object.as_value())),
+            : SlotObject(cls, native_layout), code_object(_code_object),
               default_parameters(_default_parameters), docstring(Value::None()),
               min_positional_arity(
                   min_arity_for_code(_code_object, _default_parameters)),
@@ -78,11 +72,9 @@ namespace cl
                    n_positional_parameters - min_positional_arity);
         }
 
-        Function(ClassObject *cls, TValue<CodeObject> _code_object,
+        Function(ClassObject *cls, TValue2<CodeObject> _code_object,
                  TValue<Tuple> _default_parameters, Value _docstring)
-            : SlotObject(cls, native_layout),
-              code_object(TValue2<CodeObject>::from_value_unchecked(
-                  _code_object.as_value())),
+            : SlotObject(cls, native_layout), code_object(_code_object),
               default_parameters(_default_parameters), docstring(_docstring),
               min_positional_arity(
                   min_arity_for_code(_code_object, _default_parameters)),
@@ -121,7 +113,7 @@ namespace cl
         CL_DECLARE_STATIC_OBJECT_SIZE(Function);
 
     private:
-        static uint32_t min_arity_for_code(TValue<CodeObject> code_object,
+        static uint32_t min_arity_for_code(TValue2<CodeObject> code_object,
                                            TValue<Tuple> default_parameters)
         {
             assert(default_parameters.extract()->size() <=
@@ -130,14 +122,14 @@ namespace cl
                    uint32_t(default_parameters.extract()->size());
         }
 
-        static uint32_t max_arity_for_code(TValue<CodeObject> code_object)
+        static uint32_t max_arity_for_code(TValue2<CodeObject> code_object)
         {
             return code_object.extract()->has_varargs()
                        ? VarArgs
                        : code_object.extract()->n_positional_parameters;
         }
 
-        static void assert_parameter_layout(TValue<CodeObject> code_object)
+        static void assert_parameter_layout(TValue2<CodeObject> code_object)
         {
             assert(code_object.extract()->n_parameters ==
                    code_object.extract()->n_positional_parameters +
