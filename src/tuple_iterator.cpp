@@ -8,25 +8,19 @@ namespace cl
 {
     static Value native_tuple_iterator_iter(Value self)
     {
-        if(!can_convert_to<TupleIterator>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError",
-                L"tuple_iterator.__iter__ expects a tuple_iterator receiver");
-        }
+        (void)CL_TRY(TValue2<TupleIterator>::from_value_or_raise(
+            self, L"TypeError",
+            L"tuple_iterator.__iter__ expects a tuple_iterator receiver"));
         return self;
     }
 
     static Value native_tuple_iterator_next(Value self)
     {
-        if(!can_convert_to<TupleIterator>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError",
-                L"tuple_iterator.__next__ expects a tuple_iterator receiver");
-        }
-
-        TupleIterator *iterator = self.get_ptr<TupleIterator>();
+        TValue2<TupleIterator> iterator_value =
+            CL_TRY(TValue2<TupleIterator>::from_value_or_raise(
+                self, L"TypeError",
+                L"tuple_iterator.__next__ expects a tuple_iterator receiver"));
+        TupleIterator *iterator = iterator_value.extract();
         int64_t index_smi = iterator->index.extract();
         int64_t length_smi = iterator->length.extract();
         assert(index_smi >= 0);
@@ -38,7 +32,7 @@ namespace cl
         }
 
         iterator->index =
-            TValue<SMI>::from_smi(static_cast<int64_t>(index + 1));
+            TValue2<SMI>::from_smi(static_cast<int64_t>(index + 1));
         Tuple *tuple = iterator->tuple.extract();
         return tuple->item_unchecked(index);
     }

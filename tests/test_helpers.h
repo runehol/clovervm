@@ -68,4 +68,11 @@ namespace cl::test
 
 }  // namespace cl::test
 
+#define CL_ASSERT_CONVERT_TO(type, value)                                      \
+    ({                                                                         \
+        ::cl::Value cl_assert_convert_value = (value);                         \
+        ASSERT_TRUE(::cl::can_convert_to<type>(cl_assert_convert_value));      \
+        ::cl::assume_convert_to<type>(cl_assert_convert_value);                \
+    })
+
 #endif  // CL_TEST_HELPERS_H

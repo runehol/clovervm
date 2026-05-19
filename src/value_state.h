@@ -91,6 +91,9 @@ namespace cl
         using semantic_type = T;
 
         static Expected<TValue2<T>> from_value_checked(Value value);
+        static Expected<TValue2<T>>
+        from_value_or_raise(Value value, const wchar_t *type_name,
+                            const wchar_t *message);
         static TValue2 from_value_assumed(Value value)
         {
             assert(TValue2Traits<T>::is_instance(value));
@@ -155,10 +158,25 @@ namespace cl
         }
 
         Value raw_value() const { return value_; }
-        operator Value() const { return value_; }
 
         bool operator==(TValue2 other) const { return value_ == other.value_; }
         bool operator!=(TValue2 other) const { return value_ != other.value_; }
+        friend bool operator==(TValue2 left, Value right)
+        {
+            return left.raw_value() == right;
+        }
+        friend bool operator!=(TValue2 left, Value right)
+        {
+            return left.raw_value() != right;
+        }
+        friend bool operator==(Value left, TValue2 right)
+        {
+            return right == left;
+        }
+        friend bool operator!=(Value left, TValue2 right)
+        {
+            return right != left;
+        }
 
     private:
         explicit TValue2(Value value) : value_(value) {}
@@ -225,21 +243,21 @@ namespace cl
             assert(!value_.raw_value().is_exception_marker());
         }
 
-        static Expected ok(T value) { return Expected(value); }
+        [[nodiscard]] static Expected ok(T value) { return Expected(value); }
 
-        static Expected raise_exception(const wchar_t *type_name,
-                                        const wchar_t *message)
+        [[nodiscard]] static Expected raise_exception(const wchar_t *type_name,
+                                                      const wchar_t *message)
         {
             return Expected(RawValueTag{},
                             raise_exception_for_expected(type_name, message));
         }
 
-        static Expected propagate_exception()
+        [[nodiscard]] static Expected propagate_exception()
         {
             return Expected(RawValueTag{}, propagate_exception_for_expected());
         }
 
-        static Expected from_value_unchecked(Value value)
+        [[nodiscard]] static Expected from_value_unchecked(Value value)
         {
             return Expected(RawValueTag{}, value);
         }
@@ -267,6 +285,21 @@ namespace cl
         Value value_;
     };
 
+    class PropagatedException
+    {
+    public:
+        // Propagates an already-pending exception through APIs that return
+        // either a raw Value exception marker or an Expected<T> error state.
+        PropagatedException();
+
+        operator Value() const { return Value::exception_marker(); }
+
+        template <typename T> operator Expected<T>() const
+        {
+            return Expected<T>::propagate_exception();
+        }
+    };
+
     static_assert(sizeof(Optional<Value>) == sizeof(Value));
     static_assert(sizeof(Expected<Value>) == sizeof(Value));
 
@@ -289,6 +322,31 @@ namespace cl
         return Expected<TValue2<T>>::ok(from_value_unchecked(value));
     }
 
+    template <typename T>
+    Expected<TValue2<T>>
+    TValue2<T>::from_value_or_raise(Value value, const wchar_t *type_name,
+                                    const wchar_t *message)
+    {
+        if(!TValue2Traits<T>::is_instance(value))
+        {
+            return Expected<TValue2<T>>::raise_exception(type_name, message);
+        }
+        return Expected<TValue2<T>>::ok(from_value_unchecked(value));
+    }
+
 }  // namespace cl
+
+// Unwrap an Expected-like result or propagate its pending exception from the
+// enclosing function. The enclosing function must return either Value or
+// Expected<T>.
+#define CL_TRY(expr)                                                           \
+    ({                                                                         \
+        auto cl_try_result = (expr);                                           \
+        if(unlikely(!cl_try_result))                                           \
+        {                                                                      \
+            return ::cl::PropagatedException();                                \
+        }                                                                      \
+        cl_try_result.value();                                                 \
+    })
 
 #endif  // CL_VALUE_STATE_H

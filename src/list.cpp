@@ -5,6 +5,7 @@
 #include "native_function.h"
 #include "string_builder.h"
 #include "thread_state.h"
+#include "value_state.h"
 #include "virtual_machine.h"
 #include <algorithm>
 #include <iterator>
@@ -49,14 +50,9 @@ namespace cl
 
     static Value native_list_iter(Value self)
     {
-        if(!can_convert_to<List>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"list.__iter__ expects a list receiver");
-        }
-
-        return make_object_value<ListIterator>(
-            TValue<List>::from_value_checked(self));
+        TValue2<List> list = CL_TRY(TValue2<List>::from_value_or_raise(
+            self, L"TypeError", L"list.__iter__ expects a list receiver"));
+        return make_object_value<ListIterator>(list);
     }
 
     List::List(ClassObject *cls, size_t size) : Object(cls, native_layout)

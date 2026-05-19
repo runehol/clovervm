@@ -20,6 +20,11 @@ namespace cl
         return Value::exception_marker();
     }
 
+    PropagatedException::PropagatedException()
+    {
+        assert(active_thread()->has_pending_exception());
+    }
+
     static std::wstring string_to_wstring(TValue<String> string)
     {
         String *str = string.extract();

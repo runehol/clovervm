@@ -31,6 +31,21 @@ namespace
                                   .extract()
                                   ->data);
     }
+
+    static Value require_smi_for_test(Value value)
+    {
+        TValue2<SMI> smi = CL_TRY(TValue2<SMI>::from_value_or_raise(
+            value, L"TypeError", L"test expected an SMI"));
+        return smi.raw_value();
+    }
+
+    static Expected<TValue2<Bool>>
+    require_smi_then_return_bool_for_test(Value value)
+    {
+        (void)CL_TRY(TValue2<SMI>::from_value_or_raise(
+            value, L"TypeError", L"test expected an SMI"));
+        return Expected<TValue2<Bool>>::ok(TValue2<Bool>::True());
+    }
 }  // namespace
 
 TEST(TValue2, SmiUsesSameBasicProtocolAsTValue)
@@ -174,11 +189,74 @@ TEST(TValue2, CheckedBoolConstructionNamesTargetTypeOnFailure)
                              L"invalid typed value construction for bool");
 }
 
+TEST(TValue2, CustomCheckedConstructionReturnsExpectedSuccess)
+{
+    Expected<TValue2<SMI>> smi = TValue2<SMI>::from_value_or_raise(
+        Value::from_smi(42), L"TypeError", L"expected an SMI");
+
+    ASSERT_TRUE(smi.has_value());
+    EXPECT_EQ(42, smi.value().extract());
+}
+
+TEST(TValue2, CustomCheckedConstructionRaisesSuppliedExceptionOnFailure)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Expected<TValue2<SMI>> smi = TValue2<SMI>::from_value_or_raise(
+        Value::None(), L"TypeError", L"expected an SMI");
+
+    EXPECT_TRUE(smi.has_exception());
+    EXPECT_TRUE(smi.raw_value().is_exception_marker());
+    expect_pending_exception(context.thread(), L"TypeError",
+                             L"expected an SMI");
+}
+
 TEST(TValue2, AssumedConstructionAssertsTypeAndReturnsTypedValue)
 {
     TValue2<SMI> smi = TValue2<SMI>::from_value_assumed(Value::from_smi(42));
 
     EXPECT_EQ(42, smi.extract());
+}
+
+TEST(Expected, TryMacroUnwrapsSuccess)
+{
+    EXPECT_EQ(Value::from_smi(42), require_smi_for_test(Value::from_smi(42)));
+}
+
+TEST(Expected, TryMacroPropagatesExceptionMarker)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value result = require_smi_for_test(Value::None());
+
+    EXPECT_TRUE(result.is_exception_marker());
+    expect_pending_exception(context.thread(), L"TypeError",
+                             L"test expected an SMI");
+}
+
+TEST(Expected, TryMacroPropagatesIntoDifferentExpectedPayload)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Expected<TValue2<Bool>> result =
+        require_smi_then_return_bool_for_test(Value::None());
+
+    EXPECT_TRUE(result.has_exception());
+    EXPECT_TRUE(result.raw_value().is_exception_marker());
+    expect_pending_exception(context.thread(), L"TypeError",
+                             L"test expected an SMI");
+}
+
+TEST(Expected, TryMacroUnwrapsSuccessInExpectedReturningFunction)
+{
+    Expected<TValue2<Bool>> result =
+        require_smi_then_return_bool_for_test(Value::from_smi(42));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result.value().extract());
 }
 
 TEST(Expected, ValueBackedSuccessUsesRawValueRepresentation)

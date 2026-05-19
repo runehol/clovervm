@@ -6,6 +6,7 @@
 #include "string_builder.h"
 #include "thread_state.h"
 #include "tuple_iterator.h"
+#include "value_state.h"
 #include "virtual_machine.h"
 #include <iterator>
 
@@ -41,14 +42,9 @@ namespace cl
 
     static Value native_tuple_iter(Value self)
     {
-        if(!can_convert_to<Tuple>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"tuple.__iter__ expects a tuple receiver");
-        }
-
-        return make_object_value<TupleIterator>(
-            TValue<Tuple>::from_value_checked(self));
+        TValue2<Tuple> tuple = CL_TRY(TValue2<Tuple>::from_value_or_raise(
+            self, L"TypeError", L"tuple.__iter__ expects a tuple receiver"));
+        return make_object_value<TupleIterator>(tuple);
     }
 
     static Value native_tuple_len(Value self)

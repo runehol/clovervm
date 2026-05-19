@@ -4,8 +4,9 @@
 #include "builtin_class_registry.h"
 #include "list.h"
 #include "object.h"
-#include "owned_typed_value.h"
+#include "owned2.h"
 #include "value.h"
+#include "value_state.h"
 
 namespace cl
 {
@@ -18,13 +19,14 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::ListIterator;
 
-        ListIterator(ClassObject *cls, TValue<List> _list)
-            : Object(cls, native_layout), list(_list), index(Value::from_smi(0))
+        ListIterator(ClassObject *cls, TValue2<List> _list)
+            : Object(cls, native_layout), list(_list),
+              index(TValue2<SMI>::from_smi(0))
         {
         }
 
-        MemberTValue<List> list;
-        MemberTValue<SMI> index;
+        Member2<TValue2<List>> list;
+        Member2<TValue2<SMI>> index;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ListIterator, Object, 2);
         CL_DECLARE_STATIC_OBJECT_SIZE(ListIterator);

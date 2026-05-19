@@ -3,9 +3,10 @@
 
 #include "builtin_class_registry.h"
 #include "object.h"
-#include "owned_typed_value.h"
+#include "owned2.h"
 #include "tuple.h"
 #include "value.h"
+#include "value_state.h"
 
 namespace cl
 {
@@ -18,17 +19,17 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::TupleIterator;
 
-        TupleIterator(ClassObject *cls, TValue<Tuple> _tuple)
+        TupleIterator(ClassObject *cls, TValue2<Tuple> _tuple)
             : Object(cls, native_layout), tuple(_tuple),
-              index(TValue<SMI>::from_smi(0)),
-              length(TValue<SMI>::from_smi(
+              index(TValue2<SMI>::from_smi(0)),
+              length(TValue2<SMI>::from_smi(
                   static_cast<int64_t>(_tuple.extract()->size())))
         {
         }
 
-        MemberTValue<Tuple> tuple;
-        MemberTValue<SMI> index;
-        MemberTValue<SMI> length;
+        Member2<TValue2<Tuple>> tuple;
+        Member2<TValue2<SMI>> index;
+        Member2<TValue2<SMI>> length;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(TupleIterator, Object, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(TupleIterator);

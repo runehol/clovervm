@@ -8,25 +8,19 @@ namespace cl
 {
     static Value native_list_iterator_iter(Value self)
     {
-        if(!can_convert_to<ListIterator>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError",
-                L"list_iterator.__iter__ expects a list_iterator receiver");
-        }
+        (void)CL_TRY(TValue2<ListIterator>::from_value_or_raise(
+            self, L"TypeError",
+            L"list_iterator.__iter__ expects a list_iterator receiver"));
         return self;
     }
 
     static Value native_list_iterator_next(Value self)
     {
-        if(!can_convert_to<ListIterator>(self))
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError",
-                L"list_iterator.__next__ expects a list_iterator receiver");
-        }
-
-        ListIterator *iterator = self.get_ptr<ListIterator>();
+        TValue2<ListIterator> iterator_value =
+            CL_TRY(TValue2<ListIterator>::from_value_or_raise(
+                self, L"TypeError",
+                L"list_iterator.__next__ expects a list_iterator receiver"));
+        ListIterator *iterator = iterator_value.extract();
         int64_t index_smi = iterator->index.extract();
         assert(index_smi >= 0);
         size_t index = static_cast<size_t>(index_smi);
@@ -37,7 +31,7 @@ namespace cl
         }
 
         iterator->index =
-            TValue<SMI>::from_smi(static_cast<int64_t>(index + 1));
+            TValue2<SMI>::from_smi(static_cast<int64_t>(index + 1));
         return list->item_unchecked(index);
     }
 

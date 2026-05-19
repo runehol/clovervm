@@ -166,11 +166,7 @@ static void expect_python_error(const wchar_t *source,
 static void expect_range_iterator(Value actual, int64_t expected_current,
                                   int64_t expected_stop, int64_t expected_step)
 {
-    ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(NativeLayoutId::RangeIterator,
-              actual.get_ptr<Object>()->native_layout_id());
-
-    RangeIterator *iterator = actual.get_ptr<RangeIterator>();
+    RangeIterator *iterator = CL_ASSERT_CONVERT_TO(RangeIterator, actual);
     EXPECT_EQ(Value::from_smi(expected_current), iterator->current);
     EXPECT_EQ(Value::from_smi(expected_stop), iterator->stop);
     EXPECT_EQ(Value::from_smi(expected_step), iterator->step);
@@ -180,12 +176,8 @@ static void expect_tuple_iterator(Value actual, Tuple *expected_tuple,
                                   int64_t expected_length,
                                   int64_t expected_index)
 {
-    ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(NativeLayoutId::TupleIterator,
-              actual.get_ptr<Object>()->native_layout_id());
-
-    TupleIterator *iterator = actual.get_ptr<TupleIterator>();
-    EXPECT_EQ(Value::from_oop(expected_tuple), iterator->tuple.as_value());
+    TupleIterator *iterator = CL_ASSERT_CONVERT_TO(TupleIterator, actual);
+    EXPECT_EQ(Value::from_oop(expected_tuple), iterator->tuple);
     EXPECT_EQ(Value::from_smi(expected_length), iterator->length);
     EXPECT_EQ(Value::from_smi(expected_index), iterator->index);
 }
@@ -193,12 +185,8 @@ static void expect_tuple_iterator(Value actual, Tuple *expected_tuple,
 static void expect_list_iterator(Value actual, List *expected_list,
                                  int64_t expected_index)
 {
-    ASSERT_TRUE(actual.is_ptr());
-    ASSERT_EQ(NativeLayoutId::ListIterator,
-              actual.get_ptr<Object>()->native_layout_id());
-
-    ListIterator *iterator = actual.get_ptr<ListIterator>();
-    EXPECT_EQ(Value::from_oop(expected_list), iterator->list.as_value());
+    ListIterator *iterator = CL_ASSERT_CONVERT_TO(ListIterator, actual);
+    EXPECT_EQ(Value::from_oop(expected_list), iterator->list);
     EXPECT_EQ(Value::from_smi(expected_index), iterator->index);
 }
 
@@ -3670,18 +3658,13 @@ TEST(Interpreter, python_defined_iter_builtin_calls_dunder_iter)
 TEST(Interpreter, tuple_iter_returns_tuple_iterator)
 {
     test::VmTestContext test_context;
-    Value tuple_value = test_context.run_file(L"(1, 2, 3)\n");
-    ASSERT_TRUE(can_convert_to<Tuple>(tuple_value));
 
     Value iterator_value = test_context.run_file(L"iter((1, 2, 3))\n");
-    ASSERT_TRUE(can_convert_to<TupleIterator>(iterator_value));
-    EXPECT_EQ(Value::from_smi(3),
-              iterator_value.get_ptr<TupleIterator>()->length);
-    EXPECT_EQ(Value::from_smi(0),
-              iterator_value.get_ptr<TupleIterator>()->index);
-    ASSERT_TRUE(can_convert_to<Tuple>(
-        iterator_value.get_ptr<TupleIterator>()->tuple.as_value()));
-    Tuple *tuple = iterator_value.get_ptr<TupleIterator>()->tuple.extract();
+    TupleIterator *iterator =
+        CL_ASSERT_CONVERT_TO(TupleIterator, iterator_value);
+    EXPECT_EQ(Value::from_smi(3), iterator->length);
+    EXPECT_EQ(Value::from_smi(0), iterator->index);
+    Tuple *tuple = iterator->tuple.extract();
     ASSERT_EQ(size_t(3), tuple->size());
     EXPECT_EQ(Value::from_smi(1), tuple->item_unchecked(0));
     EXPECT_EQ(Value::from_smi(2), tuple->item_unchecked(1));
@@ -3714,8 +3697,8 @@ TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
     Value iterator_value = test_context.run_file(L"iter((4, 5))\n");
-    ASSERT_TRUE(can_convert_to<TupleIterator>(iterator_value));
-    TupleIterator *iterator = iterator_value.get_ptr<TupleIterator>();
+    TupleIterator *iterator =
+        CL_ASSERT_CONVERT_TO(TupleIterator, iterator_value);
     Tuple *tuple = iterator->tuple.extract();
     expect_tuple_iterator(iterator_value, tuple, 2, 0);
 
@@ -3752,12 +3735,9 @@ TEST(Interpreter, list_iter_returns_list_iterator)
 {
     test::VmTestContext test_context;
     Value iterator_value = test_context.run_file(L"iter([1, 2, 3])\n");
-    ASSERT_TRUE(can_convert_to<ListIterator>(iterator_value));
-    EXPECT_EQ(Value::from_smi(0),
-              iterator_value.get_ptr<ListIterator>()->index);
-    ASSERT_TRUE(can_convert_to<List>(
-        iterator_value.get_ptr<ListIterator>()->list.as_value()));
-    List *list = iterator_value.get_ptr<ListIterator>()->list.extract();
+    ListIterator *iterator = CL_ASSERT_CONVERT_TO(ListIterator, iterator_value);
+    EXPECT_EQ(Value::from_smi(0), iterator->index);
+    List *list = iterator->list.extract();
     ASSERT_EQ(size_t(3), list->size());
     EXPECT_EQ(Value::from_smi(1), list->item_unchecked(0));
     EXPECT_EQ(Value::from_smi(2), list->item_unchecked(1));
@@ -3769,8 +3749,7 @@ TEST(Interpreter, list_iterator_next_returns_items_until_stop_iteration)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
     Value iterator_value = test_context.run_file(L"iter([4, 5])\n");
-    ASSERT_TRUE(can_convert_to<ListIterator>(iterator_value));
-    ListIterator *iterator = iterator_value.get_ptr<ListIterator>();
+    ListIterator *iterator = CL_ASSERT_CONVERT_TO(ListIterator, iterator_value);
     List *list = iterator->list.extract();
     expect_list_iterator(iterator_value, list, 0);
 
