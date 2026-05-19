@@ -95,6 +95,8 @@ namespace cl
     template <typename T> class TValue
     {
     public:
+        using semantic_type = T;
+
         static TValue from_value_checked(Value value)
         {
             validate_typed_value<T>(value);
@@ -139,6 +141,7 @@ namespace cl
         }
 
         Value as_value() const { return value_; }
+        Value raw_value() const { return value_; }
         operator Value() const { return value_; }
 
         bool operator==(TValue other) const { return value_ == other.value_; }

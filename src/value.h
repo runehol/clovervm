@@ -85,6 +85,10 @@ namespace cl
     class Value
     {
     public:
+        using semantic_type = Value;
+
+        static inline Value from_value_unchecked(Value value) { return value; }
+
         static inline Value from_smi(int64_t v)
         {
             Value val;
@@ -175,6 +179,8 @@ namespace cl
 
         bool operator==(Value o) const { return as.integer == o.as.integer; }
         bool operator!=(Value o) const { return as.integer != o.as.integer; }
+
+        Value raw_value() const { return *this; }
 
         bool is_smi() const { return (as.integer & value_tag_mask) == 0; }
 

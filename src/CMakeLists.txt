@@ -90,6 +90,7 @@ add_library(libclovervm STATIC
     overflow_slots.cpp
     overflow_slots.h
     owned.h
+    owned2.h
     owned_typed_value.h
     refcount.cpp
     refcount.h
@@ -112,6 +113,8 @@ add_library(libclovervm STATIC
     tokenizer.cpp
     validity_cell.h
     value.h
+    value_state.cpp
+    value_state.h
     value_string.cpp
     value_string.h
     string_builder.cpp
