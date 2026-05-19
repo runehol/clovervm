@@ -3,8 +3,10 @@
 
 #include "builtin_class_registry.h"
 #include "object.h"
+#include "owned2.h"
 #include "owned_typed_value.h"
 #include "value.h"
+#include "value_state.h"
 #include <assert.h>
 #include <cstring>
 #include <stdint.h>
@@ -24,63 +26,61 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout = NativeLayoutId::String;
 
-        String(ClassObject *cls, const cl_wchar *_data, TValue<SMI> _count)
-            : Object(cls, native_layout)
+        String(ClassObject *cls, const cl_wchar *_data, TValue2<SMI> _count)
+            : Object(cls, native_layout), count(_count)
         {
-            size_t n_chars = _count.extract();
+            size_t n_chars = count.extract();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
-            count = _count;
         }
 
-        String(const cl_wchar *_data, TValue<SMI> _count)
-            : Object(BootstrapObjectTag{}, native_layout)
+        String(const cl_wchar *_data, TValue2<SMI> _count)
+            : Object(BootstrapObjectTag{}, native_layout), count(_count)
         {
-            size_t n_chars = _count.extract();
+            size_t n_chars = count.extract();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
-            count = _count;
         }
 
         String(ClassObject *cls, const cl_wchar *_data)
-            : Object(cls, native_layout)
+            : Object(cls, native_layout),
+              count(TValue2<SMI>::from_smi(wcslen(_data)))
         {
-            size_t n_chars = wcslen(_data);
+            size_t n_chars = count.extract();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
-            count = TValue<SMI>::from_smi(n_chars);
         }
 
         String(const cl_wchar *_data)
-            : Object(BootstrapObjectTag{}, native_layout)
+            : Object(BootstrapObjectTag{}, native_layout),
+              count(TValue2<SMI>::from_smi(wcslen(_data)))
         {
-            size_t n_chars = wcslen(_data);
+            size_t n_chars = count.extract();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
-            count = TValue<SMI>::from_smi(n_chars);
         }
 
         String(ClassObject *cls, const std::wstring &str)
-            : Object(cls, native_layout)
+            : Object(cls, native_layout),
+              count(TValue2<SMI>::from_smi(str.size()))
         {
-            size_t n_chars = str.size();
+            size_t n_chars = count.extract();
             memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
-            count = TValue<SMI>::from_smi(n_chars);
         }
 
         String(const std::wstring &str)
-            : Object(BootstrapObjectTag{}, native_layout)
+            : Object(BootstrapObjectTag{}, native_layout),
+              count(TValue2<SMI>::from_smi(str.size()))
         {
-            size_t n_chars = str.size();
+            size_t n_chars = count.extract();
             memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
             this->data[n_chars] = 0;  // zero terminate for good measure
-            count = TValue<SMI>::from_smi(n_chars);
         }
 
         void install_bootstrap_class(ClassObject *new_cls);
 
-        MemberTValue<SMI> count;
+        Member2<TValue2<SMI>> count;
         cl_wchar data[1];
 
         static size_t size_for(const std::wstring &str)
@@ -95,11 +95,11 @@ namespace cl
         {
             return sizeof(String) + n_chars * sizeof(cl_wchar);
         }
-        static size_t size_for(TValue<SMI> count)
+        static size_t size_for(TValue2<SMI> count)
         {
             return size_for(size_t(count.extract()));
         }
-        static size_t size_for(ClassObject *, TValue<SMI> count)
+        static size_t size_for(ClassObject *, TValue2<SMI> count)
         {
             return size_for(count);
         }

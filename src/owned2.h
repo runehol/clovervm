@@ -79,22 +79,6 @@ namespace cl
         T value() const { return value_; }
         T operator*() const { return value(); }
         Value raw_value() const { return value_.raw_value(); }
-        friend bool operator==(const Owned2 &left, Value right)
-        {
-            return left.raw_value() == right;
-        }
-        friend bool operator!=(const Owned2 &left, Value right)
-        {
-            return left.raw_value() != right;
-        }
-        friend bool operator==(Value left, const Owned2 &right)
-        {
-            return right == left;
-        }
-        friend bool operator!=(Value left, const Owned2 &right)
-        {
-            return right != left;
-        }
 
         template <typename U = T,
                   typename ExtractType = decltype(std::declval<U>().extract())>
@@ -158,22 +142,6 @@ namespace cl
         T value() const { return value_; }
         T operator*() const { return value(); }
         Value raw_value() const { return value_.raw_value(); }
-        friend bool operator==(const Member2 &left, Value right)
-        {
-            return left.raw_value() == right;
-        }
-        friend bool operator!=(const Member2 &left, Value right)
-        {
-            return left.raw_value() != right;
-        }
-        friend bool operator==(Value left, const Member2 &right)
-        {
-            return right == left;
-        }
-        friend bool operator!=(Value left, const Member2 &right)
-        {
-            return right != left;
-        }
 
         template <typename U = T,
                   typename ExtractType = decltype(std::declval<U>().extract())>

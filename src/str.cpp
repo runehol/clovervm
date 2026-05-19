@@ -82,7 +82,7 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"str.__len__ expects a str receiver");
         }
-        return self.get_ptr<String>()->count.as_value();
+        return self.get_ptr<String>()->count.raw_value();
     }
 
     static Value native_str_add(Value left_value, Value right_value)

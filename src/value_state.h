@@ -22,6 +22,37 @@ namespace cl
                                                      const wchar_t *message);
     [[nodiscard]] Value propagate_exception_for_expected();
 
+    template <typename T, typename = void> struct HasRawValue : std::false_type
+    {
+    };
+
+    template <typename T>
+    struct HasRawValue<
+        T, std::void_t<decltype(std::declval<const T &>().raw_value())>>
+        : std::true_type
+    {
+    };
+
+    template <typename A, typename B,
+              std::enable_if_t<HasRawValue<A>::value && HasRawValue<B>::value &&
+                                   !(std::is_same_v<std::decay_t<A>, Value> &&
+                                     std::is_same_v<std::decay_t<B>, Value>),
+                               int> = 0>
+    bool operator==(const A &left, const B &right)
+    {
+        return left.raw_value() == right.raw_value();
+    }
+
+    template <typename A, typename B,
+              std::enable_if_t<HasRawValue<A>::value && HasRawValue<B>::value &&
+                                   !(std::is_same_v<std::decay_t<A>, Value> &&
+                                     std::is_same_v<std::decay_t<B>, Value>),
+                               int> = 0>
+    bool operator!=(const A &left, const B &right)
+    {
+        return left.raw_value() != right.raw_value();
+    }
+
     template <typename T, typename Enable = void> struct TValue2Traits;
 
     template <typename T>
@@ -158,25 +189,6 @@ namespace cl
         }
 
         Value raw_value() const { return value_; }
-
-        bool operator==(TValue2 other) const { return value_ == other.value_; }
-        bool operator!=(TValue2 other) const { return value_ != other.value_; }
-        friend bool operator==(TValue2 left, Value right)
-        {
-            return left.raw_value() == right;
-        }
-        friend bool operator!=(TValue2 left, Value right)
-        {
-            return left.raw_value() != right;
-        }
-        friend bool operator==(Value left, TValue2 right)
-        {
-            return right == left;
-        }
-        friend bool operator!=(Value left, TValue2 right)
-        {
-            return right != left;
-        }
 
     private:
         explicit TValue2(Value value) : value_(value) {}

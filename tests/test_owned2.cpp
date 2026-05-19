@@ -87,6 +87,22 @@ TEST(Owned2, CopyRetainsRawValue)
     EXPECT_EQ(0, string->refcount);
 }
 
+TEST(Owned2, ComparesByRawValue)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    String *first = context.thread()->make_internal_raw<String>(L"first");
+    String *second = context.thread()->make_internal_raw<String>(L"second");
+
+    Owned2<TValue2<String>> owned_first(TValue2<String>::from_oop(first));
+    Owned2<TValue2<String>> owned_first_again(TValue2<String>::from_oop(first));
+    Owned2<TValue2<String>> owned_second(TValue2<String>::from_oop(second));
+
+    EXPECT_EQ(owned_first, owned_first_again);
+    EXPECT_NE(owned_first, owned_second);
+}
+
 TEST(Member2, StoresTypedWrapperAndRetainsRawValue)
 {
     test::VmTestContext context;
@@ -112,6 +128,28 @@ TEST(Member2, StoresTypedWrapperAndRetainsRawValue)
 
     decref(Value::from_oop(string));
     EXPECT_EQ(0, string->refcount);
+}
+
+TEST(Member2, ComparesByRawValue)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    String *first = context.thread()->make_internal_raw<String>(L"first");
+    String *second = context.thread()->make_internal_raw<String>(L"second");
+
+    Member2<TValue2<String>> member_first(TValue2<String>::from_oop(first));
+    Member2<TValue2<String>> member_first_again(
+        TValue2<String>::from_oop(first));
+    Member2<TValue2<String>> member_second(TValue2<String>::from_oop(second));
+    Owned2<TValue2<String>> owned_first(TValue2<String>::from_oop(first));
+
+    EXPECT_EQ(member_first, member_first_again);
+    EXPECT_NE(member_first, member_second);
+    EXPECT_EQ(member_first, owned_first);
+    EXPECT_EQ(owned_first, member_first);
+    EXPECT_NE(member_second, owned_first);
+    EXPECT_NE(owned_first, member_second);
 }
 
 TEST(Member2, ReleaseRefReleasesRawValueForDealloc)
