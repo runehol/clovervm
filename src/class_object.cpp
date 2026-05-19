@@ -174,7 +174,8 @@ namespace cl
                              ClassObject *single_base,
                              ShapeFlags class_shape_flags,
                              ShapeFlags instance_shape_flags)
-        : SlotObject(BootstrapObjectTag{}, native_layout), name(_name),
+        : SlotObject(BootstrapObjectTag{}, native_layout),
+          name(TValue2<String>::from_value_unchecked(_name.as_value())),
           bases(Value::not_present()), mro(Value::not_present()),
           mro_shape_and_contents_validity_cell(nullptr),
           mro_shape_and_metaclass_mro_shape_and_contents_validity_cell(nullptr),
@@ -363,7 +364,7 @@ namespace cl
 
     void ClassObject::validate_inline_slot_layout()
     {
-        static_assert(sizeof(MemberTValue<String>) == sizeof(Value));
+        static_assert(sizeof(Member2<TValue2<String>>) == sizeof(Value));
         static_assert(sizeof(MemberValue) == sizeof(Value));
         static_assert(CL_OFFSETOF(ClassObject, name) == sizeof(SlotObject));
         static_assert(CL_OFFSETOF(ClassObject, bases) ==

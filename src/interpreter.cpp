@@ -536,10 +536,10 @@ namespace cl
         Value value = thread->pending_stop_iteration_value();
         ClassObject *stop_iteration =
             thread->class_for_native_layout(NativeLayoutId::StopIteration);
-        TValue<StopIterationObject> exception = make_stop_iteration_object(
+        TValue2<StopIterationObject> exception = make_stop_iteration_object(
             thread, TValue<ClassObject>::from_oop(stop_iteration), value);
         (void)thread->set_pending_exception_object(
-            TValue<ExceptionObject>::from_value_checked(exception.as_value()));
+            TValue2<Exception>::from_value_unchecked(exception.raw_value()));
     }
 
     static INTERP_CC Value op_lda_active_exception(PARAMS)
@@ -561,7 +561,7 @@ namespace cl
                 "InternalError: active exception required");
         }
 
-        accumulator = thread->pending_exception_object();
+        accumulator = thread->pending_exception_object().raw_value();
         START(1);
         COMPLETE();
     }
@@ -586,7 +586,7 @@ namespace cl
         {
             case PendingExceptionKind::Object:
                 exception_class = thread->pending_exception_object()
-                                      .get_ptr<ExceptionObject>()
+                                      .extract()
                                       ->get_shape()
                                       ->get_class();
                 break;
@@ -628,7 +628,7 @@ namespace cl
 
         START(2);
         int8_t reg = pc[1];
-        fp[reg] = thread->pending_exception_object();
+        fp[reg] = thread->pending_exception_object().raw_value();
         thread->clear_pending_exception();
         COMPLETE();
     }
@@ -657,12 +657,12 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static TValue<ExceptionObject>
+    NOINLINE static TValue2<Exception>
     make_raise_exception_object(ThreadState *thread, Value raised)
     {
-        if(can_convert_to<ExceptionObject>(raised))
+        if(TValue2Traits<Exception>::is_instance(raised))
         {
-            return TValue<ExceptionObject>::from_value_checked(raised);
+            return TValue2<Exception>::from_value_assumed(raised);
         }
         if(can_convert_to<ClassObject>(raised))
         {
@@ -679,10 +679,10 @@ namespace cl
             if(cls ==
                thread->class_for_native_layout(NativeLayoutId::StopIteration))
             {
-                return TValue<ExceptionObject>::from_value_checked(
+                return TValue2<Exception>::from_value_unchecked(
                     make_stop_iteration_object(
                         thread, TValue<ClassObject>::from_oop(cls))
-                        .as_value());
+                        .raw_value());
             }
 
             return make_exception_object(
@@ -697,7 +697,7 @@ namespace cl
     }
 
     NOINLINE static void set_exception_context(ThreadState *thread,
-                                               TValue<ExceptionObject> raised,
+                                               TValue2<Exception> raised,
                                                Value context)
     {
         [[maybe_unused]] bool ok = raised.extract()->set_own_property(
@@ -724,7 +724,7 @@ namespace cl
     NOINLINE INTERP_CC Value raise_unwind_with_context(PARAMS)
     {
         int8_t context_reg = pc[1];
-        TValue<ExceptionObject> raised =
+        TValue2<Exception> raised =
             make_raise_exception_object(thread, accumulator);
         set_exception_context(thread, raised, fp[context_reg]);
         (void)thread->set_pending_exception_object(raised);

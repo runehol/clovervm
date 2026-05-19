@@ -6,12 +6,13 @@
 #include "instance.h"
 #include "object.h"
 #include "owned.h"
-#include "owned_typed_value.h"
+#include "owned2.h"
 #include "refcount.h"
 #include "shape.h"
 #include "typed_value.h"
 #include "validity_cell.h"
 #include "value.h"
+#include "value_state.h"
 #include "vm_array.h"
 #include <cstdint>
 
@@ -97,7 +98,10 @@ namespace cl
                            const BuiltinClassMethod *methods,
                            uint32_t method_count, ClassObject *single_base);
 
-        TValue<String> get_name() const { return name; }
+        TValue<String> get_name() const
+        {
+            return TValue<String>::from_value_unchecked(name.raw_value());
+        }
         Value get_mro_value() const { return mro; }
         uint32_t get_instance_default_inline_slot_count() const
         {
@@ -191,7 +195,7 @@ namespace cl
         attach_mro_validity_cell(ValidityCell *cell,
                                  MroValidityCellDependency dependency) const;
 
-        MemberTValue<String> name;
+        Member2<TValue2<String>> name;
         MemberValue bases;
         MemberValue mro;
         MemberValue class_extra_inline_attribute_slots

@@ -127,29 +127,33 @@ namespace cl
         return builtin_class_definition(cls, native_layout_ids);
     }
 
-    TValue<ExceptionObject> make_exception_object(TValue<ClassObject> type,
-                                                  TValue<String> message)
+    TValue2<Exception> make_exception_object(TValue<ClassObject> type,
+                                             TValue<String> message)
     {
-        return make_internal_value<ExceptionObject>(type.extract(), message);
+        return TValue2<Exception>::from_value_unchecked(
+            make_internal_value<ExceptionObject>(type.extract(), message)
+                .as_value());
     }
 
-    TValue<ExceptionObject> make_exception_object(ThreadState *thread,
-                                                  TValue<ClassObject> type,
-                                                  TValue<String> message)
+    TValue2<Exception> make_exception_object(ThreadState *thread,
+                                             TValue<ClassObject> type,
+                                             TValue<String> message)
     {
-        return thread->make_internal_value<ExceptionObject>(type.extract(),
-                                                            message);
+        return TValue2<Exception>::from_value_unchecked(
+            thread
+                ->make_internal_value<ExceptionObject>(type.extract(), message)
+                .as_value());
     }
 
-    TValue<ExceptionObject> make_exception_object(TValue<ClassObject> type,
-                                                  const wchar_t *message)
+    TValue2<Exception> make_exception_object(TValue<ClassObject> type,
+                                             const wchar_t *message)
     {
         return make_exception_object(type, interned_string(message));
     }
 
-    TValue<ExceptionObject> make_exception_object(ThreadState *thread,
-                                                  TValue<ClassObject> type,
-                                                  const wchar_t *message)
+    TValue2<Exception> make_exception_object(ThreadState *thread,
+                                             TValue<ClassObject> type,
+                                             const wchar_t *message)
     {
         return make_exception_object(
             thread, type,
@@ -157,20 +161,26 @@ namespace cl
                 message));
     }
 
-    TValue<StopIterationObject>
+    TValue2<StopIterationObject>
     make_stop_iteration_object(TValue<ClassObject> type, Value value)
     {
-        return make_internal_value<StopIterationObject>(type.extract(), value);
+        return TValue2<StopIterationObject>::from_value_unchecked(
+            make_internal_value<StopIterationObject>(type.extract(), value)
+                .as_value());
     }
 
-    TValue<StopIterationObject>
+    TValue2<StopIterationObject>
     make_stop_iteration_object(ThreadState *thread, TValue<ClassObject> type,
                                Value value)
     {
-        return thread->make_internal_value<StopIterationObject>(
-            type.extract(),
-            thread->get_machine()->get_or_create_interned_string_value(L""),
-            value);
+        return TValue2<StopIterationObject>::from_value_unchecked(
+            thread
+                ->make_internal_value<StopIterationObject>(
+                    type.extract(),
+                    thread->get_machine()->get_or_create_interned_string_value(
+                        L""),
+                    value)
+                .as_value());
     }
 
 }  // namespace cl

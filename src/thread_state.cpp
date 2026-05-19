@@ -9,7 +9,6 @@
 #include "function.h"
 #include "heap_reclamation.h"
 #include "interpreter.h"
-#include "owned_typed_value.h"
 #include "parser.h"
 #include "runtime_helpers.h"
 #include "tokenizer.h"
@@ -33,7 +32,8 @@ namespace cl
     thread_local ThreadState *ThreadState::current_thread = nullptr;
 
     PendingException::PendingException()
-        : stop_iteration_value(Value::not_present())
+        : object(Optional<TValue2<Exception>>::none()),
+          stop_iteration_value(Value::not_present())
     {
     }
 
@@ -116,9 +116,14 @@ namespace cl
     Value ThreadState::run_clovervm_code_object(CodeObject *obj)
     {
         ActivationScope activation_scope(this);
-        OwnedTValue<Function> function(this->make_object_value<Function>(
-            TValue<CodeObject>::from_oop(obj)));
-        return call_clovervm_function_with_args(function, nullptr, 0);
+        Owned2<TValue2<Function>> function(
+            TValue2<Function>::from_value_unchecked(
+                this->make_object_value<Function>(
+                        TValue<CodeObject>::from_oop(obj))
+                    .as_value()));
+        return call_clovervm_function_with_args(
+            TValue<Function>::from_value_unchecked(function.raw_value()),
+            nullptr, 0);
     }
 
     static void set_clover_entry_adapter_parameter(CodeObject *adapter,
@@ -249,7 +254,7 @@ namespace cl
                                                     TValue<String> message)
     {
         return set_pending_exception_object(
-            make_internal_value<ExceptionObject>(type.extract(), message));
+            make_exception_object(this, type, message));
     }
 
     Value ThreadState::set_pending_exception_string(TValue<ClassObject> type,
@@ -289,7 +294,7 @@ namespace cl
 
     Value ThreadState::set_pending_stop_iteration_value(Value value)
     {
-        pending_exception.object.clear();
+        pending_exception.object = Optional<TValue2<Exception>>::none();
         pending_exception.stop_iteration_value = value;
         pending_exception.kind = PendingExceptionKind::StopIteration;
         return Value::exception_marker();

@@ -24,6 +24,7 @@
 #include "tokenizer.h"
 #include "tuple.h"
 #include "tuple_iterator.h"
+#include "value_state.h"
 #include "value_string.h"
 #include "virtual_machine.h"
 #include <cstdint>
@@ -121,6 +122,12 @@ static std::wstring cl_test_string_to_wstring(TValue<String> string)
     return std::wstring(str->data, size_t(str->count.extract()));
 }
 
+static std::wstring cl_test_string_to_wstring(TValue2<String> string)
+{
+    String *str = string.extract();
+    return std::wstring(str->data, size_t(str->count.extract()));
+}
+
 static std::wstring format_pending_python_error(ThreadState *thread)
 {
     if(thread->pending_exception_kind() == PendingExceptionKind::StopIteration)
@@ -129,13 +136,11 @@ static std::wstring format_pending_python_error(ThreadState *thread)
     }
 
     EXPECT_EQ(PendingExceptionKind::Object, thread->pending_exception_kind());
-    TValue<ExceptionObject> exception =
-        TValue<ExceptionObject>::from_value_checked(
-            thread->pending_exception_object());
+    TValue2<Exception> exception = thread->pending_exception_object();
     std::wstring result = cl_test_string_to_wstring(
         exception.extract()->get_shape()->get_class()->get_name());
-    std::wstring message = cl_test_string_to_wstring(
-        static_cast<TValue<String>>(exception.extract()->message));
+    std::wstring message =
+        cl_test_string_to_wstring(exception.extract()->message.value());
     if(!message.empty())
     {
         result += L": ";
@@ -2604,10 +2609,12 @@ TEST(Interpreter, native_exception_marker_materializes_stop_iteration)
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
-    TValue<StopIterationObject> exception =
-        TValue<StopIterationObject>::from_value_checked(
-            test_context.thread()->pending_exception_object());
-    EXPECT_EQ(Value::from_smi(123), exception.extract()->value.as_value());
+    TValue2<Exception> exception =
+        test_context.thread()->pending_exception_object();
+    ASSERT_TRUE(can_convert_to<StopIterationObject>(exception.raw_value()));
+    StopIterationObject *stop_iteration =
+        exception.raw_value().get_ptr<StopIterationObject>();
+    EXPECT_EQ(Value::from_smi(123), stop_iteration->value.as_value());
 }
 
 TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
@@ -2629,10 +2636,12 @@ TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
-    TValue<StopIterationObject> exception =
-        TValue<StopIterationObject>::from_value_checked(
-            test_context.thread()->pending_exception_object());
-    EXPECT_EQ(Value::from_smi(123), exception.extract()->value.as_value());
+    TValue2<Exception> exception =
+        test_context.thread()->pending_exception_object();
+    ASSERT_TRUE(can_convert_to<StopIterationObject>(exception.raw_value()));
+    StopIterationObject *stop_iteration =
+        exception.raw_value().get_ptr<StopIterationObject>();
+    EXPECT_EQ(Value::from_smi(123), stop_iteration->value.as_value());
 }
 
 TEST(Interpreter, catch_stop_iteration_as_exposes_value)
@@ -2671,9 +2680,8 @@ TEST(Interpreter, raise_from_handler_sets_exception_context)
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
-    TValue<ExceptionObject> exception =
-        TValue<ExceptionObject>::from_value_checked(
-            test_context.thread()->pending_exception_object());
+    TValue2<Exception> exception =
+        test_context.thread()->pending_exception_object();
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"ValueError"),
               exception.extract()->get_shape()->get_class());
 
@@ -2698,9 +2706,8 @@ TEST(Interpreter, bare_raise_without_active_exception_raises_runtime_error)
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
-    TValue<ExceptionObject> exception =
-        TValue<ExceptionObject>::from_value_checked(
-            test_context.thread()->pending_exception_object());
+    TValue2<Exception> exception =
+        test_context.thread()->pending_exception_object();
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"RuntimeError"),
               exception.extract()->get_shape()->get_class());
 }
@@ -2753,9 +2760,8 @@ TEST(Interpreter, try_finally_raise_chains_body_exception_as_context)
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
-    TValue<ExceptionObject> exception =
-        TValue<ExceptionObject>::from_value_checked(
-            test_context.thread()->pending_exception_object());
+    TValue2<Exception> exception =
+        test_context.thread()->pending_exception_object();
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"ValueError"),
               exception.extract()->get_shape()->get_class());
 
@@ -2782,9 +2788,10 @@ TEST(Interpreter, bare_raise_in_exceptional_finally_reraises_body_exception)
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
-    Value exception = test_context.thread()->pending_exception_object();
+    TValue2<Exception> exception =
+        test_context.thread()->pending_exception_object();
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"NameError"),
-              exception.get_ptr<ExceptionObject>()->get_shape()->get_class());
+              exception.extract()->get_shape()->get_class());
 }
 
 TEST(Interpreter, return_in_finally_overrides_body_exception)
@@ -3188,12 +3195,12 @@ TEST(Interpreter, raise_unwind_raises_exception_object)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    TValue<ExceptionObject> exception = make_exception_object(
+    TValue2<Exception> exception = make_exception_object(
         TValue<ClassObject>::from_oop(
             test_context.thread()->class_for_builtin_name(L"ValueError")),
         L"boom");
     CodeObject *code_obj =
-        make_raise_unwind_code(test_context, exception.as_value());
+        make_raise_unwind_code(test_context, exception.raw_value());
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());

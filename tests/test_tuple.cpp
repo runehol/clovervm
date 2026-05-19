@@ -3,6 +3,7 @@
 #include "test_helpers.h"
 #include "thread_state.h"
 #include "tuple.h"
+#include "value_state.h"
 #include <gtest/gtest.h>
 #include <stdexcept>
 
@@ -22,19 +23,14 @@ namespace
     {
         ASSERT_EQ(PendingExceptionKind::Object,
                   thread->pending_exception_kind());
-        TValue<ExceptionObject> exception =
-            TValue<ExceptionObject>::from_value_checked(
-                thread->pending_exception_object());
+        TValue2<Exception> exception = thread->pending_exception_object();
         EXPECT_STREQ(class_name, exception.extract()
                                      ->get_shape()
                                      ->get_class()
                                      ->get_name()
                                      .extract()
                                      ->data);
-        EXPECT_STREQ(message, TValue<String>::from_value_checked(
-                                  exception.extract()->message)
-                                  .extract()
-                                  ->data);
+        EXPECT_STREQ(message, exception.extract()->message.extract()->data);
     }
 }  // namespace
 

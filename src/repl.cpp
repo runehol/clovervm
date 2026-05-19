@@ -9,6 +9,7 @@
 #include "str.h"
 #include "thread_state.h"
 #include "value.h"
+#include "value_state.h"
 #include "value_string.h"
 #include "virtual_machine.h"
 #include <algorithm>
@@ -52,6 +53,12 @@ namespace cl
         return std::wstring(str->data, size_t(str->count.extract()));
     }
 
+    static std::wstring cl_string_to_wstring(TValue2<String> string)
+    {
+        String *str = string.extract();
+        return std::wstring(str->data, size_t(str->count.extract()));
+    }
+
     static std::wstring format_pending_python_exception(ThreadState *thread)
     {
         if(thread->pending_exception_kind() ==
@@ -65,13 +72,11 @@ namespace cl
             return L"InternalError: exception marker without pending exception";
         }
 
-        TValue<ExceptionObject> exception =
-            TValue<ExceptionObject>::from_value_checked(
-                thread->pending_exception_object());
+        TValue2<Exception> exception = thread->pending_exception_object();
         std::wstring result = cl_string_to_wstring(
             exception.extract()->get_shape()->get_class()->get_name());
-        std::wstring message = cl_string_to_wstring(
-            static_cast<TValue<String>>(exception.extract()->message));
+        std::wstring message =
+            cl_string_to_wstring(exception.extract()->message.value());
         if(!message.empty())
         {
             result += L": ";

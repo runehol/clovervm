@@ -12,7 +12,8 @@ namespace cl
                                   ShapeTransitionVerb _verb,
                                   DescriptorFlags _descriptor_flags,
                                   Shape *_next_shape)
-        : name(_name), verb(_verb), descriptor_flags(_descriptor_flags),
+        : name(TValue2<String>::from_value_unchecked(_name.as_value())),
+          verb(_verb), descriptor_flags(_descriptor_flags),
           next_shape(_next_shape)
     {
     }

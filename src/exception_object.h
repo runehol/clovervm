@@ -3,7 +3,10 @@
 
 #include "builtin_class_registry.h"
 #include "object.h"
-#include "owned_typed_value.h"
+#include "owned.h"
+#include "owned2.h"
+#include "typed_value.h"
+#include "value_state.h"
 
 namespace cl
 {
@@ -24,7 +27,7 @@ namespace cl
         {
         }
 
-        MemberTValue<String> message;
+        Member2<TValue2<String>> message;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ExceptionObject, SlotObject, 1);
         CL_DECLARE_STATIC_OBJECT_SIZE(ExceptionObject);
@@ -32,7 +35,8 @@ namespace cl
     protected:
         ExceptionObject(ClassObject *cls, NativeLayoutId layout_id,
                         TValue<String> message)
-            : SlotObject(cls, layout_id), message(message)
+            : SlotObject(cls, layout_id),
+              message(TValue2<String>::from_value_unchecked(message.as_value()))
         {
         }
     };
@@ -67,12 +71,16 @@ namespace cl
                       StopIterationObject::kValueSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<StopIterationObject>);
 
-    template <>
-    struct ValueTypeTraits<ExceptionObject>
-        : PointerBackedValueTypeTraits<
-              ExceptionObject, ExactNativeLayoutProvider<ExceptionObject>,
-              RefcountPolicy::Always>
+    struct Exception
     {
+    };
+
+    template <> struct ValueTypeTraits<Exception>
+    {
+        using get_type = ExceptionObject *;
+        static constexpr RefcountPolicy refcount_policy =
+            RefcountPolicy::Always;
+
         static bool is_instance(Value value)
         {
             if(!value.is_ptr())
@@ -83,6 +91,33 @@ namespace cl
                 value.get_ptr<Object>()->native_layout_id();
             return layout_id == NativeLayoutId::Exception ||
                    layout_id == NativeLayoutId::StopIteration;
+        }
+
+        static get_type get_unchecked(Value value)
+        {
+            return value.get_ptr<ExceptionObject>();
+        }
+    };
+
+    template <> struct TValue2Traits<Exception>
+    {
+        using extract_type = ExceptionObject *;
+
+        static bool is_instance(Value value)
+        {
+            if(!value.is_ptr())
+            {
+                return false;
+            }
+            NativeLayoutId layout_id =
+                value.get_ptr<Object>()->native_layout_id();
+            return layout_id == NativeLayoutId::Exception ||
+                   layout_id == NativeLayoutId::StopIteration;
+        }
+
+        static extract_type extract_unchecked(Value value)
+        {
+            return value.get_ptr<ExceptionObject>();
         }
     };
 
@@ -95,20 +130,20 @@ namespace cl
     BuiltinClassDefinition make_stop_iteration_class(VirtualMachine *vm,
                                                      ClassObject *base);
 
-    TValue<ExceptionObject> make_exception_object(TValue<ClassObject> type,
-                                                  TValue<String> message);
-    TValue<ExceptionObject> make_exception_object(ThreadState *thread,
-                                                  TValue<ClassObject> type,
-                                                  TValue<String> message);
-    TValue<ExceptionObject> make_exception_object(TValue<ClassObject> type,
-                                                  const wchar_t *message);
-    TValue<ExceptionObject> make_exception_object(ThreadState *thread,
-                                                  TValue<ClassObject> type,
-                                                  const wchar_t *message);
-    TValue<StopIterationObject>
+    TValue2<Exception> make_exception_object(TValue<ClassObject> type,
+                                             TValue<String> message);
+    TValue2<Exception> make_exception_object(ThreadState *thread,
+                                             TValue<ClassObject> type,
+                                             TValue<String> message);
+    TValue2<Exception> make_exception_object(TValue<ClassObject> type,
+                                             const wchar_t *message);
+    TValue2<Exception> make_exception_object(ThreadState *thread,
+                                             TValue<ClassObject> type,
+                                             const wchar_t *message);
+    TValue2<StopIterationObject>
     make_stop_iteration_object(TValue<ClassObject> type,
                                Value value = Value::not_present());
-    TValue<StopIterationObject>
+    TValue2<StopIterationObject>
     make_stop_iteration_object(ThreadState *thread, TValue<ClassObject> type,
                                Value value = Value::not_present());
 

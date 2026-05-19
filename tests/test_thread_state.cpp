@@ -246,7 +246,7 @@ namespace cl
         ClassObject *base_exception =
             context.vm().class_for_native_layout(NativeLayoutId::Exception);
         ThreadState::ActivationScope active_thread(thread);
-        TValue<ExceptionObject> exception = make_exception_object(
+        TValue2<Exception> exception = make_exception_object(
             TValue<ClassObject>::from_oop(base_exception), L"boom");
 
         EXPECT_TRUE(thread->set_pending_exception_object(exception)
@@ -255,7 +255,7 @@ namespace cl
         EXPECT_TRUE(thread->has_pending_exception());
         EXPECT_EQ(PendingExceptionKind::Object,
                   thread->pending_exception_kind());
-        EXPECT_EQ(exception.as_value(), thread->pending_exception_object());
+        EXPECT_EQ(exception, thread->pending_exception_object());
     }
 
     TEST(ThreadState, PendingStopIterationNoValueUsesNotPresent)
@@ -318,14 +318,10 @@ namespace cl
         EXPECT_TRUE(thread->has_pending_exception());
         EXPECT_EQ(PendingExceptionKind::Object,
                   thread->pending_exception_kind());
-        TValue<ExceptionObject> exception =
-            TValue<ExceptionObject>::from_value_checked(
-                thread->pending_exception_object());
+        TValue2<Exception> exception = thread->pending_exception_object();
         EXPECT_EQ(base_exception,
                   exception.extract()->get_shape()->get_class());
-        TValue<String> message =
-            TValue<String>::from_value_checked(exception.extract()->message);
-        EXPECT_STREQ(L"boom", message.extract()->data);
+        EXPECT_STREQ(L"boom", exception.extract()->message.extract()->data);
     }
 
     TEST(ThreadState, StopIterationObjectStoresValueSlot)
@@ -336,16 +332,14 @@ namespace cl
             context.vm().class_for_native_layout(NativeLayoutId::StopIteration);
         ThreadState::ActivationScope active_thread(thread);
 
-        TValue<StopIterationObject> exception = make_stop_iteration_object(
+        TValue2<StopIterationObject> exception = make_stop_iteration_object(
             TValue<ClassObject>::from_oop(stop_iteration), Value::from_smi(42));
 
         EXPECT_EQ(Value::from_smi(42), exception.extract()->value.as_value());
-        TValue<String> message =
-            TValue<String>::from_value_checked(exception.extract()->message);
-        EXPECT_STREQ(L"", message.extract()->data);
-        TValue<ExceptionObject> base_exception =
-            TValue<ExceptionObject>::from_value_checked(exception.as_value());
-        EXPECT_EQ(exception.as_value(), base_exception.as_value());
+        EXPECT_STREQ(L"", exception.extract()->message.extract()->data);
+        TValue2<Exception> base_exception =
+            TValue2<Exception>::from_value_assumed(exception.raw_value());
+        EXPECT_EQ(exception, base_exception);
     }
 
     TEST(ThreadState, StopIterationObjectDefaultsValueToNotPresent)
@@ -356,7 +350,7 @@ namespace cl
             context.vm().class_for_native_layout(NativeLayoutId::StopIteration);
         ThreadState::ActivationScope active_thread(thread);
 
-        TValue<StopIterationObject> exception = make_stop_iteration_object(
+        TValue2<StopIterationObject> exception = make_stop_iteration_object(
             TValue<ClassObject>::from_oop(stop_iteration));
 
         EXPECT_TRUE(exception.extract()->value.as_value().is_not_present());

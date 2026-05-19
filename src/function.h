@@ -4,9 +4,12 @@
 #include "builtin_class_registry.h"
 #include "code_object.h"
 #include "object.h"
-#include "owned_typed_value.h"
+#include "owned.h"
+#include "owned2.h"
 #include "tuple.h"
+#include "typed_value.h"
 #include "value.h"
+#include "value_state.h"
 #include <cstdint>
 #include <vector>
 
@@ -26,7 +29,9 @@ namespace cl
         static constexpr uint32_t kInlineSlotCount = 3;
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object)
-            : SlotObject(cls, native_layout), code_object(_code_object),
+            : SlotObject(cls, native_layout),
+              code_object(TValue2<CodeObject>::from_value_unchecked(
+                  _code_object.as_value())),
               default_parameters(Value::None()), docstring(Value::None()),
               min_positional_arity(
                   _code_object.extract()->n_positional_parameters),
@@ -40,7 +45,9 @@ namespace cl
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object,
                  Value _docstring)
-            : SlotObject(cls, native_layout), code_object(_code_object),
+            : SlotObject(cls, native_layout),
+              code_object(TValue2<CodeObject>::from_value_unchecked(
+                  _code_object.as_value())),
               default_parameters(Value::None()), docstring(_docstring),
               min_positional_arity(
                   _code_object.extract()->n_positional_parameters),
@@ -54,7 +61,9 @@ namespace cl
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object,
                  TValue<Tuple> _default_parameters)
-            : SlotObject(cls, native_layout), code_object(_code_object),
+            : SlotObject(cls, native_layout),
+              code_object(TValue2<CodeObject>::from_value_unchecked(
+                  _code_object.as_value())),
               default_parameters(_default_parameters), docstring(Value::None()),
               min_positional_arity(
                   min_arity_for_code(_code_object, _default_parameters)),
@@ -71,7 +80,9 @@ namespace cl
 
         Function(ClassObject *cls, TValue<CodeObject> _code_object,
                  TValue<Tuple> _default_parameters, Value _docstring)
-            : SlotObject(cls, native_layout), code_object(_code_object),
+            : SlotObject(cls, native_layout),
+              code_object(TValue2<CodeObject>::from_value_unchecked(
+                  _code_object.as_value())),
               default_parameters(_default_parameters), docstring(_docstring),
               min_positional_arity(
                   min_arity_for_code(_code_object, _default_parameters)),
@@ -98,7 +109,7 @@ namespace cl
                 parameter_flags, FunctionParameterFlags::HasVarArgs);
         }
 
-        MemberTValue<CodeObject> code_object;
+        Member2<TValue2<CodeObject>> code_object;
         MemberValue default_parameters;
         MemberValue docstring;
         uint32_t min_positional_arity;

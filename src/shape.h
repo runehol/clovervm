@@ -4,10 +4,11 @@
 #include "heap_object.h"
 #include "native_layout_declarations.h"
 #include "owned.h"
-#include "owned_typed_value.h"
+#include "owned2.h"
 #include "shape_descriptor.h"
 #include "typed_value.h"
 #include "value.h"
+#include "value_state.h"
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -81,7 +82,10 @@ namespace cl
             Transition(TValue<String> name, ShapeTransitionVerb verb,
                        DescriptorFlags descriptor_flags, Shape *next_shape);
 
-            TValue<String> get_name() const { return name; }
+            TValue<String> get_name() const
+            {
+                return TValue<String>::from_value_unchecked(name.raw_value());
+            }
             ShapeTransitionVerb get_verb() const { return verb; }
             DescriptorFlags get_descriptor_flags() const
             {
@@ -90,7 +94,7 @@ namespace cl
             Shape *get_next_shape() const { return next_shape.extract(); }
 
         private:
-            OwnedTValue<String> name;
+            Owned2<TValue2<String>> name;
             ShapeTransitionVerb verb;
             DescriptorFlags descriptor_flags;
             OwnedHeapPtr<Shape> next_shape;
