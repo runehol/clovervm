@@ -45,7 +45,7 @@ TEST(Shape, InstanceRootShapeCarriesPresentedClass)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> name(
+    TValue2<String> name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         name, 2, context.vm().object_class());
@@ -76,7 +76,7 @@ TEST(Shape, ClassObjectShapeCarriesMetaclass)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> name(
+    TValue2<String> name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         name, 2, context.vm().object_class());
@@ -89,7 +89,7 @@ TEST(Shape, ShapeFlagsAreStoredOnShape)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -111,11 +111,11 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> a_name(
+    TValue2<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
-    TValue<String> b_name(
+    TValue2<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -176,11 +176,11 @@ TEST(Shape, DescriptorLookupReportsPresentAndAbsentProperties)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> a_name(
+    TValue2<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
-    TValue<String> b_name(
+    TValue2<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -232,9 +232,9 @@ TEST(Shape, AddTransitionCanCarryDescriptorFlags)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> a_name(
+    TValue2<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -261,9 +261,9 @@ TEST(Shape, InstanceRejectsStoreToReadOnlyDescriptor)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> a_name(
+    TValue2<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -295,9 +295,9 @@ TEST(Shape, StableSlotDeleteMovesDescriptorToLatentAndReAddReusesSlot)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> a_name(
+    TValue2<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -336,11 +336,11 @@ TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> a_name(
+    TValue2<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
-    TValue<String> b_name(
+    TValue2<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 1, context.vm().object_class());
@@ -372,7 +372,7 @@ TEST(Shape, InstanceStoresClassAndShapeSeparately)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -387,9 +387,9 @@ TEST(Shape, InstanceShapeDescribesDunderClassWithoutStorageSlot)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> dunder_class_name(
+    TValue2<String> dunder_class_name(
         context.vm().get_or_create_interned_string_value(L"__class__"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -419,9 +419,9 @@ TEST(Shape, InstanceStoresAndLoadsInlineOwnProperty)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> a_name(
+    TValue2<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -439,19 +439,19 @@ TEST(Shape, InstanceSpillsIntoGeometricallyGrowingOverflowStorage)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> a_name(
+    TValue2<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
-    TValue<String> b_name(
+    TValue2<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
-    TValue<String> c_name(
+    TValue2<String> c_name(
         context.vm().get_or_create_interned_string_value(L"c"));
-    TValue<String> d_name(
+    TValue2<String> d_name(
         context.vm().get_or_create_interned_string_value(L"d"));
-    TValue<String> e_name(
+    TValue2<String> e_name(
         context.vm().get_or_create_interned_string_value(L"e"));
-    TValue<String> f_name(
+    TValue2<String> f_name(
         context.vm().get_or_create_interned_string_value(L"f"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 1, context.vm().object_class());
@@ -474,11 +474,11 @@ TEST(Shape, DeleteClearsSlotAndAllowsFreshReAdd)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> a_name(
+    TValue2<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
-    TValue<String> b_name(
+    TValue2<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 1, context.vm().object_class());
@@ -501,11 +501,11 @@ TEST(Shape, TwoInstancesShareShapeTransitionsButHoldDistinctValues)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> a_name(
+    TValue2<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
-    TValue<String> b_name(
+    TValue2<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 1, context.vm().object_class());
@@ -529,11 +529,11 @@ TEST(ClassObject, ClassPropertiesPreserveInsertionOrderAndCompactOnDelete)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> a_name(
+    TValue2<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
-    TValue<String> b_name(
+    TValue2<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -564,9 +564,9 @@ TEST(ClassObject, ClassPropertiesUseShapeBackedInlineAndOverflowStorage)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    std::vector<TValue<String>> names;
+    std::vector<TValue2<String>> names;
     constexpr uint32_t property_count =
         ClassObject::class_inline_storage_slot_count -
         ClassObject::class_predefined_slot_count + 1;
@@ -621,21 +621,21 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> other_name(
+    TValue2<String> other_name(
         context.vm().get_or_create_interned_string_value(L"Other"));
-    TValue<String> dunder_class_name(
+    TValue2<String> dunder_class_name(
         context.vm().get_or_create_interned_string_value(L"__class__"));
-    TValue<String> dunder_name_name(
+    TValue2<String> dunder_name_name(
         context.vm().get_or_create_interned_string_value(L"__name__"));
-    TValue<String> dunder_bases_name(
+    TValue2<String> dunder_bases_name(
         context.vm().get_or_create_interned_string_value(L"__bases__"));
-    TValue<String> dunder_mro_name(
+    TValue2<String> dunder_mro_name(
         context.vm().get_or_create_interned_string_value(L"__mro__"));
-    TValue<String> dunder_new_name(
+    TValue2<String> dunder_new_name(
         context.vm().get_or_create_interned_string_value(L"__new__"));
-    TValue<String> dunder_init_name(
+    TValue2<String> dunder_init_name(
         context.vm().get_or_create_interned_string_value(L"__init__"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -730,14 +730,15 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     EXPECT_EQ(Value::from_oop(context.vm().object_class()),
               mro_value.get_ptr<Tuple>()->item_unchecked(1));
 
-    TValue<String> readonly_names[] = {dunder_class_name, dunder_name_name,
-                                       dunder_bases_name, dunder_mro_name};
-    Value readonly_values[] = {Value::not_present(), cls_name, bases_value,
-                               mro_value};
+    TValue2<String> readonly_names[] = {dunder_class_name, dunder_name_name,
+                                        dunder_bases_name, dunder_mro_name};
+    Value readonly_values[] = {Value::not_present(), cls_name.raw_value(),
+                               bases_value, mro_value};
     for(uint32_t idx = 0; idx < std::size(readonly_names); ++idx)
     {
         Shape *before_shape = cls->get_shape();
-        EXPECT_FALSE(cls->set_own_property(readonly_names[idx], other_name));
+        EXPECT_FALSE(
+            cls->set_own_property(readonly_names[idx], other_name.raw_value()));
         EXPECT_FALSE(cls->delete_own_property(readonly_names[idx]));
         EXPECT_EQ(before_shape, cls->get_shape());
         EXPECT_EQ(readonly_values[idx],
@@ -751,9 +752,9 @@ TEST(ClassObject, PredefinedConstructorSlotsAreReadWriteStableSlots)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> dunder_init_name(
+    TValue2<String> dunder_init_name(
         context.vm().get_or_create_interned_string_value(L"__init__"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -792,11 +793,11 @@ TEST(ClassObject, BuiltinClassRegistersReadonlyFixedMethods)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"str"));
-    TValue<String> method_name(
+    TValue2<String> method_name(
         context.vm().get_or_create_interned_string_value(L"upper"));
-    TValue<String> other_method_name(
+    TValue2<String> other_method_name(
         context.vm().get_or_create_interned_string_value(L"lower"));
     BuiltinClassMethod methods[] = {
         BuiltinClassMethod{method_name, Value::from_smi(11)},
@@ -837,11 +838,11 @@ TEST(ClassObject, DefineAndSetExistingOwnPropertyHaveSeparateSemantics)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
-    TValue<String> missing_name(
+    TValue2<String> missing_name(
         context.vm().get_or_create_interned_string_value(L"missing"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -866,13 +867,13 @@ TEST(ClassObject, PredefinedBasesAndMroReflectSingleBaseChain)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> dunder_bases_name(
+    TValue2<String> dunder_bases_name(
         context.vm().get_or_create_interned_string_value(L"__bases__"));
-    TValue<String> dunder_mro_name(
+    TValue2<String> dunder_mro_name(
         context.vm().get_or_create_interned_string_value(L"__mro__"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -905,11 +906,11 @@ TEST(ClassObject, IsSubclassOfAndIsInstanceOfFollowMro)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> sibling_name(
+    TValue2<String> sibling_name(
         context.vm().get_or_create_interned_string_value(L"Sibling"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -936,11 +937,11 @@ TEST(ClassObject, OwnPropertyApiDoesNotFallBackToBaseChain)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -967,9 +968,9 @@ TEST(ClassObject, MutationDistinguishesSlotUpdateAddAndDelete)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -1002,7 +1003,7 @@ TEST(ClassObject, MroShapeAndContentsValidityCellStartsNullAndIsCreatedLazily)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -1023,11 +1024,11 @@ TEST(ClassObject,
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -1063,9 +1064,9 @@ TEST(ClassObject,
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -1097,11 +1098,11 @@ TEST(ClassObject,
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -1136,11 +1137,11 @@ TEST(ClassObject,
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> meta_name(
+    TValue2<String> meta_name(
         context.vm().get_or_create_interned_string_value(L"Meta"));
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
         context.vm().type_class(), meta_name, 2, context.vm().object_class());
@@ -1196,11 +1197,11 @@ TEST(ClassObject, ClassLookupWalksMaterializedMro)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> method_name(
+    TValue2<String> method_name(
         context.vm().get_or_create_interned_string_value(L"m"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -1218,11 +1219,11 @@ TEST(ClassObject, ClassLookupContinuesPastLatentDescriptor)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
