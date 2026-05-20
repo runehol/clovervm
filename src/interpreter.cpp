@@ -1173,7 +1173,7 @@ namespace cl
         }
 
         TValue<Tuple> defaults = TValue<Tuple>::from_value_assumed(
-            fun.extract()->default_parameters.as_value());
+            fun.extract()->default_parameters);
         uint32_t first_default_idx =
             uint32_t(defaults.extract()->size()) - n_missing_args;
         CodeObject *target_code_object = fun.extract()->code_object.extract();
@@ -2336,7 +2336,7 @@ namespace cl
             code_object->constant_table[const_offset].as_value());
 
         accumulator = thread->make_object_value<Function>(
-            code_obj, code_obj.extract()->docstring.as_value());
+            code_obj, code_obj.extract()->docstring);
 
         COMPLETE();
     }
@@ -2352,7 +2352,7 @@ namespace cl
             TValue<Tuple>::from_value_assumed(fp[defaults_reg]);
 
         accumulator = thread->make_object_value<Function>(
-            code_obj, defaults, code_obj.extract()->docstring.as_value());
+            code_obj, defaults, code_obj.extract()->docstring);
 
         COMPLETE();
     }

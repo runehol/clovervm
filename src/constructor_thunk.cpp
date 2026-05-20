@@ -134,7 +134,7 @@ namespace cl
 
         TValue<Function> init_function =
             TValue<Function>::from_value_checked(init);
-        Value defaults = init_function.extract()->default_parameters.as_value();
+        Value defaults = init_function.extract()->default_parameters;
         if(defaults.is_not_present() || defaults == Value::None())
         {
             return make_object_value<Function>(

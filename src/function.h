@@ -102,8 +102,8 @@ namespace cl
         }
 
         Member2<TValue2<CodeObject>> code_object;
-        MemberValue default_parameters;
-        MemberValue docstring;
+        Member2<Value> default_parameters;
+        Member2<Value> docstring;
         uint32_t min_positional_arity;
         uint32_t max_positional_arity;
         uint32_t n_positional_parameters;

@@ -3290,11 +3290,10 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
         EXPECT_EQ(NativeLayoutId::Function,
                   value.get_ptr<Object>()->native_layout_id());
         TValue<Function> function = TValue<Function>::from_value_checked(value);
-        EXPECT_STREQ(expected.docstring,
-                     cl_test_string_to_wstring(
-                         TValue<String>::from_value_checked(
-                             function.extract()->docstring.as_value()))
-                         .c_str());
+        EXPECT_STREQ(expected.docstring, cl_test_string_to_wstring(
+                                             TValue<String>::from_value_checked(
+                                                 function.extract()->docstring))
+                                             .c_str());
     }
 }
 
@@ -3481,14 +3480,14 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
     EXPECT_EQ(test_context.vm()
                   .get_or_create_interned_string_value(L"Return str(self).")
                   .as_value(),
-              assume_convert_to<Function>(str_method)->docstring.as_value());
+              assume_convert_to<Function>(str_method)->docstring);
     EXPECT_EQ(test_context.vm()
                   .get_or_create_interned_string_value(L"Return self + value.")
                   .as_value(),
-              assume_convert_to<Function>(add_method)->docstring.as_value());
-    EXPECT_EQ(assume_convert_to<Function>(str_method)->docstring.as_value(),
+              assume_convert_to<Function>(add_method)->docstring);
+    EXPECT_EQ(assume_convert_to<Function>(str_method)->docstring,
               load_attr(str_method, dunder_doc_name));
-    EXPECT_EQ(assume_convert_to<Function>(add_method)->docstring.as_value(),
+    EXPECT_EQ(assume_convert_to<Function>(add_method)->docstring,
               load_attr(add_method, dunder_doc_name));
     EXPECT_FALSE(
         str_class->set_own_property(dunder_str_name, Value::from_smi(99)));

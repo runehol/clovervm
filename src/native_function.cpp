@@ -24,7 +24,7 @@ namespace cl
         builder.emit_return_or_raise_exception(0);
         TValue2<CodeObject> code =
             TValue2<CodeObject>::from_oop(builder.finalize());
-        if(default_parameters.as_value() != Value::None())
+        if(default_parameters != Value::None())
         {
             return vm->make_immortal_object_value<Function>(
                 code, default_parameters, docstring);
