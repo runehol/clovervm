@@ -45,14 +45,15 @@ This repository contains clovervm, a Python VM.
 - Prefer small non-virtual accessor definitions in headers so they are easy to inline.
 
 # Pending exception propagation
-- Functions that can set or propagate pending exception state must return `[[nodiscard]] Value`: success is the natural result or `Value::None()`, failure is `Value::exception_marker()`.
-- This contract is transitive. `CL_PROPAGATE_EXCEPTION(...)` propagates fallibility upward; only explicit local handling may clear pending exception state.
+- Functions that can set or propagate pending exception state must make that fallibility explicit in the return type. Native/interpreter boundary APIs generally return `[[nodiscard]] Value`: success is the natural result or `Value::None()`, failure is `Value::exception_marker()`. Typed/internal APIs may return `[[nodiscard]] Expected<T>`, including non-`Value` payloads such as `Expected<int32_t>`.
+- This contract is transitive. `CL_PROPAGATE_EXCEPTION(...)` and `CL_TRY(...)` propagate fallibility upward; only explicit local handling may clear pending exception state. Opcode handlers must use the interpreter-specific propagation path rather than plain `CL_TRY`.
 - Keep unchecked primitives free of pending-exception semantics; callers must prove validity before using them.
 
 # Ownership semantics
 - `Value` and `TValue<T>` are borrowed handles. Use them for C++ parameters and for locals whose lifetime is managed elsewhere.
 - `TValue<T>` should be preferred over `Value` when the value is known to satisfy a specific semantic type, such as `String`, `SMI`, `CLInt`, or a concrete `Object` subclass.
-- `Owned<Value>` and `Owned<TValue<T>>` are RAII local owners. They retain on construction or assignment and release on destruction. Use them for local C++ variables that must keep a value alive.
-- `Member<Value>` and `Member<TValue<T>>` are for direct members of cl heap objects. They retain on construction or assignment and release the overwritten value on reassignment, but they do not release on destruction. This leaves the stored reference for the garbage collector to observe.
-- Direct members of cl heap objects should use `Member<Value>` or `Member<TValue<T>>`, not `Owned<Value>` or `Owned<TValue<T>>`.
+- `Optional<T>` should be used when `None` is a valid absence state, for example `Optional<TValue<String>>`.
+- `Owned<Value>` and `Owned<TValue<T>>` are RAII local owners. They retain on construction or assignment and release on destruction. Use them for local C++ variables that must keep a value alive. The same applies to composed handle types such as `Owned<Optional<TValue<T>>>`.
+- `Member<Value>` and `Member<TValue<T>>` are for direct members of cl heap objects. They retain on construction or assignment and release the overwritten value on reassignment, but they do not release on destruction. This leaves the stored reference for the garbage collector to observe. The same applies to composed handle types such as `Member<Optional<TValue<T>>>`.
+- Direct members of cl heap objects should use `Member<Value>`, `Member<TValue<T>>`, or another `Member<...>` handle wrapper, not `Owned<...>`.
 - Prefer `Member<TValue<T>>` or `Owned<TValue<T>>` over the untyped forms when the stored value has a known type. Use the untyped forms only when the value is genuinely heterogeneous or may hold sentinels such as `None` or `not_present`.

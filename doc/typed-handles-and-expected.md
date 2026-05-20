@@ -1,241 +1,218 @@
-# Typed Handles And Expected Results
+# Typed Values, Optional, Expected, And Ownership
 
-This is a draft design note for reducing the current `Value` / `TValue` /
-`Owned` / `Member` trait surface while adding explicit types for VM-level
-exception propagation and optional values.
+This note documents the current direction for CloverVM's C++ value wrappers.
+`Value` remains the compact runtime word and ABI representation. The wrapper
+types describe what a C++ API has already proved about that word: semantic type,
+optional absence, pending-exception propagation, and ownership.
 
-The immediate motivation is that raw `Value` can represent too many states:
+The motivating problem is that raw `Value` can represent too many states:
 
-- a valid value of the expected semantic type
+- a value of the expected semantic type
 - `None`
 - `not_present`
 - `exception_marker`
 - a value of the wrong semantic type
 
-That is good as a compact runtime representation, but it is too dynamically
-typed for internal C++ APIs. In particular, a conversion from `Value` to
-`TValue<String>` may need to raise `TypeError`. If the function can return
-`exception_marker`, the result is not really a `TValue<String>`.
+That flexibility is useful at VM boundaries and in interpreter registers, but it
+is too dynamically typed for most internal C++ APIs. Code that has proved "this
+is a string" should say `TValue<String>`. Code that may raise while proving that
+fact should say `Expected<TValue<String>>`.
 
 ## Goals
 
 - Keep `Value` as the compact storage and ABI representation.
 - Make C++ APIs express which checks are still owed:
-  - type check
+  - semantic type check
   - `None` check
   - pending-exception propagation
-  - ownership/lifetime
-- Avoid C++ exceptions on VM-semantic paths.
-- Support an eventual `-fno-exceptions` build.
-- Avoid a new explosion of trait types.
-- Preserve niche-backed representations where possible, so wrappers do not add
-  a second boolean/tag word.
+  - ownership/lifetime management
+- Avoid C++ exceptions on VM-semantic paths, with an eventual `-fno-exceptions`
+  build in mind.
+- Prefer factory functions over fallible constructors.
+- Keep traits narrow and local to representation facts.
+- Preserve niche-backed representations where `Value` already has spare states.
 
 ## Non-Goals
 
-- This is not a proposal to change the `Value` word layout.
-- This is not a proposal to make VM allocation generally recoverable.
-- This is not a proposal to represent host failure, corrupt invariants, or true
-  VM-internal OOM as Python exceptions.
+- This is not a change to the `Value` word layout.
+- This is not a plan to make all VM allocation recoverable.
+- This is not a plan to model host failure, corrupt invariants, or VM-internal
+  out-of-memory as Python exceptions.
 
 Python-semantic allocation requests can fail with `MemoryError`; VM-internal
 allocation failure may still be fatal. For example, `[0] * (2**50)` should be
 rejected before raw allocation and should raise `MemoryError`.
 
-## Current State
+## Core Vocabulary
 
-The current typed-value machinery has two overlapping conversion systems.
+### `Value`
 
-### Native-layout conversion helpers
+`Value` is the untyped runtime word. It can hold normal Python values, inline
+sentinels, and VM control-flow markers. Use it for interpreter registers,
+heterogeneous storage, low-level runtime boundaries, and places where a value is
+genuinely not known more precisely.
 
-`can_convert_to<T>`, `try_convert_to<T>`, and `assume_convert_to<T>` answer
-questions about native object layouts:
-
-```cpp
-can_convert_to<T>(value)      // bool
-try_convert_to<T>(value)      // T * or nullptr
-assume_convert_to<T>(value)   // assert and return T *
-```
-
-For ordinary object subclasses, these check:
-
-```cpp
-value.is_ptr() &&
-value.get_ptr<Object>()->native_layout_id() == T::native_layout
-```
-
-This mechanism is object/native-layout specific.
-
-### `ValueTypeTraits<T>`
-
-`ValueTypeTraits<T>` currently expresses several separate concerns:
-
-- runtime semantic type predicate
-- unchecked extraction type
-- unchecked extraction operation
-- refcount policy optimization
-
-For ordinary object subclasses, it duplicates the same exact-native-layout
-check as `can_convert_to<T>`. For inline semantic types, it handles cases that
-`can_convert_to<T>` cannot express:
-
-```cpp
-TValue<SMI>    // value.is_smi(), extracts int64_t
-TValue<CLInt>  // value.is_integer(), currently extracts no C++ payload
-```
-
-It also carries `RefcountPolicy::{Never, Maybe, Always}`. That policy is an
-ownership concern, not a type-classification concern.
-
-`Always` is not stable under composition. Even if `TValue<Foo>` always holds a
-refcounted pointer today, these do not:
-
-```cpp
-OptionalValue<TValue<Foo>>
-Expected<TValue<Foo>>
-Expected<OptionalValue<TValue<Foo>>>
-```
-
-They may hold `None` or `exception_marker`. Also, interning can make a semantic
-type's storage class `Maybe` without changing the semantic type.
-
-### `HandleTraits<TValue<T>>`
-
-`HandleTraits<TValue<T>>` adapts typed values to `Owned` and `Member`. It
-currently expresses:
-
-- conversion from raw `Value`
-- conversion to raw `Value`
-- default empty sentinel
-- extraction forwarding
-- retain/release behavior
-
-This creates a second trait stack on top of `ValueTypeTraits<T>`.
-
-## Proposed Vocabulary
+`Value` has `raw_value()` returning itself. That lets generic code compare or
+refcount handle-like objects without first erasing typed handles through an
+implicit conversion.
 
 ### `TValue<T>`
 
-`TValue<T>` should mean:
+`TValue<T>` is a borrowed typed handle:
 
 ```text
-definitely a T
-not None
+definitely semantic T
+not None unless T is None
 not exception_marker
 not not_present
 ```
 
-Construction should not raise. There should be only assert-only or unchecked
-constructors:
+It stores a `Value`, but its public type records the proof that the underlying
+word satisfies `TValueTraits<T>::is_instance(value)`.
+
+Common construction APIs:
 
 ```cpp
-TValue<T>::from_value_assumed(value);    // asserts ValueType<T>::matches(value)
-TValue<T>::from_value_unchecked(value);  // raw internal escape hatch
-TValue<T>::from_oop(ptr);
-TValue<T>::from_smi(n);
+TValue<T>::from_value_checked(value)     // checked, sets TypeError on mismatch
+TValue<T>::from_value_or_raise(value, type_name, message)
+TValue<T>::from_value_assumed(value)     // assert-only checked conversion
+TValue<T>::from_value_unchecked(value)   // raw internal escape hatch
+TValue<T>::from_oop(ptr)
+TValue<T>::from_smi(n)
+TValue<Bool>::from_bool(b)
+TValue<None>::None()
 ```
 
-The current `from_value_checked()` name should be deprecated or removed because
-it currently means "throw a C++ exception on mismatch." VM-semantic conversion
-belongs in a function whose return type admits exception propagation.
+`from_value_checked()` and `from_value_or_raise()` return
+`Expected<TValue<T>>`. They are the VM-semantic conversions: a mismatch sets
+pending exception state and returns the exception path. `from_value_assumed()`
+is for code that has already proved the type. `from_value_unchecked()` exists
+for representation plumbing and should remain visibly scary.
 
-### `Expected<T>`
-
-`Expected<T>` is the VM-level analogue of `std::expected<T, E>`, except the
-error payload is stored out-of-band in `ThreadState` pending exception state.
-
-```text
-Expected<T> = either T, or pending VM exception
-```
-
-The failure state is represented by `Value::exception_marker()` where the
-payload type has a `Value` niche. For non-`Value` payloads, a specialized niche
-may be used.
-
-Core API:
+`extract()` returns the useful C++ view for the semantic type:
 
 ```cpp
-static Expected ok(T value);
-static Expected exception();
-
-bool has_value() const;
-bool has_exception() const;
-
-T value() const;  // asserts has_value()
+TValue<String>::extract()  // String *
+TValue<SMI>::extract()     // int64_t
+TValue<Bool>::extract()    // bool
+TValue<None>::extract()    // void
+TValue<CLInt>::extract()   // Value
 ```
 
-`value()` should assert on the exceptional state. Calling it without first
-propagating or checking is a C++ programmer error, not a Python runtime event.
+`raw_value()` returns the backing `Value` for refcounting, low-level storage,
+and APIs that intentionally cross back to the untyped representation.
 
-The name `value()` is reserved for semantic unwrapping, following
-`std::expected` and `std::optional`. Low-level access to the backing `Value`
-representation should use `raw_value()` instead. For example,
-`Expected<TValue<String>>::raw_value()` may return `Value::exception_marker()`;
-`Expected<TValue<String>>::value()` must not.
+### `Optional<T>`
 
-Examples:
-
-```cpp
-Expected<TValue<String>>
-Expected<OptionalValue<TValue<String>>>
-Expected<AstIndex>
-Expected<AstVector>
-Expected<Unit>
-```
-
-### `OptionalValue<T>`
-
-`OptionalValue<T>` represents:
+`Optional<T>` is the VM-level optional wrapper:
 
 ```text
 None or T
 ```
 
-For VM-backed payloads, it should use `Value::None()` as the niche. For example:
+It stores a raw `Value` and uses `Value::None()` as its absence niche. It is
+therefore compact for value-backed payloads:
 
 ```cpp
-OptionalValue<TValue<String>>
+Optional<TValue<String>>
+Optional<TValue<Tuple>>
 ```
 
-means either Python `None` or definitely a `String`.
-
-### `Unit`
-
-`Unit` represents success with no meaningful payload:
+The API mirrors `std::optional` where useful:
 
 ```cpp
-Expected<Unit>
+Optional<T>::none()
+Optional<T>::some(value)
+
+bool has_value() const;
+bool is_none() const;
+explicit operator bool() const;
+
+T value() const;      // asserts has_value()
+T operator*() const;
+Value raw_value() const;
 ```
 
-This is the VM equivalent of `Result<(), PendingException>`.
+`Optional<TValue<None>>` is rejected by design. `None` is already the absence
+state, so allowing it as the contained semantic type would make both branches
+look identical.
 
-For APIs whose successful VM-level value is Python `None`, `Unit::raw_value()`
-can return `Value::None()`.
+### `Expected<T>`
 
-### `AstIndex`
+`Expected<T>` is the VM-level analogue of `std::expected<T, PendingException>`.
+The error object itself is not stored in the wrapper; it lives in
+`ThreadState` as pending exception state.
 
-Parser functions currently return raw `int32_t` AST node indices. If parser
-functions become fallible, prefer:
-
-```cpp
-Expected<AstIndex>
+```text
+Expected<T> = either T, or a pending VM exception
 ```
 
-over:
+Core API:
 
 ```cpp
+Expected<T>::ok(value)
+Expected<T>::raise_exception(type_name, message)
+Expected<T>::propagate_exception()
+
+bool has_value() const;
+bool has_exception() const;
+explicit operator bool() const;
+
+T value() const;      // asserts has_value()
+T operator*() const;
+```
+
+`value()` is semantic unwrapping, following `std::expected` and
+`std::optional`. Low-level access to the backing VM representation is named
+`raw_value()`, and only exists for value-backed `Expected<T>` specializations.
+
+There are two storage modes:
+
+- `Expected<T, true>` for value-like payloads that can be reconstructed from a
+  raw `Value`. This includes `Value`, `TValue<T>`, and wrappers such as
+  `Optional<TValue<T>>`. It stores one word and uses
+  `Value::exception_marker()` as the exception niche.
+- `Expected<T, false>` for ordinary C++ payloads such as `int32_t`. It stores an
+  explicit success flag plus manually managed `T` storage.
+
+Examples:
+
+```cpp
+Expected<TValue<String>>
+Expected<Optional<TValue<String>>>
+Expected<TValue<None>>
 Expected<int32_t>
 ```
 
-This makes the `-1` niche explicit and avoids teaching arbitrary integers that
-`-1` means pending exception.
+`Expected<TValue<None>>` is the "success with no payload" form for VM-semantic
+APIs whose successful result is Python `None`. For parser or compiler internals
+that naturally return indexes, `Expected<int32_t>` is now supported directly.
+If a domain-specific index type would make the meaning clearer, it can still be
+introduced later.
+
+### `CL_TRY`
+
+`CL_TRY(expr)` unwraps an `Expected`-like result or propagates the currently
+pending exception from the enclosing function:
+
+```cpp
+TValue<String> name = CL_TRY(TValue<String>::from_value_checked(value));
+```
+
+The enclosing function must return either `Value` or `Expected<T>`. Propagation
+uses a small marker object that converts to either `Value::exception_marker()` or
+`Expected<T>::propagate_exception()`.
+
+Do not use `CL_TRY` inside interpreter opcode handlers. Interpreter handlers
+need the interpreter-specific exception-table dispatch path instead of ordinary
+native propagation.
 
 ## Conversion Ladder
 
-The API should distinguish non-raising checks, assert-only conversion, and
-VM-semantic raising conversion.
+The API distinguishes predicates, assert-only conversion, unchecked conversion,
+and VM-semantic raising conversion.
 
-Object/native-layout helpers:
+Native-layout predicates:
 
 ```cpp
 can_convert_to<T>(value)       // non-raising predicate
@@ -243,126 +220,88 @@ try_convert_to<T>(value)       // T * or nullptr
 assume_convert_to<T>(value)    // assert-only pointer conversion
 ```
 
-Typed handle construction:
+Typed handle conversion:
 
 ```cpp
-TValue<T>::from_value_assumed(value)    // assert-only typed handle conversion
-TValue<T>::from_value_unchecked(value)  // raw escape hatch
+TValue<T>::from_value_checked(value)
+    -> Expected<TValue<T>>
+
+TValue<T>::from_value_or_raise(value, type_name, message)
+    -> Expected<TValue<T>>
+
+TValue<T>::from_value_assumed(value)
+    -> TValue<T>
+
+TValue<T>::from_value_unchecked(value)
+    -> TValue<T>
 ```
 
-VM-semantic conversion:
+Use the checked forms when the caller receives arbitrary Python data. Use the
+assumed form when an earlier branch or invariant has already proved the type.
+Use the unchecked form only at representation boundaries where preserving the
+proof in the type is the whole point of the surrounding code.
+
+## Traits
+
+`TValueTraits<T>` is intentionally small. It describes only semantic
+classification and extraction:
 
 ```cpp
-TValue<T>::require(value) -> Expected<TValue<T>>
+static bool is_instance(Value value);
+static extract_type extract_unchecked(Value value);
 ```
 
-`require()` sets a pending `TypeError` and returns `Expected<TValue<T>>::exception()`
-when the value does not match.
-
-Optional VM-semantic conversion:
+For native-layout heap objects, the generic specialization checks exact native
+layout:
 
 ```cpp
-TValue<T>::require_optional(value)
-    -> Expected<OptionalValue<TValue<T>>>
+value.is_ptr() &&
+value.get_ptr<Object>()->native_layout_id() == T::native_layout
 ```
 
-That conversion accepts `None`; otherwise it performs the same type check as
-`require()`.
+Inline semantic types such as `SMI`, `CLInt`, `Bool`, and `None` provide their
+own specializations. The trait does not describe ownership or refcounting.
 
-## Factoring Traits
+`Exception` is a semantic type for the exception-object family, rather than one
+exact native layout. It accepts `ExceptionObject` and its exception subclasses.
 
-The target shape should keep traits narrow.
+## Ownership
 
-### `ValueType<T>`
+`Value` and `TValue<T>` are borrowed handles. Use them for parameters and locals
+whose lifetime is managed elsewhere.
 
-One trait should classify semantic VM value types:
-
-```cpp
-template <typename T>
-struct ValueType
-{
-    using extracted_type = ...;
-
-    static bool matches(Value value);
-    static extracted_type extract_unchecked(Value value);
-};
-```
-
-For ordinary object subclasses, it can delegate to the existing conversion
-helpers:
+`Owned<T>` and `Member<T>` are ownership wrappers over handle-like `T`:
 
 ```cpp
-static bool matches(Value value)
-{
-    return can_convert_to<T>(value);
-}
-
-static T *extract_unchecked(Value value)
-{
-    return assume_convert_to<T>(value);
-}
-```
-
-For inline semantic types:
-
-```cpp
-ValueType<SMI>::matches(value)   // value.is_smi()
-ValueType<CLInt>::matches(value) // value.is_integer()
-```
-
-This trait should not express refcount policy.
-
-### Handle-like VM values
-
-Any VM-backed handle should expose a small concrete protocol:
-
-```cpp
-Value raw_value() const;
-static H from_value_unchecked(Value value);
-```
-
-This should cover:
-
-```cpp
-Value
-TValue<T>
-OptionalValue<H>
-Expected<H>       // when H is VM-backed
-```
-
-Where possible, use concrete methods and detection instead of introducing a
-large `HandleTraits` hierarchy.
-
-### Ownership
-
-`Owned<H>` and `Member<H>` should be orthogonal to semantic wrappers. For any
-VM-backed handle `H`, ownership can retain and release through generic
-`Value` operations:
-
-```cpp
-incref(handle.raw_value());
-decref(handle.raw_value());
-```
-
-Generic `incref(Value)` and `decref(Value)` already skip inline values,
-`None`, `exception_marker`, and interned pointers. Therefore `RefcountPolicy`
-is not semantically necessary.
-
-This makes the following compositions natural:
-
-```cpp
+Owned<Value>
 Owned<TValue<String>>
-Owned<OptionalValue<TValue<String>>>
-Owned<Expected<TValue<String>>>
-Owned<Expected<OptionalValue<TValue<String>>>>
+Owned<Optional<TValue<String>>>
 
+Member<Value>
 Member<TValue<String>>
-Member<OptionalValue<TValue<String>>>
+Member<Optional<TValue<String>>>
 ```
 
-`Member<Expected<T>>` should be mechanically possible only if there is a real
-use case. As a design rule, exception markers should generally be transient
-control flow, not heap object state.
+Both store a `T` directly and retain/release `T::raw_value()` where necessary.
+`Owned<T>` releases on destruction and is suitable for local RAII ownership.
+`Member<T>` is for direct members of Clover heap objects; it retains on
+construction and assignment, releases overwritten values, and does not release
+on destruction so reclamation can observe the stored member.
+
+`HandleRefcountTraits<T>` is the separate refcount classification trait. It
+uses the wrapper's recursive `semantic_type` to elide refcount work for fully
+inline states such as `SMI`, `Bool`, and `None`. Extra wrapper states such as
+`None` and `exception_marker` are inline sentinels, so this remains correct for
+`Optional<T>` and value-backed `Expected<T>`.
+
+`Member<T>::release_ref()` exists only for custom heap-object deallocation
+paths. It decrefs the stored reference but leaves the member value unchanged;
+the containing object must not use that member afterward. `Owned<T>` does not
+have a release operation.
+
+`OwnedHeapPtr<T>` and `MemberHeapPtr<T>` remain separate for VM-internal heap
+pointer ownership where no `Value` handle exists or where pointer-nullability is
+the intended representation.
 
 ## Factories
 
@@ -387,60 +326,50 @@ public:
 
     static Expected<TValue<Foo>> make(Value name, Value args);
 };
+
+Expected<TValue<Foo>> Foo::make(Value name, Value args)
+{
+    TValue<String> typed_name =
+        CL_TRY(TValue<String>::from_value_checked(name));
+    TValue<Tuple> typed_args =
+        CL_TRY(TValue<Tuple>::from_value_checked(args));
+
+    return Expected<TValue<Foo>>::ok(make_object_value<Foo>(
+        typed_name, typed_args));
+}
 ```
 
-Factory body:
+This avoids half-constructed heap objects and keeps the exception path explicit.
+
+## Parser And Other Non-Value Results
+
+`Expected<T>` is no longer limited to value-backed handles. Parser and compiler
+code may return ordinary C++ payloads:
 
 ```cpp
-auto typed_name = TValue<String>::require(name);
-CL_TRY(typed_name);
-
-auto typed_args = TValue<Tuple>::require(args);
-CL_TRY(typed_args);
-
-return Expected<TValue<Foo>>::ok(
-    active_thread()->make_object_value<Foo>(
-        typed_name.value(), typed_args.value()));
+Expected<int32_t> expression();
+Expected<int32_t> statement();
+Expected<int32_t> block();
 ```
 
-This avoids half-constructed heap objects and aligns with `-fno-exceptions`.
+The non-value-backed representation carries a separate `has_value_` flag. That
+is an acceptable cost for control-plane results such as AST indexes. Where a
+domain-specific type would make invalid states clearer, a named wrapper can be
+introduced later without changing the propagation model.
 
-## Parser And Tokenizer
+## Current Design Rules
 
-The parser is an important non-`Value` use case. Most parser functions naturally
-return AST node indices, not VM values:
-
-```cpp
-Expected<AstIndex> expression();
-Expected<AstIndex> statement();
-Expected<AstIndex> block();
-Expected<AstVector> parse(...);
-Expected<Unit> consume(Token expected);
-```
-
-There are two possible designs for syntax errors:
-
-1. Parser/tokenizer return explicit diagnostics, and `ThreadState::compile`
-   converts them to pending `SyntaxError` / `IndentationError`.
-2. Parser/tokenizer receive a `ThreadState` and directly set pending VM
-   exceptions, returning `Expected<T>`.
-
-The first keeps parser/tokenizer logic less tied to VM exception object
-construction. The second makes parse failures participate directly in the same
-`Expected<T>` propagation protocol. Either works with `-fno-exceptions`.
-
-## Open Questions
-
-- Should the public trait be named `ValueType`, `ValueTypeTraits`, or something
-  else?
-- Should `can_convert_to<T>` remain object-only, or should it delegate to
-  `ValueType<T>` and cover inline semantic types too?
-- How much compatibility should be kept for `from_value_checked()` during the
-  migration?
-- Should `Owned<H>` require a small `HandleOps<H>` trait for `none()` and raw
-  `Value` construction, or can this be handled with concrete methods and a
-  `Value` specialization?
-- Should `Expected<T>` support `raw_value()` only for VM-backed `T`, or should
-  that be a separate `ExpectedValue<T>` specialization?
-- Should parser failures first use explicit parse diagnostics, or immediately
-  set pending `SyntaxError` on `ThreadState`?
+- Prefer `TValue<T>` over `Value` when the semantic type is known.
+- Use `Optional<T>` when `None` is a valid absence state.
+- Use `Expected<T>` when the operation can set or propagate pending exception
+  state.
+- Use `Expected<TValue<None>>` for fallible VM operations whose success result
+  is Python `None`.
+- Use `Expected<int32_t>` or another ordinary C++ payload for non-VM values such
+  as parser indexes.
+- Use `raw_value()` only at low-level representation, refcounting, storage, and
+  boundary sites.
+- Keep exception markers transient. Heap object state should almost never store
+  `Expected<T>`.
+- Keep constructors non-fallible; put validation and pending-exception behavior
+  in factories.

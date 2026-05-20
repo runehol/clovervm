@@ -177,14 +177,16 @@ lifetime model.
 
 ## Native Exception Transport
 
-Fallible native VM operations return `Value`. On success, the value is the
-natural result or `Value::None()` for operations with no Python result. On
-failure, the native operation sets pending exception state and returns
-`Value::exception_marker()`.
+Native VM boundary operations that can fail return `Value`. On success, the
+value is the natural result or `Value::None()` for operations with no Python
+result. On failure, the native operation sets pending exception state and
+returns `Value::exception_marker()`.
 
 Callers must not treat `exception_marker` as ordinary Python data. Functions
-that can propagate pending exception state should preserve the `[[nodiscard]]
-Value` contract described in the exception design docs.
+that can propagate pending exception state should preserve an explicit fallible
+return contract. At native/interpreter boundaries this is usually
+`[[nodiscard]] Value`; typed internal helpers may instead return
+`Expected<T>`, including non-`Value` payloads such as `Expected<int32_t>`.
 
 Python bytecode does not use `exception_marker` as the user-visible exception
 mechanism. Managed Python code uses exception tables and interpreter unwind
@@ -192,7 +194,8 @@ state to find handlers, bind active exceptions, reraise, or continue unwinding.
 `exception_marker` is the bridge used when native helpers, runtime operations,
 or interpreter paths need to report that pending exception state has been set.
 
-See [Exception Transport And Protocols](exception-transport-and-protocols.md).
+See [Exception Transport And Protocols](exception-transport-and-protocols.md)
+and [Typed Values, Optional, Expected, And Ownership](typed-handles-and-expected.md).
 
 ## JIT Constraints
 
