@@ -13,11 +13,6 @@ namespace cl
         return TValue2<String>::from_value_unchecked(name);
     }
 
-    static TValue<String> old_typed_string(TValue2<String> name)
-    {
-        return TValue<String>::from_value_unchecked(name.raw_value());
-    }
-
     Shape::Transition::Transition(TValue2<String> _name,
                                   ShapeTransitionVerb _verb,
                                   DescriptorFlags _descriptor_flags,
@@ -138,7 +133,8 @@ namespace cl
         for(uint32_t property_idx = 0; property_idx < present_count_;
             ++property_idx)
         {
-            if(string_eq(name, get_property_name(property_idx)))
+            if(string_eq(string_value_state(name),
+                         get_property_name(property_idx)))
             {
                 return property_idx;
             }
@@ -152,7 +148,8 @@ namespace cl
         for(uint32_t property_idx = 0; property_idx < property_count_;
             ++property_idx)
         {
-            if(string_eq(name, get_property_name(property_idx)))
+            if(string_eq(string_value_state(name),
+                         get_property_name(property_idx)))
             {
                 DescriptorPresence presence = property_idx < present_count_
                                                   ? DescriptorPresence::Present
@@ -189,7 +186,7 @@ namespace cl
         {
             if(transition.get_verb() == verb &&
                transition.get_descriptor_flags() == descriptor_flags &&
-               string_eq(name, old_typed_string(transition.get_name())))
+               string_eq(string_value_state(name), transition.get_name()))
             {
                 return transition.get_next_shape();
             }
@@ -267,7 +264,7 @@ namespace cl
             ++property_idx)
         {
             next_shape->descriptor_names[property_idx] =
-                incref(get_property_name(property_idx));
+                incref(get_property_name(property_idx).raw_value());
             next_shape->descriptor_infos()[property_idx] =
                 get_descriptor_info(property_idx);
             ++next_property_idx;
@@ -278,13 +275,14 @@ namespace cl
         for(uint32_t property_idx = present_count_;
             property_idx < property_count_; ++property_idx)
         {
-            if(string_eq(name, get_property_name(property_idx)))
+            if(string_eq(string_value_state(name),
+                         get_property_name(property_idx)))
             {
                 continue;
             }
 
             next_shape->descriptor_names[next_property_idx] =
-                incref(get_property_name(property_idx));
+                incref(get_property_name(property_idx).raw_value());
             next_shape->descriptor_infos()[next_property_idx] =
                 get_descriptor_info(property_idx);
             ++next_property_idx;
@@ -311,13 +309,14 @@ namespace cl
         for(uint32_t property_idx = 0; property_idx < present_count_;
             ++property_idx)
         {
-            if(string_eq(name, get_property_name(property_idx)))
+            if(string_eq(string_value_state(name),
+                         get_property_name(property_idx)))
             {
                 continue;
             }
 
             next_shape->descriptor_names[next_property_idx] =
-                incref(get_property_name(property_idx));
+                incref(get_property_name(property_idx).raw_value());
             next_shape->descriptor_infos()[next_property_idx] =
                 get_descriptor_info(property_idx);
             ++next_property_idx;
@@ -326,7 +325,7 @@ namespace cl
             property_idx < property_count_; ++property_idx)
         {
             next_shape->descriptor_names[next_property_idx] =
-                incref(get_property_name(property_idx));
+                incref(get_property_name(property_idx).raw_value());
             next_shape->descriptor_infos()[next_property_idx] =
                 get_descriptor_info(property_idx);
             ++next_property_idx;
@@ -351,7 +350,7 @@ namespace cl
             ++property_idx)
         {
             cloned_shape->descriptor_names[property_idx] =
-                incref(get_property_name(property_idx));
+                incref(get_property_name(property_idx).raw_value());
             cloned_shape->descriptor_infos()[property_idx] =
                 get_descriptor_info(property_idx);
         }
@@ -367,7 +366,7 @@ namespace cl
             ++property_idx)
         {
             cloned_shape->descriptor_names[property_idx] =
-                incref(get_property_name(property_idx));
+                incref(get_property_name(property_idx).raw_value());
             cloned_shape->descriptor_infos()[property_idx] =
                 get_descriptor_info(property_idx);
         }

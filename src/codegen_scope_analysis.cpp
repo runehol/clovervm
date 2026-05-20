@@ -22,8 +22,7 @@ namespace cl
         {
             size_t operator()(TValue2<String> name) const
             {
-                return size_t(string_hash(
-                    TValue<String>::from_value_unchecked(name.raw_value())));
+                return size_t(string_hash(name));
             }
         };
 
@@ -31,9 +30,7 @@ namespace cl
         {
             bool operator()(TValue2<String> left, TValue2<String> right) const
             {
-                return string_eq(
-                    TValue<String>::from_value_unchecked(left.raw_value()),
-                    TValue<String>::from_value_unchecked(right.raw_value()));
+                return string_eq(left, right);
             }
         };
 

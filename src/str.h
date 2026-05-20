@@ -130,14 +130,14 @@ namespace cl
         return a == b.data;
     }
 
-    uint64_t string_hash(TValue<String> s);
-    bool string_eq_slow_path(TValue<String> a, TValue<String> b);
+    uint64_t string_hash(TValue2<String> s);
+    bool string_eq_slow_path(TValue2<String> a, TValue2<String> b);
 
-    const cl_wchar *string_as_wchar_t(TValue<String> s);
+    const cl_wchar *string_as_wchar_t(TValue2<String> s);
     BuiltinClassDefinition make_str_class(VirtualMachine *vm);
     void install_str_class_methods(VirtualMachine *vm);
 
-    static inline bool string_eq(TValue<String> a, TValue<String> b)
+    static inline bool string_eq(TValue2<String> a, TValue2<String> b)
     {
         {
             // pointer equality -> true

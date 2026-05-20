@@ -116,12 +116,6 @@ static std::string narrow_test_wstring(const wchar_t *message)
     return result;
 }
 
-static std::wstring cl_test_string_to_wstring(TValue<String> string)
-{
-    String *str = string.extract();
-    return std::wstring(str->data, size_t(str->count.extract()));
-}
-
 static std::wstring cl_test_string_to_wstring(TValue2<String> string)
 {
     String *str = string.extract();
@@ -699,7 +693,7 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
         ClassObject::class_metadata_slot_count + 1;
     for(uint32_t idx = 0; idx < 3; ++idx)
     {
-        EXPECT_STREQ(string_as_wchar_t(names[idx]),
+        EXPECT_STREQ(string_as_wchar_t(test::value_state(names[idx])),
                      string_as_wchar_t(cls->get_shape()->get_property_name(
                          class_metadata_descriptor_count + idx)));
 
@@ -778,8 +772,8 @@ TEST(Interpreter, string_literal_value)
     test::VmTestContext test_context;
     Value actual = test_context.run_file(L"\"abc\"\n");
 
-    EXPECT_STREQ(L"abc",
-                 string_as_wchar_t(TValue<String>::from_value_checked(actual)));
+    EXPECT_STREQ(
+        L"abc", string_as_wchar_t(TValue2<String>::from_value_assumed(actual)));
 }
 
 TEST(Interpreter, float_literal_values)
@@ -973,8 +967,8 @@ TEST(Interpreter, string_dunder_add_calls_native_function)
     Value actual = test_context.run_file(L"\"ab\".__add__(\"cd\")\n");
 
     ASSERT_TRUE(can_convert_to<String>(actual));
-    EXPECT_STREQ(L"abcd",
-                 string_as_wchar_t(TValue<String>::from_value_checked(actual)));
+    EXPECT_STREQ(L"abcd", string_as_wchar_t(
+                              TValue2<String>::from_value_assumed(actual)));
 }
 
 TEST(Interpreter, string_dunder_add_wrong_type_reports_unimplemented)
@@ -2398,8 +2392,9 @@ TEST(Interpreter, value_repr_uses_special_method_lookup)
 
     ASSERT_FALSE(actual.is_exception_marker());
     ASSERT_TRUE(can_convert_to<String>(actual));
-    EXPECT_STREQ(L"class repr",
-                 string_as_wchar_t(TValue<String>::from_value_checked(actual)));
+    EXPECT_STREQ(
+        L"class repr",
+        string_as_wchar_t(TValue2<String>::from_value_assumed(actual)));
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 }
 
@@ -2419,8 +2414,9 @@ TEST(Interpreter, call_clovervm_method_calls_inline_value_native_methods)
 
         ASSERT_FALSE(actual.is_exception_marker());
         ASSERT_TRUE(can_convert_to<String>(actual));
-        EXPECT_STREQ(expected, string_as_wchar_t(
-                                   TValue<String>::from_value_checked(actual)));
+        EXPECT_STREQ(
+            expected,
+            string_as_wchar_t(TValue2<String>::from_value_assumed(actual)));
         EXPECT_FALSE(test_context.thread()->has_pending_exception());
     };
 
@@ -2448,8 +2444,9 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
 
         ASSERT_FALSE(actual.is_exception_marker());
         ASSERT_TRUE(can_convert_to<String>(actual));
-        EXPECT_STREQ(expected, string_as_wchar_t(
-                                   TValue<String>::from_value_checked(actual)));
+        EXPECT_STREQ(
+            expected,
+            string_as_wchar_t(TValue2<String>::from_value_assumed(actual)));
         EXPECT_FALSE(test_context.thread()->has_pending_exception());
     };
 
@@ -2511,7 +2508,7 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
     EXPECT_NE(dict_str, reordered_dict_str);
     EXPECT_STREQ(L"{'beta': True, 'alpha': 1}",
                  string_as_wchar_t(
-                     TValue<String>::from_value_checked(reordered_dict_str)));
+                     TValue2<String>::from_value_assumed(reordered_dict_str)));
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 
     TValue<String> class_name(
@@ -3529,15 +3526,17 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
         test_context.thread()->call_clovervm_method(value, dunder_str_name);
     ASSERT_TRUE(can_convert_to<String>(str_result));
     EXPECT_TRUE(string_eq(
-        TValue<String>::from_value_unchecked(str_result),
-        test_context.vm().get_or_create_interned_string_value(L"1.5")));
+        TValue2<String>::from_value_unchecked(str_result),
+        test::value_state(
+            test_context.vm().get_or_create_interned_string_value(L"1.5"))));
 
     Value repr_result =
         test_context.thread()->call_clovervm_method(value, dunder_repr_name);
     ASSERT_TRUE(can_convert_to<String>(repr_result));
     EXPECT_TRUE(string_eq(
-        TValue<String>::from_value_unchecked(repr_result),
-        test_context.vm().get_or_create_interned_string_value(L"1.5")));
+        TValue2<String>::from_value_unchecked(repr_result),
+        test::value_state(
+            test_context.vm().get_or_create_interned_string_value(L"1.5"))));
 }
 
 TEST(Interpreter, float_string_methods_format_special_values)
@@ -3557,8 +3556,9 @@ TEST(Interpreter, float_string_methods_format_special_values)
         Value result = test_context.thread()->call_clovervm_method(float_value,
                                                                    method_name);
         ASSERT_TRUE(can_convert_to<String>(result));
-        EXPECT_STREQ(expected, string_as_wchar_t(
-                                   TValue<String>::from_value_checked(result)));
+        EXPECT_STREQ(
+            expected,
+            string_as_wchar_t(TValue2<String>::from_value_assumed(result)));
     };
 
     expect_method_result(-0.0, dunder_str_name, L"-0.0");
@@ -3804,8 +3804,8 @@ TEST(Interpreter, python_defined_repr_builtin_calls_dunder_repr)
     Value actual = test_context.run_file(L"repr(42)\n");
 
     ASSERT_TRUE(can_convert_to<String>(actual));
-    EXPECT_STREQ(L"42",
-                 string_as_wchar_t(TValue<String>::from_value_checked(actual)));
+    EXPECT_STREQ(
+        L"42", string_as_wchar_t(TValue2<String>::from_value_assumed(actual)));
 }
 
 TEST(Interpreter, python_defined_repr_builtin_formats_float_literals)
@@ -3815,8 +3815,9 @@ TEST(Interpreter, python_defined_repr_builtin_formats_float_literals)
     auto expect_repr = [&](const wchar_t *source, const wchar_t *expected) {
         Value actual = test_context.run_file(source);
         ASSERT_TRUE(can_convert_to<String>(actual));
-        EXPECT_STREQ(expected, string_as_wchar_t(
-                                   TValue<String>::from_value_checked(actual)));
+        EXPECT_STREQ(
+            expected,
+            string_as_wchar_t(TValue2<String>::from_value_assumed(actual)));
     };
 
     expect_repr(L"repr(1.5)\n", L"1.5");

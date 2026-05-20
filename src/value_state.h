@@ -1,6 +1,7 @@
 #ifndef CL_VALUE_STATE_H
 #define CL_VALUE_STATE_H
 
+#include "typed_value.h"
 #include "value.h"
 #include <cassert>
 #include <type_traits>
@@ -120,6 +121,14 @@ namespace cl
     {
     public:
         using semantic_type = T;
+
+        // Temporary TValue migration scaffolding. Remove once old TValue users
+        // have moved to TValue2 or the new value-state wrappers.
+        TValue2(TValue<T> value) : value_(value.raw_value()) {}
+        operator TValue<T>() const
+        {
+            return TValue<T>::from_value_unchecked(value_);
+        }
 
         static Expected<TValue2<T>> from_value_checked(Value value);
         static Expected<TValue2<T>>

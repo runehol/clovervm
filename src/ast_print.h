@@ -14,12 +14,10 @@ static inline std::string narrow_wstring_view_ast(std::wstring_view s)
     return std::string(s.begin(), s.end());
 }
 
-static inline cl::TValue<cl::String>
+static inline cl::TValue2<cl::String>
 ast_print_string_constant(const cl::AstVector &av, int32_t node_idx)
 {
-    cl::TValue2<cl::String> value =
-        cl::TValue2<cl::String>::from_value_assumed(av.constants[node_idx]);
-    return cl::TValue<cl::String>::from_value_unchecked(value.raw_value());
+    return cl::TValue2<cl::String>::from_value_assumed(av.constants[node_idx]);
 }
 
 template <> struct fmt::formatter<cl::AstOperatorKind>

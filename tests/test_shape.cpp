@@ -23,7 +23,7 @@ static uint32_t class_property_count(ClassObject *cls)
     return shape->present_count() - class_metadata_descriptor_count;
 }
 
-static TValue<String> class_property_name(ClassObject *cls, uint32_t idx)
+static TValue2<String> class_property_name(ClassObject *cls, uint32_t idx)
 {
     constexpr uint32_t class_metadata_descriptor_count =
         ClassObject::class_metadata_slot_count + 1;

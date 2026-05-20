@@ -19,13 +19,13 @@ namespace cl
     static TValue<SMI> internal_hash(Value key)
     {
         return TValue<SMI>::from_smi(
-            string_hash(TValue<String>::from_value_unchecked(key)));
+            string_hash(TValue2<String>::from_value_unchecked(key)));
     }
 
     static bool internal_eq(Value a, Value b)
     {
-        return string_eq(TValue<String>::from_value_unchecked(a),
-                         TValue<String>::from_value_unchecked(b));
+        return string_eq(TValue2<String>::from_value_unchecked(a),
+                         TValue2<String>::from_value_unchecked(b));
     }
 
     Dict::Dict(ClassObject *cls)

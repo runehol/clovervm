@@ -97,10 +97,7 @@ namespace cl
                            const BuiltinClassMethod *methods,
                            uint32_t method_count, ClassObject *single_base);
 
-        TValue<String> get_name() const
-        {
-            return TValue<String>::from_value_unchecked(name.raw_value());
-        }
+        TValue2<String> get_name() const { return name.value(); }
         Value get_mro_value() const { return mro; }
         uint32_t get_instance_default_inline_slot_count() const
         {

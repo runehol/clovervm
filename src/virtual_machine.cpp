@@ -402,8 +402,8 @@ namespace cl
             {
                 continue;
             }
-            builtin_scope.extract()->set_by_name(
-                value_state_string(cls->get_name()), Value::from_oop(cls));
+            builtin_scope.extract()->set_by_name(cls->get_name(),
+                                                 Value::from_oop(cls));
         }
 
         builtin_scope.extract()->set_by_name(

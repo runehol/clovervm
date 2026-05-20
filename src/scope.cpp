@@ -4,11 +4,6 @@
 
 namespace cl
 {
-    static TValue<String> old_typed_string(TValue2<String> value)
-    {
-        return TValue<String>::from_value_unchecked(value.raw_value());
-    }
-
     Scope::Scope(Scope *_parent_scope)
         : HeapObject(native_layout), parent_scope(_parent_scope),
           name_table(16, hash_not_present)
@@ -17,7 +12,7 @@ namespace cl
 
     const int32_t *Scope::find_name_table_entry(TValue2<String> key) const
     {
-        uint64_t hash = string_hash(old_typed_string(key));
+        uint64_t hash = string_hash(key);
         uint32_t table_size_m1 = name_table.size() - 1;
 
         uint32_t hash_idx = hash & table_size_m1;
@@ -28,9 +23,8 @@ namespace cl
             {
                 return &name_table[hash_idx];
             }
-            if(string_eq(
-                   old_typed_string(key),
-                   TValue<String>::from_value_unchecked(slot_names[slot_idx])))
+            if(string_eq(key, TValue2<String>::from_value_unchecked(
+                                  slot_names[slot_idx])))
             {
                 return &name_table[hash_idx];
             }

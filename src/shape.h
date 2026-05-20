@@ -179,10 +179,10 @@ namespace cl
         {
             return !has_flag(ShapeFlag::DisallowAttributeAddDelete);
         }
-        TValue<String> get_property_name(uint32_t property_idx) const
+        TValue2<String> get_property_name(uint32_t property_idx) const
         {
             assert(property_idx < property_count_);
-            return TValue<String>::from_value_unchecked(
+            return TValue2<String>::from_value_unchecked(
                 descriptor_names[property_idx]);
         }
         StorageLocation

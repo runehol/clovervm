@@ -99,7 +99,7 @@ namespace cl
                 L"TypeError", L"object.__repr__ expects an object receiver");
         }
 
-        TValue<String> class_name =
+        TValue2<String> class_name =
             active_thread()->class_of_value(self)->get_name();
         StringBuilder builder;
         builder.append_char(L'<');

@@ -25,7 +25,7 @@ namespace cl
         assert(active_thread()->has_pending_exception());
     }
 
-    static std::wstring string_to_wstring(TValue<String> string)
+    static std::wstring string_to_wstring(TValue2<String> string)
     {
         String *str = string.extract();
         return std::wstring(str->data, size_t(str->count.extract()));
