@@ -188,16 +188,16 @@ namespace cl
             return Value::exception_marker();
         }
         [[nodiscard]] Value
-        set_pending_exception_string(TValue<ClassObject> type,
-                                     TValue<String> message);
+        set_pending_exception_string(TValue2<ClassObject> type,
+                                     TValue2<String> message);
         [[nodiscard]] Value
-        set_pending_exception_string(TValue<ClassObject> type,
+        set_pending_exception_string(TValue2<ClassObject> type,
                                      const wchar_t *message);
         [[nodiscard]] Value
-        set_pending_exception_none(TValue<ClassObject> type);
+        set_pending_exception_none(TValue2<ClassObject> type);
         [[nodiscard]] Value
         set_pending_builtin_exception_string(const wchar_t *type_name,
-                                             TValue<String> message);
+                                             TValue2<String> message);
         [[nodiscard]] Value
         set_pending_builtin_exception_string(const wchar_t *type_name,
                                              const wchar_t *message);

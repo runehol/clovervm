@@ -21,7 +21,7 @@ namespace cl
         static constexpr uint32_t kMessageSlot = 0;
         static constexpr uint32_t kInlineSlotCount = 1;
 
-        ExceptionObject(ClassObject *cls, TValue<String> message)
+        ExceptionObject(ClassObject *cls, TValue2<String> message)
             : ExceptionObject(cls, native_layout, message)
         {
         }
@@ -33,9 +33,8 @@ namespace cl
 
     protected:
         ExceptionObject(ClassObject *cls, NativeLayoutId layout_id,
-                        TValue<String> message)
-            : SlotObject(cls, layout_id),
-              message(TValue2<String>::from_value_unchecked(message))
+                        TValue2<String> message)
+            : SlotObject(cls, layout_id), message(message)
         {
         }
     };
@@ -55,7 +54,7 @@ namespace cl
 
         StopIterationObject(ClassObject *cls,
                             Value value = Value::not_present());
-        StopIterationObject(ClassObject *cls, TValue<String> message,
+        StopIterationObject(ClassObject *cls, TValue2<String> message,
                             Value value = Value::not_present());
 
         Member<Value> value;
@@ -129,21 +128,21 @@ namespace cl
     BuiltinClassDefinition make_stop_iteration_class(VirtualMachine *vm,
                                                      ClassObject *base);
 
-    TValue2<Exception> make_exception_object(TValue<ClassObject> type,
-                                             TValue<String> message);
+    TValue2<Exception> make_exception_object(TValue2<ClassObject> type,
+                                             TValue2<String> message);
     TValue2<Exception> make_exception_object(ThreadState *thread,
-                                             TValue<ClassObject> type,
-                                             TValue<String> message);
-    TValue2<Exception> make_exception_object(TValue<ClassObject> type,
+                                             TValue2<ClassObject> type,
+                                             TValue2<String> message);
+    TValue2<Exception> make_exception_object(TValue2<ClassObject> type,
                                              const wchar_t *message);
     TValue2<Exception> make_exception_object(ThreadState *thread,
-                                             TValue<ClassObject> type,
+                                             TValue2<ClassObject> type,
                                              const wchar_t *message);
     TValue2<StopIterationObject>
-    make_stop_iteration_object(TValue<ClassObject> type,
+    make_stop_iteration_object(TValue2<ClassObject> type,
                                Value value = Value::not_present());
     TValue2<StopIterationObject>
-    make_stop_iteration_object(ThreadState *thread, TValue<ClassObject> type,
+    make_stop_iteration_object(ThreadState *thread, TValue2<ClassObject> type,
                                Value value = Value::not_present());
 
 }  // namespace cl

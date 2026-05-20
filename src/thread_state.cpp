@@ -251,31 +251,31 @@ namespace cl
         return call_clovervm_method_with_args(receiver, name, args, 3);
     }
 
-    Value ThreadState::set_pending_exception_string(TValue<ClassObject> type,
-                                                    TValue<String> message)
+    Value ThreadState::set_pending_exception_string(TValue2<ClassObject> type,
+                                                    TValue2<String> message)
     {
         return set_pending_exception_object(
             make_exception_object(this, type, message));
     }
 
-    Value ThreadState::set_pending_exception_string(TValue<ClassObject> type,
+    Value ThreadState::set_pending_exception_string(TValue2<ClassObject> type,
                                                     const wchar_t *message)
     {
         return set_pending_exception_string(
             type, machine->get_or_create_interned_string_value(message));
     }
 
-    Value ThreadState::set_pending_exception_none(TValue<ClassObject> type)
+    Value ThreadState::set_pending_exception_none(TValue2<ClassObject> type)
     {
         return set_pending_exception_string(type, L"");
     }
 
     Value
     ThreadState::set_pending_builtin_exception_string(const wchar_t *type_name,
-                                                      TValue<String> message)
+                                                      TValue2<String> message)
     {
         return set_pending_exception_string(
-            TValue<ClassObject>::from_oop(class_for_builtin_name(type_name)),
+            TValue2<ClassObject>::from_oop(class_for_builtin_name(type_name)),
             message);
     }
 
