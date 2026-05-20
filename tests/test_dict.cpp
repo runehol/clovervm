@@ -15,7 +15,7 @@ namespace
 {
     static Value make_string(test::VmTestContext &context, const wchar_t *text)
     {
-        return context.thread()->make_internal_value<String>(text);
+        return context.thread()->make_internal_value<String>(text).raw_value();
     }
 
     static void expect_pending_exception(ThreadState *thread,

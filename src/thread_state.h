@@ -238,9 +238,9 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        TValue<T> make_internal_value(Args &&...args)
+        TValue2<T> make_internal_value(Args &&...args)
         {
-            return TValue<T>::from_oop(
+            return TValue2<T>::from_oop(
                 make_internal_raw<T>(std::forward<Args>(args)...));
         }
 
@@ -279,9 +279,9 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        TValue<T> make_object_value(Args &&...args)
+        TValue2<T> make_object_value(Args &&...args)
         {
-            return TValue<T>::from_oop(
+            return TValue2<T>::from_oop(
                 make_object_raw<T>(std::forward<Args>(args)...));
         }
 
@@ -346,7 +346,7 @@ namespace cl
     }
 
     template <typename T, typename... Args>
-    TValue<T> make_internal_value(Args &&...args)
+    TValue2<T> make_internal_value(Args &&...args)
     {
         return active_thread()->make_internal_value<T>(
             std::forward<Args>(args)...);
@@ -358,7 +358,7 @@ namespace cl
     }
 
     template <typename T, typename... Args>
-    TValue<T> make_object_value(Args &&...args)
+    TValue2<T> make_object_value(Args &&...args)
     {
         return active_thread()->make_object_value<T>(
             std::forward<Args>(args)...);

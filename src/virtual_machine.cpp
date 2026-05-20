@@ -91,9 +91,10 @@ namespace cl
         }
 
         return make_object_value<RangeIterator>(
-            TValue2<SMI>::from_value_assumed(start),
-            TValue2<SMI>::from_value_assumed(stop),
-            TValue2<SMI>::from_value_assumed(step));
+                   TValue2<SMI>::from_value_assumed(start),
+                   TValue2<SMI>::from_value_assumed(stop),
+                   TValue2<SMI>::from_value_assumed(step))
+            .raw_value();
     }
 
     static Value builtin_sqrt(Value arg)
@@ -119,7 +120,9 @@ namespace cl
                 L"ValueError", L"math domain error");
         }
 
-        return active_thread()->make_object_value<Float>(std::sqrt(value));
+        return active_thread()
+            ->make_object_value<Float>(std::sqrt(value))
+            .raw_value();
     }
 
     VirtualMachine::VirtualMachine()

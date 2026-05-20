@@ -16,7 +16,7 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"NoneType.__str__ expects a NoneType receiver");
         }
-        return active_thread()->make_object_value<String>(L"None");
+        return active_thread()->make_object_value<String>(L"None").raw_value();
     }
 
     BuiltinClassDefinition make_none_type_class(VirtualMachine *vm)

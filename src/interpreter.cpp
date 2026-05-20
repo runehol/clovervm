@@ -847,7 +847,8 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
 
-        accumulator = thread->make_object_value<Float>(left + right);
+        accumulator =
+            thread->make_object_value<Float>(left + right).raw_value();
         COMPLETE();
     }
 
@@ -862,7 +863,8 @@ namespace cl
         }
 
         accumulator =
-            thread->make_object_value<Float>(left + double(b.get_smi()));
+            thread->make_object_value<Float>(left + double(b.get_smi()))
+                .raw_value();
         COMPLETE();
     }
 
@@ -878,7 +880,8 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
 
-        accumulator = thread->make_object_value<Float>(left - right);
+        accumulator =
+            thread->make_object_value<Float>(left - right).raw_value();
         COMPLETE();
     }
 
@@ -893,7 +896,8 @@ namespace cl
         }
 
         accumulator =
-            thread->make_object_value<Float>(left - double(b.get_smi()));
+            thread->make_object_value<Float>(left - double(b.get_smi()))
+                .raw_value();
         COMPLETE();
     }
 
@@ -909,7 +913,8 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
 
-        accumulator = thread->make_object_value<Float>(left * right);
+        accumulator =
+            thread->make_object_value<Float>(left * right).raw_value();
         COMPLETE();
     }
 
@@ -924,7 +929,8 @@ namespace cl
         }
 
         accumulator =
-            thread->make_object_value<Float>(left * double(b.get_smi()));
+            thread->make_object_value<Float>(left * double(b.get_smi()))
+                .raw_value();
         COMPLETE();
     }
 
@@ -1041,7 +1047,8 @@ namespace cl
             MUSTTAIL return zero_division_error(ARGS);
         }
 
-        accumulator = thread->make_object_value<Float>(left / right);
+        accumulator =
+            thread->make_object_value<Float>(left / right).raw_value();
         COMPLETE();
     }
 
@@ -1055,7 +1062,7 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
 
-        accumulator = thread->make_object_value<Float>(-value);
+        accumulator = thread->make_object_value<Float>(-value).raw_value();
         COMPLETE();
     }
 
@@ -1069,7 +1076,7 @@ namespace cl
             MUSTTAIL return slow_path(ARGS);
         }
 
-        accumulator = thread->make_object_value<Float>(value);
+        accumulator = thread->make_object_value<Float>(value).raw_value();
         COMPLETE();
     }
 
@@ -2337,8 +2344,10 @@ namespace cl
         TValue2<CodeObject> code_obj = TValue2<CodeObject>::from_value_assumed(
             code_object->constant_table[const_offset].value());
 
-        accumulator = thread->make_object_value<Function>(
-            code_obj, code_obj.extract()->docstring.value());
+        accumulator = thread
+                          ->make_object_value<Function>(
+                              code_obj, code_obj.extract()->docstring.value())
+                          .raw_value();
 
         COMPLETE();
     }
@@ -2353,9 +2362,11 @@ namespace cl
         TValue2<Tuple> defaults =
             TValue2<Tuple>::from_value_assumed(fp[defaults_reg]);
 
-        accumulator = thread->make_object_value<Function>(
-            code_obj, code_obj.extract()->docstring.value(),
-            Optional<TValue2<Tuple>>::some(defaults));
+        accumulator = thread
+                          ->make_object_value<Function>(
+                              code_obj, code_obj.extract()->docstring.value(),
+                              Optional<TValue2<Tuple>>::some(defaults))
+                          .raw_value();
 
         COMPLETE();
     }

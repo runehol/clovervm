@@ -17,6 +17,7 @@
 #include "scope.h"
 #include "str.h"
 #include "value.h"
+#include "value_state.h"
 
 namespace cl
 {
@@ -193,9 +194,9 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        TValue<T> make_immortal_internal_value(Args &&...args)
+        TValue2<T> make_immortal_internal_value(Args &&...args)
         {
-            return TValue<T>::from_oop(
+            return TValue2<T>::from_oop(
                 make_immortal_internal_raw<T>(std::forward<Args>(args)...));
         }
 
@@ -213,9 +214,9 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        TValue<T> make_immortal_object_value(Args &&...args)
+        TValue2<T> make_immortal_object_value(Args &&...args)
         {
-            return TValue<T>::from_oop(
+            return TValue2<T>::from_oop(
                 make_immortal_object_raw<T>(std::forward<Args>(args)...));
         }
 

@@ -35,7 +35,7 @@ namespace cl
 
     Value StringBuilder::finish()
     {
-        return active_thread()->make_object_value<String>(buffer);
+        return active_thread()->make_object_value<String>(buffer).raw_value();
     }
 
 }  // namespace cl

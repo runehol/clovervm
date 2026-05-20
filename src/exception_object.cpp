@@ -131,7 +131,8 @@ namespace cl
                                              TValue2<String> message)
     {
         return TValue2<Exception>::from_value_unchecked(
-            make_internal_value<ExceptionObject>(type.extract(), message));
+            make_internal_value<ExceptionObject>(type.extract(), message)
+                .raw_value());
     }
 
     TValue2<Exception> make_exception_object(ThreadState *thread,
@@ -139,8 +140,9 @@ namespace cl
                                              TValue2<String> message)
     {
         return TValue2<Exception>::from_value_unchecked(
-            thread->make_internal_value<ExceptionObject>(type.extract(),
-                                                         message));
+            thread
+                ->make_internal_value<ExceptionObject>(type.extract(), message)
+                .raw_value());
     }
 
     TValue2<Exception> make_exception_object(TValue2<ClassObject> type,
@@ -163,7 +165,8 @@ namespace cl
     make_stop_iteration_object(TValue2<ClassObject> type, Value value)
     {
         return TValue2<StopIterationObject>::from_value_unchecked(
-            make_internal_value<StopIterationObject>(type.extract(), value));
+            make_internal_value<StopIterationObject>(type.extract(), value)
+                .raw_value());
     }
 
     TValue2<StopIterationObject>
@@ -171,10 +174,13 @@ namespace cl
                                Value value)
     {
         return TValue2<StopIterationObject>::from_value_unchecked(
-            thread->make_internal_value<StopIterationObject>(
-                type.extract(),
-                thread->get_machine()->get_or_create_interned_string_value(L""),
-                value));
+            thread
+                ->make_internal_value<StopIterationObject>(
+                    type.extract(),
+                    thread->get_machine()->get_or_create_interned_string_value(
+                        L""),
+                    value)
+                .raw_value());
     }
 
 }  // namespace cl

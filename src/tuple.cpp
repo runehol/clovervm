@@ -44,7 +44,7 @@ namespace cl
     {
         TValue2<Tuple> tuple = CL_TRY(TValue2<Tuple>::from_value_or_raise(
             self, L"TypeError", L"tuple.__iter__ expects a tuple receiver"));
-        return make_object_value<TupleIterator>(tuple);
+        return make_object_value<TupleIterator>(tuple).raw_value();
     }
 
     static Value native_tuple_len(Value self)

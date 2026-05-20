@@ -17,8 +17,9 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"int.__str__ expects an int receiver");
         }
-        return active_thread()->make_object_value<String>(
-            std::to_wstring(self.get_smi()));
+        return active_thread()
+            ->make_object_value<String>(std::to_wstring(self.get_smi()))
+            .raw_value();
     }
 
     BuiltinClassDefinition make_int_class(VirtualMachine *vm)

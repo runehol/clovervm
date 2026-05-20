@@ -4,8 +4,8 @@
 #include "heap_constants.h"
 #include "heap_construction.h"
 #include "slab_allocator.h"
-#include "typed_value.h"
 #include "value.h"
+#include "value_state.h"
 #include <cstdint>
 #include <cstdlib>
 #include <deque>
@@ -58,9 +58,9 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        TValue<T> make_global_internal_value(Args &&...args)
+        TValue2<T> make_global_internal_value(Args &&...args)
         {
-            return TValue<T>::from_oop(
+            return TValue2<T>::from_oop(
                 make_global_internal_raw<T>(std::forward<Args>(args)...));
         }
 

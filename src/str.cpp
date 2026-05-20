@@ -98,7 +98,7 @@ namespace cl
         String *right = right_value.get_ptr<String>();
         std::wstring result(left->data, size_t(left->count.extract()));
         result.append(right->data, size_t(right->count.extract()));
-        return active_thread()->make_object_value<String>(result);
+        return active_thread()->make_object_value<String>(result).raw_value();
     }
 
     BuiltinClassDefinition make_str_class(VirtualMachine *vm)

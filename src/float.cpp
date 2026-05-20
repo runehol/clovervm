@@ -38,8 +38,10 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"float.__str__ expects a float receiver");
         }
-        return active_thread()->make_object_value<String>(
-            format_float_value(self.get_ptr<Float>()->value));
+        return active_thread()
+            ->make_object_value<String>(
+                format_float_value(self.get_ptr<Float>()->value))
+            .raw_value();
     }
 
     static Value native_float_repr(Value self)
@@ -49,8 +51,10 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"float.__repr__ expects a float receiver");
         }
-        return active_thread()->make_object_value<String>(
-            format_float_value(self.get_ptr<Float>()->value));
+        return active_thread()
+            ->make_object_value<String>(
+                format_float_value(self.get_ptr<Float>()->value))
+            .raw_value();
     }
 
     BuiltinClassDefinition make_float_class(VirtualMachine *vm)

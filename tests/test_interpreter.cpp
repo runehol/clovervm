@@ -302,7 +302,7 @@ static uint64_t g_every_safepoint_reclamation_valid_objects = 0;
 static Value native_large_tuple_for_every_safepoint_reclamation()
 {
     size_t tuple_size = LargeAllocationSize / sizeof(Value);
-    return active_thread()->make_object_value<Tuple>(tuple_size);
+    return active_thread()->make_object_value<Tuple>(tuple_size).raw_value();
 }
 
 static Value native_capture_every_safepoint_reclamation_target(Value value)
@@ -3506,7 +3506,8 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    Value value = test_context.thread()->make_object_value<Float>(1.5);
+    Value value =
+        test_context.thread()->make_object_value<Float>(1.5).raw_value();
     ASSERT_TRUE(can_convert_to<Float>(value));
     EXPECT_EQ(NativeLayoutId::Float,
               value.get_ptr<Object>()->native_layout_id());
@@ -3546,7 +3547,7 @@ TEST(Interpreter, float_string_methods_format_special_values)
     auto expect_method_result = [&](double value, TValue<String> method_name,
                                     const wchar_t *expected) {
         Value float_value =
-            test_context.thread()->make_object_value<Float>(value);
+            test_context.thread()->make_object_value<Float>(value).raw_value();
         Value result = test_context.thread()->call_clovervm_method(float_value,
                                                                    method_name);
         ASSERT_TRUE(can_convert_to<String>(result));

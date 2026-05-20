@@ -1014,7 +1014,7 @@ namespace cl
                             *ast.compilation_unit, source_pos_for_token());
                         double value =
                             std::stod(remove_number_separators(token));
-                        Value v = make_object_value<Float>(value);
+                        TValue2<Float> v = make_object_value<Float>(value);
                         return ast.emplace_back(
                             AstKind(AstNodeKind::EXPRESSION_LITERAL,
                                     AstOperatorKind::NUMBER),

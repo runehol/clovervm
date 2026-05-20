@@ -16,8 +16,10 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"bool.__str__ expects a bool receiver");
         }
-        return active_thread()->make_object_value<String>(
-            self == Value::True() ? L"True" : L"False");
+        return active_thread()
+            ->make_object_value<String>(self == Value::True() ? L"True"
+                                                              : L"False")
+            .raw_value();
     }
 
     BuiltinClassDefinition make_bool_class(VirtualMachine *vm,

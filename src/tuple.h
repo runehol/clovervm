@@ -60,7 +60,7 @@ namespace cl
         }
         [[nodiscard]] Value get_item(int64_t py_idx) const;
 
-        static ALWAYSINLINE TValue<Tuple>
+        static ALWAYSINLINE TValue2<Tuple>
         from_frame_arguments(ThreadState *thread, Value *fp,
                              int8_t first_arg_reg, uint32_t n_args)
         {
