@@ -55,7 +55,7 @@ namespace cl
     }
 
     Shape *Shape::make_root_with_single_descriptor(
-        TValue2<ClassObject> class_value, TValue<String> name,
+        TValue2<ClassObject> class_value, TValue2<String> name,
         DescriptorInfo info, int32_t next_slot_index,
         uint32_t inline_slot_capacity, ShapeFlags shape_flags)
     {
@@ -67,7 +67,7 @@ namespace cl
 
     Shape *Shape::make_immortal_root_with_single_descriptor(
         VirtualMachine *vm, TValue2<ClassObject> class_value,
-        TValue<String> name, DescriptorInfo info, int32_t next_slot_index,
+        TValue2<String> name, DescriptorInfo info, int32_t next_slot_index,
         uint32_t inline_slot_capacity, ShapeFlags shape_flags)
     {
         ShapeRootDescriptor descriptor{name, info};
@@ -110,7 +110,7 @@ namespace cl
             ++descriptor_idx)
         {
             descriptor_names[descriptor_idx] =
-                incref(descriptors[descriptor_idx].name);
+                incref(descriptors[descriptor_idx].name.raw_value());
             descriptor_infos()[descriptor_idx] =
                 descriptors[descriptor_idx].info;
         }
@@ -123,7 +123,7 @@ namespace cl
         return inline_slot_capacity;
     }
 
-    int32_t Shape::lookup_descriptor_index(TValue<String> name) const
+    int32_t Shape::lookup_descriptor_index(TValue2<String> name) const
     {
         for(uint32_t property_idx = 0; property_idx < present_count_;
             ++property_idx)
@@ -137,7 +137,7 @@ namespace cl
     }
 
     DescriptorLookup
-    Shape::lookup_descriptor_including_latent(TValue<String> name) const
+    Shape::lookup_descriptor_including_latent(TValue2<String> name) const
     {
         for(uint32_t property_idx = 0; property_idx < property_count_;
             ++property_idx)
@@ -155,7 +155,7 @@ namespace cl
         return DescriptorLookup::absent();
     }
 
-    StorageLocation Shape::resolve_present_property(TValue<String> name) const
+    StorageLocation Shape::resolve_present_property(TValue2<String> name) const
     {
         int32_t descriptor_idx = lookup_descriptor_index(name);
         if(descriptor_idx < 0)
@@ -166,12 +166,12 @@ namespace cl
         return get_descriptor_info(descriptor_idx).storage_location();
     }
 
-    StorageLocation Shape::resolve_own_property(TValue<String> name) const
+    StorageLocation Shape::resolve_own_property(TValue2<String> name) const
     {
         return resolve_present_property(name);
     }
 
-    Shape *Shape::lookup_transition(TValue<String> name,
+    Shape *Shape::lookup_transition(TValue2<String> name,
                                     ShapeTransitionVerb verb,
                                     DescriptorFlags descriptor_flags) const
     {
@@ -187,7 +187,7 @@ namespace cl
         return nullptr;
     }
 
-    Shape *Shape::derive_transition(TValue<String> name,
+    Shape *Shape::derive_transition(TValue2<String> name,
                                     ShapeTransitionVerb verb,
                                     DescriptorFlags descriptor_flags)
     {
@@ -211,7 +211,7 @@ namespace cl
         return next_shape;
     }
 
-    Shape *Shape::derive_add_transition(TValue<String> name,
+    Shape *Shape::derive_add_transition(TValue2<String> name,
                                         DescriptorFlags descriptor_flags)
     {
         DescriptorLookup descriptor = lookup_descriptor_including_latent(name);
@@ -261,7 +261,8 @@ namespace cl
                 get_descriptor_info(property_idx);
             ++next_property_idx;
         }
-        next_shape->descriptor_names[next_property_idx] = incref(name);
+        next_shape->descriptor_names[next_property_idx] =
+            incref(name.raw_value());
         next_shape->descriptor_infos()[next_property_idx] = inserted_info;
         ++next_property_idx;
         for(uint32_t property_idx = present_count_;
@@ -281,7 +282,7 @@ namespace cl
         return next_shape;
     }
 
-    Shape *Shape::derive_delete_transition(TValue<String> name)
+    Shape *Shape::derive_delete_transition(TValue2<String> name)
     {
         if(lookup_descriptor_index(name) < 0)
         {
@@ -322,7 +323,8 @@ namespace cl
         }
         if(keep_latent)
         {
-            next_shape->descriptor_names[next_property_idx] = incref(name);
+            next_shape->descriptor_names[next_property_idx] =
+                incref(name.raw_value());
             next_shape->descriptor_infos()[next_property_idx] = descriptor.info;
             ++next_property_idx;
         }

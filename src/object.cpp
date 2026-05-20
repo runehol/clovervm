@@ -11,6 +11,7 @@
 #include "thread_state.h"
 #include "typed_value.h"
 #include "value.h"
+#include "value_state.h"
 #include "value_string.h"
 #include "virtual_machine.h"
 #include <algorithm>
@@ -22,7 +23,7 @@ namespace cl
     {
         AttributeWriteDescriptor
         lookup_existing_own_property_write_descriptor(Object *object,
-                                                      TValue<String> name)
+                                                      TValue2<String> name)
         {
             Shape *current_shape = object->get_shape();
             int32_t descriptor_idx =
@@ -51,7 +52,7 @@ namespace cl
 
         AttributeDeleteDescriptor
         lookup_existing_own_property_delete_descriptor(Object *object,
-                                                       TValue<String> name)
+                                                       TValue2<String> name)
         {
             Shape *current_shape = object->get_shape();
             if(!current_shape->allows_attribute_add_delete())
@@ -161,7 +162,7 @@ namespace cl
         }
     }
 
-    Value Object::get_own_property(TValue<String> name) const
+    Value Object::get_own_property(TValue2<String> name) const
     {
         StorageLocation location = get_shape()->resolve_present_property(name);
         if(!location.is_found())
@@ -173,7 +174,7 @@ namespace cl
     }
 
     AttributeReadDescriptor
-    Object::lookup_own_attribute_descriptor(TValue<String> name) const
+    Object::lookup_own_attribute_descriptor(TValue2<String> name) const
     {
         StorageLocation location = get_shape()->resolve_present_property(name);
         if(!location.is_found())
@@ -190,18 +191,18 @@ namespace cl
     }
 
     AttributeWriteDescriptor
-    Object::lookup_own_attribute_write_descriptor(TValue<String> name)
+    Object::lookup_own_attribute_write_descriptor(TValue2<String> name)
     {
         return lookup_existing_own_property_write_descriptor(this, name);
     }
 
     AttributeDeleteDescriptor
-    Object::lookup_own_attribute_delete_descriptor(TValue<String> name)
+    Object::lookup_own_attribute_delete_descriptor(TValue2<String> name)
     {
         return lookup_existing_own_property_delete_descriptor(this, name);
     }
 
-    bool Object::add_own_property(TValue<String> name, Value value)
+    bool Object::add_own_property(TValue2<String> name, Value value)
     {
         value.assert_not_vm_sentinel();
 
@@ -228,7 +229,7 @@ namespace cl
         return true;
     }
 
-    bool Object::define_own_property(TValue<String> name, Value value,
+    bool Object::define_own_property(TValue2<String> name, Value value,
                                      DescriptorFlags descriptor_flags)
     {
         value.assert_not_vm_sentinel();
@@ -255,7 +256,7 @@ namespace cl
         return true;
     }
 
-    bool Object::set_existing_own_property(TValue<String> name, Value value)
+    bool Object::set_existing_own_property(TValue2<String> name, Value value)
     {
         value.assert_not_vm_sentinel();
 
@@ -269,7 +270,7 @@ namespace cl
                                     value);
     }
 
-    bool Object::set_own_property(TValue<String> name, Value value)
+    bool Object::set_own_property(TValue2<String> name, Value value)
     {
         value.assert_not_vm_sentinel();
 
@@ -287,7 +288,7 @@ namespace cl
         return false;
     }
 
-    bool Object::delete_own_property(TValue<String> name)
+    bool Object::delete_own_property(TValue2<String> name)
     {
         AttributeDeleteDescriptor descriptor =
             lookup_own_attribute_delete_descriptor(name);
