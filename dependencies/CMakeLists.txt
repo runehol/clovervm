@@ -10,8 +10,8 @@ FetchContent_Declare(
   googletest
   URL               https://github.com/google/googletest/archive/refs/tags/v1.17.0.tar.gz
   URL_MD5           b6f100bc2a5853a48046aa168ececf84
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
-FetchContent_MakeAvailable(googletest)
 
 
 if(CLOVERVM_BUILD_BENCHMARK_DEPS)
@@ -22,29 +22,38 @@ if(CLOVERVM_BUILD_BENCHMARK_DEPS)
     googlebenchmark
     URL               https://github.com/google/benchmark/archive/refs/tags/v1.8.5.tar.gz
     URL_MD5           708d91ce255e8af4c1d7dfec50dff178
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
   )
-  FetchContent_MakeAvailable(googlebenchmark)
 endif()
 
 FetchContent_Declare(
   absl
   URL               https://github.com/abseil/abseil-cpp/archive/refs/tags/20260107.1.tar.gz
   URL_MD5           d032877f03483884299c50f527f3983e
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
-FetchContent_MakeAvailable(absl)
 
 
 FetchContent_Declare(
   ctre
   URL               https://github.com/hanickadot/compile-time-regular-expressions/archive/refs/tags/v3.10.0.tar.gz
   URL_MD5           e3f4f173228180b564b72f73fb4c065c
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
-FetchContent_MakeAvailable(ctre)
 
 
 FetchContent_Declare(
   fmt
   URL               https://github.com/fmtlib/fmt/archive/refs/tags/12.1.0.tar.gz
   URL_MD5           92eb6f492e4838e5f024ce5207beafc7
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
-FetchContent_MakeAvailable(fmt)
+
+block()
+  set(CMAKE_MESSAGE_LOG_LEVEL WARNING)
+  FetchContent_MakeAvailable(googletest)
+  if(CLOVERVM_BUILD_BENCHMARK_DEPS)
+    FetchContent_MakeAvailable(googlebenchmark)
+  endif()
+  FetchContent_MakeAvailable(absl ctre fmt)
+endblock()
