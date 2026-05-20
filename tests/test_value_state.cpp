@@ -307,11 +307,11 @@ TEST(Expected, PropagatedExceptionCarriesExistingExceptionMarker)
 
 TEST(Expected, RecursesSemanticTypeThroughTypedValue)
 {
-    using ExpectedSmi = Expected<TValue<SMI>>;
+    using ExpectedSmi = Expected<TValue2<SMI>>;
 
     static_assert(std::is_same_v<ExpectedSmi::semantic_type, SMI>);
 
-    ExpectedSmi expected = ExpectedSmi::ok(TValue<SMI>::from_smi(42));
+    ExpectedSmi expected = ExpectedSmi::ok(TValue2<SMI>::from_smi(42));
 
     EXPECT_TRUE(expected.has_value());
     EXPECT_EQ(Value::from_smi(42), expected.raw_value());
@@ -357,7 +357,7 @@ TEST(Optional, ConstructsSomeValueAndUnpacksLikeStdOptional)
 
 TEST(Optional, TypedValueUnpacksThroughFromValueUnchecked)
 {
-    Optional<TValue<SMI>> optional(TValue<SMI>::from_smi(42));
+    Optional<TValue2<SMI>> optional(TValue2<SMI>::from_smi(42));
 
     EXPECT_TRUE(optional.has_value());
     EXPECT_EQ(Value::from_smi(42), optional.raw_value());
@@ -367,7 +367,7 @@ TEST(Optional, TypedValueUnpacksThroughFromValueUnchecked)
 
 TEST(Optional, RecursesSemanticTypeThroughExpectedAndTypedValue)
 {
-    using MaybeString = Optional<Expected<TValue<String>>>;
+    using MaybeString = Optional<Expected<TValue2<String>>>;
 
     static_assert(std::is_same_v<MaybeString::semantic_type, String>);
 }
