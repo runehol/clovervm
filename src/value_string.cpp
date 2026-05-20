@@ -30,9 +30,9 @@ namespace cl
         Value result =
             self.is_not_present()
                 ? active_thread()->call_clovervm_function(
-                      TValue<Function>::from_value_checked(callable))
+                      TValue2<Function>::from_value_assumed(callable))
                 : active_thread()->call_clovervm_function(
-                      TValue<Function>::from_value_checked(callable), self);
+                      TValue2<Function>::from_value_assumed(callable), self);
         CL_PROPAGATE_EXCEPTION(result);
         if(!can_convert_to<String>(result))
         {

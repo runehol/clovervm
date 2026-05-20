@@ -115,23 +115,23 @@ namespace cl
         }
 
         [[nodiscard]] Value run_clovervm_code_object(CodeObject *obj);
-        [[nodiscard]] Value call_clovervm_function(TValue<Function> function);
-        [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
+        [[nodiscard]] Value call_clovervm_function(TValue2<Function> function);
+        [[nodiscard]] Value call_clovervm_function(TValue2<Function> function,
                                                    Value arg0);
-        [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
+        [[nodiscard]] Value call_clovervm_function(TValue2<Function> function,
                                                    Value arg0, Value arg1);
-        [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
+        [[nodiscard]] Value call_clovervm_function(TValue2<Function> function,
                                                    Value arg0, Value arg1,
                                                    Value arg2);
         [[nodiscard]] Value call_clovervm_method(Value receiver,
-                                                 TValue<String> name);
+                                                 TValue2<String> name);
         [[nodiscard]] Value
-        call_clovervm_method(Value receiver, TValue<String> name, Value arg0);
+        call_clovervm_method(Value receiver, TValue2<String> name, Value arg0);
         [[nodiscard]] Value call_clovervm_method(Value receiver,
-                                                 TValue<String> name,
+                                                 TValue2<String> name,
                                                  Value arg0, Value arg1);
         [[nodiscard]] Value call_clovervm_method(Value receiver,
-                                                 TValue<String> name,
+                                                 TValue2<String> name,
                                                  Value arg0, Value arg1,
                                                  Value arg2);
         void set_clover_frame_frontier(Value *fp)
@@ -297,10 +297,10 @@ namespace cl
 
     private:
         [[nodiscard]] Value
-        call_clovervm_function_with_args(TValue<Function> function,
+        call_clovervm_function_with_args(TValue2<Function> function,
                                          const Value *args, uint32_t n_args);
         [[nodiscard]] Value call_clovervm_method_with_args(Value receiver,
-                                                           TValue<String> name,
+                                                           TValue2<String> name,
                                                            const Value *args,
                                                            uint32_t n_args);
         NOINLINE Shape *shape_of_inline_value(Value value) const;

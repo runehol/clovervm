@@ -133,7 +133,7 @@ namespace cl
     }
 
     Value ThreadState::call_clovervm_function_with_args(
-        TValue<Function> function, const Value *args, uint32_t n_args)
+        TValue2<Function> function, const Value *args, uint32_t n_args)
     {
         ActivationScope activation_scope(this);
         CodeObject *adapter = machine->clover_function_entry_adapter(n_args);
@@ -142,7 +142,8 @@ namespace cl
         adapter_fp[FrameHeaderPreviousFpOffset].as.ptr =
             reinterpret_cast<Object *>(caller_fp);
 
-        set_clover_entry_adapter_parameter(adapter, adapter_fp, 0, function);
+        set_clover_entry_adapter_parameter(adapter, adapter_fp, 0,
+                                           function.raw_value());
         for(uint32_t arg_idx = 0; arg_idx < n_args; ++arg_idx)
         {
             set_clover_entry_adapter_parameter(adapter, adapter_fp, arg_idx + 1,
@@ -153,26 +154,26 @@ namespace cl
         return run_interpreter(adapter_fp, adapter, 0, this);
     }
 
-    Value ThreadState::call_clovervm_function(TValue<Function> function)
+    Value ThreadState::call_clovervm_function(TValue2<Function> function)
     {
         return call_clovervm_function_with_args(function, nullptr, 0);
     }
 
-    Value ThreadState::call_clovervm_function(TValue<Function> function,
+    Value ThreadState::call_clovervm_function(TValue2<Function> function,
                                               Value arg0)
     {
         Value args[] = {arg0};
         return call_clovervm_function_with_args(function, args, 1);
     }
 
-    Value ThreadState::call_clovervm_function(TValue<Function> function,
+    Value ThreadState::call_clovervm_function(TValue2<Function> function,
                                               Value arg0, Value arg1)
     {
         Value args[] = {arg0, arg1};
         return call_clovervm_function_with_args(function, args, 2);
     }
 
-    Value ThreadState::call_clovervm_function(TValue<Function> function,
+    Value ThreadState::call_clovervm_function(TValue2<Function> function,
                                               Value arg0, Value arg1,
                                               Value arg2)
     {
@@ -181,7 +182,7 @@ namespace cl
     }
 
     Value ThreadState::call_clovervm_method_with_args(Value receiver,
-                                                      TValue<String> name,
+                                                      TValue2<String> name,
                                                       const Value *args,
                                                       uint32_t n_args)
     {
@@ -217,31 +218,34 @@ namespace cl
         }
 
         return call_clovervm_function_with_args(
-            TValue<Function>::from_value_checked(callable), method_args,
+            TValue2<Function>::from_value_assumed(callable), method_args,
             total_args);
     }
 
-    Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name)
+    Value ThreadState::call_clovervm_method(Value receiver,
+                                            TValue2<String> name)
     {
         return call_clovervm_method_with_args(receiver, name, nullptr, 0);
     }
 
-    Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name,
-                                            Value arg0)
+    Value ThreadState::call_clovervm_method(Value receiver,
+                                            TValue2<String> name, Value arg0)
     {
         Value args[] = {arg0};
         return call_clovervm_method_with_args(receiver, name, args, 1);
     }
 
-    Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name,
-                                            Value arg0, Value arg1)
+    Value ThreadState::call_clovervm_method(Value receiver,
+                                            TValue2<String> name, Value arg0,
+                                            Value arg1)
     {
         Value args[] = {arg0, arg1};
         return call_clovervm_method_with_args(receiver, name, args, 2);
     }
 
-    Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name,
-                                            Value arg0, Value arg1, Value arg2)
+    Value ThreadState::call_clovervm_method(Value receiver,
+                                            TValue2<String> name, Value arg0,
+                                            Value arg1, Value arg2)
     {
         Value args[] = {arg0, arg1, arg2};
         return call_clovervm_method_with_args(receiver, name, args, 3);
@@ -304,7 +308,7 @@ namespace cl
 
     ClassObject *ThreadState::class_for_builtin_name(const wchar_t *name) const
     {
-        TValue<String> name_value =
+        TValue2<String> name_value =
             machine->get_or_create_interned_string_value(std::wstring(name));
         Value value = machine->builtin_scope_ptr()->get_by_name(name_value);
         assert(value.is_ptr());
