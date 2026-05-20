@@ -250,7 +250,7 @@ static Value native_weave_outer(Value inner_function)
 {
     expect_current_frontier_reaches_initial(5);
     Value result = active_thread()->call_clovervm_function(
-        TValue<Function>::from_value_checked(inner_function));
+        TValue2<Function>::from_value_assumed(inner_function));
     expect_current_frontier_reaches_initial(5);
     if(result.is_exception_marker())
     {
@@ -293,7 +293,7 @@ static Value native_base_exception_with_message()
     ClassObject *cls =
         active_thread()->class_for_native_layout(NativeLayoutId::Exception);
     return active_thread()->set_pending_exception_string(
-        TValue<ClassObject>::from_oop(cls), L"boom");
+        TValue2<ClassObject>::from_oop(cls), L"boom");
 }
 
 static void *g_every_safepoint_reclamation_target_address = nullptr;
@@ -328,7 +328,7 @@ template <typename T>
 static void bind_global(test::VmTestContext &test_context,
                         CodeObject *code_object, const wchar_t *name, T value)
 {
-    TValue<String> name_value(
+    TValue2<String> name_value(
         test_context.vm().get_or_create_interned_string_value(name));
     code_object->module_scope.extract()->set_by_name(name_value,
                                                      value.raw_value());
@@ -340,7 +340,7 @@ static Value make_test_function(test::VmTestContext &test_context,
     CodeObject *code_object = test_context.compile_file(source);
     (void)test_context.thread()->run_clovervm_code_object(code_object);
 
-    TValue<String> name_value(
+    TValue2<String> name_value(
         test_context.vm().get_or_create_interned_string_value(name));
     Value function_value =
         code_object->module_scope.extract()->get_by_name(name_value);
@@ -353,7 +353,7 @@ static Value make_test_function(test::VmTestContext &test_context,
 static CodeObject *make_raise_unwind_code(test::VmTestContext &test_context,
                                           Value raised)
 {
-    TValue<String> name =
+    TValue2<String> name =
         test_context.vm().get_or_create_interned_string_value(L"<raise-test>");
     CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
                               name);
@@ -403,8 +403,9 @@ static Value *prepare_clover_function_entry_adapter_frame(ThreadState *thread,
 
 static CodeObject *make_return_to_native_code(test::VmTestContext &test_context)
 {
-    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
-        L"<return-to-native-test>");
+    TValue2<String> name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"<return-to-native-test>");
     CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
                               name);
     builder.emit_lda_smi(0, 42);
@@ -415,8 +416,9 @@ static CodeObject *make_return_to_native_code(test::VmTestContext &test_context)
 static CodeObject *
 make_return_pending_exception_to_native_code(test::VmTestContext &test_context)
 {
-    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
-        L"<return-pending-exception-to-native-test>");
+    TValue2<String> name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"<return-pending-exception-to-native-test>");
     CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
                               name);
     builder.emit_return_pending_exception_to_native(0);
@@ -593,7 +595,7 @@ TEST(Interpreter, function_varargs_collect_empty_tuple)
     ASSERT_TRUE(actual.is_ptr());
     ASSERT_EQ(NativeLayoutId::Tuple,
               actual.get_ptr<Object>()->native_layout_id());
-    EXPECT_TRUE(TValue<Tuple>::from_value_checked(actual).extract()->empty());
+    EXPECT_TRUE(TValue2<Tuple>::from_value_assumed(actual).extract()->empty());
 }
 
 TEST(Interpreter, function_varargs_still_requires_positional_arguments)
@@ -626,9 +628,9 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         test_context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> value_name(
+    TValue2<String> value_name(
         test_context.vm().get_or_create_interned_string_value(L"value"));
 
     CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
@@ -665,13 +667,13 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         test_context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> first_name(
+    TValue2<String> first_name(
         test_context.vm().get_or_create_interned_string_value(L"first"));
-    TValue<String> second_name(
+    TValue2<String> second_name(
         test_context.vm().get_or_create_interned_string_value(L"second"));
-    TValue<String> third_name(
+    TValue2<String> third_name(
         test_context.vm().get_or_create_interned_string_value(L"third"));
 
     CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
@@ -686,7 +688,7 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
               cls_value.get_ptr<Object>()->native_layout_id());
     ClassObject *cls = cls_value.get_ptr<ClassObject>();
 
-    TValue<String> names[] = {first_name, second_name, third_name};
+    TValue2<String> names[] = {first_name, second_name, third_name};
     constexpr uint32_t class_metadata_descriptor_count =
         ClassObject::class_metadata_slot_count + 1;
     for(uint32_t idx = 0; idx < 3; ++idx)
@@ -1019,7 +1021,7 @@ TEST(Interpreter, list_literal_evaluates_elements_left_to_right)
     CodeObject *code_obj = test_context.compile_file(
         L"[next_counter(), next_counter(), next_counter()]\n");
 
-    TValue<String> name =
+    TValue2<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter)
@@ -1088,7 +1090,7 @@ TEST(Interpreter, tuple_literal_evaluates_elements_left_to_right)
     CodeObject *code_obj = test_context.compile_file(
         L"next_counter(), next_counter(), next_counter()\n");
 
-    TValue<String> name =
+    TValue2<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter)
@@ -1175,7 +1177,7 @@ TEST(Interpreter,
                                   L"get_dict()[next_key()] += 7\n"
                                   L"xs[\"alpha\"]\n");
 
-    TValue<String> name =
+    TValue2<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter)
@@ -1241,7 +1243,7 @@ TEST(Interpreter,
                                   L"get_list()[next_counter()] += 7\n"
                                   L"xs[0]\n");
 
-    TValue<String> name =
+    TValue2<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter)
@@ -1367,9 +1369,9 @@ TEST(Interpreter, attribute_load_and_store_syntax)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    TValue<String> obj_name(
+    TValue2<String> obj_name(
         test_context.vm().get_or_create_interned_string_value(L"obj"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         test_context.vm().get_or_create_interned_string_value(L"value"));
 
     CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
@@ -1393,7 +1395,7 @@ TEST(Interpreter, store_attr_caches_instance_add_transition)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    TValue<String> function_name(
+    TValue2<String> function_name(
         test_context.vm().get_or_create_interned_string_value(L"make"));
     CodeObject *code_obj = test_context.compile_file(L"class Cls:\n"
                                                      L"    pass\n"
@@ -1428,11 +1430,11 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    TValue<String> clear_name(
+    TValue2<String> clear_name(
         test_context.vm().get_or_create_interned_string_value(L"clear"));
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         test_context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> value_name(
+    TValue2<String> value_name(
         test_context.vm().get_or_create_interned_string_value(L"value"));
 
     CodeObject *definition_code =
@@ -1484,9 +1486,9 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    TValue<String> clear_name(
+    TValue2<String> clear_name(
         test_context.vm().get_or_create_interned_string_value(L"clear"));
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         test_context.vm().get_or_create_interned_string_value(L"Cls"));
 
     CodeObject *definition_code =
@@ -1535,13 +1537,13 @@ TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         test_context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> mid_name(
+    TValue2<String> mid_name(
         test_context.vm().get_or_create_interned_string_value(L"Mid"));
-    TValue<String> leaf_name(
+    TValue2<String> leaf_name(
         test_context.vm().get_or_create_interned_string_value(L"Leaf"));
-    TValue<String> value_name(
+    TValue2<String> value_name(
         test_context.vm().get_or_create_interned_string_value(L"value"));
 
     ClassObject *base = test_context.thread()->make_internal_raw<ClassObject>(
@@ -1617,13 +1619,13 @@ TEST(Interpreter, cached_direct_method_call_observes_mro_mutations)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         test_context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> mid_name(
+    TValue2<String> mid_name(
         test_context.vm().get_or_create_interned_string_value(L"Mid"));
-    TValue<String> leaf_name(
+    TValue2<String> leaf_name(
         test_context.vm().get_or_create_interned_string_value(L"Leaf"));
-    TValue<String> method_name(
+    TValue2<String> method_name(
         test_context.vm().get_or_create_interned_string_value(L"method"));
 
     ClassObject *base = test_context.thread()->make_internal_raw<ClassObject>(
@@ -1696,13 +1698,13 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         test_context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> mid_name(
+    TValue2<String> mid_name(
         test_context.vm().get_or_create_interned_string_value(L"Mid"));
-    TValue<String> leaf_name(
+    TValue2<String> leaf_name(
         test_context.vm().get_or_create_interned_string_value(L"Leaf"));
-    TValue<String> value_name(
+    TValue2<String> value_name(
         test_context.vm().get_or_create_interned_string_value(L"value"));
 
     ClassObject *base = test_context.thread()->make_internal_raw<ClassObject>(
@@ -1996,7 +1998,7 @@ TEST(Interpreter, native_function_thunk_uses_return_or_raise_adapter)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    TValue<Function> native =
+    TValue2<Function> native =
         make_native_function(&test_context.vm(), native_zero);
 
     std::string actual =
@@ -2235,18 +2237,18 @@ TEST(Interpreter, call_clovervm_function_overloads_call_managed_functions)
 
     EXPECT_EQ(Value::from_smi(7),
               test_context.thread()->call_clovervm_function(
-                  TValue<Function>::from_value_checked(zero)));
+                  TValue2<Function>::from_value_assumed(zero)));
     EXPECT_EQ(
         Value::from_smi(11),
         test_context.thread()->call_clovervm_function(
-            TValue<Function>::from_value_checked(inc), Value::from_smi(10)));
+            TValue2<Function>::from_value_assumed(inc), Value::from_smi(10)));
     EXPECT_EQ(Value::from_smi(30),
               test_context.thread()->call_clovervm_function(
-                  TValue<Function>::from_value_checked(add),
+                  TValue2<Function>::from_value_assumed(add),
                   Value::from_smi(10), Value::from_smi(20)));
     EXPECT_EQ(Value::from_smi(60),
               test_context.thread()->call_clovervm_function(
-                  TValue<Function>::from_value_checked(sum3),
+                  TValue2<Function>::from_value_assumed(sum3),
                   Value::from_smi(10), Value::from_smi(20),
                   Value::from_smi(30)));
     EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
@@ -2263,7 +2265,7 @@ TEST(Interpreter, call_clovervm_function_returns_pending_exception)
     Value *caller_fp = test_context.thread()->clover_frame_frontier();
 
     Value actual = test_context.thread()->call_clovervm_function(
-        TValue<Function>::from_value_checked(function), Value::from_smi(10));
+        TValue2<Function>::from_value_assumed(function), Value::from_smi(10));
 
     EXPECT_TRUE(actual.is_exception_marker());
     EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
@@ -2283,7 +2285,7 @@ TEST(Interpreter, call_clovervm_function_uses_function_call_adaptation)
     Value *caller_fp = test_context.thread()->clover_frame_frontier();
 
     Value actual = test_context.thread()->call_clovervm_function(
-        TValue<Function>::from_value_checked(function), Value::from_smi(10));
+        TValue2<Function>::from_value_assumed(function), Value::from_smi(10));
 
     EXPECT_EQ(Value::from_smi(42), actual);
     EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
@@ -2294,9 +2296,9 @@ TEST(Interpreter, call_clovervm_method_binds_class_function_receiver)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    TValue<String> class_name(
+    TValue2<String> class_name(
         test_context.vm().get_or_create_interned_string_value(L"MethodSource"));
-    TValue<String> method_name(
+    TValue2<String> method_name(
         test_context.vm().get_or_create_interned_string_value(L"method"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
         class_name, 2, test_context.vm().object_class());
@@ -2320,9 +2322,9 @@ TEST(Interpreter, call_clovervm_method_calls_unbound_own_function)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    TValue<String> class_name(
+    TValue2<String> class_name(
         test_context.vm().get_or_create_interned_string_value(L"MethodSource"));
-    TValue<String> method_name(
+    TValue2<String> method_name(
         test_context.vm().get_or_create_interned_string_value(L"method"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
         class_name, 2, test_context.vm().object_class());
@@ -2346,9 +2348,9 @@ TEST(Interpreter, call_clovervm_method_uses_function_call_adaptation)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    TValue<String> class_name(
+    TValue2<String> class_name(
         test_context.vm().get_or_create_interned_string_value(L"MethodSource"));
-    TValue<String> method_name(
+    TValue2<String> method_name(
         test_context.vm().get_or_create_interned_string_value(L"method"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
         class_name, 2, test_context.vm().object_class());
@@ -2372,9 +2374,9 @@ TEST(Interpreter, value_repr_uses_special_method_lookup)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    TValue<String> class_name(
+    TValue2<String> class_name(
         test_context.vm().get_or_create_interned_string_value(L"ReprSource"));
-    TValue<String> dunder_repr_name(
+    TValue2<String> dunder_repr_name(
         test_context.vm().get_or_create_interned_string_value(L"__repr__"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
         class_name, 2, test_context.vm().object_class());
@@ -2403,12 +2405,12 @@ TEST(Interpreter, call_clovervm_method_calls_inline_value_native_methods)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    TValue<String> dunder_str_name(
+    TValue2<String> dunder_str_name(
         test_context.vm().get_or_create_interned_string_value(L"__str__"));
-    TValue<String> dunder_repr_name(
+    TValue2<String> dunder_repr_name(
         test_context.vm().get_or_create_interned_string_value(L"__repr__"));
 
-    auto expect_method_string = [&](Value receiver, TValue<String> name,
+    auto expect_method_string = [&](Value receiver, TValue2<String> name,
                                     const wchar_t *expected) {
         Value actual =
             test_context.thread()->call_clovervm_method(receiver, name);
@@ -2433,12 +2435,12 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    TValue<String> dunder_str_name(
+    TValue2<String> dunder_str_name(
         test_context.vm().get_or_create_interned_string_value(L"__str__"));
-    TValue<String> dunder_repr_name(
+    TValue2<String> dunder_repr_name(
         test_context.vm().get_or_create_interned_string_value(L"__repr__"));
 
-    auto expect_method_string = [&](Value receiver, TValue<String> name,
+    auto expect_method_string = [&](Value receiver, TValue2<String> name,
                                     const wchar_t *expected) {
         Value actual =
             test_context.thread()->call_clovervm_method(receiver, name);
@@ -2451,15 +2453,15 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
         EXPECT_FALSE(test_context.thread()->has_pending_exception());
     };
 
-    TValue<String> string =
+    TValue2<String> string =
         test_context.vm().get_or_create_interned_string_value(L"a'b\n");
-    expect_method_string(string, dunder_repr_name, L"'a\\'b\\n'");
+    expect_method_string(string.raw_value(), dunder_repr_name, L"'a\\'b\\n'");
 
     List *list = test_context.thread()->make_object_raw<List>();
     list->append(Value::from_smi(42));
     list->append(Value::True());
     list->append(Value::None());
-    list->append(string);
+    list->append(string.raw_value());
     expect_method_string(Value::from_oop(list), dunder_repr_name,
                          L"[42, True, None, 'a\\'b\\n']");
     expect_method_string(Value::from_oop(list), dunder_str_name,
@@ -2475,29 +2477,29 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
 
     Tuple *tuple = test_context.thread()->make_object_raw<Tuple>(2);
     tuple->initialize_item_unchecked(0, Value::from_smi(42));
-    tuple->initialize_item_unchecked(1, string);
+    tuple->initialize_item_unchecked(1, string.raw_value());
     expect_method_string(Value::from_oop(tuple), dunder_str_name,
                          L"(42, 'a\\'b\\n')");
 
     Dict *dict = test_context.thread()->make_object_raw<Dict>();
-    TValue<String> alpha =
+    TValue2<String> alpha =
         test_context.vm().get_or_create_interned_string_value(L"alpha");
-    TValue<String> beta =
+    TValue2<String> beta =
         test_context.vm().get_or_create_interned_string_value(L"beta");
-    TValue<String> removed =
+    TValue2<String> removed =
         test_context.vm().get_or_create_interned_string_value(L"removed");
-    dict->set_item(alpha, Value::from_smi(1));
-    dict->set_item(removed, Value::from_smi(99));
-    dict->set_item(beta, Value::True());
-    ASSERT_EQ(Value::None(), dict->del_item(removed));
+    dict->set_item(alpha.raw_value(), Value::from_smi(1));
+    dict->set_item(removed.raw_value(), Value::from_smi(99));
+    dict->set_item(beta.raw_value(), Value::True());
+    ASSERT_EQ(Value::None(), dict->del_item(removed.raw_value()));
     expect_method_string(Value::from_oop(dict), dunder_repr_name,
                          L"{'alpha': 1, 'beta': True}");
     expect_method_string(Value::from_oop(dict), dunder_str_name,
                          L"{'alpha': 1, 'beta': True}");
 
     Dict *reordered_dict = test_context.thread()->make_object_raw<Dict>();
-    reordered_dict->set_item(beta, Value::True());
-    reordered_dict->set_item(alpha, Value::from_smi(1));
+    reordered_dict->set_item(beta.raw_value(), Value::True());
+    reordered_dict->set_item(alpha.raw_value(), Value::from_smi(1));
     Value dict_str = test_context.thread()->call_clovervm_method(
         Value::from_oop(dict), dunder_str_name);
     Value reordered_dict_str = test_context.thread()->call_clovervm_method(
@@ -2512,7 +2514,7 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
                      TValue2<String>::from_value_assumed(reordered_dict_str)));
     EXPECT_FALSE(test_context.thread()->has_pending_exception());
 
-    TValue<String> class_name(
+    TValue2<String> class_name(
         test_context.vm().get_or_create_interned_string_value(L"Plain"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
         class_name, 2, test_context.vm().object_class());
@@ -2528,9 +2530,9 @@ TEST(Interpreter, call_clovervm_method_reports_missing_method)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    TValue<String> class_name(
+    TValue2<String> class_name(
         test_context.vm().get_or_create_interned_string_value(L"MethodSource"));
-    TValue<String> method_name(
+    TValue2<String> method_name(
         test_context.vm().get_or_create_interned_string_value(L"method"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
         class_name, 2, test_context.vm().object_class());
@@ -2551,9 +2553,9 @@ TEST(Interpreter, call_clovervm_method_reports_non_callable_method)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    TValue<String> class_name(
+    TValue2<String> class_name(
         test_context.vm().get_or_create_interned_string_value(L"MethodSource"));
-    TValue<String> method_name(
+    TValue2<String> method_name(
         test_context.vm().get_or_create_interned_string_value(L"method"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
         class_name, 2, test_context.vm().object_class());
@@ -2690,7 +2692,7 @@ TEST(Interpreter, raise_from_handler_sets_exception_context)
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"ValueError"),
               exception.extract()->get_shape()->get_class());
 
-    TValue<String> context_name =
+    TValue2<String> context_name =
         test_context.vm().get_or_create_interned_string_value(L"__context__");
     Value context = exception.extract()->get_own_property(context_name);
     ASSERT_TRUE(can_convert_to<ExceptionObject>(context));
@@ -2744,7 +2746,7 @@ TEST(Interpreter, try_finally_runs_cleanup_before_reraising)
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 
-    TValue<String> result_name =
+    TValue2<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
     EXPECT_EQ(Value::from_smi(2),
               code_obj->module_scope.extract()->get_by_name(result_name));
@@ -2770,7 +2772,7 @@ TEST(Interpreter, try_finally_raise_chains_body_exception_as_context)
     EXPECT_EQ(test_context.thread()->class_for_builtin_name(L"ValueError"),
               exception.extract()->get_shape()->get_class());
 
-    TValue<String> context_name =
+    TValue2<String> context_name =
         test_context.vm().get_or_create_interned_string_value(L"__context__");
     Value context = exception.extract()->get_own_property(context_name);
     ASSERT_TRUE(can_convert_to<ExceptionObject>(context));
@@ -2877,7 +2879,7 @@ TEST(Interpreter, return_through_finally_that_raises_runs_cleanup_once)
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 
-    TValue<String> result_name =
+    TValue2<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
     EXPECT_EQ(Value::from_smi(1),
               code_obj->module_scope.extract()->get_by_name(result_name));
@@ -3029,7 +3031,7 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_unmatched_reraise)
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 
-    TValue<String> result_name =
+    TValue2<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
     EXPECT_EQ(Value::from_smi(2),
               code_obj->module_scope.extract()->get_by_name(result_name));
@@ -3051,7 +3053,7 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_handler_reraise)
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 
-    TValue<String> result_name =
+    TValue2<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
     EXPECT_EQ(Value::from_smi(2),
               code_obj->module_scope.extract()->get_by_name(result_name));
@@ -3138,7 +3140,7 @@ TEST(Interpreter, try_except_else_finally_cleans_up_else_exception)
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 
-    TValue<String> result_name =
+    TValue2<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
     EXPECT_EQ(Value::from_smi(2),
               code_obj->module_scope.extract()->get_by_name(result_name));
@@ -3201,7 +3203,7 @@ TEST(Interpreter, raise_unwind_raises_exception_object)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
     TValue2<Exception> exception = make_exception_object(
-        TValue<ClassObject>::from_oop(
+        TValue2<ClassObject>::from_oop(
             test_context.thread()->class_for_builtin_name(L"ValueError")),
         L"boom");
     CodeObject *code_obj =
@@ -3232,7 +3234,7 @@ TEST(Interpreter, builtin_scope_lookup)
     CodeObject *code_obj = test_context.compile_file(L"range\n");
 
     Scope *module_scope = code_obj->module_scope.extract();
-    TValue<String> name =
+    TValue2<String> name =
         test_context.vm().get_or_create_interned_string_value(L"range");
     int32_t slot_idx = module_scope->lookup_slot_index_local(name);
     ASSERT_GE(slot_idx, 0);
@@ -3287,14 +3289,15 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
 
     for(const ExpectedBuiltin &expected: expected_builtins)
     {
-        TValue<String> name_value =
+        TValue2<String> name_value =
             test_context.vm().get_or_create_interned_string_value(
                 expected.name);
         Value value = builtins->get_by_name(name_value);
         ASSERT_TRUE(value.is_ptr());
         EXPECT_EQ(NativeLayoutId::Function,
                   value.get_ptr<Object>()->native_layout_id());
-        TValue<Function> function = TValue<Function>::from_value_checked(value);
+        TValue2<Function> function =
+            TValue2<Function>::from_value_assumed(value);
         Optional<TValue2<String>> docstring =
             function.extract()->docstring.value();
         ASSERT_TRUE(docstring.has_value());
@@ -3401,7 +3404,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
                       test_context.vm().get_or_create_interned_string_value(
                           L"__class__")));
 
-        TValue<String> name =
+        TValue2<String> name =
             test_context.vm().get_or_create_interned_string_value(
                 expected.name);
         EXPECT_EQ(name, cls->get_name());
@@ -3413,9 +3416,9 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
                       ->get_class()
                       ->get_instance_root_shape());
 
-        TValue<String> dunder_bases_name =
+        TValue2<String> dunder_bases_name =
             test_context.vm().get_or_create_interned_string_value(L"__bases__");
-        TValue<String> dunder_mro_name =
+        TValue2<String> dunder_mro_name =
             test_context.vm().get_or_create_interned_string_value(L"__mro__");
         Value bases_value = cls->get_own_property(dunder_bases_name);
         Value mro_value = cls->get_own_property(dunder_mro_name);
@@ -3454,7 +3457,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         }
     }
 
-    TValue<String> post_bootstrap_name =
+    TValue2<String> post_bootstrap_name =
         test_context.vm().get_or_create_interned_string_value(
             L"post_bootstrap_name");
     EXPECT_EQ(test_context.vm().str_class(),
@@ -3471,11 +3474,11 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
                       L"__class__")));
 
     ClassObject *str_class = test_context.vm().str_class();
-    TValue<String> dunder_str_name =
+    TValue2<String> dunder_str_name =
         test_context.vm().get_or_create_interned_string_value(L"__str__");
-    TValue<String> dunder_add_name =
+    TValue2<String> dunder_add_name =
         test_context.vm().get_or_create_interned_string_value(L"__add__");
-    TValue<String> dunder_doc_name =
+    TValue2<String> dunder_doc_name =
         test_context.vm().get_or_create_interned_string_value(L"__doc__");
     Value str_method = str_class->get_own_property(dunder_str_name);
     Value add_method = str_class->get_own_property(dunder_add_name);
@@ -3514,9 +3517,9 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
     EXPECT_EQ(test_context.vm().float_class(),
               value.get_ptr<Object>()->get_shape()->get_class());
 
-    TValue<String> dunder_str_name =
+    TValue2<String> dunder_str_name =
         test_context.vm().get_or_create_interned_string_value(L"__str__");
-    TValue<String> dunder_repr_name =
+    TValue2<String> dunder_repr_name =
         test_context.vm().get_or_create_interned_string_value(L"__repr__");
 
     Value str_result =
@@ -3539,12 +3542,12 @@ TEST(Interpreter, float_string_methods_format_special_values)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    TValue<String> dunder_str_name =
+    TValue2<String> dunder_str_name =
         test_context.vm().get_or_create_interned_string_value(L"__str__");
-    TValue<String> dunder_repr_name =
+    TValue2<String> dunder_repr_name =
         test_context.vm().get_or_create_interned_string_value(L"__repr__");
 
-    auto expect_method_result = [&](double value, TValue<String> method_name,
+    auto expect_method_result = [&](double value, TValue2<String> method_name,
                                     const wchar_t *expected) {
         Value float_value =
             test_context.thread()->make_object_value<Float>(value).raw_value();
@@ -3719,7 +3722,7 @@ TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
     expect_tuple_iterator(iterator_value, tuple, 2, 0);
 
     Value first = test_context.thread()->call_clovervm_function(
-        TValue<Function>::from_value_checked(
+        TValue2<Function>::from_value_assumed(
             test_context.vm().builtin_scope_ptr()->get_by_name(
                 test_context.vm().get_or_create_interned_string_value(
                     L"next"))),
@@ -3728,7 +3731,7 @@ TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
     expect_tuple_iterator(iterator_value, tuple, 2, 1);
 
     Value second = test_context.thread()->call_clovervm_function(
-        TValue<Function>::from_value_checked(
+        TValue2<Function>::from_value_assumed(
             test_context.vm().builtin_scope_ptr()->get_by_name(
                 test_context.vm().get_or_create_interned_string_value(
                     L"next"))),
@@ -3737,7 +3740,7 @@ TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
     expect_tuple_iterator(iterator_value, tuple, 2, 2);
 
     Value exhausted = test_context.thread()->call_clovervm_function(
-        TValue<Function>::from_value_checked(
+        TValue2<Function>::from_value_assumed(
             test_context.vm().builtin_scope_ptr()->get_by_name(
                 test_context.vm().get_or_create_interned_string_value(
                     L"next"))),
@@ -3769,7 +3772,7 @@ TEST(Interpreter, list_iterator_next_returns_items_until_stop_iteration)
     List *list = iterator->list.extract();
     expect_list_iterator(iterator_value, list, 0);
 
-    TValue<Function> next_function = TValue<Function>::from_value_checked(
+    TValue2<Function> next_function = TValue2<Function>::from_value_assumed(
         test_context.vm().builtin_scope_ptr()->get_by_name(
             test_context.vm().get_or_create_interned_string_value(L"next")));
 
@@ -4155,7 +4158,7 @@ TEST(Interpreter, with_statement_exit_that_raises_during_return_runs_once)
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 
-    TValue<String> log_name =
+    TValue2<String> log_name =
         test_context.vm().get_or_create_interned_string_value(L"log");
     EXPECT_EQ(Value::from_smi(1),
               code_obj->module_scope.extract()->get_by_name(log_name));
@@ -4195,7 +4198,7 @@ TEST(Interpreter, with_statement_inner_exit_stays_suspended_during_outer_exit)
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(test_context.thread(), L"ValueError");
 
-    TValue<String> log_name =
+    TValue2<String> log_name =
         test_context.vm().get_or_create_interned_string_value(L"log");
     EXPECT_EQ(Value::from_smi(1342),
               code_obj->module_scope.extract()->get_by_name(log_name));
