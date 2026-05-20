@@ -17,9 +17,9 @@ TEST(Attr, LoadAttrReturnsInstanceOwnPropertyBeforeClassMember)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -37,15 +37,15 @@ TEST(Attr, DataDescriptorReadDescriptorTakesPrecedenceOverInstanceOwnProperty)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> descriptor_cls_name(
+    TValue2<String> descriptor_cls_name(
         context.vm().get_or_create_interned_string_value(L"Descriptor"));
-    TValue<String> owner_cls_name(
+    TValue2<String> owner_cls_name(
         context.vm().get_or_create_interned_string_value(L"Owner"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"field"));
-    TValue<String> get_name(
+    TValue2<String> get_name(
         context.vm().get_or_create_interned_string_value(L"__get__"));
-    TValue<String> set_name(
+    TValue2<String> set_name(
         context.vm().get_or_create_interned_string_value(L"__set__"));
 
     ClassObject *descriptor_cls =
@@ -77,13 +77,13 @@ TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> descriptor_cls_name(
+    TValue2<String> descriptor_cls_name(
         context.vm().get_or_create_interned_string_value(L"Descriptor"));
-    TValue<String> owner_cls_name(
+    TValue2<String> owner_cls_name(
         context.vm().get_or_create_interned_string_value(L"Owner"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"field"));
-    TValue<String> get_name(
+    TValue2<String> get_name(
         context.vm().get_or_create_interned_string_value(L"__get__"));
 
     ClassObject *descriptor_cls =
@@ -123,11 +123,11 @@ TEST(Attr, InstanceOwnReadDescriptorKeepsClassCacheBlockers)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> descriptor_cls_name(
+    TValue2<String> descriptor_cls_name(
         context.vm().get_or_create_interned_string_value(L"Descriptor"));
-    TValue<String> owner_cls_name(
+    TValue2<String> owner_cls_name(
         context.vm().get_or_create_interned_string_value(L"Owner"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"field"));
 
     ClassObject *descriptor_cls =
@@ -162,11 +162,11 @@ TEST(Attr, InstanceClassReadDescriptorDoesNotBlockOnWinningMutableValue)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> descriptor_cls_name(
+    TValue2<String> descriptor_cls_name(
         context.vm().get_or_create_interned_string_value(L"Descriptor"));
-    TValue<String> owner_cls_name(
+    TValue2<String> owner_cls_name(
         context.vm().get_or_create_interned_string_value(L"Owner"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"field"));
 
     ClassObject *descriptor_cls =
@@ -200,9 +200,9 @@ TEST(Attr, InstanceClassReadDescriptorSurvivesClassContentsWriteAndReloadsSlot)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -236,11 +236,11 @@ TEST(Attr,
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> meta_name(
+    TValue2<String> meta_name(
         context.vm().get_or_create_interned_string_value(L"Meta"));
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"field"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
         context.vm().type_class(), meta_name, 2, context.vm().object_class());
@@ -274,11 +274,11 @@ TEST(Attr, ClassReadDescriptorMetaclassFallbackReloadsSlot)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> meta_name(
+    TValue2<String> meta_name(
         context.vm().get_or_create_interned_string_value(L"Meta"));
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"field"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
         context.vm().type_class(), meta_name, 2, context.vm().object_class());
@@ -301,9 +301,9 @@ TEST(Attr, ClassReadDescriptorSurvivesClassContentsWriteAndReloadsSlot)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -335,11 +335,11 @@ TEST(Attr, ClassReadDescriptorSurvivesBaseContentsWriteAndReloadsSlot)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -373,13 +373,13 @@ TEST(Attr, ClassReadDescriptorInvalidatesOnBaseShapeChange)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
-    TValue<String> other_name(
+    TValue2<String> other_name(
         context.vm().get_or_create_interned_string_value(L"other"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -407,13 +407,13 @@ TEST(Attr, ClassReadDescriptorInvalidatesOnMetaclassContentsWrite)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> meta_name(
+    TValue2<String> meta_name(
         context.vm().get_or_create_interned_string_value(L"Meta"));
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
-    TValue<String> meta_attr_name(
+    TValue2<String> meta_attr_name(
         context.vm().get_or_create_interned_string_value(L"meta_attr"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
         context.vm().type_class(), meta_name, 2, context.vm().object_class());
@@ -442,11 +442,11 @@ TEST(Attr, LoadAttrFallsBackToClassAndBaseMembers)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> inherited_name(
+    TValue2<String> inherited_name(
         context.vm().get_or_create_interned_string_value(L"inherited"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -467,11 +467,11 @@ TEST(Attr, LoadAttrOnClassFallsBackToMetaclass)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> meta_name(
+    TValue2<String> meta_name(
         context.vm().get_or_create_interned_string_value(L"Meta"));
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"meta_attr"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
         meta_name, 2, context.vm().object_class());
@@ -487,11 +487,11 @@ TEST(Attr, LoadAttrOnClassPrefersClassPathOverMetaclass)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> meta_name(
+    TValue2<String> meta_name(
         context.vm().get_or_create_interned_string_value(L"Meta"));
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
         meta_name, 2, context.vm().object_class());
@@ -508,11 +508,11 @@ TEST(Attr, LoadAttrClassFallbackContinuesPastLatentDescriptor)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -542,9 +542,9 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> dunder_class_name(
+    TValue2<String> dunder_class_name(
         context.vm().get_or_create_interned_string_value(L"__class__"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -558,10 +558,10 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
     EXPECT_EQ(Value::from_oop(context.vm().type_class()),
               load_attr(Value::from_oop(cls), dunder_class_name));
 
-    TValue<String> string_value(
+    TValue2<String> string_value(
         context.vm().get_or_create_interned_string_value(L"hello"));
     EXPECT_EQ(Value::from_oop(context.vm().str_class()),
-              load_attr(string_value, dunder_class_name));
+              load_attr(string_value.raw_value(), dunder_class_name));
 }
 
 TEST(Attr, BuiltinInstancesExposeDunderClassThroughAttributeLookup)
@@ -569,10 +569,10 @@ TEST(Attr, BuiltinInstancesExposeDunderClassThroughAttributeLookup)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> dunder_class_name(
+    TValue2<String> dunder_class_name(
         context.vm().get_or_create_interned_string_value(L"__class__"));
 
-    TValue<String> string_value(
+    TValue2<String> string_value(
         context.vm().get_or_create_interned_string_value(L"hello"));
     List *list = context.thread()->make_object_raw<List>();
     Dict *dict = context.thread()->make_object_raw<Dict>();
@@ -593,7 +593,7 @@ TEST(Attr, BuiltinInstancesExposeDunderClassThroughAttributeLookup)
     };
 
     BuiltinInstance instances[] = {
-        {string_value, context.vm().str_class()},
+        {string_value.raw_value(), context.vm().str_class()},
         {Value::from_oop(list), context.vm().list_class()},
         {Value::from_oop(dict), context.vm().dict_class()},
         {Value::from_oop(code), context.vm().code_class()},
@@ -616,7 +616,7 @@ TEST(Attr, InlineValuesExposeDunderClassThroughAttributeLookup)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> dunder_class_name =
+    TValue2<String> dunder_class_name =
         context.thread()->make_object_value<String>(L"__class__");
 
     struct InlineInstance
@@ -653,12 +653,12 @@ TEST(Attr, BuiltinInstancesRejectUnsupportedAttributeWrites)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"custom"));
-    TValue<String> dunder_class_name(
+    TValue2<String> dunder_class_name(
         context.vm().get_or_create_interned_string_value(L"__class__"));
 
-    TValue<String> string_value(
+    TValue2<String> string_value(
         context.vm().get_or_create_interned_string_value(L"hello"));
     List *list = context.thread()->make_object_raw<List>();
     Dict *dict = context.thread()->make_object_raw<Dict>();
@@ -673,12 +673,9 @@ TEST(Attr, BuiltinInstancesRejectUnsupportedAttributeWrites)
             TValue2<SMI>::from_smi(1));
 
     Value instances[] = {
-        string_value,
-        Value::from_oop(list),
-        Value::from_oop(dict),
-        Value::from_oop(code),
-        Value::from_oop(function),
-        Value::from_oop(range_iterator),
+        string_value.raw_value(),  Value::from_oop(list),
+        Value::from_oop(dict),     Value::from_oop(code),
+        Value::from_oop(function), Value::from_oop(range_iterator),
     };
 
     for(Value instance: instances)
@@ -699,7 +696,7 @@ TEST(Attr, BuiltinTypeObjectsRejectUnsupportedAttributeWrites)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"custom"));
     Value builtin_types[] = {
         Value::from_oop(context.vm().type_class()),
@@ -724,7 +721,7 @@ TEST(Attr, InlineValueReadDescriptorsAreNotCacheable)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> missing_name(
+    TValue2<String> missing_name(
         context.vm().get_or_create_interned_string_value(L"missing"));
 
     AttributeReadDescriptor missing_descriptor =
@@ -738,9 +735,9 @@ TEST(Attr, StoreAttrWritesInstanceOwnProperty)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -757,9 +754,9 @@ TEST(Attr, ReceiverSlotPlansExecuteAgainstCurrentReceiver)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -797,9 +794,9 @@ TEST(Attr, StoreAttrWritesClassMember)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -814,13 +811,13 @@ TEST(Attr, ClassWriteDescriptorUsesMetaclassMroShapeAndContentsValidityCell)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> meta_name(
+    TValue2<String> meta_name(
         context.vm().get_or_create_interned_string_value(L"Meta"));
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
-    TValue<String> descriptor_name(
+    TValue2<String> descriptor_name(
         context.vm().get_or_create_interned_string_value(L"descriptor"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
         context.vm().type_class(), meta_name, 2, context.vm().object_class());
@@ -849,11 +846,11 @@ TEST(Attr, AttributeWriteDescriptorCarriesSupersededClassCacheBlockers)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> descriptor_cls_name(
+    TValue2<String> descriptor_cls_name(
         context.vm().get_or_create_interned_string_value(L"Descriptor"));
-    TValue<String> owner_cls_name(
+    TValue2<String> owner_cls_name(
         context.vm().get_or_create_interned_string_value(L"Owner"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"field"));
 
     ClassObject *descriptor_cls =
@@ -887,13 +884,13 @@ TEST(Attr, AttributeWriteDescriptorRejectsClassDataDescriptor)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> descriptor_cls_name(
+    TValue2<String> descriptor_cls_name(
         context.vm().get_or_create_interned_string_value(L"Descriptor"));
-    TValue<String> owner_cls_name(
+    TValue2<String> owner_cls_name(
         context.vm().get_or_create_interned_string_value(L"Owner"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"field"));
-    TValue<String> set_name(
+    TValue2<String> set_name(
         context.vm().get_or_create_interned_string_value(L"__set__"));
 
     ClassObject *descriptor_cls =
@@ -925,9 +922,9 @@ TEST(Attr, AttributeWritesInvalidateLookupCellsForClassTargets)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -973,11 +970,11 @@ TEST(Attr, AttributeWriteDescriptorMissDoesNotCreateLookupValidityCell)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -1002,11 +999,11 @@ TEST(Attr, AttributeDeleteDescriptorMissDoesNotCreateLookupValidityCell)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -1031,13 +1028,13 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
-    TValue<String> descriptor_name(
+    TValue2<String> descriptor_name(
         context.vm().get_or_create_interned_string_value(L"descriptor"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -1073,13 +1070,13 @@ TEST(Attr, AttributeDeleteDescriptorCarriesLookupValidityForOwnDelete)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
-    TValue<String> descriptor_name(
+    TValue2<String> descriptor_name(
         context.vm().get_or_create_interned_string_value(L"descriptor"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -1123,13 +1120,13 @@ TEST(Attr, InstanceOwnReadDescriptorCarriesLookupValidityCell)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> base_name(
+    TValue2<String> base_name(
         context.vm().get_or_create_interned_string_value(L"Base"));
-    TValue<String> child_name(
+    TValue2<String> child_name(
         context.vm().get_or_create_interned_string_value(L"Child"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
-    TValue<String> descriptor_name(
+    TValue2<String> descriptor_name(
         context.vm().get_or_create_interned_string_value(L"descriptor"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
         base_name, 2, context.vm().object_class());
@@ -1161,9 +1158,9 @@ TEST(Attr, ShapePolicyCanDisallowInstanceAttributeAddDelete)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ShapeFlags instance_shape_flags =
         shape_flag(ShapeFlag::DisallowAttributeAddDelete);
@@ -1180,18 +1177,18 @@ TEST(Attr, ClassMetadataAttributesAreReadonly)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> replacement_name(
+    TValue2<String> replacement_name(
         context.vm().get_or_create_interned_string_value(L"Replacement"));
-    TValue<String> dunder_name_name(
+    TValue2<String> dunder_name_name(
         context.vm().get_or_create_interned_string_value(L"__name__"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
 
     EXPECT_EQ(cls_name, load_attr(Value::from_oop(cls), dunder_name_name));
-    EXPECT_FALSE(
-        store_attr(Value::from_oop(cls), dunder_name_name, replacement_name));
+    EXPECT_FALSE(store_attr(Value::from_oop(cls), dunder_name_name,
+                            replacement_name.raw_value()));
     EXPECT_EQ(cls_name, load_attr(Value::from_oop(cls), dunder_name_name));
 }
 
@@ -1200,11 +1197,11 @@ TEST(Attr, StoreAttrRejectsDunderClassAndUnsupportedInlineValues)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
-    TValue<String> dunder_class_name(
+    TValue2<String> dunder_class_name(
         context.vm().get_or_create_interned_string_value(L"__class__"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -1227,13 +1224,13 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> method_name(
+    TValue2<String> method_name(
         context.vm().get_or_create_interned_string_value(L"method"));
-    TValue<String> value_name(
+    TValue2<String> value_name(
         context.vm().get_or_create_interned_string_value(L"value"));
-    TValue<String> own_name(
+    TValue2<String> own_name(
         context.vm().get_or_create_interned_string_value(L"own"));
 
     CodeObject *method_code = context.thread()->compile(L"def method(self):\n"
@@ -1275,13 +1272,13 @@ TEST(Attr, ClassFunctionMethodPlanSurvivesClassContentsWriteAndReloadsSlot)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
-    TValue<String> first_method_name(
+    TValue2<String> first_method_name(
         context.vm().get_or_create_interned_string_value(L"first"));
-    TValue<String> second_method_name(
+    TValue2<String> second_method_name(
         context.vm().get_or_create_interned_string_value(L"second"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"method"));
 
     CodeObject *method_code = context.thread()->compile(L"def first(self):\n"
