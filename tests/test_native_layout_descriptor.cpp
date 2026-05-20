@@ -427,7 +427,8 @@ TEST(NativeLayoutDescriptor, ShapeNativeObjectSizeUsesPropertyCount)
     ThreadState::ActivationScope activation_scope(context.thread());
     ClassObject *cls = context.vm().object_class();
     Shape *shape = context.thread()->make_internal_raw<Shape>(
-        Value::from_oop(cls), nullptr, 0, 3, 0, shape_flag(ShapeFlag::None), 0);
+        TValue2<ClassObject>::from_oop(cls), nullptr, 0, 3, 0,
+        shape_flag(ShapeFlag::None), 0);
 
     EXPECT_EQ(Shape::size_for(3), object_size_in_bytes(shape));
 }

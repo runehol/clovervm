@@ -138,7 +138,8 @@ namespace cl
             set_shape(new_cls->get_instance_root_shape());
             return;
         }
-        set_shape(shape->clone_with_class(Value::from_oop(new_cls)));
+        set_shape(
+            shape->clone_with_class(TValue2<ClassObject>::from_oop(new_cls)));
     }
 
     void Object::set_shape(Shape *new_shape)

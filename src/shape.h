@@ -97,25 +97,26 @@ namespace cl
             OwnedHeapPtr2<Shape> next_shape;
         };
 
-        Shape(Value class_value, Shape *previous_shape, int32_t next_slot_index,
-              uint32_t property_count, uint32_t inline_slot_capacity,
-              ShapeFlags shape_flags, uint32_t present_count);
+        Shape(TValue2<ClassObject> class_value, Shape *previous_shape,
+              int32_t next_slot_index, uint32_t property_count,
+              uint32_t inline_slot_capacity, ShapeFlags shape_flags,
+              uint32_t present_count);
 
         static Shape *make_root_with_single_descriptor(
-            Value class_value, TValue<String> name, DescriptorInfo info,
-            int32_t next_slot_index, uint32_t inline_slot_capacity,
-            ShapeFlags shape_flags);
-        static Shape *make_immortal_root_with_single_descriptor(
-            VirtualMachine *vm, Value class_value, TValue<String> name,
+            TValue2<ClassObject> class_value, TValue<String> name,
             DescriptorInfo info, int32_t next_slot_index,
             uint32_t inline_slot_capacity, ShapeFlags shape_flags);
+        static Shape *make_immortal_root_with_single_descriptor(
+            VirtualMachine *vm, TValue2<ClassObject> class_value,
+            TValue<String> name, DescriptorInfo info, int32_t next_slot_index,
+            uint32_t inline_slot_capacity, ShapeFlags shape_flags);
         static Shape *make_root_with_descriptors(
-            Value class_value, const ShapeRootDescriptor *descriptors,
-            uint32_t descriptor_count, int32_t next_slot_index,
-            uint32_t present_count, uint32_t inline_slot_capacity,
-            ShapeFlags shape_flags);
+            TValue2<ClassObject> class_value,
+            const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
+            int32_t next_slot_index, uint32_t present_count,
+            uint32_t inline_slot_capacity, ShapeFlags shape_flags);
         static Shape *make_immortal_root_with_descriptors(
-            VirtualMachine *vm, Value class_value,
+            VirtualMachine *vm, TValue2<ClassObject> class_value,
             const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
             int32_t next_slot_index, uint32_t present_count,
             uint32_t inline_slot_capacity, ShapeFlags shape_flags);
@@ -125,8 +126,9 @@ namespace cl
             return sizeof(Shape) + sizeof(Value) * property_count -
                    sizeof(Value) + sizeof(DescriptorInfo) * property_count;
         }
-        static size_t size_for(Value class_value, Shape *previous_shape,
-                               int32_t next_slot_index, uint32_t property_count,
+        static size_t size_for(TValue2<ClassObject> class_value,
+                               Shape *previous_shape, int32_t next_slot_index,
+                               uint32_t property_count,
                                uint32_t inline_slot_capacity,
                                ShapeFlags shape_flags, uint32_t present_count)
         {
@@ -145,6 +147,8 @@ namespace cl
 
         ClassObject *get_class() const
         {
+            // Hot path: avoid TValue2<ClassObject>::extract() here so this
+            // header does not need ClassObject to be complete.
             return reinterpret_cast<ClassObject *>(
                 class_value.raw_value().as.ptr);
         }
@@ -209,7 +213,7 @@ namespace cl
                                  DescriptorFlags descriptor_flags =
                                      descriptor_flag(DescriptorFlag::None));
         Shape *clone_with_flags(ShapeFlags new_shape_flags) const;
-        Shape *clone_with_class(Value new_class) const;
+        Shape *clone_with_class(TValue2<ClassObject> new_class) const;
 
     private:
         void initialize_root_descriptors(const ShapeRootDescriptor *descriptors,
@@ -235,7 +239,7 @@ namespace cl
         uint32_t inline_slot_capacity;
         ShapeFlags shape_flags;
         std::vector<Transition> transitions;
-        Member2<Value> class_value;
+        Member2<TValue2<ClassObject>> class_value;
         Value descriptor_names[1];
 
     public:

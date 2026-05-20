@@ -309,7 +309,8 @@ namespace cl
             descriptor_flag(DescriptorFlag::StableSlot) |
             descriptor_flag(DescriptorFlag::ShapeClassValue);
         smi_shape_ = Shape::make_immortal_root_with_single_descriptor(
-            this, Value::from_oop(int_class_), dunder_class_name(),
+            this, TValue2<ClassObject>::from_oop(int_class_),
+            dunder_class_name(),
             DescriptorInfo::make(StorageLocation::not_found(),
                                  inline_class_flags),
             0, 0, fixed_attribute_shape_flags());
@@ -318,7 +319,8 @@ namespace cl
         bool_class_ = bool_definition.cls;
         register_builtin_class(bool_definition);
         bool_shape_ = Shape::make_immortal_root_with_single_descriptor(
-            this, Value::from_oop(bool_class_), dunder_class_name(),
+            this, TValue2<ClassObject>::from_oop(bool_class_),
+            dunder_class_name(),
             DescriptorInfo::make(StorageLocation::not_found(),
                                  inline_class_flags),
             0, 0, fixed_attribute_shape_flags());
@@ -327,7 +329,8 @@ namespace cl
         none_type_class_ = none_type_definition.cls;
         register_builtin_class(none_type_definition);
         none_shape_ = Shape::make_immortal_root_with_single_descriptor(
-            this, Value::from_oop(none_type_class_), dunder_class_name(),
+            this, TValue2<ClassObject>::from_oop(none_type_class_),
+            dunder_class_name(),
             DescriptorInfo::make(StorageLocation::not_found(),
                                  inline_class_flags),
             0, 0, fixed_attribute_shape_flags());

@@ -45,7 +45,7 @@ namespace cl
         shape->~Shape();
     }
 
-    Shape::Shape(Value _class_value, Shape *_previous_shape,
+    Shape::Shape(TValue2<ClassObject> _class_value, Shape *_previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count,
                  uint32_t _inline_slot_capacity, ShapeFlags _shape_flags,
                  uint32_t _present_count)
@@ -65,9 +65,9 @@ namespace cl
     }
 
     Shape *Shape::make_root_with_single_descriptor(
-        Value class_value, TValue<String> name, DescriptorInfo info,
-        int32_t next_slot_index, uint32_t inline_slot_capacity,
-        ShapeFlags shape_flags)
+        TValue2<ClassObject> class_value, TValue<String> name,
+        DescriptorInfo info, int32_t next_slot_index,
+        uint32_t inline_slot_capacity, ShapeFlags shape_flags)
     {
         ShapeRootDescriptor descriptor{name, info};
         return make_root_with_descriptors(class_value, &descriptor, 1,
@@ -76,8 +76,8 @@ namespace cl
     }
 
     Shape *Shape::make_immortal_root_with_single_descriptor(
-        VirtualMachine *vm, Value class_value, TValue<String> name,
-        DescriptorInfo info, int32_t next_slot_index,
+        VirtualMachine *vm, TValue2<ClassObject> class_value,
+        TValue<String> name, DescriptorInfo info, int32_t next_slot_index,
         uint32_t inline_slot_capacity, ShapeFlags shape_flags)
     {
         ShapeRootDescriptor descriptor{name, info};
@@ -87,10 +87,10 @@ namespace cl
     }
 
     Shape *Shape::make_root_with_descriptors(
-        Value class_value, const ShapeRootDescriptor *descriptors,
-        uint32_t descriptor_count, int32_t next_slot_index,
-        uint32_t present_count, uint32_t inline_slot_capacity,
-        ShapeFlags shape_flags)
+        TValue2<ClassObject> class_value,
+        const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
+        int32_t next_slot_index, uint32_t present_count,
+        uint32_t inline_slot_capacity, ShapeFlags shape_flags)
     {
         Shape *shape = make_internal_raw<Shape>(
             class_value, nullptr, next_slot_index, descriptor_count,
@@ -100,7 +100,7 @@ namespace cl
     }
 
     Shape *Shape::make_immortal_root_with_descriptors(
-        VirtualMachine *vm, Value class_value,
+        VirtualMachine *vm, TValue2<ClassObject> class_value,
         const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
         int32_t next_slot_index, uint32_t present_count,
         uint32_t inline_slot_capacity, ShapeFlags shape_flags)
@@ -360,7 +360,7 @@ namespace cl
         return cloned_shape;
     }
 
-    Shape *Shape::clone_with_class(Value new_class) const
+    Shape *Shape::clone_with_class(TValue2<ClassObject> new_class) const
     {
         Shape *cloned_shape = make_internal_raw<Shape>(
             new_class, previous_shape, next_slot_index, property_count_,

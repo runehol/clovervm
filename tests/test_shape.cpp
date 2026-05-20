@@ -97,7 +97,7 @@ TEST(Shape, ShapeFlagsAreStoredOnShape)
     flags |= shape_flag(ShapeFlag::IsImmutableType);
 
     Shape *shape = context.thread()->make_internal_raw<Shape>(
-        Value::from_oop(cls), nullptr, 0, 0,
+        TValue2<ClassObject>::from_oop(cls), nullptr, 0, 0,
         ClassObject::class_inline_storage_slot_count, flags, 0);
 
     EXPECT_EQ(flags, shape->flags());

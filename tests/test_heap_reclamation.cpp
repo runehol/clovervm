@@ -274,8 +274,8 @@ namespace cl
         TValue<String> a_name(
             context.vm().get_or_create_interned_string_value(L"a"));
         Shape *root_shape = thread->make_internal_raw<Shape>(
-            Value::from_oop(context.vm().object_class()), nullptr, 0, 0, 0,
-            shape_flag(ShapeFlag::None), 0);
+            TValue2<ClassObject>::from_oop(context.vm().object_class()),
+            nullptr, 0, 0, 0, shape_flag(ShapeFlag::None), 0);
         Shape *child_shape =
             root_shape->derive_transition(a_name, ShapeTransitionVerb::Add);
         ASSERT_EQ(1, child_shape->refcount);
