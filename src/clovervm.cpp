@@ -67,12 +67,6 @@ std::wstring widen_string(const char *str)
     return decode_string(str, "failed to decode string");
 }
 
-std::wstring cl_string_to_wstring(TValue<String> string)
-{
-    String *str = string.extract();
-    return std::wstring(str->data, size_t(str->count.extract()));
-}
-
 std::wstring cl_string_to_wstring(TValue2<String> string)
 {
     String *str = string.extract();
