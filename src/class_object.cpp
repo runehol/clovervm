@@ -592,7 +592,7 @@ namespace cl
             resolve_attr_read_descriptor(Value::from_oop(self), init_name);
         if(!init_descriptor.is_found())
         {
-            TValue<Function> thunk = make_constructor_thunk_function(
+            TValue2<Function> thunk = make_constructor_thunk_function(
                 self, Optional<TValue2<Function>>::none());
             constructor_thunk = thunk.extract();
             return ConstructorThunkLookup{thunk.extract(), lookup_cell};
@@ -614,7 +614,7 @@ namespace cl
             return ConstructorThunkLookup{nullptr, nullptr};
         }
 
-        TValue<Function> thunk = make_constructor_thunk_function(
+        TValue2<Function> thunk = make_constructor_thunk_function(
             self, Optional<TValue2<Function>>::some(
                       TValue2<Function>::from_value_assumed(init_value)));
         constructor_thunk = thunk.extract();

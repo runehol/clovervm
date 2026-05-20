@@ -324,13 +324,14 @@ static Value native_every_safepoint_reclamation_ping()
     return Value::from_smi(1);
 }
 
+template <typename T>
 static void bind_global(test::VmTestContext &test_context,
-                        CodeObject *code_object, const wchar_t *name,
-                        Value value)
+                        CodeObject *code_object, const wchar_t *name, T value)
 {
     TValue<String> name_value(
         test_context.vm().get_or_create_interned_string_value(name));
-    code_object->module_scope.extract()->set_by_name(name_value, value);
+    code_object->module_scope.extract()->set_by_name(name_value,
+                                                     value.raw_value());
 }
 
 static Value make_test_function(test::VmTestContext &test_context,
@@ -1021,7 +1022,8 @@ TEST(Interpreter, list_literal_evaluates_elements_left_to_right)
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
-        make_native_function(&test_context.vm(), native_next_counter);
+        make_native_function(&test_context.vm(), native_next_counter)
+            .raw_value();
     code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
@@ -1089,7 +1091,8 @@ TEST(Interpreter, tuple_literal_evaluates_elements_left_to_right)
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
-        make_native_function(&test_context.vm(), native_next_counter);
+        make_native_function(&test_context.vm(), native_next_counter)
+            .raw_value();
     code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
@@ -1172,7 +1175,8 @@ TEST(Interpreter,
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
-        make_native_function(&test_context.vm(), native_next_counter);
+        make_native_function(&test_context.vm(), native_next_counter)
+            .raw_value();
     code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
@@ -1237,7 +1241,8 @@ TEST(Interpreter,
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
-        make_native_function(&test_context.vm(), native_next_counter);
+        make_native_function(&test_context.vm(), native_next_counter)
+            .raw_value();
     code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);

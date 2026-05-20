@@ -27,7 +27,7 @@ namespace cl
                                 Optional<TValue2<Function>> init)
     {
         Scope *local_scope = make_internal_raw<Scope>(nullptr);
-        TValue<String> thunk_name(interned_string(L"<constructor_thunk>"));
+        TValue2<String> thunk_name(interned_string(L"<constructor_thunk>"));
         std::optional<CodeObjectBuilder> code_storage;
         CodeObject *init_code = nullptr;
         uint32_t init_n_parameters = 0;
@@ -47,7 +47,7 @@ namespace cl
 
             code_storage.emplace(init_code->compilation_unit,
                                  init_code->module_scope.extract(), local_scope,
-                                 thunk_name);
+                                 thunk_name.raw_value());
             CodeObjectBuilder &code = *code_storage;
             code.n_parameters() = init_n_parameters - 1;
             code.n_positional_parameters() =
@@ -57,7 +57,7 @@ namespace cl
         else
         {
             code_storage.emplace(nullptr, active_vm()->builtin_scope_ptr(),
-                                 local_scope, thunk_name);
+                                 local_scope, thunk_name.raw_value());
             CodeObjectBuilder &code = *code_storage;
             code.n_parameters() = 0;
             code.n_positional_parameters() = 0;
@@ -99,8 +99,8 @@ namespace cl
         return code.finalize();
     }
 
-    static TValue<Tuple>
-    make_constructor_thunk_defaults(TValue<Tuple> init_defaults,
+    static TValue2<Tuple>
+    make_constructor_thunk_defaults(TValue2<Tuple> init_defaults,
                                     uint32_t init_n_positional_parameters)
     {
         uint32_t init_n_defaults = init_defaults.extract()->size();
@@ -113,7 +113,7 @@ namespace cl
 
         assert(init_n_defaults > 0);
         uint32_t thunk_n_defaults = init_n_defaults - 1;
-        TValue<Tuple> thunk_defaults =
+        TValue2<Tuple> thunk_defaults =
             make_object_value<Tuple>(static_cast<size_t>(thunk_n_defaults));
         for(uint32_t idx = 0; idx < thunk_n_defaults; ++idx)
         {
@@ -123,7 +123,7 @@ namespace cl
         return thunk_defaults;
     }
 
-    TValue<Function>
+    TValue2<Function>
     make_constructor_thunk_function(ClassObject *cls,
                                     Optional<TValue2<Function>> init)
     {
@@ -145,7 +145,7 @@ namespace cl
                 Optional<TValue2<String>>::none());
         }
 
-        TValue<Tuple> thunk_defaults = make_constructor_thunk_defaults(
+        TValue2<Tuple> thunk_defaults = make_constructor_thunk_defaults(
             defaults.value(), init_function.extract()
                                   ->code_object.extract()
                                   ->n_positional_parameters);
@@ -163,7 +163,6 @@ namespace cl
         return make_object_value<Function>(
             TValue2<CodeObject>::from_oop(code),
             Optional<TValue2<String>>::none(),
-            Optional<TValue2<Tuple>>::some(
-                TValue2<Tuple>::from_value_unchecked(thunk_defaults)));
+            Optional<TValue2<Tuple>>::some(thunk_defaults));
     }
 }  // namespace cl

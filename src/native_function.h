@@ -31,24 +31,24 @@ namespace cl
                                               NativeFunction3 function,
                                               const wchar_t *doc = nullptr);
 
-    TValue<Function>
+    TValue2<Function>
     make_native_function(VirtualMachine *vm, NativeFunction0 function,
                          Optional<TValue2<Tuple>> default_parameters =
                              Optional<TValue2<Tuple>>::none());
-    TValue<Function>
+    TValue2<Function>
     make_native_function(VirtualMachine *vm, NativeFunction1 function,
                          Optional<TValue2<Tuple>> default_parameters =
                              Optional<TValue2<Tuple>>::none());
-    TValue<Function>
+    TValue2<Function>
     make_native_function(VirtualMachine *vm, NativeFunction2 function,
                          Optional<TValue2<Tuple>> default_parameters =
                              Optional<TValue2<Tuple>>::none());
-    TValue<Function>
+    TValue2<Function>
     make_native_function(VirtualMachine *vm, NativeFunction3 function,
                          Optional<TValue2<Tuple>> default_parameters =
                              Optional<TValue2<Tuple>>::none());
-    TValue<Function> make_native_function(VirtualMachine *vm,
-                                          const BuiltinNativeMethod &method);
+    TValue2<Function> make_native_function(VirtualMachine *vm,
+                                           const BuiltinNativeMethod &method);
 
     void install_builtin_native_methods(VirtualMachine *vm, ClassObject *cls,
                                         const BuiltinNativeMethod *methods,

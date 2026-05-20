@@ -8,7 +8,7 @@ namespace cl
 {
     class ClassObject;
 
-    TValue<Function>
+    TValue2<Function>
     make_constructor_thunk_function(ClassObject *cls,
                                     Optional<TValue2<Function>> init);
 }  // namespace cl

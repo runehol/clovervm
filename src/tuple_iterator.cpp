@@ -43,9 +43,9 @@ namespace cl
             NativeLayoutId::TupleIterator};
         BuiltinClassMethod methods[] = {
             {vm->get_or_create_interned_string_value(L"__iter__"),
-             make_native_function(vm, native_tuple_iterator_iter)},
+             make_native_function(vm, native_tuple_iterator_iter).raw_value()},
             {vm->get_or_create_interned_string_value(L"__next__"),
-             make_native_function(vm, native_tuple_iterator_next)},
+             make_native_function(vm, native_tuple_iterator_next).raw_value()},
         };
         ClassObject *cls = ClassObject::make_builtin_class(
             vm->get_or_create_interned_string_value(L"tuple_iterator"),
