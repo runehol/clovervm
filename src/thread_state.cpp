@@ -119,7 +119,8 @@ namespace cl
         Owned2<TValue2<Function>> function(
             TValue2<Function>::from_value_unchecked(
                 this->make_object_value<Function>(
-                        TValue2<CodeObject>::from_oop(obj))
+                        TValue2<CodeObject>::from_oop(obj),
+                        Optional<TValue2<String>>::none())
                     .as_value()));
         return call_clovervm_function_with_args(
             TValue<Function>::from_value_unchecked(function.raw_value()),

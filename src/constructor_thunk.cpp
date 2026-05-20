@@ -129,7 +129,8 @@ namespace cl
         if(init.is_not_present())
         {
             return make_object_value<Function>(
-                TValue2<CodeObject>::from_oop(code));
+                TValue2<CodeObject>::from_oop(code),
+                Optional<TValue2<String>>::none());
         }
 
         TValue<Function> init_function =
@@ -139,7 +140,8 @@ namespace cl
         if(!defaults.has_value())
         {
             return make_object_value<Function>(
-                TValue2<CodeObject>::from_oop(code));
+                TValue2<CodeObject>::from_oop(code),
+                Optional<TValue2<String>>::none());
         }
 
         TValue<Tuple> default_tuple =
@@ -151,7 +153,8 @@ namespace cl
         if(thunk_defaults.extract()->empty())
         {
             return make_object_value<Function>(
-                TValue2<CodeObject>::from_oop(code));
+                TValue2<CodeObject>::from_oop(code),
+                Optional<TValue2<String>>::none());
         }
         if(thunk_defaults.extract()->size() > code->n_positional_parameters)
         {
@@ -160,6 +163,8 @@ namespace cl
         }
         return make_object_value<Function>(
             TValue2<CodeObject>::from_oop(code),
-            TValue2<Tuple>::from_value_unchecked(thunk_defaults.as_value()));
+            Optional<TValue2<String>>::none(),
+            Optional<TValue2<Tuple>>::some(TValue2<Tuple>::from_value_unchecked(
+                thunk_defaults.as_value())));
     }
 }  // namespace cl

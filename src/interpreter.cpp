@@ -2338,7 +2338,7 @@ namespace cl
             code_object->constant_table[const_offset].value());
 
         accumulator = thread->make_object_value<Function>(
-            code_obj, code_obj.extract()->docstring);
+            code_obj, code_obj.extract()->docstring.value());
 
         COMPLETE();
     }
@@ -2354,7 +2354,8 @@ namespace cl
             TValue2<Tuple>::from_value_assumed(fp[defaults_reg]);
 
         accumulator = thread->make_object_value<Function>(
-            code_obj, defaults, code_obj.extract()->docstring);
+            code_obj, code_obj.extract()->docstring.value(),
+            Optional<TValue2<Tuple>>::some(defaults));
 
         COMPLETE();
     }

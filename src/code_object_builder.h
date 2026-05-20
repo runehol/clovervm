@@ -184,7 +184,7 @@ namespace cl
             code_obj->name = name;
         }
 
-        void set_docstring(Value docstring)
+        void set_docstring(Optional<TValue2<String>> docstring)
         {
             assert_not_finalized();
             code_obj->docstring = docstring;

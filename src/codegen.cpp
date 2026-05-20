@@ -2211,25 +2211,26 @@ namespace cl
         return false;
     }
 
-    Value docstring_for_body(const AstVector &av, int32_t body_idx)
+    Optional<TValue2<String>> docstring_for_body(const AstVector &av,
+                                                 int32_t body_idx)
     {
         AstChildren body_children = av.children[body_idx];
         if(body_children.empty())
         {
-            return Value::None();
+            return Optional<TValue2<String>>::none();
         }
 
         int32_t first_statement_idx = body_children[0];
         if(av.kinds[first_statement_idx].node_kind !=
            AstNodeKind::STATEMENT_EXPRESSION)
         {
-            return Value::None();
+            return Optional<TValue2<String>>::none();
         }
 
         AstChildren statement_children = av.children[first_statement_idx];
         if(statement_children.size() != 1)
         {
-            return Value::None();
+            return Optional<TValue2<String>>::none();
         }
 
         int32_t expression_idx = statement_children[0];
@@ -2237,10 +2238,11 @@ namespace cl
         if(expression_kind.node_kind != AstNodeKind::EXPRESSION_LITERAL ||
            expression_kind.operator_kind != AstOperatorKind::STRING)
         {
-            return Value::None();
+            return Optional<TValue2<String>>::none();
         }
 
-        return av.constants[expression_idx];
+        return Optional<TValue2<String>>::some(
+            TValue2<String>::from_value_assumed(av.constants[expression_idx]));
     }
 
     CodeObject *codegen_function(const AstVector &av, Scope *module_scope,

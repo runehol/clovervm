@@ -3290,10 +3290,11 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
         EXPECT_EQ(NativeLayoutId::Function,
                   value.get_ptr<Object>()->native_layout_id());
         TValue<Function> function = TValue<Function>::from_value_checked(value);
-        EXPECT_STREQ(expected.docstring, cl_test_string_to_wstring(
-                                             TValue<String>::from_value_checked(
-                                                 function.extract()->docstring))
-                                             .c_str());
+        Optional<TValue2<String>> docstring =
+            function.extract()->docstring.value();
+        ASSERT_TRUE(docstring.has_value());
+        EXPECT_STREQ(expected.docstring,
+                     cl_test_string_to_wstring(docstring.value()).c_str());
     }
 }
 
@@ -3477,18 +3478,25 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
     ASSERT_TRUE(can_convert_to<Function>(add_method));
     EXPECT_EQ(-1, str_method.get_ptr<Object>()->refcount);
     EXPECT_EQ(-1, add_method.get_ptr<Object>()->refcount);
-    EXPECT_EQ(test_context.vm()
-                  .get_or_create_interned_string_value(L"Return str(self).")
-                  .as_value(),
-              assume_convert_to<Function>(str_method)->docstring);
-    EXPECT_EQ(test_context.vm()
-                  .get_or_create_interned_string_value(L"Return self + value.")
-                  .as_value(),
-              assume_convert_to<Function>(add_method)->docstring);
-    EXPECT_EQ(assume_convert_to<Function>(str_method)->docstring,
-              load_attr(str_method, dunder_doc_name));
-    EXPECT_EQ(assume_convert_to<Function>(add_method)->docstring,
-              load_attr(add_method, dunder_doc_name));
+    Optional<TValue2<String>> str_docstring =
+        assume_convert_to<Function>(str_method)->docstring.value();
+    Optional<TValue2<String>> add_docstring =
+        assume_convert_to<Function>(add_method)->docstring.value();
+    ASSERT_TRUE(str_docstring.has_value());
+    ASSERT_TRUE(add_docstring.has_value());
+    EXPECT_EQ(TValue2<String>::from_value_unchecked(
+                  test_context.vm()
+                      .get_or_create_interned_string_value(L"Return str(self).")
+                      .as_value()),
+              str_docstring.value());
+    EXPECT_EQ(
+        TValue2<String>::from_value_unchecked(
+            test_context.vm()
+                .get_or_create_interned_string_value(L"Return self + value.")
+                .as_value()),
+        add_docstring.value());
+    EXPECT_EQ(str_docstring.value(), load_attr(str_method, dunder_doc_name));
+    EXPECT_EQ(add_docstring.value(), load_attr(add_method, dunder_doc_name));
     EXPECT_FALSE(
         str_class->set_own_property(dunder_str_name, Value::from_smi(99)));
 }

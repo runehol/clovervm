@@ -12,7 +12,8 @@ namespace cl
 {
     static TValue<Function> make_native_function_with_target(
         VirtualMachine *vm, TValue<String> name, NativeFunctionTarget target,
-        Bytecode call_opcode, uint32_t n_parameters, Value docstring,
+        Bytecode call_opcode, uint32_t n_parameters,
+        Optional<TValue2<String>> docstring,
         Optional<TValue2<Tuple>> default_parameters =
             Optional<TValue2<Tuple>>::none())
     {
@@ -26,8 +27,8 @@ namespace cl
             TValue2<CodeObject>::from_oop(builder.finalize());
         if(default_parameters.has_value())
         {
-            return vm->make_immortal_object_value<Function>(
-                code, default_parameters.value(), docstring);
+            return vm->make_immortal_object_value<Function>(code, docstring,
+                                                            default_parameters);
         }
         return vm->make_immortal_object_value<Function>(code, docstring);
     }
@@ -40,7 +41,8 @@ namespace cl
     {
         return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(L"<native>"), target,
-            call_opcode, n_parameters, Value::None(), default_parameters);
+            call_opcode, n_parameters, Optional<TValue2<String>>::none(),
+            default_parameters);
     }
 
     static Bytecode call_native_opcode_for_arity(uint32_t n_parameters)
@@ -140,11 +142,12 @@ namespace cl
     TValue<Function> make_native_function(VirtualMachine *vm,
                                           const BuiltinNativeMethod &method)
     {
-        Value docstring =
+        Optional<TValue2<String>> docstring =
             method.doc == nullptr
-                ? Value::None()
-                : vm->get_or_create_interned_string_value(method.doc)
-                      .as_value();
+                ? Optional<TValue2<String>>::none()
+                : Optional<TValue2<String>>::some(TValue2<String>::from_oop(
+                      vm->get_or_create_interned_string_value(method.doc)
+                          .extract()));
         return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(method.name),
             method.target, call_native_opcode_for_arity(method.n_parameters),

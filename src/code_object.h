@@ -134,7 +134,8 @@ namespace cl
         CodeObject(ClassObject *cls, const CompilationUnit *_compilation_unit,
                    Scope *_module_scope, Scope *_local_scope, Value _name)
             : Object(cls, native_layout), module_scope(_module_scope),
-              local_scope(_local_scope), name(_name), docstring(Value::None()),
+              local_scope(_local_scope), name(_name),
+              docstring(Optional<TValue2<String>>::none()),
               compilation_unit(_compilation_unit)
         {
         }
@@ -142,7 +143,7 @@ namespace cl
         MemberHeapPtr2<Scope> module_scope;
         MemberHeapPtr2<Scope> local_scope;
         Member2<Value> name;
-        Member2<Value> docstring;
+        Member2<Optional<TValue2<String>>> docstring;
         const CompilationUnit *compilation_unit;
 
         uint32_t n_parameters = 0;
