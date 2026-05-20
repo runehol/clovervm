@@ -5,9 +5,8 @@
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
-#include "typed_value.h"
+#include "value_state.h"
 #include <gtest/gtest.h>
-#include <stdexcept>
 
 using namespace cl;
 
@@ -45,14 +44,14 @@ TEST(ExceptionPropagation, EvaluatesExpressionOnce)
     EXPECT_EQ(1, n_evaluations);
 }
 
-TEST(TValue, StringAllowsCheckedConstructionFromNonInternedString)
+TEST(TValue2, StringAllowsConstructionFromNonInternedString)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
     String *string = context.thread()->make_internal_raw<String>(L"hello");
 
-    TValue<String> typed_string = TValue<String>::from_oop(string);
+    TValue2<String> typed_string = TValue2<String>::from_oop(string);
 
     EXPECT_EQ(string, typed_string.extract());
     EXPECT_STREQ(L"hello", typed_string.extract()->data);
@@ -92,7 +91,7 @@ TEST(NativeLayout, ObjectAndValueConversionHelpersUseExactLayout)
     EXPECT_EQ(nullptr, try_convert_to<String>(Value::None()));
 }
 
-TEST(TValue, UnsafeUncheckedRoundTripsRawValue)
+TEST(TValue2, UnsafeUncheckedRoundTripsRawValue)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -100,28 +99,36 @@ TEST(TValue, UnsafeUncheckedRoundTripsRawValue)
     String *string = context.thread()->make_internal_raw<String>(L"unsafe");
     Value raw = Value::from_oop(string);
 
-    TValue<String> typed_string = TValue<String>::from_value_unchecked(raw);
+    TValue2<String> typed_string = TValue2<String>::from_value_unchecked(raw);
 
     EXPECT_EQ(raw, typed_string.raw_value());
     EXPECT_EQ(string, typed_string.extract());
 }
 
-TEST(TValue, CheckedConstructionThrowsOnWrongType)
+TEST(TValue2, CheckedConstructionReturnsExceptionOnWrongType)
 {
-    EXPECT_THROW((void)TValue<String>::from_value_checked(Value::True()),
-                 std::runtime_error);
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Expected<TValue2<String>> result =
+        TValue2<String>::from_value_checked(Value::True());
+
+    EXPECT_TRUE(result.has_exception());
+    EXPECT_TRUE(result.raw_value().is_exception_marker());
+    EXPECT_TRUE(context.thread()->has_pending_exception());
+    context.thread()->clear_pending_exception();
 }
 
-TEST(TValue, SmiUsesTraitDefinedGetter)
+TEST(TValue2, SmiUsesTraitDefinedGetter)
 {
-    TValue<SMI> smi = TValue<SMI>::from_smi(42);
+    TValue2<SMI> smi = TValue2<SMI>::from_smi(42);
 
     EXPECT_EQ(42, smi.extract());
 }
 
-TEST(TValue, ClIntAcceptsCurrentIntegerRepresentation)
+TEST(TValue2, ClIntAcceptsCurrentIntegerRepresentation)
 {
-    TValue<CLInt> integer = TValue<CLInt>::from_smi(42);
+    TValue2<CLInt> integer = TValue2<CLInt>::from_smi(42);
 
     EXPECT_EQ(Value::from_smi(42), integer.raw_value());
 }
@@ -145,7 +152,7 @@ TEST(Value, InlineTypePredicatesDistinguishSmiBoolAndNone)
     EXPECT_FALSE(Value::None().is_bool());
 }
 
-TEST(OwnedTValue, RetainsAndExposesTypedPointers)
+TEST(OwnedValueState, RetainsAndExposesTypedPointers)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -154,26 +161,33 @@ TEST(OwnedTValue, RetainsAndExposesTypedPointers)
     EXPECT_EQ(0, string->refcount);
 
     {
-        Owned<TValue<String>> owned_string(TValue<String>::from_oop(string));
+        Owned<TValue2<String>> owned_string(TValue2<String>::from_oop(string));
         EXPECT_EQ(1, string->refcount);
         EXPECT_EQ(string, owned_string.extract());
         EXPECT_STREQ(L"owned", owned_string.extract()->data);
         EXPECT_EQ(Value::from_oop(string), owned_string.raw_value());
         EXPECT_EQ(Value::from_oop(string), owned_string.value().raw_value());
-        TValue<String> borrowed_string = owned_string;
+        TValue2<String> borrowed_string = owned_string;
         EXPECT_EQ(string, borrowed_string.extract());
     }
     EXPECT_EQ(0, string->refcount);
 }
 
-TEST(OwnedTValue, CheckedTypedConstructionThrowsOnWrongType)
+TEST(OwnedValueState, CheckedTypedConstructionRejectsWrongTypeBeforeOwnership)
 {
-    EXPECT_THROW((void)Owned<TValue<String>>(
-                     TValue<String>::from_value_checked(Value::None())),
-                 std::runtime_error);
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Expected<TValue2<String>> result =
+        TValue2<String>::from_value_checked(Value::None());
+
+    EXPECT_TRUE(result.has_exception());
+    EXPECT_TRUE(result.raw_value().is_exception_marker());
+    EXPECT_TRUE(context.thread()->has_pending_exception());
+    context.thread()->clear_pending_exception();
 }
 
-TEST(MemberTValue, ExposesValueAndReleaseRef)
+TEST(MemberValueState, ExposesValueAndReleaseRef)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -181,35 +195,35 @@ TEST(MemberTValue, ExposesValueAndReleaseRef)
     String *string = context.thread()->make_internal_raw<String>(L"member");
     EXPECT_EQ(0, string->refcount);
 
-    Member<TValue<String>> member_string(TValue<String>::from_oop(string));
+    Member<TValue2<String>> member_string(TValue2<String>::from_oop(string));
     EXPECT_EQ(1, string->refcount);
     EXPECT_EQ(Value::from_oop(string), member_string.raw_value());
     EXPECT_EQ(Value::from_oop(string), member_string.value().raw_value());
-    TValue<String> borrowed_string = member_string;
+    TValue2<String> borrowed_string = member_string;
     EXPECT_EQ(string, borrowed_string.extract());
 
     member_string.release_ref();
     EXPECT_EQ(0, string->refcount);
 }
 
-TEST(OwnedTValue, SmiActsAsOwnedHandleWithoutRefcounting)
+TEST(OwnedValueState, SmiActsAsOwnedHandleWithoutRefcounting)
 {
-    Owned<TValue<SMI>> owned_smi(TValue<SMI>::from_smi(42));
+    Owned<TValue2<SMI>> owned_smi(TValue2<SMI>::from_smi(42));
 
     EXPECT_EQ(42, owned_smi.extract());
     EXPECT_EQ(Value::from_smi(42), owned_smi.raw_value());
     EXPECT_EQ(Value::from_smi(42), owned_smi.value().raw_value());
 
-    Owned<TValue<SMI>> copied_smi(owned_smi);
+    Owned<TValue2<SMI>> copied_smi(owned_smi);
     EXPECT_EQ(Value::from_smi(42), copied_smi.raw_value());
 }
 
-TEST(OwnedTValue, ClIntActsAsOwnedIntegerHandle)
+TEST(OwnedValueState, ClIntActsAsOwnedIntegerHandle)
 {
-    Owned<TValue<CLInt>> owned_integer(TValue<CLInt>::from_smi(42));
+    Owned<TValue2<CLInt>> owned_integer(TValue2<CLInt>::from_smi(42));
 
     EXPECT_EQ(Value::from_smi(42), owned_integer.raw_value());
 
-    Owned<TValue<CLInt>> copied_integer(owned_integer);
+    Owned<TValue2<CLInt>> copied_integer(owned_integer);
     EXPECT_EQ(Value::from_smi(42), copied_integer.raw_value());
 }
