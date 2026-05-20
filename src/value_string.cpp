@@ -12,7 +12,7 @@ namespace cl
     static Value value_to_dunder_string(Value value, const wchar_t *name,
                                         const wchar_t *error_message)
     {
-        TValue<String> method_name =
+        TValue2<String> method_name =
             active_vm()->get_or_create_interned_string_value(name);
         Value callable;
         Value self;

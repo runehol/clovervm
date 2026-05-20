@@ -408,20 +408,19 @@ namespace cl
         builtin_scope.extract()->set_by_name(
             get_or_create_interned_string_value(L"None"), Value::None());
 
-        TValue<String> range_name =
+        TValue2<String> range_name =
             get_or_create_interned_string_value(L"range");
-        TValue<Tuple> range_defaults = make_object_value<Tuple>(2);
+        TValue2<Tuple> range_defaults = make_object_value<Tuple>(2);
         range_defaults.extract()->initialize_item_unchecked(0, Value::None());
         range_defaults.extract()->initialize_item_unchecked(1, Value::None());
         range_builtin =
-            make_native_function(
-                this, builtin_range,
-                Optional<TValue2<Tuple>>::some(
-                    TValue2<Tuple>::from_value_unchecked(range_defaults)))
+            make_native_function(this, builtin_range,
+                                 Optional<TValue2<Tuple>>::some(range_defaults))
                 .raw_value();
         builtin_scope.extract()->set_by_name(range_name, range_builtin);
 
-        TValue<String> sqrt_name = get_or_create_interned_string_value(L"sqrt");
+        TValue2<String> sqrt_name =
+            get_or_create_interned_string_value(L"sqrt");
         builtin_scope.extract()->set_by_name(
             sqrt_name, make_native_function(this, builtin_sqrt).raw_value());
 

@@ -30,10 +30,11 @@ namespace cl
                 "unsupported Clover function entry adapter arity");
         }
 
-        TValue<String> adapter_name = vm->get_or_create_interned_string_value(
+        TValue2<String> adapter_name = vm->get_or_create_interned_string_value(
             L"<clover_function_entry_adapter>");
         Scope *local_scope = vm->make_immortal_internal_raw<Scope>(nullptr);
-        CodeObjectBuilder code(vm, nullptr, nullptr, local_scope, adapter_name);
+        CodeObjectBuilder code(vm, nullptr, nullptr, local_scope,
+                               adapter_name.raw_value());
         code.n_parameters() = n_args + 1;
         code.n_positional_parameters() = n_args + 1;
         reserve_parameter_slots_and_frame_header(&code);
