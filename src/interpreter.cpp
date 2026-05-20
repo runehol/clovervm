@@ -247,6 +247,19 @@ namespace cl
         COMPLETE();
     }
 
+// Unwrap an Expected-like result inside an opcode handler. Unlike CL_TRY, this
+// dispatches through the interpreter exception table instead of returning the
+// exception marker directly.
+#define INTERP_TRY(expr)                                                       \
+    ({                                                                         \
+        auto cl_opcode_try_result = (expr);                                    \
+        if(unlikely(!cl_opcode_try_result))                                    \
+        {                                                                      \
+            MUSTTAIL return propagate_pending_exception(ARGS);                 \
+        }                                                                      \
+        cl_opcode_try_result.value();                                          \
+    })
+
     NOINLINE INTERP_CC Value method_lookup_error(PARAMS)
     {
         throw std::runtime_error("AttributeError");
@@ -521,7 +534,7 @@ namespace cl
             thread,
             TValue2<ClassObject>::from_oop(
                 thread->class_for_builtin_name(L"AssertionError")),
-            CL_TRY(TValue2<String>::from_value_checked(accumulator))));
+            INTERP_TRY(TValue2<String>::from_value_checked(accumulator))));
         ExceptionalTarget target =
             resolve_exceptional_frame_exit(thread, fp, pc, code_object);
         fp = target.fp;
@@ -1545,7 +1558,7 @@ namespace cl
         uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
-        TValue<String> attr_name = TValue<String>::from_value_assumed(
+        TValue2<String> attr_name = TValue2<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
         AttributeReadInlineCache &cache =
             code_object->attribute_read_caches[cache_idx];
@@ -1584,7 +1597,7 @@ namespace cl
         uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
-        TValue<String> attr_name = TValue<String>::from_value_assumed(
+        TValue2<String> attr_name = TValue2<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
         AttributeMutationInlineCache &cache =
             code_object->attribute_mutation_caches[cache_idx];
@@ -1642,7 +1655,7 @@ namespace cl
         uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
-        TValue<String> attr_name = TValue<String>::from_value_assumed(
+        TValue2<String> attr_name = TValue2<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
         AttributeMutationInlineCache &cache =
             code_object->attribute_mutation_caches[cache_idx];
@@ -2311,7 +2324,7 @@ namespace cl
         }
 
         thread->get_machine()->write_stdout(
-            TValue<String>::from_value_checked(accumulator));
+            TValue2<String>::from_value_assumed(accumulator));
         accumulator = Value::None();
         COMPLETE();
     }
@@ -2716,7 +2729,7 @@ namespace cl
         uint8_t call_cache_idx = pc[4];
         uint32_t n_user_args = uint8_t(pc[5]);
         Value receiver = fp[receiver_reg];
-        TValue<String> attr_name = TValue<String>::from_value_assumed(
+        TValue2<String> attr_name = TValue2<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
 
         AttributeReadInlineCache &cache =
@@ -2877,7 +2890,7 @@ namespace cl
         uint8_t missing_exception_type_idx = pc[6];
         uint8_t missing_exception_message_idx = pc[7];
         Value receiver = fp[receiver_reg];
-        TValue<String> method_name = TValue<String>::from_value_assumed(
+        TValue2<String> method_name = TValue2<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
 
         AttributeReadInlineCache &cache =
@@ -2904,11 +2917,11 @@ namespace cl
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
-            TValue<ClassObject> exception_type =
-                TValue<ClassObject>::from_value_assumed(
+            TValue2<ClassObject> exception_type =
+                TValue2<ClassObject>::from_value_assumed(
                     code_object->constant_table[missing_exception_type_idx]
                         .value());
-            TValue<String> message = TValue<String>::from_value_assumed(
+            TValue2<String> message = TValue2<String>::from_value_assumed(
                 code_object->constant_table[missing_exception_message_idx]
                     .value());
             (void)thread->set_pending_exception_string(exception_type, message);
