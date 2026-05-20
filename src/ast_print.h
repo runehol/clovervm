@@ -4,6 +4,7 @@
 #include "ast.h"
 #include "str.h"
 #include "tokenizer.h"
+#include "value_state.h"
 #include <cassert>
 #include <fmt/format.h>
 #include <string>
@@ -11,6 +12,14 @@
 static inline std::string narrow_wstring_view_ast(std::wstring_view s)
 {
     return std::string(s.begin(), s.end());
+}
+
+static inline cl::TValue<cl::String>
+ast_print_string_constant(const cl::AstVector &av, int32_t node_idx)
+{
+    cl::TValue2<cl::String> value =
+        cl::TValue2<cl::String>::from_value_assumed(av.constants[node_idx]);
+    return cl::TValue<cl::String>::from_value_unchecked(value.raw_value());
 }
 
 template <> struct fmt::formatter<cl::AstOperatorKind>
@@ -200,16 +209,14 @@ template <> struct fmt::formatter<cl::AstVector>
             case cl::AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
                 format_to(out, "{}",
                           narrow_wstring_view_ast(string_as_wchar_t(
-                              cl::TValue<cl::String>::from_value_checked(
-                                  av.constants[node_idx]))));
+                              ast_print_string_constant(av, node_idx))));
                 break;
 
             case cl::AstNodeKind::EXPRESSION_ATTRIBUTE:
                 render_node(av, out, children[0], indent, self_precedence);
                 format_to(out, ".{}",
                           narrow_wstring_view_ast(string_as_wchar_t(
-                              cl::TValue<cl::String>::from_value_checked(
-                                  av.constants[node_idx]))));
+                              ast_print_string_constant(av, node_idx))));
                 break;
 
             case cl::AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
@@ -298,8 +305,7 @@ template <> struct fmt::formatter<cl::AstVector>
             case cl::AstNodeKind::PARAMETER:
                 format_to(out, "{}",
                           narrow_wstring_view_ast(string_as_wchar_t(
-                              cl::TValue<cl::String>::from_value_checked(
-                                  av.constants[node_idx]))));
+                              ast_print_string_constant(av, node_idx))));
                 if(!children.empty())
                 {
                     format_to(out, "=");
@@ -311,16 +317,14 @@ template <> struct fmt::formatter<cl::AstVector>
             case cl::AstNodeKind::PARAMETER_VARARGS:
                 format_to(out, "*{}",
                           narrow_wstring_view_ast(string_as_wchar_t(
-                              cl::TValue<cl::String>::from_value_checked(
-                                  av.constants[node_idx]))));
+                              ast_print_string_constant(av, node_idx))));
                 break;
 
             case cl::AstNodeKind::STATEMENT_FUNCTION_DEF:
                 emit_indent(out, indent);
                 format_to(out, "def {}",
                           narrow_wstring_view_ast(string_as_wchar_t(
-                              cl::TValue<cl::String>::from_value_checked(
-                                  av.constants[node_idx]))));
+                              ast_print_string_constant(av, node_idx))));
 
                 render_node(av, out, children[0], indent,
                             cl::ExpressionPrecedence::Lowest);
@@ -332,8 +336,7 @@ template <> struct fmt::formatter<cl::AstVector>
                 emit_indent(out, indent);
                 format_to(out, "class {}",
                           narrow_wstring_view_ast(string_as_wchar_t(
-                              cl::TValue<cl::String>::from_value_checked(
-                                  av.constants[node_idx]))));
+                              ast_print_string_constant(av, node_idx))));
                 if(!av.children[children[0]].empty())
                 {
                     render_node(av, out, children[0], indent,

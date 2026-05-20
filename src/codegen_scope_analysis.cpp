@@ -3,6 +3,7 @@
 #include "code_object_builder.h"
 #include "scope.h"
 #include "str.h"
+#include "value_state.h"
 #include <cassert>
 #include <optional>
 #include <stdexcept>
@@ -12,6 +13,12 @@ namespace cl
 {
     namespace
     {
+        TValue<String> ast_string_constant(Value value)
+        {
+            TValue2<String> name = TValue2<String>::from_value_assumed(value);
+            return TValue<String>::from_value_unchecked(name.raw_value());
+        }
+
         struct StringNameHash
         {
             size_t operator()(TValue<String> name) const
@@ -144,8 +151,8 @@ namespace cl
             int32_t find_binding_idx(const AnalysisState &analysis,
                                      Value name) const
             {
-                auto binding_iter = analysis.binding_indices.find(
-                    TValue<String>::from_value_checked(name));
+                auto binding_iter =
+                    analysis.binding_indices.find(ast_string_constant(name));
                 if(binding_iter == analysis.binding_indices.end())
                 {
                     return -1;
@@ -187,16 +194,14 @@ namespace cl
                     return *binding;
                 }
 
-                uint32_t slot_idx =
-                    code_obj->get_local_scope_ptr()
-                        ->register_slot_index_for_write(
-                            TValue<String>::from_value_checked(name));
+                uint32_t slot_idx = code_obj->get_local_scope_ptr()
+                                        ->register_slot_index_for_write(
+                                            ast_string_constant(name));
                 int32_t binding_idx = int32_t(analysis.result.bindings.size());
                 analysis.result.bindings.push_back(
                     BindingInfo{name, BindingScope::Local, slot_idx,
                                 initial_presence, false});
-                analysis
-                    .binding_indices[TValue<String>::from_value_checked(name)] =
+                analysis.binding_indices[ast_string_constant(name)] =
                     binding_idx;
                 return analysis.result.bindings.back();
             }
@@ -215,8 +220,7 @@ namespace cl
                 int32_t binding_idx = int32_t(analysis.result.bindings.size());
                 analysis.result.bindings.push_back(BindingInfo{
                     name, BindingScope::Global, 0, Presence::Maybe, false});
-                analysis
-                    .binding_indices[TValue<String>::from_value_checked(name)] =
+                analysis.binding_indices[ast_string_constant(name)] =
                     binding_idx;
                 return analysis.result.bindings.back();
             }
@@ -255,13 +259,13 @@ namespace cl
                         binding.local_slot_idx};
                 }
 
-                uint32_t slot_idx =
-                    is_read ? code_obj->module_scope()
-                                  ->register_slot_index_for_read(
-                                      TValue<String>::from_value_checked(name))
-                            : code_obj->module_scope()
-                                  ->register_slot_index_for_write(
-                                      TValue<String>::from_value_checked(name));
+                uint32_t slot_idx = is_read
+                                        ? code_obj->module_scope()
+                                              ->register_slot_index_for_read(
+                                                  ast_string_constant(name))
+                                        : code_obj->module_scope()
+                                              ->register_slot_index_for_write(
+                                                  ast_string_constant(name));
                 return NameAccessAnalysis{BindingScope::Global, Presence::Maybe,
                                           slot_idx};
             }
@@ -283,7 +287,7 @@ namespace cl
             GlobalDeclarationState::NameState &
             global_name_state(GlobalDeclarationState &state, Value name)
             {
-                return state.names[TValue<String>::from_value_checked(name)];
+                return state.names[ast_string_constant(name)];
             }
 
             void mark_global_validation_use(GlobalDeclarationState &state,

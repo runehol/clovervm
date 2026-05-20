@@ -7,6 +7,7 @@
 #include "scope.h"
 #include "str.h"
 #include "tokenizer.h"
+#include "value_state.h"
 #include <fmt/core.h>
 #include <optional>
 #include <utility>
@@ -105,6 +106,13 @@ namespace cl
             n_parameter_padding);
         target_code_obj->get_local_scope_ptr()->reserve_empty_slots(
             FrameHeaderSize);
+    }
+
+    TValue<String> ast_string_constant(const AstVector &av, int32_t node_idx)
+    {
+        TValue2<String> name =
+            TValue2<String>::from_value_assumed(av.constants[node_idx]);
+        return TValue<String>::from_value_unchecked(name.raw_value());
     }
 
     class AstCodegen
@@ -547,8 +555,7 @@ namespace cl
                 throw std::runtime_error(error_message);
             }
 
-            TValue<String> name =
-                TValue<String>::from_value_checked(av.constants[node_idx]);
+            TValue<String> name = ast_string_constant(av, node_idx);
             Value value = active_vm()->builtin_scope_ptr()->get_by_name(name);
             if(!value.is_ptr() || value.get_ptr<Object>()->native_layout_id() !=
                                       NativeLayoutId::ClassObject)
@@ -2271,7 +2278,7 @@ namespace cl
             assert(av.kinds[ch].node_kind == AstNodeKind::PARAMETER ||
                    av.kinds[ch].node_kind == AstNodeKind::PARAMETER_VARARGS);
             fun_obj.get_local_scope_ptr()->register_slot_index_for_write(
-                TValue<String>::from_value_checked(av.constants[ch]));
+                ast_string_constant(av, ch));
         }
         reserve_parameter_padding_and_frame_header(&fun_obj);
 
