@@ -239,8 +239,10 @@ namespace cl
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
 
         String *child = thread->make_object_raw<String>(L"code-constant");
+        TValue2<String> code_name =
+            context.vm().get_or_create_interned_string_value(L"<test>");
         CodeObject *code_object = thread->make_object_raw<CodeObject>(
-            nullptr, nullptr, nullptr, Value::None());
+            nullptr, nullptr, nullptr, code_name);
         code_object->constant_table.emplace_back(Value::from_oop(child));
         code_object->function_call_caches.push_back(FunctionCallInlineCache{});
         code_object->function_call_caches.back().guard_value =

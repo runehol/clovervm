@@ -47,7 +47,7 @@ namespace cl
 
             code_storage.emplace(init_code->compilation_unit,
                                  init_code->module_scope.extract(), local_scope,
-                                 thunk_name.raw_value());
+                                 thunk_name);
             CodeObjectBuilder &code = *code_storage;
             code.n_parameters() = init_n_parameters - 1;
             code.n_positional_parameters() =
@@ -57,7 +57,7 @@ namespace cl
         else
         {
             code_storage.emplace(nullptr, active_vm()->builtin_scope_ptr(),
-                                 local_scope, thunk_name.raw_value());
+                                 local_scope, thunk_name);
             CodeObjectBuilder &code = *code_storage;
             code.n_parameters() = 0;
             code.n_positional_parameters() = 0;

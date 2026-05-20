@@ -7,6 +7,7 @@
 #include "owned.h"
 #include "scope.h"
 #include "value.h"
+#include "value_state.h"
 #include <algorithm>
 #include <cstdint>
 #include <vector>
@@ -130,7 +131,8 @@ namespace cl
             NativeLayoutId::CodeObject;
 
         CodeObject(ClassObject *cls, const CompilationUnit *_compilation_unit,
-                   Scope *_module_scope, Scope *_local_scope, Value _name)
+                   Scope *_module_scope, Scope *_local_scope,
+                   TValue2<String> _name)
             : Object(cls, native_layout), module_scope(_module_scope),
               local_scope(_local_scope), name(_name),
               docstring(Optional<TValue2<String>>::none()),
@@ -140,7 +142,7 @@ namespace cl
 
         MemberHeapPtr<Scope> module_scope;
         MemberHeapPtr<Scope> local_scope;
-        Member<Value> name;
+        Member<TValue2<String>> name;
         Member<Optional<TValue2<String>>> docstring;
         const CompilationUnit *compilation_unit;
 

@@ -17,8 +17,7 @@ namespace cl
         Optional<TValue2<Tuple>> default_parameters =
             Optional<TValue2<Tuple>>::none())
     {
-        CodeObjectBuilder builder(vm, nullptr, nullptr, nullptr,
-                                  name.raw_value());
+        CodeObjectBuilder builder(vm, nullptr, nullptr, nullptr, name);
         builder.n_parameters() = n_parameters;
         builder.n_positional_parameters() = n_parameters;
         uint32_t target_idx = builder.add_native_function_target(target);

@@ -1005,20 +1005,17 @@ namespace cl
         {
             return code_obj->allocate_constant(
                 interned_string(L"object does not support the context "
-                                L"manager protocol")
-                    .raw_value());
+                                L"manager protocol"));
         }
 
         uint8_t enter_method_name_idx()
         {
-            return code_obj->allocate_constant(
-                interned_string(L"__enter__").raw_value());
+            return code_obj->allocate_constant(interned_string(L"__enter__"));
         }
 
         uint8_t exit_method_name_idx()
         {
-            return code_obj->allocate_constant(
-                interned_string(L"__exit__").raw_value());
+            return code_obj->allocate_constant(interned_string(L"__exit__"));
         }
 
         void emit_context_exit_call(uint32_t source_offset,
@@ -1206,8 +1203,8 @@ namespace cl
             exceptional_target.resolve();
             {
                 TemporaryReg saved_exception(*code_obj);
-                uint8_t class_name_idx = code_obj->allocate_constant(
-                    interned_string(L"__class__").raw_value());
+                uint8_t class_name_idx =
+                    code_obj->allocate_constant(interned_string(L"__class__"));
 
                 code_obj->emit_drain_active_exception_into(source_offset,
                                                            saved_exception);
@@ -1448,14 +1445,14 @@ namespace cl
             JumpTarget continue_target(code_obj);
             JumpTarget stop_iteration_handler_target(code_obj);
             JumpTarget propagate_exception_target(code_obj);
-            uint8_t next_constant_idx = code_obj->allocate_constant(
-                interned_string(L"__next__").raw_value());
+            uint8_t next_constant_idx =
+                code_obj->allocate_constant(interned_string(L"__next__"));
             uint8_t not_iterator_type_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(
                     active_thread()->class_for_builtin_name(L"TypeError")));
             uint8_t not_iterator_message_constant_idx =
                 code_obj->allocate_constant(
-                    interned_string(L"object is not an iterator").raw_value());
+                    interned_string(L"object is not an iterator"));
             uint8_t stop_iteration_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(
                     active_thread()->class_for_builtin_name(L"StopIteration")));
@@ -1558,14 +1555,14 @@ namespace cl
             }
             code_obj->emit_call_simple(source_offset, range_regs,
                                        OutgoingArgReg(0), n_args);
-            uint8_t iter_constant_idx = code_obj->allocate_constant(
-                interned_string(L"__iter__").raw_value());
+            uint8_t iter_constant_idx =
+                code_obj->allocate_constant(interned_string(L"__iter__"));
             uint8_t not_iterable_type_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(
                     active_thread()->class_for_builtin_name(L"TypeError")));
             uint8_t not_iterable_message_constant_idx =
                 code_obj->allocate_constant(
-                    interned_string(L"object is not iterable").raw_value());
+                    interned_string(L"object is not iterable"));
             code_obj->emit_star(source_offset, OutgoingArgReg(0));
             code_obj->emit_call_special_method(
                 source_offset, OutgoingArgReg(0), iter_constant_idx, 0,
@@ -2002,15 +1999,14 @@ namespace cl
 
                         codegen_node(iterable_idx);
                         uint8_t iter_constant_idx = code_obj->allocate_constant(
-                            interned_string(L"__iter__").raw_value());
+                            interned_string(L"__iter__"));
                         uint8_t not_iterable_type_constant_idx =
                             code_obj->allocate_constant(Value::from_oop(
                                 active_thread()->class_for_builtin_name(
                                     L"TypeError")));
                         uint8_t not_iterable_message_constant_idx =
                             code_obj->allocate_constant(
-                                interned_string(L"object is not iterable")
-                                    .raw_value());
+                                interned_string(L"object is not iterable"));
                         code_obj->emit_star(source_offset, OutgoingArgReg(0));
                         code_obj->emit_call_special_method(
                             source_offset, OutgoingArgReg(0), iter_constant_idx,
@@ -2263,10 +2259,11 @@ namespace cl
         AstChildren param_children = av.children[children[0]];
         Scope *local_scope =
             make_internal_raw<Scope>(parent_code_obj->local_scope());
+        TValue2<String> function_name =
+            TValue2<String>::from_value_assumed(av.constants[node_idx]);
         CodeObjectBuilder fun_obj(av.compilation_unit, module_scope,
-                                  local_scope, Value::None());
+                                  local_scope, function_name);
 
-        fun_obj.set_name(av.constants[node_idx]);
         fun_obj.set_docstring(docstring_for_body(av, children[1]));
         fun_obj.n_parameters() = param_children.size();
         fun_obj.n_positional_parameters() =
@@ -2343,7 +2340,7 @@ namespace cl
 
     CodeObject *codegen_module_in_scope(const AstVector &av,
                                         Scope *module_scope,
-                                        TValue<String> module_name,
+                                        TValue2<String> module_name,
                                         LanguageMode language_mode,
                                         ModuleResultMode result_mode)
     {
@@ -2360,7 +2357,7 @@ namespace cl
         return builder.run_module();
     }
 
-    CodeObject *codegen_module(const AstVector &av, TValue<String> module_name,
+    CodeObject *codegen_module(const AstVector &av, TValue2<String> module_name,
                                LanguageMode language_mode)
     {
         Scope *module_scope =
