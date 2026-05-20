@@ -18,7 +18,7 @@ namespace cl
         static constexpr bool may_need_refcounting = !is_fully_inline;
     };
 
-    template <typename T> static inline void incref_value_state(T value)
+    template <typename T> static inline void incref_handle(T value)
     {
         if constexpr(HandleRefcountTraits<T>::may_need_refcounting)
         {
@@ -26,7 +26,7 @@ namespace cl
         }
     }
 
-    template <typename T> static inline void decref_value_state(T value)
+    template <typename T> static inline void decref_handle(T value)
     {
         if constexpr(HandleRefcountTraits<T>::may_need_refcounting)
         {
@@ -46,20 +46,20 @@ namespace cl
                                       !std::is_same_v<U, Value>>>
         Owned() : value_()
         {
-            incref_value_state(value_);
+            incref_handle(value_);
         }
-        explicit Owned(T value) : value_(value) { incref_value_state(value_); }
+        explicit Owned(T value) : value_(value) { incref_handle(value_); }
         explicit Owned(const Member<T> &other) : value_(other.value())
         {
-            incref_value_state(value_);
+            incref_handle(value_);
         }
 
         Owned(const Owned &other) : value_(other.value_)
         {
-            incref_value_state(value_);
+            incref_handle(value_);
         }
 
-        ~Owned() { decref_value_state(value_); }
+        ~Owned() { decref_handle(value_); }
 
         Owned &operator=(T value)
         {
@@ -97,8 +97,8 @@ namespace cl
     private:
         void assign(T value)
         {
-            incref_value_state(value);
-            decref_value_state(value_);
+            incref_handle(value);
+            decref_handle(value_);
             value_ = value;
         }
 
@@ -115,17 +115,17 @@ namespace cl
                                       !std::is_same_v<U, Value>>>
         Member() : value_()
         {
-            incref_value_state(value_);
+            incref_handle(value_);
         }
-        explicit Member(T value) : value_(value) { incref_value_state(value_); }
+        explicit Member(T value) : value_(value) { incref_handle(value_); }
         explicit Member(const Owned<T> &other) : value_(other.value())
         {
-            incref_value_state(value_);
+            incref_handle(value_);
         }
 
         Member(const Member &other) : value_(other.value_)
         {
-            incref_value_state(value_);
+            incref_handle(value_);
         }
 
         Member &operator=(T value)
@@ -163,13 +163,13 @@ namespace cl
 
         // For custom heap-object dealloc paths. Leaves the member value
         // unchanged; the containing object must not use the member afterward.
-        void release_ref() { decref_value_state(value_); }
+        void release_ref() { decref_handle(value_); }
 
     private:
         void assign(T value)
         {
-            incref_value_state(value);
-            decref_value_state(value_);
+            incref_handle(value);
+            decref_handle(value_);
             value_ = value;
         }
 
