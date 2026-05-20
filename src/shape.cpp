@@ -8,7 +8,7 @@
 
 namespace cl
 {
-    Shape::Transition::Transition(TValue2<String> _name,
+    Shape::Transition::Transition(TValue<String> _name,
                                   ShapeTransitionVerb _verb,
                                   DescriptorFlags _descriptor_flags,
                                   Shape *_next_shape)
@@ -35,7 +35,7 @@ namespace cl
         shape->~Shape();
     }
 
-    Shape::Shape(TValue2<ClassObject> _class_value, Shape *_previous_shape,
+    Shape::Shape(TValue<ClassObject> _class_value, Shape *_previous_shape,
                  int32_t _next_slot_index, uint32_t _property_count,
                  uint32_t _inline_slot_capacity, ShapeFlags _shape_flags,
                  uint32_t _present_count)
@@ -55,7 +55,7 @@ namespace cl
     }
 
     Shape *Shape::make_root_with_single_descriptor(
-        TValue2<ClassObject> class_value, TValue2<String> name,
+        TValue<ClassObject> class_value, TValue<String> name,
         DescriptorInfo info, int32_t next_slot_index,
         uint32_t inline_slot_capacity, ShapeFlags shape_flags)
     {
@@ -66,8 +66,8 @@ namespace cl
     }
 
     Shape *Shape::make_immortal_root_with_single_descriptor(
-        VirtualMachine *vm, TValue2<ClassObject> class_value,
-        TValue2<String> name, DescriptorInfo info, int32_t next_slot_index,
+        VirtualMachine *vm, TValue<ClassObject> class_value,
+        TValue<String> name, DescriptorInfo info, int32_t next_slot_index,
         uint32_t inline_slot_capacity, ShapeFlags shape_flags)
     {
         ShapeRootDescriptor descriptor{name, info};
@@ -77,10 +77,10 @@ namespace cl
     }
 
     Shape *Shape::make_root_with_descriptors(
-        TValue2<ClassObject> class_value,
-        const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
-        int32_t next_slot_index, uint32_t present_count,
-        uint32_t inline_slot_capacity, ShapeFlags shape_flags)
+        TValue<ClassObject> class_value, const ShapeRootDescriptor *descriptors,
+        uint32_t descriptor_count, int32_t next_slot_index,
+        uint32_t present_count, uint32_t inline_slot_capacity,
+        ShapeFlags shape_flags)
     {
         Shape *shape = make_internal_raw<Shape>(
             class_value, nullptr, next_slot_index, descriptor_count,
@@ -90,7 +90,7 @@ namespace cl
     }
 
     Shape *Shape::make_immortal_root_with_descriptors(
-        VirtualMachine *vm, TValue2<ClassObject> class_value,
+        VirtualMachine *vm, TValue<ClassObject> class_value,
         const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
         int32_t next_slot_index, uint32_t present_count,
         uint32_t inline_slot_capacity, ShapeFlags shape_flags)
@@ -123,7 +123,7 @@ namespace cl
         return inline_slot_capacity;
     }
 
-    int32_t Shape::lookup_descriptor_index(TValue2<String> name) const
+    int32_t Shape::lookup_descriptor_index(TValue<String> name) const
     {
         for(uint32_t property_idx = 0; property_idx < present_count_;
             ++property_idx)
@@ -137,7 +137,7 @@ namespace cl
     }
 
     DescriptorLookup
-    Shape::lookup_descriptor_including_latent(TValue2<String> name) const
+    Shape::lookup_descriptor_including_latent(TValue<String> name) const
     {
         for(uint32_t property_idx = 0; property_idx < property_count_;
             ++property_idx)
@@ -155,7 +155,7 @@ namespace cl
         return DescriptorLookup::absent();
     }
 
-    StorageLocation Shape::resolve_present_property(TValue2<String> name) const
+    StorageLocation Shape::resolve_present_property(TValue<String> name) const
     {
         int32_t descriptor_idx = lookup_descriptor_index(name);
         if(descriptor_idx < 0)
@@ -166,12 +166,12 @@ namespace cl
         return get_descriptor_info(descriptor_idx).storage_location();
     }
 
-    StorageLocation Shape::resolve_own_property(TValue2<String> name) const
+    StorageLocation Shape::resolve_own_property(TValue<String> name) const
     {
         return resolve_present_property(name);
     }
 
-    Shape *Shape::lookup_transition(TValue2<String> name,
+    Shape *Shape::lookup_transition(TValue<String> name,
                                     ShapeTransitionVerb verb,
                                     DescriptorFlags descriptor_flags) const
     {
@@ -187,7 +187,7 @@ namespace cl
         return nullptr;
     }
 
-    Shape *Shape::derive_transition(TValue2<String> name,
+    Shape *Shape::derive_transition(TValue<String> name,
                                     ShapeTransitionVerb verb,
                                     DescriptorFlags descriptor_flags)
     {
@@ -211,7 +211,7 @@ namespace cl
         return next_shape;
     }
 
-    Shape *Shape::derive_add_transition(TValue2<String> name,
+    Shape *Shape::derive_add_transition(TValue<String> name,
                                         DescriptorFlags descriptor_flags)
     {
         DescriptorLookup descriptor = lookup_descriptor_including_latent(name);
@@ -282,7 +282,7 @@ namespace cl
         return next_shape;
     }
 
-    Shape *Shape::derive_delete_transition(TValue2<String> name)
+    Shape *Shape::derive_delete_transition(TValue<String> name)
     {
         if(lookup_descriptor_index(name) < 0)
         {
@@ -349,7 +349,7 @@ namespace cl
         return cloned_shape;
     }
 
-    Shape *Shape::clone_with_class(TValue2<ClassObject> new_class) const
+    Shape *Shape::clone_with_class(TValue<ClassObject> new_class) const
     {
         Shape *cloned_shape = make_internal_raw<Shape>(
             new_class, previous_shape, next_slot_index, property_count_,

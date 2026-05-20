@@ -32,7 +32,7 @@ namespace cl
     thread_local ThreadState *ThreadState::current_thread = nullptr;
 
     PendingException::PendingException()
-        : object(Optional<TValue2<Exception>>::none()),
+        : object(Optional<TValue<Exception>>::none()),
           stop_iteration_value(Value::not_present())
     {
     }
@@ -116,9 +116,9 @@ namespace cl
     Value ThreadState::run_clovervm_code_object(CodeObject *obj)
     {
         ActivationScope activation_scope(this);
-        Owned<TValue2<Function>> function(this->make_object_value<Function>(
-            TValue2<CodeObject>::from_oop(obj),
-            Optional<TValue2<String>>::none()));
+        Owned<TValue<Function>> function(this->make_object_value<Function>(
+            TValue<CodeObject>::from_oop(obj),
+            Optional<TValue<String>>::none()));
         return call_clovervm_function_with_args(function.value(), nullptr, 0);
     }
 
@@ -131,7 +131,7 @@ namespace cl
     }
 
     Value ThreadState::call_clovervm_function_with_args(
-        TValue2<Function> function, const Value *args, uint32_t n_args)
+        TValue<Function> function, const Value *args, uint32_t n_args)
     {
         ActivationScope activation_scope(this);
         CodeObject *adapter = machine->clover_function_entry_adapter(n_args);
@@ -152,26 +152,26 @@ namespace cl
         return run_interpreter(adapter_fp, adapter, 0, this);
     }
 
-    Value ThreadState::call_clovervm_function(TValue2<Function> function)
+    Value ThreadState::call_clovervm_function(TValue<Function> function)
     {
         return call_clovervm_function_with_args(function, nullptr, 0);
     }
 
-    Value ThreadState::call_clovervm_function(TValue2<Function> function,
+    Value ThreadState::call_clovervm_function(TValue<Function> function,
                                               Value arg0)
     {
         Value args[] = {arg0};
         return call_clovervm_function_with_args(function, args, 1);
     }
 
-    Value ThreadState::call_clovervm_function(TValue2<Function> function,
+    Value ThreadState::call_clovervm_function(TValue<Function> function,
                                               Value arg0, Value arg1)
     {
         Value args[] = {arg0, arg1};
         return call_clovervm_function_with_args(function, args, 2);
     }
 
-    Value ThreadState::call_clovervm_function(TValue2<Function> function,
+    Value ThreadState::call_clovervm_function(TValue<Function> function,
                                               Value arg0, Value arg1,
                                               Value arg2)
     {
@@ -180,7 +180,7 @@ namespace cl
     }
 
     Value ThreadState::call_clovervm_method_with_args(Value receiver,
-                                                      TValue2<String> name,
+                                                      TValue<String> name,
                                                       const Value *args,
                                                       uint32_t n_args)
     {
@@ -216,64 +216,61 @@ namespace cl
         }
 
         return call_clovervm_function_with_args(
-            TValue2<Function>::from_value_assumed(callable), method_args,
+            TValue<Function>::from_value_assumed(callable), method_args,
             total_args);
     }
 
-    Value ThreadState::call_clovervm_method(Value receiver,
-                                            TValue2<String> name)
+    Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name)
     {
         return call_clovervm_method_with_args(receiver, name, nullptr, 0);
     }
 
-    Value ThreadState::call_clovervm_method(Value receiver,
-                                            TValue2<String> name, Value arg0)
+    Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name,
+                                            Value arg0)
     {
         Value args[] = {arg0};
         return call_clovervm_method_with_args(receiver, name, args, 1);
     }
 
-    Value ThreadState::call_clovervm_method(Value receiver,
-                                            TValue2<String> name, Value arg0,
-                                            Value arg1)
+    Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name,
+                                            Value arg0, Value arg1)
     {
         Value args[] = {arg0, arg1};
         return call_clovervm_method_with_args(receiver, name, args, 2);
     }
 
-    Value ThreadState::call_clovervm_method(Value receiver,
-                                            TValue2<String> name, Value arg0,
-                                            Value arg1, Value arg2)
+    Value ThreadState::call_clovervm_method(Value receiver, TValue<String> name,
+                                            Value arg0, Value arg1, Value arg2)
     {
         Value args[] = {arg0, arg1, arg2};
         return call_clovervm_method_with_args(receiver, name, args, 3);
     }
 
-    Value ThreadState::set_pending_exception_string(TValue2<ClassObject> type,
-                                                    TValue2<String> message)
+    Value ThreadState::set_pending_exception_string(TValue<ClassObject> type,
+                                                    TValue<String> message)
     {
         return set_pending_exception_object(
             make_exception_object(this, type, message));
     }
 
-    Value ThreadState::set_pending_exception_string(TValue2<ClassObject> type,
+    Value ThreadState::set_pending_exception_string(TValue<ClassObject> type,
                                                     const wchar_t *message)
     {
         return set_pending_exception_string(
             type, machine->get_or_create_interned_string_value(message));
     }
 
-    Value ThreadState::set_pending_exception_none(TValue2<ClassObject> type)
+    Value ThreadState::set_pending_exception_none(TValue<ClassObject> type)
     {
         return set_pending_exception_string(type, L"");
     }
 
     Value
     ThreadState::set_pending_builtin_exception_string(const wchar_t *type_name,
-                                                      TValue2<String> message)
+                                                      TValue<String> message)
     {
         return set_pending_exception_string(
-            TValue2<ClassObject>::from_oop(class_for_builtin_name(type_name)),
+            TValue<ClassObject>::from_oop(class_for_builtin_name(type_name)),
             message);
     }
 
@@ -293,7 +290,7 @@ namespace cl
 
     Value ThreadState::set_pending_stop_iteration_value(Value value)
     {
-        pending_exception.object = Optional<TValue2<Exception>>::none();
+        pending_exception.object = Optional<TValue<Exception>>::none();
         pending_exception.stop_iteration_value = value;
         pending_exception.kind = PendingExceptionKind::StopIteration;
         return Value::exception_marker();
@@ -306,7 +303,7 @@ namespace cl
 
     ClassObject *ThreadState::class_for_builtin_name(const wchar_t *name) const
     {
-        TValue2<String> name_value =
+        TValue<String> name_value =
             machine->get_or_create_interned_string_value(std::wstring(name));
         Value value = machine->builtin_scope_ptr()->get_by_name(name_value);
         assert(value.is_ptr());

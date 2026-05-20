@@ -24,10 +24,10 @@ namespace cl
 
     static CodeObject *
     make_constructor_thunk_code(ClassObject *cls,
-                                Optional<TValue2<Function>> init)
+                                Optional<TValue<Function>> init)
     {
         Scope *local_scope = make_internal_raw<Scope>(nullptr);
-        TValue2<String> thunk_name(interned_string(L"<constructor_thunk>"));
+        TValue<String> thunk_name(interned_string(L"<constructor_thunk>"));
         std::optional<CodeObjectBuilder> code_storage;
         CodeObject *init_code = nullptr;
         uint32_t init_n_parameters = 0;
@@ -35,7 +35,7 @@ namespace cl
 
         if(has_init)
         {
-            TValue2<Function> init_function = init.value();
+            TValue<Function> init_function = init.value();
             init_code = init_function.extract()->code_object.extract();
             init_n_parameters = init_code->n_parameters;
             if(init_n_parameters == 0 ||
@@ -99,8 +99,8 @@ namespace cl
         return code.finalize();
     }
 
-    static TValue2<Tuple>
-    make_constructor_thunk_defaults(TValue2<Tuple> init_defaults,
+    static TValue<Tuple>
+    make_constructor_thunk_defaults(TValue<Tuple> init_defaults,
                                     uint32_t init_n_positional_parameters)
     {
         uint32_t init_n_defaults = init_defaults.extract()->size();
@@ -113,7 +113,7 @@ namespace cl
 
         assert(init_n_defaults > 0);
         uint32_t thunk_n_defaults = init_n_defaults - 1;
-        TValue2<Tuple> thunk_defaults =
+        TValue<Tuple> thunk_defaults =
             make_object_value<Tuple>(static_cast<size_t>(thunk_n_defaults));
         for(uint32_t idx = 0; idx < thunk_n_defaults; ++idx)
         {
@@ -123,37 +123,37 @@ namespace cl
         return thunk_defaults;
     }
 
-    TValue2<Function>
+    TValue<Function>
     make_constructor_thunk_function(ClassObject *cls,
-                                    Optional<TValue2<Function>> init)
+                                    Optional<TValue<Function>> init)
     {
         CodeObject *code = make_constructor_thunk_code(cls, init);
         if(!init.has_value())
         {
             return make_object_value<Function>(
-                TValue2<CodeObject>::from_oop(code),
-                Optional<TValue2<String>>::none());
+                TValue<CodeObject>::from_oop(code),
+                Optional<TValue<String>>::none());
         }
 
-        TValue2<Function> init_function = init.value();
-        Optional<TValue2<Tuple>> defaults =
+        TValue<Function> init_function = init.value();
+        Optional<TValue<Tuple>> defaults =
             init_function.extract()->default_parameters.value();
         if(!defaults.has_value())
         {
             return make_object_value<Function>(
-                TValue2<CodeObject>::from_oop(code),
-                Optional<TValue2<String>>::none());
+                TValue<CodeObject>::from_oop(code),
+                Optional<TValue<String>>::none());
         }
 
-        TValue2<Tuple> thunk_defaults = make_constructor_thunk_defaults(
+        TValue<Tuple> thunk_defaults = make_constructor_thunk_defaults(
             defaults.value(), init_function.extract()
                                   ->code_object.extract()
                                   ->n_positional_parameters);
         if(thunk_defaults.extract()->empty())
         {
             return make_object_value<Function>(
-                TValue2<CodeObject>::from_oop(code),
-                Optional<TValue2<String>>::none());
+                TValue<CodeObject>::from_oop(code),
+                Optional<TValue<String>>::none());
         }
         if(thunk_defaults.extract()->size() > code->n_positional_parameters)
         {
@@ -161,8 +161,8 @@ namespace cl
                 "TypeError: unsupported __init__ default parameter layout");
         }
         return make_object_value<Function>(
-            TValue2<CodeObject>::from_oop(code),
-            Optional<TValue2<String>>::none(),
-            Optional<TValue2<Tuple>>::some(thunk_defaults));
+            TValue<CodeObject>::from_oop(code),
+            Optional<TValue<String>>::none(),
+            Optional<TValue<Tuple>>::some(thunk_defaults));
     }
 }  // namespace cl

@@ -375,7 +375,7 @@ namespace cl
 
         template <typename T>
         int32_t emplace_back(AstKind kind, uint32_t source_offset,
-                             TValue2<T> constant)
+                             TValue<T> constant)
         {
             return emplace_back(kind, source_offset, constant.raw_value());
         }
@@ -394,7 +394,7 @@ namespace cl
 
         template <typename T>
         int32_t emplace_back(AstKind kind, uint32_t source_offset,
-                             AstChildren child_vec, TValue2<T> constant)
+                             AstChildren child_vec, TValue<T> constant)
         {
             return emplace_back(kind, source_offset, child_vec,
                                 constant.raw_value());

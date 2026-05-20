@@ -53,8 +53,8 @@ namespace cl
 
         explicit ValueArrayBacking(size_t value_cell_count)
             : HeapObject(native_layout),
-              value_cell_count_value(TValue2<SMI>::from_smi(
-                  static_cast<int64_t>(value_cell_count)))
+              value_cell_count_value(
+                  TValue<SMI>::from_smi(static_cast<int64_t>(value_cell_count)))
         {
         }
 
@@ -66,7 +66,7 @@ namespace cl
         void set_value_cell_count(size_t value_cell_count)
         {
             value_cell_count_value =
-                TValue2<SMI>::from_smi(static_cast<int64_t>(value_cell_count));
+                TValue<SMI>::from_smi(static_cast<int64_t>(value_cell_count));
         }
 
         static size_t size_for(size_t value_cell_count)
@@ -80,7 +80,7 @@ namespace cl
             return size_for(backing->value_cell_count());
         }
 
-        Member<TValue2<SMI>> value_cell_count_value;
+        Member<TValue<SMI>> value_cell_count_value;
         Value elements[1];
 
         CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN(ValueArrayBacking,
@@ -97,8 +97,8 @@ namespace cl
 
         explicit HeapPtrArrayBacking(size_t value_cell_count)
             : HeapObject(native_layout),
-              value_cell_count_value(TValue2<SMI>::from_smi(
-                  static_cast<int64_t>(value_cell_count)))
+              value_cell_count_value(
+                  TValue<SMI>::from_smi(static_cast<int64_t>(value_cell_count)))
         {
         }
 
@@ -110,7 +110,7 @@ namespace cl
         void set_value_cell_count(size_t value_cell_count)
         {
             value_cell_count_value =
-                TValue2<SMI>::from_smi(static_cast<int64_t>(value_cell_count));
+                TValue<SMI>::from_smi(static_cast<int64_t>(value_cell_count));
         }
 
         static size_t size_for(size_t value_cell_count)
@@ -124,7 +124,7 @@ namespace cl
             return size_for(backing->value_cell_count());
         }
 
-        Member<TValue2<SMI>> value_cell_count_value;
+        Member<TValue<SMI>> value_cell_count_value;
         HeapObject *elements[1];
 
         static_assert(sizeof(HeapObject *) == sizeof(Value));

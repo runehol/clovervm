@@ -8,7 +8,7 @@ namespace cl
 {
     static Value native_tuple_iterator_iter(Value self)
     {
-        (void)CL_TRY(TValue2<TupleIterator>::from_value_or_raise(
+        (void)CL_TRY(TValue<TupleIterator>::from_value_or_raise(
             self, L"TypeError",
             L"tuple_iterator.__iter__ expects a tuple_iterator receiver"));
         return self;
@@ -16,8 +16,8 @@ namespace cl
 
     static Value native_tuple_iterator_next(Value self)
     {
-        TValue2<TupleIterator> iterator_value =
-            CL_TRY(TValue2<TupleIterator>::from_value_or_raise(
+        TValue<TupleIterator> iterator_value =
+            CL_TRY(TValue<TupleIterator>::from_value_or_raise(
                 self, L"TypeError",
                 L"tuple_iterator.__next__ expects a tuple_iterator receiver"));
         TupleIterator *iterator = iterator_value.extract();
@@ -32,7 +32,7 @@ namespace cl
         }
 
         iterator->index =
-            TValue2<SMI>::from_smi(static_cast<int64_t>(index + 1));
+            TValue<SMI>::from_smi(static_cast<int64_t>(index + 1));
         Tuple *tuple = iterator->tuple.extract();
         return tuple->item_unchecked(index);
     }

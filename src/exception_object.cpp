@@ -17,7 +17,7 @@ namespace cl
     }
 
     StopIterationObject::StopIterationObject(ClassObject *cls,
-                                             TValue2<String> message,
+                                             TValue<String> message,
                                              Value value)
         : ExceptionObject(cls, native_layout, message), value(value)
     {
@@ -25,8 +25,8 @@ namespace cl
 
     static void install_exception_instance_root_shape(ClassObject *cls)
     {
-        TValue2<String> dunder_class_name = interned_string(L"__class__");
-        TValue2<String> message_name = interned_string(L"message");
+        TValue<String> dunder_class_name = interned_string(L"__class__");
+        TValue<String> message_name = interned_string(L"message");
         DescriptorFlags class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot) |
@@ -50,9 +50,9 @@ namespace cl
 
     static void install_stop_iteration_instance_root_shape(ClassObject *cls)
     {
-        TValue2<String> dunder_class_name = interned_string(L"__class__");
-        TValue2<String> message_name = interned_string(L"message");
-        TValue2<String> value_name = interned_string(L"value");
+        TValue<String> dunder_class_name = interned_string(L"__class__");
+        TValue<String> message_name = interned_string(L"message");
+        TValue<String> value_name = interned_string(L"value");
         DescriptorFlags class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot) |
@@ -127,33 +127,33 @@ namespace cl
         return builtin_class_definition(cls, native_layout_ids);
     }
 
-    TValue2<Exception> make_exception_object(TValue2<ClassObject> type,
-                                             TValue2<String> message)
+    TValue<Exception> make_exception_object(TValue<ClassObject> type,
+                                            TValue<String> message)
     {
-        return TValue2<Exception>::from_value_unchecked(
+        return TValue<Exception>::from_value_unchecked(
             make_internal_value<ExceptionObject>(type.extract(), message)
                 .raw_value());
     }
 
-    TValue2<Exception> make_exception_object(ThreadState *thread,
-                                             TValue2<ClassObject> type,
-                                             TValue2<String> message)
+    TValue<Exception> make_exception_object(ThreadState *thread,
+                                            TValue<ClassObject> type,
+                                            TValue<String> message)
     {
-        return TValue2<Exception>::from_value_unchecked(
+        return TValue<Exception>::from_value_unchecked(
             thread
                 ->make_internal_value<ExceptionObject>(type.extract(), message)
                 .raw_value());
     }
 
-    TValue2<Exception> make_exception_object(TValue2<ClassObject> type,
-                                             const wchar_t *message)
+    TValue<Exception> make_exception_object(TValue<ClassObject> type,
+                                            const wchar_t *message)
     {
         return make_exception_object(type, interned_string(message));
     }
 
-    TValue2<Exception> make_exception_object(ThreadState *thread,
-                                             TValue2<ClassObject> type,
-                                             const wchar_t *message)
+    TValue<Exception> make_exception_object(ThreadState *thread,
+                                            TValue<ClassObject> type,
+                                            const wchar_t *message)
     {
         return make_exception_object(
             thread, type,
@@ -161,19 +161,19 @@ namespace cl
                 message));
     }
 
-    TValue2<StopIterationObject>
-    make_stop_iteration_object(TValue2<ClassObject> type, Value value)
+    TValue<StopIterationObject>
+    make_stop_iteration_object(TValue<ClassObject> type, Value value)
     {
-        return TValue2<StopIterationObject>::from_value_unchecked(
+        return TValue<StopIterationObject>::from_value_unchecked(
             make_internal_value<StopIterationObject>(type.extract(), value)
                 .raw_value());
     }
 
-    TValue2<StopIterationObject>
-    make_stop_iteration_object(ThreadState *thread, TValue2<ClassObject> type,
+    TValue<StopIterationObject>
+    make_stop_iteration_object(ThreadState *thread, TValue<ClassObject> type,
                                Value value)
     {
-        return TValue2<StopIterationObject>::from_value_unchecked(
+        return TValue<StopIterationObject>::from_value_unchecked(
             thread
                 ->make_internal_value<StopIterationObject>(
                     type.extract(),

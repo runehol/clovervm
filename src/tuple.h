@@ -30,7 +30,7 @@ namespace cl
         Tuple(ClassObject *cls, TupleFromFrameArgumentsTag, Value *fp,
               int8_t first_arg_reg, uint32_t n_args)
             : Object(cls, native_layout),
-              size_value(TValue2<SMI>::from_smi(static_cast<int64_t>(n_args)))
+              size_value(TValue<SMI>::from_smi(static_cast<int64_t>(n_args)))
         {
             for(uint32_t idx = 0; idx < n_args; ++idx)
             {
@@ -60,7 +60,7 @@ namespace cl
         }
         [[nodiscard]] Value get_item(int64_t py_idx) const;
 
-        static ALWAYSINLINE TValue2<Tuple>
+        static ALWAYSINLINE TValue<Tuple>
         from_frame_arguments(ThreadState *thread, Value *fp,
                              int8_t first_arg_reg, uint32_t n_args)
         {
@@ -104,7 +104,7 @@ namespace cl
         [[nodiscard]] Value check_index(size_t idx) const;
         void initialize_items(size_t size);
 
-        Member<TValue2<SMI>> size_value;
+        Member<TValue<SMI>> size_value;
         Value elements[1];
     };
 

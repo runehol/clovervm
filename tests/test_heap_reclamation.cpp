@@ -239,7 +239,7 @@ namespace cl
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
 
         String *child = thread->make_object_raw<String>(L"code-constant");
-        TValue2<String> code_name =
+        TValue<String> code_name =
             context.vm().get_or_create_interned_string_value(L"<test>");
         CodeObject *code_object = thread->make_object_raw<CodeObject>(
             nullptr, nullptr, nullptr, code_name);
@@ -273,11 +273,11 @@ namespace cl
         context.vm().run_heap_reclamation();
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
 
-        TValue2<String> a_name(
+        TValue<String> a_name(
             context.vm().get_or_create_interned_string_value(L"a"));
         Shape *root_shape = thread->make_internal_raw<Shape>(
-            TValue2<ClassObject>::from_oop(context.vm().object_class()),
-            nullptr, 0, 0, 0, shape_flag(ShapeFlag::None), 0);
+            TValue<ClassObject>::from_oop(context.vm().object_class()), nullptr,
+            0, 0, 0, shape_flag(ShapeFlag::None), 0);
         Shape *child_shape =
             root_shape->derive_transition(a_name, ShapeTransitionVerb::Add);
         ASSERT_EQ(1, child_shape->refcount);

@@ -37,7 +37,7 @@ An object can use no-reference slabs only if all of these are true:
 
 - its shape is fixed and immortal;
 - it cannot grow instance attributes or transition shape;
-- it has no `Member2<Value>` or `Member2<TValue2<T>>` fields;
+- it has no `Member<Value>` or `Member<TValue<T>>` fields;
 - it has no custom deallocation that releases child heap objects;
 - all pointer-like metadata reachable from the object is immortal or otherwise
   non-owning;

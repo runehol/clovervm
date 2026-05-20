@@ -47,7 +47,7 @@ namespace cl
         return result;
     }
 
-    static std::wstring cl_string_to_wstring(TValue2<String> string)
+    static std::wstring cl_string_to_wstring(TValue<String> string)
     {
         String *str = string.extract();
         return std::wstring(str->data, size_t(str->count.extract()));
@@ -66,7 +66,7 @@ namespace cl
             return L"InternalError: exception marker without pending exception";
         }
 
-        TValue2<Exception> exception = thread->pending_exception_object();
+        TValue<Exception> exception = thread->pending_exception_object();
         std::wstring result = cl_string_to_wstring(
             exception.extract()->get_shape()->get_class()->get_name());
         std::wstring message =
@@ -100,7 +100,7 @@ namespace cl
         }
 
         std::wcout << cl_string_to_wstring(
-                          TValue2<String>::from_value_checked(repr).value())
+                          TValue<String>::from_value_checked(repr).value())
                    << L"\n";
     }
 

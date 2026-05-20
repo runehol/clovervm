@@ -134,11 +134,11 @@ namespace cl
 
         CodeObjectBuilder(const CompilationUnit *compilation_unit,
                           Scope *module_scope, Scope *local_scope,
-                          TValue2<String> name);
+                          TValue<String> name);
         CodeObjectBuilder(VirtualMachine *vm,
                           const CompilationUnit *compilation_unit,
                           Scope *module_scope, Scope *local_scope,
-                          TValue2<String> name);
+                          TValue<String> name);
 
         CodeObjectBuilder(const CodeObjectBuilder &) = delete;
         CodeObjectBuilder &operator=(const CodeObjectBuilder &) = delete;
@@ -174,19 +174,19 @@ namespace cl
             return code_obj->local_scope.extract();
         }
 
-        TValue2<String> name() const
+        TValue<String> name() const
         {
             assert(code_obj != nullptr);
             return code_obj->name.value();
         }
 
-        void set_name(TValue2<String> name)
+        void set_name(TValue<String> name)
         {
             assert_not_finalized();
             code_obj->name = name;
         }
 
-        void set_docstring(Optional<TValue2<String>> docstring)
+        void set_docstring(Optional<TValue<String>> docstring)
         {
             assert_not_finalized();
             code_obj->docstring = docstring;
@@ -348,7 +348,7 @@ namespace cl
                                            JumpTarget &handler);
 
         uint32_t allocate_constant(Value val);
-        uint32_t allocate_constant(TValue2<String> val)
+        uint32_t allocate_constant(TValue<String> val)
         {
             return allocate_constant(val.raw_value());
         }

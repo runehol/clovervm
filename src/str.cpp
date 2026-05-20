@@ -126,7 +126,7 @@ namespace cl
                                        std::size(methods));
     }
 
-    uint64_t string_hash(TValue2<String> s)
+    uint64_t string_hash(TValue<String> s)
     {
         String *str = s.extract();
         uint64_t len = str->count.extract();
@@ -140,14 +140,14 @@ namespace cl
         return hash;
     }
 
-    const cl_wchar *string_as_wchar_t(TValue2<String> s)
+    const cl_wchar *string_as_wchar_t(TValue<String> s)
     {
         String *str = s.extract();
         cl_wchar *c = &str->data[0];
         return c;
     }
 
-    bool string_eq_slow_path(TValue2<String> a, TValue2<String> b)
+    bool string_eq_slow_path(TValue<String> a, TValue<String> b)
     {
 
         const String *sa = a.extract();

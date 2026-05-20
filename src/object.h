@@ -26,7 +26,7 @@ namespace cl
     class VirtualMachine;
     class String;
     class Value;
-    template <typename T> class TValue2;
+    template <typename T> class TValue;
 
     struct BootstrapObjectTag
     {
@@ -55,19 +55,19 @@ namespace cl
         bool is_class_bootstrapped() const { return shape != nullptr; }
         Shape *get_shape() const { return shape; }
         void set_shape(Shape *new_shape);
-        Value get_own_property(TValue2<String> name) const;
+        Value get_own_property(TValue<String> name) const;
         AttributeReadDescriptor
-        lookup_own_attribute_descriptor(TValue2<String> name) const;
+        lookup_own_attribute_descriptor(TValue<String> name) const;
         AttributeWriteDescriptor
-        lookup_own_attribute_write_descriptor(TValue2<String> name);
+        lookup_own_attribute_write_descriptor(TValue<String> name);
         AttributeDeleteDescriptor
-        lookup_own_attribute_delete_descriptor(TValue2<String> name);
-        bool add_own_property(TValue2<String> name, Value value);
-        bool define_own_property(TValue2<String> name, Value value,
+        lookup_own_attribute_delete_descriptor(TValue<String> name);
+        bool add_own_property(TValue<String> name, Value value);
+        bool define_own_property(TValue<String> name, Value value,
                                  DescriptorFlags descriptor_flags);
-        bool set_existing_own_property(TValue2<String> name, Value value);
-        bool set_own_property(TValue2<String> name, Value value);
-        bool delete_own_property(TValue2<String> name);
+        bool set_existing_own_property(TValue<String> name, Value value);
+        bool set_own_property(TValue<String> name, Value value);
+        bool delete_own_property(TValue<String> name);
         Value read_storage_location(StorageLocation location) const;
         void write_existing_storage_location(StorageLocation location,
                                              Value value);

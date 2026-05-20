@@ -41,9 +41,9 @@ namespace cl
         }
 
         template <typename Source>
-        TValue2<CLType> get_or_create_value(const Source &src)
+        TValue<CLType> get_or_create_value(const Source &src)
         {
-            return TValue2<CLType>::from_oop(get_or_create_raw(src));
+            return TValue<CLType>::from_oop(get_or_create_raw(src));
         }
 
         template <typename Visitor> void for_each_raw(Visitor &&visitor)

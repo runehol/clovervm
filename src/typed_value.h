@@ -53,10 +53,10 @@ namespace cl
         return left.raw_value() != right.raw_value();
     }
 
-    template <typename T, typename Enable = void> struct TValue2Traits;
+    template <typename T, typename Enable = void> struct TValueTraits;
 
     template <typename T>
-    struct TValue2Traits<T, std::enable_if_t<HasNativeLayoutId<T>::value>>
+    struct TValueTraits<T, std::enable_if_t<HasNativeLayoutId<T>::value>>
     {
         using extract_type = T *;
 
@@ -73,7 +73,7 @@ namespace cl
         }
     };
 
-    template <> struct TValue2Traits<SMI>
+    template <> struct TValueTraits<SMI>
     {
         using extract_type = int64_t;
 
@@ -85,7 +85,7 @@ namespace cl
         static const wchar_t *target_type_name() { return L"SMI"; }
     };
 
-    template <> struct TValue2Traits<CLInt>
+    template <> struct TValueTraits<CLInt>
     {
         using extract_type = Value;
 
@@ -94,7 +94,7 @@ namespace cl
         static const wchar_t *target_type_name() { return L"int"; }
     };
 
-    template <> struct TValue2Traits<None>
+    template <> struct TValueTraits<None>
     {
         using extract_type = void;
 
@@ -103,7 +103,7 @@ namespace cl
         static const wchar_t *target_type_name() { return L"None"; }
     };
 
-    template <> struct TValue2Traits<Bool>
+    template <> struct TValueTraits<Bool>
     {
         using extract_type = bool;
 
@@ -116,82 +116,81 @@ namespace cl
         static const wchar_t *target_type_name() { return L"bool"; }
     };
 
-    template <typename T> class TValue2
+    template <typename T> class TValue
     {
     public:
         using semantic_type = T;
 
-        static Expected<TValue2<T>> from_value_checked(Value value);
-        static Expected<TValue2<T>>
-        from_value_or_raise(Value value, const wchar_t *type_name,
-                            const wchar_t *message);
-        static TValue2 from_value_assumed(Value value)
+        static Expected<TValue<T>> from_value_checked(Value value);
+        static Expected<TValue<T>> from_value_or_raise(Value value,
+                                                       const wchar_t *type_name,
+                                                       const wchar_t *message);
+        static TValue from_value_assumed(Value value)
         {
-            assert(TValue2Traits<T>::is_instance(value));
+            assert(TValueTraits<T>::is_instance(value));
             return from_value_unchecked(value);
         }
 
-        static TValue2 from_value_unchecked(Value value)
+        static TValue from_value_unchecked(Value value)
         {
-            return TValue2(value);
+            return TValue(value);
         }
 
         template <typename U = T,
                   typename = std::enable_if_t<std::is_same_v<U, SMI> ||
                                               std::is_same_v<U, CLInt>>>
-        static TValue2 from_smi(int64_t value)
+        static TValue from_smi(int64_t value)
         {
             return from_value_unchecked(Value::from_smi(value));
         }
 
         template <typename U = T,
                   typename = std::enable_if_t<std::is_same_v<U, None>>>
-        static TValue2 None()
+        static TValue None()
         {
             return from_value_unchecked(Value::None());
         }
 
         template <typename U = T,
                   typename = std::enable_if_t<std::is_same_v<U, Bool>>>
-        static TValue2 from_bool(bool value)
+        static TValue from_bool(bool value)
         {
             return from_value_unchecked(value ? Value::True() : Value::False());
         }
 
         template <typename U = T,
                   typename = std::enable_if_t<std::is_same_v<U, Bool>>>
-        static TValue2 True()
+        static TValue True()
         {
             return from_value_unchecked(Value::True());
         }
 
         template <typename U = T,
                   typename = std::enable_if_t<std::is_same_v<U, Bool>>>
-        static TValue2 False()
+        static TValue False()
         {
             return from_value_unchecked(Value::False());
         }
 
-        template <
-            typename U = T,
-            typename ExtractType = typename TValue2Traits<U>::extract_type,
-            typename = std::enable_if_t<std::is_pointer_v<ExtractType>>>
-        static TValue2 from_oop(std::remove_pointer_t<ExtractType> *ptr)
+        template <typename U = T,
+                  typename ExtractType = typename TValueTraits<U>::extract_type,
+                  typename = std::enable_if_t<std::is_pointer_v<ExtractType>>>
+        static TValue from_oop(std::remove_pointer_t<ExtractType> *ptr)
         {
             return from_value_unchecked(Value::from_oop(ptr));
         }
 
-        template <typename U = T, typename ExtractType =
-                                      typename TValue2Traits<U>::extract_type>
+        template <typename U = T,
+                  typename ExtractType = typename TValueTraits<U>::extract_type>
         ExtractType extract() const
         {
-            return TValue2Traits<U>::extract_unchecked(value_);
+            return TValueTraits<U>::extract_unchecked(value_);
         }
 
         Value raw_value() const { return value_; }
 
     private:
-        explicit TValue2(Value value) : value_(value) {}
+        explicit TValue(Value value) : value_(value) {}
 
         Value value_;
     };
@@ -316,9 +315,9 @@ namespace cl
     static_assert(sizeof(Expected<Value>) == sizeof(Value));
 
     template <typename T>
-    Expected<TValue2<T>> TValue2<T>::from_value_checked(Value value)
+    Expected<TValue<T>> TValue<T>::from_value_checked(Value value)
     {
-        if(!TValue2Traits<T>::is_instance(value))
+        if(!TValueTraits<T>::is_instance(value))
         {
             if constexpr(HasNativeLayoutId<T>::value)
             {
@@ -327,23 +326,23 @@ namespace cl
             else
             {
                 (void)set_pending_invalid_typed_value_error(
-                    TValue2Traits<T>::target_type_name());
+                    TValueTraits<T>::target_type_name());
             }
-            return Expected<TValue2<T>>::propagate_exception();
+            return Expected<TValue<T>>::propagate_exception();
         }
-        return Expected<TValue2<T>>::ok(from_value_unchecked(value));
+        return Expected<TValue<T>>::ok(from_value_unchecked(value));
     }
 
     template <typename T>
-    Expected<TValue2<T>>
-    TValue2<T>::from_value_or_raise(Value value, const wchar_t *type_name,
-                                    const wchar_t *message)
+    Expected<TValue<T>> TValue<T>::from_value_or_raise(Value value,
+                                                       const wchar_t *type_name,
+                                                       const wchar_t *message)
     {
-        if(!TValue2Traits<T>::is_instance(value))
+        if(!TValueTraits<T>::is_instance(value))
         {
-            return Expected<TValue2<T>>::raise_exception(type_name, message);
+            return Expected<TValue<T>>::raise_exception(type_name, message);
         }
-        return Expected<TValue2<T>>::ok(from_value_unchecked(value));
+        return Expected<TValue<T>>::ok(from_value_unchecked(value));
     }
 
 }  // namespace cl

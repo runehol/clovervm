@@ -214,8 +214,8 @@ The important field names should remain semantic. Prefer an explicit defining
 module plus resolved builtins namespace:
 
 ```cpp
-MemberHeapPtr2<ModuleObject> defining_module;
-Member2<Value> builtins_namespace;
+MemberHeapPtr<ModuleObject> defining_module;
+Member<Value> builtins_namespace;
 ```
 
 over a generic search-path array. There are exactly two namespaces in normal

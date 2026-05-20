@@ -25,7 +25,7 @@ namespace cl
     public:
         static constexpr NativeLayoutId native_layout = NativeLayoutId::String;
 
-        String(ClassObject *cls, const cl_wchar *_data, TValue2<SMI> _count)
+        String(ClassObject *cls, const cl_wchar *_data, TValue<SMI> _count)
             : Object(cls, native_layout), count(_count)
         {
             size_t n_chars = count.extract();
@@ -33,7 +33,7 @@ namespace cl
             this->data[n_chars] = 0;  // zero terminate for good measure
         }
 
-        String(const cl_wchar *_data, TValue2<SMI> _count)
+        String(const cl_wchar *_data, TValue<SMI> _count)
             : Object(BootstrapObjectTag{}, native_layout), count(_count)
         {
             size_t n_chars = count.extract();
@@ -43,7 +43,7 @@ namespace cl
 
         String(ClassObject *cls, const cl_wchar *_data)
             : Object(cls, native_layout),
-              count(TValue2<SMI>::from_smi(wcslen(_data)))
+              count(TValue<SMI>::from_smi(wcslen(_data)))
         {
             size_t n_chars = count.extract();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -52,7 +52,7 @@ namespace cl
 
         String(const cl_wchar *_data)
             : Object(BootstrapObjectTag{}, native_layout),
-              count(TValue2<SMI>::from_smi(wcslen(_data)))
+              count(TValue<SMI>::from_smi(wcslen(_data)))
         {
             size_t n_chars = count.extract();
             memcpy(&this->data[0], _data, n_chars * sizeof(cl_wchar));
@@ -61,7 +61,7 @@ namespace cl
 
         String(ClassObject *cls, const std::wstring &str)
             : Object(cls, native_layout),
-              count(TValue2<SMI>::from_smi(str.size()))
+              count(TValue<SMI>::from_smi(str.size()))
         {
             size_t n_chars = count.extract();
             memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
@@ -70,7 +70,7 @@ namespace cl
 
         String(const std::wstring &str)
             : Object(BootstrapObjectTag{}, native_layout),
-              count(TValue2<SMI>::from_smi(str.size()))
+              count(TValue<SMI>::from_smi(str.size()))
         {
             size_t n_chars = count.extract();
             memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
@@ -79,7 +79,7 @@ namespace cl
 
         void install_bootstrap_class(ClassObject *new_cls);
 
-        Member<TValue2<SMI>> count;
+        Member<TValue<SMI>> count;
         cl_wchar data[1];
 
         static size_t size_for(const std::wstring &str)
@@ -94,11 +94,11 @@ namespace cl
         {
             return sizeof(String) + n_chars * sizeof(cl_wchar);
         }
-        static size_t size_for(TValue2<SMI> count)
+        static size_t size_for(TValue<SMI> count)
         {
             return size_for(size_t(count.extract()));
         }
-        static size_t size_for(ClassObject *, TValue2<SMI> count)
+        static size_t size_for(ClassObject *, TValue<SMI> count)
         {
             return size_for(count);
         }
@@ -129,14 +129,14 @@ namespace cl
         return a == b.data;
     }
 
-    uint64_t string_hash(TValue2<String> s);
-    bool string_eq_slow_path(TValue2<String> a, TValue2<String> b);
+    uint64_t string_hash(TValue<String> s);
+    bool string_eq_slow_path(TValue<String> a, TValue<String> b);
 
-    const cl_wchar *string_as_wchar_t(TValue2<String> s);
+    const cl_wchar *string_as_wchar_t(TValue<String> s);
     BuiltinClassDefinition make_str_class(VirtualMachine *vm);
     void install_str_class_methods(VirtualMachine *vm);
 
-    static inline bool string_eq(TValue2<String> a, TValue2<String> b)
+    static inline bool string_eq(TValue<String> a, TValue<String> b)
     {
         {
             // pointer equality -> true

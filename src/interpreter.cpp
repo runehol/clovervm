@@ -94,7 +94,7 @@ namespace cl
     resolve_exceptional_frame_exit(ThreadState *thread, Value *fp,
                                    const uint8_t *pc, CodeObject *code_object);
 
-    static std::wstring format_name_error_message(TValue2<String> name)
+    static std::wstring format_name_error_message(TValue<String> name)
     {
         String *str = name.extract();
         size_t n_chars = size_t(str->count.extract());
@@ -127,7 +127,7 @@ namespace cl
 
     static NOINLINE ExceptionalTarget set_name_error_and_resolve_frame_exit(
         ThreadState *thread, Value *fp, const uint8_t *pc,
-        CodeObject *code_object, TValue2<String> name)
+        CodeObject *code_object, TValue<String> name)
     {
         std::wstring message = format_name_error_message(name);
         (void)thread->set_pending_builtin_exception_string(L"NameError",
@@ -402,7 +402,7 @@ namespace cl
     reject_set_name_notifications_until_supported(Value *fp,
                                                   CodeObject *body_code)
     {
-        TValue2<String> set_name_name(interned_string(L"__set_name__"));
+        TValue<String> set_name_name(interned_string(L"__set_name__"));
 
         Scope *local_scope = body_code->get_local_scope_ptr();
         for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
@@ -436,12 +436,12 @@ namespace cl
     static Value build_class_from_frame(ThreadState *thread, Value *fp,
                                         CodeObject *body_code)
     {
-        TValue2<String> class_name = TValue2<String>::from_value_assumed(
+        TValue<String> class_name = TValue<String>::from_value_assumed(
             fp[body_code->encode_reg(ClassBodyNameParameter)]);
-        TValue2<Tuple> bases = TValue2<Tuple>::from_value_assumed(
+        TValue<Tuple> bases = TValue<Tuple>::from_value_assumed(
             fp[body_code->encode_reg(ClassBodyBasesParameter)]);
 
-        TValue2<ClassObject> cls = thread->make_internal_value<ClassObject>(
+        TValue<ClassObject> cls = thread->make_internal_value<ClassObject>(
             thread->get_machine()->type_class(), class_name,
             kDefaultFactoryInlineSlotCount, bases);
         Scope *local_scope = body_code->get_local_scope_ptr();
@@ -532,9 +532,9 @@ namespace cl
     {
         (void)thread->set_pending_exception_object(make_exception_object(
             thread,
-            TValue2<ClassObject>::from_oop(
+            TValue<ClassObject>::from_oop(
                 thread->class_for_builtin_name(L"AssertionError")),
-            INTERP_TRY(TValue2<String>::from_value_checked(accumulator))));
+            INTERP_TRY(TValue<String>::from_value_checked(accumulator))));
         ExceptionalTarget target =
             resolve_exceptional_frame_exit(thread, fp, pc, code_object);
         fp = target.fp;
@@ -549,10 +549,10 @@ namespace cl
         Value value = thread->pending_stop_iteration_value();
         ClassObject *stop_iteration =
             thread->class_for_native_layout(NativeLayoutId::StopIteration);
-        TValue2<StopIterationObject> exception = make_stop_iteration_object(
-            thread, TValue2<ClassObject>::from_oop(stop_iteration), value);
+        TValue<StopIterationObject> exception = make_stop_iteration_object(
+            thread, TValue<ClassObject>::from_oop(stop_iteration), value);
         (void)thread->set_pending_exception_object(
-            TValue2<Exception>::from_value_unchecked(exception.raw_value()));
+            TValue<Exception>::from_value_unchecked(exception.raw_value()));
     }
 
     static INTERP_CC Value op_lda_active_exception(PARAMS)
@@ -670,12 +670,12 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static TValue2<Exception>
+    NOINLINE static TValue<Exception>
     make_raise_exception_object(ThreadState *thread, Value raised)
     {
-        if(TValue2Traits<Exception>::is_instance(raised))
+        if(TValueTraits<Exception>::is_instance(raised))
         {
-            return TValue2<Exception>::from_value_assumed(raised);
+            return TValue<Exception>::from_value_assumed(raised);
         }
         if(can_convert_to<ClassObject>(raised))
         {
@@ -685,32 +685,32 @@ namespace cl
             {
                 return make_exception_object(
                     thread,
-                    TValue2<ClassObject>::from_oop(
+                    TValue<ClassObject>::from_oop(
                         thread->class_for_builtin_name(L"TypeError")),
                     L"exceptions must derive from BaseException");
             }
             if(cls ==
                thread->class_for_native_layout(NativeLayoutId::StopIteration))
             {
-                return TValue2<Exception>::from_value_unchecked(
+                return TValue<Exception>::from_value_unchecked(
                     make_stop_iteration_object(
-                        thread, TValue2<ClassObject>::from_oop(cls))
+                        thread, TValue<ClassObject>::from_oop(cls))
                         .raw_value());
             }
 
             return make_exception_object(
-                thread, TValue2<ClassObject>::from_oop(cls), L"");
+                thread, TValue<ClassObject>::from_oop(cls), L"");
         }
 
         return make_exception_object(
             thread,
-            TValue2<ClassObject>::from_oop(
+            TValue<ClassObject>::from_oop(
                 thread->class_for_builtin_name(L"TypeError")),
             L"exceptions must derive from BaseException");
     }
 
     NOINLINE static void set_exception_context(ThreadState *thread,
-                                               TValue2<Exception> raised,
+                                               TValue<Exception> raised,
                                                Value context)
     {
         [[maybe_unused]] bool ok = raised.extract()->set_own_property(
@@ -737,7 +737,7 @@ namespace cl
     NOINLINE INTERP_CC Value raise_unwind_with_context(PARAMS)
     {
         int8_t context_reg = pc[1];
-        TValue2<Exception> raised =
+        TValue<Exception> raised =
             make_raise_exception_object(thread, accumulator);
         set_exception_context(thread, raised, fp[context_reg]);
         (void)thread->set_pending_exception_object(raised);
@@ -1095,7 +1095,7 @@ namespace cl
 
     static ALWAYSINLINE void enter_function_frame_at_new_fp(
         Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
-        TValue2<Function> fun, Value *new_fp, uint32_t instr_len)
+        TValue<Function> fun, Value *new_fp, uint32_t instr_len)
     {
         assert(is_stack_frame_aligned(new_fp));
         pc += instr_len;
@@ -1107,7 +1107,7 @@ namespace cl
         pc = code_object->code.data();
     }
 
-    static ALWAYSINLINE bool is_fixed_arity_function(TValue2<Function> fun)
+    static ALWAYSINLINE bool is_fixed_arity_function(TValue<Function> fun)
     {
         return !fun.extract()->has_varargs() &&
                fun.extract()->min_positional_arity ==
@@ -1115,7 +1115,7 @@ namespace cl
     }
 
     static ALWAYSINLINE FunctionCallAdaptation
-    classify_function_call_adaptation(TValue2<Function> fun)
+    classify_function_call_adaptation(TValue<Function> fun)
     {
         if(fun.extract()->has_varargs())
         {
@@ -1130,7 +1130,7 @@ namespace cl
 
     static ALWAYSINLINE void
     populate_function_call_cache(FunctionCallInlineCache &cache,
-                                 TValue2<Function> fun, uint32_t n_args,
+                                 TValue<Function> fun, uint32_t n_args,
                                  FunctionCallAdaptation adaptation)
     {
         cache.kind = FunctionCallInlineCacheKind::Function;
@@ -1144,7 +1144,7 @@ namespace cl
 
     static ALWAYSINLINE void
     populate_constructor_call_cache(FunctionCallInlineCache &cache,
-                                    ClassObject *cls, TValue2<Function> thunk,
+                                    ClassObject *cls, TValue<Function> thunk,
                                     ValidityCell *lookup_cell, uint32_t n_args,
                                     FunctionCallAdaptation adaptation)
     {
@@ -1178,7 +1178,7 @@ namespace cl
     }
 
     static ALWAYSINLINE void
-    initialize_missing_default_arguments(Value *new_fp, TValue2<Function> fun,
+    initialize_missing_default_arguments(Value *new_fp, TValue<Function> fun,
                                          uint32_t n_args)
     {
         uint32_t n_supplied_positional_args =
@@ -1192,10 +1192,10 @@ namespace cl
             return;
         }
 
-        Optional<TValue2<Tuple>> maybe_defaults =
+        Optional<TValue<Tuple>> maybe_defaults =
             fun.extract()->default_parameters.value();
         assert(maybe_defaults.has_value());
-        TValue2<Tuple> defaults = maybe_defaults.value();
+        TValue<Tuple> defaults = maybe_defaults.value();
         uint32_t first_default_idx =
             uint32_t(defaults.extract()->size()) - n_missing_args;
         CodeObject *target_code_object = fun.extract()->code_object.extract();
@@ -1209,7 +1209,7 @@ namespace cl
 
     static ALWAYSINLINE void initialize_varargs_argument(ThreadState *thread,
                                                          Value *new_fp,
-                                                         TValue2<Function> fun,
+                                                         TValue<Function> fun,
                                                          uint32_t n_args)
     {
         uint32_t n_positional_parameters =
@@ -1218,7 +1218,7 @@ namespace cl
                                     ? n_args - n_positional_parameters
                                     : 0;
         CodeObject *target_code_object = fun.extract()->code_object.extract();
-        TValue2<Tuple> varargs_tuple = Tuple::from_frame_arguments(
+        TValue<Tuple> varargs_tuple = Tuple::from_frame_arguments(
             thread, new_fp,
             target_code_object->encode_reg(n_positional_parameters),
             n_extra_args);
@@ -1227,7 +1227,7 @@ namespace cl
     }
 
     static ALWAYSINLINE Value *
-    new_frame_pointer_from_first_arg(Value *fp, TValue2<Function> fun,
+    new_frame_pointer_from_first_arg(Value *fp, TValue<Function> fun,
                                      int32_t first_arg_reg)
     {
         int32_t new_fp_reg = first_arg_reg -
@@ -1268,7 +1268,7 @@ namespace cl
 
     static ALWAYSINLINE void enter_function_frame_from_positional_args(
         ThreadState *thread, Value *&fp, const uint8_t *&pc,
-        CodeObject *&code_object, TValue2<Function> fun, int32_t first_arg_reg,
+        CodeObject *&code_object, TValue<Function> fun, int32_t first_arg_reg,
         uint32_t n_args, uint32_t instr_len, FunctionCallAdaptation adaptation)
     {
         Value *new_fp =
@@ -1558,7 +1558,7 @@ namespace cl
         uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
-        TValue2<String> attr_name = TValue2<String>::from_value_assumed(
+        TValue<String> attr_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
         AttributeReadInlineCache &cache =
             code_object->attribute_read_caches[cache_idx];
@@ -1597,7 +1597,7 @@ namespace cl
         uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
-        TValue2<String> attr_name = TValue2<String>::from_value_assumed(
+        TValue<String> attr_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
         AttributeMutationInlineCache &cache =
             code_object->attribute_mutation_caches[cache_idx];
@@ -1655,7 +1655,7 @@ namespace cl
         uint8_t const_offset = pc[2];
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
-        TValue2<String> attr_name = TValue2<String>::from_value_assumed(
+        TValue<String> attr_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
         AttributeMutationInlineCache &cache =
             code_object->attribute_mutation_caches[cache_idx];
@@ -2324,7 +2324,7 @@ namespace cl
         }
 
         thread->get_machine()->write_stdout(
-            TValue2<String>::from_value_assumed(accumulator));
+            TValue<String>::from_value_assumed(accumulator));
         accumulator = Value::None();
         COMPLETE();
     }
@@ -2354,7 +2354,7 @@ namespace cl
     {
         START(2);
         uint8_t const_offset = pc[1];
-        TValue2<CodeObject> code_obj = TValue2<CodeObject>::from_value_assumed(
+        TValue<CodeObject> code_obj = TValue<CodeObject>::from_value_assumed(
             code_object->constant_table[const_offset].value());
 
         accumulator = thread
@@ -2370,15 +2370,15 @@ namespace cl
         START(3);
         uint8_t const_offset = pc[1];
         int8_t defaults_reg = pc[2];
-        TValue2<CodeObject> code_obj = TValue2<CodeObject>::from_value_assumed(
+        TValue<CodeObject> code_obj = TValue<CodeObject>::from_value_assumed(
             code_object->constant_table[const_offset].value());
-        TValue2<Tuple> defaults =
-            TValue2<Tuple>::from_value_assumed(fp[defaults_reg]);
+        TValue<Tuple> defaults =
+            TValue<Tuple>::from_value_assumed(fp[defaults_reg]);
 
         accumulator = thread
                           ->make_object_value<Function>(
                               code_obj, code_obj.extract()->docstring.value(),
-                              Optional<TValue2<Tuple>>::some(defaults))
+                              Optional<TValue<Tuple>>::some(defaults))
                           .raw_value();
 
         COMPLETE();
@@ -2401,7 +2401,7 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue2<List> list = thread->make_object_value<List>(n_items);
+        TValue<List> list = thread->make_object_value<List>(n_items);
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             list.extract()->set_item_unchecked(idx, fp[reg - int8_t(idx)]);
@@ -2417,7 +2417,7 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue2<Tuple> tuple = thread->make_object_value<Tuple>(n_items);
+        TValue<Tuple> tuple = thread->make_object_value<Tuple>(n_items);
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             tuple.extract()->initialize_item_unchecked(
@@ -2434,7 +2434,7 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue2<Dict> dict = thread->make_object_value<Dict>();
+        TValue<Dict> dict = thread->make_object_value<Dict>();
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             Value key = fp[reg - int8_t(idx * 2)];
@@ -2451,7 +2451,7 @@ namespace cl
         static constexpr uint32_t create_class_instr_len = 3;
         uint8_t body_const_offset = pc[1];
         int8_t first_arg_reg = pc[2];
-        TValue2<CodeObject> body_code = TValue2<CodeObject>::from_value_assumed(
+        TValue<CodeObject> body_code = TValue<CodeObject>::from_value_assumed(
             code_object->constant_table[body_const_offset].value());
 
         const uint8_t *return_pc = pc + create_class_instr_len;
@@ -2588,8 +2588,8 @@ namespace cl
                 MUSTTAIL return not_callable_error(ARGS);
             }
 
-            TValue2<Function> thunk =
-                TValue2<Function>::from_oop(constructor.thunk);
+            TValue<Function> thunk =
+                TValue<Function>::from_oop(constructor.thunk);
             if(unlikely(!thunk.extract()->accepts_arity(n_args)))
             {
                 MUSTTAIL return wrong_arity_error(ARGS);
@@ -2616,7 +2616,7 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        TValue2<Function> function = TValue2<Function>::from_value_assumed(fun);
+        TValue<Function> function = TValue<Function>::from_value_assumed(fun);
         if(unlikely(!function.extract()->accepts_arity(n_args)))
         {
             MUSTTAIL return wrong_arity_error(ARGS);
@@ -2646,8 +2646,7 @@ namespace cl
         uint8_t cache_idx = pc[4];
         FunctionCallInlineCache &cache =
             code_object->function_call_caches[cache_idx];
-        TValue2<Function> function =
-            TValue2<Function>::from_oop(cache.function);
+        TValue<Function> function = TValue<Function>::from_oop(cache.function);
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, cache.adaptation);
@@ -2730,7 +2729,7 @@ namespace cl
         uint8_t call_cache_idx = pc[4];
         uint32_t n_user_args = uint8_t(pc[5]);
         Value receiver = fp[receiver_reg];
-        TValue2<String> attr_name = TValue2<String>::from_value_assumed(
+        TValue<String> attr_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
 
         AttributeReadInlineCache &cache =
@@ -2779,16 +2778,16 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        TValue2<Function> function =
-            TValue2<Function>::from_value_assumed(callable);
+        TValue<Function> function =
+            TValue<Function>::from_value_assumed(callable);
         FunctionCallInlineCache &call_cache =
             code_object->function_call_caches[call_cache_idx];
         if(function_call_cache_matches(call_cache, callable, n_args))
         {
             int32_t first_arg_reg = prepare_method_call_argument_slots(
                 fp, receiver_reg, n_user_args, self);
-            TValue2<Function> cached_function =
-                TValue2<Function>::from_oop(call_cache.function);
+            TValue<Function> cached_function =
+                TValue<Function>::from_oop(call_cache.function);
             enter_function_frame_from_positional_args(
                 thread, fp, pc, code_object, cached_function, first_arg_reg,
                 n_args, call_instr_len, call_cache.adaptation);
@@ -2866,8 +2865,8 @@ namespace cl
 
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
-        TValue2<Function> function =
-            TValue2<Function>::from_oop(call_cache.function);
+        TValue<Function> function =
+            TValue<Function>::from_oop(call_cache.function);
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, FunctionCallAdaptation::FixedArity);
@@ -2891,7 +2890,7 @@ namespace cl
         uint8_t missing_exception_type_idx = pc[6];
         uint8_t missing_exception_message_idx = pc[7];
         Value receiver = fp[receiver_reg];
-        TValue2<String> method_name = TValue2<String>::from_value_assumed(
+        TValue<String> method_name = TValue<String>::from_value_assumed(
             code_object->constant_table[const_offset].value());
 
         AttributeReadInlineCache &cache =
@@ -2918,11 +2917,11 @@ namespace cl
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
-            TValue2<ClassObject> exception_type =
-                TValue2<ClassObject>::from_value_assumed(
+            TValue<ClassObject> exception_type =
+                TValue<ClassObject>::from_value_assumed(
                     code_object->constant_table[missing_exception_type_idx]
                         .value());
-            TValue2<String> message = TValue2<String>::from_value_assumed(
+            TValue<String> message = TValue<String>::from_value_assumed(
                 code_object->constant_table[missing_exception_message_idx]
                     .value());
             (void)thread->set_pending_exception_string(exception_type, message);
@@ -2954,16 +2953,16 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        TValue2<Function> function =
-            TValue2<Function>::from_value_assumed(callable);
+        TValue<Function> function =
+            TValue<Function>::from_value_assumed(callable);
         FunctionCallInlineCache &call_cache =
             code_object->function_call_caches[call_cache_idx];
         if(function_call_cache_matches(call_cache, callable, n_args))
         {
             int32_t first_arg_reg = prepare_method_call_argument_slots(
                 fp, receiver_reg, n_user_args, self);
-            TValue2<Function> cached_function =
-                TValue2<Function>::from_oop(call_cache.function);
+            TValue<Function> cached_function =
+                TValue<Function>::from_oop(call_cache.function);
             enter_function_frame_from_positional_args(
                 thread, fp, pc, code_object, cached_function, first_arg_reg,
                 n_args, call_instr_len, call_cache.adaptation);
@@ -3041,8 +3040,8 @@ namespace cl
 
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
-        TValue2<Function> function =
-            TValue2<Function>::from_oop(call_cache.function);
+        TValue<Function> function =
+            TValue<Function>::from_oop(call_cache.function);
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, FunctionCallAdaptation::FixedArity);
@@ -3158,7 +3157,7 @@ namespace cl
                 MUSTTAIL return overflow_path(ARGS);
             }
             accumulator = current;
-            iterator->current = TValue2<SMI>::from_smi(next_smi);
+            iterator->current = TValue<SMI>::from_smi(next_smi);
         }
 
         START(0);

@@ -33,7 +33,7 @@ namespace cl
 
     struct BuiltinClassMethod
     {
-        TValue2<String> name;
+        TValue<String> name;
         Value value;
     };
 
@@ -61,42 +61,42 @@ namespace cl
         static constexpr uint32_t class_inline_storage_slot_count = 48;
 
         ClassObject(
-            BootstrapObjectTag, TValue2<String> name,
+            BootstrapObjectTag, TValue<String> name,
             uint32_t instance_default_inline_slot_count,
             ClassObject *single_base,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
-            ClassObject *metaclass, TValue2<String> name,
+            ClassObject *metaclass, TValue<String> name,
             uint32_t instance_default_inline_slot_count,
             ClassObject *single_base,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
-            ClassObject *metaclass, TValue2<String> name,
-            uint32_t instance_default_inline_slot_count, TValue2<Tuple> bases,
+            ClassObject *metaclass, TValue<String> name,
+            uint32_t instance_default_inline_slot_count, TValue<Tuple> bases,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
-            TValue2<String> name, uint32_t instance_default_inline_slot_count,
+            TValue<String> name, uint32_t instance_default_inline_slot_count,
             ClassObject *single_base,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         static ClassObject *make_bootstrap_builtin_class(
-            TValue2<String> name, uint32_t instance_default_inline_slot_count,
+            TValue<String> name, uint32_t instance_default_inline_slot_count,
             const BuiltinClassMethod *methods, uint32_t method_count);
 
         static ClassObject *
-        make_builtin_class(TValue2<String> name,
+        make_builtin_class(TValue<String> name,
                            uint32_t instance_default_inline_slot_count,
                            const BuiltinClassMethod *methods,
                            uint32_t method_count, ClassObject *single_base);
 
-        TValue2<String> get_name() const { return name.value(); }
+        TValue<String> get_name() const { return name.value(); }
         Value get_mro_value() const { return mro; }
         uint32_t get_instance_default_inline_slot_count() const
         {
@@ -176,7 +176,7 @@ namespace cl
             class_inline_storage_slot_count - class_metadata_slot_count;
 
         Value make_bases_tuple(ClassObject *single_base) const;
-        static void validate_bases(TValue2<Tuple> bases);
+        static void validate_bases(TValue<Tuple> bases);
         NOINLINE ValidityCell *
         create_mro_shape_and_contents_validity_cell_slow() const;
         NOINLINE ValidityCell *
@@ -190,7 +190,7 @@ namespace cl
         attach_mro_validity_cell(ValidityCell *cell,
                                  MroValidityCellDependency dependency) const;
 
-        Member<TValue2<String>> name;
+        Member<TValue<String>> name;
         Member<Value> bases;
         Member<Value> mro;
         Value class_extra_inline_attribute_slots

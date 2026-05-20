@@ -8,7 +8,7 @@ namespace cl
 {
     static Value native_range_iterator_iter(Value self)
     {
-        (void)CL_TRY(TValue2<RangeIterator>::from_value_or_raise(
+        (void)CL_TRY(TValue<RangeIterator>::from_value_or_raise(
             self, L"TypeError",
             L"range_iterator.__iter__ expects a range_iterator receiver"));
         return self;
@@ -16,8 +16,8 @@ namespace cl
 
     static Value native_range_iterator_next(Value self)
     {
-        TValue2<RangeIterator> iterator_value =
-            CL_TRY(TValue2<RangeIterator>::from_value_or_raise(
+        TValue<RangeIterator> iterator_value =
+            CL_TRY(TValue<RangeIterator>::from_value_or_raise(
                 self, L"TypeError",
                 L"range_iterator.__next__ expects a range_iterator receiver"));
 
@@ -45,7 +45,7 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"UnimplementedError", L"integer overflow");
         }
-        iterator->current = TValue2<SMI>::from_smi(next_smi);
+        iterator->current = TValue<SMI>::from_smi(next_smi);
         return current;
     }
 

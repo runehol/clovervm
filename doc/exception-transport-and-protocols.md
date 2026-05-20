@@ -41,10 +41,10 @@ struct PendingException
     PendingExceptionKind kind;
 
     // Used when kind == Object.
-    MemberTValue<ExceptionObject> object;
+    Member<Optional<TValue<Exception>>> object;
 
     // Used when kind == StopIteration. Value::not_present() means no value.
-    Member2<Value> stop_iteration_value;
+    Member<Value> stop_iteration_value;
 };
 ```
 

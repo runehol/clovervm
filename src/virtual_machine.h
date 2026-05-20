@@ -67,9 +67,9 @@ namespace cl
         GlobalHeap &get_interned_global_heap() { return interned_global_heap; }
 
         template <typename Source>
-        TValue2<String> get_or_create_interned_string_value(const Source &str)
+        TValue<String> get_or_create_interned_string_value(const Source &str)
         {
-            return TValue2<String>::from_oop(
+            return TValue<String>::from_oop(
                 get_or_create_interned_string_raw(str));
         }
 
@@ -94,7 +94,7 @@ namespace cl
         HeapPtr<Scope> get_builtin_scope() const { return builtin_scope; }
         Scope *builtin_scope_ptr() const { return builtin_scope.extract(); }
         Value get_range_builtin() const { return range_builtin; }
-        void write_stdout(TValue2<String> value);
+        void write_stdout(TValue<String> value);
         void set_stdout_file(FILE *file)
         {
             assert(file != nullptr);
@@ -177,10 +177,10 @@ namespace cl
             }
             __builtin_unreachable();
         }
-        TValue2<String> dunder_class_name() const
+        TValue<String> dunder_class_name() const
         {
             assert(dunder_class_name_ != nullptr);
-            return TValue2<String>::from_oop(dunder_class_name_);
+            return TValue<String>::from_oop(dunder_class_name_);
         }
         CodeObject *clover_function_entry_adapter(uint32_t n_args);
 
@@ -194,9 +194,9 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        TValue2<T> make_immortal_internal_value(Args &&...args)
+        TValue<T> make_immortal_internal_value(Args &&...args)
         {
-            return TValue2<T>::from_oop(
+            return TValue<T>::from_oop(
                 make_immortal_internal_raw<T>(std::forward<Args>(args)...));
         }
 
@@ -214,9 +214,9 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        TValue2<T> make_immortal_object_value(Args &&...args)
+        TValue<T> make_immortal_object_value(Args &&...args)
         {
-            return TValue2<T>::from_oop(
+            return TValue<T>::from_oop(
                 make_immortal_object_raw<T>(std::forward<Args>(args)...));
         }
 

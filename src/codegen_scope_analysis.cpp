@@ -13,14 +13,14 @@ namespace cl
 {
     namespace
     {
-        TValue2<String> ast_string_constant(Value value)
+        TValue<String> ast_string_constant(Value value)
         {
-            return TValue2<String>::from_value_assumed(value);
+            return TValue<String>::from_value_assumed(value);
         }
 
         struct StringNameHash
         {
-            size_t operator()(TValue2<String> name) const
+            size_t operator()(TValue<String> name) const
             {
                 return size_t(string_hash(name));
             }
@@ -28,7 +28,7 @@ namespace cl
 
         struct StringNameEq
         {
-            bool operator()(TValue2<String> left, TValue2<String> right) const
+            bool operator()(TValue<String> left, TValue<String> right) const
             {
                 return string_eq(left, right);
             }
@@ -48,7 +48,7 @@ namespace cl
             }
 
             ScopeAnalysis result;
-            std::unordered_map<TValue2<String>, int32_t, StringNameHash,
+            std::unordered_map<TValue<String>, int32_t, StringNameHash,
                                StringNameEq>
                 binding_indices;
         };
@@ -65,7 +65,7 @@ namespace cl
             };
 
             CodegenMode mode;
-            std::unordered_map<TValue2<String>, NameState, StringNameHash,
+            std::unordered_map<TValue<String>, NameState, StringNameHash,
                                StringNameEq>
                 names;
         };

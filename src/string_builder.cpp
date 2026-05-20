@@ -11,7 +11,7 @@ namespace cl
 
     void StringBuilder::append_c_str(const cl_wchar *text) { buffer += text; }
 
-    void StringBuilder::append_string(TValue2<String> string)
+    void StringBuilder::append_string(TValue<String> string)
     {
         String *str = string.extract();
         buffer.append(str->data, size_t(str->count.extract()));
@@ -21,7 +21,7 @@ namespace cl
     {
         Value str = value_to_repr_string(value);
         CL_PROPAGATE_EXCEPTION(str);
-        append_string(CL_TRY(TValue2<String>::from_value_checked(str)));
+        append_string(CL_TRY(TValue<String>::from_value_checked(str)));
         return Value::None();
     }
 
@@ -29,7 +29,7 @@ namespace cl
     {
         Value str = value_to_str_string(value);
         CL_PROPAGATE_EXCEPTION(str);
-        append_string(CL_TRY(TValue2<String>::from_value_checked(str)));
+        append_string(CL_TRY(TValue<String>::from_value_checked(str)));
         return Value::None();
     }
 

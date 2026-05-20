@@ -920,7 +920,7 @@ namespace cl
                                 std::wstring(string_for_name_token(
                                     *ast.compilation_unit,
                                     source_pos_for_previous_token()));
-                            TValue2<String> name_value =
+                            TValue<String> name_value =
                                 vm.get_or_create_interned_string_value(name);
                             result = ast.emplace_back(
                                 AstNodeKind::EXPRESSION_ATTRIBUTE, source_pos,
@@ -990,7 +990,7 @@ namespace cl
                     {
                         std::wstring name = std::wstring(string_for_name_token(
                             *ast.compilation_unit, source_pos_for_token()));
-                        TValue2<String> v =
+                        TValue<String> v =
                             vm.get_or_create_interned_string_value(name);
                         return ast.emplace_back(
                             AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
@@ -1014,7 +1014,7 @@ namespace cl
                             *ast.compilation_unit, source_pos_for_token());
                         double value =
                             std::stod(remove_number_separators(token));
-                        TValue2<Float> v = make_object_value<Float>(value);
+                        TValue<Float> v = make_object_value<Float>(value);
                         return ast.emplace_back(
                             AstKind(AstNodeKind::EXPRESSION_LITERAL,
                                     AstOperatorKind::NUMBER),
@@ -1026,7 +1026,7 @@ namespace cl
                             *ast.compilation_unit, source_pos_for_token());
                         std::wstring value =
                             decode_python_string_literal(token);
-                        TValue2<String> v =
+                        TValue<String> v =
                             vm.get_or_create_interned_string_value(value);
                         return ast.emplace_back(
                             AstKind(AstNodeKind::EXPRESSION_LITERAL,
@@ -1399,8 +1399,7 @@ namespace cl
                 uint32_t name_source_pos = source_pos_for_previous_token();
                 std::wstring name = std::wstring(string_for_name_token(
                     *ast.compilation_unit, name_source_pos));
-                TValue2<String> v =
-                    vm.get_or_create_interned_string_value(name);
+                TValue<String> v = vm.get_or_create_interned_string_value(name);
                 ch.push_back(
                     ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
                                      name_source_pos, v));
@@ -1490,7 +1489,7 @@ namespace cl
             consume(Token::NAME);
             std::wstring name = std::wstring(string_for_name_token(
                 *ast.compilation_unit, source_pos_for_previous_token()));
-            TValue2<String> name_str =
+            TValue<String> name_str =
                 vm.get_or_create_interned_string_value(name);
             consume(Token::LPAR);
             int32_t param_seq = params();
@@ -1523,8 +1522,7 @@ namespace cl
                 uint32_t name_source_pos = source_pos_for_previous_token();
                 std::wstring name = std::wstring(string_for_name_token(
                     *ast.compilation_unit, name_source_pos));
-                TValue2<String> v =
-                    vm.get_or_create_interned_string_value(name);
+                TValue<String> v = vm.get_or_create_interned_string_value(name);
                 AstChildren parameter_children;
                 if(match(Token::COLON))
                 {
@@ -1609,7 +1607,7 @@ namespace cl
             consume(Token::NAME);
             std::wstring name = std::wstring(string_for_name_token(
                 *ast.compilation_unit, source_pos_for_previous_token()));
-            TValue2<String> name_str =
+            TValue<String> name_str =
                 vm.get_or_create_interned_string_value(name);
 
             AstChildren children;
@@ -1670,8 +1668,7 @@ namespace cl
             {
                 std::wstring name = std::wstring(string_for_name_token(
                     *ast.compilation_unit, source_pos_for_token()));
-                TValue2<String> v =
-                    vm.get_or_create_interned_string_value(name);
+                TValue<String> v = vm.get_or_create_interned_string_value(name);
                 target =
                     ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
                                      source_pos_and_advance(), v);
@@ -1753,7 +1750,7 @@ namespace cl
                             source_pos_for_previous_token();
                         std::wstring name = std::wstring(string_for_name_token(
                             *ast.compilation_unit, name_source_pos));
-                        TValue2<String> v =
+                        TValue<String> v =
                             vm.get_or_create_interned_string_value(name);
                         handler_children.push_back(ast.emplace_back(
                             AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,

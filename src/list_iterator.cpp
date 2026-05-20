@@ -8,7 +8,7 @@ namespace cl
 {
     static Value native_list_iterator_iter(Value self)
     {
-        (void)CL_TRY(TValue2<ListIterator>::from_value_or_raise(
+        (void)CL_TRY(TValue<ListIterator>::from_value_or_raise(
             self, L"TypeError",
             L"list_iterator.__iter__ expects a list_iterator receiver"));
         return self;
@@ -16,8 +16,8 @@ namespace cl
 
     static Value native_list_iterator_next(Value self)
     {
-        TValue2<ListIterator> iterator_value =
-            CL_TRY(TValue2<ListIterator>::from_value_or_raise(
+        TValue<ListIterator> iterator_value =
+            CL_TRY(TValue<ListIterator>::from_value_or_raise(
                 self, L"TypeError",
                 L"list_iterator.__next__ expects a list_iterator receiver"));
         ListIterator *iterator = iterator_value.extract();
@@ -31,7 +31,7 @@ namespace cl
         }
 
         iterator->index =
-            TValue2<SMI>::from_smi(static_cast<int64_t>(index + 1));
+            TValue<SMI>::from_smi(static_cast<int64_t>(index + 1));
         return list->item_unchecked(index);
     }
 

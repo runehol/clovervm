@@ -26,10 +26,10 @@ namespace cl
         static constexpr uint32_t kDocstringSlot = 2;
         static constexpr uint32_t kInlineSlotCount = 3;
 
-        Function(ClassObject *cls, TValue2<CodeObject> _code_object,
-                 Optional<TValue2<String>> _docstring,
-                 Optional<TValue2<Tuple>> _default_parameters =
-                     Optional<TValue2<Tuple>>::none())
+        Function(ClassObject *cls, TValue<CodeObject> _code_object,
+                 Optional<TValue<String>> _docstring,
+                 Optional<TValue<Tuple>> _default_parameters =
+                     Optional<TValue<Tuple>>::none())
             : SlotObject(cls, native_layout), code_object(_code_object),
               default_parameters(_default_parameters), docstring(_docstring),
               min_positional_arity(
@@ -60,9 +60,9 @@ namespace cl
                 parameter_flags, FunctionParameterFlags::HasVarArgs);
         }
 
-        Member<TValue2<CodeObject>> code_object;
-        Member<Optional<TValue2<Tuple>>> default_parameters;
-        Member<Optional<TValue2<String>>> docstring;
+        Member<TValue<CodeObject>> code_object;
+        Member<Optional<TValue<Tuple>>> default_parameters;
+        Member<Optional<TValue<String>>> docstring;
         uint32_t min_positional_arity;
         uint32_t max_positional_arity;
         uint32_t n_positional_parameters;
@@ -73,8 +73,8 @@ namespace cl
 
     private:
         static uint32_t
-        min_arity_for_code(TValue2<CodeObject> code_object,
-                           Optional<TValue2<Tuple>> default_parameters)
+        min_arity_for_code(TValue<CodeObject> code_object,
+                           Optional<TValue<Tuple>> default_parameters)
         {
             if(!default_parameters.has_value())
             {
@@ -86,14 +86,14 @@ namespace cl
                    uint32_t(default_parameters.value().extract()->size());
         }
 
-        static uint32_t max_arity_for_code(TValue2<CodeObject> code_object)
+        static uint32_t max_arity_for_code(TValue<CodeObject> code_object)
         {
             return code_object.extract()->has_varargs()
                        ? VarArgs
                        : code_object.extract()->n_positional_parameters;
         }
 
-        static void assert_parameter_layout(TValue2<CodeObject> code_object)
+        static void assert_parameter_layout(TValue<CodeObject> code_object)
         {
             assert(code_object.extract()->n_parameters ==
                    code_object.extract()->n_positional_parameters +

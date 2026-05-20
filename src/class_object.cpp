@@ -107,7 +107,7 @@ namespace cl
 
     static Value compute_mro(ClassObject *cls, const Tuple *bases)
     {
-        TValue2<String> dunder_mro_name = interned_string(L"__mro__");
+        TValue<String> dunder_mro_name = interned_string(L"__mro__");
         std::vector<std::deque<ClassObject *>> sequences;
         sequences.reserve(bases->size() + 1);
         for(size_t base_idx = 0; base_idx < bases->size(); ++base_idx)
@@ -146,7 +146,7 @@ namespace cl
         return tuple_from_vector<ClassObject>(linearized);
     }
 
-    void ClassObject::validate_bases(TValue2<Tuple> bases)
+    void ClassObject::validate_bases(TValue<Tuple> bases)
     {
         Tuple *bases_tuple = bases.extract();
         std::vector<ClassObject *> seen_bases;
@@ -169,7 +169,7 @@ namespace cl
         }
     }
 
-    ClassObject::ClassObject(BootstrapObjectTag, TValue2<String> _name,
+    ClassObject::ClassObject(BootstrapObjectTag, TValue<String> _name,
                              uint32_t _instance_default_inline_slot_count,
                              ClassObject *single_base,
                              ShapeFlags class_shape_flags,
@@ -184,23 +184,23 @@ namespace cl
           instance_default_inline_slot_count(
               _instance_default_inline_slot_count)
     {
-        TValue2<String> dunder_class_name = interned_string(L"__class__");
+        TValue<String> dunder_class_name = interned_string(L"__class__");
         DescriptorFlags instance_class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly);
         instance_class_flags |= descriptor_flag(DescriptorFlag::StableSlot);
         instance_class_flags |=
             descriptor_flag(DescriptorFlag::ShapeClassValue);
         instance_root_shape = Shape::make_root_with_single_descriptor(
-            TValue2<ClassObject>::from_oop(this), dunder_class_name,
+            TValue<ClassObject>::from_oop(this), dunder_class_name,
             DescriptorInfo::make(StorageLocation::not_found(),
                                  instance_class_flags),
             0, instance_default_inline_slot_count, instance_shape_flags);
 
-        TValue2<String> dunder_name_name = interned_string(L"__name__");
-        TValue2<String> dunder_bases_name = interned_string(L"__bases__");
-        TValue2<String> dunder_mro_name = interned_string(L"__mro__");
-        TValue2<String> dunder_new_name = interned_string(L"__new__");
-        TValue2<String> dunder_init_name = interned_string(L"__init__");
+        TValue<String> dunder_name_name = interned_string(L"__name__");
+        TValue<String> dunder_bases_name = interned_string(L"__bases__");
+        TValue<String> dunder_mro_name = interned_string(L"__mro__");
+        TValue<String> dunder_new_name = interned_string(L"__new__");
+        TValue<String> dunder_init_name = interned_string(L"__init__");
         DescriptorFlags class_metadata_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot);
@@ -241,7 +241,7 @@ namespace cl
                                      class_predefined_flags)},
         };
         set_shape(Shape::make_root_with_descriptors(
-            TValue2<ClassObject>::from_oop(this), descriptors,
+            TValue<ClassObject>::from_oop(this), descriptors,
             class_predefined_descriptor_count, class_predefined_slot_count,
             class_metadata_slot_count + 1, class_inline_storage_slot_count,
             class_shape_flags));
@@ -264,7 +264,7 @@ namespace cl
         }
     }
 
-    ClassObject::ClassObject(ClassObject *metaclass, TValue2<String> _name,
+    ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
                              uint32_t _instance_default_inline_slot_count,
                              ClassObject *single_base,
                              ShapeFlags class_shape_flags,
@@ -276,10 +276,9 @@ namespace cl
         install_bootstrap_class(metaclass);
     }
 
-    ClassObject::ClassObject(ClassObject *metaclass, TValue2<String> _name,
+    ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
                              uint32_t _instance_default_inline_slot_count,
-                             TValue2<Tuple> _bases,
-                             ShapeFlags class_shape_flags,
+                             TValue<Tuple> _bases, ShapeFlags class_shape_flags,
                              ShapeFlags instance_shape_flags)
         : ClassObject(BootstrapObjectTag{}, _name,
                       _instance_default_inline_slot_count, nullptr,
@@ -291,7 +290,7 @@ namespace cl
         mro = compute_mro(this, _bases.extract());
     }
 
-    ClassObject::ClassObject(TValue2<String> _name,
+    ClassObject::ClassObject(TValue<String> _name,
                              uint32_t _instance_default_inline_slot_count,
                              ClassObject *single_base,
                              ShapeFlags class_shape_flags,
@@ -303,7 +302,7 @@ namespace cl
     }
 
     ClassObject *ClassObject::make_bootstrap_builtin_class(
-        TValue2<String> name, uint32_t instance_default_inline_slot_count,
+        TValue<String> name, uint32_t instance_default_inline_slot_count,
         const BuiltinClassMethod *methods, uint32_t method_count)
     {
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
@@ -333,7 +332,7 @@ namespace cl
     }
 
     ClassObject *ClassObject::make_builtin_class(
-        TValue2<String> name, uint32_t instance_default_inline_slot_count,
+        TValue<String> name, uint32_t instance_default_inline_slot_count,
         const BuiltinClassMethod *methods, uint32_t method_count,
         ClassObject *single_base)
     {
@@ -364,7 +363,7 @@ namespace cl
 
     void ClassObject::validate_inline_slot_layout()
     {
-        static_assert(sizeof(Member<TValue2<String>>) == sizeof(Value));
+        static_assert(sizeof(Member<TValue<String>>) == sizeof(Value));
         static_assert(sizeof(Member<Value>) == sizeof(Value));
         static_assert(CL_OFFSETOF(ClassObject, name) == sizeof(SlotObject));
         static_assert(CL_OFFSETOF(ClassObject, bases) ==
@@ -434,7 +433,7 @@ namespace cl
         int32_t next_slot_index, ShapeFlags shape_flags)
     {
         instance_root_shape = Shape::make_root_with_descriptors(
-            TValue2<ClassObject>::from_oop(this), descriptors, descriptor_count,
+            TValue<ClassObject>::from_oop(this), descriptors, descriptor_count,
             next_slot_index, descriptor_count,
             instance_default_inline_slot_count, shape_flags);
     }
@@ -579,7 +578,7 @@ namespace cl
             return ConstructorThunkLookup{existing, lookup_cell};
         }
 
-        TValue2<String> new_name(interned_string(L"__new__"));
+        TValue<String> new_name(interned_string(L"__new__"));
         AttributeReadDescriptor new_descriptor =
             resolve_attr_read_descriptor(Value::from_oop(self), new_name);
         if(new_descriptor.is_found())
@@ -587,13 +586,13 @@ namespace cl
             return ConstructorThunkLookup{nullptr, nullptr};
         }
 
-        TValue2<String> init_name(interned_string(L"__init__"));
+        TValue<String> init_name(interned_string(L"__init__"));
         AttributeReadDescriptor init_descriptor =
             resolve_attr_read_descriptor(Value::from_oop(self), init_name);
         if(!init_descriptor.is_found())
         {
-            TValue2<Function> thunk = make_constructor_thunk_function(
-                self, Optional<TValue2<Function>>::none());
+            TValue<Function> thunk = make_constructor_thunk_function(
+                self, Optional<TValue<Function>>::none());
             constructor_thunk = thunk.extract();
             return ConstructorThunkLookup{thunk.extract(), lookup_cell};
         }
@@ -614,9 +613,9 @@ namespace cl
             return ConstructorThunkLookup{nullptr, nullptr};
         }
 
-        TValue2<Function> thunk = make_constructor_thunk_function(
-            self, Optional<TValue2<Function>>::some(
-                      TValue2<Function>::from_value_assumed(init_value)));
+        TValue<Function> thunk = make_constructor_thunk_function(
+            self, Optional<TValue<Function>>::some(
+                      TValue<Function>::from_value_assumed(init_value)));
         constructor_thunk = thunk.extract();
         return ConstructorThunkLookup{thunk.extract(), lookup_cell};
     }

@@ -65,7 +65,7 @@ namespace cl
 
     struct ShapeRootDescriptor
     {
-        TValue2<String> name;
+        TValue<String> name;
         DescriptorInfo info;
     };
 
@@ -77,10 +77,10 @@ namespace cl
         class Transition
         {
         public:
-            Transition(TValue2<String> name, ShapeTransitionVerb verb,
+            Transition(TValue<String> name, ShapeTransitionVerb verb,
                        DescriptorFlags descriptor_flags, Shape *next_shape);
 
-            TValue2<String> get_name() const { return name.value(); }
+            TValue<String> get_name() const { return name.value(); }
             ShapeTransitionVerb get_verb() const { return verb; }
             DescriptorFlags get_descriptor_flags() const
             {
@@ -89,32 +89,32 @@ namespace cl
             Shape *get_next_shape() const { return next_shape.extract(); }
 
         private:
-            Owned<TValue2<String>> name;
+            Owned<TValue<String>> name;
             ShapeTransitionVerb verb;
             DescriptorFlags descriptor_flags;
             OwnedHeapPtr<Shape> next_shape;
         };
 
-        Shape(TValue2<ClassObject> class_value, Shape *previous_shape,
+        Shape(TValue<ClassObject> class_value, Shape *previous_shape,
               int32_t next_slot_index, uint32_t property_count,
               uint32_t inline_slot_capacity, ShapeFlags shape_flags,
               uint32_t present_count);
 
         static Shape *make_root_with_single_descriptor(
-            TValue2<ClassObject> class_value, TValue2<String> name,
+            TValue<ClassObject> class_value, TValue<String> name,
             DescriptorInfo info, int32_t next_slot_index,
             uint32_t inline_slot_capacity, ShapeFlags shape_flags);
         static Shape *make_immortal_root_with_single_descriptor(
-            VirtualMachine *vm, TValue2<ClassObject> class_value,
-            TValue2<String> name, DescriptorInfo info, int32_t next_slot_index,
+            VirtualMachine *vm, TValue<ClassObject> class_value,
+            TValue<String> name, DescriptorInfo info, int32_t next_slot_index,
             uint32_t inline_slot_capacity, ShapeFlags shape_flags);
         static Shape *make_root_with_descriptors(
-            TValue2<ClassObject> class_value,
+            TValue<ClassObject> class_value,
             const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
             int32_t next_slot_index, uint32_t present_count,
             uint32_t inline_slot_capacity, ShapeFlags shape_flags);
         static Shape *make_immortal_root_with_descriptors(
-            VirtualMachine *vm, TValue2<ClassObject> class_value,
+            VirtualMachine *vm, TValue<ClassObject> class_value,
             const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
             int32_t next_slot_index, uint32_t present_count,
             uint32_t inline_slot_capacity, ShapeFlags shape_flags);
@@ -124,7 +124,7 @@ namespace cl
             return sizeof(Shape) + sizeof(Value) * property_count -
                    sizeof(Value) + sizeof(DescriptorInfo) * property_count;
         }
-        static size_t size_for(TValue2<ClassObject> class_value,
+        static size_t size_for(TValue<ClassObject> class_value,
                                Shape *previous_shape, int32_t next_slot_index,
                                uint32_t property_count,
                                uint32_t inline_slot_capacity,
@@ -145,7 +145,7 @@ namespace cl
 
         ClassObject *get_class() const
         {
-            // Hot path: avoid TValue2<ClassObject>::extract() here so this
+            // Hot path: avoid TValue<ClassObject>::extract() here so this
             // header does not need ClassObject to be complete.
             return reinterpret_cast<ClassObject *>(
                 class_value.raw_value().as.ptr);
@@ -178,10 +178,10 @@ namespace cl
         {
             return !has_flag(ShapeFlag::DisallowAttributeAddDelete);
         }
-        TValue2<String> get_property_name(uint32_t property_idx) const
+        TValue<String> get_property_name(uint32_t property_idx) const
         {
             assert(property_idx < property_count_);
-            return TValue2<String>::from_value_unchecked(
+            return TValue<String>::from_value_unchecked(
                 descriptor_names[property_idx]);
         }
         StorageLocation
@@ -198,27 +198,27 @@ namespace cl
 
         uint32_t transition_count() const { return transitions.size(); }
 
-        int32_t lookup_descriptor_index(TValue2<String> name) const;
+        int32_t lookup_descriptor_index(TValue<String> name) const;
         DescriptorLookup
-        lookup_descriptor_including_latent(TValue2<String> name) const;
-        StorageLocation resolve_present_property(TValue2<String> name) const;
-        StorageLocation resolve_own_property(TValue2<String> name) const;
+        lookup_descriptor_including_latent(TValue<String> name) const;
+        StorageLocation resolve_present_property(TValue<String> name) const;
+        StorageLocation resolve_own_property(TValue<String> name) const;
         Shape *
-        lookup_transition(TValue2<String> name, ShapeTransitionVerb verb,
+        lookup_transition(TValue<String> name, ShapeTransitionVerb verb,
                           DescriptorFlags descriptor_flags =
                               descriptor_flag(DescriptorFlag::None)) const;
-        Shape *derive_transition(TValue2<String> name, ShapeTransitionVerb verb,
+        Shape *derive_transition(TValue<String> name, ShapeTransitionVerb verb,
                                  DescriptorFlags descriptor_flags =
                                      descriptor_flag(DescriptorFlag::None));
         Shape *clone_with_flags(ShapeFlags new_shape_flags) const;
-        Shape *clone_with_class(TValue2<ClassObject> new_class) const;
+        Shape *clone_with_class(TValue<ClassObject> new_class) const;
 
     private:
         void initialize_root_descriptors(const ShapeRootDescriptor *descriptors,
                                          uint32_t descriptor_count);
-        Shape *derive_add_transition(TValue2<String> name,
+        Shape *derive_add_transition(TValue<String> name,
                                      DescriptorFlags descriptor_flags);
-        Shape *derive_delete_transition(TValue2<String> name);
+        Shape *derive_delete_transition(TValue<String> name);
         DescriptorInfo *descriptor_infos()
         {
             return reinterpret_cast<DescriptorInfo *>(
@@ -237,7 +237,7 @@ namespace cl
         uint32_t inline_slot_capacity;
         ShapeFlags shape_flags;
         std::vector<Transition> transitions;
-        Member<TValue2<ClassObject>> class_value;
+        Member<TValue<ClassObject>> class_value;
         Value descriptor_names[1];
 
     public:

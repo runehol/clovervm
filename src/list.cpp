@@ -50,7 +50,7 @@ namespace cl
 
     static Value native_list_iter(Value self)
     {
-        TValue2<List> list = CL_TRY(TValue2<List>::from_value_or_raise(
+        TValue<List> list = CL_TRY(TValue<List>::from_value_or_raise(
             self, L"TypeError", L"list.__iter__ expects a list receiver"));
         return make_object_value<ListIterator>(list).raw_value();
     }

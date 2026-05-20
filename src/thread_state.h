@@ -46,7 +46,7 @@ namespace cl
     struct PendingException
     {
         PendingExceptionKind kind = PendingExceptionKind::None;
-        Member<Optional<TValue2<Exception>>> object;
+        Member<Optional<TValue<Exception>>> object;
         Member<Value> stop_iteration_value;
 
         PendingException();
@@ -114,23 +114,23 @@ namespace cl
         }
 
         [[nodiscard]] Value run_clovervm_code_object(CodeObject *obj);
-        [[nodiscard]] Value call_clovervm_function(TValue2<Function> function);
-        [[nodiscard]] Value call_clovervm_function(TValue2<Function> function,
+        [[nodiscard]] Value call_clovervm_function(TValue<Function> function);
+        [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
                                                    Value arg0);
-        [[nodiscard]] Value call_clovervm_function(TValue2<Function> function,
+        [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
                                                    Value arg0, Value arg1);
-        [[nodiscard]] Value call_clovervm_function(TValue2<Function> function,
+        [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
                                                    Value arg0, Value arg1,
                                                    Value arg2);
         [[nodiscard]] Value call_clovervm_method(Value receiver,
-                                                 TValue2<String> name);
+                                                 TValue<String> name);
         [[nodiscard]] Value
-        call_clovervm_method(Value receiver, TValue2<String> name, Value arg0);
+        call_clovervm_method(Value receiver, TValue<String> name, Value arg0);
         [[nodiscard]] Value call_clovervm_method(Value receiver,
-                                                 TValue2<String> name,
+                                                 TValue<String> name,
                                                  Value arg0, Value arg1);
         [[nodiscard]] Value call_clovervm_method(Value receiver,
-                                                 TValue2<String> name,
+                                                 TValue<String> name,
                                                  Value arg0, Value arg1,
                                                  Value arg2);
         void set_clover_frame_frontier(Value *fp)
@@ -174,29 +174,29 @@ namespace cl
         void clear_pending_exception()
         {
             pending_exception.kind = PendingExceptionKind::None;
-            pending_exception.object = Optional<TValue2<Exception>>::none();
+            pending_exception.object = Optional<TValue<Exception>>::none();
             pending_exception.stop_iteration_value = Value::not_present();
         }
         [[nodiscard]] Value
-        set_pending_exception_object(TValue2<Exception> exception)
+        set_pending_exception_object(TValue<Exception> exception)
         {
             pending_exception.object =
-                Optional<TValue2<Exception>>::some(exception);
+                Optional<TValue<Exception>>::some(exception);
             pending_exception.stop_iteration_value = Value::not_present();
             pending_exception.kind = PendingExceptionKind::Object;
             return Value::exception_marker();
         }
         [[nodiscard]] Value
-        set_pending_exception_string(TValue2<ClassObject> type,
-                                     TValue2<String> message);
+        set_pending_exception_string(TValue<ClassObject> type,
+                                     TValue<String> message);
         [[nodiscard]] Value
-        set_pending_exception_string(TValue2<ClassObject> type,
+        set_pending_exception_string(TValue<ClassObject> type,
                                      const wchar_t *message);
         [[nodiscard]] Value
-        set_pending_exception_none(TValue2<ClassObject> type);
+        set_pending_exception_none(TValue<ClassObject> type);
         [[nodiscard]] Value
         set_pending_builtin_exception_string(const wchar_t *type_name,
-                                             TValue2<String> message);
+                                             TValue<String> message);
         [[nodiscard]] Value
         set_pending_builtin_exception_string(const wchar_t *type_name,
                                              const wchar_t *message);
@@ -204,13 +204,13 @@ namespace cl
         set_pending_builtin_exception_none(const wchar_t *type_name);
         [[nodiscard]] Value set_pending_stop_iteration_no_value()
         {
-            pending_exception.object = Optional<TValue2<Exception>>::none();
+            pending_exception.object = Optional<TValue<Exception>>::none();
             pending_exception.stop_iteration_value = Value::not_present();
             pending_exception.kind = PendingExceptionKind::StopIteration;
             return Value::exception_marker();
         }
         [[nodiscard]] Value set_pending_stop_iteration_value(Value value);
-        TValue2<Exception> pending_exception_object() const
+        TValue<Exception> pending_exception_object() const
         {
             assert(pending_exception.kind == PendingExceptionKind::Object);
             return pending_exception.object.value().value();
@@ -237,9 +237,9 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        TValue2<T> make_internal_value(Args &&...args)
+        TValue<T> make_internal_value(Args &&...args)
         {
-            return TValue2<T>::from_oop(
+            return TValue<T>::from_oop(
                 make_internal_raw<T>(std::forward<Args>(args)...));
         }
 
@@ -278,9 +278,9 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        TValue2<T> make_object_value(Args &&...args)
+        TValue<T> make_object_value(Args &&...args)
         {
-            return TValue2<T>::from_oop(
+            return TValue<T>::from_oop(
                 make_object_raw<T>(std::forward<Args>(args)...));
         }
 
@@ -296,10 +296,10 @@ namespace cl
 
     private:
         [[nodiscard]] Value
-        call_clovervm_function_with_args(TValue2<Function> function,
+        call_clovervm_function_with_args(TValue<Function> function,
                                          const Value *args, uint32_t n_args);
         [[nodiscard]] Value call_clovervm_method_with_args(Value receiver,
-                                                           TValue2<String> name,
+                                                           TValue<String> name,
                                                            const Value *args,
                                                            uint32_t n_args);
         NOINLINE Shape *shape_of_inline_value(Value value) const;
@@ -345,7 +345,7 @@ namespace cl
     }
 
     template <typename T, typename... Args>
-    TValue2<T> make_internal_value(Args &&...args)
+    TValue<T> make_internal_value(Args &&...args)
     {
         return active_thread()->make_internal_value<T>(
             std::forward<Args>(args)...);
@@ -357,7 +357,7 @@ namespace cl
     }
 
     template <typename T, typename... Args>
-    TValue2<T> make_object_value(Args &&...args)
+    TValue<T> make_object_value(Args &&...args)
     {
         return active_thread()->make_object_value<T>(
             std::forward<Args>(args)...);

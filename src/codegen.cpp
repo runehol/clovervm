@@ -108,9 +108,9 @@ namespace cl
             FrameHeaderSize);
     }
 
-    TValue2<String> ast_string_constant(const AstVector &av, int32_t node_idx)
+    TValue<String> ast_string_constant(const AstVector &av, int32_t node_idx)
     {
-        return TValue2<String>::from_value_assumed(av.constants[node_idx]);
+        return TValue<String>::from_value_assumed(av.constants[node_idx]);
     }
 
     class AstCodegen
@@ -553,7 +553,7 @@ namespace cl
                 throw std::runtime_error(error_message);
             }
 
-            TValue2<String> name = ast_string_constant(av, node_idx);
+            TValue<String> name = ast_string_constant(av, node_idx);
             Value value = active_vm()->builtin_scope_ptr()->get_by_name(name);
             if(!value.is_ptr() || value.get_ptr<Object>()->native_layout_id() !=
                                       NativeLayoutId::ClassObject)
@@ -863,7 +863,7 @@ namespace cl
                 return std::nullopt;
             }
 
-            TValue2<String> range_name = interned_string(L"range");
+            TValue<String> range_name = interned_string(L"range");
             if(av.constants[callable_idx] != range_name)
             {
                 return std::nullopt;
@@ -2216,26 +2216,26 @@ namespace cl
         return false;
     }
 
-    Optional<TValue2<String>> docstring_for_body(const AstVector &av,
-                                                 int32_t body_idx)
+    Optional<TValue<String>> docstring_for_body(const AstVector &av,
+                                                int32_t body_idx)
     {
         AstChildren body_children = av.children[body_idx];
         if(body_children.empty())
         {
-            return Optional<TValue2<String>>::none();
+            return Optional<TValue<String>>::none();
         }
 
         int32_t first_statement_idx = body_children[0];
         if(av.kinds[first_statement_idx].node_kind !=
            AstNodeKind::STATEMENT_EXPRESSION)
         {
-            return Optional<TValue2<String>>::none();
+            return Optional<TValue<String>>::none();
         }
 
         AstChildren statement_children = av.children[first_statement_idx];
         if(statement_children.size() != 1)
         {
-            return Optional<TValue2<String>>::none();
+            return Optional<TValue<String>>::none();
         }
 
         int32_t expression_idx = statement_children[0];
@@ -2243,11 +2243,11 @@ namespace cl
         if(expression_kind.node_kind != AstNodeKind::EXPRESSION_LITERAL ||
            expression_kind.operator_kind != AstOperatorKind::STRING)
         {
-            return Optional<TValue2<String>>::none();
+            return Optional<TValue<String>>::none();
         }
 
-        return Optional<TValue2<String>>::some(
-            TValue2<String>::from_value_assumed(av.constants[expression_idx]));
+        return Optional<TValue<String>>::some(
+            TValue<String>::from_value_assumed(av.constants[expression_idx]));
     }
 
     CodeObject *codegen_function(const AstVector &av, Scope *module_scope,
@@ -2259,8 +2259,8 @@ namespace cl
         AstChildren param_children = av.children[children[0]];
         Scope *local_scope =
             make_internal_raw<Scope>(parent_code_obj->local_scope());
-        TValue2<String> function_name =
-            TValue2<String>::from_value_assumed(av.constants[node_idx]);
+        TValue<String> function_name =
+            TValue<String>::from_value_assumed(av.constants[node_idx]);
         CodeObjectBuilder fun_obj(av.compilation_unit, module_scope,
                                   local_scope, function_name);
 
@@ -2340,7 +2340,7 @@ namespace cl
 
     CodeObject *codegen_module_in_scope(const AstVector &av,
                                         Scope *module_scope,
-                                        TValue2<String> module_name,
+                                        TValue<String> module_name,
                                         LanguageMode language_mode,
                                         ModuleResultMode result_mode)
     {
@@ -2357,7 +2357,7 @@ namespace cl
         return builder.run_module();
     }
 
-    CodeObject *codegen_module(const AstVector &av, TValue2<String> module_name,
+    CodeObject *codegen_module(const AstVector &av, TValue<String> module_name,
                                LanguageMode language_mode)
     {
         Scope *module_scope =

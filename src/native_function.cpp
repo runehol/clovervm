@@ -10,12 +10,12 @@
 
 namespace cl
 {
-    static TValue2<Function> make_native_function_with_target(
-        VirtualMachine *vm, TValue2<String> name, NativeFunctionTarget target,
+    static TValue<Function> make_native_function_with_target(
+        VirtualMachine *vm, TValue<String> name, NativeFunctionTarget target,
         Bytecode call_opcode, uint32_t n_parameters,
-        Optional<TValue2<String>> docstring,
-        Optional<TValue2<Tuple>> default_parameters =
-            Optional<TValue2<Tuple>>::none())
+        Optional<TValue<String>> docstring,
+        Optional<TValue<Tuple>> default_parameters =
+            Optional<TValue<Tuple>>::none())
     {
         CodeObjectBuilder builder(vm, nullptr, nullptr, nullptr, name);
         builder.n_parameters() = n_parameters;
@@ -23,8 +23,8 @@ namespace cl
         uint32_t target_idx = builder.add_native_function_target(target);
         builder.emit_call_native(0, call_opcode, uint8_t(target_idx));
         builder.emit_return_or_raise_exception(0);
-        TValue2<CodeObject> code =
-            TValue2<CodeObject>::from_oop(builder.finalize());
+        TValue<CodeObject> code =
+            TValue<CodeObject>::from_oop(builder.finalize());
         if(default_parameters.has_value())
         {
             return vm->make_immortal_object_value<Function>(code, docstring,
@@ -33,15 +33,15 @@ namespace cl
         return vm->make_immortal_object_value<Function>(code, docstring);
     }
 
-    static TValue2<Function> make_native_function_with_target(
+    static TValue<Function> make_native_function_with_target(
         VirtualMachine *vm, NativeFunctionTarget target, Bytecode call_opcode,
         uint32_t n_parameters,
-        Optional<TValue2<Tuple>> default_parameters =
-            Optional<TValue2<Tuple>>::none())
+        Optional<TValue<Tuple>> default_parameters =
+            Optional<TValue<Tuple>>::none())
     {
         return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(L"<native>"), target,
-            call_opcode, n_parameters, Optional<TValue2<String>>::none(),
+            call_opcode, n_parameters, Optional<TValue<String>>::none(),
             default_parameters);
     }
 
@@ -99,9 +99,9 @@ namespace cl
         return BuiltinNativeMethod{name, target, 3, doc};
     }
 
-    TValue2<Function>
+    TValue<Function>
     make_native_function(VirtualMachine *vm, NativeFunction0 function,
-                         Optional<TValue2<Tuple>> default_parameters)
+                         Optional<TValue<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed0 = function;
@@ -109,9 +109,9 @@ namespace cl
             vm, target, Bytecode::CallNative0, 0, default_parameters);
     }
 
-    TValue2<Function>
+    TValue<Function>
     make_native_function(VirtualMachine *vm, NativeFunction1 function,
-                         Optional<TValue2<Tuple>> default_parameters)
+                         Optional<TValue<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed1 = function;
@@ -119,9 +119,9 @@ namespace cl
             vm, target, Bytecode::CallNative1, 1, default_parameters);
     }
 
-    TValue2<Function>
+    TValue<Function>
     make_native_function(VirtualMachine *vm, NativeFunction2 function,
-                         Optional<TValue2<Tuple>> default_parameters)
+                         Optional<TValue<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed2 = function;
@@ -129,9 +129,9 @@ namespace cl
             vm, target, Bytecode::CallNative2, 2, default_parameters);
     }
 
-    TValue2<Function>
+    TValue<Function>
     make_native_function(VirtualMachine *vm, NativeFunction3 function,
-                         Optional<TValue2<Tuple>> default_parameters)
+                         Optional<TValue<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed3 = function;
@@ -139,13 +139,13 @@ namespace cl
             vm, target, Bytecode::CallNative3, 3, default_parameters);
     }
 
-    TValue2<Function> make_native_function(VirtualMachine *vm,
-                                           const BuiltinNativeMethod &method)
+    TValue<Function> make_native_function(VirtualMachine *vm,
+                                          const BuiltinNativeMethod &method)
     {
-        Optional<TValue2<String>> docstring =
+        Optional<TValue<String>> docstring =
             method.doc == nullptr
-                ? Optional<TValue2<String>>::none()
-                : Optional<TValue2<String>>::some(TValue2<String>::from_oop(
+                ? Optional<TValue<String>>::none()
+                : Optional<TValue<String>>::some(TValue<String>::from_oop(
                       vm->get_or_create_interned_string_value(method.doc)
                           .extract()));
         return make_native_function_with_target(

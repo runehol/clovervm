@@ -12,7 +12,7 @@ namespace cl
     static Value value_to_dunder_string(Value value, const wchar_t *name,
                                         const wchar_t *error_message)
     {
-        TValue2<String> method_name =
+        TValue<String> method_name =
             active_vm()->get_or_create_interned_string_value(name);
         Value callable;
         Value self;
@@ -30,9 +30,9 @@ namespace cl
         Value result =
             self.is_not_present()
                 ? active_thread()->call_clovervm_function(
-                      TValue2<Function>::from_value_assumed(callable))
+                      TValue<Function>::from_value_assumed(callable))
                 : active_thread()->call_clovervm_function(
-                      TValue2<Function>::from_value_assumed(callable), self);
+                      TValue<Function>::from_value_assumed(callable), self);
         CL_PROPAGATE_EXCEPTION(result);
         if(!can_convert_to<String>(result))
         {

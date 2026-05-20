@@ -21,18 +21,18 @@ namespace cl
 
         /* For a write, we just insert a regular not-present value with no
          * parent scope slot indication (-1) */
-        int32_t register_slot_index_for_write(TValue2<String> key);
+        int32_t register_slot_index_for_write(TValue<String> key);
 
         /* whereas for a read, if the value isn't present, we also
          * register the slot in the parent scope and save that slot in
          * the not-present value. This is to accelerate access to
          * builtins, which live in the parent scope
          */
-        int32_t register_slot_index_for_read(TValue2<String> key);
+        int32_t register_slot_index_for_read(TValue<String> key);
 
-        int32_t lookup_slot_index_local(TValue2<String> name) const;
+        int32_t lookup_slot_index_local(TValue<String> name) const;
 
-        Value get_by_name(TValue2<String> name) const;
+        Value get_by_name(TValue<String> name) const;
 
         ALWAYSINLINE bool slot_is_live(int32_t slot_idx) const
         {
@@ -86,7 +86,7 @@ namespace cl
             }
         }
 
-        void set_by_name(TValue2<String> name, Value val);
+        void set_by_name(TValue<String> name, Value val);
 
         ALWAYSINLINE void set_by_slot_index(int32_t slot_idx, Value val)
         {
@@ -123,17 +123,17 @@ namespace cl
         {
             return slot_names[slot_idx] != Value::None();
         }
-        TValue2<String> get_name_by_slot_index(int32_t slot_idx) const;
+        TValue<String> get_name_by_slot_index(int32_t slot_idx) const;
         uint32_t entry_count() const { return entries.size(); }
         int32_t get_entry_slot_index(uint32_t entry_idx) const
         {
             return entries[entry_idx].get_slot_idx();
         }
-        TValue2<String> get_entry_key(uint32_t entry_idx) const
+        TValue<String> get_entry_key(uint32_t entry_idx) const
         {
             int32_t slot_idx = entries[entry_idx].get_slot_idx();
             assert(slot_idx >= 0);
-            return TValue2<String>::from_value_unchecked(slot_names[slot_idx]);
+            return TValue<String>::from_value_unchecked(slot_names[slot_idx]);
         }
 
     private:
@@ -154,8 +154,8 @@ namespace cl
         static constexpr int32_t hash_not_present = -1;
 
         Scope *get_parent_scope_ptr() const { return parent_scope.extract(); }
-        const int32_t *find_name_table_entry(TValue2<String> key) const;
-        int32_t *find_name_table_entry(TValue2<String> key);
+        const int32_t *find_name_table_entry(TValue<String> key) const;
+        int32_t *find_name_table_entry(TValue<String> key);
         void maybe_grow_name_table()
         {
             if(slot_values.size() >
@@ -166,7 +166,7 @@ namespace cl
         }
         void grow_name_table();
         int32_t append_entry(int32_t slot_idx);
-        int32_t allocate_slot(TValue2<String> key, Value initial_value);
+        int32_t allocate_slot(TValue<String> key, Value initial_value);
         void revive_slot(int32_t slot_idx);
 
         MemberHeapPtr<Scope> parent_scope;

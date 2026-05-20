@@ -22,7 +22,7 @@ namespace cl
     {
         AttributeWriteDescriptor
         lookup_existing_own_property_write_descriptor(Object *object,
-                                                      TValue2<String> name)
+                                                      TValue<String> name)
         {
             Shape *current_shape = object->get_shape();
             int32_t descriptor_idx =
@@ -51,7 +51,7 @@ namespace cl
 
         AttributeDeleteDescriptor
         lookup_existing_own_property_delete_descriptor(Object *object,
-                                                       TValue2<String> name)
+                                                       TValue<String> name)
         {
             Shape *current_shape = object->get_shape();
             if(!current_shape->allows_attribute_add_delete())
@@ -99,7 +99,7 @@ namespace cl
                 L"TypeError", L"object.__repr__ expects an object receiver");
         }
 
-        TValue2<String> class_name =
+        TValue<String> class_name =
             active_thread()->class_of_value(self)->get_name();
         StringBuilder builder;
         builder.append_char(L'<');
@@ -139,7 +139,7 @@ namespace cl
             return;
         }
         set_shape(
-            shape->clone_with_class(TValue2<ClassObject>::from_oop(new_cls)));
+            shape->clone_with_class(TValue<ClassObject>::from_oop(new_cls)));
     }
 
     void Object::set_shape(Shape *new_shape)
@@ -161,7 +161,7 @@ namespace cl
         }
     }
 
-    Value Object::get_own_property(TValue2<String> name) const
+    Value Object::get_own_property(TValue<String> name) const
     {
         StorageLocation location = get_shape()->resolve_present_property(name);
         if(!location.is_found())
@@ -173,7 +173,7 @@ namespace cl
     }
 
     AttributeReadDescriptor
-    Object::lookup_own_attribute_descriptor(TValue2<String> name) const
+    Object::lookup_own_attribute_descriptor(TValue<String> name) const
     {
         StorageLocation location = get_shape()->resolve_present_property(name);
         if(!location.is_found())
@@ -190,18 +190,18 @@ namespace cl
     }
 
     AttributeWriteDescriptor
-    Object::lookup_own_attribute_write_descriptor(TValue2<String> name)
+    Object::lookup_own_attribute_write_descriptor(TValue<String> name)
     {
         return lookup_existing_own_property_write_descriptor(this, name);
     }
 
     AttributeDeleteDescriptor
-    Object::lookup_own_attribute_delete_descriptor(TValue2<String> name)
+    Object::lookup_own_attribute_delete_descriptor(TValue<String> name)
     {
         return lookup_existing_own_property_delete_descriptor(this, name);
     }
 
-    bool Object::add_own_property(TValue2<String> name, Value value)
+    bool Object::add_own_property(TValue<String> name, Value value)
     {
         value.assert_not_vm_sentinel();
 
@@ -228,7 +228,7 @@ namespace cl
         return true;
     }
 
-    bool Object::define_own_property(TValue2<String> name, Value value,
+    bool Object::define_own_property(TValue<String> name, Value value,
                                      DescriptorFlags descriptor_flags)
     {
         value.assert_not_vm_sentinel();
@@ -255,7 +255,7 @@ namespace cl
         return true;
     }
 
-    bool Object::set_existing_own_property(TValue2<String> name, Value value)
+    bool Object::set_existing_own_property(TValue<String> name, Value value)
     {
         value.assert_not_vm_sentinel();
 
@@ -269,7 +269,7 @@ namespace cl
                                     value);
     }
 
-    bool Object::set_own_property(TValue2<String> name, Value value)
+    bool Object::set_own_property(TValue<String> name, Value value)
     {
         value.assert_not_vm_sentinel();
 
@@ -287,7 +287,7 @@ namespace cl
         return false;
     }
 
-    bool Object::delete_own_property(TValue2<String> name)
+    bool Object::delete_own_property(TValue<String> name)
     {
         AttributeDeleteDescriptor descriptor =
             lookup_own_attribute_delete_descriptor(name);

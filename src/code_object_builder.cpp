@@ -212,7 +212,7 @@ namespace cl
 
     CodeObjectBuilder::CodeObjectBuilder(
         const CompilationUnit *compilation_unit, Scope *module_scope,
-        Scope *local_scope, TValue2<String> name)
+        Scope *local_scope, TValue<String> name)
         : code_obj(make_object_raw<CodeObject>(compilation_unit, module_scope,
                                                local_scope, name))
     {
@@ -220,7 +220,7 @@ namespace cl
 
     CodeObjectBuilder::CodeObjectBuilder(
         VirtualMachine *vm, const CompilationUnit *compilation_unit,
-        Scope *module_scope, Scope *local_scope, TValue2<String> name)
+        Scope *module_scope, Scope *local_scope, TValue<String> name)
         : code_obj(vm->make_immortal_object_raw<CodeObject>(
               compilation_unit, module_scope, local_scope, name))
     {

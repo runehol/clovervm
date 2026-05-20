@@ -24,7 +24,7 @@ namespace
     {
         ASSERT_EQ(PendingExceptionKind::Object,
                   thread->pending_exception_kind());
-        TValue2<Exception> exception = thread->pending_exception_object();
+        TValue<Exception> exception = thread->pending_exception_object();
         EXPECT_STREQ(class_name, exception.extract()
                                      ->get_shape()
                                      ->get_class()

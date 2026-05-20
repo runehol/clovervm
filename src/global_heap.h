@@ -58,9 +58,9 @@ namespace cl
         }
 
         template <typename T, typename... Args>
-        TValue2<T> make_global_internal_value(Args &&...args)
+        TValue<T> make_global_internal_value(Args &&...args)
         {
-            return TValue2<T>::from_oop(
+            return TValue<T>::from_oop(
                 make_global_internal_raw<T>(std::forward<Args>(args)...));
         }
 

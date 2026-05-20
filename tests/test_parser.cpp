@@ -450,7 +450,7 @@ TEST(Parser, string_literal_stores_constant_value)
                 AstNodeKind::EXPRESSION_LITERAL);
     EXPECT_TRUE(parsed.ast.kinds[literal_idx].operator_kind ==
                 AstOperatorKind::STRING);
-    EXPECT_STREQ(L"abc", string_as_wchar_t(TValue2<String>::from_value_assumed(
+    EXPECT_STREQ(L"abc", string_as_wchar_t(TValue<String>::from_value_assumed(
                              parsed.ast.constants[literal_idx])));
 }
 
@@ -482,7 +482,7 @@ TEST(Parser, string_literal_decodes_escapes_and_prefixes)
     int32_t escaped_stmt = escaped.ast.children[escaped.ast.root_node][0];
     int32_t escaped_literal = escaped.ast.children[escaped_stmt][0];
     EXPECT_STREQ(L"line\nAA",
-                 string_as_wchar_t(TValue2<String>::from_value_assumed(
+                 string_as_wchar_t(TValue<String>::from_value_assumed(
                      escaped.ast.constants[escaped_literal])));
 
     test::ParsedFile raw(L"r\"line\\n\"\n"
@@ -490,12 +490,12 @@ TEST(Parser, string_literal_decodes_escapes_and_prefixes)
     int32_t raw_stmt = raw.ast.children[raw.ast.root_node][0];
     int32_t raw_literal = raw.ast.children[raw_stmt][0];
     EXPECT_STREQ(L"line\\n",
-                 string_as_wchar_t(TValue2<String>::from_value_assumed(
+                 string_as_wchar_t(TValue<String>::from_value_assumed(
                      raw.ast.constants[raw_literal])));
 
     int32_t unicode_stmt = raw.ast.children[raw.ast.root_node][1];
     int32_t unicode_literal = raw.ast.children[unicode_stmt][0];
-    EXPECT_STREQ(L"☺", string_as_wchar_t(TValue2<String>::from_value_assumed(
+    EXPECT_STREQ(L"☺", string_as_wchar_t(TValue<String>::from_value_assumed(
                            raw.ast.constants[unicode_literal])));
 }
 
@@ -509,13 +509,13 @@ TEST(Parser, triple_quoted_string_literals_decode_multiline_body)
     int32_t escaped_stmt = parsed.ast.children[parsed.ast.root_node][0];
     int32_t escaped_literal = parsed.ast.children[escaped_stmt][0];
     EXPECT_STREQ(L"first\nsecond\n",
-                 string_as_wchar_t(TValue2<String>::from_value_assumed(
+                 string_as_wchar_t(TValue<String>::from_value_assumed(
                      parsed.ast.constants[escaped_literal])));
 
     int32_t raw_stmt = parsed.ast.children[parsed.ast.root_node][1];
     int32_t raw_literal = parsed.ast.children[raw_stmt][0];
     EXPECT_STREQ(L"raw\\n\ntext",
-                 string_as_wchar_t(TValue2<String>::from_value_assumed(
+                 string_as_wchar_t(TValue<String>::from_value_assumed(
                      parsed.ast.constants[raw_literal])));
 }
 

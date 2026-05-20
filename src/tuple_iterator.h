@@ -19,17 +19,17 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::TupleIterator;
 
-        TupleIterator(ClassObject *cls, TValue2<Tuple> _tuple)
+        TupleIterator(ClassObject *cls, TValue<Tuple> _tuple)
             : Object(cls, native_layout), tuple(_tuple),
-              index(TValue2<SMI>::from_smi(0)),
-              length(TValue2<SMI>::from_smi(
+              index(TValue<SMI>::from_smi(0)),
+              length(TValue<SMI>::from_smi(
                   static_cast<int64_t>(_tuple.extract()->size())))
         {
         }
 
-        Member<TValue2<Tuple>> tuple;
-        Member<TValue2<SMI>> index;
-        Member<TValue2<SMI>> length;
+        Member<TValue<Tuple>> tuple;
+        Member<TValue<SMI>> index;
+        Member<TValue<SMI>> length;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(TupleIterator, Object, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(TupleIterator);

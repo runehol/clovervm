@@ -19,14 +19,14 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::ListIterator;
 
-        ListIterator(ClassObject *cls, TValue2<List> _list)
+        ListIterator(ClassObject *cls, TValue<List> _list)
             : Object(cls, native_layout), list(_list),
-              index(TValue2<SMI>::from_smi(0))
+              index(TValue<SMI>::from_smi(0))
         {
         }
 
-        Member<TValue2<List>> list;
-        Member<TValue2<SMI>> index;
+        Member<TValue<List>> list;
+        Member<TValue<SMI>> index;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ListIterator, Object, 2);
         CL_DECLARE_STATIC_OBJECT_SIZE(ListIterator);

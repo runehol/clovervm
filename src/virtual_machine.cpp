@@ -91,9 +91,9 @@ namespace cl
         }
 
         return make_object_value<RangeIterator>(
-                   TValue2<SMI>::from_value_assumed(start),
-                   TValue2<SMI>::from_value_assumed(stop),
-                   TValue2<SMI>::from_value_assumed(step))
+                   TValue<SMI>::from_value_assumed(start),
+                   TValue<SMI>::from_value_assumed(stop),
+                   TValue<SMI>::from_value_assumed(step))
             .raw_value();
     }
 
@@ -176,7 +176,7 @@ namespace cl
         }
     }
 
-    void VirtualMachine::write_stdout(TValue2<String> value)
+    void VirtualMachine::write_stdout(TValue<String> value)
     {
         String *string = value.extract();
         size_t count = static_cast<size_t>(string->count.extract());
@@ -313,7 +313,7 @@ namespace cl
             descriptor_flag(DescriptorFlag::StableSlot) |
             descriptor_flag(DescriptorFlag::ShapeClassValue);
         smi_shape_ = Shape::make_immortal_root_with_single_descriptor(
-            this, TValue2<ClassObject>::from_oop(int_class_),
+            this, TValue<ClassObject>::from_oop(int_class_),
             dunder_class_name(),
             DescriptorInfo::make(StorageLocation::not_found(),
                                  inline_class_flags),
@@ -323,7 +323,7 @@ namespace cl
         bool_class_ = bool_definition.cls;
         register_builtin_class(bool_definition);
         bool_shape_ = Shape::make_immortal_root_with_single_descriptor(
-            this, TValue2<ClassObject>::from_oop(bool_class_),
+            this, TValue<ClassObject>::from_oop(bool_class_),
             dunder_class_name(),
             DescriptorInfo::make(StorageLocation::not_found(),
                                  inline_class_flags),
@@ -333,7 +333,7 @@ namespace cl
         none_type_class_ = none_type_definition.cls;
         register_builtin_class(none_type_definition);
         none_shape_ = Shape::make_immortal_root_with_single_descriptor(
-            this, TValue2<ClassObject>::from_oop(none_type_class_),
+            this, TValue<ClassObject>::from_oop(none_type_class_),
             dunder_class_name(),
             DescriptorInfo::make(StorageLocation::not_found(),
                                  inline_class_flags),
@@ -411,19 +411,18 @@ namespace cl
         builtin_scope.extract()->set_by_name(
             get_or_create_interned_string_value(L"None"), Value::None());
 
-        TValue2<String> range_name =
+        TValue<String> range_name =
             get_or_create_interned_string_value(L"range");
-        TValue2<Tuple> range_defaults = make_object_value<Tuple>(2);
+        TValue<Tuple> range_defaults = make_object_value<Tuple>(2);
         range_defaults.extract()->initialize_item_unchecked(0, Value::None());
         range_defaults.extract()->initialize_item_unchecked(1, Value::None());
         range_builtin =
             make_native_function(this, builtin_range,
-                                 Optional<TValue2<Tuple>>::some(range_defaults))
+                                 Optional<TValue<Tuple>>::some(range_defaults))
                 .raw_value();
         builtin_scope.extract()->set_by_name(range_name, range_builtin);
 
-        TValue2<String> sqrt_name =
-            get_or_create_interned_string_value(L"sqrt");
+        TValue<String> sqrt_name = get_or_create_interned_string_value(L"sqrt");
         builtin_scope.extract()->set_by_name(
             sqrt_name, make_native_function(this, builtin_sqrt).raw_value());
 

@@ -42,7 +42,7 @@ namespace cl
 
     static Value native_tuple_iter(Value self)
     {
-        TValue2<Tuple> tuple = CL_TRY(TValue2<Tuple>::from_value_or_raise(
+        TValue<Tuple> tuple = CL_TRY(TValue<Tuple>::from_value_or_raise(
             self, L"TypeError", L"tuple.__iter__ expects a tuple receiver"));
         return make_object_value<TupleIterator>(tuple).raw_value();
     }
@@ -61,14 +61,14 @@ namespace cl
 
     Tuple::Tuple(BootstrapObjectTag, size_t size)
         : Object(BootstrapObjectTag{}, native_layout),
-          size_value(TValue2<SMI>::from_smi(static_cast<int64_t>(size)))
+          size_value(TValue<SMI>::from_smi(static_cast<int64_t>(size)))
     {
         initialize_items(size);
     }
 
     Tuple::Tuple(ClassObject *cls, size_t size)
         : Object(cls, native_layout),
-          size_value(TValue2<SMI>::from_smi(static_cast<int64_t>(size)))
+          size_value(TValue<SMI>::from_smi(static_cast<int64_t>(size)))
     {
         initialize_items(size);
     }

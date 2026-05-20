@@ -123,7 +123,7 @@ namespace cl
 
     static AttributeReadDescriptor
     lookup_inline_shape_attribute_read_descriptor(Value receiver,
-                                                  TValue2<String> name)
+                                                  TValue<String> name)
     {
         DescriptorLookup lookup =
             active_thread()
@@ -215,7 +215,7 @@ namespace cl
     }
 
     static AttributeReadDescriptor lookup_class_chain_read_descriptor(
-        const ClassObject *class_object, TValue2<String> name,
+        const ClassObject *class_object, TValue<String> name,
         AttributeReadPlanPath path, AttributeBindingContext binding)
     {
         Value mro_value = class_object->get_mro_value();
@@ -281,7 +281,7 @@ namespace cl
     }
 
     static AttributeReadDescriptor lookup_instance_attribute_read_descriptor(
-        const ClassObject *class_object, TValue2<String> name, Value receiver)
+        const ClassObject *class_object, TValue<String> name, Value receiver)
     {
         return lookup_class_chain_read_descriptor(
             class_object, name, AttributeReadPlanPath::InstanceClassChain,
@@ -290,7 +290,7 @@ namespace cl
 
     static AttributeReadDescriptor
     lookup_class_attribute_read_descriptor(const ClassObject *class_object,
-                                           TValue2<String> name)
+                                           TValue<String> name)
     {
         return lookup_class_chain_read_descriptor(
             class_object, name, AttributeReadPlanPath::ClassObjectChain,
@@ -299,7 +299,7 @@ namespace cl
 
     static AttributeReadDescriptor
     lookup_metaclass_attribute_read_descriptor(const ClassObject *metaclass,
-                                               TValue2<String> name,
+                                               TValue<String> name,
                                                ClassObject *receiver_class)
     {
         return lookup_class_chain_read_descriptor(
@@ -311,9 +311,9 @@ namespace cl
     static DescriptorProtocol lookup_descriptor_protocol(Value value)
     {
         ClassObject *type = active_thread()->class_of_value(value);
-        TValue2<String> get_name(interned_string(L"__get__"));
-        TValue2<String> set_name(interned_string(L"__set__"));
-        TValue2<String> delete_name(interned_string(L"__delete__"));
+        TValue<String> get_name(interned_string(L"__get__"));
+        TValue<String> set_name(interned_string(L"__set__"));
+        TValue<String> delete_name(interned_string(L"__delete__"));
 
         return DescriptorProtocol{
             lookup_class_attribute_read_descriptor(type, get_name).lookup_value,
@@ -360,7 +360,7 @@ namespace cl
     }
 
     static AttributeReadDescriptor
-    resolve_class_attr_read_descriptor(ClassObject *cls, TValue2<String> name)
+    resolve_class_attr_read_descriptor(ClassObject *cls, TValue<String> name)
     {
         AttributeReadDescriptor class_descriptor =
             classify_class_read_descriptor(
@@ -386,7 +386,7 @@ namespace cl
     }
 
     AttributeReadDescriptor resolve_attr_read_descriptor(Value obj,
-                                                         TValue2<String> name)
+                                                         TValue<String> name)
     {
         if(likely(obj.is_ptr()))
         {
@@ -462,7 +462,7 @@ namespace cl
     }
 
     AttributeReadDescriptor
-    resolve_special_method_read_descriptor(Value obj, TValue2<String> name)
+    resolve_special_method_read_descriptor(Value obj, TValue<String> name)
     {
         ClassObject *class_object = active_thread()->class_of_value(obj);
         AttributeReadDescriptor descriptor = classify_class_read_descriptor(
@@ -525,7 +525,7 @@ namespace cl
         return true;
     }
 
-    bool load_method(Value obj, TValue2<String> name, Value &callable_out,
+    bool load_method(Value obj, TValue<String> name, Value &callable_out,
                      Value &self_out)
     {
         AttributeReadDescriptor descriptor =
@@ -540,7 +540,7 @@ namespace cl
                                      self_out);
     }
 
-    bool load_special_method(Value obj, TValue2<String> name,
+    bool load_special_method(Value obj, TValue<String> name,
                              Value &callable_out, Value &self_out)
     {
         AttributeReadDescriptor descriptor =
@@ -555,7 +555,7 @@ namespace cl
                                      self_out);
     }
 
-    Value load_attr(Value obj, TValue2<String> name)
+    Value load_attr(Value obj, TValue<String> name)
     {
         AttributeReadDescriptor descriptor =
             resolve_attr_read_descriptor(obj, name);
@@ -567,7 +567,7 @@ namespace cl
     }
 
     AttributeWriteDescriptor resolve_attr_write_descriptor(Value obj,
-                                                           TValue2<String> name)
+                                                           TValue<String> name)
     {
         if(!obj.is_ptr())
         {
@@ -597,7 +597,7 @@ namespace cl
     }
 
     AttributeDeleteDescriptor
-    resolve_attr_delete_descriptor(Value obj, TValue2<String> name)
+    resolve_attr_delete_descriptor(Value obj, TValue<String> name)
     {
         if(!obj.is_ptr())
         {
@@ -669,7 +669,7 @@ namespace cl
         return true;
     }
 
-    bool store_attr(Value obj, TValue2<String> name, Value value)
+    bool store_attr(Value obj, TValue<String> name, Value value)
     {
         value.assert_not_vm_sentinel();
 
@@ -686,7 +686,7 @@ namespace cl
         return false;
     }
 
-    bool delete_attr(Value obj, TValue2<String> name)
+    bool delete_attr(Value obj, TValue<String> name)
     {
         AttributeDeleteDescriptor descriptor =
             resolve_attr_delete_descriptor(obj, name);

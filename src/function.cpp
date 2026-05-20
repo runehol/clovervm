@@ -10,8 +10,8 @@ namespace cl
 {
     static void install_function_instance_root_shape(ClassObject *cls)
     {
-        TValue2<String> dunder_class_name = interned_string(L"__class__");
-        TValue2<String> dunder_doc_name = interned_string(L"__doc__");
+        TValue<String> dunder_class_name = interned_string(L"__class__");
+        TValue<String> dunder_doc_name = interned_string(L"__doc__");
         DescriptorFlags class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot) |

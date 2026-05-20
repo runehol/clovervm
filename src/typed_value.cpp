@@ -1,7 +1,7 @@
+#include "typed_value.h"
 #include "class_object.h"
 #include "str.h"
 #include "thread_state.h"
-#include "typed_value.h"
 #include <string>
 
 namespace cl
@@ -25,7 +25,7 @@ namespace cl
         assert(active_thread()->has_pending_exception());
     }
 
-    static std::wstring string_to_wstring(TValue2<String> string)
+    static std::wstring string_to_wstring(TValue<String> string)
     {
         String *str = string.extract();
         return std::wstring(str->data, size_t(str->count.extract()));

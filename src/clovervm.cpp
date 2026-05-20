@@ -67,7 +67,7 @@ std::wstring widen_string(const char *str)
     return decode_string(str, "failed to decode string");
 }
 
-std::wstring cl_string_to_wstring(TValue2<String> string)
+std::wstring cl_string_to_wstring(TValue<String> string)
 {
     String *str = string.extract();
     return std::wstring(str->data, size_t(str->count.extract()));
@@ -85,7 +85,7 @@ std::wstring format_pending_python_exception(ThreadState *thread)
         return L"InternalError: exception marker without pending exception";
     }
 
-    TValue2<Exception> exception = thread->pending_exception_object();
+    TValue<Exception> exception = thread->pending_exception_object();
     std::wstring result = cl_string_to_wstring(
         exception.extract()->get_shape()->get_class()->get_name());
     std::wstring message =

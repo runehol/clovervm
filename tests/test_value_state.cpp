@@ -16,7 +16,7 @@ namespace
     {
         ASSERT_EQ(PendingExceptionKind::Object,
                   thread->pending_exception_kind());
-        TValue2<Exception> exception = thread->pending_exception_object();
+        TValue<Exception> exception = thread->pending_exception_object();
         EXPECT_STREQ(class_name, exception.extract()
                                      ->get_shape()
                                      ->get_class()
@@ -28,83 +28,83 @@ namespace
 
     static Value require_smi_for_test(Value value)
     {
-        TValue2<SMI> smi = CL_TRY(TValue2<SMI>::from_value_or_raise(
+        TValue<SMI> smi = CL_TRY(TValue<SMI>::from_value_or_raise(
             value, L"TypeError", L"test expected an SMI"));
         return smi.raw_value();
     }
 
-    static Expected<TValue2<Bool>>
+    static Expected<TValue<Bool>>
     require_smi_then_return_bool_for_test(Value value)
     {
-        (void)CL_TRY(TValue2<SMI>::from_value_or_raise(
-            value, L"TypeError", L"test expected an SMI"));
-        return Expected<TValue2<Bool>>::ok(TValue2<Bool>::True());
+        (void)CL_TRY(TValue<SMI>::from_value_or_raise(value, L"TypeError",
+                                                      L"test expected an SMI"));
+        return Expected<TValue<Bool>>::ok(TValue<Bool>::True());
     }
 }  // namespace
 
-TEST(TValue2, SmiUsesSameBasicProtocolAsTValue)
+TEST(TValue, SmiUsesSameBasicProtocolAsTValue)
 {
-    TValue2<SMI> smi = TValue2<SMI>::from_value_unchecked(Value::from_smi(42));
+    TValue<SMI> smi = TValue<SMI>::from_value_unchecked(Value::from_smi(42));
 
-    static_assert(std::is_same_v<TValue2<SMI>::semantic_type, SMI>);
-    static_assert(!std::is_default_constructible_v<TValue2<SMI>>);
+    static_assert(std::is_same_v<TValue<SMI>::semantic_type, SMI>);
+    static_assert(!std::is_default_constructible_v<TValue<SMI>>);
 
     EXPECT_EQ(Value::from_smi(42), smi.raw_value());
 }
 
-TEST(TValue2, SmiFactoryAndExtractUseTrait)
+TEST(TValue, SmiFactoryAndExtractUseTrait)
 {
-    TValue2<SMI> smi = TValue2<SMI>::from_smi(42);
+    TValue<SMI> smi = TValue<SMI>::from_smi(42);
 
     EXPECT_EQ(Value::from_smi(42), smi.raw_value());
     EXPECT_EQ(42, smi.extract());
 }
 
-TEST(TValue2, StringRoundTripsObjectPointer)
+TEST(TValue, StringRoundTripsObjectPointer)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
     String *string = context.thread()->make_internal_raw<String>(L"v2");
-    TValue2<String> typed_string =
-        TValue2<String>::from_value_unchecked(Value::from_oop(string));
+    TValue<String> typed_string =
+        TValue<String>::from_value_unchecked(Value::from_oop(string));
 
     EXPECT_EQ(Value::from_oop(string), typed_string.raw_value());
 }
 
-TEST(TValue2, OopFactoryAndExtractUseNativeLayoutTrait)
+TEST(TValue, OopFactoryAndExtractUseNativeLayoutTrait)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
     String *string = context.thread()->make_internal_raw<String>(L"v2");
-    TValue2<String> typed_string = TValue2<String>::from_oop(string);
+    TValue<String> typed_string = TValue<String>::from_oop(string);
 
     EXPECT_EQ(Value::from_oop(string), typed_string.raw_value());
     EXPECT_EQ(string, typed_string.extract());
 }
 
-TEST(TValue2, CheckedConstructionReturnsExpectedSuccess)
+TEST(TValue, CheckedConstructionReturnsExpectedSuccess)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
     String *string = context.thread()->make_internal_raw<String>(L"v2");
-    Expected<TValue2<String>> typed_string =
-        TValue2<String>::from_value_checked(Value::from_oop(string));
+    Expected<TValue<String>> typed_string =
+        TValue<String>::from_value_checked(Value::from_oop(string));
 
     ASSERT_TRUE(typed_string.has_value());
     EXPECT_EQ(string, typed_string.value().extract());
     EXPECT_FALSE(context.thread()->has_pending_exception());
 }
 
-TEST(TValue2, CheckedConstructionSetsTypeErrorOnFailure)
+TEST(TValue, CheckedConstructionSetsTypeErrorOnFailure)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    Expected<TValue2<String>> typed_string =
-        TValue2<String>::from_value_checked(Value::from_smi(42));
+    Expected<TValue<String>> typed_string =
+        TValue<String>::from_value_checked(Value::from_smi(42));
 
     EXPECT_TRUE(typed_string.has_exception());
     EXPECT_TRUE(typed_string.raw_value().is_exception_marker());
@@ -112,13 +112,12 @@ TEST(TValue2, CheckedConstructionSetsTypeErrorOnFailure)
                              L"invalid typed value construction for str");
 }
 
-TEST(TValue2, CheckedSmiConstructionNamesTargetTypeOnFailure)
+TEST(TValue, CheckedSmiConstructionNamesTargetTypeOnFailure)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    Expected<TValue2<SMI>> smi =
-        TValue2<SMI>::from_value_checked(Value::True());
+    Expected<TValue<SMI>> smi = TValue<SMI>::from_value_checked(Value::True());
 
     EXPECT_TRUE(smi.has_exception());
     EXPECT_TRUE(smi.raw_value().is_exception_marker());
@@ -126,27 +125,27 @@ TEST(TValue2, CheckedSmiConstructionNamesTargetTypeOnFailure)
                              L"invalid typed value construction for SMI");
 }
 
-TEST(TValue2, NoneFactoryAndCheckedConstructionUseNoneSingleton)
+TEST(TValue, NoneFactoryAndCheckedConstructionUseNoneSingleton)
 {
-    TValue2<None> none = TValue2<None>::None();
+    TValue<None> none = TValue<None>::None();
 
-    static_assert(std::is_same_v<TValue2<None>::semantic_type, None>);
+    static_assert(std::is_same_v<TValue<None>::semantic_type, None>);
 
     EXPECT_EQ(Value::None(), none.raw_value());
 
-    Expected<TValue2<None>> checked =
-        TValue2<None>::from_value_checked(Value::None());
+    Expected<TValue<None>> checked =
+        TValue<None>::from_value_checked(Value::None());
     ASSERT_TRUE(checked.has_value());
     EXPECT_EQ(Value::None(), checked.value().raw_value());
 }
 
-TEST(TValue2, CheckedNoneConstructionNamesTargetTypeOnFailure)
+TEST(TValue, CheckedNoneConstructionNamesTargetTypeOnFailure)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    Expected<TValue2<None>> none =
-        TValue2<None>::from_value_checked(Value::from_smi(42));
+    Expected<TValue<None>> none =
+        TValue<None>::from_value_checked(Value::from_smi(42));
 
     EXPECT_TRUE(none.has_exception());
     EXPECT_TRUE(none.raw_value().is_exception_marker());
@@ -154,13 +153,13 @@ TEST(TValue2, CheckedNoneConstructionNamesTargetTypeOnFailure)
                              L"invalid typed value construction for None");
 }
 
-TEST(TValue2, BoolFactoriesAndExtractUseBoolSingletons)
+TEST(TValue, BoolFactoriesAndExtractUseBoolSingletons)
 {
-    TValue2<Bool> true_value = TValue2<Bool>::True();
-    TValue2<Bool> false_value = TValue2<Bool>::False();
-    TValue2<Bool> from_bool = TValue2<Bool>::from_bool(true);
+    TValue<Bool> true_value = TValue<Bool>::True();
+    TValue<Bool> false_value = TValue<Bool>::False();
+    TValue<Bool> from_bool = TValue<Bool>::from_bool(true);
 
-    static_assert(std::is_same_v<TValue2<Bool>::semantic_type, Bool>);
+    static_assert(std::is_same_v<TValue<Bool>::semantic_type, Bool>);
 
     EXPECT_EQ(Value::True(), true_value.raw_value());
     EXPECT_EQ(Value::False(), false_value.raw_value());
@@ -169,13 +168,13 @@ TEST(TValue2, BoolFactoriesAndExtractUseBoolSingletons)
     EXPECT_FALSE(false_value.extract());
 }
 
-TEST(TValue2, CheckedBoolConstructionNamesTargetTypeOnFailure)
+TEST(TValue, CheckedBoolConstructionNamesTargetTypeOnFailure)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    Expected<TValue2<Bool>> boolean =
-        TValue2<Bool>::from_value_checked(Value::None());
+    Expected<TValue<Bool>> boolean =
+        TValue<Bool>::from_value_checked(Value::None());
 
     EXPECT_TRUE(boolean.has_exception());
     EXPECT_TRUE(boolean.raw_value().is_exception_marker());
@@ -183,21 +182,21 @@ TEST(TValue2, CheckedBoolConstructionNamesTargetTypeOnFailure)
                              L"invalid typed value construction for bool");
 }
 
-TEST(TValue2, CustomCheckedConstructionReturnsExpectedSuccess)
+TEST(TValue, CustomCheckedConstructionReturnsExpectedSuccess)
 {
-    Expected<TValue2<SMI>> smi = TValue2<SMI>::from_value_or_raise(
+    Expected<TValue<SMI>> smi = TValue<SMI>::from_value_or_raise(
         Value::from_smi(42), L"TypeError", L"expected an SMI");
 
     ASSERT_TRUE(smi.has_value());
     EXPECT_EQ(42, smi.value().extract());
 }
 
-TEST(TValue2, CustomCheckedConstructionRaisesSuppliedExceptionOnFailure)
+TEST(TValue, CustomCheckedConstructionRaisesSuppliedExceptionOnFailure)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    Expected<TValue2<SMI>> smi = TValue2<SMI>::from_value_or_raise(
+    Expected<TValue<SMI>> smi = TValue<SMI>::from_value_or_raise(
         Value::None(), L"TypeError", L"expected an SMI");
 
     EXPECT_TRUE(smi.has_exception());
@@ -206,9 +205,9 @@ TEST(TValue2, CustomCheckedConstructionRaisesSuppliedExceptionOnFailure)
                              L"expected an SMI");
 }
 
-TEST(TValue2, AssumedConstructionAssertsTypeAndReturnsTypedValue)
+TEST(TValue, AssumedConstructionAssertsTypeAndReturnsTypedValue)
 {
-    TValue2<SMI> smi = TValue2<SMI>::from_value_assumed(Value::from_smi(42));
+    TValue<SMI> smi = TValue<SMI>::from_value_assumed(Value::from_smi(42));
 
     EXPECT_EQ(42, smi.extract());
 }
@@ -235,7 +234,7 @@ TEST(Expected, TryMacroPropagatesIntoDifferentExpectedPayload)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    Expected<TValue2<Bool>> result =
+    Expected<TValue<Bool>> result =
         require_smi_then_return_bool_for_test(Value::None());
 
     EXPECT_TRUE(result.has_exception());
@@ -246,7 +245,7 @@ TEST(Expected, TryMacroPropagatesIntoDifferentExpectedPayload)
 
 TEST(Expected, TryMacroUnwrapsSuccessInExpectedReturningFunction)
 {
-    Expected<TValue2<Bool>> result =
+    Expected<TValue<Bool>> result =
         require_smi_then_return_bool_for_test(Value::from_smi(42));
 
     ASSERT_TRUE(result.has_value());
@@ -306,11 +305,11 @@ TEST(Expected, PropagatedExceptionCarriesExistingExceptionMarker)
 
 TEST(Expected, RecursesSemanticTypeThroughTypedValue)
 {
-    using ExpectedSmi = Expected<TValue2<SMI>>;
+    using ExpectedSmi = Expected<TValue<SMI>>;
 
     static_assert(std::is_same_v<ExpectedSmi::semantic_type, SMI>);
 
-    ExpectedSmi expected = ExpectedSmi::ok(TValue2<SMI>::from_smi(42));
+    ExpectedSmi expected = ExpectedSmi::ok(TValue<SMI>::from_smi(42));
 
     EXPECT_TRUE(expected.has_value());
     EXPECT_EQ(Value::from_smi(42), expected.raw_value());
@@ -320,12 +319,12 @@ TEST(Expected, RecursesSemanticTypeThroughTypedValue)
 
 TEST(Expected, NoneTypedValueRepresentsNoneOrException)
 {
-    using ExpectedNone = Expected<TValue2<None>>;
+    using ExpectedNone = Expected<TValue<None>>;
 
     static_assert(sizeof(ExpectedNone) == sizeof(Value));
     static_assert(std::is_same_v<ExpectedNone::semantic_type, None>);
 
-    ExpectedNone success = ExpectedNone::ok(TValue2<None>::None());
+    ExpectedNone success = ExpectedNone::ok(TValue<None>::None());
 
     EXPECT_TRUE(success.has_value());
     EXPECT_EQ(Value::None(), success.value().raw_value());
@@ -356,7 +355,7 @@ TEST(Optional, ConstructsSomeValueAndUnpacksLikeStdOptional)
 
 TEST(Optional, TypedValueUnpacksThroughFromValueUnchecked)
 {
-    Optional<TValue2<SMI>> optional(TValue2<SMI>::from_smi(42));
+    Optional<TValue<SMI>> optional(TValue<SMI>::from_smi(42));
 
     EXPECT_TRUE(optional.has_value());
     EXPECT_EQ(Value::from_smi(42), optional.raw_value());
@@ -366,7 +365,7 @@ TEST(Optional, TypedValueUnpacksThroughFromValueUnchecked)
 
 TEST(Optional, RecursesSemanticTypeThroughExpectedAndTypedValue)
 {
-    using MaybeString = Optional<Expected<TValue2<String>>>;
+    using MaybeString = Optional<Expected<TValue<String>>>;
 
     static_assert(std::is_same_v<MaybeString::semantic_type, String>);
 }

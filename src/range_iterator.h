@@ -18,16 +18,16 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::RangeIterator;
 
-        RangeIterator(ClassObject *cls, TValue2<SMI> _current,
-                      TValue2<SMI> _stop, TValue2<SMI> _step)
+        RangeIterator(ClassObject *cls, TValue<SMI> _current, TValue<SMI> _stop,
+                      TValue<SMI> _step)
             : Object(cls, native_layout), current(_current), stop(_stop),
               step(_step)
         {
         }
 
-        Member<TValue2<SMI>> current;
-        Member<TValue2<SMI>> stop;
-        Member<TValue2<SMI>> step;
+        Member<TValue<SMI>> current;
+        Member<TValue<SMI>> stop;
+        Member<TValue<SMI>> step;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(RangeIterator, Object, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(RangeIterator);

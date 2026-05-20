@@ -172,8 +172,8 @@ TEST(NativeLayoutDescriptor, NewObjectSizeReportsCurrentLayoutExtent)
     size_t expected_range_iterator_size = sizeof(RangeIterator);
     RangeIterator *range_iterator =
         context.thread()->make_object_raw<RangeIterator>(
-            TValue2<SMI>::from_smi(0), TValue2<SMI>::from_smi(3),
-            TValue2<SMI>::from_smi(1));
+            TValue<SMI>::from_smi(0), TValue<SMI>::from_smi(3),
+            TValue<SMI>::from_smi(1));
     EXPECT_EQ(expected_range_iterator_size,
               object_size_in_bytes(range_iterator));
 
@@ -185,7 +185,7 @@ TEST(NativeLayoutDescriptor, NewObjectSizeReportsCurrentLayoutExtent)
     Tuple *tuple = context.thread()->make_object_raw<Tuple>(5);
     EXPECT_EQ(expected_tuple_size, object_size_in_bytes(tuple));
 
-    TValue2<String> cls_name(
+    TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"SizedInstance"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 4, context.vm().object_class());
@@ -299,9 +299,9 @@ TEST(NativeLayoutDescriptor, InstanceAuxCountTracksInitializedInlineSlots)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    TValue2<String> small_name(
+    TValue<String> small_name(
         context.vm().get_or_create_interned_string_value(L"Small"));
-    TValue2<String> large_name(
+    TValue<String> large_name(
         context.vm().get_or_create_interned_string_value(L"Large"));
     ClassObject *small_cls = context.thread()->make_internal_raw<ClassObject>(
         small_name, 1, context.vm().object_class());
@@ -327,7 +327,7 @@ TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesInitializedInlineSlots)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    TValue2<String> cls_name(
+    TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"SizedInstance"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 4, context.vm().object_class());
@@ -348,13 +348,13 @@ TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    TValue2<String> cls_name(
+    TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Transitioned"));
-    TValue2<String> a_name(
+    TValue<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
-    TValue2<String> b_name(
+    TValue<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
-    TValue2<String> c_name(
+    TValue<String> c_name(
         context.vm().get_or_create_interned_string_value(L"c"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 1, context.vm().object_class());
@@ -377,9 +377,9 @@ TEST(NativeLayoutDescriptor,
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    TValue2<String> cls_name(
+    TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"OverflowOnly"));
-    TValue2<String> attr_name(
+    TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 0, context.vm().object_class());
@@ -427,7 +427,7 @@ TEST(NativeLayoutDescriptor, ShapeNativeObjectSizeUsesPropertyCount)
     ThreadState::ActivationScope activation_scope(context.thread());
     ClassObject *cls = context.vm().object_class();
     Shape *shape = context.thread()->make_internal_raw<Shape>(
-        TValue2<ClassObject>::from_oop(cls), nullptr, 0, 3, 0,
+        TValue<ClassObject>::from_oop(cls), nullptr, 0, 3, 0,
         shape_flag(ShapeFlag::None), 0);
 
     EXPECT_EQ(Shape::size_for(3), object_size_in_bytes(shape));

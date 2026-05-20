@@ -65,8 +65,8 @@ namespace cl
         using const_iterator = const T *;
 
         RawArray()
-            : size_value(TValue2<SMI>::from_smi(0)),
-              capacity_value(TValue2<SMI>::from_smi(0)), backing(nullptr)
+            : size_value(TValue<SMI>::from_smi(0)),
+              capacity_value(TValue<SMI>::from_smi(0)), backing(nullptr)
         {
         }
 
@@ -84,7 +84,7 @@ namespace cl
 
         size_t size() const { return static_cast<size_t>(len().extract()); }
 
-        TValue2<SMI> len() const { return size_value.value(); }
+        TValue<SMI> len() const { return size_value.value(); }
 
         size_t capacity() const
         {
@@ -230,20 +230,20 @@ namespace cl
     private:
         void set_size(size_t new_size)
         {
-            size_value = TValue2<SMI>::from_smi(static_cast<int64_t>(new_size));
+            size_value = TValue<SMI>::from_smi(static_cast<int64_t>(new_size));
         }
 
         void set_capacity(size_t new_capacity)
         {
             capacity_value =
-                TValue2<SMI>::from_smi(static_cast<int64_t>(new_capacity));
+                TValue<SMI>::from_smi(static_cast<int64_t>(new_capacity));
         }
 
         Backing *backing_ptr() { return backing.extract(); }
         const Backing *backing_ptr() const { return backing.extract(); }
 
-        Member<TValue2<SMI>> size_value;
-        Member<TValue2<SMI>> capacity_value;
+        Member<TValue<SMI>> size_value;
+        Member<TValue<SMI>> capacity_value;
         MemberHeapPtr<Backing> backing;
     };
 
@@ -273,8 +273,8 @@ namespace cl
         using const_iterator = const T *;
 
         ValueArray()
-            : size_value(TValue2<SMI>::from_smi(0)),
-              capacity_value(TValue2<SMI>::from_smi(0)), backing(nullptr)
+            : size_value(TValue<SMI>::from_smi(0)),
+              capacity_value(TValue<SMI>::from_smi(0)), backing(nullptr)
         {
         }
 
@@ -292,7 +292,7 @@ namespace cl
 
         size_t size() const { return static_cast<size_t>(len().extract()); }
 
-        TValue2<SMI> len() const { return size_value.value(); }
+        TValue<SMI> len() const { return size_value.value(); }
 
         size_t capacity() const
         {
@@ -500,20 +500,20 @@ namespace cl
 
         void set_size(size_t new_size)
         {
-            size_value = TValue2<SMI>::from_smi(static_cast<int64_t>(new_size));
+            size_value = TValue<SMI>::from_smi(static_cast<int64_t>(new_size));
         }
 
         void set_capacity(size_t new_capacity)
         {
             capacity_value =
-                TValue2<SMI>::from_smi(static_cast<int64_t>(new_capacity));
+                TValue<SMI>::from_smi(static_cast<int64_t>(new_capacity));
         }
 
         Backing *backing_ptr() { return backing.extract(); }
         const Backing *backing_ptr() const { return backing.extract(); }
 
-        Member<TValue2<SMI>> size_value;
-        Member<TValue2<SMI>> capacity_value;
+        Member<TValue<SMI>> size_value;
+        Member<TValue<SMI>> capacity_value;
         MemberHeapPtr<Backing> backing;
     };
 
@@ -533,8 +533,8 @@ namespace cl
         using const_iterator = T *const *;
 
         HeapPtrArray()
-            : size_value(TValue2<SMI>::from_smi(0)),
-              capacity_value(TValue2<SMI>::from_smi(0)), backing(nullptr)
+            : size_value(TValue<SMI>::from_smi(0)),
+              capacity_value(TValue<SMI>::from_smi(0)), backing(nullptr)
         {
         }
 
@@ -547,7 +547,7 @@ namespace cl
 
         size_t size() const { return static_cast<size_t>(len().extract()); }
 
-        TValue2<SMI> len() const { return size_value.value(); }
+        TValue<SMI> len() const { return size_value.value(); }
 
         size_t capacity() const
         {
@@ -687,20 +687,20 @@ namespace cl
 
         void set_size(size_t new_size)
         {
-            size_value = TValue2<SMI>::from_smi(static_cast<int64_t>(new_size));
+            size_value = TValue<SMI>::from_smi(static_cast<int64_t>(new_size));
         }
 
         void set_capacity(size_t new_capacity)
         {
             capacity_value =
-                TValue2<SMI>::from_smi(static_cast<int64_t>(new_capacity));
+                TValue<SMI>::from_smi(static_cast<int64_t>(new_capacity));
         }
 
         Backing *backing_ptr() { return backing.extract(); }
         const Backing *backing_ptr() const { return backing.extract(); }
 
-        Member<TValue2<SMI>> size_value;
-        Member<TValue2<SMI>> capacity_value;
+        Member<TValue<SMI>> size_value;
+        Member<TValue<SMI>> capacity_value;
         MemberHeapPtr<Backing> backing;
     };
 
