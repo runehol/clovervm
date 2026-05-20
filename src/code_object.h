@@ -5,8 +5,6 @@
 #include "builtin_class_registry.h"
 #include "bytecode.h"
 #include "owned.h"
-#include "owned2.h"
-#include "owned_typed_value.h"
 #include "scope.h"
 #include "value.h"
 #include <algorithm>
@@ -142,8 +140,8 @@ namespace cl
 
         MemberHeapPtr2<Scope> module_scope;
         MemberHeapPtr2<Scope> local_scope;
-        Member2<Value> name;
-        Member2<Optional<TValue2<String>>> docstring;
+        Member<Value> name;
+        Member<Optional<TValue2<String>>> docstring;
         const CompilationUnit *compilation_unit;
 
         uint32_t n_parameters = 0;
@@ -164,7 +162,7 @@ namespace cl
         std::vector<uint8_t> code;
 
         std::vector<uint32_t> source_offsets;
-        std::vector<Owned2<Value>> constant_table;
+        std::vector<Owned<Value>> constant_table;
         std::vector<AttributeReadInlineCache> attribute_read_caches;
         std::vector<AttributeMutationInlineCache> attribute_mutation_caches;
         std::vector<FunctionCallInlineCache> function_call_caches;

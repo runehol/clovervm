@@ -4,7 +4,6 @@
 #include "builtin_class_registry.h"
 #include "object.h"
 #include "owned.h"
-#include "owned2.h"
 #include "typed_value.h"
 #include "value_state.h"
 
@@ -27,7 +26,7 @@ namespace cl
         {
         }
 
-        Member2<TValue2<String>> message;
+        Member<TValue2<String>> message;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ExceptionObject, SlotObject, 1);
         CL_DECLARE_STATIC_OBJECT_SIZE(ExceptionObject);
@@ -59,7 +58,7 @@ namespace cl
         StopIterationObject(ClassObject *cls, TValue<String> message,
                             Value value = Value::not_present());
 
-        Member2<Value> value;
+        Member<Value> value;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(StopIterationObject,
                                              ExceptionObject, 1);

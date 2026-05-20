@@ -3,7 +3,7 @@
 
 #include "builtin_class_registry.h"
 #include "object.h"
-#include "owned2.h"
+#include "owned.h"
 #include "tuple.h"
 #include "value.h"
 #include "value_state.h"
@@ -27,9 +27,9 @@ namespace cl
         {
         }
 
-        Member2<TValue2<Tuple>> tuple;
-        Member2<TValue2<SMI>> index;
-        Member2<TValue2<SMI>> length;
+        Member<TValue2<Tuple>> tuple;
+        Member<TValue2<SMI>> index;
+        Member<TValue2<SMI>> length;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(TupleIterator, Object, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(TupleIterator);

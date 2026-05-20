@@ -13,8 +13,7 @@
 #include "clover_entry.h"
 #include "global_heap.h"
 #include "intern_store.h"
-#include "owned2.h"
-#include "owned_typed_value.h"
+#include "owned.h"
 #include "scope.h"
 #include "str.h"
 #include "value.h"
@@ -266,7 +265,7 @@ namespace cl
             clover_function_entry_adapters = {};
         std::vector<ClassObject *> builtin_classes;
         OwnedHeapPtr2<Scope> builtin_scope;
-        Owned2<Value> range_builtin;
+        Owned<Value> range_builtin;
         bool safepoint_requested_ = false;
         bool fire_every_safepoint_for_testing_ = false;
         SafepointCallbackForTesting safepoint_callback_for_testing_ = nullptr;

@@ -3,7 +3,7 @@
 
 #include "heap_object.h"
 #include "native_layout_declarations.h"
-#include "owned2.h"
+#include "owned.h"
 #include "value.h"
 #include "value_state.h"
 
@@ -80,7 +80,7 @@ namespace cl
             return size_for(backing->value_cell_count());
         }
 
-        Member2<TValue2<SMI>> value_cell_count_value;
+        Member<TValue2<SMI>> value_cell_count_value;
         Value elements[1];
 
         CL_DECLARE_DYNAMIC_SMI_VALUE_SPAN(ValueArrayBacking,
@@ -124,7 +124,7 @@ namespace cl
             return size_for(backing->value_cell_count());
         }
 
-        Member2<TValue2<SMI>> value_cell_count_value;
+        Member<TValue2<SMI>> value_cell_count_value;
         HeapObject *elements[1];
 
         static_assert(sizeof(HeapObject *) == sizeof(Value));

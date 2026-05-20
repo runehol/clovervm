@@ -3,7 +3,7 @@
 
 #include "native_layout_declarations.h"
 #include "object.h"
-#include "owned2.h"
+#include "owned.h"
 #include "str.h"
 #include "typed_value.h"
 #include "value.h"

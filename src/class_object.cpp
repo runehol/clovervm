@@ -364,8 +364,8 @@ namespace cl
 
     void ClassObject::validate_inline_slot_layout()
     {
-        static_assert(sizeof(Member2<TValue2<String>>) == sizeof(Value));
-        static_assert(sizeof(Member2<Value>) == sizeof(Value));
+        static_assert(sizeof(Member<TValue2<String>>) == sizeof(Value));
+        static_assert(sizeof(Member<Value>) == sizeof(Value));
         static_assert(CL_OFFSETOF(ClassObject, name) == sizeof(SlotObject));
         static_assert(CL_OFFSETOF(ClassObject, bases) ==
                       CL_OFFSETOF(ClassObject, name) +

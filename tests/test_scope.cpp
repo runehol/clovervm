@@ -94,7 +94,7 @@ TEST(Scope, SetBySlotIndexEnqueuesOverwrittenObject)
         context.vm().get_or_create_interned_string_value(L"slot"));
     String *old_string = thread->make_object_raw<String>(L"old-scope");
     String *new_string = thread->make_object_raw<String>(L"new-scope");
-    Owned2<Value> keep_new(Value::from_oop(new_string));
+    Owned<Value> keep_new(Value::from_oop(new_string));
     int32_t slot_idx = scope->register_slot_index_for_write(name);
     scope->set_by_slot_index(slot_idx, Value::from_oop(old_string));
     ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));

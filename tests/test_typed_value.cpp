@@ -1,7 +1,6 @@
 #include "dict.h"
 #include "exception_propagation.h"
-#include "owned2.h"
-#include "owned_typed_value.h"
+#include "owned.h"
 #include "scope.h"
 #include "str.h"
 #include "test_helpers.h"
@@ -146,7 +145,7 @@ TEST(Value, InlineTypePredicatesDistinguishSmiBoolAndNone)
     EXPECT_FALSE(Value::None().is_bool());
 }
 
-TEST(Owned2TValue, RetainsAndExposesTypedPointers)
+TEST(OwnedTValue, RetainsAndExposesTypedPointers)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -155,7 +154,7 @@ TEST(Owned2TValue, RetainsAndExposesTypedPointers)
     EXPECT_EQ(0, string->refcount);
 
     {
-        Owned2<TValue<String>> owned_string(TValue<String>::from_oop(string));
+        Owned<TValue<String>> owned_string(TValue<String>::from_oop(string));
         EXPECT_EQ(1, string->refcount);
         EXPECT_EQ(string, owned_string.extract());
         EXPECT_STREQ(L"owned", owned_string.extract()->data);
@@ -167,14 +166,14 @@ TEST(Owned2TValue, RetainsAndExposesTypedPointers)
     EXPECT_EQ(0, string->refcount);
 }
 
-TEST(Owned2TValue, CheckedTypedConstructionThrowsOnWrongType)
+TEST(OwnedTValue, CheckedTypedConstructionThrowsOnWrongType)
 {
-    EXPECT_THROW((void)Owned2<TValue<String>>(
+    EXPECT_THROW((void)Owned<TValue<String>>(
                      TValue<String>::from_value_checked(Value::None())),
                  std::runtime_error);
 }
 
-TEST(Member2TValue, ExposesValueAndReleaseRef)
+TEST(MemberTValue, ExposesValueAndReleaseRef)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -182,7 +181,7 @@ TEST(Member2TValue, ExposesValueAndReleaseRef)
     String *string = context.thread()->make_internal_raw<String>(L"member");
     EXPECT_EQ(0, string->refcount);
 
-    Member2<TValue<String>> member_string(TValue<String>::from_oop(string));
+    Member<TValue<String>> member_string(TValue<String>::from_oop(string));
     EXPECT_EQ(1, string->refcount);
     EXPECT_EQ(Value::from_oop(string), member_string.raw_value());
     EXPECT_EQ(Value::from_oop(string), member_string.value().raw_value());
@@ -193,24 +192,24 @@ TEST(Member2TValue, ExposesValueAndReleaseRef)
     EXPECT_EQ(0, string->refcount);
 }
 
-TEST(Owned2TValue, SmiActsAsOwnedHandleWithoutRefcounting)
+TEST(OwnedTValue, SmiActsAsOwnedHandleWithoutRefcounting)
 {
-    Owned2<TValue<SMI>> owned_smi(TValue<SMI>::from_smi(42));
+    Owned<TValue<SMI>> owned_smi(TValue<SMI>::from_smi(42));
 
     EXPECT_EQ(42, owned_smi.extract());
     EXPECT_EQ(Value::from_smi(42), owned_smi.raw_value());
     EXPECT_EQ(Value::from_smi(42), owned_smi.value().raw_value());
 
-    Owned2<TValue<SMI>> copied_smi(owned_smi);
+    Owned<TValue<SMI>> copied_smi(owned_smi);
     EXPECT_EQ(Value::from_smi(42), copied_smi.raw_value());
 }
 
-TEST(Owned2TValue, ClIntActsAsOwnedIntegerHandle)
+TEST(OwnedTValue, ClIntActsAsOwnedIntegerHandle)
 {
-    Owned2<TValue<CLInt>> owned_integer(TValue<CLInt>::from_smi(42));
+    Owned<TValue<CLInt>> owned_integer(TValue<CLInt>::from_smi(42));
 
     EXPECT_EQ(Value::from_smi(42), owned_integer.raw_value());
 
-    Owned2<TValue<CLInt>> copied_integer(owned_integer);
+    Owned<TValue<CLInt>> copied_integer(owned_integer);
     EXPECT_EQ(Value::from_smi(42), copied_integer.raw_value());
 }

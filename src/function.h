@@ -5,7 +5,6 @@
 #include "code_object.h"
 #include "object.h"
 #include "owned.h"
-#include "owned2.h"
 #include "tuple.h"
 #include "typed_value.h"
 #include "value.h"
@@ -62,9 +61,9 @@ namespace cl
                 parameter_flags, FunctionParameterFlags::HasVarArgs);
         }
 
-        Member2<TValue2<CodeObject>> code_object;
-        Member2<Optional<TValue2<Tuple>>> default_parameters;
-        Member2<Optional<TValue2<String>>> docstring;
+        Member<TValue2<CodeObject>> code_object;
+        Member<Optional<TValue2<Tuple>>> default_parameters;
+        Member<Optional<TValue2<String>>> docstring;
         uint32_t min_positional_arity;
         uint32_t max_positional_arity;
         uint32_t n_positional_parameters;

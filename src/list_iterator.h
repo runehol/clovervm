@@ -4,7 +4,7 @@
 #include "builtin_class_registry.h"
 #include "list.h"
 #include "object.h"
-#include "owned2.h"
+#include "owned.h"
 #include "value.h"
 #include "value_state.h"
 
@@ -25,8 +25,8 @@ namespace cl
         {
         }
 
-        Member2<TValue2<List>> list;
-        Member2<TValue2<SMI>> index;
+        Member<TValue2<List>> list;
+        Member<TValue2<SMI>> index;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ListIterator, Object, 2);
         CL_DECLARE_STATIC_OBJECT_SIZE(ListIterator);

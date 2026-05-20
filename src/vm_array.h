@@ -3,7 +3,6 @@
 
 #include "object.h"
 #include "owned.h"
-#include "owned2.h"
 #include "refcount.h"
 #include "thread_state.h"
 #include "value.h"
@@ -243,8 +242,8 @@ namespace cl
         Backing *backing_ptr() { return backing.extract(); }
         const Backing *backing_ptr() const { return backing.extract(); }
 
-        Member2<TValue2<SMI>> size_value;
-        Member2<TValue2<SMI>> capacity_value;
+        Member<TValue2<SMI>> size_value;
+        Member<TValue2<SMI>> capacity_value;
         MemberHeapPtr2<Backing> backing;
     };
 
@@ -513,8 +512,8 @@ namespace cl
         Backing *backing_ptr() { return backing.extract(); }
         const Backing *backing_ptr() const { return backing.extract(); }
 
-        Member2<TValue2<SMI>> size_value;
-        Member2<TValue2<SMI>> capacity_value;
+        Member<TValue2<SMI>> size_value;
+        Member<TValue2<SMI>> capacity_value;
         MemberHeapPtr2<Backing> backing;
     };
 
@@ -700,8 +699,8 @@ namespace cl
         Backing *backing_ptr() { return backing.extract(); }
         const Backing *backing_ptr() const { return backing.extract(); }
 
-        Member2<TValue2<SMI>> size_value;
-        Member2<TValue2<SMI>> capacity_value;
+        Member<TValue2<SMI>> size_value;
+        Member<TValue2<SMI>> capacity_value;
         MemberHeapPtr2<Backing> backing;
     };
 

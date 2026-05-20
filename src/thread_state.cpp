@@ -116,7 +116,7 @@ namespace cl
     Value ThreadState::run_clovervm_code_object(CodeObject *obj)
     {
         ActivationScope activation_scope(this);
-        Owned2<TValue2<Function>> function(
+        Owned<TValue2<Function>> function(
             TValue2<Function>::from_value_unchecked(
                 this->make_object_value<Function>(
                     TValue2<CodeObject>::from_oop(obj),

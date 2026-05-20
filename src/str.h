@@ -3,8 +3,8 @@
 
 #include "builtin_class_registry.h"
 #include "object.h"
-#include "owned2.h"
-#include "owned_typed_value.h"
+#include "owned.h"
+#include "typed_value.h"
 #include "value.h"
 #include "value_state.h"
 #include <assert.h>
@@ -80,7 +80,7 @@ namespace cl
 
         void install_bootstrap_class(ClassObject *new_cls);
 
-        Member2<TValue2<SMI>> count;
+        Member<TValue2<SMI>> count;
         cl_wchar data[1];
 
         static size_t size_for(const std::wstring &str)

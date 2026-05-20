@@ -90,8 +90,6 @@ add_library(libclovervm STATIC
     overflow_slots.cpp
     overflow_slots.h
     owned.h
-    owned2.h
-    owned_typed_value.h
     refcount.cpp
     refcount.h
     scope.cpp

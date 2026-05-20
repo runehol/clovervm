@@ -3,7 +3,7 @@
 
 #include "builtin_class_registry.h"
 #include "object.h"
-#include "owned2.h"
+#include "owned.h"
 #include "value.h"
 #include "value_state.h"
 
@@ -25,9 +25,9 @@ namespace cl
         {
         }
 
-        Member2<TValue2<SMI>> current;
-        Member2<TValue2<SMI>> stop;
-        Member2<TValue2<SMI>> step;
+        Member<TValue2<SMI>> current;
+        Member<TValue2<SMI>> stop;
+        Member<TValue2<SMI>> step;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(RangeIterator, Object, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(RangeIterator);

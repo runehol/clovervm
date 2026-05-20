@@ -6,7 +6,6 @@
 #include "instance.h"
 #include "object.h"
 #include "owned.h"
-#include "owned2.h"
 #include "refcount.h"
 #include "shape.h"
 #include "typed_value.h"
@@ -195,9 +194,9 @@ namespace cl
         attach_mro_validity_cell(ValidityCell *cell,
                                  MroValidityCellDependency dependency) const;
 
-        Member2<TValue2<String>> name;
-        Member2<Value> bases;
-        Member2<Value> mro;
+        Member<TValue2<String>> name;
+        Member<Value> bases;
+        Member<Value> mro;
         Value class_extra_inline_attribute_slots
             [class_extra_inline_attribute_slot_count];
         mutable MemberHeapPtr2<ValidityCell>

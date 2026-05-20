@@ -79,8 +79,8 @@ TEST(Dict, SetItemOverwriteEnqueuesOverwrittenObject)
     Value key = make_string(context, L"shared");
     Value old_value = make_string(context, L"old-dict");
     Value new_value = make_string(context, L"new-dict");
-    Owned2<Value> keep_dict(Value::from_oop(dict));
-    Owned2<Value> keep_new(new_value);
+    Owned<Value> keep_dict(Value::from_oop(dict));
+    Owned<Value> keep_new(new_value);
     HeapObject *old_object = old_value.as.ptr;
     HeapObject *new_object = new_value.as.ptr;
     dict->set_item(key, old_value);

@@ -3,7 +3,6 @@
 
 #include "code_object.h"
 #include "function.h"
-#include "owned_typed_value.h"
 
 namespace cl
 {

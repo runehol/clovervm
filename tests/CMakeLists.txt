@@ -29,7 +29,7 @@ target_sources(test_clovervm PRIVATE
 	test_heap_reclamation.cpp
 	test_thread_state.cpp
 	test_typed_value.cpp
-	test_owned2.cpp
+	test_owned.cpp
 	test_value_state.cpp
 	test_tuple.cpp
 	)

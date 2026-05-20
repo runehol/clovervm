@@ -3,8 +3,7 @@
 
 #include "builtin_class_registry.h"
 #include "object.h"
-#include "owned2.h"
-#include "owned_typed_value.h"
+#include "owned.h"
 #include "refcount.h"
 #include "runtime_helpers.h"
 #include "value.h"
@@ -105,7 +104,7 @@ namespace cl
         [[nodiscard]] Value check_index(size_t idx) const;
         void initialize_items(size_t size);
 
-        Member2<TValue2<SMI>> size_value;
+        Member<TValue2<SMI>> size_value;
         Value elements[1];
     };
 

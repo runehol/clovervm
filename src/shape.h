@@ -4,7 +4,6 @@
 #include "heap_object.h"
 #include "native_layout_declarations.h"
 #include "owned.h"
-#include "owned2.h"
 #include "shape_descriptor.h"
 #include "typed_value.h"
 #include "value.h"
@@ -91,7 +90,7 @@ namespace cl
             Shape *get_next_shape() const { return next_shape.extract(); }
 
         private:
-            Owned2<TValue2<String>> name;
+            Owned<TValue2<String>> name;
             ShapeTransitionVerb verb;
             DescriptorFlags descriptor_flags;
             OwnedHeapPtr2<Shape> next_shape;
@@ -239,7 +238,7 @@ namespace cl
         uint32_t inline_slot_capacity;
         ShapeFlags shape_flags;
         std::vector<Transition> transitions;
-        Member2<TValue2<ClassObject>> class_value;
+        Member<TValue2<ClassObject>> class_value;
         Value descriptor_names[1];
 
     public:

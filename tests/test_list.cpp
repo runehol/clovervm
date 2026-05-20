@@ -115,8 +115,8 @@ TEST(List, SetItemUncheckedEnqueuesOverwrittenObject)
     List *list = thread->make_object_raw<List>();
     String *old_string = make_string(context, L"old-list");
     String *new_string = make_string(context, L"new-list");
-    Owned2<Value> keep_list(Value::from_oop(list));
-    Owned2<Value> keep_new(Value::from_oop(new_string));
+    Owned<Value> keep_list(Value::from_oop(list));
+    Owned<Value> keep_new(Value::from_oop(new_string));
     list->append(Value::from_oop(old_string));
     ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
     ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);

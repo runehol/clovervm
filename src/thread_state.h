@@ -7,7 +7,6 @@
 
 #include "exception_object.h"
 #include "owned.h"
-#include "owned2.h"
 #include "shape.h"
 #include "thread_local_heap.h"
 #include "typed_value.h"
@@ -48,8 +47,8 @@ namespace cl
     struct PendingException
     {
         PendingExceptionKind kind = PendingExceptionKind::None;
-        Member2<Optional<TValue2<Exception>>> object;
-        Member2<Value> stop_iteration_value;
+        Member<Optional<TValue2<Exception>>> object;
+        Member<Value> stop_iteration_value;
 
         PendingException();
     };

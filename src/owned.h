@@ -2,69 +2,68 @@
 #define CL_OWNED_H
 
 #include "refcount.h"
+#include "value_state.h"
 #include <type_traits>
 
 namespace cl
 {
-    template <typename Handle> struct HandleTraits;
-    template <typename Handle> class Member;
-
-    template <> struct HandleTraits<Value>
+    template <typename T> struct HandleRefcountTraits
     {
-        static Value from_value(Value value) { return value; }
-        static Value from_value_unchecked(Value value) { return value; }
-        static Value to_value(Value value) { return value; }
-        static Value none() { return Value::None(); }
-        using extracted_type = void;
-        static constexpr RefcountPolicy refcount_policy = RefcountPolicy::Maybe;
+        using semantic_type = typename T::semantic_type;
 
-        static Value retain_ref(Value value) { return incref(value); }
-
-        static void release_ref(Value value) { decref(value); }
+        static constexpr bool is_fully_inline =
+            std::is_same_v<semantic_type, SMI> ||
+            std::is_same_v<semantic_type, Bool> ||
+            std::is_same_v<semantic_type, None>;
+        static constexpr bool may_need_refcounting = !is_fully_inline;
     };
 
-    template <typename Handle> class Owned
+    template <typename T> static inline void incref_value_state(T value)
+    {
+        if constexpr(HandleRefcountTraits<T>::may_need_refcounting)
+        {
+            incref(value.raw_value());
+        }
+    }
+
+    template <typename T> static inline void decref_value_state(T value)
+    {
+        if constexpr(HandleRefcountTraits<T>::may_need_refcounting)
+        {
+            decref(value.raw_value());
+        }
+    }
+
+    template <typename T> class Member;
+
+    template <typename T> class Owned
     {
     public:
-        Owned() : handle_(HandleTraits<Handle>::none()) {}
-        explicit Owned(Value value)
-            : handle_(HandleTraits<Handle>::retain_ref(
-                  HandleTraits<Handle>::from_value(value)))
+        using semantic_type = typename T::semantic_type;
+
+        template <typename U = T, typename = std::enable_if_t<
+                                      std::is_default_constructible_v<U> &&
+                                      !std::is_same_v<U, Value>>>
+        Owned() : value_()
         {
+            incref_value_state(value_);
+        }
+        explicit Owned(T value) : value_(value) { incref_value_state(value_); }
+        explicit Owned(const Member<T> &other) : value_(other.value())
+        {
+            incref_value_state(value_);
         }
 
-        template <typename H = Handle,
-                  typename = std::enable_if_t<!std::is_same_v<H, Value>>>
-        explicit Owned(H handle)
-            : handle_(HandleTraits<Handle>::retain_ref(handle))
+        Owned(const Owned &other) : value_(other.value_)
         {
+            incref_value_state(value_);
         }
 
-        explicit Owned(const Member<Handle> &other)
-            : handle_(
-                  HandleTraits<Handle>::retain_ref(static_cast<Handle>(other)))
-        {
-        }
+        ~Owned() { decref_value_state(value_); }
 
-        Owned(const Owned &other)
-            : handle_(
-                  HandleTraits<Handle>::retain_ref(static_cast<Handle>(other)))
+        Owned &operator=(T value)
         {
-        }
-
-        ~Owned() { HandleTraits<Handle>::release_ref(handle_); }
-
-        Owned &operator=(Value value)
-        {
-            assign(HandleTraits<Handle>::from_value(value));
-            return *this;
-        }
-
-        template <typename H = Handle,
-                  typename = std::enable_if_t<!std::is_same_v<H, Value>>>
-        Owned &operator=(H handle)
-        {
-            assign(handle);
+            assign(value);
             return *this;
         }
 
@@ -72,86 +71,66 @@ namespace cl
         {
             if(this != &other)
             {
-                assign(other.handle_);
+                assign(other.value_);
             }
             return *this;
         }
 
-        Owned &operator=(const Member<Handle> &other)
+        Owned &operator=(const Member<T> &other)
         {
-            assign(static_cast<Handle>(other));
+            assign(other.value());
             return *this;
         }
 
-        template <typename H = Handle,
-                  typename Extracted = typename HandleTraits<H>::extracted_type,
-                  typename = std::enable_if_t<!std::is_void_v<Extracted>>>
-        Extracted extract() const
-        {
-            return HandleTraits<Handle>::extract(handle_);
-        }
+        T value() const { return value_; }
+        T operator*() const { return value(); }
+        operator T() const { return value(); }
+        Value raw_value() const { return value_.raw_value(); }
 
-        Handle value() const { return handle_; }
-        Value raw_value() const
+        template <typename U = T,
+                  typename ExtractType = decltype(std::declval<U>().extract())>
+        ExtractType extract() const
         {
-            return HandleTraits<Handle>::to_value(handle_);
+            return value_.extract();
         }
-        operator Handle() const { return handle_; }
-
-        bool operator==(Value value) const { return raw_value() == value; }
-        bool operator!=(Value value) const { return raw_value() != value; }
 
     private:
-        void assign(Handle handle)
+        void assign(T value)
         {
-            HandleTraits<Handle>::retain_ref(handle);
-            HandleTraits<Handle>::release_ref(handle_);
-            handle_ = handle;
+            incref_value_state(value);
+            decref_value_state(value_);
+            value_ = value;
         }
 
-        Handle handle_;
+        T value_;
     };
 
-    template <typename Handle> class Member
+    template <typename T> class Member
     {
     public:
-        Member() : handle_(HandleTraits<Handle>::none()) {}
-        explicit Member(Value value)
-            : handle_(HandleTraits<Handle>::retain_ref(
-                  HandleTraits<Handle>::from_value(value)))
+        using semantic_type = typename T::semantic_type;
+
+        template <typename U = T, typename = std::enable_if_t<
+                                      std::is_default_constructible_v<U> &&
+                                      !std::is_same_v<U, Value>>>
+        Member() : value_()
         {
+            incref_value_state(value_);
+        }
+        explicit Member(T value) : value_(value) { incref_value_state(value_); }
+        explicit Member(const Owned<T> &other) : value_(other.value())
+        {
+            incref_value_state(value_);
         }
 
-        template <typename H = Handle,
-                  typename = std::enable_if_t<!std::is_same_v<H, Value>>>
-        explicit Member(H handle)
-            : handle_(HandleTraits<Handle>::retain_ref(handle))
+        Member(const Member &other) : value_(other.value_)
         {
+            incref_value_state(value_);
         }
 
-        explicit Member(const Owned<Handle> &other)
-            : handle_(
-                  HandleTraits<Handle>::retain_ref(static_cast<Handle>(other)))
+        Member &operator=(T value)
         {
-        }
-
-        Member(const Member &other)
-            : handle_(
-                  HandleTraits<Handle>::retain_ref(static_cast<Handle>(other)))
-        {
-        }
-
-        Member &operator=(Value value)
-        {
-            assign(HandleTraits<Handle>::from_value(value));
-            return *this;
-        }
-
-        template <typename H = Handle,
-                  typename = std::enable_if_t<!std::is_same_v<H, Value>>>
-        Member &operator=(H handle)
-        {
-            assign(handle);
+            assign(value);
             return *this;
         }
 
@@ -159,47 +138,179 @@ namespace cl
         {
             if(this != &other)
             {
-                assign(other.handle_);
+                assign(other.value_);
             }
             return *this;
         }
 
-        Member &operator=(const Owned<Handle> &other)
+        Member &operator=(const Owned<T> &other)
         {
-            assign(static_cast<Handle>(other));
+            assign(other.value());
             return *this;
         }
 
-        template <typename H = Handle,
-                  typename Extracted = typename HandleTraits<H>::extracted_type,
-                  typename = std::enable_if_t<!std::is_void_v<Extracted>>>
-        Extracted extract() const
+        T value() const { return value_; }
+        T operator*() const { return value(); }
+        operator T() const { return value(); }
+        Value raw_value() const { return value_.raw_value(); }
+
+        template <typename U = T,
+                  typename ExtractType = decltype(std::declval<U>().extract())>
+        ExtractType extract() const
         {
-            return HandleTraits<Handle>::extract(handle_);
+            return value_.extract();
         }
 
-        Handle value() const { return handle_; }
-        Value raw_value() const
-        {
-            return HandleTraits<Handle>::to_value(handle_);
-        }
-        operator Handle() const { return handle_; }
-
-        bool operator==(Value value) const { return raw_value() == value; }
-        bool operator!=(Value value) const { return raw_value() != value; }
-
-        void release_ref() { HandleTraits<Handle>::release_ref(handle_); }
+        // For custom heap-object dealloc paths. Leaves the member value
+        // unchanged; the containing object must not use the member afterward.
+        void release_ref() { decref_value_state(value_); }
 
     private:
-        void assign(Handle handle)
+        void assign(T value)
         {
-            HandleTraits<Handle>::retain_ref(handle);
-            HandleTraits<Handle>::release_ref(handle_);
-            handle_ = handle;
+            incref_value_state(value);
+            decref_value_state(value_);
+            value_ = value;
         }
 
-        Handle handle_;
+        T value_;
     };
+
+    template <typename T> class OwnedHeapPtr2
+    {
+    public:
+        OwnedHeapPtr2() : ptr_(nullptr) {}
+        OwnedHeapPtr2(std::nullptr_t) : ptr_(nullptr) {}
+        explicit OwnedHeapPtr2(T *ptr) : ptr_(retain_ref(ptr)) {}
+        explicit OwnedHeapPtr2(HeapPtr<T> ptr) : OwnedHeapPtr2(ptr.get()) {}
+
+        OwnedHeapPtr2(const OwnedHeapPtr2 &other) : ptr_(retain_ref(other.ptr_))
+        {
+        }
+
+        ~OwnedHeapPtr2() { release_ptr(ptr_); }
+
+        OwnedHeapPtr2 &operator=(T *ptr)
+        {
+            assign(ptr);
+            return *this;
+        }
+        OwnedHeapPtr2 &operator=(std::nullptr_t)
+        {
+            assign(nullptr);
+            return *this;
+        }
+        OwnedHeapPtr2 &operator=(HeapPtr<T> ptr)
+        {
+            assign(ptr.get());
+            return *this;
+        }
+        OwnedHeapPtr2 &operator=(const OwnedHeapPtr2 &other)
+        {
+            if(this != &other)
+            {
+                assign(other.ptr_);
+            }
+            return *this;
+        }
+
+        T *get() const { return ptr_; }
+        T *extract() const { return ptr_; }
+        T *operator->() const { return ptr_; }
+        explicit operator bool() const { return ptr_ != nullptr; }
+        operator HeapPtr<T>() const { return HeapPtr<T>(ptr_); }
+        bool operator==(std::nullptr_t) const { return ptr_ == nullptr; }
+        bool operator!=(std::nullptr_t) const { return ptr_ != nullptr; }
+
+    private:
+        void assign(T *ptr)
+        {
+            T *new_ptr = retain_ref(ptr);
+            release_ptr(ptr_);
+            ptr_ = new_ptr;
+        }
+
+        static T *retain_ref(T *ptr)
+        {
+            incref_heap_ptr(ptr);
+            return ptr;
+        }
+
+        static void release_ptr(T *ptr) { decref_heap_ptr(ptr); }
+
+        T *ptr_;
+    };
+
+    template <typename T> class MemberHeapPtr2
+    {
+    public:
+        MemberHeapPtr2() : ptr_(nullptr) {}
+        MemberHeapPtr2(std::nullptr_t) : ptr_(nullptr) {}
+        explicit MemberHeapPtr2(T *ptr) : ptr_(retain_ref(ptr)) {}
+        explicit MemberHeapPtr2(HeapPtr<T> ptr) : MemberHeapPtr2(ptr.get()) {}
+
+        MemberHeapPtr2(const MemberHeapPtr2 &other)
+            : ptr_(retain_ref(other.ptr_))
+        {
+        }
+
+        MemberHeapPtr2 &operator=(T *ptr)
+        {
+            assign(ptr);
+            return *this;
+        }
+        MemberHeapPtr2 &operator=(std::nullptr_t)
+        {
+            assign(nullptr);
+            return *this;
+        }
+        MemberHeapPtr2 &operator=(HeapPtr<T> ptr)
+        {
+            assign(ptr.get());
+            return *this;
+        }
+        MemberHeapPtr2 &operator=(const MemberHeapPtr2 &other)
+        {
+            if(this != &other)
+            {
+                assign(other.ptr_);
+            }
+            return *this;
+        }
+
+        T *get() const { return ptr_; }
+        T *extract() const { return ptr_; }
+        T *operator->() const { return ptr_; }
+        explicit operator bool() const { return ptr_ != nullptr; }
+        operator HeapPtr<T>() const { return HeapPtr<T>(ptr_); }
+        bool operator==(std::nullptr_t) const { return ptr_ == nullptr; }
+        bool operator!=(std::nullptr_t) const { return ptr_ != nullptr; }
+
+        // For custom heap-object dealloc paths. Leaves the member pointer
+        // unchanged; the containing object must not use the member afterward.
+        void release_ref() { release_ptr(ptr_); }
+
+    private:
+        void assign(T *ptr)
+        {
+            T *new_ptr = retain_ref(ptr);
+            release_ptr(ptr_);
+            ptr_ = new_ptr;
+        }
+
+        static T *retain_ref(T *ptr)
+        {
+            incref_heap_ptr(ptr);
+            return ptr;
+        }
+
+        static void release_ptr(T *ptr) { decref_heap_ptr(ptr); }
+
+        T *ptr_;
+    };
+
+    static_assert(sizeof(OwnedHeapPtr2<HeapObject>) == sizeof(HeapObject *));
+    static_assert(sizeof(MemberHeapPtr2<HeapObject>) == sizeof(HeapObject *));
 
 }  // namespace cl
 

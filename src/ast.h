@@ -2,7 +2,6 @@
 #define CL_AST_H
 
 #include "owned.h"
-#include "owned2.h"
 #include "value.h"
 #include <absl/container/inlined_vector.h>
 #include <cassert>
@@ -321,7 +320,7 @@ namespace cl
         std::vector<AstKind> kinds;
         std::vector<uint32_t> source_offsets;
         std::vector<AstChildren> children;
-        std::vector<Member2<Value>> constants;
+        std::vector<Member<Value>> constants;
 
         int32_t root_node = -1;
 
