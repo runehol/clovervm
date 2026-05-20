@@ -165,6 +165,186 @@ namespace cl
         T value_;
     };
 
+    template <typename T> class OwnedHeapPtr2
+    {
+    public:
+        OwnedHeapPtr2() : ptr_(nullptr) {}
+        OwnedHeapPtr2(std::nullptr_t) : ptr_(nullptr) {}
+        explicit OwnedHeapPtr2(T *ptr) : ptr_(retain_ref(ptr)) {}
+        explicit OwnedHeapPtr2(HeapPtr<T> ptr) : OwnedHeapPtr2(ptr.get()) {}
+
+        OwnedHeapPtr2(const OwnedHeapPtr2 &other) : ptr_(retain_ref(other.ptr_))
+        {
+        }
+        OwnedHeapPtr2(OwnedHeapPtr2 &&other) noexcept : ptr_(other.release()) {}
+
+        ~OwnedHeapPtr2() { release_ref(ptr_); }
+
+        OwnedHeapPtr2 &operator=(T *ptr)
+        {
+            reset(ptr);
+            return *this;
+        }
+        OwnedHeapPtr2 &operator=(std::nullptr_t)
+        {
+            clear();
+            return *this;
+        }
+        OwnedHeapPtr2 &operator=(HeapPtr<T> ptr)
+        {
+            reset(ptr.get());
+            return *this;
+        }
+        OwnedHeapPtr2 &operator=(const OwnedHeapPtr2 &other)
+        {
+            if(this != &other)
+            {
+                reset(other.ptr_);
+            }
+            return *this;
+        }
+        OwnedHeapPtr2 &operator=(OwnedHeapPtr2 &&other) noexcept
+        {
+            if(this != &other)
+            {
+                release_ref(ptr_);
+                ptr_ = other.release();
+            }
+            return *this;
+        }
+
+        T *get() const { return ptr_; }
+        T *extract() const { return ptr_; }
+        T *operator->() const { return ptr_; }
+        explicit operator bool() const { return ptr_ != nullptr; }
+        operator HeapPtr<T>() const { return HeapPtr<T>(ptr_); }
+        bool operator==(std::nullptr_t) const { return ptr_ == nullptr; }
+        bool operator!=(std::nullptr_t) const { return ptr_ != nullptr; }
+
+        void reset(T *ptr)
+        {
+            T *new_ptr = retain_ref(ptr);
+            release_ref(ptr_);
+            ptr_ = new_ptr;
+        }
+
+        void clear()
+        {
+            release_ref(ptr_);
+            ptr_ = nullptr;
+        }
+
+        T *release()
+        {
+            T *released = ptr_;
+            ptr_ = nullptr;
+            return released;
+        }
+
+    private:
+        static T *retain_ref(T *ptr)
+        {
+            incref_heap_ptr(ptr);
+            return ptr;
+        }
+
+        static void release_ref(T *ptr) { decref_heap_ptr(ptr); }
+
+        T *ptr_;
+    };
+
+    template <typename T> class MemberHeapPtr2
+    {
+    public:
+        MemberHeapPtr2() : ptr_(nullptr) {}
+        MemberHeapPtr2(std::nullptr_t) : ptr_(nullptr) {}
+        explicit MemberHeapPtr2(T *ptr) : ptr_(retain_ref(ptr)) {}
+        explicit MemberHeapPtr2(HeapPtr<T> ptr) : MemberHeapPtr2(ptr.get()) {}
+
+        MemberHeapPtr2(const MemberHeapPtr2 &other)
+            : ptr_(retain_ref(other.ptr_))
+        {
+        }
+        MemberHeapPtr2(MemberHeapPtr2 &&other) noexcept : ptr_(other.release())
+        {
+        }
+
+        MemberHeapPtr2 &operator=(T *ptr)
+        {
+            reset(ptr);
+            return *this;
+        }
+        MemberHeapPtr2 &operator=(std::nullptr_t)
+        {
+            clear();
+            return *this;
+        }
+        MemberHeapPtr2 &operator=(HeapPtr<T> ptr)
+        {
+            reset(ptr.get());
+            return *this;
+        }
+        MemberHeapPtr2 &operator=(const MemberHeapPtr2 &other)
+        {
+            if(this != &other)
+            {
+                reset(other.ptr_);
+            }
+            return *this;
+        }
+        MemberHeapPtr2 &operator=(MemberHeapPtr2 &&other) noexcept
+        {
+            if(this != &other)
+            {
+                release_ref(ptr_);
+                ptr_ = other.release();
+            }
+            return *this;
+        }
+
+        T *get() const { return ptr_; }
+        T *extract() const { return ptr_; }
+        T *operator->() const { return ptr_; }
+        explicit operator bool() const { return ptr_ != nullptr; }
+        operator HeapPtr<T>() const { return HeapPtr<T>(ptr_); }
+        bool operator==(std::nullptr_t) const { return ptr_ == nullptr; }
+        bool operator!=(std::nullptr_t) const { return ptr_ != nullptr; }
+
+        void reset(T *ptr)
+        {
+            T *new_ptr = retain_ref(ptr);
+            release_ref(ptr_);
+            ptr_ = new_ptr;
+        }
+
+        void clear()
+        {
+            release_ref(ptr_);
+            ptr_ = nullptr;
+        }
+
+        T *release()
+        {
+            T *released = ptr_;
+            ptr_ = nullptr;
+            return released;
+        }
+
+    private:
+        static T *retain_ref(T *ptr)
+        {
+            incref_heap_ptr(ptr);
+            return ptr;
+        }
+
+        static void release_ref(T *ptr) { decref_heap_ptr(ptr); }
+
+        T *ptr_;
+    };
+
+    static_assert(sizeof(OwnedHeapPtr2<HeapObject>) == sizeof(HeapObject *));
+    static_assert(sizeof(MemberHeapPtr2<HeapObject>) == sizeof(HeapObject *));
+
 }  // namespace cl
 
 #endif  // CL_OWNED2_H
