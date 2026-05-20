@@ -265,13 +265,6 @@ namespace cl
         Handle handle_;
     };
 
-    using OwnedValue = Owned<Value>;
-    using MemberValue = Member<Value>;
-
-    static_assert(sizeof(OwnedValue) == sizeof(Value));
-    static_assert(sizeof(MemberValue) == sizeof(Value));
-    static_assert(std::is_trivially_destructible_v<MemberValue>);
-
 }  // namespace cl
 
 #endif  // CL_OWNED_H

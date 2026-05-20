@@ -1537,7 +1537,7 @@ namespace cl
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
         TValue<String> attr_name = TValue<String>::from_value_assumed(
-            code_object->constant_table[const_offset].as_value());
+            code_object->constant_table[const_offset].value());
         AttributeReadInlineCache &cache =
             code_object->attribute_read_caches[cache_idx];
         AttributeReadDescriptor descriptor =
@@ -1576,7 +1576,7 @@ namespace cl
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
         TValue<String> attr_name = TValue<String>::from_value_assumed(
-            code_object->constant_table[const_offset].as_value());
+            code_object->constant_table[const_offset].value());
         AttributeMutationInlineCache &cache =
             code_object->attribute_mutation_caches[cache_idx];
         AttributeWriteDescriptor descriptor =
@@ -1634,7 +1634,7 @@ namespace cl
         uint8_t cache_idx = pc[3];
         Value receiver = fp[reg];
         TValue<String> attr_name = TValue<String>::from_value_assumed(
-            code_object->constant_table[const_offset].as_value());
+            code_object->constant_table[const_offset].value());
         AttributeMutationInlineCache &cache =
             code_object->attribute_mutation_caches[cache_idx];
         AttributeDeleteDescriptor descriptor =
@@ -2333,7 +2333,7 @@ namespace cl
         START(2);
         uint8_t const_offset = pc[1];
         TValue2<CodeObject> code_obj = TValue2<CodeObject>::from_value_assumed(
-            code_object->constant_table[const_offset].as_value());
+            code_object->constant_table[const_offset].value());
 
         accumulator = thread->make_object_value<Function>(
             code_obj, code_obj.extract()->docstring);
@@ -2347,7 +2347,7 @@ namespace cl
         uint8_t const_offset = pc[1];
         int8_t defaults_reg = pc[2];
         TValue2<CodeObject> code_obj = TValue2<CodeObject>::from_value_assumed(
-            code_object->constant_table[const_offset].as_value());
+            code_object->constant_table[const_offset].value());
         TValue<Tuple> defaults =
             TValue<Tuple>::from_value_assumed(fp[defaults_reg]);
 
@@ -2362,7 +2362,7 @@ namespace cl
         START(2);
         uint8_t const_offset = pc[1];
         ClassObject *cls = assume_convert_to<ClassObject>(
-            code_object->constant_table[const_offset].as_value());
+            code_object->constant_table[const_offset].value());
         accumulator = Value::from_oop(thread->make_internal_raw<Instance>(cls));
 
         COMPLETE();
@@ -2425,7 +2425,7 @@ namespace cl
         uint8_t body_const_offset = pc[1];
         int8_t first_arg_reg = pc[2];
         TValue<CodeObject> body_code = TValue<CodeObject>::from_value_assumed(
-            code_object->constant_table[body_const_offset].as_value());
+            code_object->constant_table[body_const_offset].value());
 
         const uint8_t *return_pc = pc + create_class_instr_len;
         Value *new_fp =
@@ -2639,7 +2639,7 @@ namespace cl
         int8_t first_arg_reg = pc[2];
         uint8_t n_args = pc[3];
         CodeObject *target_code_object = assume_convert_to<CodeObject>(
-            code_object->constant_table[const_offset].as_value());
+            code_object->constant_table[const_offset].value());
         assert(n_args == target_code_object->n_parameters);
         (void)n_args;
         enter_code_object_frame_from_prepared_args(
@@ -2703,7 +2703,7 @@ namespace cl
         uint32_t n_user_args = uint8_t(pc[5]);
         Value receiver = fp[receiver_reg];
         TValue<String> attr_name = TValue<String>::from_value_assumed(
-            code_object->constant_table[const_offset].as_value());
+            code_object->constant_table[const_offset].value());
 
         AttributeReadInlineCache &cache =
             code_object->attribute_read_caches[read_cache_idx];
@@ -2864,7 +2864,7 @@ namespace cl
         uint8_t missing_exception_message_idx = pc[7];
         Value receiver = fp[receiver_reg];
         TValue<String> method_name = TValue<String>::from_value_assumed(
-            code_object->constant_table[const_offset].as_value());
+            code_object->constant_table[const_offset].value());
 
         AttributeReadInlineCache &cache =
             code_object->attribute_read_caches[read_cache_idx];
@@ -2893,10 +2893,10 @@ namespace cl
             TValue<ClassObject> exception_type =
                 TValue<ClassObject>::from_value_assumed(
                     code_object->constant_table[missing_exception_type_idx]
-                        .as_value());
+                        .value());
             TValue<String> message = TValue<String>::from_value_assumed(
                 code_object->constant_table[missing_exception_message_idx]
-                    .as_value());
+                    .value());
             (void)thread->set_pending_exception_string(exception_type, message);
             ExceptionalTarget target =
                 resolve_exceptional_frame_exit(thread, fp, pc, code_object);

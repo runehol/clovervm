@@ -52,7 +52,7 @@ This repository contains clovervm, a Python VM.
 # Ownership semantics
 - `Value` and `TValue<T>` are borrowed handles. Use them for C++ parameters and for locals whose lifetime is managed elsewhere.
 - `TValue<T>` should be preferred over `Value` when the value is known to satisfy a specific semantic type, such as `String`, `SMI`, `CLInt`, or a concrete `Object` subclass.
-- `OwnedValue` and `OwnedTValue<T>` are RAII local owners. They retain on construction or assignment and release on destruction. Use them for local C++ variables that must keep a value alive.
-- `MemberValue` and `MemberTValue<T>` are for direct members of cl heap objects. They retain on construction or assignment and release the overwritten value on reassignment, but they do not release on destruction. This leaves the stored reference for the garbage collector to observe.
-- Direct members of cl heap objects should use `MemberValue` or `MemberTValue<T>`, not `OwnedValue` or `OwnedTValue<T>`.
-- Prefer `MemberTValue<T>` or `OwnedTValue<T>` over the untyped forms when the stored value has a known type. Use the untyped forms only when the value is genuinely heterogeneous or may hold sentinels such as `None` or `not_present`.
+- `Owned2<Value>` and `Owned2<TValue2<T>>` are RAII local owners. They retain on construction or assignment and release on destruction. Use them for local C++ variables that must keep a value alive.
+- `Member2<Value>` and `Member2<TValue2<T>>` are for direct members of cl heap objects. They retain on construction or assignment and release the overwritten value on reassignment, but they do not release on destruction. This leaves the stored reference for the garbage collector to observe.
+- Direct members of cl heap objects should use `Member2<Value>` or `Member2<TValue2<T>>`, not `Owned2<Value>` or `Owned2<TValue2<T>>`.
+- Prefer `Member2<TValue2<T>>` or `Owned2<TValue2<T>>` over the untyped forms when the stored value has a known type. Use the untyped forms only when the value is genuinely heterogeneous or may hold sentinels such as `None` or `not_present`.

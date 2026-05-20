@@ -143,8 +143,8 @@ namespace cl
         ThreadState::ActivationScope active_thread(thread);
         String *old_string = thread->make_object_raw<String>(L"old-owned");
         String *new_string = thread->make_object_raw<String>(L"new-owned");
-        OwnedValue owner(Value::from_oop(old_string));
-        OwnedValue keep_new(Value::from_oop(new_string));
+        Owned2<Value> owner(Value::from_oop(old_string));
+        Owned2<Value> keep_new(Value::from_oop(new_string));
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
         ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);
 
@@ -163,8 +163,8 @@ namespace cl
         ThreadState::ActivationScope active_thread(thread);
         String *old_string = thread->make_object_raw<String>(L"old-member");
         String *new_string = thread->make_object_raw<String>(L"new-member");
-        MemberValue member(Value::from_oop(old_string));
-        OwnedValue keep_new(Value::from_oop(new_string));
+        Member2<Value> member(Value::from_oop(old_string));
+        Owned2<Value> keep_new(Value::from_oop(new_string));
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
         ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);
 
@@ -174,7 +174,7 @@ namespace cl
         EXPECT_EQ(HeapLifecycleState::InZct, old_string->lifecycle_state);
         EXPECT_TRUE(thread->zero_count_table_contains_for_testing(old_string));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(new_string));
-        member.clear();
+        member.release_ref();
     }
 
     TEST(ThreadState, SafepointRequestReadsVmFlag)

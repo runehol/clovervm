@@ -44,7 +44,7 @@ struct PendingException
     MemberTValue<ExceptionObject> object;
 
     // Used when kind == StopIteration. Value::not_present() means no value.
-    MemberValue stop_iteration_value;
+    Member2<Value> stop_iteration_value;
 };
 ```
 

@@ -21,11 +21,6 @@ namespace cl
         code_object->name.release_ref();
         code_object->docstring.release_ref();
 
-        for(OwnedValue &constant: code_object->constant_table)
-        {
-            decref(constant.release());
-        }
-
         for(AttributeReadInlineCache &cache: code_object->attribute_read_caches)
         {
             cache.clear();

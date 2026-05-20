@@ -225,7 +225,7 @@ TEST(Codegen, function_varargs_parameter_layout)
         test_context.compile_file(L"def f(a, b=1, *args):\n"
                                   L"    return args\n");
     CodeObject *function_code =
-        module_code->constant_table[0].as_value().get_ptr<CodeObject>();
+        module_code->constant_table[0].value().get_ptr<CodeObject>();
 
     EXPECT_EQ(3, function_code->n_parameters);
     EXPECT_EQ(2, function_code->n_positional_parameters);
@@ -246,19 +246,19 @@ TEST(Codegen, parameter_frame_offsets_are_padded_to_abi_alignment)
                                                         L"    return a\n");
 
     EXPECT_EQ(5, one_param->constant_table[0]
-                     .as_value()
+                     .value()
                      .get_ptr<CodeObject>()
                      ->get_highest_occupied_frame_offset());
     EXPECT_EQ(5, two_params->constant_table[0]
-                     .as_value()
+                     .value()
                      .get_ptr<CodeObject>()
                      ->get_highest_occupied_frame_offset());
     EXPECT_EQ(7, three_params->constant_table[0]
-                     .as_value()
+                     .value()
                      .get_ptr<CodeObject>()
                      ->get_highest_occupied_frame_offset());
     EXPECT_EQ(7, four_params->constant_table[0]
-                     .as_value()
+                     .value()
                      .get_ptr<CodeObject>()
                      ->get_highest_occupied_frame_offset());
 }
@@ -564,7 +564,7 @@ TEST(Codegen, string_literal_constant_value)
 
     ASSERT_EQ(size_t(1), code_obj->constant_table.size());
     EXPECT_STREQ(L"abc", string_as_wchar_t(TValue<String>::from_value_checked(
-                             code_obj->constant_table[0].as_value())));
+                             code_obj->constant_table[0].value())));
 
     std::string expected = "Code object:\n"
                            "    0 LdaConstant c[0]\n"
@@ -579,7 +579,7 @@ TEST(Codegen, float_literal_constant_value)
     CodeObject *code_obj = test_context.compile_file(L"1.5\n");
 
     ASSERT_EQ(size_t(1), code_obj->constant_table.size());
-    Value constant = code_obj->constant_table[0].as_value();
+    Value constant = code_obj->constant_table[0].value();
     ASSERT_TRUE(can_convert_to<Float>(constant));
     EXPECT_DOUBLE_EQ(1.5, constant.get_ptr<Float>()->value);
 }

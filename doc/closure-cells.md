@@ -102,7 +102,7 @@ class Cell : public HeapObject {
   void set_value(Value value);
 
  private:
-  MemberValue value_;
+  Member2<Value> value_;
 };
 ```
 

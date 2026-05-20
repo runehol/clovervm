@@ -196,9 +196,9 @@ namespace cl
                                  MroValidityCellDependency dependency) const;
 
         Member2<TValue2<String>> name;
-        MemberValue bases;
-        MemberValue mro;
-        MemberValue class_extra_inline_attribute_slots
+        Member2<Value> bases;
+        Member2<Value> mro;
+        Value class_extra_inline_attribute_slots
             [class_extra_inline_attribute_slot_count];
         mutable MemberHeapPtr2<ValidityCell>
             mro_shape_and_contents_validity_cell;
