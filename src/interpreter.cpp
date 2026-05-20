@@ -1095,7 +1095,7 @@ namespace cl
 
     static ALWAYSINLINE void enter_function_frame_at_new_fp(
         Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
-        TValue<Function> fun, Value *new_fp, uint32_t instr_len)
+        TValue2<Function> fun, Value *new_fp, uint32_t instr_len)
     {
         assert(is_stack_frame_aligned(new_fp));
         pc += instr_len;
@@ -1107,7 +1107,7 @@ namespace cl
         pc = code_object->code.data();
     }
 
-    static ALWAYSINLINE bool is_fixed_arity_function(TValue<Function> fun)
+    static ALWAYSINLINE bool is_fixed_arity_function(TValue2<Function> fun)
     {
         return !fun.extract()->has_varargs() &&
                fun.extract()->min_positional_arity ==
@@ -1115,7 +1115,7 @@ namespace cl
     }
 
     static ALWAYSINLINE FunctionCallAdaptation
-    classify_function_call_adaptation(TValue<Function> fun)
+    classify_function_call_adaptation(TValue2<Function> fun)
     {
         if(fun.extract()->has_varargs())
         {
@@ -1130,11 +1130,11 @@ namespace cl
 
     static ALWAYSINLINE void
     populate_function_call_cache(FunctionCallInlineCache &cache,
-                                 TValue<Function> fun, uint32_t n_args,
+                                 TValue2<Function> fun, uint32_t n_args,
                                  FunctionCallAdaptation adaptation)
     {
         cache.kind = FunctionCallInlineCacheKind::Function;
-        cache.guard_value = fun;
+        cache.guard_value = fun.raw_value();
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
         cache.validity_cell = nullptr;
@@ -1144,7 +1144,7 @@ namespace cl
 
     static ALWAYSINLINE void
     populate_constructor_call_cache(FunctionCallInlineCache &cache,
-                                    ClassObject *cls, TValue<Function> thunk,
+                                    ClassObject *cls, TValue2<Function> thunk,
                                     ValidityCell *lookup_cell, uint32_t n_args,
                                     FunctionCallAdaptation adaptation)
     {
@@ -1178,7 +1178,7 @@ namespace cl
     }
 
     static ALWAYSINLINE void
-    initialize_missing_default_arguments(Value *new_fp, TValue<Function> fun,
+    initialize_missing_default_arguments(Value *new_fp, TValue2<Function> fun,
                                          uint32_t n_args)
     {
         uint32_t n_supplied_positional_args =
@@ -1209,7 +1209,7 @@ namespace cl
 
     static ALWAYSINLINE void initialize_varargs_argument(ThreadState *thread,
                                                          Value *new_fp,
-                                                         TValue<Function> fun,
+                                                         TValue2<Function> fun,
                                                          uint32_t n_args)
     {
         uint32_t n_positional_parameters =
@@ -1218,16 +1218,16 @@ namespace cl
                                     ? n_args - n_positional_parameters
                                     : 0;
         CodeObject *target_code_object = fun.extract()->code_object.extract();
-        TValue<Tuple> varargs_tuple = Tuple::from_frame_arguments(
+        TValue2<Tuple> varargs_tuple = Tuple::from_frame_arguments(
             thread, new_fp,
             target_code_object->encode_reg(n_positional_parameters),
             n_extra_args);
         new_fp[target_code_object->encode_reg(n_positional_parameters)] =
-            varargs_tuple;
+            varargs_tuple.raw_value();
     }
 
     static ALWAYSINLINE Value *
-    new_frame_pointer_from_first_arg(Value *fp, TValue<Function> fun,
+    new_frame_pointer_from_first_arg(Value *fp, TValue2<Function> fun,
                                      int32_t first_arg_reg)
     {
         int32_t new_fp_reg = first_arg_reg -
@@ -1268,7 +1268,7 @@ namespace cl
 
     static ALWAYSINLINE void enter_function_frame_from_positional_args(
         ThreadState *thread, Value *&fp, const uint8_t *&pc,
-        CodeObject *&code_object, TValue<Function> fun, int32_t first_arg_reg,
+        CodeObject *&code_object, TValue2<Function> fun, int32_t first_arg_reg,
         uint32_t n_args, uint32_t instr_len, FunctionCallAdaptation adaptation)
     {
         Value *new_fp =
@@ -2588,8 +2588,8 @@ namespace cl
                 MUSTTAIL return not_callable_error(ARGS);
             }
 
-            TValue<Function> thunk =
-                TValue<Function>::from_oop(constructor.thunk);
+            TValue2<Function> thunk =
+                TValue2<Function>::from_oop(constructor.thunk);
             if(unlikely(!thunk.extract()->accepts_arity(n_args)))
             {
                 MUSTTAIL return wrong_arity_error(ARGS);
@@ -2616,7 +2616,7 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        TValue<Function> function = TValue<Function>::from_value_assumed(fun);
+        TValue2<Function> function = TValue2<Function>::from_value_assumed(fun);
         if(unlikely(!function.extract()->accepts_arity(n_args)))
         {
             MUSTTAIL return wrong_arity_error(ARGS);
@@ -2646,7 +2646,8 @@ namespace cl
         uint8_t cache_idx = pc[4];
         FunctionCallInlineCache &cache =
             code_object->function_call_caches[cache_idx];
-        TValue<Function> function = TValue<Function>::from_oop(cache.function);
+        TValue2<Function> function =
+            TValue2<Function>::from_oop(cache.function);
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, cache.adaptation);
@@ -2778,16 +2779,16 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        TValue<Function> function =
-            TValue<Function>::from_value_assumed(callable);
+        TValue2<Function> function =
+            TValue2<Function>::from_value_assumed(callable);
         FunctionCallInlineCache &call_cache =
             code_object->function_call_caches[call_cache_idx];
         if(function_call_cache_matches(call_cache, callable, n_args))
         {
             int32_t first_arg_reg = prepare_method_call_argument_slots(
                 fp, receiver_reg, n_user_args, self);
-            TValue<Function> cached_function =
-                TValue<Function>::from_oop(call_cache.function);
+            TValue2<Function> cached_function =
+                TValue2<Function>::from_oop(call_cache.function);
             enter_function_frame_from_positional_args(
                 thread, fp, pc, code_object, cached_function, first_arg_reg,
                 n_args, call_instr_len, call_cache.adaptation);
@@ -2865,8 +2866,8 @@ namespace cl
 
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
-        TValue<Function> function =
-            TValue<Function>::from_oop(call_cache.function);
+        TValue2<Function> function =
+            TValue2<Function>::from_oop(call_cache.function);
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, FunctionCallAdaptation::FixedArity);
@@ -2953,16 +2954,16 @@ namespace cl
             MUSTTAIL return not_callable_error(ARGS);
         }
 
-        TValue<Function> function =
-            TValue<Function>::from_value_assumed(callable);
+        TValue2<Function> function =
+            TValue2<Function>::from_value_assumed(callable);
         FunctionCallInlineCache &call_cache =
             code_object->function_call_caches[call_cache_idx];
         if(function_call_cache_matches(call_cache, callable, n_args))
         {
             int32_t first_arg_reg = prepare_method_call_argument_slots(
                 fp, receiver_reg, n_user_args, self);
-            TValue<Function> cached_function =
-                TValue<Function>::from_oop(call_cache.function);
+            TValue2<Function> cached_function =
+                TValue2<Function>::from_oop(call_cache.function);
             enter_function_frame_from_positional_args(
                 thread, fp, pc, code_object, cached_function, first_arg_reg,
                 n_args, call_instr_len, call_cache.adaptation);
@@ -3040,8 +3041,8 @@ namespace cl
 
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
-        TValue<Function> function =
-            TValue<Function>::from_oop(call_cache.function);
+        TValue2<Function> function =
+            TValue2<Function>::from_oop(call_cache.function);
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, FunctionCallAdaptation::FixedArity);
