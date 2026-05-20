@@ -11,6 +11,11 @@ using namespace cl;
 
 namespace
 {
+    Value raw_value_from_typed_string(TValue2<String> value)
+    {
+        return value.raw_value();
+    }
+
     template <typename T, typename = void>
     struct HasReleaseRef : std::false_type
     {
@@ -63,6 +68,18 @@ TEST(Owned2, StoresTypedWrapperAndRetainsRawValue)
         EXPECT_EQ(string, (*owned).extract());
     }
     EXPECT_EQ(0, string->refcount);
+}
+
+TEST(Owned2, ConvertsToWrappedType)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    String *string = context.thread()->make_internal_raw<String>(L"owned2");
+    TValue2<String> typed_string = TValue2<String>::from_oop(string);
+    Owned2<TValue2<String>> owned(typed_string);
+
+    EXPECT_EQ(typed_string.raw_value(), raw_value_from_typed_string(owned));
 }
 
 TEST(Owned2, CopyRetainsRawValue)
@@ -128,6 +145,19 @@ TEST(Member2, StoresTypedWrapperAndRetainsRawValue)
 
     decref(Value::from_oop(string));
     EXPECT_EQ(0, string->refcount);
+}
+
+TEST(Member2, ConvertsToWrappedType)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    String *string = context.thread()->make_internal_raw<String>(L"member2");
+    TValue2<String> typed_string = TValue2<String>::from_oop(string);
+    Member2<TValue2<String>> member(typed_string);
+
+    EXPECT_EQ(typed_string.raw_value(), raw_value_from_typed_string(member));
+    member.release_ref();
 }
 
 TEST(Member2, ComparesByRawValue)

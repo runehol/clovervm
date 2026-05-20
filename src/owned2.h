@@ -78,6 +78,7 @@ namespace cl
 
         T value() const { return value_; }
         T operator*() const { return value(); }
+        operator T() const { return value(); }
         Value raw_value() const { return value_.raw_value(); }
 
         template <typename U = T,
@@ -141,6 +142,7 @@ namespace cl
 
         T value() const { return value_; }
         T operator*() const { return value(); }
+        operator T() const { return value(); }
         Value raw_value() const { return value_.raw_value(); }
 
         template <typename U = T,
