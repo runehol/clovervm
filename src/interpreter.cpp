@@ -2401,12 +2401,12 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue<List> list = thread->make_object_value<List>(n_items);
+        TValue2<List> list = thread->make_object_value<List>(n_items);
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             list.extract()->set_item_unchecked(idx, fp[reg - int8_t(idx)]);
         }
-        accumulator = list;
+        accumulator = list.raw_value();
 
         COMPLETE();
     }
@@ -2417,13 +2417,13 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue<Tuple> tuple = thread->make_object_value<Tuple>(n_items);
+        TValue2<Tuple> tuple = thread->make_object_value<Tuple>(n_items);
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             tuple.extract()->initialize_item_unchecked(
                 idx, fp[int32_t(reg) - int32_t(idx)]);
         }
-        accumulator = tuple;
+        accumulator = tuple.raw_value();
 
         COMPLETE();
     }
@@ -2434,14 +2434,14 @@ namespace cl
         int8_t reg = pc[1];
         uint8_t n_items = pc[2];
 
-        TValue<Dict> dict = thread->make_object_value<Dict>();
+        TValue2<Dict> dict = thread->make_object_value<Dict>();
         for(uint8_t idx = 0; idx < n_items; ++idx)
         {
             Value key = fp[reg - int8_t(idx * 2)];
             Value value = fp[reg - int8_t(idx * 2 + 1)];
             dict.extract()->set_item(key, value);
         }
-        accumulator = dict;
+        accumulator = dict.raw_value();
 
         COMPLETE();
     }
