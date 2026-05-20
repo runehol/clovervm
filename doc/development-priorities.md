@@ -7,34 +7,44 @@ JIT, language, and runtime work.
 
 ## Hard Constraints
 
-- Do not start real JIT implementation before the memory substrate has a
-  working baseline for root discovery, heap scanning, and deallocation.
+- Real JIT work must preserve the current memory substrate assumptions: root
+  discovery, safepoint visibility, heap scanning, descriptor-driven teardown,
+  and deallocation all have to remain explicit in the design.
 - Keep interpreter hot paths measurable. Opcode handlers listed as hot path
   should remain compatible with the existing frameless/musttail dispatch
   constraints.
 - Do not turn feature work into hidden semantic shortcuts. If a feature can run
   Python bytecode, allocate observably, invoke descriptors, or raise, it should
   be routed through explicit VM dispatch and pending-exception propagation.
+- Keep fallibility visible in types. Native/interpreter boundaries may still use
+  `[[nodiscard]] Value` plus `Value::exception_marker()`, but typed internal
+  APIs should move toward `Expected<T>`, including non-`Value` results such as
+  parser indexes.
 - Prefer architecture that supports future no-GIL and C-extension work without
   forcing immediate implementation of those larger goals.
 
 ## Priority Order
 
-1. **Fast iterator protocol**
+1. **Iterator protocol completion and range object**
 
-   Finish the iterator protocol in a way that preserves the current loop
-   performance direction. Important pieces include a reusable `range` object,
-   fresh iterators from `iter(range_obj)`, fast paths for range/list/tuple
-   iteration, and a clean generic `iter()` / `next()` fallback. Iterator
-   exhaustion should continue to integrate with the managed exception-table
-   machinery.
+   The first iterator slice is no longer greenfield: generic `iter()` /
+   `next()`, generic `for` lowering, compact `StopIteration` transport, and
+   range/list/tuple iterator objects exist. The remaining foundational gap is
+   that public `range()` still returns a mutable iterator directly. Introduce a
+   reusable `range` object, make `iter(range_obj)` produce fresh
+   `RangeIterator`s, and keep the direct range/list/tuple fast paths aligned
+   with the generic iterator protocol. Iterator exhaustion should continue to
+   integrate with the managed exception-table machinery.
 
-2. **Specific VM exceptions**
+2. **Specific VM exceptions and typed fallibility**
 
    Replace generic runtime failures with specific VM exceptions for overflow,
    type errors, unsupported operations, descriptor failures, and other slow
    paths. This is a prerequisite for making later object-model and language
-   features behave predictably without hiding failures in C++ helpers.
+   features behave predictably without hiding failures in C++ helpers. Continue
+   converting fallible internal helpers to `Expected<T>` where that makes the
+   success type precise, including non-handle results such as `Expected<int32_t>`
+   in parser or compiler code.
 
 3. **Interpreter-controlled descriptor execution**
 
@@ -102,9 +112,9 @@ JIT, language, and runtime work.
 
 10. **Range object completeness**
 
-    If not completed as part of the fast iterator protocol, finish `range` as a
-    proper reusable object with length, indexing, containment, representation,
-    and iteration semantics.
+    After public `range()` stops returning a mutable iterator directly, finish
+    the remaining range surface: length, indexing, containment, representation,
+    equality where appropriate, and edge-case arithmetic semantics.
 
 11. **Memory substrate policy and placement**
 
@@ -133,16 +143,17 @@ JIT, language, and runtime work.
 ## Near-Term Track
 
 The recommended next major track is language/runtime behavior, starting with the
-fast iterator protocol. It is high impact, mostly interpreter-local, and does not
-require beginning JIT implementation.
+remaining iterator/range work. It is high impact, mostly interpreter-local, and
+keeps future JIT assumptions honest without requiring the JIT to exist first.
 
 Near-term order:
 
-1. Finish `range` object reuse and fresh `iter(range_obj)` behavior.
-2. Keep range/list/tuple fast iteration paths aligned with the generic
-   `iter()` / `next()` fallback.
-3. Replace generic runtime failures with specific VM exceptions where current
-   slow paths still blur Python-visible behavior.
+1. Introduce a reusable public `range` object and fresh `iter(range_obj)`
+   behavior.
+2. Keep range/list/tuple fast iteration paths aligned with generic
+   `iter()` / `next()` semantics and exception-table loop exit behavior.
+3. Replace generic runtime failures with specific VM exceptions, and move
+   fallible internal helpers toward typed `Expected<T>` results where useful.
 4. Continue moving descriptor execution into explicit interpreter/VM-controlled
    paths rather than hidden lookup helpers.
 5. Add keyword calls for ordinary functions and constructors.
@@ -156,8 +167,10 @@ fragmentation has become the limiting problem.
 
 Revisit this ordering when:
 
-- range/list/tuple/generic iterator paths are semantically complete enough for
-  normal loops;
+- `range()` is a reusable object and range/list/tuple/generic iterator paths are
+  semantically complete enough for normal loops;
+- descriptor `__get__`, `__set__`, and `__delete__` execution no longer hides
+  Python-visible behavior inside lookup helpers;
 - keyword calls land for ordinary functions and constructors;
 - module/import work becomes necessary to run broader Python source;
 - module/global scope behavior starts duplicating enough shape/cache machinery
