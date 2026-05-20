@@ -94,11 +94,6 @@ namespace cl
     resolve_exceptional_frame_exit(ThreadState *thread, Value *fp,
                                    const uint8_t *pc, CodeObject *code_object);
 
-    static TValue<String> old_typed_string(TValue2<String> value)
-    {
-        return TValue<String>::from_value_unchecked(value.raw_value());
-    }
-
     static std::wstring format_name_error_message(TValue2<String> name)
     {
         String *str = name.extract();
@@ -450,9 +445,7 @@ namespace cl
                 continue;
             }
             if(!cls.extract()->set_own_property(
-                   old_typed_string(
-                       local_scope->get_name_by_slot_index(slot_idx)),
-                   value))
+                   local_scope->get_name_by_slot_index(slot_idx), value))
             {
                 throw std::runtime_error(
                     "TypeError: cannot set read-only class attribute");

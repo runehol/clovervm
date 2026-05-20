@@ -17,19 +17,18 @@ TEST(Scope, ReinsertByNameReusesSlotAndAppendsEntry)
     TValue<String> name(
         context.vm().get_or_create_interned_string_value(L"answer"));
 
-    scope->set_by_name(test::value_state(name), Value::from_smi(1));
+    scope->set_by_name(name, Value::from_smi(1));
 
     ASSERT_EQ(1u, scope->entry_count());
-    int32_t slot_idx = scope->lookup_slot_index_local(test::value_state(name));
+    int32_t slot_idx = scope->lookup_slot_index_local(name);
     ASSERT_EQ(0, slot_idx);
     EXPECT_EQ(0, scope->get_entry_slot_index(0));
 
     scope->set_by_slot_index(slot_idx, Value::not_present());
-    scope->set_by_name(test::value_state(name), Value::from_smi(2));
+    scope->set_by_name(name, Value::from_smi(2));
 
-    EXPECT_EQ(slot_idx,
-              scope->lookup_slot_index_local(test::value_state(name)));
-    EXPECT_EQ(Value::from_smi(2), scope->get_by_name(test::value_state(name)));
+    EXPECT_EQ(slot_idx, scope->lookup_slot_index_local(name));
+    EXPECT_EQ(Value::from_smi(2), scope->get_by_name(name));
     ASSERT_EQ(2u, scope->entry_count());
     EXPECT_EQ(-1, scope->get_entry_slot_index(0));
     EXPECT_EQ(slot_idx, scope->get_entry_slot_index(1));
@@ -46,19 +45,18 @@ TEST(Scope, ReadTrackingSlotStartsWithoutEntryUntilBound)
     TValue<String> name(
         context.vm().get_or_create_interned_string_value(L"tracked"));
 
-    parent->set_by_name(test::value_state(name), Value::from_smi(7));
+    parent->set_by_name(name, Value::from_smi(7));
 
-    int32_t slot_idx =
-        child->register_slot_index_for_read(test::value_state(name));
+    int32_t slot_idx = child->register_slot_index_for_read(name);
     EXPECT_EQ(0, slot_idx);
     EXPECT_EQ(0u, child->entry_count());
-    EXPECT_EQ(Value::from_smi(7), child->get_by_name(test::value_state(name)));
+    EXPECT_EQ(Value::from_smi(7), child->get_by_name(name));
 
-    child->set_by_name(test::value_state(name), Value::from_smi(11));
+    child->set_by_name(name, Value::from_smi(11));
 
     ASSERT_EQ(1u, child->entry_count());
     EXPECT_EQ(slot_idx, child->get_entry_slot_index(0));
-    EXPECT_EQ(Value::from_smi(11), child->get_by_name(test::value_state(name)));
+    EXPECT_EQ(Value::from_smi(11), child->get_by_name(name));
 }
 
 TEST(Scope, DeletedChildSlotFallsBackToParentByCurrentEntryName)
@@ -71,19 +69,18 @@ TEST(Scope, DeletedChildSlotFallsBackToParentByCurrentEntryName)
     TValue<String> name(
         context.vm().get_or_create_interned_string_value(L"shadowed"));
 
-    parent->set_by_name(test::value_state(name), Value::from_smi(7));
+    parent->set_by_name(name, Value::from_smi(7));
 
-    int32_t slot_idx =
-        child->register_slot_index_for_read(test::value_state(name));
+    int32_t slot_idx = child->register_slot_index_for_read(name);
     EXPECT_EQ(Value::from_smi(7), child->get_by_slot_index(slot_idx));
 
-    child->set_by_name(test::value_state(name), Value::from_smi(11));
+    child->set_by_name(name, Value::from_smi(11));
     ASSERT_EQ(1u, child->entry_count());
     EXPECT_EQ(slot_idx, child->get_entry_slot_index(0));
 
     child->set_by_slot_index(slot_idx, Value::not_present());
 
-    EXPECT_EQ(Value::from_smi(7), child->get_by_name(test::value_state(name)));
+    EXPECT_EQ(Value::from_smi(7), child->get_by_name(name));
 }
 
 TEST(Scope, SetBySlotIndexEnqueuesOverwrittenObject)
@@ -98,8 +95,7 @@ TEST(Scope, SetBySlotIndexEnqueuesOverwrittenObject)
     String *old_string = thread->make_object_raw<String>(L"old-scope");
     String *new_string = thread->make_object_raw<String>(L"new-scope");
     Owned<Value> keep_new(Value::from_oop(new_string));
-    int32_t slot_idx =
-        scope->register_slot_index_for_write(test::value_state(name));
+    int32_t slot_idx = scope->register_slot_index_for_write(name);
     scope->set_by_slot_index(slot_idx, Value::from_oop(old_string));
     ASSERT_FALSE(thread->zero_count_table_contains_for_testing(old_string));
     ASSERT_EQ(HeapLifecycleState::Normal, old_string->lifecycle_state);

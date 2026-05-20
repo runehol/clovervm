@@ -330,8 +330,7 @@ static void bind_global(test::VmTestContext &test_context,
 {
     TValue<String> name_value(
         test_context.vm().get_or_create_interned_string_value(name));
-    code_object->module_scope.extract()->set_by_name(
-        test::value_state(name_value), value);
+    code_object->module_scope.extract()->set_by_name(name_value, value);
 }
 
 static Value make_test_function(test::VmTestContext &test_context,
@@ -342,8 +341,8 @@ static Value make_test_function(test::VmTestContext &test_context,
 
     TValue<String> name_value(
         test_context.vm().get_or_create_interned_string_value(name));
-    Value function_value = code_object->module_scope.extract()->get_by_name(
-        test::value_state(name_value));
+    Value function_value =
+        code_object->module_scope.extract()->get_by_name(name_value);
     assert(function_value.is_ptr());
     assert(function_value.get_ptr<Object>()->native_layout_id() ==
            NativeLayoutId::Function);
@@ -635,8 +634,7 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
                                                      L"    value = 7\n");
     (void)test_context.thread()->run_clovervm_code_object(code_obj);
 
-    Value cls_value = code_obj->module_scope.extract()->get_by_name(
-        test::value_state(cls_name));
+    Value cls_value = code_obj->module_scope.extract()->get_by_name(cls_name);
     ASSERT_TRUE(cls_value.is_ptr());
     ASSERT_EQ(NativeLayoutId::ClassObject,
               cls_value.get_ptr<Object>()->native_layout_id());
@@ -681,8 +679,7 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
                                                      L"    third = 3\n");
     (void)test_context.thread()->run_clovervm_code_object(code_obj);
 
-    Value cls_value = code_obj->module_scope.extract()->get_by_name(
-        test::value_state(cls_name));
+    Value cls_value = code_obj->module_scope.extract()->get_by_name(cls_name);
     ASSERT_TRUE(cls_value.is_ptr());
     ASSERT_EQ(NativeLayoutId::ClassObject,
               cls_value.get_ptr<Object>()->native_layout_id());
@@ -693,7 +690,7 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
         ClassObject::class_metadata_slot_count + 1;
     for(uint32_t idx = 0; idx < 3; ++idx)
     {
-        EXPECT_STREQ(string_as_wchar_t(test::value_state(names[idx])),
+        EXPECT_STREQ(string_as_wchar_t(names[idx]),
                      string_as_wchar_t(cls->get_shape()->get_property_name(
                          class_metadata_descriptor_count + idx)));
 
@@ -1025,8 +1022,7 @@ TEST(Interpreter, list_literal_evaluates_elements_left_to_right)
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter);
-    code_obj->module_scope.extract()->set_by_name(test::value_state(name),
-                                                  next_counter);
+    code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(actual.is_ptr());
@@ -1094,8 +1090,7 @@ TEST(Interpreter, tuple_literal_evaluates_elements_left_to_right)
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter);
-    code_obj->module_scope.extract()->set_by_name(test::value_state(name),
-                                                  next_counter);
+    code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(actual.is_ptr());
@@ -1178,8 +1173,7 @@ TEST(Interpreter,
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter);
-    code_obj->module_scope.extract()->set_by_name(test::value_state(name),
-                                                  next_counter);
+    code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
@@ -1244,8 +1238,7 @@ TEST(Interpreter,
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter);
-    code_obj->module_scope.extract()->set_by_name(test::value_state(name),
-                                                  next_counter);
+    code_obj->module_scope.extract()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
@@ -1379,7 +1372,7 @@ TEST(Interpreter, attribute_load_and_store_syntax)
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(7), actual);
     Scope *module_scope = code_obj->module_scope.extract();
-    Value obj_value = module_scope->get_by_name(test::value_state(obj_name));
+    Value obj_value = module_scope->get_by_name(obj_name);
     ASSERT_TRUE(obj_value.is_ptr());
     ASSERT_EQ(NativeLayoutId::Instance,
               obj_value.get_ptr<Object>()->native_layout_id());
@@ -1406,8 +1399,8 @@ TEST(Interpreter, store_attr_caches_instance_add_transition)
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(2), actual);
 
-    Value function_value = code_obj->module_scope.extract()->get_by_name(
-        test::value_state(function_name));
+    Value function_value =
+        code_obj->module_scope.extract()->get_by_name(function_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
@@ -1438,8 +1431,8 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
         test_context.compile_file(L"def clear(obj):\n"
                                   L"    del obj.value\n");
     (void)test_context.thread()->run_clovervm_code_object(definition_code);
-    Value function_value = definition_code->module_scope.extract()->get_by_name(
-        test::value_state(clear_name));
+    Value function_value =
+        definition_code->module_scope.extract()->get_by_name(clear_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
@@ -1492,8 +1485,8 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
         test_context.compile_file(L"def clear(obj):\n"
                                   L"    del obj.value\n");
     (void)test_context.thread()->run_clovervm_code_object(definition_code);
-    Value function_value = definition_code->module_scope.extract()->get_by_name(
-        test::value_state(clear_name));
+    Value function_value =
+        definition_code->module_scope.extract()->get_by_name(clear_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
 
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
@@ -2745,8 +2738,8 @@ TEST(Interpreter, try_finally_runs_cleanup_before_reraising)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(Value::from_smi(2), code_obj->module_scope.extract()->get_by_name(
-                                      test::value_state(result_name)));
+    EXPECT_EQ(Value::from_smi(2),
+              code_obj->module_scope.extract()->get_by_name(result_name));
 }
 
 TEST(Interpreter, try_finally_raise_chains_body_exception_as_context)
@@ -2878,8 +2871,8 @@ TEST(Interpreter, return_through_finally_that_raises_runs_cleanup_once)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(Value::from_smi(1), code_obj->module_scope.extract()->get_by_name(
-                                      test::value_state(result_name)));
+    EXPECT_EQ(Value::from_smi(1),
+              code_obj->module_scope.extract()->get_by_name(result_name));
 }
 
 TEST(Interpreter, return_in_finally_overrides_protected_return)
@@ -3030,8 +3023,8 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_unmatched_reraise)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(Value::from_smi(2), code_obj->module_scope.extract()->get_by_name(
-                                      test::value_state(result_name)));
+    EXPECT_EQ(Value::from_smi(2),
+              code_obj->module_scope.extract()->get_by_name(result_name));
 }
 
 TEST(Interpreter, try_except_finally_runs_cleanup_before_handler_reraise)
@@ -3052,8 +3045,8 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_handler_reraise)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(Value::from_smi(2), code_obj->module_scope.extract()->get_by_name(
-                                      test::value_state(result_name)));
+    EXPECT_EQ(Value::from_smi(2),
+              code_obj->module_scope.extract()->get_by_name(result_name));
 }
 
 TEST(Interpreter, try_except_else_runs_on_body_success)
@@ -3139,8 +3132,8 @@ TEST(Interpreter, try_except_else_finally_cleans_up_else_exception)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(Value::from_smi(2), code_obj->module_scope.extract()->get_by_name(
-                                      test::value_state(result_name)));
+    EXPECT_EQ(Value::from_smi(2),
+              code_obj->module_scope.extract()->get_by_name(result_name));
 }
 
 TEST(Interpreter, unhandled_pending_exception_reports_class_and_message)
@@ -3233,8 +3226,7 @@ TEST(Interpreter, builtin_scope_lookup)
     Scope *module_scope = code_obj->module_scope.extract();
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"range");
-    int32_t slot_idx =
-        module_scope->lookup_slot_index_local(test::value_state(name));
+    int32_t slot_idx = module_scope->lookup_slot_index_local(name);
     ASSERT_GE(slot_idx, 0);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
@@ -3290,7 +3282,7 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
         TValue<String> name_value =
             test_context.vm().get_or_create_interned_string_value(
                 expected.name);
-        Value value = builtins->get_by_name(test::value_state(name_value));
+        Value value = builtins->get_by_name(name_value);
         ASSERT_TRUE(value.is_ptr());
         EXPECT_EQ(NativeLayoutId::Function,
                   value.get_ptr<Object>()->native_layout_id());
@@ -3310,16 +3302,16 @@ TEST(Interpreter, builtin_scope_exposes_singleton_values)
 
     EXPECT_EQ(
         Value::True(),
-        builtins->get_by_name(test::value_state(
-            test_context.vm().get_or_create_interned_string_value(L"True"))));
+        builtins->get_by_name(
+            test_context.vm().get_or_create_interned_string_value(L"True")));
     EXPECT_EQ(
         Value::False(),
-        builtins->get_by_name(test::value_state(
-            test_context.vm().get_or_create_interned_string_value(L"False"))));
+        builtins->get_by_name(
+            test_context.vm().get_or_create_interned_string_value(L"False")));
     EXPECT_EQ(
         Value::None(),
-        builtins->get_by_name(test::value_state(
-            test_context.vm().get_or_create_interned_string_value(L"None"))));
+        builtins->get_by_name(
+            test_context.vm().get_or_create_interned_string_value(L"None")));
 }
 
 TEST(Interpreter, user_code_cannot_use_clover_call_special_as_intrinsic)
@@ -3446,13 +3438,11 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
 
         if(expected.native_layout_id == NativeLayoutId::CodeObject)
         {
-            EXPECT_EQ(Value::not_present(),
-                      builtins->get_by_name(test::value_state(name)));
+            EXPECT_EQ(Value::not_present(), builtins->get_by_name(name));
         }
         else
         {
-            EXPECT_EQ(Value::from_oop(cls),
-                      builtins->get_by_name(test::value_state(name)));
+            EXPECT_EQ(Value::from_oop(cls), builtins->get_by_name(name));
         }
     }
 
@@ -3527,16 +3517,14 @@ TEST(Interpreter, float_objects_have_builtin_class_and_string_methods)
     ASSERT_TRUE(can_convert_to<String>(str_result));
     EXPECT_TRUE(string_eq(
         TValue2<String>::from_value_unchecked(str_result),
-        test::value_state(
-            test_context.vm().get_or_create_interned_string_value(L"1.5"))));
+        test_context.vm().get_or_create_interned_string_value(L"1.5")));
 
     Value repr_result =
         test_context.thread()->call_clovervm_method(value, dunder_repr_name);
     ASSERT_TRUE(can_convert_to<String>(repr_result));
     EXPECT_TRUE(string_eq(
         TValue2<String>::from_value_unchecked(repr_result),
-        test::value_state(
-            test_context.vm().get_or_create_interned_string_value(L"1.5"))));
+        test_context.vm().get_or_create_interned_string_value(L"1.5")));
 }
 
 TEST(Interpreter, float_string_methods_format_special_values)
@@ -3726,9 +3714,8 @@ TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
     Value first = test_context.thread()->call_clovervm_function(
         TValue<Function>::from_value_checked(
             test_context.vm().builtin_scope_ptr()->get_by_name(
-                test::value_state(
-                    test_context.vm().get_or_create_interned_string_value(
-                        L"next")))),
+                test_context.vm().get_or_create_interned_string_value(
+                    L"next"))),
         iterator_value);
     EXPECT_EQ(Value::from_smi(4), first);
     expect_tuple_iterator(iterator_value, tuple, 2, 1);
@@ -3736,9 +3723,8 @@ TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
     Value second = test_context.thread()->call_clovervm_function(
         TValue<Function>::from_value_checked(
             test_context.vm().builtin_scope_ptr()->get_by_name(
-                test::value_state(
-                    test_context.vm().get_or_create_interned_string_value(
-                        L"next")))),
+                test_context.vm().get_or_create_interned_string_value(
+                    L"next"))),
         iterator_value);
     EXPECT_EQ(Value::from_smi(5), second);
     expect_tuple_iterator(iterator_value, tuple, 2, 2);
@@ -3746,9 +3732,8 @@ TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
     Value exhausted = test_context.thread()->call_clovervm_function(
         TValue<Function>::from_value_checked(
             test_context.vm().builtin_scope_ptr()->get_by_name(
-                test::value_state(
-                    test_context.vm().get_or_create_interned_string_value(
-                        L"next")))),
+                test_context.vm().get_or_create_interned_string_value(
+                    L"next"))),
         iterator_value);
     EXPECT_TRUE(exhausted.is_exception_marker());
     EXPECT_TRUE(test_context.thread()->has_pending_exception());
@@ -3778,8 +3763,8 @@ TEST(Interpreter, list_iterator_next_returns_items_until_stop_iteration)
     expect_list_iterator(iterator_value, list, 0);
 
     TValue<Function> next_function = TValue<Function>::from_value_checked(
-        test_context.vm().builtin_scope_ptr()->get_by_name(test::value_state(
-            test_context.vm().get_or_create_interned_string_value(L"next"))));
+        test_context.vm().builtin_scope_ptr()->get_by_name(
+            test_context.vm().get_or_create_interned_string_value(L"next")));
 
     Value first = test_context.thread()->call_clovervm_function(next_function,
                                                                 iterator_value);
@@ -4165,8 +4150,8 @@ TEST(Interpreter, with_statement_exit_that_raises_during_return_runs_once)
 
     TValue<String> log_name =
         test_context.vm().get_or_create_interned_string_value(L"log");
-    EXPECT_EQ(Value::from_smi(1), code_obj->module_scope.extract()->get_by_name(
-                                      test::value_state(log_name)));
+    EXPECT_EQ(Value::from_smi(1),
+              code_obj->module_scope.extract()->get_by_name(log_name));
 }
 
 TEST(Interpreter, with_statement_inner_exit_stays_suspended_during_outer_exit)
@@ -4206,8 +4191,7 @@ TEST(Interpreter, with_statement_inner_exit_stays_suspended_during_outer_exit)
     TValue<String> log_name =
         test_context.vm().get_or_create_interned_string_value(L"log");
     EXPECT_EQ(Value::from_smi(1342),
-              code_obj->module_scope.extract()->get_by_name(
-                  test::value_state(log_name)));
+              code_obj->module_scope.extract()->get_by_name(log_name));
 }
 
 TEST(Interpreter, with_statement_multiple_items_exit_in_reverse_order)

@@ -145,12 +145,10 @@ namespace cl
                 Optional<TValue2<String>>::none());
         }
 
-        TValue<Tuple> default_tuple =
-            TValue<Tuple>::from_value_unchecked(defaults.value().raw_value());
         TValue<Tuple> thunk_defaults = make_constructor_thunk_defaults(
-            default_tuple, init_function.extract()
-                               ->code_object.extract()
-                               ->n_positional_parameters);
+            defaults.value(), init_function.extract()
+                                  ->code_object.extract()
+                                  ->n_positional_parameters);
         if(thunk_defaults.extract()->empty())
         {
             return make_object_value<Function>(

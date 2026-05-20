@@ -8,11 +8,6 @@
 
 namespace cl
 {
-    static TValue2<String> string_value_state(TValue<String> name)
-    {
-        return TValue2<String>::from_value_unchecked(name);
-    }
-
     Shape::Transition::Transition(TValue2<String> _name,
                                   ShapeTransitionVerb _verb,
                                   DescriptorFlags _descriptor_flags,
@@ -133,8 +128,7 @@ namespace cl
         for(uint32_t property_idx = 0; property_idx < present_count_;
             ++property_idx)
         {
-            if(string_eq(string_value_state(name),
-                         get_property_name(property_idx)))
+            if(string_eq(name, get_property_name(property_idx)))
             {
                 return property_idx;
             }
@@ -148,8 +142,7 @@ namespace cl
         for(uint32_t property_idx = 0; property_idx < property_count_;
             ++property_idx)
         {
-            if(string_eq(string_value_state(name),
-                         get_property_name(property_idx)))
+            if(string_eq(name, get_property_name(property_idx)))
             {
                 DescriptorPresence presence = property_idx < present_count_
                                                   ? DescriptorPresence::Present
@@ -186,7 +179,7 @@ namespace cl
         {
             if(transition.get_verb() == verb &&
                transition.get_descriptor_flags() == descriptor_flags &&
-               string_eq(string_value_state(name), transition.get_name()))
+               string_eq(name, transition.get_name()))
             {
                 return transition.get_next_shape();
             }
@@ -214,8 +207,7 @@ namespace cl
                 break;
         }
 
-        transitions.emplace_back(string_value_state(name), verb,
-                                 descriptor_flags, next_shape);
+        transitions.emplace_back(name, verb, descriptor_flags, next_shape);
         return next_shape;
     }
 
@@ -275,8 +267,7 @@ namespace cl
         for(uint32_t property_idx = present_count_;
             property_idx < property_count_; ++property_idx)
         {
-            if(string_eq(string_value_state(name),
-                         get_property_name(property_idx)))
+            if(string_eq(name, get_property_name(property_idx)))
             {
                 continue;
             }
@@ -309,8 +300,7 @@ namespace cl
         for(uint32_t property_idx = 0; property_idx < present_count_;
             ++property_idx)
         {
-            if(string_eq(string_value_state(name),
-                         get_property_name(property_idx)))
+            if(string_eq(name, get_property_name(property_idx)))
             {
                 continue;
             }

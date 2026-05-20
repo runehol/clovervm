@@ -14,11 +14,6 @@
 
 namespace cl::test
 {
-    template <typename T> TValue2<T> value_state(TValue<T> value)
-    {
-        return TValue2<T>::from_value_unchecked(value.raw_value());
-    }
-
     class VmTestContext
     {
     public:
