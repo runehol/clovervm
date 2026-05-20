@@ -16,6 +16,8 @@ namespace
         return value.raw_value();
     }
 
+    Value raw_value_from_value(Value value) { return value.raw_value(); }
+
     template <typename T, typename = void>
     struct HasReleaseRef : std::false_type
     {
@@ -66,6 +68,31 @@ TEST(Owned2, StoresTypedWrapperAndRetainsRawValue)
         EXPECT_EQ(typed_string.raw_value(), owned.raw_value());
         EXPECT_EQ(string, owned.value().extract());
         EXPECT_EQ(string, (*owned).extract());
+    }
+    EXPECT_EQ(0, string->refcount);
+}
+
+TEST(Owned2, StoresRawValueAndRetainsIt)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    String *string = context.thread()->make_internal_raw<String>(L"owned2");
+    Value value = Value::from_oop(string);
+
+    static_assert(std::is_same_v<Owned2<Value>::semantic_type, Value>);
+    static_assert(sizeof(Owned2<Value>) == sizeof(Value));
+    static_assert(!std::is_default_constructible_v<Owned2<Value>>);
+    static_assert(!HasReleaseRef<Owned2<Value>>::value);
+
+    EXPECT_EQ(0, string->refcount);
+    {
+        Owned2<Value> owned(value);
+
+        EXPECT_EQ(1, string->refcount);
+        EXPECT_EQ(value, owned.raw_value());
+        EXPECT_EQ(value, owned.value());
+        EXPECT_EQ(value, raw_value_from_value(owned));
     }
     EXPECT_EQ(0, string->refcount);
 }
@@ -144,6 +171,31 @@ TEST(Member2, StoresTypedWrapperAndRetainsRawValue)
     EXPECT_EQ(1, string->refcount);
 
     decref(Value::from_oop(string));
+    EXPECT_EQ(0, string->refcount);
+}
+
+TEST(Member2, StoresRawValueAndRetainsIt)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    String *string = context.thread()->make_internal_raw<String>(L"member2");
+    Value value = Value::from_oop(string);
+
+    static_assert(std::is_same_v<Member2<Value>::semantic_type, Value>);
+    static_assert(sizeof(Member2<Value>) == sizeof(Value));
+    static_assert(!std::is_default_constructible_v<Member2<Value>>);
+    static_assert(HasReleaseRef<Member2<Value>>::value);
+
+    EXPECT_EQ(0, string->refcount);
+    Member2<Value> member(value);
+
+    EXPECT_EQ(1, string->refcount);
+    EXPECT_EQ(value, member.raw_value());
+    EXPECT_EQ(value, member.value());
+    EXPECT_EQ(value, raw_value_from_value(member));
+
+    member.release_ref();
     EXPECT_EQ(0, string->refcount);
 }
 

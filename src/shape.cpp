@@ -34,7 +34,7 @@ namespace cl
 
         shape->transitions.clear();
 
-        decref(shape->class_value.release());
+        shape->class_value.release_ref();
         for(uint32_t idx = 0; idx < shape->property_count_; ++idx)
         {
             Value name = shape->descriptor_names[idx];
@@ -260,9 +260,8 @@ namespace cl
         }
 
         Shape *next_shape = make_internal_raw<Shape>(
-            class_value.as_value(), this, next_slot_index_for_shape,
-            next_property_count, inline_slot_capacity, shape_flags,
-            present_count_ + 1);
+            class_value, this, next_slot_index_for_shape, next_property_count,
+            inline_slot_capacity, shape_flags, present_count_ + 1);
         uint32_t next_property_idx = 0;
         for(uint32_t property_idx = 0; property_idx < present_count_;
             ++property_idx)
@@ -307,7 +306,7 @@ namespace cl
         uint32_t next_property_count =
             keep_latent ? property_count_ : property_count_ - 1;
         Shape *next_shape = make_internal_raw<Shape>(
-            class_value.as_value(), this, next_slot_index, next_property_count,
+            class_value, this, next_slot_index, next_property_count,
             inline_slot_capacity, shape_flags, present_count_ - 1);
         uint32_t next_property_idx = 0;
         for(uint32_t property_idx = 0; property_idx < present_count_;
@@ -348,9 +347,8 @@ namespace cl
     {
         assert(valid_shape_flags(new_shape_flags));
         Shape *cloned_shape = make_internal_raw<Shape>(
-            class_value.as_value(), previous_shape, next_slot_index,
-            property_count_, inline_slot_capacity, new_shape_flags,
-            present_count_);
+            class_value, previous_shape, next_slot_index, property_count_,
+            inline_slot_capacity, new_shape_flags, present_count_);
         for(uint32_t property_idx = 0; property_idx < property_count_;
             ++property_idx)
         {

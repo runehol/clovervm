@@ -146,7 +146,7 @@ namespace cl
         ClassObject *get_class() const
         {
             return reinterpret_cast<ClassObject *>(
-                class_value.as_value().as.ptr);
+                class_value.raw_value().as.ptr);
         }
         Shape *get_previous_shape() const;
         int32_t get_next_slot_index() const { return next_slot_index; }
@@ -235,7 +235,7 @@ namespace cl
         uint32_t inline_slot_capacity;
         ShapeFlags shape_flags;
         std::vector<Transition> transitions;
-        MemberValue class_value;
+        Member2<Value> class_value;
         Value descriptor_names[1];
 
     public:
