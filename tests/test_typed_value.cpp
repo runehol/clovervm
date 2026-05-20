@@ -3,8 +3,10 @@
 #include "test_helpers.h"
 #include "thread_state.h"
 #include "typed_value.h"
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <type_traits>
+#include <utility>
 
 using namespace cl;
 
@@ -40,6 +42,71 @@ namespace
                                                       L"test expected an SMI"));
         return Expected<TValue<Bool>>::ok(TValue<Bool>::True());
     }
+
+    static Expected<int32_t> require_smi_then_return_int_for_test(Value value)
+    {
+        (void)CL_TRY(TValue<SMI>::from_value_or_raise(value, L"TypeError",
+                                                      L"test expected an SMI"));
+        return Expected<int32_t>::ok(42);
+    }
+
+    struct NonTrivialPayload
+    {
+        explicit NonTrivialPayload(int _value) : value(_value) { ++live; }
+
+        NonTrivialPayload(const NonTrivialPayload &other) : value(other.value)
+        {
+            ++live;
+            ++copies;
+        }
+
+        NonTrivialPayload(NonTrivialPayload &&other) noexcept
+            : value(other.value)
+        {
+            ++live;
+            ++moves;
+            other.value = -1;
+        }
+
+        NonTrivialPayload &operator=(const NonTrivialPayload &other)
+        {
+            value = other.value;
+            ++copy_assigns;
+            return *this;
+        }
+
+        NonTrivialPayload &operator=(NonTrivialPayload &&other) noexcept
+        {
+            value = other.value;
+            other.value = -1;
+            ++move_assigns;
+            return *this;
+        }
+
+        ~NonTrivialPayload() { --live; }
+
+        static void reset()
+        {
+            live = 0;
+            copies = 0;
+            moves = 0;
+            copy_assigns = 0;
+            move_assigns = 0;
+        }
+
+        int value;
+        static int live;
+        static int copies;
+        static int moves;
+        static int copy_assigns;
+        static int move_assigns;
+    };
+
+    int NonTrivialPayload::live = 0;
+    int NonTrivialPayload::copies = 0;
+    int NonTrivialPayload::moves = 0;
+    int NonTrivialPayload::copy_assigns = 0;
+    int NonTrivialPayload::move_assigns = 0;
 }  // namespace
 
 TEST(TValue, SmiUsesSameBasicProtocolAsTValue)
@@ -356,6 +423,94 @@ TEST(Expected, NoneTypedValueRepresentsNoneOrException)
     EXPECT_TRUE(success.has_value());
     EXPECT_EQ(Value::None(), success.value().raw_value());
     EXPECT_EQ(Value::None(), success.raw_value());
+}
+
+TEST(Expected, NonValueBackedSuccessUsesBoolWord)
+{
+    Expected<int32_t> expected = Expected<int32_t>::ok(42);
+
+    EXPECT_TRUE(expected.has_value());
+    EXPECT_FALSE(expected.has_exception());
+    EXPECT_TRUE(expected);
+    EXPECT_EQ(42, expected.value());
+    EXPECT_EQ(42, *expected);
+}
+
+TEST(Expected, NonValueBackedExceptionTracksPendingException)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Expected<int32_t> expected =
+        Expected<int32_t>::raise_exception(L"TypeError", L"bad value");
+
+    EXPECT_FALSE(expected.has_value());
+    EXPECT_TRUE(expected.has_exception());
+    EXPECT_FALSE(expected);
+    expect_pending_exception(context.thread(), L"TypeError", L"bad value");
+}
+
+TEST(Expected, TryMacroUnwrapsSuccessInNonValueExpectedReturningFunction)
+{
+    Expected<int32_t> result =
+        require_smi_then_return_int_for_test(Value::from_smi(42));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(42, result.value());
+}
+
+TEST(Expected, NonValueBackedSuccessManagesNonTrivialLifetime)
+{
+    NonTrivialPayload::reset();
+
+    {
+        Expected<NonTrivialPayload> expected =
+            Expected<NonTrivialPayload>::ok(NonTrivialPayload(7));
+
+        EXPECT_TRUE(expected.has_value());
+        EXPECT_EQ(7, expected.value().value);
+        EXPECT_EQ(1, NonTrivialPayload::live);
+    }
+
+    EXPECT_EQ(0, NonTrivialPayload::live);
+}
+
+TEST(Expected, NonValueBackedExceptionDoesNotConstructPayload)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    NonTrivialPayload::reset();
+
+    {
+        Expected<NonTrivialPayload> expected =
+            Expected<NonTrivialPayload>::raise_exception(L"TypeError",
+                                                         L"bad value");
+
+        EXPECT_TRUE(expected.has_exception());
+        EXPECT_EQ(0, NonTrivialPayload::live);
+    }
+
+    EXPECT_EQ(0, NonTrivialPayload::live);
+}
+
+TEST(Expected, NonValueBackedCopyAndMoveManageNonTrivialLifetime)
+{
+    NonTrivialPayload::reset();
+
+    {
+        Expected<NonTrivialPayload> original =
+            Expected<NonTrivialPayload>::ok(NonTrivialPayload(7));
+        Expected<NonTrivialPayload> copied = original;
+        Expected<NonTrivialPayload> moved = std::move(copied);
+
+        EXPECT_EQ(3, NonTrivialPayload::live);
+        EXPECT_EQ(7, original.value().value);
+        EXPECT_EQ(7, moved.value().value);
+        EXPECT_GE(NonTrivialPayload::copies, 1);
+        EXPECT_GE(NonTrivialPayload::moves, 1);
+    }
+
+    EXPECT_EQ(0, NonTrivialPayload::live);
 }
 
 TEST(Optional, ValueBackedNoneUsesNoneNiche)

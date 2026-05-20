@@ -3,7 +3,9 @@
 
 #include "value.h"
 #include <cassert>
+#include <new>
 #include <type_traits>
+#include <utility>
 
 namespace cl
 {
@@ -11,8 +13,6 @@ namespace cl
     struct CLInt;
     struct None;
     struct Bool;
-
-    template <typename T> class Expected;
 
     [[nodiscard]] Value
     set_pending_invalid_typed_value_error(NativeLayoutId native_layout);
@@ -32,6 +32,22 @@ namespace cl
         : std::true_type
     {
     };
+
+    template <typename T, typename = void> struct IsValueLike : std::false_type
+    {
+    };
+
+    template <typename T>
+    struct IsValueLike<
+        T, std::void_t<decltype(std::decay_t<T>::from_value_unchecked(
+               std::declval<Value>()))>> : std::true_type
+    {
+    };
+
+    // Expected<T> is split by storage representation. Value-like payloads can
+    // use Value::exception_marker() as an in-band exception niche; ordinary C++
+    // payloads need an explicit success flag and manually managed storage.
+    template <typename T, bool = IsValueLike<T>::value> class Expected;
 
     template <typename T, typename = void>
     struct HasSemanticType : std::false_type
@@ -150,10 +166,10 @@ namespace cl
     public:
         using semantic_type = T;
 
-        static Expected<TValue<T>> from_value_checked(Value value);
-        static Expected<TValue<T>> from_value_or_raise(Value value,
-                                                       const wchar_t *type_name,
-                                                       const wchar_t *message);
+        static Expected<TValue<T>, true> from_value_checked(Value value);
+        static Expected<TValue<T>, true>
+        from_value_or_raise(Value value, const wchar_t *type_name,
+                            const wchar_t *message);
         static TValue from_value_assumed(Value value)
         {
             assert(TValueTraits<T>::is_instance(value));
@@ -272,7 +288,9 @@ namespace cl
         Value value_;
     };
 
-    template <typename T> class Expected
+    // Compact Expected<T> representation for Value and TValue-like handles.
+    // The pending-exception state is carried by Value::exception_marker().
+    template <typename T> class Expected<T, true>
     {
     public:
         using semantic_type = typename T::semantic_type;
@@ -325,6 +343,152 @@ namespace cl
         Value value_;
     };
 
+    // General Expected<T> representation for non-Value payloads, such as AST
+    // indexes. This deliberately uses a bool word instead of sentinel values.
+    template <typename T> class Expected<T, false>
+    {
+    public:
+        using semantic_type = T;
+
+        Expected() = delete;
+
+        explicit Expected(T value) : has_value_(true)
+        {
+            new(&storage_) T(std::move(value));
+        }
+
+        Expected(const Expected &other) : has_value_(other.has_value_)
+        {
+            if(has_value_)
+            {
+                new(&storage_) T(other.value_ref());
+            }
+        }
+
+        Expected(Expected &&other) noexcept(
+            std::is_nothrow_move_constructible_v<T>)
+            : has_value_(other.has_value_)
+        {
+            if(has_value_)
+            {
+                new(&storage_) T(std::move(other.value_ref()));
+            }
+        }
+
+        Expected &operator=(const Expected &other)
+        {
+            if(this == &other)
+            {
+                return *this;
+            }
+            if(has_value_ && other.has_value_)
+            {
+                value_ref() = other.value_ref();
+            }
+            else if(has_value_)
+            {
+                destroy_value();
+                has_value_ = false;
+            }
+            else if(other.has_value_)
+            {
+                new(&storage_) T(other.value_ref());
+                has_value_ = true;
+            }
+            return *this;
+        }
+
+        Expected &operator=(Expected &&other) noexcept(
+            std::is_nothrow_move_constructible_v<T> &&
+            std::is_nothrow_move_assignable_v<T>)
+        {
+            if(this == &other)
+            {
+                return *this;
+            }
+            if(has_value_ && other.has_value_)
+            {
+                value_ref() = std::move(other.value_ref());
+            }
+            else if(has_value_)
+            {
+                destroy_value();
+                has_value_ = false;
+            }
+            else if(other.has_value_)
+            {
+                new(&storage_) T(std::move(other.value_ref()));
+                has_value_ = true;
+            }
+            return *this;
+        }
+
+        ~Expected()
+        {
+            if(has_value_)
+            {
+                destroy_value();
+            }
+        }
+
+        [[nodiscard]] static Expected ok(T value)
+        {
+            return Expected(std::move(value));
+        }
+
+        [[nodiscard]] static Expected raise_exception(const wchar_t *type_name,
+                                                      const wchar_t *message)
+        {
+            return Expected(ErrorTag{},
+                            raise_exception_for_expected(type_name, message));
+        }
+
+        [[nodiscard]] static Expected propagate_exception()
+        {
+            return Expected(ErrorTag{}, propagate_exception_for_expected());
+        }
+
+        bool has_value() const { return has_value_; }
+        bool has_exception() const { return !has_value_; }
+        explicit operator bool() const { return has_value(); }
+
+        T value() const &
+        {
+            assert(has_value());
+            return value_ref();
+        }
+
+        T value() &&
+        {
+            assert(has_value());
+            return std::move(value_ref());
+        }
+
+        T operator*() const { return value(); }
+
+    private:
+        struct ErrorTag
+        {
+        };
+
+        Expected(ErrorTag, Value value) : has_value_(false)
+        {
+            assert(value.is_exception_marker());
+        }
+
+        T &value_ref() { return *reinterpret_cast<T *>(&storage_); }
+
+        const T &value_ref() const
+        {
+            return *reinterpret_cast<const T *>(&storage_);
+        }
+
+        void destroy_value() { value_ref().~T(); }
+
+        bool has_value_;
+        std::aligned_storage_t<sizeof(T), alignof(T)> storage_;
+    };
+
     class PropagatedException
     {
     public:
@@ -344,7 +508,7 @@ namespace cl
     static_assert(sizeof(Expected<Value>) == sizeof(Value));
 
     template <typename T>
-    Expected<TValue<T>> TValue<T>::from_value_checked(Value value)
+    Expected<TValue<T>, true> TValue<T>::from_value_checked(Value value)
     {
         if(!TValueTraits<T>::is_instance(value))
         {
@@ -363,9 +527,9 @@ namespace cl
     }
 
     template <typename T>
-    Expected<TValue<T>> TValue<T>::from_value_or_raise(Value value,
-                                                       const wchar_t *type_name,
-                                                       const wchar_t *message)
+    Expected<TValue<T>, true>
+    TValue<T>::from_value_or_raise(Value value, const wchar_t *type_name,
+                                   const wchar_t *message)
     {
         if(!TValueTraits<T>::is_instance(value))
         {
