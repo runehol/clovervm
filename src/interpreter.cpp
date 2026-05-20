@@ -2451,7 +2451,7 @@ namespace cl
         static constexpr uint32_t create_class_instr_len = 3;
         uint8_t body_const_offset = pc[1];
         int8_t first_arg_reg = pc[2];
-        TValue<CodeObject> body_code = TValue<CodeObject>::from_value_assumed(
+        TValue2<CodeObject> body_code = TValue2<CodeObject>::from_value_assumed(
             code_object->constant_table[body_const_offset].value());
 
         const uint8_t *return_pc = pc + create_class_instr_len;
