@@ -82,8 +82,7 @@ namespace cl
                 {
                     for(int32_t param_idx: param_children)
                     {
-                        ensure_local_binding(analysis,
-                                             av.constants[param_idx].as_value(),
+                        ensure_local_binding(analysis, av.constants[param_idx],
                                              Presence::Present);
                     }
                 }
@@ -351,8 +350,8 @@ namespace cl
                 switch(kind.node_kind)
                 {
                     case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
-                        mark_global_validation_use(
-                            state, av.constants[node_idx].as_value());
+                        mark_global_validation_use(state,
+                                                   av.constants[node_idx]);
                         return;
 
                     case AstNodeKind::EXPRESSION_ATTRIBUTE:
@@ -382,11 +381,11 @@ namespace cl
                 {
                     if(augmented_assignment)
                     {
-                        mark_global_validation_use(
-                            state, av.constants[target_idx].as_value());
+                        mark_global_validation_use(state,
+                                                   av.constants[target_idx]);
                     }
-                    mark_global_validation_assignment(
-                        state, av.constants[target_idx].as_value());
+                    mark_global_validation_assignment(state,
+                                                      av.constants[target_idx]);
                     return;
                 }
 
@@ -422,8 +421,7 @@ namespace cl
                     case AstNodeKind::STATEMENT_GLOBAL:
                         for(int32_t name_idx: children)
                         {
-                            declare_global_name(
-                                state, av.constants[name_idx].as_value());
+                            declare_global_name(state, av.constants[name_idx]);
                         }
                         return;
 
@@ -440,7 +438,7 @@ namespace cl
                                 }
                             }
                             mark_global_validation_assignment(
-                                state, av.constants[node_idx].as_value());
+                                state, av.constants[node_idx]);
                             return;
                         }
 
@@ -451,7 +449,7 @@ namespace cl
                                                                    base_idx);
                         }
                         mark_global_validation_assignment(
-                            state, av.constants[node_idx].as_value());
+                            state, av.constants[node_idx]);
                         return;
 
                     case AstNodeKind::STATEMENT_ASSIGN:
@@ -478,7 +476,7 @@ namespace cl
                            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
                             mark_global_validation_annotation(
-                                state, av.constants[children[0]].as_value());
+                                state, av.constants[children[0]]);
                         }
                         else
                         {
@@ -583,8 +581,7 @@ namespace cl
                 {
                     for(int32_t param_idx: param_children)
                     {
-                        global_name_state(state,
-                                          av.constants[param_idx].as_value())
+                        global_name_state(state, av.constants[param_idx])
                             .parameter = true;
                     }
                 }
@@ -603,8 +600,8 @@ namespace cl
                     case AstNodeKind::STATEMENT_GLOBAL:
                         for(int32_t name_idx: children)
                         {
-                            ensure_global_binding(
-                                analysis, av.constants[name_idx].as_value());
+                            ensure_global_binding(analysis,
+                                                  av.constants[name_idx]);
                         }
                         return;
 
@@ -634,8 +631,8 @@ namespace cl
                     case AstNodeKind::STATEMENT_CLASS_DEF:
                         if(analysis.result.mode != CodegenMode::Module)
                         {
-                            ensure_local_binding(
-                                analysis, av.constants[node_idx].as_value());
+                            ensure_local_binding(analysis,
+                                                 av.constants[node_idx]);
                         }
                         return;
 
@@ -647,8 +644,8 @@ namespace cl
                                av.kinds[lhs_idx].node_kind ==
                                    AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                             {
-                                ensure_local_binding(
-                                    analysis, av.constants[lhs_idx].as_value());
+                                ensure_local_binding(analysis,
+                                                     av.constants[lhs_idx]);
                             }
                             break;
                         }
@@ -659,8 +656,8 @@ namespace cl
                            av.kinds[children[0]].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
-                            ensure_local_binding(
-                                analysis, av.constants[children[0]].as_value());
+                            ensure_local_binding(analysis,
+                                                 av.constants[children[0]]);
                         }
                         if(children.size() == 3)
                         {
@@ -681,8 +678,7 @@ namespace cl
                                    AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                                 {
                                     ensure_local_binding(
-                                        analysis,
-                                        av.constants[target_idx].as_value());
+                                        analysis, av.constants[target_idx]);
                                 }
                             }
                         }
@@ -695,9 +691,8 @@ namespace cl
                             if(av.kinds[target_idx].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                             {
-                                ensure_local_binding(
-                                    analysis,
-                                    av.constants[target_idx].as_value());
+                                ensure_local_binding(analysis,
+                                                     av.constants[target_idx]);
                             }
                         }
                         break;
@@ -710,9 +705,8 @@ namespace cl
                             if(av.kinds[target_idx].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                             {
-                                ensure_local_binding(
-                                    analysis,
-                                    av.constants[target_idx].as_value());
+                                ensure_local_binding(analysis,
+                                                     av.constants[target_idx]);
                             }
                         }
                         break;
@@ -722,8 +716,8 @@ namespace cl
                            analysis.result.mode != CodegenMode::Module)
                         {
                             int32_t name_idx = handler_name_idx(children);
-                            ensure_local_binding(
-                                analysis, av.constants[name_idx].as_value());
+                            ensure_local_binding(analysis,
+                                                 av.constants[name_idx]);
                         }
                         if(handler_has_type(children))
                         {
@@ -765,7 +759,7 @@ namespace cl
                 {
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
                     case AstNodeKind::STATEMENT_CLASS_DEF:
-                        mark_name(av.constants[node_idx].as_value());
+                        mark_name(av.constants[node_idx]);
                         return;
 
                     case AstNodeKind::STATEMENT_ASSIGN:
@@ -775,7 +769,7 @@ namespace cl
                             if(av.kinds[lhs_idx].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                             {
-                                mark_name(av.constants[lhs_idx].as_value());
+                                mark_name(av.constants[lhs_idx]);
                             }
                             break;
                         }
@@ -785,7 +779,7 @@ namespace cl
                            av.kinds[children[0]].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
-                            mark_name(av.constants[children[0]].as_value());
+                            mark_name(av.constants[children[0]]);
                         }
                         if(children.size() == 3)
                         {
@@ -805,7 +799,7 @@ namespace cl
                             if(av.kinds[target_idx].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                             {
-                                mark_name(av.constants[target_idx].as_value());
+                                mark_name(av.constants[target_idx]);
                             }
                         }
                         break;
@@ -814,7 +808,7 @@ namespace cl
                         if(av.kinds[children[0]].node_kind ==
                            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
-                            mark_name(av.constants[children[0]].as_value());
+                            mark_name(av.constants[children[0]]);
                         }
                         break;
 
@@ -823,15 +817,14 @@ namespace cl
                            av.kinds[children[1]].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
-                            mark_name(av.constants[children[1]].as_value());
+                            mark_name(av.constants[children[1]]);
                         }
                         break;
 
                     case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
                         if(handler_has_name(children))
                         {
-                            mark_name(av.constants[handler_name_idx(children)]
-                                          .as_value());
+                            mark_name(av.constants[handler_name_idx(children)]);
                         }
                         if(handler_has_type(children))
                         {
@@ -870,7 +863,7 @@ namespace cl
             {
                 assert(av.kinds[node_idx].node_kind ==
                        AstNodeKind::STATEMENT_ANN_ASSIGN);
-                return av.constants[node_idx].as_value() == Value::True();
+                return av.constants[node_idx] == Value::True();
             }
 
             FlowState merge_flow_states(const FlowState &left,
@@ -902,32 +895,29 @@ namespace cl
                 AstChildren children = av.children[node_idx];
 
                 auto annotate_read = [&](int32_t read_idx) {
-                    analysis.result.loads[read_idx] =
-                        make_access(analysis, av.constants[read_idx].as_value(),
-                                    state, true, true);
+                    analysis.result.loads[read_idx] = make_access(
+                        analysis, av.constants[read_idx], state, true, true);
                 };
                 auto annotate_write = [&](int32_t write_idx) {
                     analysis.result.stores[write_idx] = make_access(
-                        analysis, av.constants[write_idx].as_value(), state,
-                        false, false);
+                        analysis, av.constants[write_idx], state, false, false);
                     mark_local_presence(analysis, state,
-                                        av.constants[write_idx].as_value(),
+                                        av.constants[write_idx],
                                         Presence::Present);
                 };
                 auto annotate_delete = [&](int32_t delete_idx) {
                     analysis.result.deletes[delete_idx] = make_access(
-                        analysis, av.constants[delete_idx].as_value(), state,
-                        false, true);
+                        analysis, av.constants[delete_idx], state, false, true);
                     mark_local_presence(analysis, state,
-                                        av.constants[delete_idx].as_value(),
+                                        av.constants[delete_idx],
                                         Presence::Missing);
                 };
                 auto annotate_named_definition = [&](int32_t definition_idx) {
-                    analysis.result.stores[definition_idx] = make_access(
-                        analysis, av.constants[definition_idx].as_value(),
-                        state, false, false);
+                    analysis.result.stores[definition_idx] =
+                        make_access(analysis, av.constants[definition_idx],
+                                    state, false, false);
                     mark_local_presence(analysis, state,
-                                        av.constants[definition_idx].as_value(),
+                                        av.constants[definition_idx],
                                         Presence::Present);
                 };
 
@@ -1089,8 +1079,7 @@ namespace cl
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                             {
                                 int32_t target_binding_idx = find_binding_idx(
-                                    analysis,
-                                    av.constants[target_idx].as_value());
+                                    analysis, av.constants[target_idx]);
                                 if(target_binding_idx >= 0)
                                 {
                                     modified[size_t(target_binding_idx)] = true;
@@ -1111,14 +1100,12 @@ namespace cl
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                             {
                                 analysis.result.stores[target_idx] =
-                                    make_access(
-                                        analysis,
-                                        av.constants[target_idx].as_value(),
-                                        body_state, false, false);
-                                mark_local_presence(
-                                    analysis, body_state,
-                                    av.constants[target_idx].as_value(),
-                                    Presence::Present);
+                                    make_access(analysis,
+                                                av.constants[target_idx],
+                                                body_state, false, false);
+                                mark_local_presence(analysis, body_state,
+                                                    av.constants[target_idx],
+                                                    Presence::Present);
                             }
                             analyze_flow_node(analysis, body_idx, body_state);
 

@@ -471,7 +471,7 @@ TEST(Parser, float_literal_stores_constant_value)
     EXPECT_TRUE(parsed.ast.kinds[literal_idx].operator_kind ==
                 AstOperatorKind::NUMBER);
 
-    Value constant = parsed.ast.constants[literal_idx].as_value();
+    Value constant = parsed.ast.constants[literal_idx];
     ASSERT_TRUE(can_convert_to<Float>(constant));
     EXPECT_DOUBLE_EQ(1.5, constant.get_ptr<Float>()->value);
 }

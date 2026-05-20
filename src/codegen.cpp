@@ -41,8 +41,7 @@ namespace cl
             OpTableEntry(Bytecode::Sub, Bytecode::SubSmi);
         t.table[size_t(AstOperatorKind::MULTIPLY)] =
             OpTableEntry(Bytecode::Mul, Bytecode::MulSmi);
-        t.table[size_t(AstOperatorKind::DIVIDE)] =
-            OpTableEntry(Bytecode::Div);
+        t.table[size_t(AstOperatorKind::DIVIDE)] = OpTableEntry(Bytecode::Div);
         t.table[size_t(AstOperatorKind::INT_DIVIDE)] =
             OpTableEntry(Bytecode::IntDiv, Bytecode::IntDivSmi);
         t.table[size_t(AstOperatorKind::POWER)] =
@@ -195,7 +194,7 @@ namespace cl
                 return std::nullopt;
             }
 
-            Value rhs = av.constants[rhs_idx].as_value();
+            Value rhs = av.constants[rhs_idx];
             if(!rhs.is_smi8())
             {
                 return std::nullopt;
@@ -256,7 +255,7 @@ namespace cl
         {
             assert(av.kinds[node_idx].node_kind ==
                    AstNodeKind::STATEMENT_ANN_ASSIGN);
-            return av.constants[node_idx].as_value() == Value::True();
+            return av.constants[node_idx] == Value::True();
         }
 
         const NameAccessAnalysis &load_access(int32_t node_idx) const
@@ -536,7 +535,7 @@ namespace cl
             {
                 throw std::runtime_error(error_message);
             }
-            return av.constants[node_idx].as_value();
+            return av.constants[node_idx];
         }
 
         Value builtin_class_constant_from_name_reference(
@@ -1802,8 +1801,7 @@ namespace cl
 
                             case AstOperatorKind::NUMBER:
                                 {
-                                    Value val =
-                                        av.constants[node_idx].as_value();
+                                    Value val = av.constants[node_idx];
                                     if(val.is_smi8())
                                     {
                                         code_obj->emit_lda_smi(source_offset,
@@ -2242,7 +2240,7 @@ namespace cl
             return Value::None();
         }
 
-        return av.constants[expression_idx].as_value();
+        return av.constants[expression_idx];
     }
 
     CodeObject *codegen_function(const AstVector &av, Scope *module_scope,
