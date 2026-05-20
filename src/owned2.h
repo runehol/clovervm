@@ -57,7 +57,7 @@ namespace cl
 
         Owned2 &operator=(T value)
         {
-            reset(value);
+            assign(value);
             return *this;
         }
 
@@ -65,14 +65,14 @@ namespace cl
         {
             if(this != &other)
             {
-                reset(other.value_);
+                assign(other.value_);
             }
             return *this;
         }
 
         Owned2 &operator=(const Member2<T> &other)
         {
-            reset(other.value());
+            assign(other.value());
             return *this;
         }
 
@@ -89,7 +89,7 @@ namespace cl
         }
 
     private:
-        void reset(T value)
+        void assign(T value)
         {
             incref_value_state(value);
             decref_value_state(value_);
@@ -121,7 +121,7 @@ namespace cl
 
         Member2 &operator=(T value)
         {
-            reset(value);
+            assign(value);
             return *this;
         }
 
@@ -129,14 +129,14 @@ namespace cl
         {
             if(this != &other)
             {
-                reset(other.value_);
+                assign(other.value_);
             }
             return *this;
         }
 
         Member2 &operator=(const Owned2<T> &other)
         {
-            reset(other.value());
+            assign(other.value());
             return *this;
         }
 
@@ -157,7 +157,7 @@ namespace cl
         void release_ref() { decref_value_state(value_); }
 
     private:
-        void reset(T value)
+        void assign(T value)
         {
             incref_value_state(value);
             decref_value_state(value_);
@@ -178,39 +178,29 @@ namespace cl
         OwnedHeapPtr2(const OwnedHeapPtr2 &other) : ptr_(retain_ref(other.ptr_))
         {
         }
-        OwnedHeapPtr2(OwnedHeapPtr2 &&other) noexcept : ptr_(other.release()) {}
 
-        ~OwnedHeapPtr2() { release_ref(ptr_); }
+        ~OwnedHeapPtr2() { release_ptr(ptr_); }
 
         OwnedHeapPtr2 &operator=(T *ptr)
         {
-            reset(ptr);
+            assign(ptr);
             return *this;
         }
         OwnedHeapPtr2 &operator=(std::nullptr_t)
         {
-            clear();
+            assign(nullptr);
             return *this;
         }
         OwnedHeapPtr2 &operator=(HeapPtr<T> ptr)
         {
-            reset(ptr.get());
+            assign(ptr.get());
             return *this;
         }
         OwnedHeapPtr2 &operator=(const OwnedHeapPtr2 &other)
         {
             if(this != &other)
             {
-                reset(other.ptr_);
-            }
-            return *this;
-        }
-        OwnedHeapPtr2 &operator=(OwnedHeapPtr2 &&other) noexcept
-        {
-            if(this != &other)
-            {
-                release_ref(ptr_);
-                ptr_ = other.release();
+                assign(other.ptr_);
             }
             return *this;
         }
@@ -223,34 +213,21 @@ namespace cl
         bool operator==(std::nullptr_t) const { return ptr_ == nullptr; }
         bool operator!=(std::nullptr_t) const { return ptr_ != nullptr; }
 
-        void reset(T *ptr)
+    private:
+        void assign(T *ptr)
         {
             T *new_ptr = retain_ref(ptr);
-            release_ref(ptr_);
+            release_ptr(ptr_);
             ptr_ = new_ptr;
         }
 
-        void clear()
-        {
-            release_ref(ptr_);
-            ptr_ = nullptr;
-        }
-
-        T *release()
-        {
-            T *released = ptr_;
-            ptr_ = nullptr;
-            return released;
-        }
-
-    private:
         static T *retain_ref(T *ptr)
         {
             incref_heap_ptr(ptr);
             return ptr;
         }
 
-        static void release_ref(T *ptr) { decref_heap_ptr(ptr); }
+        static void release_ptr(T *ptr) { decref_heap_ptr(ptr); }
 
         T *ptr_;
     };
@@ -267,39 +244,27 @@ namespace cl
             : ptr_(retain_ref(other.ptr_))
         {
         }
-        MemberHeapPtr2(MemberHeapPtr2 &&other) noexcept : ptr_(other.release())
-        {
-        }
 
         MemberHeapPtr2 &operator=(T *ptr)
         {
-            reset(ptr);
+            assign(ptr);
             return *this;
         }
         MemberHeapPtr2 &operator=(std::nullptr_t)
         {
-            clear();
+            assign(nullptr);
             return *this;
         }
         MemberHeapPtr2 &operator=(HeapPtr<T> ptr)
         {
-            reset(ptr.get());
+            assign(ptr.get());
             return *this;
         }
         MemberHeapPtr2 &operator=(const MemberHeapPtr2 &other)
         {
             if(this != &other)
             {
-                reset(other.ptr_);
-            }
-            return *this;
-        }
-        MemberHeapPtr2 &operator=(MemberHeapPtr2 &&other) noexcept
-        {
-            if(this != &other)
-            {
-                release_ref(ptr_);
-                ptr_ = other.release();
+                assign(other.ptr_);
             }
             return *this;
         }
@@ -312,34 +277,25 @@ namespace cl
         bool operator==(std::nullptr_t) const { return ptr_ == nullptr; }
         bool operator!=(std::nullptr_t) const { return ptr_ != nullptr; }
 
-        void reset(T *ptr)
+        // For custom heap-object dealloc paths. Leaves the member pointer
+        // unchanged; the containing object must not use the member afterward.
+        void release_ref() { release_ptr(ptr_); }
+
+    private:
+        void assign(T *ptr)
         {
             T *new_ptr = retain_ref(ptr);
-            release_ref(ptr_);
+            release_ptr(ptr_);
             ptr_ = new_ptr;
         }
 
-        void clear()
-        {
-            release_ref(ptr_);
-            ptr_ = nullptr;
-        }
-
-        T *release()
-        {
-            T *released = ptr_;
-            ptr_ = nullptr;
-            return released;
-        }
-
-    private:
         static T *retain_ref(T *ptr)
         {
             incref_heap_ptr(ptr);
             return ptr;
         }
 
-        static void release_ref(T *ptr) { decref_heap_ptr(ptr); }
+        static void release_ptr(T *ptr) { decref_heap_ptr(ptr); }
 
         T *ptr_;
     };

@@ -51,13 +51,12 @@ namespace cl
                   HandleTraits<Handle>::retain_ref(static_cast<Handle>(other)))
         {
         }
-        Owned(Owned &&other) noexcept : handle_(other.release()) {}
 
         ~Owned() { HandleTraits<Handle>::release_ref(handle_); }
 
         Owned &operator=(Value value)
         {
-            reset(HandleTraits<Handle>::from_value(value));
+            assign(HandleTraits<Handle>::from_value(value));
             return *this;
         }
 
@@ -65,7 +64,7 @@ namespace cl
                   typename = std::enable_if_t<!std::is_same_v<H, Value>>>
         Owned &operator=(H handle)
         {
-            reset(handle);
+            assign(handle);
             return *this;
         }
 
@@ -73,24 +72,14 @@ namespace cl
         {
             if(this != &other)
             {
-                reset(other.handle_);
-            }
-            return *this;
-        }
-
-        Owned &operator=(Owned &&other) noexcept
-        {
-            if(this != &other)
-            {
-                HandleTraits<Handle>::release_ref(handle_);
-                handle_ = other.release();
+                assign(other.handle_);
             }
             return *this;
         }
 
         Owned &operator=(const Member<Handle> &other)
         {
-            reset(static_cast<Handle>(other));
+            assign(static_cast<Handle>(other));
             return *this;
         }
 
@@ -112,27 +101,14 @@ namespace cl
         bool operator==(Value value) const { return raw_value() == value; }
         bool operator!=(Value value) const { return raw_value() != value; }
 
-        void reset(Handle handle)
+    private:
+        void assign(Handle handle)
         {
             HandleTraits<Handle>::retain_ref(handle);
             HandleTraits<Handle>::release_ref(handle_);
             handle_ = handle;
         }
 
-        void clear()
-        {
-            HandleTraits<Handle>::release_ref(handle_);
-            handle_ = HandleTraits<Handle>::none();
-        }
-
-        Handle release()
-        {
-            Handle released = handle_;
-            handle_ = HandleTraits<Handle>::none();
-            return released;
-        }
-
-    private:
         Handle handle_;
     };
 
@@ -164,11 +140,10 @@ namespace cl
                   HandleTraits<Handle>::retain_ref(static_cast<Handle>(other)))
         {
         }
-        Member(Member &&other) noexcept : handle_(other.release()) {}
 
         Member &operator=(Value value)
         {
-            reset(HandleTraits<Handle>::from_value(value));
+            assign(HandleTraits<Handle>::from_value(value));
             return *this;
         }
 
@@ -176,7 +151,7 @@ namespace cl
                   typename = std::enable_if_t<!std::is_same_v<H, Value>>>
         Member &operator=(H handle)
         {
-            reset(handle);
+            assign(handle);
             return *this;
         }
 
@@ -184,24 +159,14 @@ namespace cl
         {
             if(this != &other)
             {
-                reset(other.handle_);
-            }
-            return *this;
-        }
-
-        Member &operator=(Member &&other) noexcept
-        {
-            if(this != &other)
-            {
-                HandleTraits<Handle>::release_ref(handle_);
-                handle_ = other.release();
+                assign(other.handle_);
             }
             return *this;
         }
 
         Member &operator=(const Owned<Handle> &other)
         {
-            reset(static_cast<Handle>(other));
+            assign(static_cast<Handle>(other));
             return *this;
         }
 
@@ -223,29 +188,16 @@ namespace cl
         bool operator==(Value value) const { return raw_value() == value; }
         bool operator!=(Value value) const { return raw_value() != value; }
 
-        void reset(Handle handle)
+        void release_ref() { HandleTraits<Handle>::release_ref(handle_); }
+
+    private:
+        void assign(Handle handle)
         {
             HandleTraits<Handle>::retain_ref(handle);
             HandleTraits<Handle>::release_ref(handle_);
             handle_ = handle;
         }
 
-        void clear()
-        {
-            HandleTraits<Handle>::release_ref(handle_);
-            handle_ = HandleTraits<Handle>::none();
-        }
-
-        Handle release()
-        {
-            Handle released = handle_;
-            handle_ = HandleTraits<Handle>::none();
-            return released;
-        }
-
-        void release_ref() { HandleTraits<Handle>::release_ref(handle_); }
-
-    private:
         Handle handle_;
     };
 

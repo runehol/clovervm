@@ -137,7 +137,7 @@ namespace cl
         catch(...)
         {
             range_builtin = Value::None();
-            builtin_scope.clear();
+            builtin_scope = nullptr;
             throw;
         }
     }
@@ -148,7 +148,7 @@ namespace cl
         {
             ThreadState::ActivationScope activation_scope(threads[0].get());
             range_builtin = Value::None();
-            builtin_scope.clear();
+            builtin_scope = nullptr;
         }
     }
 

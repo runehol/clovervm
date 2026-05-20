@@ -153,18 +153,17 @@ TEST(OwnedTValue, RetainsAndExposesTypedPointers)
     String *string = context.thread()->make_internal_raw<String>(L"owned");
     EXPECT_EQ(0, string->refcount);
 
-    OwnedTValue<String> owned_string(Value::from_oop(string));
-    EXPECT_EQ(1, string->refcount);
-    EXPECT_EQ(string, owned_string.extract());
-    EXPECT_STREQ(L"owned", owned_string.extract()->data);
-    EXPECT_EQ(Value::from_oop(string), owned_string.raw_value());
-    EXPECT_EQ(Value::from_oop(string), owned_string.value().raw_value());
-    TValue<String> borrowed_string = owned_string;
-    EXPECT_EQ(string, borrowed_string.extract());
-
-    Value released = owned_string.release();
-    EXPECT_EQ(Value::from_oop(string), released);
-    EXPECT_EQ(1, string->refcount);
+    {
+        OwnedTValue<String> owned_string(Value::from_oop(string));
+        EXPECT_EQ(1, string->refcount);
+        EXPECT_EQ(string, owned_string.extract());
+        EXPECT_STREQ(L"owned", owned_string.extract()->data);
+        EXPECT_EQ(Value::from_oop(string), owned_string.raw_value());
+        EXPECT_EQ(Value::from_oop(string), owned_string.value().raw_value());
+        TValue<String> borrowed_string = owned_string;
+        EXPECT_EQ(string, borrowed_string.extract());
+    }
+    EXPECT_EQ(0, string->refcount);
 }
 
 TEST(OwnedTValue, CheckedConstructionThrowsOnWrongType)
@@ -199,9 +198,8 @@ TEST(OwnedTValue, SmiActsAsOwnedHandleWithoutRefcounting)
     EXPECT_EQ(Value::from_smi(42), owned_smi.raw_value());
     EXPECT_EQ(Value::from_smi(42), owned_smi.value().raw_value());
 
-    Value released = owned_smi.release();
-    EXPECT_EQ(Value::from_smi(42), released);
-    EXPECT_EQ(Value::None(), owned_smi.raw_value());
+    OwnedTValue<SMI> copied_smi(owned_smi);
+    EXPECT_EQ(Value::from_smi(42), copied_smi.raw_value());
 }
 
 TEST(OwnedTValue, ClIntActsAsOwnedIntegerHandle)
@@ -210,7 +208,6 @@ TEST(OwnedTValue, ClIntActsAsOwnedIntegerHandle)
 
     EXPECT_EQ(Value::from_smi(42), owned_integer.raw_value());
 
-    Value released = owned_integer.release();
-    EXPECT_EQ(Value::from_smi(42), released);
-    EXPECT_EQ(Value::None(), owned_integer.raw_value());
+    OwnedTValue<CLInt> copied_integer(owned_integer);
+    EXPECT_EQ(Value::from_smi(42), copied_integer.raw_value());
 }

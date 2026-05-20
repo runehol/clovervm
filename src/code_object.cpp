@@ -16,8 +16,8 @@ namespace cl
         decref_heap_ptr(code_object->shape);
         code_object->shape = nullptr;
 
-        decref_heap_ptr(code_object->module_scope.release());
-        decref_heap_ptr(code_object->local_scope.release());
+        code_object->module_scope.release_ref();
+        code_object->local_scope.release_ref();
         code_object->name.release_ref();
         code_object->docstring.release_ref();
 
