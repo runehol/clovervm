@@ -93,7 +93,7 @@ namespace cl
             Owned<TValue2<String>> name;
             ShapeTransitionVerb verb;
             DescriptorFlags descriptor_flags;
-            OwnedHeapPtr2<Shape> next_shape;
+            OwnedHeapPtr<Shape> next_shape;
         };
 
         Shape(TValue2<ClassObject> class_value, Shape *previous_shape,

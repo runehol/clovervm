@@ -176,36 +176,36 @@ namespace cl
         T value_;
     };
 
-    template <typename T> class OwnedHeapPtr2
+    template <typename T> class OwnedHeapPtr
     {
     public:
-        OwnedHeapPtr2() : ptr_(nullptr) {}
-        OwnedHeapPtr2(std::nullptr_t) : ptr_(nullptr) {}
-        explicit OwnedHeapPtr2(T *ptr) : ptr_(retain_ref(ptr)) {}
-        explicit OwnedHeapPtr2(HeapPtr<T> ptr) : OwnedHeapPtr2(ptr.get()) {}
+        OwnedHeapPtr() : ptr_(nullptr) {}
+        OwnedHeapPtr(std::nullptr_t) : ptr_(nullptr) {}
+        explicit OwnedHeapPtr(T *ptr) : ptr_(retain_ref(ptr)) {}
+        explicit OwnedHeapPtr(HeapPtr<T> ptr) : OwnedHeapPtr(ptr.get()) {}
 
-        OwnedHeapPtr2(const OwnedHeapPtr2 &other) : ptr_(retain_ref(other.ptr_))
+        OwnedHeapPtr(const OwnedHeapPtr &other) : ptr_(retain_ref(other.ptr_))
         {
         }
 
-        ~OwnedHeapPtr2() { release_ptr(ptr_); }
+        ~OwnedHeapPtr() { release_ptr(ptr_); }
 
-        OwnedHeapPtr2 &operator=(T *ptr)
+        OwnedHeapPtr &operator=(T *ptr)
         {
             assign(ptr);
             return *this;
         }
-        OwnedHeapPtr2 &operator=(std::nullptr_t)
+        OwnedHeapPtr &operator=(std::nullptr_t)
         {
             assign(nullptr);
             return *this;
         }
-        OwnedHeapPtr2 &operator=(HeapPtr<T> ptr)
+        OwnedHeapPtr &operator=(HeapPtr<T> ptr)
         {
             assign(ptr.get());
             return *this;
         }
-        OwnedHeapPtr2 &operator=(const OwnedHeapPtr2 &other)
+        OwnedHeapPtr &operator=(const OwnedHeapPtr &other)
         {
             if(this != &other)
             {
@@ -241,35 +241,34 @@ namespace cl
         T *ptr_;
     };
 
-    template <typename T> class MemberHeapPtr2
+    template <typename T> class MemberHeapPtr
     {
     public:
-        MemberHeapPtr2() : ptr_(nullptr) {}
-        MemberHeapPtr2(std::nullptr_t) : ptr_(nullptr) {}
-        explicit MemberHeapPtr2(T *ptr) : ptr_(retain_ref(ptr)) {}
-        explicit MemberHeapPtr2(HeapPtr<T> ptr) : MemberHeapPtr2(ptr.get()) {}
+        MemberHeapPtr() : ptr_(nullptr) {}
+        MemberHeapPtr(std::nullptr_t) : ptr_(nullptr) {}
+        explicit MemberHeapPtr(T *ptr) : ptr_(retain_ref(ptr)) {}
+        explicit MemberHeapPtr(HeapPtr<T> ptr) : MemberHeapPtr(ptr.get()) {}
 
-        MemberHeapPtr2(const MemberHeapPtr2 &other)
-            : ptr_(retain_ref(other.ptr_))
+        MemberHeapPtr(const MemberHeapPtr &other) : ptr_(retain_ref(other.ptr_))
         {
         }
 
-        MemberHeapPtr2 &operator=(T *ptr)
+        MemberHeapPtr &operator=(T *ptr)
         {
             assign(ptr);
             return *this;
         }
-        MemberHeapPtr2 &operator=(std::nullptr_t)
+        MemberHeapPtr &operator=(std::nullptr_t)
         {
             assign(nullptr);
             return *this;
         }
-        MemberHeapPtr2 &operator=(HeapPtr<T> ptr)
+        MemberHeapPtr &operator=(HeapPtr<T> ptr)
         {
             assign(ptr.get());
             return *this;
         }
-        MemberHeapPtr2 &operator=(const MemberHeapPtr2 &other)
+        MemberHeapPtr &operator=(const MemberHeapPtr &other)
         {
             if(this != &other)
             {
@@ -309,8 +308,8 @@ namespace cl
         T *ptr_;
     };
 
-    static_assert(sizeof(OwnedHeapPtr2<HeapObject>) == sizeof(HeapObject *));
-    static_assert(sizeof(MemberHeapPtr2<HeapObject>) == sizeof(HeapObject *));
+    static_assert(sizeof(OwnedHeapPtr<HeapObject>) == sizeof(HeapObject *));
+    static_assert(sizeof(MemberHeapPtr<HeapObject>) == sizeof(HeapObject *));
 
 }  // namespace cl
 

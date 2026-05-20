@@ -138,8 +138,8 @@ namespace cl
         {
         }
 
-        MemberHeapPtr2<Scope> module_scope;
-        MemberHeapPtr2<Scope> local_scope;
+        MemberHeapPtr<Scope> module_scope;
+        MemberHeapPtr<Scope> local_scope;
         Member<Value> name;
         Member<Optional<TValue2<String>>> docstring;
         const CompilationUnit *compilation_unit;

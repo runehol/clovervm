@@ -244,7 +244,7 @@ namespace cl
 
         Member<TValue2<SMI>> size_value;
         Member<TValue2<SMI>> capacity_value;
-        MemberHeapPtr2<Backing> backing;
+        MemberHeapPtr<Backing> backing;
     };
 
     template <typename T> class ValueArray
@@ -514,7 +514,7 @@ namespace cl
 
         Member<TValue2<SMI>> size_value;
         Member<TValue2<SMI>> capacity_value;
-        MemberHeapPtr2<Backing> backing;
+        MemberHeapPtr<Backing> backing;
     };
 
     template <typename T> class HeapPtrArray
@@ -701,7 +701,7 @@ namespace cl
 
         Member<TValue2<SMI>> size_value;
         Member<TValue2<SMI>> capacity_value;
-        MemberHeapPtr2<Backing> backing;
+        MemberHeapPtr<Backing> backing;
     };
 
 }  // namespace cl

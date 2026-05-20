@@ -264,7 +264,7 @@ namespace cl
         std::array<CodeObject *, MaxCloverFunctionEntryAdapterArgs + 1>
             clover_function_entry_adapters = {};
         std::vector<ClassObject *> builtin_classes;
-        OwnedHeapPtr2<Scope> builtin_scope;
+        OwnedHeapPtr<Scope> builtin_scope;
         Owned<Value> range_builtin;
         bool safepoint_requested_ = false;
         bool fire_every_safepoint_for_testing_ = false;

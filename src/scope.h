@@ -169,7 +169,7 @@ namespace cl
         int32_t allocate_slot(TValue<String> key, Value initial_value);
         void revive_slot(int32_t slot_idx);
 
-        MemberHeapPtr2<Scope> parent_scope;
+        MemberHeapPtr<Scope> parent_scope;
         RawArray<int32_t> name_table;
         RawArray<Entry> entries;
         ValueArray<Value> slot_values;
