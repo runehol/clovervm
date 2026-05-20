@@ -3,6 +3,7 @@
 
 #include "owned.h"
 #include "value.h"
+#include "value_state.h"
 #include <absl/container/inlined_vector.h>
 #include <cassert>
 #include <cstdint>
@@ -372,6 +373,13 @@ namespace cl
             return idx;
         }
 
+        template <typename T>
+        int32_t emplace_back(AstKind kind, uint32_t source_offset,
+                             TValue2<T> constant)
+        {
+            return emplace_back(kind, source_offset, constant.raw_value());
+        }
+
         int32_t emplace_back(AstKind kind, uint32_t source_offset,
                              AstChildren child_vec,
                              Value constant = Value::None())
@@ -382,6 +390,14 @@ namespace cl
             children.emplace_back(child_vec);
             constants.emplace_back(constant);
             return idx;
+        }
+
+        template <typename T>
+        int32_t emplace_back(AstKind kind, uint32_t source_offset,
+                             AstChildren child_vec, TValue2<T> constant)
+        {
+            return emplace_back(kind, source_offset, child_vec,
+                                constant.raw_value());
         }
     };
 
