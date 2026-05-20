@@ -3,7 +3,7 @@
 
 #include "builtin_class_registry.h"
 #include "object.h"
-#include "typed_value.h"
+#include "value_state.h"
 #include "vm_array.h"
 
 namespace cl
@@ -16,19 +16,19 @@ namespace cl
         class Entry
         {
         public:
-            Entry(Value _key, Value _value, TValue<SMI> _hash)
+            Entry(Value _key, Value _value, TValue2<SMI> _hash)
                 : key(_key), value(_value), hash(_hash)
             {
             }
             Value key;
             Value value;
-            TValue<SMI> hash;
+            TValue2<SMI> hash;
             bool valid() const { return !key.is_not_present(); }
             void invalidate()
             {
                 key = Value::not_present();
                 value = Value::None();
-                hash = TValue<SMI>::from_smi(0);
+                hash = TValue2<SMI>::from_smi(0);
             }
         };
 
@@ -87,9 +87,10 @@ namespace cl
 
         const int32_t *find_entry(Value key) const;
         const int32_t *
-        find_entry_with_provided_hash(Value key, TValue<SMI> hash_smi) const;
+        find_entry_with_provided_hash(Value key, TValue2<SMI> hash_smi) const;
         int32_t *find_entry(Value key);
-        int32_t *find_entry_with_provided_hash(Value key, TValue<SMI> hash_smi);
+        int32_t *find_entry_with_provided_hash(Value key,
+                                               TValue2<SMI> hash_smi);
 
         void grow();
 

@@ -16,9 +16,9 @@ namespace cl
       TODO: these just assume string keys. replace with full equality machinery
       when we have calling Python-defined methods from C++ up and running */
 
-    static TValue<SMI> internal_hash(Value key)
+    static TValue2<SMI> internal_hash(Value key)
     {
-        return TValue<SMI>::from_smi(
+        return TValue2<SMI>::from_smi(
             string_hash(TValue2<String>::from_value_unchecked(key)));
     }
 
@@ -169,7 +169,7 @@ namespace cl
     }
 
     int32_t *Dict::find_entry_with_provided_hash(Value key,
-                                                 TValue<SMI> hash_smi)
+                                                 TValue2<SMI> hash_smi)
     {
         const Dict *self = this;
         return const_cast<int32_t *>(
@@ -177,7 +177,7 @@ namespace cl
     }
 
     const int32_t *
-    Dict::find_entry_with_provided_hash(Value key, TValue<SMI> hash_smi) const
+    Dict::find_entry_with_provided_hash(Value key, TValue2<SMI> hash_smi) const
     {
         uint64_t hash = hash_smi.extract();
         uint32_t hash_table_size_m1 = hash_table.size() - 1;
@@ -233,7 +233,7 @@ namespace cl
         if(idx >= 0)
         {
             entries.set(idx, Entry(Value::not_present(), Value::None(),
-                                   TValue<SMI>::from_smi(0)));
+                                   TValue2<SMI>::from_smi(0)));
             *iidx = tombstone;
             --n_valid_entries;
             return Value::None();
@@ -251,7 +251,7 @@ namespace cl
             grow();
         }
 
-        TValue<SMI> hash = internal_hash(key);
+        TValue2<SMI> hash = internal_hash(key);
         int32_t *entry = find_entry_with_provided_hash(key, hash);
         int32_t idx = *entry;
         if(idx < 0)
@@ -306,7 +306,7 @@ namespace cl
             ++write_idx;
         }
         entries.resize(write_idx, Entry(Value::not_present(), Value::None(),
-                                        TValue<SMI>::from_smi(0)));
+                                        TValue2<SMI>::from_smi(0)));
         assert(entries.size() == n_valid_entries);
     }
 
