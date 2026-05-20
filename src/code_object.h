@@ -141,8 +141,8 @@ namespace cl
 
         MemberHeapPtr2<Scope> module_scope;
         MemberHeapPtr2<Scope> local_scope;
-        MemberValue name;
-        MemberValue docstring;
+        Member2<Value> name;
+        Member2<Value> docstring;
         const CompilationUnit *compilation_unit;
 
         uint32_t n_parameters = 0;

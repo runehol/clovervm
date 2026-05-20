@@ -175,7 +175,7 @@ namespace cl
         Value name() const
         {
             assert(code_obj != nullptr);
-            return code_obj->name.as_value();
+            return code_obj->name;
         }
 
         void set_name(Value name)

@@ -18,8 +18,8 @@ namespace cl
 
         decref_heap_ptr(code_object->module_scope.release());
         decref_heap_ptr(code_object->local_scope.release());
-        decref(code_object->name.release());
-        decref(code_object->docstring.release());
+        code_object->name.release_ref();
+        code_object->docstring.release_ref();
 
         for(OwnedValue &constant: code_object->constant_table)
         {
