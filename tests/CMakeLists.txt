@@ -42,10 +42,9 @@ gtest_discover_tests(test_clovervm
 	WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 	DISCOVERY_MODE PRE_TEST)
 
-set(CMAKE_CTEST_COMMAND ctest --progress --output-on-failure)
-
 add_custom_target(check
-COMMAND ${CMAKE_CTEST_COMMAND}
+COMMAND test_clovervm --gtest_brief=1
 DEPENDS test_clovervm
+WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 USES_TERMINAL
 )
