@@ -88,6 +88,27 @@ TEST(NativeLayoutDescriptor, SlotObjectCarriesAttributeStorageCells)
               SlotObject::native_static_release_count());
 }
 
+TEST(NativeLayout, ObjectAndValueConversionHelpersUseExactLayout)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    String *string = context.thread()->make_internal_raw<String>(L"layout");
+    Value string_value = Value::from_oop(string);
+    Object *object = string_value.get_ptr<Object>();
+
+    EXPECT_EQ(NativeLayoutId::String, object->native_layout_id());
+    EXPECT_TRUE(can_convert_to<String>(object));
+    EXPECT_FALSE(can_convert_to<Dict>(object));
+    EXPECT_EQ(string, try_convert_to<String>(object));
+    EXPECT_EQ(nullptr, try_convert_to<Dict>(object));
+    EXPECT_EQ(string, assume_convert_to<String>(object));
+    EXPECT_TRUE(can_convert_to<String>(string_value));
+    EXPECT_EQ(string, try_convert_to<String>(string_value));
+    EXPECT_EQ(string, assume_convert_to<String>(string_value));
+    EXPECT_EQ(nullptr, try_convert_to<String>(Value::None()));
+}
+
 TEST(NativeLayoutDescriptor, ListNativeReleaseSpanStartsAtInheritedObjectCells)
 {
     const ReleaseDescriptor &release =

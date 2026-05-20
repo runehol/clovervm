@@ -60,6 +60,13 @@ TEST(TValue, SmiFactoryAndExtractUseTrait)
     EXPECT_EQ(42, smi.extract());
 }
 
+TEST(TValue, ClIntAcceptsCurrentIntegerRepresentation)
+{
+    TValue<CLInt> integer = TValue<CLInt>::from_smi(42);
+
+    EXPECT_EQ(Value::from_smi(42), integer.raw_value());
+}
+
 TEST(TValue, StringRoundTripsObjectPointer)
 {
     test::VmTestContext context;
@@ -77,11 +84,12 @@ TEST(TValue, OopFactoryAndExtractUseNativeLayoutTrait)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    String *string = context.thread()->make_internal_raw<String>(L"v2");
+    String *string = context.thread()->make_internal_raw<String>(L"hello");
     TValue<String> typed_string = TValue<String>::from_oop(string);
 
     EXPECT_EQ(Value::from_oop(string), typed_string.raw_value());
     EXPECT_EQ(string, typed_string.extract());
+    EXPECT_STREQ(L"hello", typed_string.extract()->data);
 }
 
 TEST(TValue, CheckedConstructionReturnsExpectedSuccess)
@@ -180,6 +188,25 @@ TEST(TValue, CheckedBoolConstructionNamesTargetTypeOnFailure)
     EXPECT_TRUE(boolean.raw_value().is_exception_marker());
     expect_pending_exception(context.thread(), L"TypeError",
                              L"invalid typed value construction for bool");
+}
+
+TEST(Value, InlineTypePredicatesDistinguishSmiBoolAndNone)
+{
+    EXPECT_TRUE(Value::from_smi(0).is_smi());
+    EXPECT_TRUE(Value::from_smi(0).is_integer());
+    EXPECT_FALSE(Value::from_smi(0).is_bool());
+    EXPECT_FALSE(Value::from_smi(0).is_none());
+
+    EXPECT_TRUE(Value::True().is_bool());
+    EXPECT_TRUE(Value::False().is_bool());
+    EXPECT_FALSE(Value::True().is_smi());
+    EXPECT_FALSE(Value::False().is_smi());
+    EXPECT_FALSE(Value::True().is_none());
+    EXPECT_FALSE(Value::False().is_none());
+
+    EXPECT_TRUE(Value::None().is_none());
+    EXPECT_FALSE(Value::None().is_smi());
+    EXPECT_FALSE(Value::None().is_bool());
 }
 
 TEST(TValue, CustomCheckedConstructionReturnsExpectedSuccess)

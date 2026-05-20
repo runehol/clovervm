@@ -1,4 +1,5 @@
 #include "owned.h"
+#include "scope.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -45,6 +46,19 @@ TEST(HandleRefcountTraits, ClassifiesFullyInlineSemanticTypes)
     static_assert(!HandleRefcountTraits<TValue<String>>::is_fully_inline);
     static_assert(
         !HandleRefcountTraits<Optional<TValue<String>>>::is_fully_inline);
+}
+
+TEST(HeapPtr, ScopeUsesDirectHeapPointerHandle)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Scope *scope = context.thread()->make_internal_raw<Scope>(nullptr);
+
+    HeapPtr<Scope> scope_ptr(scope);
+
+    EXPECT_EQ(scope, scope_ptr.get());
+    EXPECT_TRUE(scope_ptr.get()->empty());
 }
 
 TEST(Owned, StoresTypedWrapperAndRetainsRawValue)
