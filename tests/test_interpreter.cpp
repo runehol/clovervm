@@ -24,7 +24,7 @@
 #include "tokenizer.h"
 #include "tuple.h"
 #include "tuple_iterator.h"
-#include "value_state.h"
+#include "typed_value.h"
 #include "value_string.h"
 #include "virtual_machine.h"
 #include <cstdint>

@@ -2,8 +2,8 @@
 #define CL_INTERN_STORE_H
 
 #include "global_heap.h"
+#include "typed_value.h"
 #include "value.h"
-#include "value_state.h"
 #include <absl/container/flat_hash_map.h>
 
 namespace cl

@@ -8,9 +8,9 @@
 #include "owned.h"
 #include "refcount.h"
 #include "shape.h"
+#include "typed_value.h"
 #include "validity_cell.h"
 #include "value.h"
-#include "value_state.h"
 #include "vm_array.h"
 #include <cstdint>
 

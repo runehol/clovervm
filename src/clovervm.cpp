@@ -10,8 +10,8 @@
 #include "str.h"
 #include "string.h"
 #include "thread_state.h"
+#include "typed_value.h"
 #include "value.h"
-#include "value_state.h"
 #include "virtual_machine.h"
 #include <cerrno>
 #include <clocale>

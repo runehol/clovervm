@@ -6,8 +6,8 @@
 #include "owned.h"
 #include "refcount.h"
 #include "runtime_helpers.h"
+#include "typed_value.h"
 #include "value.h"
-#include "value_state.h"
 #include <cstddef>
 #include <cstdint>
 #include <vector>

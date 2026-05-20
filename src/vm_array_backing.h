@@ -4,8 +4,8 @@
 #include "heap_object.h"
 #include "native_layout_declarations.h"
 #include "owned.h"
+#include "typed_value.h"
 #include "value.h"
-#include "value_state.h"
 
 #include <algorithm>
 #include <cstddef>

@@ -4,8 +4,8 @@
 #include "heap_constants.h"
 #include "heap_construction.h"
 #include "slab_allocator.h"
+#include "typed_value.h"
 #include "value.h"
-#include "value_state.h"
 #include <cstdint>
 #include <cstdlib>
 #include <deque>

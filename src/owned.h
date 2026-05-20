@@ -2,7 +2,7 @@
 #define CL_OWNED_H
 
 #include "refcount.h"
-#include "value_state.h"
+#include "typed_value.h"
 #include <type_traits>
 
 namespace cl

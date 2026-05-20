@@ -4,7 +4,7 @@
 #include "builtin_class_registry.h"
 #include "object.h"
 #include "owned.h"
-#include "value_state.h"
+#include "typed_value.h"
 
 namespace cl
 {

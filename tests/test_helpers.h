@@ -7,8 +7,8 @@
 #include "thread_state.h"
 #include "token.h"
 #include "tokenizer.h"
+#include "typed_value.h"
 #include "value.h"
-#include "value_state.h"
 #include "virtual_machine.h"
 
 namespace cl::test

@@ -3,7 +3,7 @@
 
 #include "builtin_class_registry.h"
 #include "object.h"
-#include "value_state.h"
+#include "typed_value.h"
 #include "vm_array.h"
 
 namespace cl

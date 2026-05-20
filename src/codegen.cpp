@@ -7,7 +7,7 @@
 #include "scope.h"
 #include "str.h"
 #include "tokenizer.h"
-#include "value_state.h"
+#include "typed_value.h"
 #include <fmt/core.h>
 #include <optional>
 #include <utility>

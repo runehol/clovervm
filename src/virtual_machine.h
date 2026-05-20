@@ -16,8 +16,8 @@
 #include "owned.h"
 #include "scope.h"
 #include "str.h"
+#include "typed_value.h"
 #include "value.h"
-#include "value_state.h"
 
 namespace cl
 {

@@ -3,7 +3,7 @@
 #include "code_object_builder.h"
 #include "scope.h"
 #include "str.h"
-#include "value_state.h"
+#include "typed_value.h"
 #include <cassert>
 #include <optional>
 #include <stdexcept>

@@ -1,7 +1,7 @@
-#include "value_state.h"
 #include "class_object.h"
 #include "str.h"
 #include "thread_state.h"
+#include "typed_value.h"
 #include <string>
 
 namespace cl

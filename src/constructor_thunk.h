@@ -2,7 +2,7 @@
 #define CL_CONSTRUCTOR_THUNK_H
 
 #include "function.h"
-#include "value_state.h"
+#include "typed_value.h"
 
 namespace cl
 {

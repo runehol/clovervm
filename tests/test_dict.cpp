@@ -4,7 +4,7 @@
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
-#include "value_state.h"
+#include "typed_value.h"
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>

@@ -22,7 +22,7 @@
 #include "thread_state.h"
 #include "tuple.h"
 #include "tuple_iterator.h"
-#include "value_state.h"
+#include "typed_value.h"
 #include <cassert>
 #include <cmath>
 #include <cwchar>

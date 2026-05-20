@@ -5,8 +5,8 @@
 #include "owned.h"
 #include "refcount.h"
 #include "thread_state.h"
+#include "typed_value.h"
 #include "value.h"
-#include "value_state.h"
 #include "vm_array_backing.h"
 #include <cassert>
 #include <cstddef>

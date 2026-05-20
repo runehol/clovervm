@@ -6,8 +6,8 @@
 #include "bytecode.h"
 #include "owned.h"
 #include "scope.h"
+#include "typed_value.h"
 #include "value.h"
-#include "value_state.h"
 #include <algorithm>
 #include <cstdint>
 #include <vector>

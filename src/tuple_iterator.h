@@ -5,8 +5,8 @@
 #include "object.h"
 #include "owned.h"
 #include "tuple.h"
+#include "typed_value.h"
 #include "value.h"
-#include "value_state.h"
 
 namespace cl
 {

@@ -107,12 +107,11 @@ add_library(libclovervm STATIC
     thread_local_heap.h
     thread_state.cpp
     thread_state.h
+    typed_value.cpp
     typed_value.h
     tokenizer.cpp
     validity_cell.h
     value.h
-    value_state.cpp
-    value_state.h
     value_string.cpp
     value_string.h
     string_builder.cpp

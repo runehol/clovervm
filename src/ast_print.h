@@ -4,7 +4,7 @@
 #include "ast.h"
 #include "str.h"
 #include "tokenizer.h"
-#include "value_state.h"
+#include "typed_value.h"
 #include <cassert>
 #include <fmt/format.h>
 #include <string>

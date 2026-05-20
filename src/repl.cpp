@@ -8,8 +8,8 @@
 #include "scope.h"
 #include "str.h"
 #include "thread_state.h"
+#include "typed_value.h"
 #include "value.h"
-#include "value_state.h"
 #include "value_string.h"
 #include "virtual_machine.h"
 #include <algorithm>

@@ -2,8 +2,8 @@
 #define CL_AST_H
 
 #include "owned.h"
+#include "typed_value.h"
 #include "value.h"
-#include "value_state.h"
 #include <absl/container/inlined_vector.h>
 #include <cassert>
 #include <cstdint>
