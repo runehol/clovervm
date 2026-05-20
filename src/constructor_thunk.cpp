@@ -22,19 +22,20 @@ namespace cl
         local_scope->reserve_empty_slots(FrameHeaderSize);
     }
 
-    static CodeObject *make_constructor_thunk_code(ClassObject *cls, Value init)
+    static CodeObject *
+    make_constructor_thunk_code(ClassObject *cls,
+                                Optional<TValue2<Function>> init)
     {
         Scope *local_scope = make_internal_raw<Scope>(nullptr);
         TValue<String> thunk_name(interned_string(L"<constructor_thunk>"));
         std::optional<CodeObjectBuilder> code_storage;
         CodeObject *init_code = nullptr;
         uint32_t init_n_parameters = 0;
-        bool has_init = !init.is_not_present();
+        bool has_init = init.has_value();
 
         if(has_init)
         {
-            TValue<Function> init_function =
-                TValue<Function>::from_value_checked(init);
+            TValue2<Function> init_function = init.value();
             init_code = init_function.extract()->code_object.extract();
             init_n_parameters = init_code->n_parameters;
             if(init_n_parameters == 0 ||
@@ -122,19 +123,19 @@ namespace cl
         return thunk_defaults;
     }
 
-    TValue<Function> make_constructor_thunk_function(ClassObject *cls,
-                                                     Value init)
+    TValue<Function>
+    make_constructor_thunk_function(ClassObject *cls,
+                                    Optional<TValue2<Function>> init)
     {
         CodeObject *code = make_constructor_thunk_code(cls, init);
-        if(init.is_not_present())
+        if(!init.has_value())
         {
             return make_object_value<Function>(
                 TValue2<CodeObject>::from_oop(code),
                 Optional<TValue2<String>>::none());
         }
 
-        TValue<Function> init_function =
-            TValue<Function>::from_value_checked(init);
+        TValue2<Function> init_function = init.value();
         Optional<TValue2<Tuple>> defaults =
             init_function.extract()->default_parameters.value();
         if(!defaults.has_value())
