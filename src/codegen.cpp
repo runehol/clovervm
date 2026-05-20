@@ -529,7 +529,8 @@ namespace cl
             {
                 return false;
             }
-            return av.constants[node_idx] == interned_string(name);
+            return av.constants[node_idx].value() ==
+                   interned_string(name).raw_value();
         }
 
         Value literal_string_constant(int32_t node_idx,
@@ -864,7 +865,7 @@ namespace cl
             }
 
             TValue<String> range_name = interned_string(L"range");
-            if(av.constants[callable_idx] != range_name)
+            if(av.constants[callable_idx].value() != range_name.raw_value())
             {
                 return std::nullopt;
             }

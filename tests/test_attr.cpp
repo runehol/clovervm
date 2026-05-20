@@ -1186,10 +1186,12 @@ TEST(Attr, ClassMetadataAttributesAreReadonly)
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
 
-    EXPECT_EQ(cls_name, load_attr(Value::from_oop(cls), dunder_name_name));
+    EXPECT_EQ(cls_name.raw_value(),
+              load_attr(Value::from_oop(cls), dunder_name_name));
     EXPECT_FALSE(store_attr(Value::from_oop(cls), dunder_name_name,
                             replacement_name.raw_value()));
-    EXPECT_EQ(cls_name, load_attr(Value::from_oop(cls), dunder_name_name));
+    EXPECT_EQ(cls_name.raw_value(),
+              load_attr(Value::from_oop(cls), dunder_name_name));
 }
 
 TEST(Attr, StoreAttrRejectsDunderClassAndUnsupportedInlineValues)

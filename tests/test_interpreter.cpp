@@ -166,9 +166,9 @@ static void expect_range_iterator(Value actual, int64_t expected_current,
                                   int64_t expected_stop, int64_t expected_step)
 {
     RangeIterator *iterator = CL_ASSERT_CONVERT_TO(RangeIterator, actual);
-    EXPECT_EQ(Value::from_smi(expected_current), iterator->current);
-    EXPECT_EQ(Value::from_smi(expected_stop), iterator->stop);
-    EXPECT_EQ(Value::from_smi(expected_step), iterator->step);
+    EXPECT_EQ(Value::from_smi(expected_current), iterator->current.raw_value());
+    EXPECT_EQ(Value::from_smi(expected_stop), iterator->stop.raw_value());
+    EXPECT_EQ(Value::from_smi(expected_step), iterator->step.raw_value());
 }
 
 static void expect_tuple_iterator(Value actual, Tuple *expected_tuple,
@@ -176,17 +176,17 @@ static void expect_tuple_iterator(Value actual, Tuple *expected_tuple,
                                   int64_t expected_index)
 {
     TupleIterator *iterator = CL_ASSERT_CONVERT_TO(TupleIterator, actual);
-    EXPECT_EQ(Value::from_oop(expected_tuple), iterator->tuple);
-    EXPECT_EQ(Value::from_smi(expected_length), iterator->length);
-    EXPECT_EQ(Value::from_smi(expected_index), iterator->index);
+    EXPECT_EQ(Value::from_oop(expected_tuple), iterator->tuple.raw_value());
+    EXPECT_EQ(Value::from_smi(expected_length), iterator->length.raw_value());
+    EXPECT_EQ(Value::from_smi(expected_index), iterator->index.raw_value());
 }
 
 static void expect_list_iterator(Value actual, List *expected_list,
                                  int64_t expected_index)
 {
     ListIterator *iterator = CL_ASSERT_CONVERT_TO(ListIterator, actual);
-    EXPECT_EQ(Value::from_oop(expected_list), iterator->list);
-    EXPECT_EQ(Value::from_smi(expected_index), iterator->index);
+    EXPECT_EQ(Value::from_oop(expected_list), iterator->list.raw_value());
+    EXPECT_EQ(Value::from_smi(expected_index), iterator->index.raw_value());
 }
 
 static int64_t g_next_counter = 0;
@@ -3492,8 +3492,10 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
     EXPECT_EQ(test_context.vm().get_or_create_interned_string_value(
                   L"Return self + value."),
               add_docstring.value());
-    EXPECT_EQ(str_docstring.value(), load_attr(str_method, dunder_doc_name));
-    EXPECT_EQ(add_docstring.value(), load_attr(add_method, dunder_doc_name));
+    EXPECT_EQ(str_docstring.value().raw_value(),
+              load_attr(str_method, dunder_doc_name));
+    EXPECT_EQ(add_docstring.value().raw_value(),
+              load_attr(add_method, dunder_doc_name));
     EXPECT_FALSE(
         str_class->set_own_property(dunder_str_name, Value::from_smi(99)));
 }
@@ -3674,8 +3676,8 @@ TEST(Interpreter, tuple_iter_returns_tuple_iterator)
     Value iterator_value = test_context.run_file(L"iter((1, 2, 3))\n");
     TupleIterator *iterator =
         CL_ASSERT_CONVERT_TO(TupleIterator, iterator_value);
-    EXPECT_EQ(Value::from_smi(3), iterator->length);
-    EXPECT_EQ(Value::from_smi(0), iterator->index);
+    EXPECT_EQ(Value::from_smi(3), iterator->length.raw_value());
+    EXPECT_EQ(Value::from_smi(0), iterator->index.raw_value());
     Tuple *tuple = iterator->tuple.extract();
     ASSERT_EQ(size_t(3), tuple->size());
     EXPECT_EQ(Value::from_smi(1), tuple->item_unchecked(0));
@@ -3748,7 +3750,7 @@ TEST(Interpreter, list_iter_returns_list_iterator)
     test::VmTestContext test_context;
     Value iterator_value = test_context.run_file(L"iter([1, 2, 3])\n");
     ListIterator *iterator = CL_ASSERT_CONVERT_TO(ListIterator, iterator_value);
-    EXPECT_EQ(Value::from_smi(0), iterator->index);
+    EXPECT_EQ(Value::from_smi(0), iterator->index.raw_value());
     List *list = iterator->list.extract();
     ASSERT_EQ(size_t(3), list->size());
     EXPECT_EQ(Value::from_smi(1), list->item_unchecked(0));

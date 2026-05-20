@@ -710,7 +710,7 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
               cls->read_storage_location(init_lookup.info.storage_location()));
 
     EXPECT_EQ(Value::not_present(), cls->get_own_property(dunder_class_name));
-    EXPECT_EQ(cls_name, cls->get_own_property(dunder_name_name));
+    EXPECT_EQ(cls_name.raw_value(), cls->get_own_property(dunder_name_name));
 
     Value bases_value = cls->get_own_property(dunder_bases_name);
     ASSERT_TRUE(bases_value.is_ptr());
@@ -744,7 +744,7 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
         EXPECT_EQ(readonly_values[idx],
                   cls->get_own_property(readonly_names[idx]));
     }
-    EXPECT_EQ(cls_name, cls->get_own_property(dunder_name_name));
+    EXPECT_EQ(cls_name.raw_value(), cls->get_own_property(dunder_name_name));
 }
 
 TEST(ClassObject, PredefinedConstructorSlotsAreReadWriteStableSlots)

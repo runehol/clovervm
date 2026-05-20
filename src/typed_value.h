@@ -33,8 +33,36 @@ namespace cl
     {
     };
 
+    template <typename T, typename = void>
+    struct HasSemanticType : std::false_type
+    {
+    };
+
+    template <typename T>
+    struct HasSemanticType<T,
+                           std::void_t<typename std::decay_t<T>::semantic_type>>
+        : std::true_type
+    {
+    };
+
+    template <typename A, typename B, typename = void>
+    struct HasSameSemanticType : std::false_type
+    {
+    };
+
+    template <typename A, typename B>
+    struct HasSameSemanticType<A, B,
+                               std::enable_if_t<HasSemanticType<A>::value &&
+                                                HasSemanticType<B>::value>>
+        : std::bool_constant<
+              std::is_same_v<typename std::decay_t<A>::semantic_type,
+                             typename std::decay_t<B>::semantic_type>>
+    {
+    };
+
     template <typename A, typename B,
               std::enable_if_t<HasRawValue<A>::value && HasRawValue<B>::value &&
+                                   HasSameSemanticType<A, B>::value &&
                                    !(std::is_same_v<std::decay_t<A>, Value> &&
                                      std::is_same_v<std::decay_t<B>, Value>),
                                int> = 0>
@@ -45,6 +73,7 @@ namespace cl
 
     template <typename A, typename B,
               std::enable_if_t<HasRawValue<A>::value && HasRawValue<B>::value &&
+                                   HasSameSemanticType<A, B>::value &&
                                    !(std::is_same_v<std::decay_t<A>, Value> &&
                                      std::is_same_v<std::decay_t<B>, Value>),
                                int> = 0>

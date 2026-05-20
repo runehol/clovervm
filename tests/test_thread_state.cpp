@@ -339,7 +339,7 @@ namespace cl
         EXPECT_STREQ(L"", exception.extract()->message.extract()->data);
         TValue<Exception> base_exception =
             TValue<Exception>::from_value_assumed(exception.raw_value());
-        EXPECT_EQ(exception, base_exception);
+        EXPECT_EQ(exception.raw_value(), base_exception.raw_value());
     }
 
     TEST(ThreadState, StopIterationObjectDefaultsValueToNotPresent)
