@@ -266,7 +266,7 @@ namespace cl
             clover_function_entry_adapters = {};
         std::vector<ClassObject *> builtin_classes;
         OwnedHeapPtr2<Scope> builtin_scope;
-        OwnedValue range_builtin;
+        Owned2<Value> range_builtin;
         bool safepoint_requested_ = false;
         bool fire_every_safepoint_for_testing_ = false;
         SafepointCallbackForTesting safepoint_callback_for_testing_ = nullptr;

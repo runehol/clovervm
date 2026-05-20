@@ -124,7 +124,7 @@ namespace cl
     VirtualMachine::VirtualMachine()
         : refcounted_global_heap(GlobalHeap::refcounted_heap()),
           interned_global_heap(GlobalHeap::interned_heap()),
-          interned_strings(&interned_global_heap)
+          interned_strings(&interned_global_heap), range_builtin(Value::None())
     {
         // make the main thread
         ThreadState *default_thread = make_new_thread();
@@ -136,7 +136,7 @@ namespace cl
         }
         catch(...)
         {
-            range_builtin.clear();
+            range_builtin = Value::None();
             builtin_scope.clear();
             throw;
         }
@@ -147,7 +147,7 @@ namespace cl
         if(!threads.empty())
         {
             ThreadState::ActivationScope activation_scope(threads[0].get());
-            range_builtin.clear();
+            range_builtin = Value::None();
             builtin_scope.clear();
         }
     }
