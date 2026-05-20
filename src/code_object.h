@@ -5,6 +5,7 @@
 #include "builtin_class_registry.h"
 #include "bytecode.h"
 #include "owned.h"
+#include "owned2.h"
 #include "owned_typed_value.h"
 #include "scope.h"
 #include "value.h"
@@ -138,8 +139,8 @@ namespace cl
         {
         }
 
-        MemberHeapPtr<Scope> module_scope;
-        MemberHeapPtr<Scope> local_scope;
+        MemberHeapPtr2<Scope> module_scope;
+        MemberHeapPtr2<Scope> local_scope;
         MemberValue name;
         MemberValue docstring;
         const CompilationUnit *compilation_unit;

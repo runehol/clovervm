@@ -200,15 +200,15 @@ namespace cl
         MemberValue mro;
         MemberValue class_extra_inline_attribute_slots
             [class_extra_inline_attribute_slot_count];
-        mutable MemberHeapPtr<ValidityCell>
+        mutable MemberHeapPtr2<ValidityCell>
             mro_shape_and_contents_validity_cell;
-        mutable MemberHeapPtr<ValidityCell>
+        mutable MemberHeapPtr2<ValidityCell>
             mro_shape_and_metaclass_mro_shape_and_contents_validity_cell;
         mutable HeapPtrArray<ValidityCell> attached_mro_shape_validity_cells;
         mutable HeapPtrArray<ValidityCell>
             attached_mro_shape_and_contents_validity_cells;
-        MemberHeapPtr<Shape> instance_root_shape;
-        mutable MemberHeapPtr<Function> constructor_thunk;
+        MemberHeapPtr2<Shape> instance_root_shape;
+        mutable MemberHeapPtr2<Function> constructor_thunk;
         uint32_t instance_default_inline_slot_count;
 
     public:
