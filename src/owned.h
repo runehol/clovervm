@@ -106,17 +106,12 @@ namespace cl
         {
             return HandleTraits<Handle>::to_value(handle_);
         }
-        operator Value() const
+        Handle value() const { return handle_; }
+        Value raw_value() const
         {
             return HandleTraits<Handle>::to_value(handle_);
         }
-
-        template <typename H = Handle,
-                  typename = std::enable_if_t<!std::is_same_v<H, Value>>>
-        operator Handle() const
-        {
-            return handle_;
-        }
+        operator Handle() const { return handle_; }
 
         bool operator==(Value value) const { return as_value() == value; }
         bool operator!=(Value value) const { return as_value() != value; }
@@ -226,17 +221,12 @@ namespace cl
         {
             return HandleTraits<Handle>::to_value(handle_);
         }
-        operator Value() const
+        Handle value() const { return handle_; }
+        Value raw_value() const
         {
             return HandleTraits<Handle>::to_value(handle_);
         }
-
-        template <typename H = Handle,
-                  typename = std::enable_if_t<!std::is_same_v<H, Value>>>
-        operator Handle() const
-        {
-            return handle_;
-        }
+        operator Handle() const { return handle_; }
 
         bool operator==(Value value) const { return as_value() == value; }
         bool operator!=(Value value) const { return as_value() != value; }
@@ -260,6 +250,8 @@ namespace cl
             handle_ = HandleTraits<Handle>::none();
             return released;
         }
+
+        void release_ref() { HandleTraits<Handle>::release_ref(handle_); }
 
     private:
         Handle handle_;
