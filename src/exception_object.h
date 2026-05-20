@@ -4,7 +4,6 @@
 #include "builtin_class_registry.h"
 #include "object.h"
 #include "owned.h"
-#include "typed_value.h"
 #include "value_state.h"
 
 namespace cl
@@ -71,30 +70,6 @@ namespace cl
 
     struct Exception
     {
-    };
-
-    template <> struct ValueTypeTraits<Exception>
-    {
-        using get_type = ExceptionObject *;
-        static constexpr RefcountPolicy refcount_policy =
-            RefcountPolicy::Always;
-
-        static bool is_instance(Value value)
-        {
-            if(!value.is_ptr())
-            {
-                return false;
-            }
-            NativeLayoutId layout_id =
-                value.get_ptr<Object>()->native_layout_id();
-            return layout_id == NativeLayoutId::Exception ||
-                   layout_id == NativeLayoutId::StopIteration;
-        }
-
-        static get_type get_unchecked(Value value)
-        {
-            return value.get_ptr<ExceptionObject>();
-        }
     };
 
     template <> struct TValue2Traits<Exception>

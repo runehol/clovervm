@@ -5,7 +5,6 @@
 #include "native_layout_declarations.h"
 #include "owned.h"
 #include "shape_descriptor.h"
-#include "typed_value.h"
 #include "value.h"
 #include "value_state.h"
 #include <cstddef>

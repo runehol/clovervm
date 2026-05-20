@@ -1,7 +1,6 @@
 #ifndef CL_CLOVER_ENTRY_H
 #define CL_CLOVER_ENTRY_H
 
-#include "typed_value.h"
 #include <cstdint>
 
 namespace cl

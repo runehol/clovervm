@@ -9,7 +9,6 @@
 #include "owned.h"
 #include "shape.h"
 #include "thread_local_heap.h"
-#include "typed_value.h"
 #include "value.h"
 #include "value_state.h"
 #include <type_traits>

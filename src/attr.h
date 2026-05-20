@@ -2,7 +2,6 @@
 #define CL_ATTR_H
 
 #include "attribute_descriptor.h"
-#include "typed_value.h"
 #include "value.h"
 #include "value_state.h"
 

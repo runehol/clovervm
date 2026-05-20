@@ -5,7 +5,6 @@
 #include "object.h"
 #include "owned.h"
 #include "str.h"
-#include "typed_value.h"
 #include "value.h"
 #include "value_state.h"
 #include "vm_array.h"
