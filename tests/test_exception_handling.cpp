@@ -12,8 +12,9 @@ static CodeObject *
 make_lda_active_exception_handler_code(test::VmTestContext &test_context,
                                        Value raised)
 {
-    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
-        L"<active-exception-test>");
+    TValue2<String> name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"<active-exception-test>");
     CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
                               name);
     uint32_t constant_idx = builder.allocate_constant(raised);
@@ -36,8 +37,9 @@ static CodeObject *
 make_clear_active_exception_handler_code(test::VmTestContext &test_context,
                                          Value raised)
 {
-    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
-        L"<clear-active-exception-test>");
+    TValue2<String> name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"<clear-active-exception-test>");
     CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
                               name);
     uint32_t constant_idx = builder.allocate_constant(raised);
@@ -61,8 +63,9 @@ static CodeObject *
 make_drain_active_exception_handler_code(test::VmTestContext &test_context,
                                          Value raised)
 {
-    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
-        L"<drain-active-exception-test>");
+    TValue2<String> name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"<drain-active-exception-test>");
     CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
                               name);
     uint32_t constant_idx = builder.allocate_constant(raised);
@@ -89,8 +92,9 @@ static CodeObject *
 make_reraise_active_exception_handler_code(test::VmTestContext &test_context,
                                            Value raised)
 {
-    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
-        L"<reraise-active-exception-test>");
+    TValue2<String> name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"<reraise-active-exception-test>");
     CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
                               name);
     uint32_t constant_idx = builder.allocate_constant(raised);
@@ -121,8 +125,9 @@ make_reraise_active_exception_handler_code(test::VmTestContext &test_context,
 static CodeObject *
 make_lda_active_exception_code(test::VmTestContext &test_context)
 {
-    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
-        L"<lda-active-exception-test>");
+    TValue2<String> name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"<lda-active-exception-test>");
     CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
                               name);
     builder.emit_lda_active_exception(0);
@@ -134,8 +139,9 @@ static CodeObject *
 make_active_exception_is_instance_code(test::VmTestContext &test_context,
                                        Value handler_class)
 {
-    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
-        L"<active-exception-is-instance-test>");
+    TValue2<String> name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"<active-exception-is-instance-test>");
     CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
                               name);
     uint32_t constant_idx = builder.allocate_constant(handler_class);
@@ -171,8 +177,10 @@ TEST(ExceptionHandling,
         Value::from_smi(7));
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
 
-    TValue<StopIterationObject> exception =
-        TValue<StopIterationObject>::from_value_checked(actual);
+    Expected<TValue2<StopIterationObject>> maybe_exception =
+        TValue2<StopIterationObject>::from_value_checked(actual);
+    ASSERT_TRUE(maybe_exception.has_value());
+    TValue2<StopIterationObject> exception = maybe_exception.value();
     EXPECT_EQ(Value::from_smi(7), exception.extract()->value);
     EXPECT_TRUE(test_context.thread()->has_pending_exception());
     test_context.thread()->clear_pending_exception();

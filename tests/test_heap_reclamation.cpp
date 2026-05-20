@@ -273,7 +273,7 @@ namespace cl
         context.vm().run_heap_reclamation();
         uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
 
-        TValue<String> a_name(
+        TValue2<String> a_name(
             context.vm().get_or_create_interned_string_value(L"a"));
         Shape *root_shape = thread->make_internal_raw<Shape>(
             TValue2<ClassObject>::from_oop(context.vm().object_class()),

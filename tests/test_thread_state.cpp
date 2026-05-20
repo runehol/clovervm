@@ -193,7 +193,7 @@ namespace cl
 
     static CodeObject *make_return_42_test_code(test::VmTestContext &context)
     {
-        TValue<String> name =
+        TValue2<String> name =
             context.vm().get_or_create_interned_string_value(L"<return-42>");
         CodeObjectBuilder builder(&context.vm(), nullptr, nullptr, nullptr,
                                   name);
@@ -247,7 +247,7 @@ namespace cl
             context.vm().class_for_native_layout(NativeLayoutId::Exception);
         ThreadState::ActivationScope active_thread(thread);
         TValue2<Exception> exception = make_exception_object(
-            TValue<ClassObject>::from_oop(base_exception), L"boom");
+            TValue2<ClassObject>::from_oop(base_exception), L"boom");
 
         EXPECT_TRUE(thread->set_pending_exception_object(exception)
                         .is_exception_marker());
@@ -312,7 +312,7 @@ namespace cl
         EXPECT_TRUE(
             thread
                 ->set_pending_exception_string(
-                    TValue<ClassObject>::from_oop(base_exception), L"boom")
+                    TValue2<ClassObject>::from_oop(base_exception), L"boom")
                 .is_exception_marker());
 
         EXPECT_TRUE(thread->has_pending_exception());
@@ -333,7 +333,8 @@ namespace cl
         ThreadState::ActivationScope active_thread(thread);
 
         TValue2<StopIterationObject> exception = make_stop_iteration_object(
-            TValue<ClassObject>::from_oop(stop_iteration), Value::from_smi(42));
+            TValue2<ClassObject>::from_oop(stop_iteration),
+            Value::from_smi(42));
 
         EXPECT_EQ(Value::from_smi(42), exception.extract()->value);
         EXPECT_STREQ(L"", exception.extract()->message.extract()->data);
@@ -351,7 +352,7 @@ namespace cl
         ThreadState::ActivationScope active_thread(thread);
 
         TValue2<StopIterationObject> exception = make_stop_iteration_object(
-            TValue<ClassObject>::from_oop(stop_iteration));
+            TValue2<ClassObject>::from_oop(stop_iteration));
 
         EXPECT_TRUE(exception.extract()->value.value().is_not_present());
     }
@@ -360,10 +361,11 @@ namespace cl
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
-        TValue<String> string =
+        TValue2<String> string =
             context.vm().get_or_create_interned_string_value(L"value");
 
-        EXPECT_EQ(context.vm().str_class(), thread->class_of_value(string));
+        EXPECT_EQ(context.vm().str_class(),
+                  thread->class_of_value(string.raw_value()));
         EXPECT_EQ(context.vm().int_class(),
                   thread->class_of_value(Value::from_smi(42)));
         EXPECT_EQ(context.vm().bool_class(),
@@ -378,11 +380,11 @@ namespace cl
     {
         test::VmTestContext context;
         ThreadState *thread = context.thread();
-        TValue<String> string =
+        TValue2<String> string =
             context.vm().get_or_create_interned_string_value(L"value");
 
         EXPECT_EQ(string.extract()->get_shape(),
-                  thread->shape_of_value(string));
+                  thread->shape_of_value(string.raw_value()));
         EXPECT_EQ(context.vm().smi_shape(),
                   thread->shape_of_value(Value::from_smi(42)));
         EXPECT_EQ(context.vm().int_class(),
@@ -398,7 +400,7 @@ namespace cl
         EXPECT_EQ(context.vm().none_type_class(),
                   thread->shape_of_value(Value::None())->get_class());
 
-        TValue<String> dunder_class_name = context.vm().dunder_class_name();
+        TValue2<String> dunder_class_name = context.vm().dunder_class_name();
         Shape *inline_shapes[] = {context.vm().smi_shape(),
                                   context.vm().bool_shape(),
                                   context.vm().none_shape()};

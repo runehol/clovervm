@@ -14,7 +14,7 @@ TEST(Scope, ReinsertByNameReusesSlotAndAppendsEntry)
     ThreadState::ActivationScope activation_scope(context.thread());
 
     Scope *scope = context.thread()->make_internal_raw<Scope>(nullptr);
-    TValue<String> name(
+    TValue2<String> name(
         context.vm().get_or_create_interned_string_value(L"answer"));
 
     scope->set_by_name(name, Value::from_smi(1));
@@ -42,7 +42,7 @@ TEST(Scope, ReadTrackingSlotStartsWithoutEntryUntilBound)
 
     Scope *parent = context.thread()->make_internal_raw<Scope>(nullptr);
     Scope *child = context.thread()->make_internal_raw<Scope>(parent);
-    TValue<String> name(
+    TValue2<String> name(
         context.vm().get_or_create_interned_string_value(L"tracked"));
 
     parent->set_by_name(name, Value::from_smi(7));
@@ -66,7 +66,7 @@ TEST(Scope, DeletedChildSlotFallsBackToParentByCurrentEntryName)
 
     Scope *parent = context.thread()->make_internal_raw<Scope>(nullptr);
     Scope *child = context.thread()->make_internal_raw<Scope>(parent);
-    TValue<String> name(
+    TValue2<String> name(
         context.vm().get_or_create_interned_string_value(L"shadowed"));
 
     parent->set_by_name(name, Value::from_smi(7));
@@ -90,7 +90,7 @@ TEST(Scope, SetBySlotIndexEnqueuesOverwrittenObject)
     ThreadState::ActivationScope activation_scope(thread);
     Scope *scope = thread->make_internal_raw<Scope>(nullptr);
     incref_heap_ptr(scope);
-    TValue<String> name(
+    TValue2<String> name(
         context.vm().get_or_create_interned_string_value(L"slot"));
     String *old_string = thread->make_object_raw<String>(L"old-scope");
     String *new_string = thread->make_object_raw<String>(L"new-scope");
