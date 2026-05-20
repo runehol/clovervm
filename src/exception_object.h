@@ -59,7 +59,7 @@ namespace cl
         StopIterationObject(ClassObject *cls, TValue<String> message,
                             Value value = Value::not_present());
 
-        MemberValue value;
+        Member2<Value> value;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(StopIterationObject,
                                              ExceptionObject, 1);

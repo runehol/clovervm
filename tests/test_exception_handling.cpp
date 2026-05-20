@@ -173,7 +173,7 @@ TEST(ExceptionHandling,
 
     TValue<StopIterationObject> exception =
         TValue<StopIterationObject>::from_value_checked(actual);
-    EXPECT_EQ(Value::from_smi(7), exception.extract()->value.as_value());
+    EXPECT_EQ(Value::from_smi(7), exception.extract()->value);
     EXPECT_TRUE(test_context.thread()->has_pending_exception());
     test_context.thread()->clear_pending_exception();
 }

@@ -2614,7 +2614,7 @@ TEST(Interpreter, native_exception_marker_materializes_stop_iteration)
     ASSERT_TRUE(can_convert_to<StopIterationObject>(exception.raw_value()));
     StopIterationObject *stop_iteration =
         exception.raw_value().get_ptr<StopIterationObject>();
-    EXPECT_EQ(Value::from_smi(123), stop_iteration->value.as_value());
+    EXPECT_EQ(Value::from_smi(123), stop_iteration->value);
 }
 
 TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
@@ -2641,7 +2641,7 @@ TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
     ASSERT_TRUE(can_convert_to<StopIterationObject>(exception.raw_value()));
     StopIterationObject *stop_iteration =
         exception.raw_value().get_ptr<StopIterationObject>();
-    EXPECT_EQ(Value::from_smi(123), stop_iteration->value.as_value());
+    EXPECT_EQ(Value::from_smi(123), stop_iteration->value);
 }
 
 TEST(Interpreter, catch_stop_iteration_as_exposes_value)

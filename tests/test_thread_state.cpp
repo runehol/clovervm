@@ -335,7 +335,7 @@ namespace cl
         TValue2<StopIterationObject> exception = make_stop_iteration_object(
             TValue<ClassObject>::from_oop(stop_iteration), Value::from_smi(42));
 
-        EXPECT_EQ(Value::from_smi(42), exception.extract()->value.as_value());
+        EXPECT_EQ(Value::from_smi(42), exception.extract()->value);
         EXPECT_STREQ(L"", exception.extract()->message.extract()->data);
         TValue2<Exception> base_exception =
             TValue2<Exception>::from_value_assumed(exception.raw_value());
@@ -353,7 +353,7 @@ namespace cl
         TValue2<StopIterationObject> exception = make_stop_iteration_object(
             TValue<ClassObject>::from_oop(stop_iteration));
 
-        EXPECT_TRUE(exception.extract()->value.as_value().is_not_present());
+        EXPECT_TRUE(exception.extract()->value.value().is_not_present());
     }
 
     TEST(ThreadState, ClassOfValueMapsPointerAndInlineValues)
