@@ -13,8 +13,8 @@ namespace cl
     static TValue<Function> make_native_function_with_target(
         VirtualMachine *vm, TValue<String> name, NativeFunctionTarget target,
         Bytecode call_opcode, uint32_t n_parameters, Value docstring,
-        TValue<Tuple> default_parameters =
-            TValue<Tuple>::from_value_unchecked(Value::None()))
+        Optional<TValue2<Tuple>> default_parameters =
+            Optional<TValue2<Tuple>>::none())
     {
         CodeObjectBuilder builder(vm, nullptr, nullptr, nullptr, name);
         builder.n_parameters() = n_parameters;
@@ -24,10 +24,10 @@ namespace cl
         builder.emit_return_or_raise_exception(0);
         TValue2<CodeObject> code =
             TValue2<CodeObject>::from_oop(builder.finalize());
-        if(default_parameters != Value::None())
+        if(default_parameters.has_value())
         {
             return vm->make_immortal_object_value<Function>(
-                code, default_parameters, docstring);
+                code, default_parameters.value(), docstring);
         }
         return vm->make_immortal_object_value<Function>(code, docstring);
     }
@@ -35,8 +35,8 @@ namespace cl
     static TValue<Function> make_native_function_with_target(
         VirtualMachine *vm, NativeFunctionTarget target, Bytecode call_opcode,
         uint32_t n_parameters,
-        TValue<Tuple> default_parameters =
-            TValue<Tuple>::from_value_unchecked(Value::None()))
+        Optional<TValue2<Tuple>> default_parameters =
+            Optional<TValue2<Tuple>>::none())
     {
         return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(L"<native>"), target,
@@ -97,9 +97,9 @@ namespace cl
         return BuiltinNativeMethod{name, target, 3, doc};
     }
 
-    TValue<Function> make_native_function(VirtualMachine *vm,
-                                          NativeFunction0 function,
-                                          TValue<Tuple> default_parameters)
+    TValue<Function>
+    make_native_function(VirtualMachine *vm, NativeFunction0 function,
+                         Optional<TValue2<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed0 = function;
@@ -107,9 +107,9 @@ namespace cl
             vm, target, Bytecode::CallNative0, 0, default_parameters);
     }
 
-    TValue<Function> make_native_function(VirtualMachine *vm,
-                                          NativeFunction1 function,
-                                          TValue<Tuple> default_parameters)
+    TValue<Function>
+    make_native_function(VirtualMachine *vm, NativeFunction1 function,
+                         Optional<TValue2<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed1 = function;
@@ -117,9 +117,9 @@ namespace cl
             vm, target, Bytecode::CallNative1, 1, default_parameters);
     }
 
-    TValue<Function> make_native_function(VirtualMachine *vm,
-                                          NativeFunction2 function,
-                                          TValue<Tuple> default_parameters)
+    TValue<Function>
+    make_native_function(VirtualMachine *vm, NativeFunction2 function,
+                         Optional<TValue2<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed2 = function;
@@ -127,9 +127,9 @@ namespace cl
             vm, target, Bytecode::CallNative2, 2, default_parameters);
     }
 
-    TValue<Function> make_native_function(VirtualMachine *vm,
-                                          NativeFunction3 function,
-                                          TValue<Tuple> default_parameters)
+    TValue<Function>
+    make_native_function(VirtualMachine *vm, NativeFunction3 function,
+                         Optional<TValue2<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed3 = function;

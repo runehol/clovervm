@@ -1172,8 +1172,10 @@ namespace cl
             return;
         }
 
-        TValue<Tuple> defaults = TValue<Tuple>::from_value_assumed(
-            fun.extract()->default_parameters);
+        Optional<TValue2<Tuple>> maybe_defaults =
+            fun.extract()->default_parameters.value();
+        assert(maybe_defaults.has_value());
+        TValue2<Tuple> defaults = maybe_defaults.value();
         uint32_t first_default_idx =
             uint32_t(defaults.extract()->size()) - n_missing_args;
         CodeObject *target_code_object = fun.extract()->code_object.extract();
@@ -2348,8 +2350,8 @@ namespace cl
         int8_t defaults_reg = pc[2];
         TValue2<CodeObject> code_obj = TValue2<CodeObject>::from_value_assumed(
             code_object->constant_table[const_offset].value());
-        TValue<Tuple> defaults =
-            TValue<Tuple>::from_value_assumed(fp[defaults_reg]);
+        TValue2<Tuple> defaults =
+            TValue2<Tuple>::from_value_assumed(fp[defaults_reg]);
 
         accumulator = thread->make_object_value<Function>(
             code_obj, defaults, code_obj.extract()->docstring);

@@ -134,15 +134,16 @@ namespace cl
 
         TValue<Function> init_function =
             TValue<Function>::from_value_checked(init);
-        Value defaults = init_function.extract()->default_parameters;
-        if(defaults.is_not_present() || defaults == Value::None())
+        Optional<TValue2<Tuple>> defaults =
+            init_function.extract()->default_parameters.value();
+        if(!defaults.has_value())
         {
             return make_object_value<Function>(
                 TValue2<CodeObject>::from_oop(code));
         }
 
         TValue<Tuple> default_tuple =
-            TValue<Tuple>::from_value_checked(defaults);
+            TValue<Tuple>::from_value_unchecked(defaults.value().raw_value());
         TValue<Tuple> thunk_defaults = make_constructor_thunk_defaults(
             default_tuple, init_function.extract()
                                ->code_object.extract()
@@ -157,7 +158,8 @@ namespace cl
             throw std::runtime_error(
                 "TypeError: unsupported __init__ default parameter layout");
         }
-        return make_object_value<Function>(TValue2<CodeObject>::from_oop(code),
-                                           thunk_defaults);
+        return make_object_value<Function>(
+            TValue2<CodeObject>::from_oop(code),
+            TValue2<Tuple>::from_value_unchecked(thunk_defaults.as_value()));
     }
 }  // namespace cl
