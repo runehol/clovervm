@@ -164,7 +164,7 @@ namespace cl
         return make_object_value<Function>(
             TValue2<CodeObject>::from_oop(code),
             Optional<TValue2<String>>::none(),
-            Optional<TValue2<Tuple>>::some(TValue2<Tuple>::from_value_unchecked(
-                thunk_defaults.as_value())));
+            Optional<TValue2<Tuple>>::some(
+                TValue2<Tuple>::from_value_unchecked(thunk_defaults)));
     }
 }  // namespace cl

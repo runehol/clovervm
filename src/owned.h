@@ -102,10 +102,6 @@ namespace cl
             return HandleTraits<Handle>::extract(handle_);
         }
 
-        Value as_value() const
-        {
-            return HandleTraits<Handle>::to_value(handle_);
-        }
         Handle value() const { return handle_; }
         Value raw_value() const
         {
@@ -113,8 +109,8 @@ namespace cl
         }
         operator Handle() const { return handle_; }
 
-        bool operator==(Value value) const { return as_value() == value; }
-        bool operator!=(Value value) const { return as_value() != value; }
+        bool operator==(Value value) const { return raw_value() == value; }
+        bool operator!=(Value value) const { return raw_value() != value; }
 
         void reset(Handle handle)
         {
@@ -217,10 +213,6 @@ namespace cl
             return HandleTraits<Handle>::extract(handle_);
         }
 
-        Value as_value() const
-        {
-            return HandleTraits<Handle>::to_value(handle_);
-        }
         Handle value() const { return handle_; }
         Value raw_value() const
         {
@@ -228,8 +220,8 @@ namespace cl
         }
         operator Handle() const { return handle_; }
 
-        bool operator==(Value value) const { return as_value() == value; }
-        bool operator!=(Value value) const { return as_value() != value; }
+        bool operator==(Value value) const { return raw_value() == value; }
+        bool operator!=(Value value) const { return raw_value() != value; }
 
         void reset(Handle handle)
         {

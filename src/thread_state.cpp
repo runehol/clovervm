@@ -119,9 +119,8 @@ namespace cl
         Owned2<TValue2<Function>> function(
             TValue2<Function>::from_value_unchecked(
                 this->make_object_value<Function>(
-                        TValue2<CodeObject>::from_oop(obj),
-                        Optional<TValue2<String>>::none())
-                    .as_value()));
+                    TValue2<CodeObject>::from_oop(obj),
+                    Optional<TValue2<String>>::none())));
         return call_clovervm_function_with_args(
             TValue<Function>::from_value_unchecked(function.raw_value()),
             nullptr, 0);
@@ -145,8 +144,7 @@ namespace cl
         adapter_fp[FrameHeaderPreviousFpOffset].as.ptr =
             reinterpret_cast<Object *>(caller_fp);
 
-        set_clover_entry_adapter_parameter(adapter, adapter_fp, 0,
-                                           function.as_value());
+        set_clover_entry_adapter_parameter(adapter, adapter_fp, 0, function);
         for(uint32_t arg_idx = 0; arg_idx < n_args; ++arg_idx)
         {
             set_clover_entry_adapter_parameter(adapter, adapter_fp, arg_idx + 1,

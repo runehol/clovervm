@@ -140,7 +140,6 @@ namespace cl
             return ValueTypeTraits<U>::get_unchecked(value_);
         }
 
-        Value as_value() const { return value_; }
         Value raw_value() const { return value_; }
         operator Value() const { return value_; }
 

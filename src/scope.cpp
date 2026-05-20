@@ -73,7 +73,7 @@ namespace cl
     {
         int32_t slot_idx = slot_values.size();
         slot_values.push_back(initial_value);
-        slot_names.emplace_back(key.as_value());
+        slot_names.emplace_back(key);
         slot_current_entry_indices.emplace_back(-1);
         return slot_idx;
     }

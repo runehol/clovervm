@@ -10,7 +10,7 @@ namespace cl
 {
     static TValue2<String> string_value_state(TValue<String> name)
     {
-        return TValue2<String>::from_value_unchecked(name.as_value());
+        return TValue2<String>::from_value_unchecked(name);
     }
 
     static TValue<String> old_typed_string(TValue2<String> name)
@@ -120,7 +120,7 @@ namespace cl
             ++descriptor_idx)
         {
             descriptor_names[descriptor_idx] =
-                incref(descriptors[descriptor_idx].name.as_value());
+                incref(descriptors[descriptor_idx].name);
             descriptor_infos()[descriptor_idx] =
                 descriptors[descriptor_idx].info;
         }
@@ -267,13 +267,12 @@ namespace cl
             ++property_idx)
         {
             next_shape->descriptor_names[property_idx] =
-                incref(get_property_name(property_idx).as_value());
+                incref(get_property_name(property_idx));
             next_shape->descriptor_infos()[property_idx] =
                 get_descriptor_info(property_idx);
             ++next_property_idx;
         }
-        next_shape->descriptor_names[next_property_idx] =
-            incref(name.as_value());
+        next_shape->descriptor_names[next_property_idx] = incref(name);
         next_shape->descriptor_infos()[next_property_idx] = inserted_info;
         ++next_property_idx;
         for(uint32_t property_idx = present_count_;
@@ -285,7 +284,7 @@ namespace cl
             }
 
             next_shape->descriptor_names[next_property_idx] =
-                incref(get_property_name(property_idx).as_value());
+                incref(get_property_name(property_idx));
             next_shape->descriptor_infos()[next_property_idx] =
                 get_descriptor_info(property_idx);
             ++next_property_idx;
@@ -318,7 +317,7 @@ namespace cl
             }
 
             next_shape->descriptor_names[next_property_idx] =
-                incref(get_property_name(property_idx).as_value());
+                incref(get_property_name(property_idx));
             next_shape->descriptor_infos()[next_property_idx] =
                 get_descriptor_info(property_idx);
             ++next_property_idx;
@@ -327,15 +326,14 @@ namespace cl
             property_idx < property_count_; ++property_idx)
         {
             next_shape->descriptor_names[next_property_idx] =
-                incref(get_property_name(property_idx).as_value());
+                incref(get_property_name(property_idx));
             next_shape->descriptor_infos()[next_property_idx] =
                 get_descriptor_info(property_idx);
             ++next_property_idx;
         }
         if(keep_latent)
         {
-            next_shape->descriptor_names[next_property_idx] =
-                incref(name.as_value());
+            next_shape->descriptor_names[next_property_idx] = incref(name);
             next_shape->descriptor_infos()[next_property_idx] = descriptor.info;
             ++next_property_idx;
         }
@@ -353,7 +351,7 @@ namespace cl
             ++property_idx)
         {
             cloned_shape->descriptor_names[property_idx] =
-                incref(get_property_name(property_idx).as_value());
+                incref(get_property_name(property_idx));
             cloned_shape->descriptor_infos()[property_idx] =
                 get_descriptor_info(property_idx);
         }
@@ -369,7 +367,7 @@ namespace cl
             ++property_idx)
         {
             cloned_shape->descriptor_names[property_idx] =
-                incref(get_property_name(property_idx).as_value());
+                incref(get_property_name(property_idx));
             cloned_shape->descriptor_infos()[property_idx] =
                 get_descriptor_info(property_idx);
         }

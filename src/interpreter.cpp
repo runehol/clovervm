@@ -1114,7 +1114,7 @@ namespace cl
                                  FunctionCallAdaptation adaptation)
     {
         cache.kind = FunctionCallInlineCacheKind::Function;
-        cache.guard_value = fun.as_value();
+        cache.guard_value = fun;
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
         cache.validity_cell = nullptr;

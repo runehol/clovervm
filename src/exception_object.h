@@ -36,7 +36,7 @@ namespace cl
         ExceptionObject(ClassObject *cls, NativeLayoutId layout_id,
                         TValue<String> message)
             : SlotObject(cls, layout_id),
-              message(TValue2<String>::from_value_unchecked(message.as_value()))
+              message(TValue2<String>::from_value_unchecked(message))
         {
         }
     };

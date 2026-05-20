@@ -561,7 +561,7 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
     TValue<String> string_value(
         context.vm().get_or_create_interned_string_value(L"hello"));
     EXPECT_EQ(Value::from_oop(context.vm().str_class()),
-              load_attr(string_value.as_value(), dunder_class_name));
+              load_attr(string_value, dunder_class_name));
 }
 
 TEST(Attr, BuiltinInstancesExposeDunderClassThroughAttributeLookup)
@@ -593,7 +593,7 @@ TEST(Attr, BuiltinInstancesExposeDunderClassThroughAttributeLookup)
     };
 
     BuiltinInstance instances[] = {
-        {string_value.as_value(), context.vm().str_class()},
+        {string_value, context.vm().str_class()},
         {Value::from_oop(list), context.vm().list_class()},
         {Value::from_oop(dict), context.vm().dict_class()},
         {Value::from_oop(code), context.vm().code_class()},
@@ -673,9 +673,12 @@ TEST(Attr, BuiltinInstancesRejectUnsupportedAttributeWrites)
             TValue2<SMI>::from_smi(1));
 
     Value instances[] = {
-        string_value.as_value(),   Value::from_oop(list),
-        Value::from_oop(dict),     Value::from_oop(code),
-        Value::from_oop(function), Value::from_oop(range_iterator),
+        string_value,
+        Value::from_oop(list),
+        Value::from_oop(dict),
+        Value::from_oop(code),
+        Value::from_oop(function),
+        Value::from_oop(range_iterator),
     };
 
     for(Value instance: instances)
@@ -1186,12 +1189,10 @@ TEST(Attr, ClassMetadataAttributesAreReadonly)
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
 
-    EXPECT_EQ(cls_name.as_value(),
-              load_attr(Value::from_oop(cls), dunder_name_name));
-    EXPECT_FALSE(store_attr(Value::from_oop(cls), dunder_name_name,
-                            replacement_name.as_value()));
-    EXPECT_EQ(cls_name.as_value(),
-              load_attr(Value::from_oop(cls), dunder_name_name));
+    EXPECT_EQ(cls_name, load_attr(Value::from_oop(cls), dunder_name_name));
+    EXPECT_FALSE(
+        store_attr(Value::from_oop(cls), dunder_name_name, replacement_name));
+    EXPECT_EQ(cls_name, load_attr(Value::from_oop(cls), dunder_name_name));
 }
 
 TEST(Attr, StoreAttrRejectsDunderClassAndUnsupportedInlineValues)

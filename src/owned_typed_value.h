@@ -38,14 +38,14 @@ namespace cl
             }
             else if constexpr(refcount_policy == RefcountPolicy::Always)
             {
-                if(value.as_value() != Value::None())
+                if(value != Value::None())
                 {
-                    incref_heap_ptr(value.as_value().as.ptr);
+                    incref_heap_ptr(value.extract());
                 }
             }
             else
             {
-                incref(value.as_value());
+                incref(value);
             }
             return value;
         }
@@ -58,14 +58,14 @@ namespace cl
             }
             else if constexpr(refcount_policy == RefcountPolicy::Always)
             {
-                if(value.as_value() != Value::None())
+                if(value != Value::None())
                 {
-                    decref_heap_ptr(value.as_value().as.ptr);
+                    decref_heap_ptr(value.extract());
                 }
             }
             else
             {
-                decref(value.as_value());
+                decref(value);
             }
         }
     };

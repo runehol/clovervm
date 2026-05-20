@@ -2448,13 +2448,13 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
 
     TValue<String> string =
         test_context.vm().get_or_create_interned_string_value(L"a'b\n");
-    expect_method_string(string.as_value(), dunder_repr_name, L"'a\\'b\\n'");
+    expect_method_string(string, dunder_repr_name, L"'a\\'b\\n'");
 
     List *list = test_context.thread()->make_object_raw<List>();
     list->append(Value::from_smi(42));
     list->append(Value::True());
     list->append(Value::None());
-    list->append(string.as_value());
+    list->append(string);
     expect_method_string(Value::from_oop(list), dunder_repr_name,
                          L"[42, True, None, 'a\\'b\\n']");
     expect_method_string(Value::from_oop(list), dunder_str_name,
@@ -2470,7 +2470,7 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
 
     Tuple *tuple = test_context.thread()->make_object_raw<Tuple>(2);
     tuple->initialize_item_unchecked(0, Value::from_smi(42));
-    tuple->initialize_item_unchecked(1, string.as_value());
+    tuple->initialize_item_unchecked(1, string);
     expect_method_string(Value::from_oop(tuple), dunder_str_name,
                          L"(42, 'a\\'b\\n')");
 
@@ -2481,18 +2481,18 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
         test_context.vm().get_or_create_interned_string_value(L"beta");
     TValue<String> removed =
         test_context.vm().get_or_create_interned_string_value(L"removed");
-    dict->set_item(alpha.as_value(), Value::from_smi(1));
-    dict->set_item(removed.as_value(), Value::from_smi(99));
-    dict->set_item(beta.as_value(), Value::True());
-    ASSERT_EQ(Value::None(), dict->del_item(removed.as_value()));
+    dict->set_item(alpha, Value::from_smi(1));
+    dict->set_item(removed, Value::from_smi(99));
+    dict->set_item(beta, Value::True());
+    ASSERT_EQ(Value::None(), dict->del_item(removed));
     expect_method_string(Value::from_oop(dict), dunder_repr_name,
                          L"{'alpha': 1, 'beta': True}");
     expect_method_string(Value::from_oop(dict), dunder_str_name,
                          L"{'alpha': 1, 'beta': True}");
 
     Dict *reordered_dict = test_context.thread()->make_object_raw<Dict>();
-    reordered_dict->set_item(beta.as_value(), Value::True());
-    reordered_dict->set_item(alpha.as_value(), Value::from_smi(1));
+    reordered_dict->set_item(beta, Value::True());
+    reordered_dict->set_item(alpha, Value::from_smi(1));
     Value dict_str = test_context.thread()->call_clovervm_method(
         Value::from_oop(dict), dunder_str_name);
     Value reordered_dict_str = test_context.thread()->call_clovervm_method(
@@ -3485,16 +3485,13 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
     ASSERT_TRUE(str_docstring.has_value());
     ASSERT_TRUE(add_docstring.has_value());
     EXPECT_EQ(TValue2<String>::from_value_unchecked(
-                  test_context.vm()
-                      .get_or_create_interned_string_value(L"Return str(self).")
-                      .as_value()),
+                  test_context.vm().get_or_create_interned_string_value(
+                      L"Return str(self).")),
               str_docstring.value());
-    EXPECT_EQ(
-        TValue2<String>::from_value_unchecked(
-            test_context.vm()
-                .get_or_create_interned_string_value(L"Return self + value.")
-                .as_value()),
-        add_docstring.value());
+    EXPECT_EQ(TValue2<String>::from_value_unchecked(
+                  test_context.vm().get_or_create_interned_string_value(
+                      L"Return self + value.")),
+              add_docstring.value());
     EXPECT_EQ(str_docstring.value(), load_attr(str_method, dunder_doc_name));
     EXPECT_EQ(add_docstring.value(), load_attr(add_method, dunder_doc_name));
     EXPECT_FALSE(

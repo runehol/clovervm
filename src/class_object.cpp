@@ -175,7 +175,7 @@ namespace cl
                              ShapeFlags class_shape_flags,
                              ShapeFlags instance_shape_flags)
         : SlotObject(BootstrapObjectTag{}, native_layout),
-          name(TValue2<String>::from_value_unchecked(_name.as_value())),
+          name(TValue2<String>::from_value_unchecked(_name)),
           bases(Value::not_present()), mro(Value::not_present()),
           mro_shape_and_contents_validity_cell(nullptr),
           mro_shape_and_metaclass_mro_shape_and_contents_validity_cell(nullptr),

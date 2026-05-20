@@ -363,8 +363,7 @@ namespace cl
         TValue<String> string =
             context.vm().get_or_create_interned_string_value(L"value");
 
-        EXPECT_EQ(context.vm().str_class(),
-                  thread->class_of_value(string.as_value()));
+        EXPECT_EQ(context.vm().str_class(), thread->class_of_value(string));
         EXPECT_EQ(context.vm().int_class(),
                   thread->class_of_value(Value::from_smi(42)));
         EXPECT_EQ(context.vm().bool_class(),
@@ -383,7 +382,7 @@ namespace cl
             context.vm().get_or_create_interned_string_value(L"value");
 
         EXPECT_EQ(string.extract()->get_shape(),
-                  thread->shape_of_value(string.as_value()));
+                  thread->shape_of_value(string));
         EXPECT_EQ(context.vm().smi_shape(),
                   thread->shape_of_value(Value::from_smi(42)));
         EXPECT_EQ(context.vm().int_class(),

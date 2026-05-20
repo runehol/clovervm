@@ -102,7 +102,7 @@ TEST(TValue, UnsafeUncheckedRoundTripsRawValue)
 
     TValue<String> typed_string = TValue<String>::from_value_unchecked(raw);
 
-    EXPECT_EQ(raw, typed_string.as_value());
+    EXPECT_EQ(raw, typed_string.raw_value());
     EXPECT_EQ(string, typed_string.extract());
 }
 
@@ -123,7 +123,7 @@ TEST(TValue, ClIntAcceptsCurrentIntegerRepresentation)
 {
     TValue<CLInt> integer = TValue<CLInt>::from_smi(42);
 
-    EXPECT_EQ(Value::from_smi(42), integer.as_value());
+    EXPECT_EQ(Value::from_smi(42), integer.raw_value());
 }
 
 TEST(Value, InlineTypePredicatesDistinguishSmiBoolAndNone)
@@ -208,7 +208,7 @@ TEST(OwnedTValue, ClIntActsAsOwnedIntegerHandle)
 {
     OwnedTValue<CLInt> owned_integer(Value::from_smi(42));
 
-    EXPECT_EQ(Value::from_smi(42), owned_integer.as_value());
+    EXPECT_EQ(Value::from_smi(42), owned_integer.raw_value());
 
     Value released = owned_integer.release();
     EXPECT_EQ(Value::from_smi(42), released);

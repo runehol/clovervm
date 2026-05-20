@@ -710,7 +710,7 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
               cls->read_storage_location(init_lookup.info.storage_location()));
 
     EXPECT_EQ(Value::not_present(), cls->get_own_property(dunder_class_name));
-    EXPECT_EQ(cls_name.as_value(), cls->get_own_property(dunder_name_name));
+    EXPECT_EQ(cls_name, cls->get_own_property(dunder_name_name));
 
     Value bases_value = cls->get_own_property(dunder_bases_name);
     ASSERT_TRUE(bases_value.is_ptr());
@@ -732,19 +732,18 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
 
     TValue<String> readonly_names[] = {dunder_class_name, dunder_name_name,
                                        dunder_bases_name, dunder_mro_name};
-    Value readonly_values[] = {Value::not_present(), cls_name.as_value(),
-                               bases_value, mro_value};
+    Value readonly_values[] = {Value::not_present(), cls_name, bases_value,
+                               mro_value};
     for(uint32_t idx = 0; idx < std::size(readonly_names); ++idx)
     {
         Shape *before_shape = cls->get_shape();
-        EXPECT_FALSE(
-            cls->set_own_property(readonly_names[idx], other_name.as_value()));
+        EXPECT_FALSE(cls->set_own_property(readonly_names[idx], other_name));
         EXPECT_FALSE(cls->delete_own_property(readonly_names[idx]));
         EXPECT_EQ(before_shape, cls->get_shape());
         EXPECT_EQ(readonly_values[idx],
                   cls->get_own_property(readonly_names[idx]));
     }
-    EXPECT_EQ(cls_name.as_value(), cls->get_own_property(dunder_name_name));
+    EXPECT_EQ(cls_name, cls->get_own_property(dunder_name_name));
 }
 
 TEST(ClassObject, PredefinedConstructorSlotsAreReadWriteStableSlots)

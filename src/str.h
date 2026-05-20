@@ -141,13 +141,13 @@ namespace cl
     {
         {
             // pointer equality -> true
-            if(a.as_value().as.integer == b.as_value().as.integer)
+            if(a.raw_value().as.integer == b.raw_value().as.integer)
             {
                 return true;
             }
 
             // if both are interned, that's good enough
-            if((a.as_value().as.integer & b.as_value().as.integer) &
+            if((a.raw_value().as.integer & b.raw_value().as.integer) &
                value_interned_ptr_tag)
             {
                 return false;
