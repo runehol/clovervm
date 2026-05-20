@@ -185,7 +185,7 @@ TEST(NativeLayoutDescriptor, NewObjectSizeReportsCurrentLayoutExtent)
     Tuple *tuple = context.thread()->make_object_raw<Tuple>(5);
     EXPECT_EQ(expected_tuple_size, object_size_in_bytes(tuple));
 
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"SizedInstance"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 4, context.vm().object_class());
@@ -299,9 +299,9 @@ TEST(NativeLayoutDescriptor, InstanceAuxCountTracksInitializedInlineSlots)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    TValue<String> small_name(
+    TValue2<String> small_name(
         context.vm().get_or_create_interned_string_value(L"Small"));
-    TValue<String> large_name(
+    TValue2<String> large_name(
         context.vm().get_or_create_interned_string_value(L"Large"));
     ClassObject *small_cls = context.thread()->make_internal_raw<ClassObject>(
         small_name, 1, context.vm().object_class());
@@ -327,7 +327,7 @@ TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesInitializedInlineSlots)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"SizedInstance"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 4, context.vm().object_class());
@@ -348,13 +348,13 @@ TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Transitioned"));
-    TValue<String> a_name(
+    TValue2<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
-    TValue<String> b_name(
+    TValue2<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
-    TValue<String> c_name(
+    TValue2<String> c_name(
         context.vm().get_or_create_interned_string_value(L"c"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 1, context.vm().object_class());
@@ -377,9 +377,9 @@ TEST(NativeLayoutDescriptor,
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
-    TValue<String> cls_name(
+    TValue2<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"OverflowOnly"));
-    TValue<String> attr_name(
+    TValue2<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 0, context.vm().object_class());
