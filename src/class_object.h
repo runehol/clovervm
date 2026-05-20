@@ -8,7 +8,6 @@
 #include "owned.h"
 #include "refcount.h"
 #include "shape.h"
-#include "typed_value.h"
 #include "validity_cell.h"
 #include "value.h"
 #include "value_state.h"
@@ -34,7 +33,7 @@ namespace cl
 
     struct BuiltinClassMethod
     {
-        TValue<String> name;
+        TValue2<String> name;
         Value value;
     };
 
@@ -62,37 +61,37 @@ namespace cl
         static constexpr uint32_t class_inline_storage_slot_count = 48;
 
         ClassObject(
-            BootstrapObjectTag, TValue<String> name,
+            BootstrapObjectTag, TValue2<String> name,
             uint32_t instance_default_inline_slot_count,
             ClassObject *single_base,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
-            ClassObject *metaclass, TValue<String> name,
+            ClassObject *metaclass, TValue2<String> name,
             uint32_t instance_default_inline_slot_count,
             ClassObject *single_base,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
-            ClassObject *metaclass, TValue<String> name,
-            uint32_t instance_default_inline_slot_count, TValue<Tuple> bases,
+            ClassObject *metaclass, TValue2<String> name,
+            uint32_t instance_default_inline_slot_count, TValue2<Tuple> bases,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
-            TValue<String> name, uint32_t instance_default_inline_slot_count,
+            TValue2<String> name, uint32_t instance_default_inline_slot_count,
             ClassObject *single_base,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         static ClassObject *make_bootstrap_builtin_class(
-            TValue<String> name, uint32_t instance_default_inline_slot_count,
+            TValue2<String> name, uint32_t instance_default_inline_slot_count,
             const BuiltinClassMethod *methods, uint32_t method_count);
 
         static ClassObject *
-        make_builtin_class(TValue<String> name,
+        make_builtin_class(TValue2<String> name,
                            uint32_t instance_default_inline_slot_count,
                            const BuiltinClassMethod *methods,
                            uint32_t method_count, ClassObject *single_base);
@@ -177,7 +176,7 @@ namespace cl
             class_inline_storage_slot_count - class_metadata_slot_count;
 
         Value make_bases_tuple(ClassObject *single_base) const;
-        static void validate_bases(TValue<Tuple> bases);
+        static void validate_bases(TValue2<Tuple> bases);
         NOINLINE ValidityCell *
         create_mro_shape_and_contents_validity_cell_slow() const;
         NOINLINE ValidityCell *

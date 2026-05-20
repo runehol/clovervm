@@ -107,7 +107,7 @@ namespace cl
 
     static Value compute_mro(ClassObject *cls, const Tuple *bases)
     {
-        TValue<String> dunder_mro_name = interned_string(L"__mro__");
+        TValue2<String> dunder_mro_name = interned_string(L"__mro__");
         std::vector<std::deque<ClassObject *>> sequences;
         sequences.reserve(bases->size() + 1);
         for(size_t base_idx = 0; base_idx < bases->size(); ++base_idx)
@@ -146,7 +146,7 @@ namespace cl
         return tuple_from_vector<ClassObject>(linearized);
     }
 
-    void ClassObject::validate_bases(TValue<Tuple> bases)
+    void ClassObject::validate_bases(TValue2<Tuple> bases)
     {
         Tuple *bases_tuple = bases.extract();
         std::vector<ClassObject *> seen_bases;
@@ -169,13 +169,12 @@ namespace cl
         }
     }
 
-    ClassObject::ClassObject(BootstrapObjectTag, TValue<String> _name,
+    ClassObject::ClassObject(BootstrapObjectTag, TValue2<String> _name,
                              uint32_t _instance_default_inline_slot_count,
                              ClassObject *single_base,
                              ShapeFlags class_shape_flags,
                              ShapeFlags instance_shape_flags)
-        : SlotObject(BootstrapObjectTag{}, native_layout),
-          name(TValue2<String>::from_value_unchecked(_name)),
+        : SlotObject(BootstrapObjectTag{}, native_layout), name(_name),
           bases(Value::not_present()), mro(Value::not_present()),
           mro_shape_and_contents_validity_cell(nullptr),
           mro_shape_and_metaclass_mro_shape_and_contents_validity_cell(nullptr),
@@ -185,7 +184,7 @@ namespace cl
           instance_default_inline_slot_count(
               _instance_default_inline_slot_count)
     {
-        TValue<String> dunder_class_name = interned_string(L"__class__");
+        TValue2<String> dunder_class_name = interned_string(L"__class__");
         DescriptorFlags instance_class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly);
         instance_class_flags |= descriptor_flag(DescriptorFlag::StableSlot);
@@ -197,11 +196,11 @@ namespace cl
                                  instance_class_flags),
             0, instance_default_inline_slot_count, instance_shape_flags);
 
-        TValue<String> dunder_name_name = interned_string(L"__name__");
-        TValue<String> dunder_bases_name = interned_string(L"__bases__");
-        TValue<String> dunder_mro_name = interned_string(L"__mro__");
-        TValue<String> dunder_new_name = interned_string(L"__new__");
-        TValue<String> dunder_init_name = interned_string(L"__init__");
+        TValue2<String> dunder_name_name = interned_string(L"__name__");
+        TValue2<String> dunder_bases_name = interned_string(L"__bases__");
+        TValue2<String> dunder_mro_name = interned_string(L"__mro__");
+        TValue2<String> dunder_new_name = interned_string(L"__new__");
+        TValue2<String> dunder_init_name = interned_string(L"__init__");
         DescriptorFlags class_metadata_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot);
@@ -265,7 +264,7 @@ namespace cl
         }
     }
 
-    ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
+    ClassObject::ClassObject(ClassObject *metaclass, TValue2<String> _name,
                              uint32_t _instance_default_inline_slot_count,
                              ClassObject *single_base,
                              ShapeFlags class_shape_flags,
@@ -277,9 +276,10 @@ namespace cl
         install_bootstrap_class(metaclass);
     }
 
-    ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
+    ClassObject::ClassObject(ClassObject *metaclass, TValue2<String> _name,
                              uint32_t _instance_default_inline_slot_count,
-                             TValue<Tuple> _bases, ShapeFlags class_shape_flags,
+                             TValue2<Tuple> _bases,
+                             ShapeFlags class_shape_flags,
                              ShapeFlags instance_shape_flags)
         : ClassObject(BootstrapObjectTag{}, _name,
                       _instance_default_inline_slot_count, nullptr,
@@ -287,11 +287,11 @@ namespace cl
     {
         install_bootstrap_class(metaclass);
         validate_bases(_bases);
-        bases = _bases;
+        bases = _bases.raw_value();
         mro = compute_mro(this, _bases.extract());
     }
 
-    ClassObject::ClassObject(TValue<String> _name,
+    ClassObject::ClassObject(TValue2<String> _name,
                              uint32_t _instance_default_inline_slot_count,
                              ClassObject *single_base,
                              ShapeFlags class_shape_flags,
@@ -303,7 +303,7 @@ namespace cl
     }
 
     ClassObject *ClassObject::make_bootstrap_builtin_class(
-        TValue<String> name, uint32_t instance_default_inline_slot_count,
+        TValue2<String> name, uint32_t instance_default_inline_slot_count,
         const BuiltinClassMethod *methods, uint32_t method_count)
     {
         ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject) |
@@ -333,7 +333,7 @@ namespace cl
     }
 
     ClassObject *ClassObject::make_builtin_class(
-        TValue<String> name, uint32_t instance_default_inline_slot_count,
+        TValue2<String> name, uint32_t instance_default_inline_slot_count,
         const BuiltinClassMethod *methods, uint32_t method_count,
         ClassObject *single_base)
     {
@@ -579,7 +579,7 @@ namespace cl
             return ConstructorThunkLookup{existing, lookup_cell};
         }
 
-        TValue<String> new_name(interned_string(L"__new__"));
+        TValue2<String> new_name(interned_string(L"__new__"));
         AttributeReadDescriptor new_descriptor =
             resolve_attr_read_descriptor(Value::from_oop(self), new_name);
         if(new_descriptor.is_found())
@@ -587,7 +587,7 @@ namespace cl
             return ConstructorThunkLookup{nullptr, nullptr};
         }
 
-        TValue<String> init_name(interned_string(L"__init__"));
+        TValue2<String> init_name(interned_string(L"__init__"));
         AttributeReadDescriptor init_descriptor =
             resolve_attr_read_descriptor(Value::from_oop(self), init_name);
         if(!init_descriptor.is_found())
