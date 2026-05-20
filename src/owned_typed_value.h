@@ -70,9 +70,6 @@ namespace cl
         }
     };
 
-    template <typename T> using OwnedTValue = Owned<TValue<T>>;
-    template <typename T> using MemberTValue = Member<TValue<T>>;
-
 }  // namespace cl
 
 #endif  // CL_OWNED_TYPED_VALUE_H
