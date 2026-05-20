@@ -94,7 +94,12 @@ namespace cl
     resolve_exceptional_frame_exit(ThreadState *thread, Value *fp,
                                    const uint8_t *pc, CodeObject *code_object);
 
-    static std::wstring format_name_error_message(TValue<String> name)
+    static TValue<String> old_typed_string(TValue2<String> value)
+    {
+        return TValue<String>::from_value_unchecked(value.raw_value());
+    }
+
+    static std::wstring format_name_error_message(TValue2<String> name)
     {
         String *str = name.extract();
         size_t n_chars = size_t(str->count.extract());
@@ -127,7 +132,7 @@ namespace cl
 
     static NOINLINE ExceptionalTarget set_name_error_and_resolve_frame_exit(
         ThreadState *thread, Value *fp, const uint8_t *pc,
-        CodeObject *code_object, TValue<String> name)
+        CodeObject *code_object, TValue2<String> name)
     {
         std::wstring message = format_name_error_message(name);
         (void)thread->set_pending_builtin_exception_string(L"NameError",
@@ -445,7 +450,9 @@ namespace cl
                 continue;
             }
             if(!cls.extract()->set_own_property(
-                   local_scope->get_name_by_slot_index(slot_idx), value))
+                   old_typed_string(
+                       local_scope->get_name_by_slot_index(slot_idx)),
+                   value))
             {
                 throw std::runtime_error(
                     "TypeError: cannot set read-only class attribute");

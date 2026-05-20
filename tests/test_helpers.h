@@ -7,11 +7,18 @@
 #include "thread_state.h"
 #include "token.h"
 #include "tokenizer.h"
+#include "typed_value.h"
 #include "value.h"
+#include "value_state.h"
 #include "virtual_machine.h"
 
 namespace cl::test
 {
+    template <typename T> TValue2<T> value_state(TValue<T> value)
+    {
+        return TValue2<T>::from_value_unchecked(value.raw_value());
+    }
+
     class VmTestContext
     {
     public:

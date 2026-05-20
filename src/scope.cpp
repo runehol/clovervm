@@ -4,6 +4,10 @@
 
 namespace cl
 {
+    static TValue<String> old_typed_string(TValue2<String> value)
+    {
+        return TValue<String>::from_value_unchecked(value.raw_value());
+    }
 
     Scope::Scope(Scope *_parent_scope)
         : HeapObject(native_layout), parent_scope(_parent_scope),
@@ -11,9 +15,9 @@ namespace cl
     {
     }
 
-    const int32_t *Scope::find_name_table_entry(TValue<String> key) const
+    const int32_t *Scope::find_name_table_entry(TValue2<String> key) const
     {
-        uint64_t hash = string_hash(key);
+        uint64_t hash = string_hash(old_typed_string(key));
         uint32_t table_size_m1 = name_table.size() - 1;
 
         uint32_t hash_idx = hash & table_size_m1;
@@ -24,8 +28,9 @@ namespace cl
             {
                 return &name_table[hash_idx];
             }
-            if(string_eq(key, TValue<String>::from_value_unchecked(
-                                  slot_names[slot_idx])))
+            if(string_eq(
+                   old_typed_string(key),
+                   TValue<String>::from_value_unchecked(slot_names[slot_idx])))
             {
                 return &name_table[hash_idx];
             }
@@ -34,7 +39,7 @@ namespace cl
         }
     }
 
-    int32_t *Scope::find_name_table_entry(TValue<String> key)
+    int32_t *Scope::find_name_table_entry(TValue2<String> key)
     {
         const Scope *self = this;
         return const_cast<int32_t *>(self->find_name_table_entry(key));
@@ -56,7 +61,7 @@ namespace cl
             }
 
             int32_t *name_table_entry = find_name_table_entry(
-                TValue<String>::from_value_unchecked(slot_names[slot_idx]));
+                TValue2<String>::from_value_unchecked(slot_names[slot_idx]));
             *name_table_entry = slot_idx;
         }
     }
@@ -69,11 +74,11 @@ namespace cl
         return entry_idx;
     }
 
-    int32_t Scope::allocate_slot(TValue<String> key, Value initial_value)
+    int32_t Scope::allocate_slot(TValue2<String> key, Value initial_value)
     {
         int32_t slot_idx = slot_values.size();
         slot_values.push_back(initial_value);
-        slot_names.emplace_back(key);
+        slot_names.emplace_back(key.raw_value());
         slot_current_entry_indices.emplace_back(-1);
         return slot_idx;
     }
@@ -89,21 +94,21 @@ namespace cl
         int32_t new_entry_idx = append_entry(slot_idx);
         (void)new_entry_idx;
 
-        TValue<String> name =
-            TValue<String>::from_value_unchecked(slot_names[slot_idx]);
+        TValue2<String> name =
+            TValue2<String>::from_value_unchecked(slot_names[slot_idx]);
         int32_t *name_table_entry = find_name_table_entry(name);
         *name_table_entry = slot_idx;
     }
 
-    TValue<String> Scope::get_name_by_slot_index(int32_t slot_idx) const
+    TValue2<String> Scope::get_name_by_slot_index(int32_t slot_idx) const
     {
         assert(slot_names[slot_idx] != Value::None());
-        return TValue<String>::from_value_unchecked(slot_names[slot_idx]);
+        return TValue2<String>::from_value_unchecked(slot_names[slot_idx]);
     }
 
     /* For a write, we just insert a regular not-present value with no parent
      * scope slot indication (-1) */
-    int32_t Scope::register_slot_index_for_write(TValue<String> key)
+    int32_t Scope::register_slot_index_for_write(TValue2<String> key)
     {
         int32_t slot_idx = lookup_slot_index_local(key);
         if(slot_idx >= 0)
@@ -123,7 +128,7 @@ namespace cl
      * the not-present value. This is to accelerate access to
      * builtins, which live in the parent scope
      */
-    int32_t Scope::register_slot_index_for_read(TValue<String> key)
+    int32_t Scope::register_slot_index_for_read(TValue2<String> key)
     {
         int32_t slot_idx = lookup_slot_index_local(key);
         if(slot_idx >= 0)
@@ -145,7 +150,7 @@ namespace cl
         return slot_idx;
     }
 
-    int32_t Scope::lookup_slot_index_local(TValue<String> name) const
+    int32_t Scope::lookup_slot_index_local(TValue2<String> name) const
     {
         const int32_t *name_table_entry = find_name_table_entry(name);
         int32_t slot_idx = *name_table_entry;
@@ -156,7 +161,7 @@ namespace cl
         return slot_idx;
     }
 
-    Value Scope::get_by_name(TValue<String> name) const
+    Value Scope::get_by_name(TValue2<String> name) const
     {
         int32_t slot_idx = lookup_slot_index_local(name);
         if(slot_idx >= 0)
@@ -170,7 +175,7 @@ namespace cl
         return Value::not_present();
     }
 
-    void Scope::set_by_name(TValue<String> name, Value val)
+    void Scope::set_by_name(TValue2<String> name, Value val)
     {
         int32_t slot_idx = lookup_slot_index_local(name);
         if(slot_idx < 0)

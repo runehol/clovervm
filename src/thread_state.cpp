@@ -308,7 +308,8 @@ namespace cl
     {
         TValue<String> name_value =
             machine->get_or_create_interned_string_value(std::wstring(name));
-        Value value = machine->builtin_scope_ptr()->get_by_name(name_value);
+        Value value = machine->builtin_scope_ptr()->get_by_name(
+            TValue2<String>::from_value_unchecked(name_value.raw_value()));
         assert(value.is_ptr());
         assert(value.get_ptr<Object>()->native_layout_id() ==
                NativeLayoutId::ClassObject);

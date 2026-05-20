@@ -22,6 +22,7 @@
 #include "thread_state.h"
 #include "tuple.h"
 #include "tuple_iterator.h"
+#include "value_state.h"
 #include <cassert>
 #include <cmath>
 #include <cwchar>
@@ -32,6 +33,11 @@
 
 namespace cl
 {
+    static TValue2<String> value_state_string(TValue<String> value)
+    {
+        return TValue2<String>::from_value_unchecked(value.raw_value());
+    }
+
     static Value make_class_tuple(std::initializer_list<ClassObject *> classes)
     {
         Tuple *tuple = make_object_raw<Tuple>(classes.size());
@@ -396,16 +402,19 @@ namespace cl
             {
                 continue;
             }
-            builtin_scope.extract()->set_by_name(cls->get_name(),
-                                                 Value::from_oop(cls));
+            builtin_scope.extract()->set_by_name(
+                value_state_string(cls->get_name()), Value::from_oop(cls));
         }
 
         builtin_scope.extract()->set_by_name(
-            get_or_create_interned_string_value(L"True"), Value::True());
+            value_state_string(get_or_create_interned_string_value(L"True")),
+            Value::True());
         builtin_scope.extract()->set_by_name(
-            get_or_create_interned_string_value(L"False"), Value::False());
+            value_state_string(get_or_create_interned_string_value(L"False")),
+            Value::False());
         builtin_scope.extract()->set_by_name(
-            get_or_create_interned_string_value(L"None"), Value::None());
+            value_state_string(get_or_create_interned_string_value(L"None")),
+            Value::None());
 
         TValue<String> range_name =
             get_or_create_interned_string_value(L"range");
@@ -416,11 +425,13 @@ namespace cl
             this, builtin_range,
             Optional<TValue2<Tuple>>::some(
                 TValue2<Tuple>::from_value_unchecked(range_defaults)));
-        builtin_scope.extract()->set_by_name(range_name, range_builtin);
+        builtin_scope.extract()->set_by_name(value_state_string(range_name),
+                                             range_builtin);
 
         TValue<String> sqrt_name = get_or_create_interned_string_value(L"sqrt");
         builtin_scope.extract()->set_by_name(
-            sqrt_name, make_native_function(this, builtin_sqrt));
+            value_state_string(sqrt_name),
+            make_native_function(this, builtin_sqrt));
 
         ThreadState *thread = get_default_thread();
         CodeObject *builtins_code = thread->compile_in_scope(

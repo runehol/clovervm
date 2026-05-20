@@ -108,11 +108,9 @@ namespace cl
             FrameHeaderSize);
     }
 
-    TValue<String> ast_string_constant(const AstVector &av, int32_t node_idx)
+    TValue2<String> ast_string_constant(const AstVector &av, int32_t node_idx)
     {
-        TValue2<String> name =
-            TValue2<String>::from_value_assumed(av.constants[node_idx]);
-        return TValue<String>::from_value_unchecked(name.raw_value());
+        return TValue2<String>::from_value_assumed(av.constants[node_idx]);
     }
 
     class AstCodegen
@@ -555,7 +553,7 @@ namespace cl
                 throw std::runtime_error(error_message);
             }
 
-            TValue<String> name = ast_string_constant(av, node_idx);
+            TValue2<String> name = ast_string_constant(av, node_idx);
             Value value = active_vm()->builtin_scope_ptr()->get_by_name(name);
             if(!value.is_ptr() || value.get_ptr<Object>()->native_layout_id() !=
                                       NativeLayoutId::ClassObject)

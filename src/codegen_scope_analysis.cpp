@@ -13,25 +13,27 @@ namespace cl
 {
     namespace
     {
-        TValue<String> ast_string_constant(Value value)
+        TValue2<String> ast_string_constant(Value value)
         {
-            TValue2<String> name = TValue2<String>::from_value_assumed(value);
-            return TValue<String>::from_value_unchecked(name.raw_value());
+            return TValue2<String>::from_value_assumed(value);
         }
 
         struct StringNameHash
         {
-            size_t operator()(TValue<String> name) const
+            size_t operator()(TValue2<String> name) const
             {
-                return size_t(string_hash(name));
+                return size_t(string_hash(
+                    TValue<String>::from_value_unchecked(name.raw_value())));
             }
         };
 
         struct StringNameEq
         {
-            bool operator()(TValue<String> left, TValue<String> right) const
+            bool operator()(TValue2<String> left, TValue2<String> right) const
             {
-                return string_eq(left, right);
+                return string_eq(
+                    TValue<String>::from_value_unchecked(left.raw_value()),
+                    TValue<String>::from_value_unchecked(right.raw_value()));
             }
         };
 
@@ -49,7 +51,7 @@ namespace cl
             }
 
             ScopeAnalysis result;
-            std::unordered_map<TValue<String>, int32_t, StringNameHash,
+            std::unordered_map<TValue2<String>, int32_t, StringNameHash,
                                StringNameEq>
                 binding_indices;
         };
@@ -66,7 +68,7 @@ namespace cl
             };
 
             CodegenMode mode;
-            std::unordered_map<TValue<String>, NameState, StringNameHash,
+            std::unordered_map<TValue2<String>, NameState, StringNameHash,
                                StringNameEq>
                 names;
         };

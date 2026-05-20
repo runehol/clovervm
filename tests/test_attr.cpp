@@ -1240,8 +1240,8 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
                                                         L"    return self\n",
                                                         StartRule::File);
     (void)context.thread()->run_clovervm_code_object(method_code);
-    Value method_value =
-        method_code->module_scope.extract()->get_by_name(method_name);
+    Value method_value = method_code->module_scope.extract()->get_by_name(
+        test::value_state(method_name));
 
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -1290,10 +1290,10 @@ TEST(Attr, ClassFunctionMethodPlanSurvivesClassContentsWriteAndReloadsSlot)
                                                         L"    return self\n",
                                                         StartRule::File);
     (void)context.thread()->run_clovervm_code_object(method_code);
-    Value first_method =
-        method_code->module_scope.extract()->get_by_name(first_method_name);
-    Value second_method =
-        method_code->module_scope.extract()->get_by_name(second_method_name);
+    Value first_method = method_code->module_scope.extract()->get_by_name(
+        test::value_state(first_method_name));
+    Value second_method = method_code->module_scope.extract()->get_by_name(
+        test::value_state(second_method_name));
 
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
