@@ -41,7 +41,13 @@ namespace cl
     public:
         using semantic_type = typename T::semantic_type;
 
-        Owned2() = delete;
+        template <typename U = T, typename = std::enable_if_t<
+                                      std::is_default_constructible_v<U> &&
+                                      !std::is_same_v<U, Value>>>
+        Owned2() : value_()
+        {
+            incref_value_state(value_);
+        }
         explicit Owned2(T value) : value_(value) { incref_value_state(value_); }
         explicit Owned2(const Member2<T> &other) : value_(other.value())
         {
@@ -104,7 +110,13 @@ namespace cl
     public:
         using semantic_type = typename T::semantic_type;
 
-        Member2() = delete;
+        template <typename U = T, typename = std::enable_if_t<
+                                      std::is_default_constructible_v<U> &&
+                                      !std::is_same_v<U, Value>>>
+        Member2() : value_()
+        {
+            incref_value_state(value_);
+        }
         explicit Member2(T value) : value_(value)
         {
             incref_value_state(value_);

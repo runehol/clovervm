@@ -83,6 +83,9 @@ TEST(Owned2, StoresRawValueAndRetainsIt)
     static_assert(std::is_same_v<Owned2<Value>::semantic_type, Value>);
     static_assert(sizeof(Owned2<Value>) == sizeof(Value));
     static_assert(!std::is_default_constructible_v<Owned2<Value>>);
+    static_assert(!std::is_default_constructible_v<Owned2<TValue2<String>>>);
+    static_assert(
+        std::is_default_constructible_v<Owned2<Optional<TValue2<String>>>>);
     static_assert(!HasReleaseRef<Owned2<Value>>::value);
 
     EXPECT_EQ(0, string->refcount);
@@ -95,6 +98,14 @@ TEST(Owned2, StoresRawValueAndRetainsIt)
         EXPECT_EQ(value, raw_value_from_value(owned));
     }
     EXPECT_EQ(0, string->refcount);
+}
+
+TEST(Owned2, DefaultConstructsWhenWrappedTypeHasDefault)
+{
+    Owned2<Optional<TValue2<String>>> owned;
+
+    EXPECT_FALSE(owned.value().has_value());
+    EXPECT_EQ(Value::None(), owned.raw_value());
 }
 
 TEST(Owned2, ConvertsToWrappedType)
@@ -185,6 +196,9 @@ TEST(Member2, StoresRawValueAndRetainsIt)
     static_assert(std::is_same_v<Member2<Value>::semantic_type, Value>);
     static_assert(sizeof(Member2<Value>) == sizeof(Value));
     static_assert(!std::is_default_constructible_v<Member2<Value>>);
+    static_assert(!std::is_default_constructible_v<Member2<TValue2<String>>>);
+    static_assert(
+        std::is_default_constructible_v<Member2<Optional<TValue2<String>>>>);
     static_assert(HasReleaseRef<Member2<Value>>::value);
 
     EXPECT_EQ(0, string->refcount);
@@ -197,6 +211,16 @@ TEST(Member2, StoresRawValueAndRetainsIt)
 
     member.release_ref();
     EXPECT_EQ(0, string->refcount);
+}
+
+TEST(Member2, DefaultConstructsWhenWrappedTypeHasDefault)
+{
+    Member2<Optional<TValue2<String>>> member;
+
+    EXPECT_FALSE(member.value().has_value());
+    EXPECT_EQ(Value::None(), member.raw_value());
+
+    member.release_ref();
 }
 
 TEST(Member2, ConvertsToWrappedType)
