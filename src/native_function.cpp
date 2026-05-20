@@ -145,9 +145,8 @@ namespace cl
         Optional<TValue<String>> docstring =
             method.doc == nullptr
                 ? Optional<TValue<String>>::none()
-                : Optional<TValue<String>>::some(TValue<String>::from_oop(
-                      vm->get_or_create_interned_string_value(method.doc)
-                          .extract()));
+                : Optional<TValue<String>>::some(
+                      vm->get_or_create_interned_string_value(method.doc));
         return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(method.name),
             method.target, call_native_opcode_for_arity(method.n_parameters),

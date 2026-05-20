@@ -164,23 +164,17 @@ namespace cl
     TValue<StopIterationObject>
     make_stop_iteration_object(TValue<ClassObject> type, Value value)
     {
-        return TValue<StopIterationObject>::from_value_unchecked(
-            make_internal_value<StopIterationObject>(type.extract(), value)
-                .raw_value());
+        return make_internal_value<StopIterationObject>(type.extract(), value);
     }
 
     TValue<StopIterationObject>
     make_stop_iteration_object(ThreadState *thread, TValue<ClassObject> type,
                                Value value)
     {
-        return TValue<StopIterationObject>::from_value_unchecked(
-            thread
-                ->make_internal_value<StopIterationObject>(
-                    type.extract(),
-                    thread->get_machine()->get_or_create_interned_string_value(
-                        L""),
-                    value)
-                .raw_value());
+        return thread->make_internal_value<StopIterationObject>(
+            type.extract(),
+            thread->get_machine()->get_or_create_interned_string_value(L""),
+            value);
     }
 
 }  // namespace cl
