@@ -173,7 +173,7 @@ namespace cl
         }
     }
 
-    void VirtualMachine::write_stdout(TValue<String> value)
+    void VirtualMachine::write_stdout(TValue2<String> value)
     {
         String *string = value.extract();
         size_t count = static_cast<size_t>(string->count.extract());

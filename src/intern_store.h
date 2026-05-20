@@ -3,6 +3,7 @@
 
 #include "global_heap.h"
 #include "value.h"
+#include "value_state.h"
 #include <absl/container/flat_hash_map.h>
 
 namespace cl
@@ -40,9 +41,9 @@ namespace cl
         }
 
         template <typename Source>
-        TValue<CLType> get_or_create_value(const Source &src)
+        TValue2<CLType> get_or_create_value(const Source &src)
         {
-            return TValue<CLType>::from_oop(get_or_create_raw(src));
+            return TValue2<CLType>::from_oop(get_or_create_raw(src));
         }
 
         template <typename Visitor> void for_each_raw(Visitor &&visitor)

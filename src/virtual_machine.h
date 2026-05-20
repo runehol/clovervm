@@ -66,9 +66,9 @@ namespace cl
         GlobalHeap &get_interned_global_heap() { return interned_global_heap; }
 
         template <typename Source>
-        TValue<String> get_or_create_interned_string_value(const Source &str)
+        TValue2<String> get_or_create_interned_string_value(const Source &str)
         {
-            return TValue<String>::from_oop(
+            return TValue2<String>::from_oop(
                 get_or_create_interned_string_raw(str));
         }
 
@@ -93,7 +93,7 @@ namespace cl
         HeapPtr<Scope> get_builtin_scope() const { return builtin_scope; }
         Scope *builtin_scope_ptr() const { return builtin_scope.extract(); }
         Value get_range_builtin() const { return range_builtin; }
-        void write_stdout(TValue<String> value);
+        void write_stdout(TValue2<String> value);
         void set_stdout_file(FILE *file)
         {
             assert(file != nullptr);
@@ -176,10 +176,10 @@ namespace cl
             }
             __builtin_unreachable();
         }
-        TValue<String> dunder_class_name() const
+        TValue2<String> dunder_class_name() const
         {
             assert(dunder_class_name_ != nullptr);
-            return TValue<String>::from_oop(dunder_class_name_);
+            return TValue2<String>::from_oop(dunder_class_name_);
         }
         CodeObject *clover_function_entry_adapter(uint32_t n_args);
 

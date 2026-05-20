@@ -12,7 +12,8 @@ namespace cl
         return active_thread()->get_machine();
     }
 
-    template <typename Source> TValue<String> interned_string(const Source &str)
+    template <typename Source>
+    TValue2<String> interned_string(const Source &str)
     {
         return active_vm()->get_or_create_interned_string_value(str);
     }

@@ -1148,9 +1148,12 @@ TEST(Interpreter, dict_literal_returns_dict_object)
     Dict *dict = actual.get_ptr<Dict>();
     EXPECT_EQ(2u, dict->size());
 
-    Value alpha =
-        test_context.vm().get_or_create_interned_string_value(L"alpha");
-    Value beta = test_context.vm().get_or_create_interned_string_value(L"beta");
+    Value alpha = test_context.vm()
+                      .get_or_create_interned_string_value(L"alpha")
+                      .raw_value();
+    Value beta = test_context.vm()
+                     .get_or_create_interned_string_value(L"beta")
+                     .raw_value();
     EXPECT_EQ(Value::from_smi(7), dict->get_item(alpha));
     EXPECT_EQ(Value::from_smi(9), dict->get_item(beta));
 }
@@ -3486,13 +3489,11 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         assume_convert_to<Function>(add_method)->docstring.value();
     ASSERT_TRUE(str_docstring.has_value());
     ASSERT_TRUE(add_docstring.has_value());
-    EXPECT_EQ(TValue2<String>::from_value_unchecked(
-                  test_context.vm().get_or_create_interned_string_value(
-                      L"Return str(self).")),
+    EXPECT_EQ(test_context.vm().get_or_create_interned_string_value(
+                  L"Return str(self)."),
               str_docstring.value());
-    EXPECT_EQ(TValue2<String>::from_value_unchecked(
-                  test_context.vm().get_or_create_interned_string_value(
-                      L"Return self + value.")),
+    EXPECT_EQ(test_context.vm().get_or_create_interned_string_value(
+                  L"Return self + value."),
               add_docstring.value());
     EXPECT_EQ(str_docstring.value(), load_attr(str_method, dunder_doc_name));
     EXPECT_EQ(add_docstring.value(), load_attr(add_method, dunder_doc_name));

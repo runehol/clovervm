@@ -529,7 +529,7 @@ namespace cl
             {
                 return false;
             }
-            return av.constants[node_idx] == Value(interned_string(name));
+            return av.constants[node_idx] == interned_string(name);
         }
 
         Value literal_string_constant(int32_t node_idx,
@@ -863,8 +863,8 @@ namespace cl
                 return std::nullopt;
             }
 
-            TValue<String> range_name = interned_string(L"range");
-            if(av.constants[callable_idx] != Value(range_name))
+            TValue2<String> range_name = interned_string(L"range");
+            if(av.constants[callable_idx] != range_name)
             {
                 return std::nullopt;
             }
@@ -1005,17 +1005,20 @@ namespace cl
         {
             return code_obj->allocate_constant(
                 interned_string(L"object does not support the context "
-                                L"manager protocol"));
+                                L"manager protocol")
+                    .raw_value());
         }
 
         uint8_t enter_method_name_idx()
         {
-            return code_obj->allocate_constant(interned_string(L"__enter__"));
+            return code_obj->allocate_constant(
+                interned_string(L"__enter__").raw_value());
         }
 
         uint8_t exit_method_name_idx()
         {
-            return code_obj->allocate_constant(interned_string(L"__exit__"));
+            return code_obj->allocate_constant(
+                interned_string(L"__exit__").raw_value());
         }
 
         void emit_context_exit_call(uint32_t source_offset,
@@ -1203,8 +1206,8 @@ namespace cl
             exceptional_target.resolve();
             {
                 TemporaryReg saved_exception(*code_obj);
-                uint8_t class_name_idx =
-                    code_obj->allocate_constant(interned_string(L"__class__"));
+                uint8_t class_name_idx = code_obj->allocate_constant(
+                    interned_string(L"__class__").raw_value());
 
                 code_obj->emit_drain_active_exception_into(source_offset,
                                                            saved_exception);
@@ -1445,14 +1448,14 @@ namespace cl
             JumpTarget continue_target(code_obj);
             JumpTarget stop_iteration_handler_target(code_obj);
             JumpTarget propagate_exception_target(code_obj);
-            uint8_t next_constant_idx =
-                code_obj->allocate_constant(interned_string(L"__next__"));
+            uint8_t next_constant_idx = code_obj->allocate_constant(
+                interned_string(L"__next__").raw_value());
             uint8_t not_iterator_type_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(
                     active_thread()->class_for_builtin_name(L"TypeError")));
             uint8_t not_iterator_message_constant_idx =
                 code_obj->allocate_constant(
-                    interned_string(L"object is not an iterator"));
+                    interned_string(L"object is not an iterator").raw_value());
             uint8_t stop_iteration_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(
                     active_thread()->class_for_builtin_name(L"StopIteration")));
@@ -1555,14 +1558,14 @@ namespace cl
             }
             code_obj->emit_call_simple(source_offset, range_regs,
                                        OutgoingArgReg(0), n_args);
-            uint8_t iter_constant_idx =
-                code_obj->allocate_constant(interned_string(L"__iter__"));
+            uint8_t iter_constant_idx = code_obj->allocate_constant(
+                interned_string(L"__iter__").raw_value());
             uint8_t not_iterable_type_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(
                     active_thread()->class_for_builtin_name(L"TypeError")));
             uint8_t not_iterable_message_constant_idx =
                 code_obj->allocate_constant(
-                    interned_string(L"object is not iterable"));
+                    interned_string(L"object is not iterable").raw_value());
             code_obj->emit_star(source_offset, OutgoingArgReg(0));
             code_obj->emit_call_special_method(
                 source_offset, OutgoingArgReg(0), iter_constant_idx, 0,
@@ -1999,14 +2002,15 @@ namespace cl
 
                         codegen_node(iterable_idx);
                         uint8_t iter_constant_idx = code_obj->allocate_constant(
-                            interned_string(L"__iter__"));
+                            interned_string(L"__iter__").raw_value());
                         uint8_t not_iterable_type_constant_idx =
                             code_obj->allocate_constant(Value::from_oop(
                                 active_thread()->class_for_builtin_name(
                                     L"TypeError")));
                         uint8_t not_iterable_message_constant_idx =
                             code_obj->allocate_constant(
-                                interned_string(L"object is not iterable"));
+                                interned_string(L"object is not iterable")
+                                    .raw_value());
                         code_obj->emit_star(source_offset, OutgoingArgReg(0));
                         code_obj->emit_call_special_method(
                             source_offset, OutgoingArgReg(0), iter_constant_idx,
