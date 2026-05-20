@@ -389,7 +389,7 @@ namespace cl
     reject_set_name_notifications_until_supported(Value *fp,
                                                   CodeObject *body_code)
     {
-        TValue<String> set_name_name(interned_string(L"__set_name__"));
+        TValue2<String> set_name_name(interned_string(L"__set_name__"));
 
         Scope *local_scope = body_code->get_local_scope_ptr();
         for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
@@ -423,12 +423,12 @@ namespace cl
     static Value build_class_from_frame(ThreadState *thread, Value *fp,
                                         CodeObject *body_code)
     {
-        TValue<String> class_name = TValue<String>::from_value_assumed(
+        TValue2<String> class_name = TValue2<String>::from_value_assumed(
             fp[body_code->encode_reg(ClassBodyNameParameter)]);
-        TValue<Tuple> bases = TValue<Tuple>::from_value_assumed(
+        TValue2<Tuple> bases = TValue2<Tuple>::from_value_assumed(
             fp[body_code->encode_reg(ClassBodyBasesParameter)]);
 
-        TValue<ClassObject> cls = thread->make_internal_value<ClassObject>(
+        TValue2<ClassObject> cls = thread->make_internal_value<ClassObject>(
             thread->get_machine()->type_class(), class_name,
             kDefaultFactoryInlineSlotCount, bases);
         Scope *local_scope = body_code->get_local_scope_ptr();
@@ -519,9 +519,9 @@ namespace cl
     {
         (void)thread->set_pending_exception_object(make_exception_object(
             thread,
-            TValue<ClassObject>::from_oop(
+            TValue2<ClassObject>::from_oop(
                 thread->class_for_builtin_name(L"AssertionError")),
-            TValue<String>::from_value_checked(accumulator)));
+            CL_TRY(TValue2<String>::from_value_checked(accumulator))));
         ExceptionalTarget target =
             resolve_exceptional_frame_exit(thread, fp, pc, code_object);
         fp = target.fp;
@@ -537,7 +537,7 @@ namespace cl
         ClassObject *stop_iteration =
             thread->class_for_native_layout(NativeLayoutId::StopIteration);
         TValue2<StopIterationObject> exception = make_stop_iteration_object(
-            thread, TValue<ClassObject>::from_oop(stop_iteration), value);
+            thread, TValue2<ClassObject>::from_oop(stop_iteration), value);
         (void)thread->set_pending_exception_object(
             TValue2<Exception>::from_value_unchecked(exception.raw_value()));
     }
@@ -672,7 +672,7 @@ namespace cl
             {
                 return make_exception_object(
                     thread,
-                    TValue<ClassObject>::from_oop(
+                    TValue2<ClassObject>::from_oop(
                         thread->class_for_builtin_name(L"TypeError")),
                     L"exceptions must derive from BaseException");
             }
@@ -681,17 +681,17 @@ namespace cl
             {
                 return TValue2<Exception>::from_value_unchecked(
                     make_stop_iteration_object(
-                        thread, TValue<ClassObject>::from_oop(cls))
+                        thread, TValue2<ClassObject>::from_oop(cls))
                         .raw_value());
             }
 
             return make_exception_object(
-                thread, TValue<ClassObject>::from_oop(cls), L"");
+                thread, TValue2<ClassObject>::from_oop(cls), L"");
         }
 
         return make_exception_object(
             thread,
-            TValue<ClassObject>::from_oop(
+            TValue2<ClassObject>::from_oop(
                 thread->class_for_builtin_name(L"TypeError")),
             L"exceptions must derive from BaseException");
     }
