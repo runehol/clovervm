@@ -18,6 +18,7 @@ This repository contains clovervm, a Python VM.
 - Run benchmarks with `cmake --build build-release --target run_benchmark`.
 - `ccache` is picked up at CMake configure time. If a configure or build step hits sandbox restrictions because of `ccache`, ask for elevated permissions instead of disabling `ccache` or reconfiguring the build to avoid it.
 - Run git commands one at a time. Do not launch multiple git commands in parallel, because repository locking can make them fail.
+- Run `gh` commands with elevated privileges so GitHub authentication works.
 - Prefer interpreter tests for semantics and end-to-end behavior. Keep codegen tests focused on high-value structural guarantees such as specific lowering patterns, call conventions, or optimizations that interpreter tests would not pin down well.
 - This is a greenfield project. Backwards compatibility layers or fallbacks are generally not needed when all uses inside the git repository can be updated.
 - When designing AST shapes for Python syntax, consult CPython's `Parser/Python.asdl` and borrow its structure where it fits clovervm before inventing a different local representation.
