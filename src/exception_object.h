@@ -92,6 +92,8 @@ namespace cl
         {
             return value.get_ptr<ExceptionObject>();
         }
+
+        static const wchar_t *target_type_name() { return L"BaseException"; }
     };
 
     BuiltinClassDefinition make_base_exception_class(VirtualMachine *vm);

@@ -257,6 +257,38 @@ TEST(TValue, CheckedBoolConstructionNamesTargetTypeOnFailure)
                              L"invalid typed value construction for bool");
 }
 
+TEST(TValue, CheckedExceptionConstructionAcceptsExceptionObjects)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TValue<ClassObject> base_exception = TValue<ClassObject>::from_oop(
+        context.vm().class_for_native_layout(NativeLayoutId::Exception));
+    TValue<Exception> exception =
+        make_exception_object(base_exception, L"boom");
+
+    Expected<TValue<Exception>> checked =
+        TValue<Exception>::from_value_checked(exception.raw_value());
+
+    ASSERT_TRUE(checked.has_value());
+    EXPECT_EQ(exception.raw_value(), checked.value().raw_value());
+    EXPECT_FALSE(context.thread()->has_pending_exception());
+}
+
+TEST(TValue, CheckedExceptionConstructionNamesTargetTypeOnFailure)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Expected<TValue<Exception>> exception =
+        TValue<Exception>::from_value_checked(Value::from_smi(42));
+
+    EXPECT_TRUE(exception.has_exception());
+    EXPECT_TRUE(exception.raw_value().is_exception_marker());
+    expect_pending_exception(
+        context.thread(), L"TypeError",
+        L"invalid typed value construction for BaseException");
+}
+
 TEST(Value, InlineTypePredicatesDistinguishSmiBoolAndNone)
 {
     EXPECT_TRUE(Value::from_smi(0).is_smi());
