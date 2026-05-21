@@ -112,6 +112,7 @@ template <> struct fmt::formatter<cl::AstOperatorKind>
             case cl::AstOperatorKind::STRING:
                 return out;
         }
+        return format_to(out, "<unknown>");
     }
 };
 

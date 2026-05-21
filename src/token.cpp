@@ -203,6 +203,7 @@ namespace cl
             case Token::ERRORTOKEN_OPEN_BRACKET_EOF:
                 return "ERRORTOKEN_OPEN_BRACKET_EOF";
         }
+        return "<unknown>";
     };
 
     std::ostream &operator<<(std::ostream &o, Token t)

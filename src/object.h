@@ -10,7 +10,7 @@
 #include <type_traits>
 
 #ifndef ALWAYSINLINE
-#define ALWAYSINLINE __attribute__((always_inline))
+#define ALWAYSINLINE inline __attribute__((always_inline))
 #endif
 #ifndef INLINE
 #define INLINE inline
@@ -98,9 +98,8 @@ namespace cl
         OverflowSlots *ensure_overflow_slot(int32_t physical_idx);
 
     protected:
-        ALWAYSINLINE void
-        initialize_shape_for_class(ClassObject *class_object,
-                                   NativeLayoutId native_layout_id);
+        void initialize_shape_for_class(ClassObject *class_object,
+                                        NativeLayoutId native_layout_id);
     };
 
     constexpr bool native_layout_has_slots(NativeLayoutId native_layout)
@@ -154,29 +153,29 @@ namespace cl
         CL_DECLARE_STATIC_OBJECT_SIZE(SlotObject);
     };
 
-    inline ALWAYSINLINE SlotObject *Object::as_slot_object()
+    ALWAYSINLINE SlotObject *Object::as_slot_object()
     {
         assert(native_layout_has_slots(native_layout_id()));
         return static_cast<SlotObject *>(this);
     }
 
-    inline ALWAYSINLINE const SlotObject *Object::as_slot_object() const
+    ALWAYSINLINE const SlotObject *Object::as_slot_object() const
     {
         assert(native_layout_has_slots(native_layout_id()));
         return static_cast<const SlotObject *>(this);
     }
 
-    inline ALWAYSINLINE Value *Object::inline_slot_base()
+    ALWAYSINLINE Value *Object::inline_slot_base()
     {
         return as_slot_object()->SlotObject::inline_slot_base();
     }
 
-    inline ALWAYSINLINE const Value *Object::inline_slot_base() const
+    ALWAYSINLINE const Value *Object::inline_slot_base() const
     {
         return as_slot_object()->SlotObject::inline_slot_base();
     }
 
-    inline ALWAYSINLINE OverflowSlots *Object::get_overflow_slots() const
+    ALWAYSINLINE OverflowSlots *Object::get_overflow_slots() const
     {
         return as_slot_object()->SlotObject::get_overflow_slots();
     }

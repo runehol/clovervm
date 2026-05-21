@@ -8,7 +8,7 @@
 namespace cl
 {
 
-    static int32_t n_fastpath_ldar_star = 16;
+    inline constexpr int32_t n_fastpath_ldar_star = 16;
 
     enum class Bytecode : uint8_t
     {

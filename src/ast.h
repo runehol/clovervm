@@ -112,6 +112,7 @@ namespace cl
             case AstNodeKind::EXPRESSION_ATTRIBUTE:
                 return true;
         }
+        return false;
     }
 
     enum class AstOperatorKind : uint8_t
@@ -304,6 +305,7 @@ namespace cl
             case AstOperatorKind::FALSE:
                 return ExpressionPrecedence::Atom;
         }
+        return ExpressionPrecedence::Atom;
     }
 
     using AstChildren = absl::InlinedVector<int32_t, 4>;

@@ -215,7 +215,7 @@ namespace cl
     };
 
     class VirtualMachine;
-    inline ALWAYSINLINE void
+    ALWAYSINLINE void
     Object::initialize_shape_for_class(ClassObject *class_object,
                                        NativeLayoutId native_layout_id)
     {
@@ -224,9 +224,8 @@ namespace cl
                          native_layout_id);
     }
 
-    inline ALWAYSINLINE void
-    Object::initialize_shape(Shape *instance_root_shape,
-                             NativeLayoutId native_layout_id)
+    ALWAYSINLINE void Object::initialize_shape(Shape *instance_root_shape,
+                                               NativeLayoutId native_layout_id)
     {
         assert(shape == nullptr);
         assert(instance_root_shape != nullptr);

@@ -32,7 +32,11 @@ namespace cl
     Value accumulator, Value *fp, const uint8_t *pc, void *dispatch,           \
         CodeObject *code_object, ThreadState *thread
 #define ARGS accumulator, fp, pc, dispatch, code_object, thread
+#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 16)
 #define INTERP_CC __attribute__((preserve_none))
+#else
+#define INTERP_CC
+#endif
 
     using DispatchTableEntry = Value(INTERP_CC *)(PARAMS);
 

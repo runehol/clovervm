@@ -348,6 +348,7 @@ template <> struct fmt::formatter<cl::Bytecode>
             case cl::Bytecode::Invalid:
                 return format_to(out, "Invalid");
         }
+        return format_to(out, "<unknown>");
     }
 };
 

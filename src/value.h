@@ -40,7 +40,7 @@ namespace cl
 #define unlikely(x) __builtin_expect((x), 0)
 #endif
 #ifndef ALWAYSINLINE
-#define ALWAYSINLINE __attribute__((always_inline))
+#define ALWAYSINLINE inline __attribute__((always_inline))
 #endif
 #ifndef INLINE
 #define INLINE inline
@@ -307,7 +307,7 @@ namespace cl
 
 namespace cl
 {
-    inline ALWAYSINLINE Value
+    ALWAYSINLINE Value
     Object::read_storage_location(StorageLocation location) const
     {
         switch(location.kind)
@@ -326,7 +326,7 @@ namespace cl
         __builtin_unreachable();
     }
 
-    inline ALWAYSINLINE void
+    ALWAYSINLINE void
     Object::write_existing_storage_location(StorageLocation location,
                                             Value value)
     {

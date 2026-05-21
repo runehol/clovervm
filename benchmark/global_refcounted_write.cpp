@@ -9,12 +9,12 @@ namespace benchmark_cpp
         };
 
         Box *volatile global_value = nullptr;
+        Box a;
+        Box b;
     }  // namespace
 
     int64_t global_refcounted_write_run(int64_t n)
     {
-        Box a;
-        Box b;
         int64_t acc = 0;
         for(int64_t i = 0; i < n; ++i)
         {

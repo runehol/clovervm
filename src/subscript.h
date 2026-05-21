@@ -10,8 +10,7 @@ namespace cl
 {
     [[nodiscard]] Value load_subscript_slow(Value obj, Value key);
 
-    [[nodiscard]] inline ALWAYSINLINE Value load_subscript_fast(Value obj,
-                                                                Value key)
+    [[nodiscard]] ALWAYSINLINE Value load_subscript_fast(Value obj, Value key)
     {
         if(!obj.is_ptr())
         {
@@ -68,7 +67,7 @@ namespace cl
         return Value::not_present();
     }
 
-    [[nodiscard]] inline ALWAYSINLINE Value load_subscript(Value obj, Value key)
+    [[nodiscard]] ALWAYSINLINE Value load_subscript(Value obj, Value key)
     {
         Value result = load_subscript_fast(obj, key);
         if(!result.is_not_present())
@@ -80,9 +79,8 @@ namespace cl
 
     [[nodiscard]] Value store_subscript_slow(Value obj, Value key, Value value);
 
-    [[nodiscard]] inline ALWAYSINLINE Value store_subscript_fast(Value obj,
-                                                                 Value key,
-                                                                 Value value)
+    [[nodiscard]] ALWAYSINLINE Value store_subscript_fast(Value obj, Value key,
+                                                          Value value)
     {
         value.assert_not_vm_sentinel();
         if(!obj.is_ptr())
@@ -122,9 +120,8 @@ namespace cl
         return Value::not_present();
     }
 
-    [[nodiscard]] inline ALWAYSINLINE Value store_subscript(Value obj,
-                                                            Value key,
-                                                            Value value)
+    [[nodiscard]] ALWAYSINLINE Value store_subscript(Value obj, Value key,
+                                                     Value value)
     {
         Value result = store_subscript_fast(obj, key, value);
         if(!result.is_not_present())
