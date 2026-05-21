@@ -2703,6 +2703,7 @@ namespace cl
         }
 
         CodeObject *target_code_object = cache.code_object;
+        const uint8_t *target_pc = target_code_object->code.data();
         int32_t new_fp_reg =
             first_arg_reg -
             int32_t(target_code_object->get_padded_n_parameters()) + 1 -
@@ -2714,7 +2715,7 @@ namespace cl
 
         fp = new_fp;
         code_object = target_code_object;
-        pc = target_code_object->code.data();
+        pc = target_pc;
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
