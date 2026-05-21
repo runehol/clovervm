@@ -4,9 +4,20 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdlib>
 
 namespace cl
 {
+    namespace
+    {
+        [[noreturn]] NOINLINE void
+        abort_missing_slab_for_address(const void *ptr)
+        {
+            (void)ptr;
+            std::abort();
+        }
+    }  // namespace
+
     uintptr_t slab_lookup_key_for_address(const void *ptr)
     {
         return reinterpret_cast<uintptr_t>(ptr) >> SlabLookupGranuleShift;
@@ -78,7 +89,12 @@ namespace cl
     SlabAllocator *GlobalHeap::slab_for_address_unlocked(const void *ptr) const
     {
         auto it = slab_lookup.find(slab_lookup_key_for_address(ptr));
-        assert(it != slab_lookup.end());
+        if(unlikely(it == slab_lookup.end()))
+        {
+            assert(false &&
+                   "address is not covered by this heap's slab lookup");
+            abort_missing_slab_for_address(ptr);
+        }
         return it->second;
     }
 
