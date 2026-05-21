@@ -11,6 +11,7 @@ on:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    name: ${{ matrix.c_compiler }} ${{ matrix.build_type }} on ${{ matrix.os }}
 
     strategy:
       # Set fail-fast to false to ensure that feedback is delivered for all matrix combinations. Consider changing this to true when your workflow is stable.
@@ -59,4 +60,68 @@ jobs:
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
       # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+      run: ctest --build-config ${{ matrix.build_type }}
+
+  gcc:
+    runs-on: ubuntu-latest
+    name: ${{ matrix.name }} ${{ matrix.build_type }}
+    container: ${{ matrix.container }}
+    continue-on-error: ${{ matrix.experimental }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GCC 15 on Fedora 43
+            container: fedora:43
+            build_type: Debug
+            c_compiler: gcc
+            cpp_compiler: g++
+            experimental: false
+          - name: GCC 16 on Fedora 44
+            container: fedora:44
+            build_type: Debug
+            c_compiler: gcc
+            cpp_compiler: g++
+            experimental: true
+          - name: GCC 15 on Fedora 43
+            container: fedora:43
+            build_type: Release
+            c_compiler: gcc
+            cpp_compiler: g++
+            experimental: false
+          - name: GCC 16 on Fedora 44
+            container: fedora:44
+            build_type: Release
+            c_compiler: gcc
+            cpp_compiler: g++
+            experimental: true
+
+    steps:
+    - name: Install build dependencies
+      run: >
+        dnf install -y
+        cmake
+        gcc
+        gcc-c++
+        git
+        ninja-build
+        python3
+
+    - uses: actions/checkout@v5
+
+    - name: Configure CMake
+      run: >
+        cmake -S ${{ github.workspace }}
+        -B ${{ github.workspace }}/build
+        -G Ninja
+        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
+        -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+
+    - name: Build
+      run: cmake --build ${{ github.workspace }}/build
+
+    - name: Test
+      working-directory: ${{ github.workspace }}/build
       run: ctest --build-config ${{ matrix.build_type }}
