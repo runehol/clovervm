@@ -64,38 +64,15 @@ jobs:
 
   gcc:
     runs-on: ubuntu-latest
-    name: ${{ matrix.name }} ${{ matrix.build_type }}
-    container: ${{ matrix.container }}
-    continue-on-error: ${{ matrix.experimental }}
+    name: GCC 16 ${{ matrix.build_type }} on Fedora 44
+    container: fedora:44
 
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: GCC 15 on Fedora 43
-            container: fedora:43
-            build_type: Debug
-            c_compiler: gcc
-            cpp_compiler: g++
-            experimental: false
-          - name: GCC 16 on Fedora 44
-            container: fedora:44
-            build_type: Debug
-            c_compiler: gcc
-            cpp_compiler: g++
-            experimental: true
-          - name: GCC 15 on Fedora 43
-            container: fedora:43
-            build_type: Release
-            c_compiler: gcc
-            cpp_compiler: g++
-            experimental: false
-          - name: GCC 16 on Fedora 44
-            container: fedora:44
-            build_type: Release
-            c_compiler: gcc
-            cpp_compiler: g++
-            experimental: true
+        build_type: [Debug, Release]
+        c_compiler: [gcc]
+        cpp_compiler: [g++]
 
     steps:
     - name: Install build dependencies
