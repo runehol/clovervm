@@ -42,6 +42,9 @@ namespace cl
 #ifndef ALWAYSINLINE
 #define ALWAYSINLINE __attribute__((always_inline))
 #endif
+#ifndef INLINE
+#define INLINE inline
+#endif
 #ifndef NOINLINE
 #define NOINLINE __attribute__((noinline))
 #endif

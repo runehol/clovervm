@@ -10,29 +10,32 @@
 namespace cl
 {
 
-    using namespace ctre::literals;
+    static constexpr auto name_pattern = ctll::fixed_string{"^\\w+"};
+    static constexpr auto name_re = ctre::re<name_pattern>();
 
-    static constexpr auto name_re = "^\\w+"_ctre;
+    static constexpr auto int_number_pattern =
+        ctll::fixed_string{"^("
+                           "(0[xX](?:_?[0-9a-fA-F])+)"  // hexadecimal
+                           "|"
+                           "(0[bB](?:_?[01])+)"  // binary
+                           "|"
+                           "(0[oO](?:_?[0-7])+)"  // octal
+                           "|"
+                           "(?:0(?:_?0)*|[1-9](?:_?[0-9])*)"
+                           ")"};
+    static constexpr auto int_number_re = ctre::re<int_number_pattern>();
 
-    static constexpr auto int_number_re =
-        "^("
-        "(0[xX](?:_?[0-9a-fA-F])+)"  // hexadecimal
-        "|"
-        "(0[bB](?:_?[01])+)"  // binary
-        "|"
-        "(0[oO](?:_?[0-7])+)"  // octal
-        "|"
-        "(?:0(?:_?0)*|[1-9](?:_?[0-9])*)"
-        ")"_ctre;
-
-    static constexpr auto float_number_re =
+    static constexpr auto float_number_pattern = ctll::fixed_string{
         "^("
         "((?:[0-9](?:_?[0-9])*)?\\.[0-9](?:_?[0-9])*|"
         "[0-9](?:_?[0-9])*\\.)(?:[eE](?:\\+|-)?[0-9](?:_?[0-9])*)?"
         "|"
-        "[0-9](?:_?[0-9])*[eE](?:\\+|-)?[0-9](?:_?[0-9])*)"_ctre;
+        "[0-9](?:_?[0-9])*[eE](?:\\+|-)?[0-9](?:_?[0-9])*)"};
+    static constexpr auto float_number_re = ctre::re<float_number_pattern>();
 
-    static constexpr auto string_prefix_re = "^[rRuU]{0,2}"_ctre;
+    static constexpr auto string_prefix_pattern =
+        ctll::fixed_string{"^[rRuU]{0,2}"};
+    static constexpr auto string_prefix_re = ctre::re<string_prefix_pattern>();
 
     static bool is_string_prefix(std::wstring_view prefix)
     {

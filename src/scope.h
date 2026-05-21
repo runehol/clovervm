@@ -44,8 +44,7 @@ namespace cl
             return entries[entry_idx].get_slot_idx() >= 0;
         }
 
-        ALWAYSINLINE Value
-        get_by_slot_index_fastpath_only(int32_t slot_idx) const
+        INLINE Value get_by_slot_index_fastpath_only(int32_t slot_idx) const
         {
             assert(slot_idx >= 0);
             Value v = slot_values[slot_idx];

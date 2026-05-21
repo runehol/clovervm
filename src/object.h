@@ -12,6 +12,9 @@
 #ifndef ALWAYSINLINE
 #define ALWAYSINLINE __attribute__((always_inline))
 #endif
+#ifndef INLINE
+#define INLINE inline
+#endif
 
 namespace cl
 {
