@@ -40,7 +40,10 @@ Use separate names for the separate jobs:
 
 - **Symbol scope**
   Compiler-side name classification for function, class, comprehension, and
-  module blocks.
+  module blocks. A symbol scope maps names to stable slot identities used by
+  compiled code and preserves insertion-order metadata for scope names; it does
+  not own runtime value storage, runtime namespace entries, or parent-scope
+  lookup indirections.
 
 - **Frame locals**
   Runtime storage for function-local slots and closure-cell references.
@@ -54,6 +57,42 @@ Use separate names for the separate jobs:
   module globals.
 
 This avoids using `Scope` to mean both "lexical parent" and "runtime namespace".
+
+## Separate Storage Families
+
+`Scope`, runtime namespaces, object Shapes, and Python `dict` are related but
+not interchangeable.
+
+- `Scope`
+  - compiler-side name classification
+  - `name -> stable slot identity`
+  - ordered name/slot metadata for dictionary-like presentation when required
+  - no runtime value cells
+  - no parent-slot fallback payload
+
+- `Namespace`
+  - runtime binding storage for module globals, class body locals, and `exec`
+    globals
+  - owns live value state and delete/reinsert behavior
+  - may be backed by shape/object storage, dict-like storage, or a temporary
+    extracted scope-storage substrate during the refactor
+
+- `Shape`
+  - object-attribute structure and lookup metadata
+  - shape-relative slots, descriptors, transitions, and validity cells
+  - the semantic authority for object membership and `obj.__dict__` mapping
+    views
+
+- `Dict`
+  - normal Python mapping object
+  - arbitrary Python keys
+  - Python-level hash and equality semantics
+  - own insertion-order and value payload
+
+The important rule is that shared implementation substrates are allowed, but
+these concepts should not collapse into one concrete table type. In particular,
+global lookup should not depend on `Scope` parent-slot indirection, and Python
+`dict` should not be coupled to VM-internal string-keyed lookup tables.
 
 ## Compile-Time Classification
 
@@ -170,8 +209,12 @@ attribute lookup on that object. The builtin module does not need to have a
 visible `__builtins__` attribute.
 
 Because frame builtins resolution depends on the value of the module
-`__builtins__` binding, that binding should be treated as a distinguished module
-slot. Shape membership alone is not enough: assigning a new value to an existing
+`__builtins__` binding, that binding should be treated as a distinguished
+predefined module slot. Every `ModuleObject` should reserve a fixed
+`__builtins__` storage location so C++ runtime code can find the binding without
+doing a general namespace lookup first.
+
+Shape membership alone is not enough: assigning a new value to an existing
 `__builtins__` slot changes future builtins resolution even though the slot
 location is unchanged.
 
@@ -492,8 +535,11 @@ hot globals that land in overflow storage.
 
 ## Refactor Direction
 
-The preferred direction is to split the current `Scope` responsibilities before
-adding module-shaped global optimization.
+The preferred direction is to introduce an explicit `ModuleObject` concept first,
+then split the current `Scope` responsibilities before adding module-shaped
+global optimization. Without a module object, the refactor has no semantic home
+for defining-module identity, module-owned globals, builtins resolution state,
+future import records, or module attribute access.
 
 Suggested layering:
 
@@ -501,6 +547,7 @@ Suggested layering:
 SymbolScope
   compiler-side lexical structure
   parent chain for function/class/module block analysis
+  maps names to stable slot identities
   no Python-visible runtime storage contract
 
 FrameLocals
@@ -548,12 +595,24 @@ bodies may continue using the current frame-slot representation and
 Recommended staging:
 
 ```text
+stage 0:
+  introduce ModuleObject as a runtime object with identity
+  give each module object an owned namespace/global storage reference
+  create a module object for startup and interactive execution
+  thread ModuleObject references through CodeObject, Function, and Frame context
+  keep current lookup behavior as much as possible while the context is moved
+
 stage 1:
   replace module Scope parent lookup with defining_module + builtins_namespace
   move module globals onto module-owned namespace/storage
   keep class bodies on the existing local-slot harvest path
 
 stage 2:
+  integrate ModuleObject storage with shape-backed object storage where useful
+  align module.x, globals(), top-level stores, and eventual __dict__ over the
+  module-owned namespace without changing LOAD_GLOBAL into attribute lookup
+
+stage 3:
   add active_locals_namespace to frames
   add LOAD_NAME / STORE_NAME / DEL_NAME
   compile class bodies to name ops
@@ -575,9 +634,11 @@ This refactor should not:
 
 ## Open Questions
 
-- Whether the first `Namespace` implementation should be a renamed/split
-  version of the current `Scope` storage or a new type built on shaped object
-  storage.
+- Whether the first `Namespace` implementation should be a new type backed by
+  shaped object storage, dict-like storage, or a temporary extraction of the
+  current scope storage pieces. The end state should not leave value storage,
+  runtime namespace entries, or parent lookup indirection on `Scope`; ordered
+  name/slot metadata may remain there for scope-derived dictionary presentation.
 - Whether builtins should be cached on functions, modules, frames, or only in
   `LOAD_GLOBAL` inline-cache entries.
 - How interactive mode should preserve its current shared module namespace while

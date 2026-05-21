@@ -198,7 +198,8 @@ string-keyed tables, shape slots, and namespace-specific storage.
 Detailed docs:
 
 - [Dictionaries](dictionaries.md)
-- [Namespaces And Mapping Views](namespaces-and-mappings.md)
+- [Module Global Namespace Design Sketch](module-global-namespace-design.md)
+- [Object Model](object-model.md)
 - [Specialized list storage design](specialized-list-storage.md)
 
 ## JIT Direction
