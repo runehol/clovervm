@@ -199,6 +199,7 @@ Detailed docs:
 
 - [Dictionaries](dictionaries.md)
 - [Module Global Namespace Design Sketch](module-global-namespace-design.md)
+- [Module Global Namespace Implementation Plan](module-global-namespace-implementation.md)
 - [Object Model](object-model.md)
 - [Specialized list storage design](specialized-list-storage.md)
 

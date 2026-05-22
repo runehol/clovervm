@@ -3,6 +3,9 @@
 This note captures the intended split between lexical scopes, module objects,
 and runtime global lookup.
 
+For staged implementation work, see
+[Module Global Namespace Implementation Plan](module-global-namespace-implementation.md).
+
 The short version is:
 
 - `Scope` should remain a compiler/name-binding concept for function-like
