@@ -158,12 +158,12 @@ template <> struct fmt::formatter<cl::Bytecode>
             case cl::Bytecode::Star15:
                 return format_to(out, "Star15");
 
-            case cl::Bytecode::LdaModuleGlobal:
-                return format_to(out, "LdaModuleGlobal");
-            case cl::Bytecode::StaModuleGlobal:
-                return format_to(out, "StaModuleGlobal");
-            case cl::Bytecode::DelModuleGlobal:
-                return format_to(out, "DelModuleGlobal");
+            case cl::Bytecode::LdaGlobal:
+                return format_to(out, "LdaGlobal");
+            case cl::Bytecode::StaGlobal:
+                return format_to(out, "StaGlobal");
+            case cl::Bytecode::DelGlobal:
+                return format_to(out, "DelGlobal");
             case cl::Bytecode::DelLocal:
                 return format_to(out, "DelLocal");
             case cl::Bytecode::LoadAttr:
@@ -552,21 +552,21 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::Star15:
                 break;
 
-            case cl::Bytecode::LdaModuleGlobal:
+            case cl::Bytecode::LdaGlobal:
                 format_to(out, " ");
                 disassemble_constant(code_obj, out, pc++);
                 format_to(out, ", ");
                 disassemble_module_global_read_cache(code_obj, out, pc++);
                 break;
 
-            case cl::Bytecode::StaModuleGlobal:
+            case cl::Bytecode::StaGlobal:
                 format_to(out, " ");
                 disassemble_constant(code_obj, out, pc++);
                 format_to(out, ", ");
                 disassemble_module_global_mutation_cache(code_obj, out, pc++);
                 break;
 
-            case cl::Bytecode::DelModuleGlobal:
+            case cl::Bytecode::DelGlobal:
                 format_to(out, " ");
                 disassemble_constant(code_obj, out, pc++);
                 break;

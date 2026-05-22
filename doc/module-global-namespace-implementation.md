@@ -321,10 +321,11 @@ First test hooks for the new path:
 ### Stage 7 Notes
 
 Slice 1 has landed: ordinary global reads, writes, and deletes now emit
-`LdaModuleGlobal`, `StaModuleGlobal`, and `DelModuleGlobal`. The new bytecode
-instructions carry name constants, so global read/delete `NameError` reporting
-no longer depends on scope-owned runtime slots. The legacy `LdaGlobal`,
-`StaGlobal`, and `DelGlobal` bytecodes have now been removed.
+name-based global bytecodes. The transitional module-global opcode spellings
+were retired after the legacy slot-index opcodes were deleted, and the names
+moved back to `LdaGlobal`, `StaGlobal`, and `DelGlobal`. These instructions
+carry name constants, so global read/delete `NameError` reporting no longer
+depends on scope-owned runtime slots.
 
 Nested functions and class bodies now receive the defining module from their
 enclosing code object. Function globals therefore resolve through the defining
@@ -372,10 +373,10 @@ metadata they need for frame storage and class namespace harvesting.
 ### Stage 8 Notes
 
 The legacy slot-index global bytecodes are gone. `LdaGlobal`, `StaGlobal`, and
-`DelGlobal` no longer exist in the bytecode enum, builder API, disassembler, or
-interpreter dispatch table, so interpreter module-global execution now goes
-through the module-object opcodes exclusively. Codegen also no longer eagerly
-creates a legacy module scope for generated modules, functions, or classes.
+`DelGlobal` now name the module-object global bytecodes in the enum, builder
+API, disassembler, and interpreter dispatch table. Codegen also no longer
+eagerly creates a legacy module scope for generated modules, functions, or
+classes.
 
 The module-owned legacy scope bridge has been removed. `ModuleObject` no longer
 stores a legacy scope pointer, `CodeObject` no longer exposes a legacy module

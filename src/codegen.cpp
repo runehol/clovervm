@@ -308,7 +308,7 @@ namespace cl
                     }
                     break;
                 case BindingScope::Global:
-                    code_obj->emit_lda_module_global(
+                    code_obj->emit_lda_global(
                         source_offset,
                         code_obj->allocate_constant(av.constants[node_idx]));
                     break;
@@ -324,7 +324,7 @@ namespace cl
                     code_obj->emit_star(source_offset, access.slot_idx);
                     break;
                 case BindingScope::Global:
-                    code_obj->emit_sta_module_global(
+                    code_obj->emit_sta_global(
                         source_offset,
                         code_obj->allocate_constant(av.constants[node_idx]));
                     break;
@@ -340,7 +340,7 @@ namespace cl
                     code_obj->emit_del_local(source_offset, access.slot_idx);
                     break;
                 case BindingScope::Global:
-                    code_obj->emit_del_module_global(
+                    code_obj->emit_del_global(
                         source_offset,
                         code_obj->allocate_constant(av.constants[node_idx]));
                     break;

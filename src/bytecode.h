@@ -63,9 +63,9 @@ namespace cl
         Star15,
 
         // module-object globals by constant-table name
-        LdaModuleGlobal,
-        StaModuleGlobal,
-        DelModuleGlobal,
+        LdaGlobal,
+        StaGlobal,
+        DelGlobal,
         DelLocal,
 
         // attribute access

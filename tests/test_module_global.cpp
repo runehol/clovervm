@@ -295,7 +295,7 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsModuleSlot)
         context, module, L"<module-global-load-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_module_global(0, name_idx);
+            builder.emit_lda_global(0, name_idx);
             builder.emit_return(0);
         });
 
@@ -329,7 +329,7 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsBuiltinsAfterModuleMiss)
         context, module, L"<module-global-builtin-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_module_global(0, name_idx);
+            builder.emit_lda_global(0, name_idx);
             builder.emit_return(0);
         });
 
@@ -357,7 +357,7 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalMissingNameRaisesNameError)
         context, module, L"<module-global-missing-load-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_module_global(0, name_idx);
+            builder.emit_lda_global(0, name_idx);
             builder.emit_return(0);
         });
 
@@ -387,8 +387,8 @@ TEST(ModuleGlobalBytecode, StoreModuleGlobalWritesModuleSlot)
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
             builder.emit_lda_smi(0, 11);
-            builder.emit_sta_module_global(0, name_idx);
-            builder.emit_lda_module_global(0, name_idx);
+            builder.emit_sta_global(0, name_idx);
+            builder.emit_lda_global(0, name_idx);
             builder.emit_return(0);
         });
 
@@ -433,8 +433,8 @@ TEST(ModuleGlobalBytecode, DeleteModuleGlobalDeletesModuleSlot)
         context, module, L"<module-global-delete-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_del_module_global(0, name_idx);
-            builder.emit_lda_module_global(0, name_idx);
+            builder.emit_del_global(0, name_idx);
+            builder.emit_lda_global(0, name_idx);
             builder.emit_return(0);
         });
 
@@ -464,7 +464,7 @@ TEST(ModuleGlobalBytecode, DeleteModuleGlobalMissingNameRaisesNameError)
         context, module, L"<module-global-missing-delete-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_del_module_global(0, name_idx);
+            builder.emit_del_global(0, name_idx);
             builder.emit_return(0);
         });
 
@@ -492,7 +492,7 @@ TEST(ModuleGlobalBytecode, CachedLoadReadsReboundModuleValue)
         context, module, L"<module-global-cached-rebind-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_module_global(0, name_idx);
+            builder.emit_lda_global(0, name_idx);
             builder.emit_return(0);
         });
 
@@ -529,7 +529,7 @@ TEST(ModuleGlobalBytecode, CachedModuleLoadInvalidatesAndRevealsBuiltin)
         context, module, L"<module-global-cached-delete-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_module_global(0, name_idx);
+            builder.emit_lda_global(0, name_idx);
             builder.emit_return(0);
         });
 
@@ -567,7 +567,7 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadReadsReboundBuiltinsValue)
         context, module, L"<module-global-cached-builtin-rebind-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_module_global(0, name_idx);
+            builder.emit_lda_global(0, name_idx);
             builder.emit_return(0);
         });
 
@@ -610,7 +610,7 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadInvalidatesOnBuiltinsReassignment)
         context, module, L"<module-global-cached-builtin-reassign-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_module_global(0, name_idx);
+            builder.emit_lda_global(0, name_idx);
             builder.emit_return(0);
         });
 

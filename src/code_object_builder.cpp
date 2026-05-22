@@ -255,12 +255,12 @@ namespace cl
         return emit_opcode_reg(source_offset, Bytecode::LoadLocalChecked, reg);
     }
 
-    uint32_t CodeObjectBuilder::emit_lda_module_global(uint32_t source_offset,
-                                                       uint8_t name_idx)
+    uint32_t CodeObjectBuilder::emit_lda_global(uint32_t source_offset,
+                                                uint8_t name_idx)
     {
         uint8_t cache_idx = allocate_module_global_read_cache();
         return emit_opcode_constant_idx_cache_idx(
-            source_offset, Bytecode::LdaModuleGlobal, name_idx, cache_idx);
+            source_offset, Bytecode::LdaGlobal, name_idx, cache_idx);
     }
 
     uint32_t CodeObjectBuilder::emit_star(uint32_t source_offset, uint32_t reg)
@@ -274,12 +274,12 @@ namespace cl
         return emit_opcode_reg(source_offset, Bytecode::Star, reg);
     }
 
-    uint32_t CodeObjectBuilder::emit_sta_module_global(uint32_t source_offset,
-                                                       uint8_t name_idx)
+    uint32_t CodeObjectBuilder::emit_sta_global(uint32_t source_offset,
+                                                uint8_t name_idx)
     {
         uint8_t cache_idx = allocate_module_global_mutation_cache();
         return emit_opcode_constant_idx_cache_idx(
-            source_offset, Bytecode::StaModuleGlobal, name_idx, cache_idx);
+            source_offset, Bytecode::StaGlobal, name_idx, cache_idx);
     }
 
     uint32_t CodeObjectBuilder::emit_del_local(uint32_t source_offset,
@@ -288,11 +288,11 @@ namespace cl
         return emit_opcode_reg(source_offset, Bytecode::DelLocal, reg);
     }
 
-    uint32_t CodeObjectBuilder::emit_del_module_global(uint32_t source_offset,
-                                                       uint8_t name_idx)
+    uint32_t CodeObjectBuilder::emit_del_global(uint32_t source_offset,
+                                                uint8_t name_idx)
     {
-        return emit_opcode_constant_idx(source_offset,
-                                        Bytecode::DelModuleGlobal, name_idx);
+        return emit_opcode_constant_idx(source_offset, Bytecode::DelGlobal,
+                                        name_idx);
     }
 
     uint32_t CodeObjectBuilder::emit_lda_none(uint32_t source_offset)

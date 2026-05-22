@@ -1815,7 +1815,7 @@ namespace cl
                 plan.storage_location(), value);
     }
 
-    NOINLINE static INTERP_CC Value op_lda_module_global_cache_miss(PARAMS)
+    NOINLINE static INTERP_CC Value op_lda_global_cache_miss(PARAMS)
     {
         START(3);
         uint8_t name_idx = pc[1];
@@ -1839,7 +1839,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_lda_module_global(PARAMS)
+    static INTERP_CC Value op_lda_global(PARAMS)
     {
         START(3);
         uint8_t cache_idx = pc[2];
@@ -1847,13 +1847,13 @@ namespace cl
             code_object->module_global_read_caches[cache_idx];
         if(unlikely(!cache.matches()))
         {
-            MUSTTAIL return op_lda_module_global_cache_miss(ARGS);
+            MUSTTAIL return op_lda_global_cache_miss(ARGS);
         }
         accumulator = load_module_global_slot_from_plan_inline(cache.slot);
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_sta_module_global_cache_miss(PARAMS)
+    NOINLINE static INTERP_CC Value op_sta_global_cache_miss(PARAMS)
     {
         START(3);
         uint8_t name_idx = pc[1];
@@ -1882,7 +1882,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_sta_module_global(PARAMS)
+    static INTERP_CC Value op_sta_global(PARAMS)
     {
         START(3);
         uint8_t cache_idx = pc[2];
@@ -1890,7 +1890,7 @@ namespace cl
             code_object->module_global_mutation_caches[cache_idx];
         if(unlikely(!cache.matches()))
         {
-            MUSTTAIL return op_sta_module_global_cache_miss(ARGS);
+            MUSTTAIL return op_sta_global_cache_miss(ARGS);
         }
         HeapObject *zct_object =
             store_module_global_from_store_existing_plan_inline_fast(
@@ -1902,7 +1902,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_del_module_global(PARAMS)
+    static INTERP_CC Value op_del_global(PARAMS)
     {
         START(2);
         uint8_t name_idx = pc[1];
@@ -3514,9 +3514,9 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::TestGreaterEqual, op_test_greater_equal);
         SET_TABLE_ENTRY(Bytecode::TestGreater, op_test_greater);
 
-        SET_TABLE_ENTRY(Bytecode::LdaModuleGlobal, op_lda_module_global);
-        SET_TABLE_ENTRY(Bytecode::StaModuleGlobal, op_sta_module_global);
-        SET_TABLE_ENTRY(Bytecode::DelModuleGlobal, op_del_module_global);
+        SET_TABLE_ENTRY(Bytecode::LdaGlobal, op_lda_global);
+        SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);
+        SET_TABLE_ENTRY(Bytecode::DelGlobal, op_del_global);
         SET_TABLE_ENTRY(Bytecode::DelLocal, op_del_local);
         SET_TABLE_ENTRY(Bytecode::LoadAttr, op_load_attr);
         SET_TABLE_ENTRY(Bytecode::StoreAttr, op_store_attr);
