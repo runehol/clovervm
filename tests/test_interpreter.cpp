@@ -12,6 +12,7 @@
 #include "interpreter.h"
 #include "list.h"
 #include "list_iterator.h"
+#include "module_global.h"
 #include "module_object.h"
 #include "native_function.h"
 #include "parser.h"
@@ -326,13 +327,32 @@ static Value native_every_safepoint_reclamation_ping()
 }
 
 template <typename T>
-static void bind_global(test::VmTestContext &test_context,
-                        CodeObject *code_object, const wchar_t *name, T value)
+static void store_global_to_module_for_test(test::VmTestContext &test_context,
+                                            CodeObject *code_object,
+                                            const wchar_t *name, T value)
 {
     TValue<String> name_value(
         test_context.vm().get_or_create_interned_string_value(name));
-    code_object->get_legacy_module_scope_ptr()->set_by_name(name_value,
-                                                            value.raw_value());
+    ASSERT_TRUE(
+        store_module_global(code_object->get_defining_module().extract(),
+                            name_value, value.raw_value()));
+}
+
+static Value load_global_from_module_for_test(CodeObject *code_object,
+                                              TValue<String> name)
+{
+    return load_module_global(code_object->get_defining_module().extract(),
+                              name);
+}
+
+static Value
+load_builtin_from_module_for_test(test::VmTestContext &test_context,
+                                  const wchar_t *name)
+{
+    TValue<String> name_value =
+        test_context.vm().get_or_create_interned_string_value(name);
+    return load_module_global(
+        test_context.vm().global_builtins_module().extract(), name_value);
 }
 
 static Value make_test_function(test::VmTestContext &test_context,
@@ -344,7 +364,7 @@ static Value make_test_function(test::VmTestContext &test_context,
     TValue<String> name_value(
         test_context.vm().get_or_create_interned_string_value(name));
     Value function_value =
-        code_object->get_legacy_module_scope_ptr()->get_by_name(name_value);
+        load_global_from_module_for_test(code_object, name_value);
     assert(function_value.is_ptr());
     assert(function_value.get_ptr<Object>()->native_layout_id() ==
            NativeLayoutId::Function);
@@ -645,8 +665,7 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
                                                      L"    value = 7\n");
     (void)test_context.thread()->run_clovervm_code_object(code_obj);
 
-    Value cls_value =
-        code_obj->get_legacy_module_scope_ptr()->get_by_name(cls_name);
+    Value cls_value = load_global_from_module_for_test(code_obj, cls_name);
     ASSERT_TRUE(cls_value.is_ptr());
     ASSERT_EQ(NativeLayoutId::ClassObject,
               cls_value.get_ptr<Object>()->native_layout_id());
@@ -691,8 +710,7 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
                                                      L"    third = 3\n");
     (void)test_context.thread()->run_clovervm_code_object(code_obj);
 
-    Value cls_value =
-        code_obj->get_legacy_module_scope_ptr()->get_by_name(cls_name);
+    Value cls_value = load_global_from_module_for_test(code_obj, cls_name);
     ASSERT_TRUE(cls_value.is_ptr());
     ASSERT_EQ(NativeLayoutId::ClassObject,
               cls_value.get_ptr<Object>()->native_layout_id());
@@ -1036,7 +1054,8 @@ TEST(Interpreter, list_literal_evaluates_elements_left_to_right)
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter)
             .raw_value();
-    code_obj->get_legacy_module_scope_ptr()->set_by_name(name, next_counter);
+    ASSERT_TRUE(store_module_global(code_obj->get_defining_module().extract(),
+                                    name, next_counter));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(actual.is_ptr());
@@ -1105,7 +1124,8 @@ TEST(Interpreter, tuple_literal_evaluates_elements_left_to_right)
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter)
             .raw_value();
-    code_obj->get_legacy_module_scope_ptr()->set_by_name(name, next_counter);
+    ASSERT_TRUE(store_module_global(code_obj->get_defining_module().extract(),
+                                    name, next_counter));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(actual.is_ptr());
@@ -1192,7 +1212,8 @@ TEST(Interpreter,
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter)
             .raw_value();
-    code_obj->get_legacy_module_scope_ptr()->set_by_name(name, next_counter);
+    ASSERT_TRUE(store_module_global(code_obj->get_defining_module().extract(),
+                                    name, next_counter));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
@@ -1258,7 +1279,8 @@ TEST(Interpreter,
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter)
             .raw_value();
-    code_obj->get_legacy_module_scope_ptr()->set_by_name(name, next_counter);
+    ASSERT_TRUE(store_module_global(code_obj->get_defining_module().extract(),
+                                    name, next_counter));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
@@ -1391,8 +1413,7 @@ TEST(Interpreter, attribute_load_and_store_syntax)
                                                      L"obj.value\n");
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(7), actual);
-    Scope *module_scope = code_obj->get_legacy_module_scope_ptr();
-    Value obj_value = module_scope->get_by_name(obj_name);
+    Value obj_value = load_global_from_module_for_test(code_obj, obj_name);
     ASSERT_TRUE(obj_value.is_ptr());
     ASSERT_EQ(NativeLayoutId::Instance,
               obj_value.get_ptr<Object>()->native_layout_id());
@@ -1420,7 +1441,7 @@ TEST(Interpreter, store_attr_caches_instance_add_transition)
     EXPECT_EQ(Value::from_smi(2), actual);
 
     Value function_value =
-        code_obj->get_legacy_module_scope_ptr()->get_by_name(function_name);
+        load_global_from_module_for_test(code_obj, function_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
@@ -1452,7 +1473,7 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
                                   L"    del obj.value\n");
     (void)test_context.thread()->run_clovervm_code_object(definition_code);
     Value function_value =
-        definition_code->get_legacy_module_scope_ptr()->get_by_name(clear_name);
+        load_global_from_module_for_test(definition_code, clear_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
@@ -1467,8 +1488,10 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
 
     CodeObject *call_code = test_context.compile_file(L"clear(obj)\n"
                                                       L"42\n");
-    bind_global(test_context, call_code, L"clear", function_value);
-    bind_global(test_context, call_code, L"obj", Value::from_oop(first));
+    store_global_to_module_for_test(test_context, call_code, L"clear",
+                                    function_value);
+    store_global_to_module_for_test(test_context, call_code, L"obj",
+                                    Value::from_oop(first));
     EXPECT_EQ(Value::from_smi(42),
               test_context.thread()->run_clovervm_code_object(call_code));
     EXPECT_TRUE(first->get_own_property(value_name).is_not_present());
@@ -1485,7 +1508,8 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
 
     Instance *second = test_context.thread()->make_internal_raw<Instance>(cls);
     ASSERT_TRUE(second->set_own_property(value_name, Value::from_smi(8)));
-    bind_global(test_context, call_code, L"obj", Value::from_oop(second));
+    store_global_to_module_for_test(test_context, call_code, L"obj",
+                                    Value::from_oop(second));
     EXPECT_EQ(Value::from_smi(42),
               test_context.thread()->run_clovervm_code_object(call_code));
     EXPECT_TRUE(second->get_own_property(value_name).is_not_present());
@@ -1506,15 +1530,17 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
                                   L"    del obj.value\n");
     (void)test_context.thread()->run_clovervm_code_object(definition_code);
     Value function_value =
-        definition_code->get_legacy_module_scope_ptr()->get_by_name(clear_name);
+        load_global_from_module_for_test(definition_code, clear_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
 
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, test_context.vm().object_class());
     Instance *obj = test_context.thread()->make_internal_raw<Instance>(cls);
     CodeObject *call_code = test_context.compile_file(L"clear(obj)\n");
-    bind_global(test_context, call_code, L"clear", function_value);
-    bind_global(test_context, call_code, L"obj", Value::from_oop(obj));
+    store_global_to_module_for_test(test_context, call_code, L"clear",
+                                    function_value);
+    store_global_to_module_for_test(test_context, call_code, L"obj",
+                                    Value::from_oop(obj));
 
     try
     {
@@ -1567,7 +1593,8 @@ TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)
     ASSERT_TRUE(base->set_own_property(value_name, Value::from_smi(1)));
 
     CodeObject *read_code = test_context.compile_file(L"obj.value\n");
-    bind_global(test_context, read_code, L"obj", Value::from_oop(obj));
+    store_global_to_module_for_test(test_context, read_code, L"obj",
+                                    Value::from_oop(obj));
 
     EXPECT_EQ(Value::from_smi(1),
               test_context.thread()->run_clovervm_code_object(read_code));
@@ -1665,7 +1692,8 @@ TEST(Interpreter, cached_direct_method_call_observes_mro_mutations)
     ASSERT_TRUE(base->set_own_property(method_name, base_method_1));
 
     CodeObject *call_code = test_context.compile_file(L"obj.method()\n");
-    bind_global(test_context, call_code, L"obj", Value::from_oop(obj));
+    store_global_to_module_for_test(test_context, call_code, L"obj",
+                                    Value::from_oop(obj));
 
     EXPECT_EQ(Value::from_smi(1),
               test_context.thread()->run_clovervm_code_object(call_code));
@@ -1728,18 +1756,21 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
     ASSERT_TRUE(base->set_own_property(value_name, Value::from_smi(1)));
 
     CodeObject *read_code = test_context.compile_file(L"obj.value\n");
-    bind_global(test_context, read_code, L"obj", Value::from_oop(obj));
+    store_global_to_module_for_test(test_context, read_code, L"obj",
+                                    Value::from_oop(obj));
     EXPECT_EQ(Value::from_smi(1),
               test_context.thread()->run_clovervm_code_object(read_code));
 
     CodeObject *base_store_code =
         test_context.compile_file(L"Base.value = new_value\n"
                                   L"obj.value\n");
-    bind_global(test_context, base_store_code, L"Base", Value::from_oop(base));
-    bind_global(test_context, base_store_code, L"obj", Value::from_oop(obj));
+    store_global_to_module_for_test(test_context, base_store_code, L"Base",
+                                    Value::from_oop(base));
+    store_global_to_module_for_test(test_context, base_store_code, L"obj",
+                                    Value::from_oop(obj));
 
-    bind_global(test_context, base_store_code, L"new_value",
-                Value::from_smi(2));
+    store_global_to_module_for_test(test_context, base_store_code, L"new_value",
+                                    Value::from_smi(2));
     EXPECT_EQ(Value::from_smi(2),
               test_context.thread()->run_clovervm_code_object(base_store_code));
     EXPECT_EQ(Value::from_smi(2),
@@ -1748,10 +1779,13 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
     CodeObject *mid_store_code =
         test_context.compile_file(L"Mid.value = new_value\n"
                                   L"obj.value\n");
-    bind_global(test_context, mid_store_code, L"Mid", Value::from_oop(mid));
-    bind_global(test_context, mid_store_code, L"obj", Value::from_oop(obj));
+    store_global_to_module_for_test(test_context, mid_store_code, L"Mid",
+                                    Value::from_oop(mid));
+    store_global_to_module_for_test(test_context, mid_store_code, L"obj",
+                                    Value::from_oop(obj));
 
-    bind_global(test_context, mid_store_code, L"new_value", Value::from_smi(3));
+    store_global_to_module_for_test(test_context, mid_store_code, L"new_value",
+                                    Value::from_smi(3));
     EXPECT_EQ(Value::from_smi(3),
               test_context.thread()->run_clovervm_code_object(mid_store_code));
     EXPECT_EQ(Value::from_smi(3),
@@ -1760,11 +1794,13 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
     CodeObject *leaf_store_code =
         test_context.compile_file(L"Leaf.value = new_value\n"
                                   L"obj.value\n");
-    bind_global(test_context, leaf_store_code, L"Leaf", Value::from_oop(leaf));
-    bind_global(test_context, leaf_store_code, L"obj", Value::from_oop(obj));
+    store_global_to_module_for_test(test_context, leaf_store_code, L"Leaf",
+                                    Value::from_oop(leaf));
+    store_global_to_module_for_test(test_context, leaf_store_code, L"obj",
+                                    Value::from_oop(obj));
 
-    bind_global(test_context, leaf_store_code, L"new_value",
-                Value::from_smi(4));
+    store_global_to_module_for_test(test_context, leaf_store_code, L"new_value",
+                                    Value::from_smi(4));
     EXPECT_EQ(Value::from_smi(4),
               test_context.thread()->run_clovervm_code_object(leaf_store_code));
     EXPECT_EQ(Value::from_smi(4),
@@ -1773,17 +1809,18 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
     CodeObject *self_store_code =
         test_context.compile_file(L"obj.value = new_value\n"
                                   L"obj.value\n");
-    bind_global(test_context, self_store_code, L"obj", Value::from_oop(obj));
+    store_global_to_module_for_test(test_context, self_store_code, L"obj",
+                                    Value::from_oop(obj));
 
-    bind_global(test_context, self_store_code, L"new_value",
-                Value::from_smi(5));
+    store_global_to_module_for_test(test_context, self_store_code, L"new_value",
+                                    Value::from_smi(5));
     EXPECT_EQ(Value::from_smi(5),
               test_context.thread()->run_clovervm_code_object(self_store_code));
     EXPECT_EQ(Value::from_smi(5),
               test_context.thread()->run_clovervm_code_object(read_code));
 
-    bind_global(test_context, base_store_code, L"new_value",
-                Value::from_smi(6));
+    store_global_to_module_for_test(test_context, base_store_code, L"new_value",
+                                    Value::from_smi(6));
     EXPECT_EQ(Value::from_smi(5),
               test_context.thread()->run_clovervm_code_object(base_store_code));
     EXPECT_EQ(Value::from_smi(5),
@@ -1953,8 +1990,9 @@ TEST(Interpreter, call_native_zero_arg_function)
     ThreadState::ActivationScope activation_scope(test_context.thread());
     CodeObject *code_obj = test_context.compile_file(L"native_zero()\n");
 
-    bind_global(test_context, code_obj, L"native_zero",
-                make_native_function(&test_context.vm(), native_zero));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"native_zero",
+        make_native_function(&test_context.vm(), native_zero));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
@@ -1975,17 +2013,20 @@ TEST(Interpreter, every_safepoint_reclamation_reclaims_unrooted_object)
                                   L"    x = 1\n"
                                   L"    reclamation_ping()\n"
                                   L"exercise()\n");
-    bind_global(test_context, code_obj, L"make_large_tuple",
-                make_native_function(
-                    &test_context.vm(),
-                    native_large_tuple_for_every_safepoint_reclamation));
-    bind_global(test_context, code_obj, L"capture_target",
-                make_native_function(
-                    &test_context.vm(),
-                    native_capture_every_safepoint_reclamation_target));
-    bind_global(test_context, code_obj, L"reclamation_ping",
-                make_native_function(&test_context.vm(),
-                                     native_every_safepoint_reclamation_ping));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"make_large_tuple",
+        make_native_function(
+            &test_context.vm(),
+            native_large_tuple_for_every_safepoint_reclamation));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"capture_target",
+        make_native_function(
+            &test_context.vm(),
+            native_capture_every_safepoint_reclamation_target));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"reclamation_ping",
+        make_native_function(&test_context.vm(),
+                             native_every_safepoint_reclamation_ping));
     GlobalHeap &heap = test_context.vm().get_refcounted_global_heap();
     test_context.vm().set_fire_every_safepoint_for_testing(true);
     test_context.vm().request_safepoint();
@@ -2027,16 +2068,16 @@ TEST(Interpreter, call_native_sets_clover_frame_frontier)
     CodeObject *code_obj = test_context.compile_file(
         L"native_frame0() + native_frame1(10) + "
         L"native_frame2(10, 20) + native_frame3(10, 20, 30)\n");
-    bind_global(
+    store_global_to_module_for_test(
         test_context, code_obj, L"native_frame0",
         make_native_function(&test_context.vm(), native_frame_frontier0));
-    bind_global(
+    store_global_to_module_for_test(
         test_context, code_obj, L"native_frame1",
         make_native_function(&test_context.vm(), native_frame_frontier1));
-    bind_global(
+    store_global_to_module_for_test(
         test_context, code_obj, L"native_frame2",
         make_native_function(&test_context.vm(), native_frame_frontier2));
-    bind_global(
+    store_global_to_module_for_test(
         test_context, code_obj, L"native_frame3",
         make_native_function(&test_context.vm(), native_frame_frontier3));
 
@@ -2083,10 +2124,12 @@ TEST(Interpreter, clover_frame_frontier_chain_survives_nested_native_reentry)
                                   L"def outer():\n"
                                   L"    return native_outer(inner)\n"
                                   L"outer()\n");
-    bind_global(test_context, code_obj, L"native_inner",
-                make_native_function(&test_context.vm(), native_weave_inner));
-    bind_global(test_context, code_obj, L"native_outer",
-                make_native_function(&test_context.vm(), native_weave_outer));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"native_inner",
+        make_native_function(&test_context.vm(), native_weave_inner));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"native_outer",
+        make_native_function(&test_context.vm(), native_weave_outer));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
 
@@ -2587,8 +2630,9 @@ TEST(Interpreter, call_native_one_arg_function)
     ThreadState::ActivationScope activation_scope(test_context.thread());
     CodeObject *code_obj = test_context.compile_file(L"native_increment(41)\n");
 
-    bind_global(test_context, code_obj, L"native_increment",
-                make_native_function(&test_context.vm(), native_increment));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"native_increment",
+        make_native_function(&test_context.vm(), native_increment));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(42), actual);
@@ -2600,8 +2644,9 @@ TEST(Interpreter, call_native_two_arg_function)
     ThreadState::ActivationScope activation_scope(test_context.thread());
     CodeObject *code_obj = test_context.compile_file(L"native_add(20, 22)\n");
 
-    bind_global(test_context, code_obj, L"native_add",
-                make_native_function(&test_context.vm(), native_add));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"native_add",
+        make_native_function(&test_context.vm(), native_add));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(42), actual);
@@ -2613,9 +2658,10 @@ TEST(Interpreter, native_exception_marker_materializes_stop_iteration)
     ThreadState::ActivationScope activation_scope(test_context.thread());
     CodeObject *code_obj = test_context.compile_file(L"native_stop()\n");
 
-    bind_global(test_context, code_obj, L"native_stop",
-                make_native_function(&test_context.vm(),
-                                     native_stop_iteration_with_value));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"native_stop",
+        make_native_function(&test_context.vm(),
+                             native_stop_iteration_with_value));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
@@ -2640,9 +2686,10 @@ TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
                                                      L"    return 99\n"
                                                      L"call_stop()\n");
 
-    bind_global(test_context, code_obj, L"native_stop",
-                make_native_function(&test_context.vm(),
-                                     native_stop_iteration_with_value));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"native_stop",
+        make_native_function(&test_context.vm(),
+                             native_stop_iteration_with_value));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
@@ -2670,9 +2717,10 @@ TEST(Interpreter, catch_stop_iteration_as_exposes_value)
                                   L"    result = e.value\n"
                                   L"result\n");
 
-    bind_global(test_context, code_obj, L"native_stop",
-                make_native_function(&test_context.vm(),
-                                     native_stop_iteration_with_value));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"native_stop",
+        make_native_function(&test_context.vm(),
+                             native_stop_iteration_with_value));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(123), actual);
@@ -2755,9 +2803,8 @@ TEST(Interpreter, try_finally_runs_cleanup_before_reraising)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(
-        Value::from_smi(2),
-        code_obj->get_legacy_module_scope_ptr()->get_by_name(result_name));
+    EXPECT_EQ(Value::from_smi(2),
+              load_global_from_module_for_test(code_obj, result_name));
 }
 
 TEST(Interpreter, try_finally_raise_chains_body_exception_as_context)
@@ -2889,9 +2936,8 @@ TEST(Interpreter, return_through_finally_that_raises_runs_cleanup_once)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(
-        Value::from_smi(1),
-        code_obj->get_legacy_module_scope_ptr()->get_by_name(result_name));
+    EXPECT_EQ(Value::from_smi(1),
+              load_global_from_module_for_test(code_obj, result_name));
 }
 
 TEST(Interpreter, return_in_finally_overrides_protected_return)
@@ -3042,9 +3088,8 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_unmatched_reraise)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(
-        Value::from_smi(2),
-        code_obj->get_legacy_module_scope_ptr()->get_by_name(result_name));
+    EXPECT_EQ(Value::from_smi(2),
+              load_global_from_module_for_test(code_obj, result_name));
 }
 
 TEST(Interpreter, try_except_finally_runs_cleanup_before_handler_reraise)
@@ -3065,9 +3110,8 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_handler_reraise)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(
-        Value::from_smi(2),
-        code_obj->get_legacy_module_scope_ptr()->get_by_name(result_name));
+    EXPECT_EQ(Value::from_smi(2),
+              load_global_from_module_for_test(code_obj, result_name));
 }
 
 TEST(Interpreter, try_except_else_runs_on_body_success)
@@ -3153,9 +3197,8 @@ TEST(Interpreter, try_except_else_finally_cleans_up_else_exception)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(
-        Value::from_smi(2),
-        code_obj->get_legacy_module_scope_ptr()->get_by_name(result_name));
+    EXPECT_EQ(Value::from_smi(2),
+              load_global_from_module_for_test(code_obj, result_name));
 }
 
 TEST(Interpreter, unhandled_pending_exception_reports_class_and_message)
@@ -3164,9 +3207,10 @@ TEST(Interpreter, unhandled_pending_exception_reports_class_and_message)
     ThreadState::ActivationScope activation_scope(test_context.thread());
     CodeObject *code_obj = test_context.compile_file(L"native_boom()\n");
 
-    bind_global(test_context, code_obj, L"native_boom",
-                make_native_function(&test_context.vm(),
-                                     native_base_exception_with_message));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"native_boom",
+        make_native_function(&test_context.vm(),
+                             native_base_exception_with_message));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
@@ -3179,9 +3223,10 @@ TEST(Interpreter, native_exception_marker_requires_pending_exception)
     ThreadState::ActivationScope activation_scope(test_context.thread());
     CodeObject *code_obj = test_context.compile_file(L"native_broken()\n");
 
-    bind_global(test_context, code_obj, L"native_broken",
-                make_native_function(&test_context.vm(),
-                                     native_marker_without_pending_exception));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"native_broken",
+        make_native_function(&test_context.vm(),
+                             native_marker_without_pending_exception));
 
     try
     {
@@ -3243,25 +3288,24 @@ TEST(Interpreter, raise_unwind_rejects_non_exception)
 TEST(Interpreter, builtin_scope_lookup)
 {
     test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
     CodeObject *code_obj = test_context.compile_file(L"range\n");
 
-    Scope *module_scope = code_obj->get_legacy_module_scope_ptr();
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"range");
-    int32_t slot_idx = module_scope->lookup_slot_index_local(name);
-    ASSERT_GE(slot_idx, 0);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(NativeLayoutId::Function,
               actual.get_ptr<Object>()->native_layout_id());
-    EXPECT_EQ(actual, module_scope->get_by_slot_index_fastpath_only(slot_idx));
+    EXPECT_EQ(actual, load_global_from_module_for_test(code_obj, name));
 }
 
 TEST(Interpreter, trusted_python_builtins_are_installed)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
-    Scope *builtins = test_context.vm().builtin_scope_ptr();
+    ModuleObject *builtins =
+        test_context.vm().global_builtins_module().extract();
 
     struct ExpectedBuiltin
     {
@@ -3304,7 +3348,7 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
         TValue<String> name_value =
             test_context.vm().get_or_create_interned_string_value(
                 expected.name);
-        Value value = builtins->get_by_name(name_value);
+        Value value = load_module_global(builtins, name_value);
         ASSERT_TRUE(value.is_ptr());
         EXPECT_EQ(NativeLayoutId::Function,
                   value.get_ptr<Object>()->native_layout_id());
@@ -3733,30 +3777,21 @@ TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
     Tuple *tuple = iterator->tuple.extract();
     expect_tuple_iterator(iterator_value, tuple, 2, 0);
 
-    Value first = test_context.thread()->call_clovervm_function(
-        TValue<Function>::from_value_assumed(
-            test_context.vm().builtin_scope_ptr()->get_by_name(
-                test_context.vm().get_or_create_interned_string_value(
-                    L"next"))),
-        iterator_value);
+    TValue<Function> next_function = TValue<Function>::from_value_assumed(
+        load_builtin_from_module_for_test(test_context, L"next"));
+
+    Value first = test_context.thread()->call_clovervm_function(next_function,
+                                                                iterator_value);
     EXPECT_EQ(Value::from_smi(4), first);
     expect_tuple_iterator(iterator_value, tuple, 2, 1);
 
     Value second = test_context.thread()->call_clovervm_function(
-        TValue<Function>::from_value_assumed(
-            test_context.vm().builtin_scope_ptr()->get_by_name(
-                test_context.vm().get_or_create_interned_string_value(
-                    L"next"))),
-        iterator_value);
+        next_function, iterator_value);
     EXPECT_EQ(Value::from_smi(5), second);
     expect_tuple_iterator(iterator_value, tuple, 2, 2);
 
     Value exhausted = test_context.thread()->call_clovervm_function(
-        TValue<Function>::from_value_assumed(
-            test_context.vm().builtin_scope_ptr()->get_by_name(
-                test_context.vm().get_or_create_interned_string_value(
-                    L"next"))),
-        iterator_value);
+        next_function, iterator_value);
     EXPECT_TRUE(exhausted.is_exception_marker());
     EXPECT_TRUE(test_context.thread()->has_pending_exception());
     test_context.thread()->clear_pending_exception();
@@ -3785,8 +3820,7 @@ TEST(Interpreter, list_iterator_next_returns_items_until_stop_iteration)
     expect_list_iterator(iterator_value, list, 0);
 
     TValue<Function> next_function = TValue<Function>::from_value_assumed(
-        test_context.vm().builtin_scope_ptr()->get_by_name(
-            test_context.vm().get_or_create_interned_string_value(L"next")));
+        load_builtin_from_module_for_test(test_context, L"next"));
 
     Value first = test_context.thread()->call_clovervm_function(next_function,
                                                                 iterator_value);
@@ -3891,17 +3925,19 @@ TEST(Interpreter, interactive_assignment_returns_none_and_persists_scope)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope active_thread(test_context.thread());
-    Scope *module_scope = test_context.thread()->make_internal_raw<Scope>(
-        test_context.vm().builtin_scope_ptr());
+    TValue<String> module_name =
+        test_context.vm().get_or_create_interned_string_value(L"<interactive>");
+    ModuleObject *module =
+        test_context.thread()->make_module_object(module_name);
 
-    CodeObject *assignment = test_context.thread()->compile_in_scope(
-        L"x = 4\n", StartRule::Interactive, L"<interactive>", module_scope,
+    CodeObject *assignment = test_context.thread()->compile_in_module(
+        L"x = 4\n", StartRule::Interactive, module,
         LanguageMode::StandardsCompliant);
     EXPECT_EQ(Value::None(),
               test_context.thread()->run_clovervm_code_object(assignment));
 
-    CodeObject *expression = test_context.thread()->compile_in_scope(
-        L"x + 1\n", StartRule::Interactive, L"<interactive>", module_scope,
+    CodeObject *expression = test_context.thread()->compile_in_module(
+        L"x + 1\n", StartRule::Interactive, module,
         LanguageMode::StandardsCompliant);
     EXPECT_EQ(Value::from_smi(5),
               test_context.thread()->run_clovervm_code_object(expression));
@@ -4043,9 +4079,10 @@ TEST(Interpreter, generic_for_loop_discards_stop_iteration_value)
                                   L"    result = 7\n"
                                   L"result\n");
 
-    bind_global(test_context, code_obj, L"native_stop",
-                make_native_function(&test_context.vm(),
-                                     native_stop_iteration_with_value));
+    store_global_to_module_for_test(
+        test_context, code_obj, L"native_stop",
+        make_native_function(&test_context.vm(),
+                             native_stop_iteration_with_value));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(7), actual);
@@ -4172,7 +4209,7 @@ TEST(Interpreter, with_statement_exit_that_raises_during_return_runs_once)
     TValue<String> log_name =
         test_context.vm().get_or_create_interned_string_value(L"log");
     EXPECT_EQ(Value::from_smi(1),
-              code_obj->get_legacy_module_scope_ptr()->get_by_name(log_name));
+              load_global_from_module_for_test(code_obj, log_name));
 }
 
 TEST(Interpreter, with_statement_inner_exit_stays_suspended_during_outer_exit)
@@ -4212,7 +4249,7 @@ TEST(Interpreter, with_statement_inner_exit_stays_suspended_during_outer_exit)
     TValue<String> log_name =
         test_context.vm().get_or_create_interned_string_value(L"log");
     EXPECT_EQ(Value::from_smi(1342),
-              code_obj->get_legacy_module_scope_ptr()->get_by_name(log_name));
+              load_global_from_module_for_test(code_obj, log_name));
 }
 
 TEST(Interpreter, with_statement_multiple_items_exit_in_reverse_order)

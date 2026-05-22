@@ -408,7 +408,9 @@ namespace cl
 
         auto install_builtin_binding = [&](TValue<String> name, Value value) {
             builtin_scope.extract()->set_by_name(name, value);
-            assert(builtins_module->set_own_property(name, value));
+            bool installed = builtins_module->set_own_property(name, value);
+            assert(installed);
+            (void)installed;
         };
 
         for(ClassObject *cls: builtin_classes)
@@ -463,7 +465,9 @@ namespace cl
             Value value = builtin_scope->get_by_name(name);
             if(!value.is_not_present())
             {
-                assert(builtins_module->set_own_property(name, value));
+                bool installed = builtins_module->set_own_property(name, value);
+                assert(installed);
+                (void)installed;
             }
         }
     }

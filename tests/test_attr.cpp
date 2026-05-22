@@ -4,6 +4,7 @@
 #include "function.h"
 #include "instance.h"
 #include "list.h"
+#include "module_global.h"
 #include "range_iterator.h"
 #include "shape.h"
 #include "test_helpers.h"
@@ -1239,8 +1240,8 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
                                                         L"    return self\n",
                                                         StartRule::File);
     (void)context.thread()->run_clovervm_code_object(method_code);
-    Value method_value =
-        method_code->get_legacy_module_scope_ptr()->get_by_name(method_name);
+    Value method_value = load_module_global(
+        method_code->get_defining_module().extract(), method_name);
 
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
@@ -1289,12 +1290,10 @@ TEST(Attr, ClassFunctionMethodPlanSurvivesClassContentsWriteAndReloadsSlot)
                                                         L"    return self\n",
                                                         StartRule::File);
     (void)context.thread()->run_clovervm_code_object(method_code);
-    Value first_method =
-        method_code->get_legacy_module_scope_ptr()->get_by_name(
-            first_method_name);
-    Value second_method =
-        method_code->get_legacy_module_scope_ptr()->get_by_name(
-            second_method_name);
+    Value first_method = load_module_global(
+        method_code->get_defining_module().extract(), first_method_name);
+    Value second_method = load_module_global(
+        method_code->get_defining_module().extract(), second_method_name);
 
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
         cls_name, 2, context.vm().object_class());
