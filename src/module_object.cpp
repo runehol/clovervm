@@ -5,28 +5,58 @@
 #include "shape.h"
 #include "str.h"
 #include "virtual_machine.h"
+#include <algorithm>
 #include <iterator>
 
 namespace cl
 {
+    static constexpr size_t kMaxAttachedValidityCellReuseScan = 8;
+
     static DescriptorFlags module_builtins_descriptor_flags()
     {
         return descriptor_flag(DescriptorFlag::ReadOnly) |
                descriptor_flag(DescriptorFlag::StableSlot);
     }
 
+    static void ensure_module_builtins_descriptor_present(ModuleObject *module)
+    {
+        TValue<String> dunder_builtins_name = interned_string(L"__builtins__");
+        if(module->get_shape()
+               ->resolve_present_property(dunder_builtins_name)
+               .is_found())
+        {
+            return;
+        }
+
+        module->set_shape(module->get_shape()->derive_transition(
+            dunder_builtins_name, ShapeTransitionVerb::Add,
+            module_builtins_descriptor_flags()));
+    }
+
+    static void ensure_module_builtins_descriptor_absent(ModuleObject *module)
+    {
+        TValue<String> dunder_builtins_name = interned_string(L"__builtins__");
+        if(!module->get_shape()
+                ->resolve_present_property(dunder_builtins_name)
+                .is_found())
+        {
+            return;
+        }
+
+        module->set_shape(module->get_shape()->derive_transition(
+            dunder_builtins_name, ShapeTransitionVerb::Delete));
+    }
+
     ModuleObject::ModuleObject(ClassObject *cls, TValue<String> _name,
                                Value _builtins)
         : SlotObject(cls, native_layout), name_binding(_name.raw_value()),
-          builtins_binding(_builtins)
+          builtins_binding(_builtins), module_globals_validity_cell(nullptr),
+          module_builtins_validity_cell(nullptr),
+          attached_module_builtins_validity_cells()
     {
         if(!_builtins.is_not_present())
         {
-            TValue<String> dunder_builtins_name =
-                interned_string(L"__builtins__");
-            set_shape(get_shape()->derive_transition(
-                dunder_builtins_name, ShapeTransitionVerb::Add,
-                module_builtins_descriptor_flags()));
+            ensure_module_builtins_descriptor_present(this);
         }
         for(uint32_t slot_idx = 0;
             slot_idx < module_extra_inline_attribute_slot_count; ++slot_idx)
@@ -45,7 +75,78 @@ namespace cl
     void ModuleObject::set_builtins_binding(Value value)
     {
         value.assert_not_vm_sentinel();
+        ensure_module_builtins_descriptor_present(this);
         builtins_binding = value;
+        invalidate_module_lookup_validity_cells();
+    }
+
+    void ModuleObject::delete_builtins_binding()
+    {
+        builtins_binding = Value::not_present();
+        ensure_module_builtins_descriptor_absent(this);
+        invalidate_module_lookup_validity_cells();
+    }
+
+    ValidityCell *ModuleObject::create_module_globals_validity_cell_slow() const
+    {
+        ValidityCell *cell = make_internal_raw<ValidityCell>();
+        module_globals_validity_cell = cell;
+        return cell;
+    }
+
+    ValidityCell *
+    ModuleObject::create_module_builtins_validity_cell_slow() const
+    {
+        ValidityCell *cell = make_internal_raw<ValidityCell>();
+        module_builtins_validity_cell = cell;
+        return cell;
+    }
+
+    void
+    ModuleObject::attach_module_builtins_validity_cell(ValidityCell *cell) const
+    {
+        assert(cell != nullptr);
+        assert(cell->is_valid());
+
+        size_t reuse_scan_count =
+            std::min(attached_module_builtins_validity_cells.size(),
+                     kMaxAttachedValidityCellReuseScan);
+        for(size_t idx = 0; idx < reuse_scan_count; ++idx)
+        {
+            ValidityCell *attached_cell =
+                attached_module_builtins_validity_cells[idx];
+            if(!attached_cell->is_valid())
+            {
+                attached_module_builtins_validity_cells.set(idx, cell);
+                return;
+            }
+        }
+
+        attached_module_builtins_validity_cells.push_back(cell);
+    }
+
+    static void invalidate_attached_cells(HeapPtrArray<ValidityCell> &cells)
+    {
+        for(ValidityCell *cell: cells)
+        {
+            cell->invalidate();
+        }
+        cells.clear();
+    }
+
+    void ModuleObject::invalidate_module_lookup_validity_cells()
+    {
+        invalidate_attached_cells(attached_module_builtins_validity_cells);
+        if(module_globals_validity_cell != nullptr)
+        {
+            module_globals_validity_cell->invalidate();
+            module_globals_validity_cell = nullptr;
+        }
+        if(module_builtins_validity_cell != nullptr)
+        {
+            module_builtins_validity_cell->invalidate();
+            module_builtins_validity_cell = nullptr;
+        }
     }
 
     static void install_module_instance_root_shape(ClassObject *cls)

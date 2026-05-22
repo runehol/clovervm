@@ -2,6 +2,7 @@
 #include "shape.h"
 #include "test_helpers.h"
 #include "thread_state.h"
+#include "validity_cell.h"
 #include <gtest/gtest.h>
 
 using namespace cl;
@@ -87,16 +88,28 @@ TEST(ModuleObject, BuiltinsBindingAccessorUsesPredefinedSlot)
     TValue<String> name =
         context.vm().get_or_create_interned_string_value(L"example");
     Value builtins = name.raw_value();
-    ModuleObject *module = context.thread()->make_module_object(name, builtins);
+    ModuleObject *module = context.thread()->make_module_object(name);
 
     TValue<String> dunder_builtins =
         context.vm().get_or_create_interned_string_value(L"__builtins__");
+    EXPECT_FALSE(module->get_shape()
+                     ->resolve_present_property(dunder_builtins)
+                     .is_found());
+
+    module->set_builtins_binding(builtins);
+
     EXPECT_EQ(builtins, module->get_builtins_binding());
     EXPECT_EQ(builtins, module->get_own_property(dunder_builtins));
+    EXPECT_TRUE(module->get_shape()
+                    ->resolve_present_property(dunder_builtins)
+                    .is_found());
 
     module->delete_builtins_binding();
     EXPECT_TRUE(module->get_builtins_binding().is_not_present());
     EXPECT_TRUE(module->get_own_property(dunder_builtins).is_not_present());
+    EXPECT_FALSE(module->get_shape()
+                     ->resolve_present_property(dunder_builtins)
+                     .is_found());
 }
 
 TEST(ModuleObject, BuiltinsBindingRejectsOrdinaryMutation)
@@ -140,4 +153,144 @@ TEST(ModuleObject, OrdinaryGlobalsStartAfterPredefinedSlots)
     EXPECT_EQ(StorageKind::Inline, location.kind);
     EXPECT_EQ(int32_t(ModuleObject::module_predefined_slot_count),
               location.physical_idx);
+}
+
+TEST(ModuleObject, ValidityCellsAreCreatedLazilyAndReusedWhileValid)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"example");
+    ModuleObject *module = context.thread()->make_module_object(name);
+
+    EXPECT_EQ(nullptr, module->current_module_globals_validity_cell());
+    EXPECT_EQ(nullptr, module->current_module_builtins_validity_cell());
+
+    ValidityCell *globals_cell =
+        module->get_or_create_module_globals_validity_cell();
+    ValidityCell *builtins_cell =
+        module->get_or_create_module_builtins_validity_cell();
+    EXPECT_TRUE(globals_cell->is_valid());
+    EXPECT_TRUE(builtins_cell->is_valid());
+    EXPECT_EQ(globals_cell,
+              module->get_or_create_module_globals_validity_cell());
+    EXPECT_EQ(builtins_cell,
+              module->get_or_create_module_builtins_validity_cell());
+}
+
+TEST(ModuleObject, InvalidatingModuleLookupCellsKillsOwnedCells)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"example");
+    ModuleObject *module = context.thread()->make_module_object(name);
+
+    ValidityCell *globals_cell =
+        module->get_or_create_module_globals_validity_cell();
+    ValidityCell *builtins_cell =
+        module->get_or_create_module_builtins_validity_cell();
+
+    module->invalidate_module_lookup_validity_cells();
+
+    EXPECT_FALSE(globals_cell->is_valid());
+    EXPECT_FALSE(builtins_cell->is_valid());
+    EXPECT_EQ(nullptr, module->current_module_globals_validity_cell());
+    EXPECT_EQ(nullptr, module->current_module_builtins_validity_cell());
+
+    EXPECT_TRUE(
+        module->get_or_create_module_globals_validity_cell()->is_valid());
+    EXPECT_TRUE(
+        module->get_or_create_module_builtins_validity_cell()->is_valid());
+}
+
+TEST(ModuleObject, InvalidatingModuleLookupCellsKillsAttachedCells)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> provider_name =
+        context.vm().get_or_create_interned_string_value(L"provider");
+    TValue<String> consumer_name =
+        context.vm().get_or_create_interned_string_value(L"consumer");
+    ModuleObject *provider =
+        context.thread()->make_module_object(provider_name);
+    ModuleObject *consumer =
+        context.thread()->make_module_object(consumer_name);
+
+    ValidityCell *consumer_builtins_cell =
+        consumer->get_or_create_module_builtins_validity_cell();
+    provider->attach_module_builtins_validity_cell(consumer_builtins_cell);
+    EXPECT_EQ(1u, provider->attached_module_builtins_validity_cell_count());
+
+    provider->invalidate_module_lookup_validity_cells();
+
+    EXPECT_FALSE(consumer_builtins_cell->is_valid());
+    EXPECT_EQ(0u, provider->attached_module_builtins_validity_cell_count());
+}
+
+TEST(ModuleObject, BuiltinsBindingMutationInvalidatesLookupCells)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> provider_name =
+        context.vm().get_or_create_interned_string_value(L"provider");
+    TValue<String> consumer_name =
+        context.vm().get_or_create_interned_string_value(L"consumer");
+    ModuleObject *provider =
+        context.thread()->make_module_object(provider_name);
+    ModuleObject *consumer =
+        context.thread()->make_module_object(consumer_name);
+
+    ValidityCell *provider_globals_cell =
+        provider->get_or_create_module_globals_validity_cell();
+    ValidityCell *provider_builtins_cell =
+        provider->get_or_create_module_builtins_validity_cell();
+    ValidityCell *consumer_builtins_cell =
+        consumer->get_or_create_module_builtins_validity_cell();
+    provider->attach_module_builtins_validity_cell(consumer_builtins_cell);
+
+    provider->set_builtins_binding(provider_name.raw_value());
+
+    EXPECT_FALSE(provider_globals_cell->is_valid());
+    EXPECT_FALSE(provider_builtins_cell->is_valid());
+    EXPECT_FALSE(consumer_builtins_cell->is_valid());
+    EXPECT_EQ(0u, provider->attached_module_builtins_validity_cell_count());
+}
+
+TEST(ModuleObject, AttachModuleBuiltinsValidityCellReusesInvalidEntries)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> provider_name =
+        context.vm().get_or_create_interned_string_value(L"provider");
+    TValue<String> first_name =
+        context.vm().get_or_create_interned_string_value(L"first");
+    TValue<String> second_name =
+        context.vm().get_or_create_interned_string_value(L"second");
+    ModuleObject *provider =
+        context.thread()->make_module_object(provider_name);
+    ModuleObject *first = context.thread()->make_module_object(first_name);
+    ModuleObject *second = context.thread()->make_module_object(second_name);
+
+    ValidityCell *first_cell =
+        first->get_or_create_module_builtins_validity_cell();
+    provider->attach_module_builtins_validity_cell(first_cell);
+    EXPECT_EQ(1u, provider->attached_module_builtins_validity_cell_count());
+
+    first->invalidate_module_lookup_validity_cells();
+    EXPECT_FALSE(first_cell->is_valid());
+
+    ValidityCell *second_cell =
+        second->get_or_create_module_builtins_validity_cell();
+    provider->attach_module_builtins_validity_cell(second_cell);
+
+    EXPECT_EQ(1u, provider->attached_module_builtins_validity_cell_count());
+    provider->invalidate_module_lookup_validity_cells();
+    EXPECT_FALSE(first_cell->is_valid());
+    EXPECT_FALSE(second_cell->is_valid());
 }

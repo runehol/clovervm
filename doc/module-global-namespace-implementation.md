@@ -175,12 +175,12 @@ First test hooks for the new path:
 - [ ] Define the module global storage-location descriptor used by runtime
       helpers and future caches.
 - [ ] Add module shape guards for global lookup assumptions.
-- [ ] Add module membership validity cells if shape guards alone are not enough
+- [x] Add module membership validity cells if shape guards alone are not enough
       for the chosen storage representation.
 - [ ] Add builtins namespace shape guards or membership validity cells.
-- [ ] Design where dedicated `__builtins__` binding validity lives without
+- [x] Design where dedicated `__builtins__` binding validity lives without
       aliasing module inline slots.
-- [ ] Add dedicated `__builtins__` binding validity once the layout is explicit.
+- [x] Add dedicated `__builtins__` binding validity once the layout is explicit.
 - [ ] Invalidate module miss assumptions when a module property is inserted.
 - [ ] Invalidate module hit assumptions when a module property is deleted.
 - [ ] Invalidate builtins hit/miss assumptions when the builtins namespace
@@ -191,7 +191,7 @@ First test hooks for the new path:
       insert.
 - [ ] Add focused tests or C++ tests that observe validity invalidation on module
       delete.
-- [ ] Add focused tests or C++ tests that observe `__builtins__` binding
+- [x] Add focused tests or C++ tests that observe `__builtins__` binding
       invalidation on assignment without a module shape change.
 
 ## Stage 3: Runtime Helpers For Module Global Access

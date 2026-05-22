@@ -5,7 +5,9 @@
 #include "object.h"
 #include "owned.h"
 #include "typed_value.h"
+#include "validity_cell.h"
 #include "value.h"
+#include "vm_array.h"
 #include <cstdint>
 #include <type_traits>
 
@@ -32,23 +34,64 @@ namespace cl
         void set_name_binding(Value value);
         Value get_builtins_binding() const { return builtins_binding.value(); }
         void set_builtins_binding(Value value);
-        void delete_builtins_binding()
+        void delete_builtins_binding();
+        ValidityCell *current_module_globals_validity_cell() const
         {
-            builtins_binding = Value::not_present();
+            return module_globals_validity_cell.extract();
         }
+        ValidityCell *current_module_builtins_validity_cell() const
+        {
+            return module_builtins_validity_cell.extract();
+        }
+        ALWAYSINLINE ValidityCell *
+        get_or_create_module_globals_validity_cell() const
+        {
+            ValidityCell *cell = module_globals_validity_cell.extract();
+            if(likely(cell != nullptr && cell->is_valid()))
+            {
+                return cell;
+            }
+            return create_module_globals_validity_cell_slow();
+        }
+        ALWAYSINLINE ValidityCell *
+        get_or_create_module_builtins_validity_cell() const
+        {
+            ValidityCell *cell = module_builtins_validity_cell.extract();
+            if(likely(cell != nullptr && cell->is_valid()))
+            {
+                return cell;
+            }
+            return create_module_builtins_validity_cell_slow();
+        }
+        uint32_t attached_module_builtins_validity_cell_count() const
+        {
+            return attached_module_builtins_validity_cells.size();
+        }
+        void attach_module_builtins_validity_cell(ValidityCell *cell) const;
+        void invalidate_module_lookup_validity_cells();
 
     private:
         static constexpr uint32_t module_extra_inline_attribute_slot_count =
             module_inline_storage_slot_count - module_predefined_slot_count;
 
+        NOINLINE ValidityCell *create_module_globals_validity_cell_slow() const;
+        NOINLINE ValidityCell *
+        create_module_builtins_validity_cell_slow() const;
+
         Member<Value> name_binding;
         Member<Value> builtins_binding;
         Value module_extra_inline_attribute_slots
             [module_extra_inline_attribute_slot_count];
+        mutable MemberHeapPtr<ValidityCell> module_globals_validity_cell;
+        mutable MemberHeapPtr<ValidityCell> module_builtins_validity_cell;
+        mutable HeapPtrArray<ValidityCell>
+            attached_module_builtins_validity_cells;
 
     public:
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(ModuleObject, SlotObject,
-                                             module_inline_storage_slot_count);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
+            ModuleObject, SlotObject,
+            module_inline_storage_slot_count + 2 +
+                HeapPtrArray<ValidityCell>::embedded_value_count);
         CL_DECLARE_STATIC_OBJECT_SIZE(ModuleObject);
     };
 
