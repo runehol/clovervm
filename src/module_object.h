@@ -28,18 +28,21 @@ namespace cl
         ModuleObject(ClassObject *cls, TValue<String> name,
                      Value builtins = Value::not_present());
 
-        TValue<String> get_name() const { return name.value(); }
-        void set_name(TValue<String> value) { name = value; }
-        Value get_builtins() const { return builtins.value(); }
-        void set_builtins(Value value);
-        void delete_builtins() { builtins = Value::not_present(); }
+        Value get_name_binding() const { return name_binding.value(); }
+        void set_name_binding(Value value);
+        Value get_builtins_binding() const { return builtins_binding.value(); }
+        void set_builtins_binding(Value value);
+        void delete_builtins_binding()
+        {
+            builtins_binding = Value::not_present();
+        }
 
     private:
         static constexpr uint32_t module_extra_inline_attribute_slot_count =
             module_inline_storage_slot_count - module_predefined_slot_count;
 
-        Member<TValue<String>> name;
-        Member<Value> builtins;
+        Member<Value> name_binding;
+        Member<Value> builtins_binding;
         Value module_extra_inline_attribute_slots
             [module_extra_inline_attribute_slot_count];
 

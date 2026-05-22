@@ -17,8 +17,8 @@ TEST(ModuleObject, ConstructedWithModuleClassAndPredefinedSlots)
 
     EXPECT_EQ(NativeLayoutId::ModuleObject, module->native_layout_id());
     EXPECT_EQ(context.vm().module_class(), module->get_shape()->get_class());
-    EXPECT_EQ(name.raw_value(), module->get_name().raw_value());
-    EXPECT_TRUE(module->get_builtins().is_not_present());
+    EXPECT_EQ(name.raw_value(), module->get_name_binding());
+    EXPECT_TRUE(module->get_builtins_binding().is_not_present());
 
     TValue<String> dunder_name =
         context.vm().get_or_create_interned_string_value(L"__name__");
@@ -26,6 +26,9 @@ TEST(ModuleObject, ConstructedWithModuleClassAndPredefinedSlots)
         context.vm().get_or_create_interned_string_value(L"__builtins__");
     EXPECT_EQ(name.raw_value(), module->get_own_property(dunder_name));
     EXPECT_TRUE(module->get_own_property(dunder_builtins).is_not_present());
+    EXPECT_FALSE(module->get_shape()
+                     ->resolve_present_property(dunder_builtins)
+                     .is_found());
 }
 
 TEST(ModuleObject, PredefinedSlotLocationsAreStable)
@@ -35,7 +38,8 @@ TEST(ModuleObject, PredefinedSlotLocationsAreStable)
 
     TValue<String> name =
         context.vm().get_or_create_interned_string_value(L"example");
-    ModuleObject *module = context.thread()->make_module_object(name);
+    ModuleObject *module =
+        context.thread()->make_module_object(name, name.raw_value());
 
     TValue<String> dunder_name =
         context.vm().get_or_create_interned_string_value(L"__name__");
@@ -57,7 +61,7 @@ TEST(ModuleObject, PredefinedSlotLocationsAreStable)
               builtins_location.physical_idx);
 }
 
-TEST(ModuleObject, BuiltinsAccessorUsesPredefinedSlot)
+TEST(ModuleObject, NameBindingAccessorUsesPredefinedSlotAndAllowsAnyValue)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -65,18 +69,55 @@ TEST(ModuleObject, BuiltinsAccessorUsesPredefinedSlot)
     TValue<String> name =
         context.vm().get_or_create_interned_string_value(L"example");
     ModuleObject *module = context.thread()->make_module_object(name);
-    Value builtins = name.raw_value();
+    Value replacement = Value::from_smi(4);
 
-    module->set_builtins(builtins);
+    module->set_name_binding(replacement);
+
+    TValue<String> dunder_name =
+        context.vm().get_or_create_interned_string_value(L"__name__");
+    EXPECT_EQ(replacement, module->get_name_binding());
+    EXPECT_EQ(replacement, module->get_own_property(dunder_name));
+}
+
+TEST(ModuleObject, BuiltinsBindingAccessorUsesPredefinedSlot)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"example");
+    Value builtins = name.raw_value();
+    ModuleObject *module = context.thread()->make_module_object(name, builtins);
 
     TValue<String> dunder_builtins =
         context.vm().get_or_create_interned_string_value(L"__builtins__");
-    EXPECT_EQ(builtins, module->get_builtins());
+    EXPECT_EQ(builtins, module->get_builtins_binding());
     EXPECT_EQ(builtins, module->get_own_property(dunder_builtins));
 
-    module->delete_builtins();
-    EXPECT_TRUE(module->get_builtins().is_not_present());
+    module->delete_builtins_binding();
+    EXPECT_TRUE(module->get_builtins_binding().is_not_present());
     EXPECT_TRUE(module->get_own_property(dunder_builtins).is_not_present());
+}
+
+TEST(ModuleObject, BuiltinsBindingRejectsOrdinaryMutation)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"example");
+    Value builtins = name.raw_value();
+    ModuleObject *module = context.thread()->make_module_object(name, builtins);
+
+    TValue<String> dunder_builtins =
+        context.vm().get_or_create_interned_string_value(L"__builtins__");
+    Shape *before_shape = module->get_shape();
+
+    EXPECT_FALSE(module->set_own_property(dunder_builtins, Value::from_smi(4)));
+    EXPECT_FALSE(module->delete_own_property(dunder_builtins));
+    EXPECT_EQ(before_shape, module->get_shape());
+    EXPECT_EQ(builtins, module->get_builtins_binding());
+    EXPECT_EQ(builtins, module->get_own_property(dunder_builtins));
 }
 
 TEST(ModuleObject, OrdinaryGlobalsStartAfterPredefinedSlots)

@@ -9,10 +9,25 @@
 
 namespace cl
 {
+    static DescriptorFlags module_builtins_descriptor_flags()
+    {
+        return descriptor_flag(DescriptorFlag::ReadOnly) |
+               descriptor_flag(DescriptorFlag::StableSlot);
+    }
+
     ModuleObject::ModuleObject(ClassObject *cls, TValue<String> _name,
                                Value _builtins)
-        : SlotObject(cls, native_layout), name(_name), builtins(_builtins)
+        : SlotObject(cls, native_layout), name_binding(_name.raw_value()),
+          builtins_binding(_builtins)
     {
+        if(!_builtins.is_not_present())
+        {
+            TValue<String> dunder_builtins_name =
+                interned_string(L"__builtins__");
+            set_shape(get_shape()->derive_transition(
+                dunder_builtins_name, ShapeTransitionVerb::Add,
+                module_builtins_descriptor_flags()));
+        }
         for(uint32_t slot_idx = 0;
             slot_idx < module_extra_inline_attribute_slot_count; ++slot_idx)
         {
@@ -21,10 +36,16 @@ namespace cl
         }
     }
 
-    void ModuleObject::set_builtins(Value value)
+    void ModuleObject::set_name_binding(Value value)
     {
         value.assert_not_vm_sentinel();
-        builtins = value;
+        name_binding = value;
+    }
+
+    void ModuleObject::set_builtins_binding(Value value)
+    {
+        value.assert_not_vm_sentinel();
+        builtins_binding = value;
     }
 
     static void install_module_instance_root_shape(ClassObject *cls)
@@ -37,7 +58,7 @@ namespace cl
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot) |
             descriptor_flag(DescriptorFlag::ShapeClassValue);
-        DescriptorFlags predefined_flags =
+        DescriptorFlags name_flags =
             descriptor_flag(DescriptorFlag::StableSlot);
         ShapeRootDescriptor descriptors[] = {
             ShapeRootDescriptor{dunder_class_name,
@@ -48,17 +69,18 @@ namespace cl
                 DescriptorInfo::make(
                     StorageLocation{ModuleObject::module_predefined_slot_name,
                                     StorageKind::Inline},
-                    predefined_flags)},
+                    name_flags)},
             ShapeRootDescriptor{
                 dunder_builtins_name,
                 DescriptorInfo::make(
                     StorageLocation{
                         ModuleObject::module_predefined_slot_builtins,
                         StorageKind::Inline},
-                    predefined_flags)},
+                    module_builtins_descriptor_flags())},
         };
         cls->install_builtin_instance_root_shape(
             descriptors, std::size(descriptors),
+            ModuleObject::module_predefined_slot_count,
             ModuleObject::module_predefined_slot_count,
             mutable_attribute_shape_flags());
     }

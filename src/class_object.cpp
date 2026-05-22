@@ -432,10 +432,19 @@ namespace cl
         const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
         int32_t next_slot_index, ShapeFlags shape_flags)
     {
+        install_builtin_instance_root_shape(descriptors, descriptor_count,
+                                            next_slot_index, descriptor_count,
+                                            shape_flags);
+    }
+
+    void ClassObject::install_builtin_instance_root_shape(
+        const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
+        int32_t next_slot_index, uint32_t present_count, ShapeFlags shape_flags)
+    {
         instance_root_shape = Shape::make_root_with_descriptors(
             TValue<ClassObject>::from_oop(this), descriptors, descriptor_count,
-            next_slot_index, descriptor_count,
-            instance_default_inline_slot_count, shape_flags);
+            next_slot_index, present_count, instance_default_inline_slot_count,
+            shape_flags);
     }
 
     void ClassObject::install_bootstrap_inheritance(Value bases_tuple,

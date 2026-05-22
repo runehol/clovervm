@@ -111,6 +111,10 @@ namespace cl
         void install_builtin_instance_root_shape(
             const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
             int32_t next_slot_index, ShapeFlags shape_flags);
+        void install_builtin_instance_root_shape(
+            const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
+            int32_t next_slot_index, uint32_t present_count,
+            ShapeFlags shape_flags);
         ValidityCell *current_mro_shape_and_contents_validity_cell() const
         {
             return mro_shape_and_contents_validity_cell.extract();
