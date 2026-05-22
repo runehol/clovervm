@@ -68,8 +68,20 @@ namespace benchmark_cpp
     int64_t function_varargs_with_positional_run(int64_t n);
     int64_t function_varargs_with_positional_items(int64_t n);
 
+    int64_t global_read_run(int64_t n);
+    int64_t global_read_items(int64_t n);
+
+    int64_t builtin_lookup_run(int64_t n);
+    int64_t builtin_lookup_items(int64_t n);
+
+    int64_t global_write_run(int64_t n);
+    int64_t global_write_items(int64_t n);
+
     int64_t global_refcounted_write_run(int64_t n);
     int64_t global_refcounted_write_items(int64_t n);
+
+    int64_t global_add_delete_run(int64_t n);
+    int64_t global_add_delete_items(int64_t n);
 
     int64_t function_default_varargs_run(int64_t n);
     int64_t function_default_varargs_items(int64_t n);

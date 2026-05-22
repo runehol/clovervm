@@ -2,6 +2,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 add_executable(bench_clovervm
     bench_interpreter.cpp
+    builtin_lookup.cpp
     class_attribute_read.cpp
     class_attribute_write.cpp
     class_instantiation.cpp
@@ -16,7 +17,10 @@ add_executable(bench_clovervm
     function_default_parameter.cpp
     function_varargs.cpp
     function_varargs_with_positional.cpp
+    global_add_delete.cpp
+    global_read.cpp
     global_refcounted_write.cpp
+    global_write.cpp
     instance_attribute_add_after_construction.cpp
     instance_attribute_add_member.cpp
     instance_attribute_read.cpp

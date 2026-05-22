@@ -95,9 +95,21 @@ namespace
             {"benchmark/function_varargs_with_positional.py",
              {benchmark_cpp::function_varargs_with_positional_run,
               benchmark_cpp::function_varargs_with_positional_items}},
+            {"benchmark/global_read.py",
+             {benchmark_cpp::global_read_run,
+              benchmark_cpp::global_read_items}},
+            {"benchmark/builtin_lookup.py",
+             {benchmark_cpp::builtin_lookup_run,
+              benchmark_cpp::builtin_lookup_items}},
+            {"benchmark/global_write.py",
+             {benchmark_cpp::global_write_run,
+              benchmark_cpp::global_write_items}},
             {"benchmark/global_refcounted_write.py",
              {benchmark_cpp::global_refcounted_write_run,
               benchmark_cpp::global_refcounted_write_items}},
+            {"benchmark/global_add_delete.py",
+             {benchmark_cpp::global_add_delete_run,
+              benchmark_cpp::global_add_delete_items}},
             {"benchmark/function_default_varargs.py",
              {benchmark_cpp::function_default_varargs_run,
               benchmark_cpp::function_default_varargs_items}},
@@ -700,6 +712,34 @@ BENCHMARK_TEMPLATE(BM_FunctionVarargsWithPositional, CloverProgram)
     ->Name("BM_FunctionVarargsWithPositional")
     ->Arg(100000);
 
+template <typename Program> static void BM_GlobalRead(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/global_read.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GlobalRead, CloverProgram)
+    ->Name("BM_GlobalRead")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_BuiltinLookup(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/builtin_lookup.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_BuiltinLookup, CloverProgram)
+    ->Name("BM_BuiltinLookup")
+    ->Arg(100000);
+
+template <typename Program> static void BM_GlobalWrite(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/global_write.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GlobalWrite, CloverProgram)
+    ->Name("BM_GlobalWrite")
+    ->Arg(100000);
+
 template <typename Program>
 static void BM_GlobalRefcountedWrite(benchmark::State &state)
 {
@@ -708,6 +748,16 @@ static void BM_GlobalRefcountedWrite(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_GlobalRefcountedWrite, CloverProgram)
     ->Name("BM_GlobalRefcountedWrite")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_GlobalAddDelete(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/global_add_delete.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GlobalAddDelete, CloverProgram)
+    ->Name("BM_GlobalAddDelete")
     ->Arg(100000);
 
 template <typename Program>
