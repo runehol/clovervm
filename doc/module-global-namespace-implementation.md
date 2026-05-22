@@ -289,13 +289,12 @@ First test hooks for the new path:
 
 ## Stage 7: Switch Codegen To ModuleObject Globals
 
-- [ ] Stop allocating module/global runtime value slots in `Scope` during
-      codegen. This remains deferred to Stage 8, where the legacy bridge is
-      removed.
-- [ ] Keep allocating symbol metadata and ordered name/slot metadata in `Scope`
+- [x] Stop allocating module/global runtime value slots in `Scope` during
+      codegen.
+- [x] Keep allocating symbol metadata and ordered name/slot metadata in `Scope`
       where codegen still needs it.
-- [ ] Stop creating module-scope holes for builtin shadowing. This remains
-      deferred to Stage 8 with the rest of the bridge removal.
+- [x] Stop creating module-scope holes for builtin shadowing in generated
+      module-global bytecode.
 - [x] Emit the new module-global load instruction for global reads.
 - [x] Emit the new module-global store instruction for global writes.
 - [x] Emit the new module-global delete instruction for global deletes.
@@ -346,6 +345,13 @@ Stage 7 intentionally leaves the legacy `Scope` bridge in place. Stage 8 owns
 removing scope-backed module runtime value cells, builtin-shadowing holes, and
 the remaining compatibility paths while preserving whatever symbol metadata
 codegen still needs.
+
+Follow-up cleanup removed the last generated-code dependency on module
+`Scope` slot allocation: global access analysis now marks global reads, writes,
+and deletes as name-based accesses without registering legacy module slots. This
+means generated module-global bytecode no longer creates parent-slot builtin
+fallback holes. Local and class-body scopes still allocate the local slot
+metadata they need for frame storage and class namespace harvesting.
 
 ## Stage 8: Retire Module Values From Scope
 

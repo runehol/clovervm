@@ -236,7 +236,7 @@ namespace cl
             }
 
             NameAccessAnalysis make_access(AnalysisState &analysis, Value name,
-                                           const FlowState &state, bool is_read,
+                                           const FlowState &state,
                                            bool checks_presence)
             {
                 BindingInfo binding = binding_for_name(analysis, name);
@@ -258,15 +258,8 @@ namespace cl
                         binding.local_slot_idx};
                 }
 
-                uint32_t slot_idx = is_read
-                                        ? code_obj->module_scope()
-                                              ->register_slot_index_for_read(
-                                                  ast_string_constant(name))
-                                        : code_obj->module_scope()
-                                              ->register_slot_index_for_write(
-                                                  ast_string_constant(name));
                 return NameAccessAnalysis{BindingScope::Global, Presence::Maybe,
-                                          slot_idx};
+                                          0};
             }
 
             void mark_local_presence(AnalysisState &analysis, FlowState &state,
@@ -899,26 +892,25 @@ namespace cl
 
                 auto annotate_read = [&](int32_t read_idx) {
                     analysis.result.loads[read_idx] = make_access(
-                        analysis, av.constants[read_idx], state, true, true);
+                        analysis, av.constants[read_idx], state, true);
                 };
                 auto annotate_write = [&](int32_t write_idx) {
                     analysis.result.stores[write_idx] = make_access(
-                        analysis, av.constants[write_idx], state, false, false);
+                        analysis, av.constants[write_idx], state, false);
                     mark_local_presence(analysis, state,
                                         av.constants[write_idx],
                                         Presence::Present);
                 };
                 auto annotate_delete = [&](int32_t delete_idx) {
                     analysis.result.deletes[delete_idx] = make_access(
-                        analysis, av.constants[delete_idx], state, false, true);
+                        analysis, av.constants[delete_idx], state, true);
                     mark_local_presence(analysis, state,
                                         av.constants[delete_idx],
                                         Presence::Missing);
                 };
                 auto annotate_named_definition = [&](int32_t definition_idx) {
-                    analysis.result.stores[definition_idx] =
-                        make_access(analysis, av.constants[definition_idx],
-                                    state, false, false);
+                    analysis.result.stores[definition_idx] = make_access(
+                        analysis, av.constants[definition_idx], state, false);
                     mark_local_presence(analysis, state,
                                         av.constants[definition_idx],
                                         Presence::Present);
@@ -1105,7 +1097,7 @@ namespace cl
                                 analysis.result.stores[target_idx] =
                                     make_access(analysis,
                                                 av.constants[target_idx],
-                                                body_state, false, false);
+                                                body_state, false);
                                 mark_local_presence(analysis, body_state,
                                                     av.constants[target_idx],
                                                     Presence::Present);

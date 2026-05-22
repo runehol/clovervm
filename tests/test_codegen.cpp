@@ -3,6 +3,7 @@
 #include "codegen.h"
 #include "float.h"
 #include "parser.h"
+#include "scope.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -52,6 +53,21 @@ TEST(Codegen, simple2)
     std::string actual = bytecode_str_from_file(L"(1 << 4) + 3");
 
     EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, module_globals_do_not_allocate_legacy_scope_slots)
+{
+    test::VmTestContext test_context;
+    CodeObject *code_obj = test_context.compile_file(L"value = 1\n"
+                                                     L"value\n"
+                                                     L"len\n"
+                                                     L"del value\n");
+    Scope *legacy_scope = code_obj->get_legacy_module_scope_ptr();
+
+    if(legacy_scope != nullptr)
+    {
+        EXPECT_EQ(0u, legacy_scope->size());
+    }
 }
 
 TEST(Codegen, assignment2)
