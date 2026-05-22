@@ -2,6 +2,7 @@
 #include "attr.h"
 #include "attribute_descriptor.h"
 #include "class_object.h"
+#include "module_object.h"
 #include "native_function.h"
 #include "overflow_slots.h"
 #include "refcount.h"
@@ -158,6 +159,13 @@ namespace cl
         {
             assume_convert_to<ClassObject>(this)
                 ->invalidate_lookup_validity_cells_for_shape_change();
+        }
+        if(old_shape != nullptr && old_shape != new_shape &&
+           new_shape != nullptr &&
+           new_shape->has_flag(ShapeFlag::IsModuleObject))
+        {
+            assume_convert_to<ModuleObject>(this)
+                ->invalidate_module_lookup_validity_cells();
         }
     }
 

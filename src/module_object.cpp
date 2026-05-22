@@ -183,7 +183,7 @@ namespace cl
             descriptors, std::size(descriptors),
             ModuleObject::module_predefined_slot_count,
             ModuleObject::module_predefined_slot_count,
-            mutable_attribute_shape_flags());
+            shape_flag(ShapeFlag::IsModuleObject));
     }
 
     BuiltinClassDefinition make_module_class(VirtualMachine *vm)

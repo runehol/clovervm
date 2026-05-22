@@ -32,6 +32,7 @@ namespace cl
         HasCustomDelAttribute = 1 << 5,
         DisallowAttributeUpdates = 1 << 6,
         DisallowAttributeAddDelete = 1 << 7,
+        IsModuleObject = 1 << 8,
     };
 
     using ShapeFlags = uint16_t;

@@ -18,6 +18,7 @@ TEST(ModuleObject, ConstructedWithModuleClassAndPredefinedSlots)
 
     EXPECT_EQ(NativeLayoutId::ModuleObject, module->native_layout_id());
     EXPECT_EQ(context.vm().module_class(), module->get_shape()->get_class());
+    EXPECT_TRUE(module->get_shape()->has_flag(ShapeFlag::IsModuleObject));
     EXPECT_EQ(name.raw_value(), module->get_name_binding());
     EXPECT_TRUE(module->get_builtins_binding().is_not_present());
 
@@ -153,6 +154,55 @@ TEST(ModuleObject, OrdinaryGlobalsStartAfterPredefinedSlots)
     EXPECT_EQ(StorageKind::Inline, location.kind);
     EXPECT_EQ(int32_t(ModuleObject::module_predefined_slot_count),
               location.physical_idx);
+}
+
+TEST(ModuleObject, ShapeChangeInvalidatesLookupCells)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"example");
+    TValue<String> global_name =
+        context.vm().get_or_create_interned_string_value(L"value");
+    ModuleObject *module = context.thread()->make_module_object(name);
+
+    ValidityCell *globals_cell =
+        module->get_or_create_module_globals_validity_cell();
+    ValidityCell *builtins_cell =
+        module->get_or_create_module_builtins_validity_cell();
+
+    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(42)));
+
+    EXPECT_FALSE(globals_cell->is_valid());
+    EXPECT_FALSE(builtins_cell->is_valid());
+    EXPECT_EQ(nullptr, module->current_module_globals_validity_cell());
+    EXPECT_EQ(nullptr, module->current_module_builtins_validity_cell());
+}
+
+TEST(ModuleObject, DeleteShapeChangeInvalidatesLookupCells)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> name =
+        context.vm().get_or_create_interned_string_value(L"example");
+    TValue<String> global_name =
+        context.vm().get_or_create_interned_string_value(L"value");
+    ModuleObject *module = context.thread()->make_module_object(name);
+
+    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(42)));
+    ValidityCell *globals_cell =
+        module->get_or_create_module_globals_validity_cell();
+    ValidityCell *builtins_cell =
+        module->get_or_create_module_builtins_validity_cell();
+
+    ASSERT_TRUE(module->delete_own_property(global_name));
+
+    EXPECT_FALSE(globals_cell->is_valid());
+    EXPECT_FALSE(builtins_cell->is_valid());
+    EXPECT_EQ(nullptr, module->current_module_globals_validity_cell());
+    EXPECT_EQ(nullptr, module->current_module_builtins_validity_cell());
 }
 
 TEST(ModuleObject, ValidityCellsAreCreatedLazilyAndReusedWhileValid)
