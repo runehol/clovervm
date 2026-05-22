@@ -196,26 +196,34 @@ First test hooks for the new path:
 
 ## Stage 3: Runtime Helpers For Module Global Access
 
-- [ ] Add a helper for module-global lookup by interned name.
-- [ ] Add a helper for module-global store by interned name.
-- [ ] Add a helper for module-global delete by interned name.
-- [ ] Add a helper for resolving hidden frame builtins from a module object.
-- [ ] Add fallback to VM default builtins when the module `__builtins__` binding
+- [x] Add descriptor/result types that separate the selected action, cacheability,
+      and non-cache metadata.
+- [x] Add a helper for module-global lookup by name.
+- [x] Add a helper for module-global store by name.
+- [x] Add a helper for module-global delete by name.
+- [x] Add a module-object helper for resolving module-valued builtins and the
+      validity cell protecting that resolution.
+- [x] Add fallback to VM default builtins when the module `__builtins__` binding
       is missing.
-- [ ] Add module-valued `__builtins__` handling.
-- [ ] Add dict-like `__builtins__` handling.
-- [ ] Preserve non-module, non-dict-like `__builtins__` behavior so later builtin
-      lookup fails through that object rather than silently ignoring it.
-- [ ] Wire module-valued builtins resolution to attach the consumer module's
-      builtins validity cell to the provider module.
-- [ ] Add a helper for `LOAD_GLOBAL` semantics: module lookup, then resolved
-      builtins lookup.
-- [ ] Add tests for module hit lookup through the helper.
-- [ ] Add tests for builtin hit after module miss through the helper.
-- [ ] Add tests for missing name through the helper.
+- [x] Add module-valued `__builtins__` handling.
+- [x] Treat non-module `__builtins__` as an explicit uncacheable builtins object;
+      do not traverse it in Stage 3.
+- [x] Wire module-valued builtins resolution to attach the consumer module's
+      builtins validity cell to the provider module exactly when the cell is
+      created.
+- [x] Add a helper for `LOAD_GLOBAL` semantics: module lookup, then resolved
+      module-valued builtins lookup.
+- [x] Add tests for module hit lookup through the helper.
+- [x] Add tests for builtin hit after module miss through the helper.
+- [x] Add tests for missing name through the helper.
+- [x] Add tests that repeated module-valued builtins lookup does not attach
+      duplicate validity cells to the provider module.
 - [ ] Add tests that deleting a module binding reveals a builtin without mutating
       the builtins namespace.
-- [ ] Add tests for assigning and deleting module `__builtins__`.
+- [x] Add tests for assigning and deleting module `__builtins__` while it remains
+      read-only through normal module-global store/delete helpers.
+- [ ] Add dict-like `__builtins__` traversal later, after dict namespace
+      semantics and cache invalidation have a dedicated design.
 
 ## Stage 4: Module Context In Code Objects, Functions, And Frames
 
@@ -272,9 +280,9 @@ First test hooks for the new path:
 - [ ] Guard missing caches with module miss validity plus builtins miss validity.
 - [ ] Guard caches that depend on resolved builtins with module `__builtins__`
       binding validity.
-- [ ] Add dict-as-builtins shape or membership validity if dict-valued builtins
-      lookups become cacheable.
-- [ ] Leave arbitrary non-cacheable builtins mappings on the slow path.
+- [ ] Keep dict-like or arbitrary builtins mappings out of the first cacheable
+      module-global path; add them only after their lookup semantics and
+      invalidation rules are designed separately.
 - [ ] Add storage-location validity guards only if the location can move without
       shape or membership invalidation.
 - [ ] Add tests that cache entries observe module rebinding.

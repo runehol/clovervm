@@ -129,7 +129,8 @@ namespace cl
     VirtualMachine::VirtualMachine()
         : refcounted_global_heap(GlobalHeap::refcounted_heap()),
           interned_global_heap(GlobalHeap::interned_heap()),
-          interned_strings(&interned_global_heap), range_builtin(Value::None())
+          interned_strings(&interned_global_heap), range_builtin(Value::None()),
+          global_builtins_module_(Value::None())
     {
         // make the main thread
         ThreadState *default_thread = make_new_thread();
@@ -142,6 +143,7 @@ namespace cl
         catch(...)
         {
             range_builtin = Value::None();
+            global_builtins_module_ = Value::None();
             builtin_scope = nullptr;
             throw;
         }
@@ -153,6 +155,7 @@ namespace cl
         {
             ThreadState::ActivationScope activation_scope(threads[0].get());
             range_builtin = Value::None();
+            global_builtins_module_ = Value::None();
             builtin_scope = nullptr;
         }
     }

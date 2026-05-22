@@ -14,8 +14,24 @@
 namespace cl
 {
     class ClassObject;
+    class ModuleObject;
     class String;
     class VirtualMachine;
+
+    class ModuleBuiltinsLookup
+    {
+    public:
+        Value builtins_object;
+        ModuleObject *builtins_module;
+        ValidityCell *lookup_validity_cell;
+
+        static ModuleBuiltinsLookup module(ModuleObject *builtins_module,
+                                           ValidityCell *lookup_validity_cell);
+
+        static ModuleBuiltinsLookup uncacheable(Value builtins_object);
+
+        bool is_module() const { return builtins_module != nullptr; }
+    };
 
     class ModuleObject : public SlotObject
     {
@@ -53,16 +69,7 @@ namespace cl
             }
             return create_module_globals_validity_cell_slow();
         }
-        ALWAYSINLINE ValidityCell *
-        get_or_create_module_builtins_validity_cell() const
-        {
-            ValidityCell *cell = module_builtins_validity_cell.extract();
-            if(likely(cell != nullptr && cell->is_valid()))
-            {
-                return cell;
-            }
-            return create_module_builtins_validity_cell_slow();
-        }
+        ModuleBuiltinsLookup get_module_builtins_lookup() const;
         uint32_t attached_module_builtins_validity_cell_count() const
         {
             return attached_module_builtins_validity_cells.size();

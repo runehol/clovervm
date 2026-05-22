@@ -3,9 +3,17 @@
 #include "test_helpers.h"
 #include "thread_state.h"
 #include "validity_cell.h"
+#include <cassert>
 #include <gtest/gtest.h>
 
 using namespace cl;
+
+static ValidityCell *module_builtins_lookup_cell(ModuleObject *module)
+{
+    ModuleBuiltinsLookup lookup = module->get_module_builtins_lookup();
+    assert(lookup.is_module());
+    return lookup.lookup_validity_cell;
+}
 
 TEST(ModuleObject, ConstructedWithModuleClassAndPredefinedSlots)
 {
@@ -166,11 +174,11 @@ TEST(ModuleObject, ShapeChangeInvalidatesLookupCells)
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
     ModuleObject *module = context.thread()->make_module_object(name);
+    module->set_builtins_binding(Value::from_oop(module));
 
     ValidityCell *globals_cell =
         module->get_or_create_module_globals_validity_cell();
-    ValidityCell *builtins_cell =
-        module->get_or_create_module_builtins_validity_cell();
+    ValidityCell *builtins_cell = module_builtins_lookup_cell(module);
 
     ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(42)));
 
@@ -190,12 +198,12 @@ TEST(ModuleObject, DeleteShapeChangeInvalidatesLookupCells)
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
     ModuleObject *module = context.thread()->make_module_object(name);
+    module->set_builtins_binding(Value::from_oop(module));
 
     ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(42)));
     ValidityCell *globals_cell =
         module->get_or_create_module_globals_validity_cell();
-    ValidityCell *builtins_cell =
-        module->get_or_create_module_builtins_validity_cell();
+    ValidityCell *builtins_cell = module_builtins_lookup_cell(module);
 
     ASSERT_TRUE(module->delete_own_property(global_name));
 
@@ -213,20 +221,19 @@ TEST(ModuleObject, ValidityCellsAreCreatedLazilyAndReusedWhileValid)
     TValue<String> name =
         context.vm().get_or_create_interned_string_value(L"example");
     ModuleObject *module = context.thread()->make_module_object(name);
+    module->set_builtins_binding(Value::from_oop(module));
 
     EXPECT_EQ(nullptr, module->current_module_globals_validity_cell());
     EXPECT_EQ(nullptr, module->current_module_builtins_validity_cell());
 
     ValidityCell *globals_cell =
         module->get_or_create_module_globals_validity_cell();
-    ValidityCell *builtins_cell =
-        module->get_or_create_module_builtins_validity_cell();
+    ValidityCell *builtins_cell = module_builtins_lookup_cell(module);
     EXPECT_TRUE(globals_cell->is_valid());
     EXPECT_TRUE(builtins_cell->is_valid());
     EXPECT_EQ(globals_cell,
               module->get_or_create_module_globals_validity_cell());
-    EXPECT_EQ(builtins_cell,
-              module->get_or_create_module_builtins_validity_cell());
+    EXPECT_EQ(builtins_cell, module_builtins_lookup_cell(module));
 }
 
 TEST(ModuleObject, InvalidatingModuleLookupCellsKillsOwnedCells)
@@ -237,11 +244,11 @@ TEST(ModuleObject, InvalidatingModuleLookupCellsKillsOwnedCells)
     TValue<String> name =
         context.vm().get_or_create_interned_string_value(L"example");
     ModuleObject *module = context.thread()->make_module_object(name);
+    module->set_builtins_binding(Value::from_oop(module));
 
     ValidityCell *globals_cell =
         module->get_or_create_module_globals_validity_cell();
-    ValidityCell *builtins_cell =
-        module->get_or_create_module_builtins_validity_cell();
+    ValidityCell *builtins_cell = module_builtins_lookup_cell(module);
 
     module->invalidate_module_lookup_validity_cells();
 
@@ -252,8 +259,7 @@ TEST(ModuleObject, InvalidatingModuleLookupCellsKillsOwnedCells)
 
     EXPECT_TRUE(
         module->get_or_create_module_globals_validity_cell()->is_valid());
-    EXPECT_TRUE(
-        module->get_or_create_module_builtins_validity_cell()->is_valid());
+    EXPECT_TRUE(module_builtins_lookup_cell(module)->is_valid());
 }
 
 TEST(ModuleObject, InvalidatingModuleLookupCellsKillsAttachedCells)
@@ -269,10 +275,10 @@ TEST(ModuleObject, InvalidatingModuleLookupCellsKillsAttachedCells)
         context.thread()->make_module_object(provider_name);
     ModuleObject *consumer =
         context.thread()->make_module_object(consumer_name);
+    consumer->set_builtins_binding(Value::from_oop(provider));
 
     ValidityCell *consumer_builtins_cell =
-        consumer->get_or_create_module_builtins_validity_cell();
-    provider->attach_module_builtins_validity_cell(consumer_builtins_cell);
+        module_builtins_lookup_cell(consumer);
     EXPECT_EQ(1u, provider->attached_module_builtins_validity_cell_count());
 
     provider->invalidate_module_lookup_validity_cells();
@@ -294,14 +300,15 @@ TEST(ModuleObject, BuiltinsBindingMutationInvalidatesLookupCells)
         context.thread()->make_module_object(provider_name);
     ModuleObject *consumer =
         context.thread()->make_module_object(consumer_name);
+    provider->set_builtins_binding(Value::from_oop(provider));
+    consumer->set_builtins_binding(Value::from_oop(provider));
 
     ValidityCell *provider_globals_cell =
         provider->get_or_create_module_globals_validity_cell();
     ValidityCell *provider_builtins_cell =
-        provider->get_or_create_module_builtins_validity_cell();
+        module_builtins_lookup_cell(provider);
     ValidityCell *consumer_builtins_cell =
-        consumer->get_or_create_module_builtins_validity_cell();
-    provider->attach_module_builtins_validity_cell(consumer_builtins_cell);
+        module_builtins_lookup_cell(consumer);
 
     provider->set_builtins_binding(provider_name.raw_value());
 
@@ -326,18 +333,16 @@ TEST(ModuleObject, AttachModuleBuiltinsValidityCellReusesInvalidEntries)
         context.thread()->make_module_object(provider_name);
     ModuleObject *first = context.thread()->make_module_object(first_name);
     ModuleObject *second = context.thread()->make_module_object(second_name);
+    first->set_builtins_binding(Value::from_oop(provider));
+    second->set_builtins_binding(Value::from_oop(provider));
 
-    ValidityCell *first_cell =
-        first->get_or_create_module_builtins_validity_cell();
-    provider->attach_module_builtins_validity_cell(first_cell);
+    ValidityCell *first_cell = module_builtins_lookup_cell(first);
     EXPECT_EQ(1u, provider->attached_module_builtins_validity_cell_count());
 
     first->invalidate_module_lookup_validity_cells();
     EXPECT_FALSE(first_cell->is_valid());
 
-    ValidityCell *second_cell =
-        second->get_or_create_module_builtins_validity_cell();
-    provider->attach_module_builtins_validity_cell(second_cell);
+    ValidityCell *second_cell = module_builtins_lookup_cell(second);
 
     EXPECT_EQ(1u, provider->attached_module_builtins_validity_cell_count());
     provider->invalidate_module_lookup_validity_cells();

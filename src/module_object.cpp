@@ -47,6 +47,22 @@ namespace cl
             dunder_builtins_name, ShapeTransitionVerb::Delete));
     }
 
+    ModuleBuiltinsLookup
+    ModuleBuiltinsLookup::module(ModuleObject *builtins_module,
+                                 ValidityCell *lookup_validity_cell)
+    {
+        assert(builtins_module != nullptr);
+        assert(lookup_validity_cell != nullptr);
+        return ModuleBuiltinsLookup{Value::from_oop(builtins_module),
+                                    builtins_module, lookup_validity_cell};
+    }
+
+    ModuleBuiltinsLookup
+    ModuleBuiltinsLookup::uncacheable(Value builtins_object)
+    {
+        return ModuleBuiltinsLookup{builtins_object, nullptr, nullptr};
+    }
+
     ModuleObject::ModuleObject(ClassObject *cls, TValue<String> _name,
                                Value _builtins)
         : SlotObject(cls, native_layout), name_binding(_name.raw_value()),
@@ -85,6 +101,31 @@ namespace cl
         builtins_binding = Value::not_present();
         ensure_module_builtins_descriptor_absent(this);
         invalidate_module_lookup_validity_cells();
+    }
+
+    ModuleBuiltinsLookup ModuleObject::get_module_builtins_lookup() const
+    {
+        Value builtins = get_builtins_binding();
+        if(builtins.is_not_present())
+        {
+            builtins = active_vm()->global_builtins_module();
+        }
+        if(!can_convert_to<ModuleObject>(builtins))
+        {
+            return ModuleBuiltinsLookup::uncacheable(builtins);
+        }
+
+        ModuleObject *builtins_module =
+            assume_convert_to<ModuleObject>(builtins);
+        ValidityCell *cell = module_builtins_validity_cell.extract();
+        if(likely(cell != nullptr && cell->is_valid()))
+        {
+            return ModuleBuiltinsLookup::module(builtins_module, cell);
+        }
+
+        cell = create_module_builtins_validity_cell_slow();
+        builtins_module->attach_module_builtins_validity_cell(cell);
+        return ModuleBuiltinsLookup::module(builtins_module, cell);
     }
 
     ValidityCell *ModuleObject::create_module_globals_validity_cell_slow() const
