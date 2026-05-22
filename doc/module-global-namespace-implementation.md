@@ -172,21 +172,21 @@ First test hooks for the new path:
 
 ## Stage 2: Module Shape Mutation And Validity
 
-- [ ] Define the module global storage-location descriptor used by runtime
-      helpers and future caches.
+- [x] Use ordinary shape `StorageLocation` descriptors for module globals.
 - [x] Add module shape guards for global lookup assumptions.
 - [x] Add module membership validity cells if shape guards alone are not enough
       for the chosen storage representation.
-- [ ] Add builtins namespace shape guards or membership validity cells.
+- [x] Add module-as-builtins dependency attachment for module builtins fallback
+      assumptions.
 - [x] Design where dedicated `__builtins__` binding validity lives without
       aliasing module inline slots.
 - [x] Add dedicated `__builtins__` binding validity once the layout is explicit.
 - [x] Invalidate module miss assumptions when a module property is inserted.
 - [x] Invalidate module hit assumptions when a module property is deleted.
-- [ ] Invalidate builtins hit/miss assumptions when the builtins namespace
-      mutates.
-- [ ] Invalidate resolved-builtins assumptions when module `__builtins__` is
-      inserted, assigned, or deleted.
+- [x] Invalidate attached module builtins fallback assumptions when a module used
+      as builtins mutates.
+- [x] Invalidate resolved-builtins assumptions when the module `__builtins__`
+      binding helper inserts, assigns, or deletes the binding.
 - [x] Add focused tests or C++ tests that observe validity invalidation on module
       insert.
 - [x] Add focused tests or C++ tests that observe validity invalidation on module
@@ -206,6 +206,8 @@ First test hooks for the new path:
 - [ ] Add dict-like `__builtins__` handling.
 - [ ] Preserve non-module, non-dict-like `__builtins__` behavior so later builtin
       lookup fails through that object rather than silently ignoring it.
+- [ ] Wire module-valued builtins resolution to attach the consumer module's
+      builtins validity cell to the provider module.
 - [ ] Add a helper for `LOAD_GLOBAL` semantics: module lookup, then resolved
       builtins lookup.
 - [ ] Add tests for module hit lookup through the helper.
@@ -270,6 +272,9 @@ First test hooks for the new path:
 - [ ] Guard missing caches with module miss validity plus builtins miss validity.
 - [ ] Guard caches that depend on resolved builtins with module `__builtins__`
       binding validity.
+- [ ] Add dict-as-builtins shape or membership validity if dict-valued builtins
+      lookups become cacheable.
+- [ ] Leave arbitrary non-cacheable builtins mappings on the slow path.
 - [ ] Add storage-location validity guards only if the location can move without
       shape or membership invalidation.
 - [ ] Add tests that cache entries observe module rebinding.
