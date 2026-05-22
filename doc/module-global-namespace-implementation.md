@@ -290,18 +290,20 @@ First test hooks for the new path:
 ## Stage 7: Switch Codegen To ModuleObject Globals
 
 - [ ] Stop allocating module/global runtime value slots in `Scope` during
-      codegen. This is intentionally deferred until the legacy bridge is removed.
+      codegen. This remains deferred to Stage 8, where the legacy bridge is
+      removed.
 - [ ] Keep allocating symbol metadata and ordered name/slot metadata in `Scope`
       where codegen still needs it.
-- [ ] Stop creating module-scope holes for builtin shadowing.
+- [ ] Stop creating module-scope holes for builtin shadowing. This remains
+      deferred to Stage 8 with the rest of the bridge removal.
 - [x] Emit the new module-global load instruction for global reads.
 - [x] Emit the new module-global store instruction for global writes.
 - [x] Emit the new module-global delete instruction for global deletes.
-- [ ] Update error/debug metadata so global names are recoverable without
+- [x] Update error/debug metadata so global names are recoverable without
       scope-owned runtime values.
-- [ ] Update function creation so functions capture or receive the chosen
+- [x] Update function creation so functions capture or receive the chosen
       defining-module and builtins context.
-- [ ] Update class codegen enough to preserve current behavior while global
+- [x] Update class codegen enough to preserve current behavior while global
       lookup moves to module objects.
 - [x] Update the tests broken by the codegen switch to inspect module object
       storage or the defining module instead of the legacy module scope.
@@ -312,23 +314,38 @@ First test hooks for the new path:
 - [x] Run the interpreter semantic tests for globals, builtins, functions, and
       interactive execution.
 - [x] Run release benchmarks after the codegen switch.
-- [ ] Profile module-global read/write regressions and decide whether they belong
+- [x] Profile module-global read/write regressions and decide whether they belong
       in this stage or in the next cache/performance pass.
-- [ ] Accept the current module-global add/delete regression as a consequence of
+- [x] Accept the current module-global add/delete regression as a consequence of
       real shape transitions unless profiling shows it affects hot workloads.
 
 ### Stage 7 Notes
 
 Slice 1 has landed: ordinary global reads, writes, and deletes now emit
-`LdaModuleGlobal`, `StaModuleGlobal`, and `DelModuleGlobal`. The legacy
-`Scope` bridge still exists for old bytecode and transitional metadata; this
-stage does not remove scope slot allocation or builtin-shadowing holes yet.
+`LdaModuleGlobal`, `StaModuleGlobal`, and `DelModuleGlobal`. The new bytecode
+instructions carry name constants, so new global read/delete `NameError`
+reporting no longer depends on scope-owned runtime slots. Legacy `LdaGlobal`,
+`StaGlobal`, and `DelGlobal` still recover names through the module-owned legacy
+scope until those opcodes are removed.
 
-Release benchmarking after the switch showed the expected cold-path cost for
-global add/delete, because module deletes now perform real shape transitions and
+Nested functions and class bodies now receive the defining module from their
+enclosing code object. Function globals therefore resolve through the defining
+module. Class bodies still use local `Scope` storage for class-local execution
+and class namespace harvesting, but their global lookup path is also
+module-object based.
+
+Profiling after the switch showed the expected cold-path cost for global
+add/delete, because module deletes now perform real shape transitions and
 invalidate module lookup state instead of writing `not_present` into an existing
-scope slot. Hot global reads and writes regressed more modestly and should be
-profiled before further design changes.
+scope slot. We accept that add/delete regression for now. Hot read/write
+profiling led to two cleanup fixes: module-global refcounted stores now avoid
+thread-local zero-count lookup on the hot path, and module-global plans are split
+from cache-entry structs so cache payloads carry only cacheable hit state.
+
+Stage 7 intentionally leaves the legacy `Scope` bridge in place. Stage 8 owns
+removing scope-backed module runtime value cells, builtin-shadowing holes, and
+the remaining compatibility paths while preserving whatever symbol metadata
+codegen still needs.
 
 ## Stage 8: Retire Module Values From Scope
 
