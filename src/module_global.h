@@ -20,7 +20,10 @@ namespace cl
     resolve_module_global_delete_descriptor(ModuleObject *module,
                                             TValue<String> name);
 
+    Value load_module_global_from_slot_plan(const ModuleGlobalSlotPlan &plan);
     Value load_module_global_from_plan(const ModuleGlobalReadPlan &plan);
+    bool store_module_global_from_store_existing_plan(
+        const ModuleGlobalStoreExistingPlan &plan, Value value);
     bool store_module_global_from_plan(ModuleObject *module,
                                        const ModuleGlobalMutationPlan &plan,
                                        Value value);

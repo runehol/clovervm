@@ -122,19 +122,32 @@ namespace cl
                 next_shape, descriptor.info.storage_location()));
     }
 
+    Value load_module_global_from_slot_plan(const ModuleGlobalSlotPlan &plan)
+    {
+        assert(plan.storage_owner != nullptr);
+        return plan.storage_owner->read_storage_location(plan.storage_location);
+    }
+
     Value load_module_global_from_plan(const ModuleGlobalReadPlan &plan)
     {
         switch(plan.kind)
         {
             case ModuleGlobalReadPlanKind::Slot:
-                assert(plan.storage_owner != nullptr);
-                return plan.storage_owner->read_storage_location(
-                    plan.storage_location);
+                return load_module_global_from_slot_plan(plan.slot_plan);
             case ModuleGlobalReadPlanKind::Missing:
             case ModuleGlobalReadPlanKind::UncacheableBuiltinsObject:
                 return Value::not_present();
         }
         __builtin_unreachable();
+    }
+
+    bool store_module_global_from_store_existing_plan(
+        const ModuleGlobalStoreExistingPlan &plan, Value value)
+    {
+        ModuleObject *storage_owner = plan.storage_owner;
+        assert(storage_owner != nullptr);
+        storage_owner->write_storage_location(plan.storage_location(), value);
+        return true;
     }
 
     bool store_module_global_from_plan(ModuleObject *module,
@@ -145,21 +158,16 @@ namespace cl
         switch(plan.kind)
         {
             case ModuleGlobalMutationPlanKind::StoreExisting:
-                {
-                    ModuleObject *storage_owner = plan.storage_owner;
-                    assert(storage_owner != nullptr);
-                    storage_owner->write_storage_location(
-                        plan.storage_location(), value);
-                    return true;
-                }
+                return store_module_global_from_store_existing_plan(
+                    plan.store_existing_plan, value);
             case ModuleGlobalMutationPlanKind::AddOwnProperty:
                 {
                     assert(module != nullptr);
                     assert(plan.next_shape != nullptr);
-                    assert(plan.storage_kind == StorageKind::Inline);
+                    assert(plan.storage_location.kind == StorageKind::Inline);
                     module->set_shape(plan.next_shape);
-                    module->write_empty_storage_location(
-                        plan.storage_location(), value);
+                    module->write_empty_storage_location(plan.storage_location,
+                                                         value);
                     return true;
                 }
             case ModuleGlobalMutationPlanKind::DeleteOwnProperty:
@@ -178,7 +186,7 @@ namespace cl
         assert(module != nullptr);
         assert(plan.next_shape != nullptr);
         module->set_shape(plan.next_shape);
-        module->write_storage_location(plan.storage_location(),
+        module->write_storage_location(plan.storage_location,
                                        Value::not_present());
         return true;
     }

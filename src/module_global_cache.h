@@ -10,35 +10,34 @@ namespace cl
     class ModuleGlobalReadInlineCache
     {
     public:
-        ModuleGlobalReadPlan plan =
-            ModuleGlobalReadDescriptor::not_found().plan;
+        ModuleGlobalSlotPlan slot = ModuleGlobalSlotPlan::not_found();
 
         ALWAYSINLINE bool matches() const
         {
-            return plan.lookup_validity_cell != nullptr &&
-                   plan.lookup_validity_cell->is_valid();
+            return slot.lookup_validity_cell != nullptr &&
+                   slot.lookup_validity_cell->is_valid();
         }
 
         void populate(const ModuleGlobalReadDescriptor &descriptor)
         {
             assert(descriptor.is_cacheable());
             assert(descriptor.plan.kind == ModuleGlobalReadPlanKind::Slot);
-            plan = descriptor.plan;
+            slot = descriptor.plan.slot_plan;
         }
 
-        void clear() { plan = ModuleGlobalReadDescriptor::not_found().plan; }
+        void clear() { slot = ModuleGlobalSlotPlan::not_found(); }
     };
 
     class ModuleGlobalMutationInlineCache
     {
     public:
-        ModuleGlobalMutationPlan plan =
-            ModuleGlobalWriteDescriptor::not_found().plan;
+        ModuleGlobalStoreExistingPlan store_existing =
+            ModuleGlobalStoreExistingPlan::not_found();
 
         ALWAYSINLINE bool matches() const
         {
-            return plan.lookup_validity_cell != nullptr &&
-                   plan.lookup_validity_cell->is_valid();
+            return store_existing.lookup_validity_cell != nullptr &&
+                   store_existing.lookup_validity_cell->is_valid();
         }
 
         void populate(const ModuleGlobalWriteDescriptor &descriptor)
@@ -46,10 +45,13 @@ namespace cl
             assert(descriptor.is_cacheable());
             assert(descriptor.plan.kind ==
                    ModuleGlobalMutationPlanKind::StoreExisting);
-            plan = descriptor.plan;
+            store_existing = descriptor.plan.store_existing_plan;
         }
 
-        void clear() { plan = ModuleGlobalWriteDescriptor::not_found().plan; }
+        void clear()
+        {
+            store_existing = ModuleGlobalStoreExistingPlan::not_found();
+        }
     };
 
 }  // namespace cl

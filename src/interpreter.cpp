@@ -1889,29 +1889,17 @@ namespace cl
     }
 
     static ALWAYSINLINE Value
-    load_module_global_slot_from_plan_inline(const ModuleGlobalReadPlan &plan)
+    load_module_global_slot_from_plan_inline(const ModuleGlobalSlotPlan &plan)
     {
-        assert(plan.kind == ModuleGlobalReadPlanKind::Slot);
         assert(plan.storage_owner != nullptr);
-        if(unlikely(plan.storage_location.kind != StorageKind::Inline))
-        {
-            return plan.storage_owner->read_storage_location(
-                plan.storage_location);
-        }
-        return plan.storage_owner
-            ->inline_slot_base()[plan.storage_location.physical_idx];
+        return plan.storage_owner->read_storage_location(plan.storage_location);
     }
 
-    static ALWAYSINLINE HeapObject *store_module_global_from_plan_inline_fast(
-        const ModuleGlobalMutationPlan &plan, Value value, bool &stored)
+    static ALWAYSINLINE HeapObject *
+    store_module_global_from_store_existing_plan_inline_fast(
+        const ModuleGlobalStoreExistingPlan &plan, Value value)
     {
-        if(unlikely(plan.kind != ModuleGlobalMutationPlanKind::StoreExisting))
-        {
-            stored = false;
-            return nullptr;
-        }
         assert(plan.storage_owner != nullptr);
-        stored = true;
         return plan.storage_owner
             ->write_existing_storage_location_returning_zero_ref(
                 plan.storage_location(), value);
@@ -1951,8 +1939,7 @@ namespace cl
         {
             MUSTTAIL return op_lda_module_global_cache_miss(ARGS);
         }
-        assert(cache.plan.kind == ModuleGlobalReadPlanKind::Slot);
-        accumulator = load_module_global_slot_from_plan_inline(cache.plan);
+        accumulator = load_module_global_slot_from_plan_inline(cache.slot);
         COMPLETE();
     }
 
@@ -1995,14 +1982,9 @@ namespace cl
         {
             MUSTTAIL return op_sta_module_global_cache_miss(ARGS);
         }
-        assert(cache.plan.kind == ModuleGlobalMutationPlanKind::StoreExisting);
-        bool stored = false;
-        HeapObject *zct_object = store_module_global_from_plan_inline_fast(
-            cache.plan, accumulator, stored);
-        if(unlikely(!stored))
-        {
-            MUSTTAIL return op_sta_module_global_cache_miss(ARGS);
-        }
+        HeapObject *zct_object =
+            store_module_global_from_store_existing_plan_inline_fast(
+                cache.store_existing, accumulator);
         if(unlikely(zct_object != nullptr))
         {
             thread->add_to_zero_count_table_if_needed(zct_object);

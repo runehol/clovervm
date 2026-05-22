@@ -75,12 +75,12 @@ TEST(ModuleGlobal, ReadModuleSlotHitIsCacheable)
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_TRUE(descriptor.is_cacheable());
     EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, descriptor.plan.kind);
-    EXPECT_EQ(module, descriptor.plan.storage_owner);
+    EXPECT_EQ(module, descriptor.plan.slot_plan.storage_owner);
     EXPECT_EQ(Value::from_smi(42), descriptor.lookup_value);
     EXPECT_EQ(Value::from_smi(42),
               load_module_global_from_plan(descriptor.plan));
     EXPECT_EQ(module->current_module_globals_validity_cell(),
-              descriptor.plan.lookup_validity_cell);
+              descriptor.plan.slot_plan.lookup_validity_cell);
 }
 
 TEST(ModuleGlobal, ReadBuiltinsModuleSlotHitIsCacheableAndAttached)
@@ -106,20 +106,20 @@ TEST(ModuleGlobal, ReadBuiltinsModuleSlotHitIsCacheableAndAttached)
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_TRUE(descriptor.is_cacheable());
     EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, descriptor.plan.kind);
-    EXPECT_EQ(builtins, descriptor.plan.storage_owner);
+    EXPECT_EQ(builtins, descriptor.plan.slot_plan.storage_owner);
     EXPECT_EQ(Value::from_smi(7), descriptor.lookup_value);
     EXPECT_EQ(Value::from_smi(7),
               load_module_global_from_plan(descriptor.plan));
     EXPECT_EQ(module->current_module_builtins_validity_cell(),
-              descriptor.plan.lookup_validity_cell);
+              descriptor.plan.slot_plan.lookup_validity_cell);
     EXPECT_EQ(1u, builtins->attached_module_builtins_validity_cell_count());
 
     ModuleGlobalReadDescriptor second_descriptor =
         resolve_module_global_read_descriptor(module, global_name);
 
     EXPECT_TRUE(second_descriptor.is_found());
-    EXPECT_EQ(descriptor.plan.lookup_validity_cell,
-              second_descriptor.plan.lookup_validity_cell);
+    EXPECT_EQ(descriptor.plan.slot_plan.lookup_validity_cell,
+              second_descriptor.plan.slot_plan.lookup_validity_cell);
     EXPECT_EQ(1u, builtins->attached_module_builtins_validity_cell_count());
 }
 
@@ -146,7 +146,7 @@ TEST(ModuleGlobal, MissingBuiltinsBindingUsesVirtualMachineDefault)
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_TRUE(descriptor.is_cacheable());
     EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, descriptor.plan.kind);
-    EXPECT_EQ(builtins, descriptor.plan.storage_owner);
+    EXPECT_EQ(builtins, descriptor.plan.slot_plan.storage_owner);
     EXPECT_EQ(Value::from_smi(9),
               load_module_global_from_plan(descriptor.plan));
 }
@@ -198,7 +198,7 @@ TEST(ModuleGlobal, MissingNameInModuleBuiltinsIsUncacheableMiss)
     EXPECT_EQ(ModuleGlobalReadStatus::NotFound, descriptor.status);
     EXPECT_FALSE(descriptor.is_cacheable());
     EXPECT_EQ(ModuleGlobalReadPlanKind::Missing, descriptor.plan.kind);
-    EXPECT_EQ(nullptr, descriptor.plan.lookup_validity_cell);
+    EXPECT_EQ(nullptr, descriptor.plan.slot_plan.lookup_validity_cell);
     EXPECT_TRUE(load_module_global_from_plan(descriptor.plan).is_not_present());
 }
 
@@ -228,7 +228,7 @@ TEST(ModuleGlobal, DeletingModuleBindingRevealsBuiltinWithoutMutatingModule)
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_TRUE(descriptor.is_cacheable());
     EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, descriptor.plan.kind);
-    EXPECT_EQ(builtins, descriptor.plan.storage_owner);
+    EXPECT_EQ(builtins, descriptor.plan.slot_plan.storage_owner);
     EXPECT_EQ(Value::from_smi(2), descriptor.lookup_value);
     EXPECT_EQ(Value::from_smi(2),
               load_module_global_from_plan(descriptor.plan));
@@ -252,7 +252,8 @@ TEST(ModuleGlobal, StoreExistingModuleSlotIsCacheableAndDoesNotInvalidate)
         resolve_module_global_write_descriptor(module, global_name);
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_TRUE(descriptor.is_cacheable());
-    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ValidityCell *cell =
+        descriptor.plan.store_existing_plan.lookup_validity_cell;
     ASSERT_TRUE(cell->is_valid());
 
     EXPECT_TRUE(store_module_global_from_plan(module, descriptor.plan,
@@ -390,8 +391,7 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsModuleSlot)
     const ModuleGlobalReadInlineCache &cache =
         code->module_global_read_caches[0];
     EXPECT_TRUE(cache.matches());
-    EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, cache.plan.kind);
-    EXPECT_EQ(module, cache.plan.storage_owner);
+    EXPECT_EQ(module, cache.slot.storage_owner);
 }
 
 TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsBuiltinsAfterModuleMiss)
@@ -425,8 +425,7 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsBuiltinsAfterModuleMiss)
     const ModuleGlobalReadInlineCache &cache =
         code->module_global_read_caches[0];
     EXPECT_TRUE(cache.matches());
-    EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, cache.plan.kind);
-    EXPECT_EQ(builtins, cache.plan.storage_owner);
+    EXPECT_EQ(builtins, cache.slot.storage_owner);
 }
 
 TEST(ModuleGlobalBytecode, LoadModuleGlobalMissingNameRaisesNameError)
@@ -490,8 +489,7 @@ TEST(ModuleGlobalBytecode, StoreModuleGlobalWritesModuleSlot)
     const ModuleGlobalMutationInlineCache &cache =
         code->module_global_mutation_caches[0];
     EXPECT_TRUE(cache.matches());
-    EXPECT_EQ(ModuleGlobalMutationPlanKind::StoreExisting, cache.plan.kind);
-    EXPECT_EQ(module, cache.plan.storage_owner);
+    EXPECT_EQ(module, cache.store_existing.storage_owner);
 
     ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(5)));
     EXPECT_EQ(Value::from_smi(11),
@@ -534,7 +532,7 @@ TEST(ModuleGlobalBytecode, DeleteModuleGlobalDeletesModuleSlot)
     const ModuleGlobalReadInlineCache &cache =
         code->module_global_read_caches[0];
     EXPECT_TRUE(cache.matches());
-    EXPECT_EQ(builtins, cache.plan.storage_owner);
+    EXPECT_EQ(builtins, cache.slot.storage_owner);
 }
 
 TEST(ModuleGlobalBytecode, DeleteModuleGlobalMissingNameRaisesNameError)
@@ -624,14 +622,14 @@ TEST(ModuleGlobalBytecode, CachedModuleLoadInvalidatesAndRevealsBuiltin)
     EXPECT_EQ(Value::from_smi(1),
               context.thread()->run_clovervm_code_object(code));
     ValidityCell *module_cell =
-        code->module_global_read_caches[0].plan.lookup_validity_cell;
+        code->module_global_read_caches[0].slot.lookup_validity_cell;
     ASSERT_TRUE(delete_module_global(module, global_name));
     EXPECT_FALSE(module_cell->is_valid());
 
     EXPECT_EQ(Value::from_smi(2),
               context.thread()->run_clovervm_code_object(code));
     EXPECT_TRUE(code->module_global_read_caches[0].matches());
-    EXPECT_EQ(builtins, code->module_global_read_caches[0].plan.storage_owner);
+    EXPECT_EQ(builtins, code->module_global_read_caches[0].slot.storage_owner);
 }
 
 TEST(ModuleGlobalBytecode, CachedBuiltinsLoadReadsReboundBuiltinsValue)
@@ -705,7 +703,7 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadInvalidatesOnBuiltinsReassignment)
     EXPECT_EQ(Value::from_smi(1),
               context.thread()->run_clovervm_code_object(code));
     ValidityCell *builtins_cell =
-        code->module_global_read_caches[0].plan.lookup_validity_cell;
+        code->module_global_read_caches[0].slot.lookup_validity_cell;
 
     module->set_builtins_binding(Value::from_oop(second_builtins));
     EXPECT_FALSE(builtins_cell->is_valid());
@@ -714,5 +712,5 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadInvalidatesOnBuiltinsReassignment)
               context.thread()->run_clovervm_code_object(code));
     EXPECT_TRUE(code->module_global_read_caches[0].matches());
     EXPECT_EQ(second_builtins,
-              code->module_global_read_caches[0].plan.storage_owner);
+              code->module_global_read_caches[0].slot.storage_owner);
 }

@@ -310,18 +310,17 @@ namespace cl
     ALWAYSINLINE Value
     Object::read_storage_location(StorageLocation location) const
     {
-        switch(location.kind)
+        if(likely(location.kind == StorageKind::Inline))
         {
-            case StorageKind::Inline:
-                return inline_slot_base()[location.physical_idx];
-            case StorageKind::Overflow:
-                {
-                    OverflowSlots *overflow_slots = get_overflow_slots();
-                    assert(overflow_slots != nullptr);
-                    assert(uint32_t(location.physical_idx) <
-                           overflow_slots->get_size());
-                    return overflow_slots->get(location.physical_idx);
-                }
+            return inline_slot_base()[location.physical_idx];
+        }
+        if(unlikely(location.kind == StorageKind::Overflow))
+        {
+            OverflowSlots *overflow_slots = get_overflow_slots();
+            assert(overflow_slots != nullptr);
+            assert(uint32_t(location.physical_idx) <
+                   overflow_slots->get_size());
+            return overflow_slots->get(location.physical_idx);
         }
         __builtin_unreachable();
     }
