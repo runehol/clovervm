@@ -66,7 +66,8 @@ TEST(ModuleGlobal, ReadModuleSlotHitIsCacheable)
         context.vm().get_or_create_interned_string_value(L"module");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
     ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(42)));
 
     ModuleGlobalReadDescriptor descriptor =
@@ -94,9 +95,10 @@ TEST(ModuleGlobal, ReadBuiltinsModuleSlotHitIsCacheableAndAttached)
         context.vm().get_or_create_interned_string_value(L"builtins");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
-    ModuleObject *builtins =
-        context.thread()->make_module_object(builtins_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
+    ModuleObject *builtins = context.thread()->make_module_object(
+        builtins_name, context.vm().global_builtins_module().raw_value());
     ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(7)));
     module->set_builtins_binding(Value::from_oop(builtins));
 
@@ -132,7 +134,8 @@ TEST(ModuleGlobal, NonModuleBuiltinsBindingProducesUncacheablePlan)
         context.vm().get_or_create_interned_string_value(L"module");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
     module->set_builtins_binding(Value::from_smi(4));
 
     ModuleGlobalReadDescriptor descriptor =
@@ -158,9 +161,10 @@ TEST(ModuleGlobal, MissingNameInModuleBuiltinsIsUncacheableMiss)
         context.vm().get_or_create_interned_string_value(L"builtins");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
-    ModuleObject *builtins =
-        context.thread()->make_module_object(builtins_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
+    ModuleObject *builtins = context.thread()->make_module_object(
+        builtins_name, context.vm().global_builtins_module().raw_value());
     module->set_builtins_binding(Value::from_oop(builtins));
 
     ModuleGlobalReadDescriptor descriptor =
@@ -183,7 +187,8 @@ TEST(ModuleGlobal, StoreExistingModuleSlotIsCacheableAndDoesNotInvalidate)
         context.vm().get_or_create_interned_string_value(L"module");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
     ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(1)));
 
     ModuleGlobalWriteDescriptor descriptor =
@@ -210,7 +215,8 @@ TEST(ModuleGlobal, StoreBuiltinsBindingIsReadOnly)
         context.vm().get_or_create_interned_string_value(L"module");
     TValue<String> dunder_builtins =
         context.vm().get_or_create_interned_string_value(L"__builtins__");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
 
     ModuleGlobalWriteDescriptor descriptor =
         resolve_module_global_write_descriptor(module, dunder_builtins);
@@ -228,7 +234,8 @@ TEST(ModuleGlobal, DeleteExistingModuleSlotIsUncacheable)
         context.vm().get_or_create_interned_string_value(L"module");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
     ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(1)));
 
     ModuleGlobalDeleteDescriptor descriptor =
@@ -252,7 +259,8 @@ TEST(ModuleGlobal, DeleteMissingModuleSlotIsNotFound)
         context.vm().get_or_create_interned_string_value(L"module");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
 
     ModuleGlobalDeleteDescriptor descriptor =
         resolve_module_global_delete_descriptor(module, global_name);
@@ -270,7 +278,8 @@ TEST(ModuleGlobal, DeleteBuiltinsBindingIsReadOnly)
         context.vm().get_or_create_interned_string_value(L"module");
     TValue<String> dunder_builtins =
         context.vm().get_or_create_interned_string_value(L"__builtins__");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
 
     ModuleGlobalDeleteDescriptor descriptor =
         resolve_module_global_delete_descriptor(module, dunder_builtins);
@@ -288,7 +297,8 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsModuleSlot)
         context.vm().get_or_create_interned_string_value(L"module");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
     ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(42)));
 
     CodeObject *code = make_module_global_test_code(
@@ -319,9 +329,10 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsBuiltinsAfterModuleMiss)
         context.vm().get_or_create_interned_string_value(L"builtins");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
-    ModuleObject *builtins =
-        context.thread()->make_module_object(builtins_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
+    ModuleObject *builtins = context.thread()->make_module_object(
+        builtins_name, context.vm().global_builtins_module().raw_value());
     ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(7)));
     module->set_builtins_binding(Value::from_oop(builtins));
 
@@ -351,7 +362,8 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalMissingNameRaisesNameError)
         context.vm().get_or_create_interned_string_value(L"module");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"not_present");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
 
     CodeObject *code = make_module_global_test_code(
         context, module, L"<module-global-missing-load-test>",
@@ -380,7 +392,8 @@ TEST(ModuleGlobalBytecode, StoreModuleGlobalWritesModuleSlot)
         context.vm().get_or_create_interned_string_value(L"module");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
 
     CodeObject *code = make_module_global_test_code(
         context, module, L"<module-global-store-test>",
@@ -422,9 +435,10 @@ TEST(ModuleGlobalBytecode, DeleteModuleGlobalDeletesModuleSlot)
         context.vm().get_or_create_interned_string_value(L"builtins");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
-    ModuleObject *builtins =
-        context.thread()->make_module_object(builtins_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
+    ModuleObject *builtins = context.thread()->make_module_object(
+        builtins_name, context.vm().global_builtins_module().raw_value());
     ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(1)));
     ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(2)));
     module->set_builtins_binding(Value::from_oop(builtins));
@@ -458,7 +472,8 @@ TEST(ModuleGlobalBytecode, DeleteModuleGlobalMissingNameRaisesNameError)
         context.vm().get_or_create_interned_string_value(L"module");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"not_present");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
 
     CodeObject *code = make_module_global_test_code(
         context, module, L"<module-global-missing-delete-test>",
@@ -485,7 +500,8 @@ TEST(ModuleGlobalBytecode, CachedLoadReadsReboundModuleValue)
         context.vm().get_or_create_interned_string_value(L"module");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
     ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(1)));
 
     CodeObject *code = make_module_global_test_code(
@@ -518,9 +534,10 @@ TEST(ModuleGlobalBytecode, CachedModuleLoadInvalidatesAndRevealsBuiltin)
         context.vm().get_or_create_interned_string_value(L"builtins");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
-    ModuleObject *builtins =
-        context.thread()->make_module_object(builtins_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
+    ModuleObject *builtins = context.thread()->make_module_object(
+        builtins_name, context.vm().global_builtins_module().raw_value());
     ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(1)));
     ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(2)));
     module->set_builtins_binding(Value::from_oop(builtins));
@@ -557,9 +574,10 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadReadsReboundBuiltinsValue)
         context.vm().get_or_create_interned_string_value(L"builtins");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
-    ModuleObject *builtins =
-        context.thread()->make_module_object(builtins_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
+    ModuleObject *builtins = context.thread()->make_module_object(
+        builtins_name, context.vm().global_builtins_module().raw_value());
     ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(1)));
     module->set_builtins_binding(Value::from_oop(builtins));
 
@@ -595,11 +613,13 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadInvalidatesOnBuiltinsReassignment)
         context.vm().get_or_create_interned_string_value(L"second_builtins");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
-    ModuleObject *first_builtins =
-        context.thread()->make_module_object(first_builtins_name);
-    ModuleObject *second_builtins =
-        context.thread()->make_module_object(second_builtins_name);
+    ModuleObject *module = context.thread()->make_module_object(
+        module_name, context.vm().global_builtins_module().raw_value());
+    ModuleObject *first_builtins = context.thread()->make_module_object(
+        first_builtins_name, context.vm().global_builtins_module().raw_value());
+    ModuleObject *second_builtins = context.thread()->make_module_object(
+        second_builtins_name,
+        context.vm().global_builtins_module().raw_value());
     ASSERT_TRUE(
         first_builtins->set_own_property(global_name, Value::from_smi(1)));
     ASSERT_TRUE(

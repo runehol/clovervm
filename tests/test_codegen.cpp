@@ -32,11 +32,12 @@ std::string bytecode_str_from_interactive(const wchar_t *expr)
 std::string trusted_builtin_bytecode_str_from_file(const wchar_t *expr)
 {
     test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
     TValue<String> module_name =
         test_context.vm().get_or_create_interned_string_value(
             L"<test-builtin>");
-    ModuleObject *module =
-        test_context.thread()->make_module_object(module_name);
+    ModuleObject *module = test_context.thread()->make_module_object(
+        module_name, test_context.vm().global_builtins_module().raw_value());
     CodeObject *code_obj = test_context.thread()->compile_in_module(
         expr, StartRule::File, module, LanguageMode::TrustedCloverExtensions);
     return fmt::to_string(*code_obj);

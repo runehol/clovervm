@@ -53,7 +53,8 @@ make_lda_active_exception_handler_code(test::VmTestContext &test_context,
     CodeObjectBuilder builder(
         &test_context.vm(), nullptr,
         TValue<ModuleObject>::from_oop(
-            test_context.thread()->make_module_object(name)),
+            test_context.thread()->make_module_object(
+                name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
     uint32_t constant_idx = builder.allocate_constant(raised);
     JumpTarget handler(&builder);
@@ -80,7 +81,8 @@ make_clear_active_exception_handler_code(test::VmTestContext &test_context,
     CodeObjectBuilder builder(
         &test_context.vm(), nullptr,
         TValue<ModuleObject>::from_oop(
-            test_context.thread()->make_module_object(name)),
+            test_context.thread()->make_module_object(
+                name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
     uint32_t constant_idx = builder.allocate_constant(raised);
     JumpTarget handler(&builder);
@@ -108,7 +110,8 @@ make_drain_active_exception_handler_code(test::VmTestContext &test_context,
     CodeObjectBuilder builder(
         &test_context.vm(), nullptr,
         TValue<ModuleObject>::from_oop(
-            test_context.thread()->make_module_object(name)),
+            test_context.thread()->make_module_object(
+                name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
     uint32_t constant_idx = builder.allocate_constant(raised);
     JumpTarget handler(&builder);
@@ -139,7 +142,8 @@ make_reraise_active_exception_handler_code(test::VmTestContext &test_context,
     CodeObjectBuilder builder(
         &test_context.vm(), nullptr,
         TValue<ModuleObject>::from_oop(
-            test_context.thread()->make_module_object(name)),
+            test_context.thread()->make_module_object(
+                name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
     uint32_t constant_idx = builder.allocate_constant(raised);
     JumpTarget inner_handler(&builder);
@@ -174,7 +178,8 @@ make_lda_active_exception_code(test::VmTestContext &test_context)
     CodeObjectBuilder builder(
         &test_context.vm(), nullptr,
         TValue<ModuleObject>::from_oop(
-            test_context.thread()->make_module_object(name)),
+            test_context.thread()->make_module_object(
+                name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
     builder.emit_lda_active_exception(0);
     builder.emit_return(0);
@@ -190,7 +195,8 @@ make_active_exception_is_instance_code(test::VmTestContext &test_context,
     CodeObjectBuilder builder(
         &test_context.vm(), nullptr,
         TValue<ModuleObject>::from_oop(
-            test_context.thread()->make_module_object(name)),
+            test_context.thread()->make_module_object(
+                name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
     uint32_t constant_idx = builder.allocate_constant(handler_class);
     builder.emit_lda_constant(0, uint8_t(constant_idx));

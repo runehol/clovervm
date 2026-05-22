@@ -344,8 +344,8 @@ namespace cl
         register_builtin_class(make_module_class(this));
         TValue<String> builtins_name =
             get_or_create_interned_string_value(L"builtins");
-        ModuleObject *builtins_module =
-            make_immortal_object_raw<ModuleObject>(builtins_name);
+        ModuleObject *builtins_module = make_immortal_object_raw<ModuleObject>(
+            builtins_name, Value::not_present());
         global_builtins_module_ = builtins_module;
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_code_object_class(this));

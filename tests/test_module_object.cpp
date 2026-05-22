@@ -22,23 +22,26 @@ TEST(ModuleObject, ConstructedWithModuleClassAndPredefinedSlots)
 
     TValue<String> name =
         context.vm().get_or_create_interned_string_value(L"example");
-    ModuleObject *module = context.thread()->make_module_object(name);
+    ModuleObject *module = context.thread()->make_module_object(
+        name, context.vm().global_builtins_module().raw_value());
 
     EXPECT_EQ(NativeLayoutId::ModuleObject, module->native_layout_id());
     EXPECT_EQ(context.vm().module_class(), module->get_shape()->get_class());
     EXPECT_TRUE(module->get_shape()->has_flag(ShapeFlag::IsModuleObject));
     EXPECT_EQ(name.raw_value(), module->get_name_binding());
-    EXPECT_TRUE(module->get_builtins_binding().is_not_present());
+    EXPECT_EQ(context.vm().global_builtins_module().raw_value(),
+              module->get_builtins_binding());
 
     TValue<String> dunder_name =
         context.vm().get_or_create_interned_string_value(L"__name__");
     TValue<String> dunder_builtins =
         context.vm().get_or_create_interned_string_value(L"__builtins__");
     EXPECT_EQ(name.raw_value(), module->get_own_property(dunder_name));
-    EXPECT_TRUE(module->get_own_property(dunder_builtins).is_not_present());
-    EXPECT_FALSE(module->get_shape()
-                     ->resolve_present_property(dunder_builtins)
-                     .is_found());
+    EXPECT_EQ(context.vm().global_builtins_module().raw_value(),
+              module->get_own_property(dunder_builtins));
+    EXPECT_TRUE(module->get_shape()
+                    ->resolve_present_property(dunder_builtins)
+                    .is_found());
 }
 
 TEST(ModuleObject, PredefinedSlotLocationsAreStable)
@@ -78,7 +81,8 @@ TEST(ModuleObject, NameBindingAccessorUsesPredefinedSlotAndAllowsAnyValue)
 
     TValue<String> name =
         context.vm().get_or_create_interned_string_value(L"example");
-    ModuleObject *module = context.thread()->make_module_object(name);
+    ModuleObject *module = context.thread()->make_module_object(
+        name, context.vm().global_builtins_module().raw_value());
     Value replacement = Value::from_smi(4);
 
     module->set_name_binding(replacement);
@@ -97,13 +101,14 @@ TEST(ModuleObject, BuiltinsBindingAccessorUsesPredefinedSlot)
     TValue<String> name =
         context.vm().get_or_create_interned_string_value(L"example");
     Value builtins = name.raw_value();
-    ModuleObject *module = context.thread()->make_module_object(name);
+    ModuleObject *module = context.thread()->make_module_object(
+        name, context.vm().global_builtins_module().raw_value());
 
     TValue<String> dunder_builtins =
         context.vm().get_or_create_interned_string_value(L"__builtins__");
-    EXPECT_FALSE(module->get_shape()
-                     ->resolve_present_property(dunder_builtins)
-                     .is_found());
+    EXPECT_TRUE(module->get_shape()
+                    ->resolve_present_property(dunder_builtins)
+                    .is_found());
 
     module->set_builtins_binding(builtins);
 
@@ -151,7 +156,8 @@ TEST(ModuleObject, OrdinaryGlobalsStartAfterPredefinedSlots)
         context.vm().get_or_create_interned_string_value(L"example");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(name);
+    ModuleObject *module = context.thread()->make_module_object(
+        name, context.vm().global_builtins_module().raw_value());
 
     ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(42)));
     EXPECT_EQ(Value::from_smi(42), module->get_own_property(global_name));
@@ -173,7 +179,8 @@ TEST(ModuleObject, ShapeChangeInvalidatesLookupCells)
         context.vm().get_or_create_interned_string_value(L"example");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(name);
+    ModuleObject *module = context.thread()->make_module_object(
+        name, context.vm().global_builtins_module().raw_value());
     module->set_builtins_binding(Value::from_oop(module));
 
     ValidityCell *globals_cell =
@@ -197,7 +204,8 @@ TEST(ModuleObject, DeleteShapeChangeInvalidatesLookupCells)
         context.vm().get_or_create_interned_string_value(L"example");
     TValue<String> global_name =
         context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(name);
+    ModuleObject *module = context.thread()->make_module_object(
+        name, context.vm().global_builtins_module().raw_value());
     module->set_builtins_binding(Value::from_oop(module));
 
     ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(42)));
@@ -220,7 +228,8 @@ TEST(ModuleObject, ValidityCellsAreCreatedLazilyAndReusedWhileValid)
 
     TValue<String> name =
         context.vm().get_or_create_interned_string_value(L"example");
-    ModuleObject *module = context.thread()->make_module_object(name);
+    ModuleObject *module = context.thread()->make_module_object(
+        name, context.vm().global_builtins_module().raw_value());
     module->set_builtins_binding(Value::from_oop(module));
 
     EXPECT_EQ(nullptr, module->current_module_globals_validity_cell());
@@ -243,7 +252,8 @@ TEST(ModuleObject, InvalidatingModuleLookupCellsKillsOwnedCells)
 
     TValue<String> name =
         context.vm().get_or_create_interned_string_value(L"example");
-    ModuleObject *module = context.thread()->make_module_object(name);
+    ModuleObject *module = context.thread()->make_module_object(
+        name, context.vm().global_builtins_module().raw_value());
     module->set_builtins_binding(Value::from_oop(module));
 
     ValidityCell *globals_cell =
@@ -271,10 +281,10 @@ TEST(ModuleObject, InvalidatingModuleLookupCellsKillsAttachedCells)
         context.vm().get_or_create_interned_string_value(L"provider");
     TValue<String> consumer_name =
         context.vm().get_or_create_interned_string_value(L"consumer");
-    ModuleObject *provider =
-        context.thread()->make_module_object(provider_name);
-    ModuleObject *consumer =
-        context.thread()->make_module_object(consumer_name);
+    ModuleObject *provider = context.thread()->make_module_object(
+        provider_name, context.vm().global_builtins_module().raw_value());
+    ModuleObject *consumer = context.thread()->make_module_object(
+        consumer_name, context.vm().global_builtins_module().raw_value());
     consumer->set_builtins_binding(Value::from_oop(provider));
 
     ValidityCell *consumer_builtins_cell =
@@ -296,10 +306,10 @@ TEST(ModuleObject, BuiltinsBindingMutationInvalidatesLookupCells)
         context.vm().get_or_create_interned_string_value(L"provider");
     TValue<String> consumer_name =
         context.vm().get_or_create_interned_string_value(L"consumer");
-    ModuleObject *provider =
-        context.thread()->make_module_object(provider_name);
-    ModuleObject *consumer =
-        context.thread()->make_module_object(consumer_name);
+    ModuleObject *provider = context.thread()->make_module_object(
+        provider_name, context.vm().global_builtins_module().raw_value());
+    ModuleObject *consumer = context.thread()->make_module_object(
+        consumer_name, context.vm().global_builtins_module().raw_value());
     provider->set_builtins_binding(Value::from_oop(provider));
     consumer->set_builtins_binding(Value::from_oop(provider));
 
@@ -329,10 +339,12 @@ TEST(ModuleObject, AttachModuleBuiltinsValidityCellReusesInvalidEntries)
         context.vm().get_or_create_interned_string_value(L"first");
     TValue<String> second_name =
         context.vm().get_or_create_interned_string_value(L"second");
-    ModuleObject *provider =
-        context.thread()->make_module_object(provider_name);
-    ModuleObject *first = context.thread()->make_module_object(first_name);
-    ModuleObject *second = context.thread()->make_module_object(second_name);
+    ModuleObject *provider = context.thread()->make_module_object(
+        provider_name, context.vm().global_builtins_module().raw_value());
+    ModuleObject *first = context.thread()->make_module_object(
+        first_name, context.vm().global_builtins_module().raw_value());
+    ModuleObject *second = context.thread()->make_module_object(
+        second_name, context.vm().global_builtins_module().raw_value());
     first->set_builtins_binding(Value::from_oop(provider));
     second->set_builtins_binding(Value::from_oop(provider));
 

@@ -194,12 +194,13 @@ namespace cl
 
     static CodeObject *make_return_42_test_code(test::VmTestContext &context)
     {
+        ThreadState::ActivationScope activation_scope(context.thread());
         TValue<String> name =
             context.vm().get_or_create_interned_string_value(L"<return-42>");
         CodeObjectBuilder builder(
             &context.vm(), nullptr,
-            TValue<ModuleObject>::from_oop(
-                context.thread()->make_module_object(name)),
+            TValue<ModuleObject>::from_oop(context.thread()->make_module_object(
+                name, context.vm().global_builtins_module().raw_value())),
             nullptr, name);
         builder.emit_lda_smi(0, 42);
         builder.emit_return(0);

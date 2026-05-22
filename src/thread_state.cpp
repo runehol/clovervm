@@ -337,7 +337,9 @@ namespace cl
         ModuleResultMode result_mode = start_rule == StartRule::Interactive
                                            ? ModuleResultMode::Interactive
                                            : ModuleResultMode::File;
-        ModuleObject *module = make_module_object(interned_string(module_name));
+        ModuleObject *module =
+            make_module_object(interned_string(module_name),
+                               machine->global_builtins_module().raw_value());
         return codegen_module_in_module(
             av, module, LanguageMode::StandardsCompliant, result_mode);
     }

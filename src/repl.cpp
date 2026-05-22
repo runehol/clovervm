@@ -118,7 +118,8 @@ namespace cl
         ThreadState *thr = vm.get_default_thread();
         ThreadState::ActivationScope active_thread(thr);
         ModuleObject *module = thr->make_module_object(
-            vm.get_or_create_interned_string_value(L"__main__"));
+            vm.get_or_create_interned_string_value(L"__main__"),
+            vm.global_builtins_module().raw_value());
 
         std::wstring source_buffer;
         bool suite_waiting_for_blank_line = false;

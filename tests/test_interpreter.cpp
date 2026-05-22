@@ -379,7 +379,8 @@ static CodeObject *make_raise_unwind_code(test::VmTestContext &test_context,
     CodeObjectBuilder builder(
         &test_context.vm(), nullptr,
         TValue<ModuleObject>::from_oop(
-            test_context.thread()->make_module_object(name)),
+            test_context.thread()->make_module_object(
+                name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
     uint32_t constant_idx = builder.allocate_constant(raised);
     builder.emit_lda_constant(0, uint8_t(constant_idx));
@@ -432,7 +433,8 @@ static CodeObject *make_return_to_native_code(test::VmTestContext &test_context)
     CodeObjectBuilder builder(
         &test_context.vm(), nullptr,
         TValue<ModuleObject>::from_oop(
-            test_context.thread()->make_module_object(name)),
+            test_context.thread()->make_module_object(
+                name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
     builder.emit_lda_smi(0, 42);
     builder.emit_return_to_native(0);
@@ -447,7 +449,8 @@ make_return_pending_exception_to_native_code(test::VmTestContext &test_context)
     CodeObjectBuilder builder(
         &test_context.vm(), nullptr,
         TValue<ModuleObject>::from_oop(
-            test_context.thread()->make_module_object(name)),
+            test_context.thread()->make_module_object(
+                name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
     builder.emit_return_pending_exception_to_native(0);
     return builder.finalize();
@@ -3310,6 +3313,42 @@ TEST(Interpreter, builtin_module_lookup)
     EXPECT_EQ(actual, load_global_from_module_for_test(code_obj, name));
 }
 
+TEST(Interpreter,
+     builtins_module_attribute_read_write_delete_use_module_storage)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    CodeObject *code_obj =
+        test_context.compile_file(L"result = __builtins__.range(1)\n"
+                                  L"__builtins__.module_attr_probe = 42\n"
+                                  L"written = __builtins__.module_attr_probe\n"
+                                  L"del __builtins__.module_attr_probe\n");
+
+    Value run_result =
+        test_context.thread()->run_clovervm_code_object(code_obj);
+    ASSERT_FALSE(run_result.is_exception_marker());
+
+    TValue<String> result_name =
+        test_context.vm().get_or_create_interned_string_value(L"result");
+    Value result = load_global_from_module_for_test(code_obj, result_name);
+    ASSERT_TRUE(result.is_ptr());
+    EXPECT_EQ(NativeLayoutId::RangeIterator,
+              result.get_ptr<Object>()->native_layout_id());
+
+    TValue<String> written_name =
+        test_context.vm().get_or_create_interned_string_value(L"written");
+    EXPECT_EQ(Value::from_smi(42),
+              load_global_from_module_for_test(code_obj, written_name));
+
+    TValue<String> probe_name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"module_attr_probe");
+    ModuleObject *builtins =
+        test_context.vm().global_builtins_module().extract();
+    EXPECT_EQ(Value::not_present(), builtins->get_own_property(probe_name));
+}
+
 TEST(Interpreter, trusted_python_builtins_are_installed)
 {
     test::VmTestContext test_context;
@@ -3939,8 +3978,8 @@ TEST(Interpreter, interactive_assignment_returns_none_and_persists_scope)
     ThreadState::ActivationScope active_thread(test_context.thread());
     TValue<String> module_name =
         test_context.vm().get_or_create_interned_string_value(L"<interactive>");
-    ModuleObject *module =
-        test_context.thread()->make_module_object(module_name);
+    ModuleObject *module = test_context.thread()->make_module_object(
+        module_name, test_context.vm().global_builtins_module().raw_value());
 
     CodeObject *assignment = test_context.thread()->compile_in_module(
         L"x = 4\n", StartRule::Interactive, module,

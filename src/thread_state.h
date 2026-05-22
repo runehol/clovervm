@@ -267,8 +267,7 @@ namespace cl
             return shape_of_value(value)->get_class();
         }
         ClassObject *class_for_builtin_name(const wchar_t *name) const;
-        ModuleObject *make_module_object(TValue<String> name,
-                                         Value builtins = Value::not_present());
+        ModuleObject *make_module_object(TValue<String> name, Value builtins);
 
         template <typename T, typename... Args>
         T *make_object_raw(Args &&...args)
