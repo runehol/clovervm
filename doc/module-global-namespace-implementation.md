@@ -247,22 +247,22 @@ First test hooks for the new path:
 
 ## Stage 5: New Module Global Instructions
 
-- [ ] Add a module-global load instruction that uses the defining module and
+- [x] Add a module-global load instruction that uses the defining module and
       builtins runtime state.
-- [ ] Add a module-global store instruction that writes only to the defining
+- [x] Add a module-global store instruction that writes only to the defining
       module object.
-- [ ] Add a module-global delete instruction that deletes only from the defining
+- [x] Add a module-global delete instruction that deletes only from the defining
       module object.
-- [ ] Decide whether instruction operands are interned-name IDs, symbol slot IDs,
+- [x] Decide whether instruction operands are interned-name IDs, symbol slot IDs,
       or cache indices plus name IDs.
-- [ ] Keep the old `Scope`-slot global instructions in place during this stage.
-- [ ] Add interpreter handlers for the new module global instructions.
-- [ ] Keep handler slow paths explicit and cold where they format errors or raise.
-- [ ] Add direct bytecode/codegen-test helpers that can emit the new instructions
+- [x] Keep the old `Scope`-slot global instructions in place during this stage.
+- [x] Add interpreter handlers for the new module global instructions.
+- [x] Keep handler slow paths explicit and cold where they format errors or raise.
+- [x] Add direct bytecode/codegen-test helpers that can emit the new instructions
       before ordinary codegen switches over.
-- [ ] Add interpreter tests for new-instruction module hit, builtin hit, missing
+- [x] Add interpreter tests for new-instruction module hit, builtin hit, missing
       name, store, and delete.
-- [ ] Add tests that new-instruction `DEL_GLOBAL` never deletes from builtins.
+- [x] Add tests that new-instruction `DEL_GLOBAL` never deletes from builtins.
 
 ## Stage 6: Inline Caches For New Global Instructions
 

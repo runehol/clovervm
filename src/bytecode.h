@@ -62,10 +62,14 @@ namespace cl
         Star14,
         Star15,
 
-        // load and store globals by slot index
+        // load and store legacy globals by slot index
         LdaGlobal,
         StaGlobal,
         DelGlobal,
+        // transitional module-object globals by constant-table name
+        LdaModuleGlobal,
+        StaModuleGlobal,
+        DelModuleGlobal,
         DelLocal,
 
         // attribute access

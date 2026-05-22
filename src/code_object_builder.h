@@ -256,11 +256,17 @@ namespace cl
         uint32_t emit_ldar(uint32_t source_offset, uint32_t reg);
         uint32_t emit_load_local_checked(uint32_t source_offset, uint32_t reg);
         uint32_t emit_lda_global(uint32_t source_offset, uint32_t slot_idx);
+        uint32_t emit_lda_module_global(uint32_t source_offset,
+                                        uint8_t name_idx);
         uint32_t emit_star(uint32_t source_offset, uint32_t reg);
         uint32_t emit_star(uint32_t source_offset, OutgoingArgReg reg);
         uint32_t emit_sta_global(uint32_t source_offset, uint32_t slot_idx);
+        uint32_t emit_sta_module_global(uint32_t source_offset,
+                                        uint8_t name_idx);
         uint32_t emit_del_local(uint32_t source_offset, uint32_t reg);
         uint32_t emit_del_global(uint32_t source_offset, uint32_t slot_idx);
+        uint32_t emit_del_module_global(uint32_t source_offset,
+                                        uint8_t name_idx);
         uint32_t emit_lda_none(uint32_t source_offset);
         uint32_t emit_lda_true(uint32_t source_offset);
         uint32_t emit_lda_false(uint32_t source_offset);

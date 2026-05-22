@@ -11,6 +11,7 @@
 #include "function.h"
 #include "instance.h"
 #include "list.h"
+#include "module_global.h"
 #include "range_iterator.h"
 #include "refcount.h"
 #include "runtime_helpers.h"
@@ -204,6 +205,25 @@ namespace cl
         pc = target.interpreted_pc;
         START(0);
         COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value module_global_name_error(PARAMS)
+    {
+        uint8_t name_idx = pc[1];
+        TValue<String> name = TValue<String>::from_value_assumed(
+            code_object->constant_table[name_idx].value());
+        ExceptionalTarget target = set_name_error_and_resolve_frame_exit(
+            thread, fp, pc, code_object, name);
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value module_global_assignment_error(PARAMS)
+    {
+        throw std::runtime_error("NameError: cannot assign global");
     }
 
     NOINLINE INTERP_CC Value not_callable_error(PARAMS)
@@ -1867,6 +1887,66 @@ namespace cl
         COMPLETE();
     }
 
+    static INTERP_CC Value op_lda_module_global(PARAMS)
+    {
+        START(2);
+        uint8_t name_idx = pc[1];
+        TValue<String> name = TValue<String>::from_value_assumed(
+            code_object->constant_table[name_idx].value());
+        ModuleObject *module = code_object->get_defining_module().extract();
+        ModuleGlobalReadDescriptor descriptor =
+            resolve_module_global_read_descriptor(module, name);
+        accumulator = load_module_global_from_plan(descriptor.plan);
+        if(unlikely(accumulator.is_not_present()))
+        {
+            MUSTTAIL return module_global_name_error(ARGS);
+        }
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_sta_module_global(PARAMS)
+    {
+        START(2);
+        uint8_t name_idx = pc[1];
+        TValue<String> name = TValue<String>::from_value_assumed(
+            code_object->constant_table[name_idx].value());
+        ModuleObject *module = code_object->get_defining_module().extract();
+        ModuleGlobalWriteDescriptor descriptor =
+            resolve_module_global_write_descriptor(module, name);
+        if(unlikely(!descriptor.is_found()))
+        {
+            MUSTTAIL return module_global_assignment_error(ARGS);
+        }
+        bool stored =
+            store_module_global_from_plan(module, descriptor.plan, accumulator);
+        if(unlikely(!stored))
+        {
+            MUSTTAIL return module_global_assignment_error(ARGS);
+        }
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_del_module_global(PARAMS)
+    {
+        START(2);
+        uint8_t name_idx = pc[1];
+        TValue<String> name = TValue<String>::from_value_assumed(
+            code_object->constant_table[name_idx].value());
+        ModuleObject *module = code_object->get_defining_module().extract();
+        ModuleGlobalDeleteDescriptor descriptor =
+            resolve_module_global_delete_descriptor(module, name);
+        if(unlikely(!descriptor.is_found()))
+        {
+            MUSTTAIL return module_global_name_error(ARGS);
+        }
+        bool deleted = delete_module_global_from_plan(module, descriptor.plan);
+        if(unlikely(!deleted))
+        {
+            MUSTTAIL return module_global_name_error(ARGS);
+        }
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_load_attr(PARAMS)
     {
         START(4);
@@ -3461,6 +3541,9 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::LdaGlobal, op_lda_global);
         SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);
         SET_TABLE_ENTRY(Bytecode::DelGlobal, op_del_global);
+        SET_TABLE_ENTRY(Bytecode::LdaModuleGlobal, op_lda_module_global);
+        SET_TABLE_ENTRY(Bytecode::StaModuleGlobal, op_sta_module_global);
+        SET_TABLE_ENTRY(Bytecode::DelModuleGlobal, op_del_module_global);
         SET_TABLE_ENTRY(Bytecode::DelLocal, op_del_local);
         SET_TABLE_ENTRY(Bytecode::LoadAttr, op_load_attr);
         SET_TABLE_ENTRY(Bytecode::StoreAttr, op_store_attr);

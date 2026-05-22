@@ -261,6 +261,13 @@ namespace cl
         return emit_opcode_uint32(source_offset, Bytecode::LdaGlobal, slot_idx);
     }
 
+    uint32_t CodeObjectBuilder::emit_lda_module_global(uint32_t source_offset,
+                                                       uint8_t name_idx)
+    {
+        return emit_opcode_constant_idx(source_offset,
+                                        Bytecode::LdaModuleGlobal, name_idx);
+    }
+
     uint32_t CodeObjectBuilder::emit_star(uint32_t source_offset, uint32_t reg)
     {
         return emit_opcode_reg(source_offset, Bytecode::Star, reg);
@@ -278,6 +285,13 @@ namespace cl
         return emit_opcode_uint32(source_offset, Bytecode::StaGlobal, slot_idx);
     }
 
+    uint32_t CodeObjectBuilder::emit_sta_module_global(uint32_t source_offset,
+                                                       uint8_t name_idx)
+    {
+        return emit_opcode_constant_idx(source_offset,
+                                        Bytecode::StaModuleGlobal, name_idx);
+    }
+
     uint32_t CodeObjectBuilder::emit_del_local(uint32_t source_offset,
                                                uint32_t reg)
     {
@@ -288,6 +302,13 @@ namespace cl
                                                 uint32_t slot_idx)
     {
         return emit_opcode_uint32(source_offset, Bytecode::DelGlobal, slot_idx);
+    }
+
+    uint32_t CodeObjectBuilder::emit_del_module_global(uint32_t source_offset,
+                                                       uint8_t name_idx)
+    {
+        return emit_opcode_constant_idx(source_offset,
+                                        Bytecode::DelModuleGlobal, name_idx);
     }
 
     uint32_t CodeObjectBuilder::emit_lda_none(uint32_t source_offset)
