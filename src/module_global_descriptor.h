@@ -46,8 +46,7 @@ namespace cl
 
     enum class ModuleGlobalReadPlanKind : uint8_t
     {
-        ModuleSlot,
-        BuiltinsModuleSlot,
+        Slot,
         Missing,
         UncacheableBuiltinsObject,
     };
@@ -83,22 +82,19 @@ namespace cl
         Value builtins_object;
         ModuleGlobalReadPlanKind kind;
 
-        static ModuleGlobalReadPlan slot(ModuleGlobalReadPlanKind kind,
-                                         ModuleObject *storage_owner,
+        static ModuleGlobalReadPlan slot(ModuleObject *storage_owner,
                                          StorageLocation location,
                                          ValidityCell *lookup_validity_cell)
         {
-            assert(kind == ModuleGlobalReadPlanKind::ModuleSlot ||
-                   kind == ModuleGlobalReadPlanKind::BuiltinsModuleSlot);
             return ModuleGlobalReadPlan{storage_owner, location,
                                         lookup_validity_cell, Value::None(),
-                                        kind};
+                                        ModuleGlobalReadPlanKind::Slot};
         }
 
-        static ModuleGlobalReadPlan missing(ValidityCell *lookup_validity_cell)
+        static ModuleGlobalReadPlan missing()
         {
             return ModuleGlobalReadPlan{nullptr, StorageLocation::not_found(),
-                                        lookup_validity_cell, Value::None(),
+                                        nullptr, Value::None(),
                                         ModuleGlobalReadPlanKind::Missing};
         }
 
@@ -118,18 +114,13 @@ namespace cl
         Value lookup_value;
         ModuleGlobalCacheBlockers cache_blockers;
 
-        static ModuleGlobalReadDescriptor
-        not_found(ValidityCell *lookup_validity_cell = nullptr)
+        static ModuleGlobalReadDescriptor not_found()
         {
             return ModuleGlobalReadDescriptor{
                 ModuleGlobalReadStatus::NotFound,
-                ModuleGlobalReadPlan::missing(lookup_validity_cell),
-                Value::not_present(),
-                lookup_validity_cell == nullptr
-                    ? module_global_cache_blocker(
-                          ModuleGlobalCacheBlocker::MissingLookupCell)
-                    : module_global_cache_blocker(
-                          ModuleGlobalCacheBlocker::None)};
+                ModuleGlobalReadPlan::missing(), Value::not_present(),
+                module_global_cache_blocker(
+                    ModuleGlobalCacheBlocker::MissingLookupCell)};
         }
 
         static ModuleGlobalReadDescriptor

@@ -74,7 +74,8 @@ TEST(ModuleGlobal, ReadModuleSlotHitIsCacheable)
 
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_TRUE(descriptor.is_cacheable());
-    EXPECT_EQ(ModuleGlobalReadPlanKind::ModuleSlot, descriptor.plan.kind);
+    EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, descriptor.plan.kind);
+    EXPECT_EQ(module, descriptor.plan.storage_owner);
     EXPECT_EQ(Value::from_smi(42), descriptor.lookup_value);
     EXPECT_EQ(Value::from_smi(42),
               load_module_global_from_plan(descriptor.plan));
@@ -104,8 +105,8 @@ TEST(ModuleGlobal, ReadBuiltinsModuleSlotHitIsCacheableAndAttached)
 
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_TRUE(descriptor.is_cacheable());
-    EXPECT_EQ(ModuleGlobalReadPlanKind::BuiltinsModuleSlot,
-              descriptor.plan.kind);
+    EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, descriptor.plan.kind);
+    EXPECT_EQ(builtins, descriptor.plan.storage_owner);
     EXPECT_EQ(Value::from_smi(7), descriptor.lookup_value);
     EXPECT_EQ(Value::from_smi(7),
               load_module_global_from_plan(descriptor.plan));
@@ -144,8 +145,8 @@ TEST(ModuleGlobal, MissingBuiltinsBindingUsesVirtualMachineDefault)
 
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_TRUE(descriptor.is_cacheable());
-    EXPECT_EQ(ModuleGlobalReadPlanKind::BuiltinsModuleSlot,
-              descriptor.plan.kind);
+    EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, descriptor.plan.kind);
+    EXPECT_EQ(builtins, descriptor.plan.storage_owner);
     EXPECT_EQ(Value::from_smi(9),
               load_module_global_from_plan(descriptor.plan));
 }
@@ -174,7 +175,7 @@ TEST(ModuleGlobal, NonModuleBuiltinsBindingProducesUncacheablePlan)
     EXPECT_TRUE(load_module_global_from_plan(descriptor.plan).is_not_present());
 }
 
-TEST(ModuleGlobal, MissingNameInModuleBuiltinsIsCacheableMiss)
+TEST(ModuleGlobal, MissingNameInModuleBuiltinsIsUncacheableMiss)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -195,8 +196,9 @@ TEST(ModuleGlobal, MissingNameInModuleBuiltinsIsCacheableMiss)
 
     EXPECT_FALSE(descriptor.is_found());
     EXPECT_EQ(ModuleGlobalReadStatus::NotFound, descriptor.status);
-    EXPECT_TRUE(descriptor.is_cacheable());
+    EXPECT_FALSE(descriptor.is_cacheable());
     EXPECT_EQ(ModuleGlobalReadPlanKind::Missing, descriptor.plan.kind);
+    EXPECT_EQ(nullptr, descriptor.plan.lookup_validity_cell);
     EXPECT_TRUE(load_module_global_from_plan(descriptor.plan).is_not_present());
 }
 
@@ -225,8 +227,8 @@ TEST(ModuleGlobal, DeletingModuleBindingRevealsBuiltinWithoutMutatingModule)
 
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_TRUE(descriptor.is_cacheable());
-    EXPECT_EQ(ModuleGlobalReadPlanKind::BuiltinsModuleSlot,
-              descriptor.plan.kind);
+    EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, descriptor.plan.kind);
+    EXPECT_EQ(builtins, descriptor.plan.storage_owner);
     EXPECT_EQ(Value::from_smi(2), descriptor.lookup_value);
     EXPECT_EQ(Value::from_smi(2),
               load_module_global_from_plan(descriptor.plan));

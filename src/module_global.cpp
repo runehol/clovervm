@@ -18,8 +18,7 @@ namespace cl
             ValidityCell *cell =
                 module->get_or_create_module_globals_validity_cell();
             return ModuleGlobalReadDescriptor::found(
-                ModuleGlobalReadPlan::slot(ModuleGlobalReadPlanKind::ModuleSlot,
-                                           module, module_location, cell),
+                ModuleGlobalReadPlan::slot(module, module_location, cell),
                 module->read_storage_location(module_location));
         }
 
@@ -38,13 +37,12 @@ namespace cl
             builtins_module->get_shape()->resolve_present_property(name);
         if(!builtins_location.is_found())
         {
-            return ModuleGlobalReadDescriptor::not_found(cell);
+            return ModuleGlobalReadDescriptor::not_found();
         }
 
         return ModuleGlobalReadDescriptor::found(
-            ModuleGlobalReadPlan::slot(
-                ModuleGlobalReadPlanKind::BuiltinsModuleSlot, builtins_module,
-                builtins_location, cell),
+            ModuleGlobalReadPlan::slot(builtins_module, builtins_location,
+                                       cell),
             builtins_module->read_storage_location(builtins_location));
     }
 
@@ -128,8 +126,7 @@ namespace cl
     {
         switch(plan.kind)
         {
-            case ModuleGlobalReadPlanKind::ModuleSlot:
-            case ModuleGlobalReadPlanKind::BuiltinsModuleSlot:
+            case ModuleGlobalReadPlanKind::Slot:
                 assert(plan.storage_owner != nullptr);
                 return plan.storage_owner->read_storage_location(
                     plan.storage_location);
