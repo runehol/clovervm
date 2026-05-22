@@ -88,7 +88,7 @@ TEST(ModuleGlobal, MissingBuiltinsBindingUsesVirtualMachineDefault)
     ModuleObject *builtins =
         context.thread()->make_module_object(builtins_name);
     ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(9)));
-    context.vm().set_global_builtins_module(Value::from_oop(builtins));
+    context.vm().set_global_builtins_module(builtins);
 
     ModuleGlobalReadDescriptor descriptor =
         resolve_module_global_read_descriptor(module, global_name);

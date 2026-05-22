@@ -2,6 +2,7 @@
 
 #include "class_object.h"
 #include "code_object_builder.h"
+#include "module_object.h"
 #include "runtime_helpers.h"
 #include "scope.h"
 #include "tuple.h"
@@ -46,7 +47,7 @@ namespace cl
             }
 
             code_storage.emplace(init_code->compilation_unit,
-                                 init_code->module_scope.extract(), local_scope,
+                                 init_code->get_defining_module(), local_scope,
                                  thunk_name);
             CodeObjectBuilder &code = *code_storage;
             code.n_parameters() = init_n_parameters - 1;
@@ -56,8 +57,10 @@ namespace cl
         }
         else
         {
-            code_storage.emplace(nullptr, active_vm()->builtin_scope_ptr(),
-                                 local_scope, thunk_name);
+            TValue<ModuleObject> builtins_module =
+                active_vm()->global_builtins_module();
+            code_storage.emplace(nullptr, builtins_module, local_scope,
+                                 thunk_name);
             CodeObjectBuilder &code = *code_storage;
             code.n_parameters() = 0;
             code.n_positional_parameters() = 0;

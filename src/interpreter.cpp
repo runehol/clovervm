@@ -197,7 +197,7 @@ namespace cl
         int32_t slot_idx = read_uint32_le(&pc[1]);
         ExceptionalTarget target = set_name_error_and_resolve_frame_exit(
             thread, fp, pc, code_object,
-            code_object->module_scope.extract()->get_name_by_slot_index(
+            code_object->get_legacy_module_scope_ptr()->get_name_by_slot_index(
                 slot_idx));
         fp = target.fp;
         code_object = target.code_object;
@@ -1802,8 +1802,8 @@ namespace cl
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
-        Value v =
-            code_object->module_scope.extract()->get_by_slot_index(slot_idx);
+        Value v = code_object->get_legacy_module_scope_ptr()->get_by_slot_index(
+            slot_idx);
         if(unlikely(v.is_not_present()))
         {
             MUSTTAIL return global_name_error(ARGS);
@@ -1816,7 +1816,7 @@ namespace cl
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
-        Value v = code_object->module_scope.extract()
+        Value v = code_object->get_legacy_module_scope_ptr()
                       ->get_by_slot_index_fastpath_only(slot_idx);
         if(unlikely(v.is_not_present()))
         {
@@ -1830,8 +1830,8 @@ namespace cl
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
-        code_object->module_scope.extract()->set_by_slot_index(slot_idx,
-                                                               accumulator);
+        code_object->get_legacy_module_scope_ptr()->set_by_slot_index(
+            slot_idx, accumulator);
         COMPLETE();
     }
 
@@ -1839,7 +1839,7 @@ namespace cl
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
-        Scope *module_scope = code_object->module_scope.extract();
+        Scope *module_scope = code_object->get_legacy_module_scope_ptr();
         if(unlikely(module_scope->set_by_slot_index_needs_slow_path(
                slot_idx, accumulator)))
         {
@@ -1858,7 +1858,7 @@ namespace cl
     {
         START(5);
         int32_t slot_idx = read_uint32_le(&pc[1]);
-        Scope *module_scope = code_object->module_scope.extract();
+        Scope *module_scope = code_object->get_legacy_module_scope_ptr();
         if(unlikely(!module_scope->slot_is_live(slot_idx)))
         {
             MUSTTAIL return global_name_error(ARGS);

@@ -2,6 +2,7 @@
 #include "test_helpers.h"
 
 #include "exception_object.h"
+#include "module_object.h"
 #include "owned.h"
 #include "refcount.h"
 #include "str.h"
@@ -195,8 +196,11 @@ namespace cl
     {
         TValue<String> name =
             context.vm().get_or_create_interned_string_value(L"<return-42>");
-        CodeObjectBuilder builder(&context.vm(), nullptr, nullptr, nullptr,
-                                  name);
+        CodeObjectBuilder builder(
+            &context.vm(), nullptr,
+            TValue<ModuleObject>::from_oop(
+                context.thread()->make_module_object(name)),
+            nullptr, name);
         builder.emit_lda_smi(0, 42);
         builder.emit_return(0);
         return builder.finalize();

@@ -12,6 +12,7 @@
 #include "interpreter.h"
 #include "list.h"
 #include "list_iterator.h"
+#include "module_object.h"
 #include "native_function.h"
 #include "parser.h"
 #include "range_iterator.h"
@@ -330,8 +331,8 @@ static void bind_global(test::VmTestContext &test_context,
 {
     TValue<String> name_value(
         test_context.vm().get_or_create_interned_string_value(name));
-    code_object->module_scope.extract()->set_by_name(name_value,
-                                                     value.raw_value());
+    code_object->get_legacy_module_scope_ptr()->set_by_name(name_value,
+                                                            value.raw_value());
 }
 
 static Value make_test_function(test::VmTestContext &test_context,
@@ -343,7 +344,7 @@ static Value make_test_function(test::VmTestContext &test_context,
     TValue<String> name_value(
         test_context.vm().get_or_create_interned_string_value(name));
     Value function_value =
-        code_object->module_scope.extract()->get_by_name(name_value);
+        code_object->get_legacy_module_scope_ptr()->get_by_name(name_value);
     assert(function_value.is_ptr());
     assert(function_value.get_ptr<Object>()->native_layout_id() ==
            NativeLayoutId::Function);
@@ -355,8 +356,11 @@ static CodeObject *make_raise_unwind_code(test::VmTestContext &test_context,
 {
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"<raise-test>");
-    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
-                              name);
+    CodeObjectBuilder builder(
+        &test_context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(
+            test_context.thread()->make_module_object(name)),
+        nullptr, name);
     uint32_t constant_idx = builder.allocate_constant(raised);
     builder.emit_lda_constant(0, uint8_t(constant_idx));
     builder.emit_raise_unwind(0);
@@ -405,8 +409,11 @@ static CodeObject *make_return_to_native_code(test::VmTestContext &test_context)
 {
     TValue<String> name = test_context.vm().get_or_create_interned_string_value(
         L"<return-to-native-test>");
-    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
-                              name);
+    CodeObjectBuilder builder(
+        &test_context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(
+            test_context.thread()->make_module_object(name)),
+        nullptr, name);
     builder.emit_lda_smi(0, 42);
     builder.emit_return_to_native(0);
     return builder.finalize();
@@ -417,8 +424,11 @@ make_return_pending_exception_to_native_code(test::VmTestContext &test_context)
 {
     TValue<String> name = test_context.vm().get_or_create_interned_string_value(
         L"<return-pending-exception-to-native-test>");
-    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
-                              name);
+    CodeObjectBuilder builder(
+        &test_context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(
+            test_context.thread()->make_module_object(name)),
+        nullptr, name);
     builder.emit_return_pending_exception_to_native(0);
     return builder.finalize();
 }
@@ -635,7 +645,8 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
                                                      L"    value = 7\n");
     (void)test_context.thread()->run_clovervm_code_object(code_obj);
 
-    Value cls_value = code_obj->module_scope.extract()->get_by_name(cls_name);
+    Value cls_value =
+        code_obj->get_legacy_module_scope_ptr()->get_by_name(cls_name);
     ASSERT_TRUE(cls_value.is_ptr());
     ASSERT_EQ(NativeLayoutId::ClassObject,
               cls_value.get_ptr<Object>()->native_layout_id());
@@ -680,7 +691,8 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
                                                      L"    third = 3\n");
     (void)test_context.thread()->run_clovervm_code_object(code_obj);
 
-    Value cls_value = code_obj->module_scope.extract()->get_by_name(cls_name);
+    Value cls_value =
+        code_obj->get_legacy_module_scope_ptr()->get_by_name(cls_name);
     ASSERT_TRUE(cls_value.is_ptr());
     ASSERT_EQ(NativeLayoutId::ClassObject,
               cls_value.get_ptr<Object>()->native_layout_id());
@@ -1024,7 +1036,7 @@ TEST(Interpreter, list_literal_evaluates_elements_left_to_right)
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter)
             .raw_value();
-    code_obj->module_scope.extract()->set_by_name(name, next_counter);
+    code_obj->get_legacy_module_scope_ptr()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(actual.is_ptr());
@@ -1093,7 +1105,7 @@ TEST(Interpreter, tuple_literal_evaluates_elements_left_to_right)
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter)
             .raw_value();
-    code_obj->module_scope.extract()->set_by_name(name, next_counter);
+    code_obj->get_legacy_module_scope_ptr()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     ASSERT_TRUE(actual.is_ptr());
@@ -1180,7 +1192,7 @@ TEST(Interpreter,
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter)
             .raw_value();
-    code_obj->module_scope.extract()->set_by_name(name, next_counter);
+    code_obj->get_legacy_module_scope_ptr()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
@@ -1246,7 +1258,7 @@ TEST(Interpreter,
     Value next_counter =
         make_native_function(&test_context.vm(), native_next_counter)
             .raw_value();
-    code_obj->module_scope.extract()->set_by_name(name, next_counter);
+    code_obj->get_legacy_module_scope_ptr()->set_by_name(name, next_counter);
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
@@ -1379,7 +1391,7 @@ TEST(Interpreter, attribute_load_and_store_syntax)
                                                      L"obj.value\n");
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(7), actual);
-    Scope *module_scope = code_obj->module_scope.extract();
+    Scope *module_scope = code_obj->get_legacy_module_scope_ptr();
     Value obj_value = module_scope->get_by_name(obj_name);
     ASSERT_TRUE(obj_value.is_ptr());
     ASSERT_EQ(NativeLayoutId::Instance,
@@ -1408,7 +1420,7 @@ TEST(Interpreter, store_attr_caches_instance_add_transition)
     EXPECT_EQ(Value::from_smi(2), actual);
 
     Value function_value =
-        code_obj->module_scope.extract()->get_by_name(function_name);
+        code_obj->get_legacy_module_scope_ptr()->get_by_name(function_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
@@ -1440,7 +1452,7 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
                                   L"    del obj.value\n");
     (void)test_context.thread()->run_clovervm_code_object(definition_code);
     Value function_value =
-        definition_code->module_scope.extract()->get_by_name(clear_name);
+        definition_code->get_legacy_module_scope_ptr()->get_by_name(clear_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
@@ -1494,7 +1506,7 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
                                   L"    del obj.value\n");
     (void)test_context.thread()->run_clovervm_code_object(definition_code);
     Value function_value =
-        definition_code->module_scope.extract()->get_by_name(clear_name);
+        definition_code->get_legacy_module_scope_ptr()->get_by_name(clear_name);
     ASSERT_TRUE(can_convert_to<Function>(function_value));
 
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
@@ -2743,8 +2755,9 @@ TEST(Interpreter, try_finally_runs_cleanup_before_reraising)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(Value::from_smi(2),
-              code_obj->module_scope.extract()->get_by_name(result_name));
+    EXPECT_EQ(
+        Value::from_smi(2),
+        code_obj->get_legacy_module_scope_ptr()->get_by_name(result_name));
 }
 
 TEST(Interpreter, try_finally_raise_chains_body_exception_as_context)
@@ -2876,8 +2889,9 @@ TEST(Interpreter, return_through_finally_that_raises_runs_cleanup_once)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(Value::from_smi(1),
-              code_obj->module_scope.extract()->get_by_name(result_name));
+    EXPECT_EQ(
+        Value::from_smi(1),
+        code_obj->get_legacy_module_scope_ptr()->get_by_name(result_name));
 }
 
 TEST(Interpreter, return_in_finally_overrides_protected_return)
@@ -3028,8 +3042,9 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_unmatched_reraise)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(Value::from_smi(2),
-              code_obj->module_scope.extract()->get_by_name(result_name));
+    EXPECT_EQ(
+        Value::from_smi(2),
+        code_obj->get_legacy_module_scope_ptr()->get_by_name(result_name));
 }
 
 TEST(Interpreter, try_except_finally_runs_cleanup_before_handler_reraise)
@@ -3050,8 +3065,9 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_handler_reraise)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(Value::from_smi(2),
-              code_obj->module_scope.extract()->get_by_name(result_name));
+    EXPECT_EQ(
+        Value::from_smi(2),
+        code_obj->get_legacy_module_scope_ptr()->get_by_name(result_name));
 }
 
 TEST(Interpreter, try_except_else_runs_on_body_success)
@@ -3137,8 +3153,9 @@ TEST(Interpreter, try_except_else_finally_cleans_up_else_exception)
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
-    EXPECT_EQ(Value::from_smi(2),
-              code_obj->module_scope.extract()->get_by_name(result_name));
+    EXPECT_EQ(
+        Value::from_smi(2),
+        code_obj->get_legacy_module_scope_ptr()->get_by_name(result_name));
 }
 
 TEST(Interpreter, unhandled_pending_exception_reports_class_and_message)
@@ -3228,7 +3245,7 @@ TEST(Interpreter, builtin_scope_lookup)
     test::VmTestContext test_context;
     CodeObject *code_obj = test_context.compile_file(L"range\n");
 
-    Scope *module_scope = code_obj->module_scope.extract();
+    Scope *module_scope = code_obj->get_legacy_module_scope_ptr();
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"range");
     int32_t slot_idx = module_scope->lookup_slot_index_local(name);
@@ -4155,7 +4172,7 @@ TEST(Interpreter, with_statement_exit_that_raises_during_return_runs_once)
     TValue<String> log_name =
         test_context.vm().get_or_create_interned_string_value(L"log");
     EXPECT_EQ(Value::from_smi(1),
-              code_obj->module_scope.extract()->get_by_name(log_name));
+              code_obj->get_legacy_module_scope_ptr()->get_by_name(log_name));
 }
 
 TEST(Interpreter, with_statement_inner_exit_stays_suspended_during_outer_exit)
@@ -4195,7 +4212,7 @@ TEST(Interpreter, with_statement_inner_exit_stays_suspended_during_outer_exit)
     TValue<String> log_name =
         test_context.vm().get_or_create_interned_string_value(L"log");
     EXPECT_EQ(Value::from_smi(1342),
-              code_obj->module_scope.extract()->get_by_name(log_name));
+              code_obj->get_legacy_module_scope_ptr()->get_by_name(log_name));
 }
 
 TEST(Interpreter, with_statement_multiple_items_exit_in_reverse_order)

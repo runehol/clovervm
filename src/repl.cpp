@@ -4,6 +4,7 @@
 #include "code_object_print.h"
 #include "codegen.h"
 #include "exception_object.h"
+#include "module_object.h"
 #include "parser.h"
 #include "scope.h"
 #include "str.h"
@@ -116,8 +117,8 @@ namespace cl
         VirtualMachine vm;
         ThreadState *thr = vm.get_default_thread();
         ThreadState::ActivationScope active_thread(thr);
-        Scope *module_scope =
-            thr->make_internal_raw<Scope>(vm.builtin_scope_ptr());
+        ModuleObject *module = thr->make_module_object(
+            vm.get_or_create_interned_string_value(L"__main__"));
 
         std::wstring source_buffer;
         bool suite_waiting_for_blank_line = false;
@@ -157,9 +158,8 @@ namespace cl
             {
                 try
                 {
-                    (void)thr->compile_in_scope(
-                        source_buffer.c_str(), StartRule::Interactive,
-                        L"<stdin>", module_scope,
+                    (void)thr->compile_in_module(
+                        source_buffer.c_str(), StartRule::Interactive, module,
                         LanguageMode::StandardsCompliant);
                 }
                 catch(const ParseError &err)
@@ -189,9 +189,9 @@ namespace cl
 
             try
             {
-                CodeObject *code_obj = thr->compile_in_scope(
-                    source_buffer.c_str(), StartRule::Interactive, L"<stdin>",
-                    module_scope, LanguageMode::StandardsCompliant);
+                CodeObject *code_obj = thr->compile_in_module(
+                    source_buffer.c_str(), StartRule::Interactive, module,
+                    LanguageMode::StandardsCompliant);
                 source_buffer.clear();
                 suite_waiting_for_blank_line = false;
                 continuation_indentation = 0;

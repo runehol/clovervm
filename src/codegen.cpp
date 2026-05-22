@@ -89,10 +89,10 @@ namespace cl
         return t;
     }
 
-    CodeObject *codegen_function(const AstVector &av, Scope *module_scope,
+    CodeObject *codegen_function(const AstVector &av, ModuleObject *module,
                                  CodeObjectBuilder *parent_code_obj,
                                  int32_t node_idx, LanguageMode language_mode);
-    CodeObject *codegen_class(const AstVector &av, Scope *module_scope,
+    CodeObject *codegen_class(const AstVector &av, ModuleObject *module,
                               CodeObjectBuilder *parent_code_obj,
                               int32_t node_idx, LanguageMode language_mode);
 
@@ -118,14 +118,13 @@ namespace cl
     public:
         using RegisterIndex = int32_t;
 
-        AstCodegen(const AstVector &_av, Scope *_module_scope,
-                   CodeObjectBuilder *_code_obj, CodegenMode _mode,
-                   LanguageMode _language_mode, int32_t _body_idx,
-                   AstChildren param_children,
+        AstCodegen(const AstVector &_av, CodeObjectBuilder *_code_obj,
+                   CodegenMode _mode, LanguageMode _language_mode,
+                   int32_t _body_idx, AstChildren param_children,
                    ModuleResultMode _result_mode = ModuleResultMode::File)
-            : av(_av), module_scope(_module_scope), code_obj(_code_obj),
-              body_idx(_body_idx), analysis(_mode, _av.size()),
-              language_mode(_language_mode), result_mode(_result_mode)
+            : av(_av), code_obj(_code_obj), body_idx(_body_idx),
+              analysis(_mode, _av.size()), language_mode(_language_mode),
+              result_mode(_result_mode)
         {
             analysis = analyze_code_object_scope(av, code_obj, _body_idx, _mode,
                                                  param_children);
@@ -217,8 +216,6 @@ namespace cl
         }
 
         const AstVector &av;
-        Scope *module_scope;
-
         CodegenMode mode() const { return analysis.mode; }
 
         CodeObjectBuilder *code_obj;
@@ -424,8 +421,9 @@ namespace cl
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             AstChildren param_children = av.children[children[0]];
-            CodeObject *fun_obj = codegen_function(av, module_scope, code_obj,
-                                                   node_idx, language_mode);
+            CodeObject *fun_obj =
+                codegen_function(av, code_obj->defining_module().extract(),
+                                 code_obj, node_idx, language_mode);
 
             // stick this code object into the constant table, load it, and call
             // the
@@ -483,8 +481,9 @@ namespace cl
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             int32_t bases_idx = children[0];
-            CodeObject *class_obj = codegen_class(av, module_scope, code_obj,
-                                                  node_idx, language_mode);
+            CodeObject *class_obj =
+                codegen_class(av, code_obj->defining_module().extract(),
+                              code_obj, node_idx, language_mode);
 
             uint32_t body_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(class_obj));
@@ -2251,10 +2250,11 @@ namespace cl
             TValue<String>::from_value_assumed(av.constants[expression_idx]));
     }
 
-    CodeObject *codegen_function(const AstVector &av, Scope *module_scope,
+    CodeObject *codegen_function(const AstVector &av, ModuleObject *module,
                                  CodeObjectBuilder *parent_code_obj,
                                  int32_t node_idx, LanguageMode language_mode)
     {
+        module->get_or_create_legacy_module_scope();
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
         AstChildren param_children = av.children[children[0]];
@@ -2262,7 +2262,8 @@ namespace cl
             make_internal_raw<Scope>(parent_code_obj->local_scope());
         TValue<String> function_name =
             TValue<String>::from_value_assumed(av.constants[node_idx]);
-        CodeObjectBuilder fun_obj(av.compilation_unit, module_scope,
+        CodeObjectBuilder fun_obj(av.compilation_unit,
+                                  TValue<ModuleObject>::from_oop(module),
                                   local_scope, function_name);
 
         fun_obj.set_docstring(docstring_for_body(av, children[1]));
@@ -2282,39 +2283,32 @@ namespace cl
         }
         reserve_parameter_padding_and_frame_header(&fun_obj);
 
-        AstCodegen fun_builder{av,
-                               module_scope,
-                               &fun_obj,
-                               CodegenMode::Function,
-                               language_mode,
-                               children[1],
-                               param_children};
+        AstCodegen fun_builder{
+            av,          &fun_obj,      CodegenMode::Function, language_mode,
+            children[1], param_children};
         return fun_builder.run_function_body(source_offset, children[1]);
     }
 
-    CodeObject *codegen_class(const AstVector &av, Scope *module_scope,
+    CodeObject *codegen_class(const AstVector &av, ModuleObject *module,
                               CodeObjectBuilder *parent_code_obj,
                               int32_t node_idx, LanguageMode language_mode)
     {
+        module->get_or_create_legacy_module_scope();
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
         int32_t body_idx = children[1];
         Scope *local_scope =
             make_internal_raw<Scope>(parent_code_obj->local_scope());
-        CodeObjectBuilder class_obj(av.compilation_unit, module_scope,
+        CodeObjectBuilder class_obj(av.compilation_unit,
+                                    TValue<ModuleObject>::from_oop(module),
                                     local_scope, parent_code_obj->name());
 
         class_obj.n_parameters() = 2;
         class_obj.get_local_scope_ptr()->reserve_empty_slots(2);
         reserve_parameter_padding_and_frame_header(&class_obj);
 
-        AstCodegen class_builder{av,
-                                 module_scope,
-                                 &class_obj,
-                                 CodegenMode::Class,
-                                 language_mode,
-                                 body_idx,
-                                 {}};
+        AstCodegen class_builder{
+            av, &class_obj, CodegenMode::Class, language_mode, body_idx, {}};
         return class_builder.run_class_body(source_offset, body_idx);
     }
 
@@ -2339,32 +2333,29 @@ namespace cl
         return code_obj->finalize();
     }
 
-    CodeObject *codegen_module_in_scope(const AstVector &av,
-                                        Scope *module_scope,
-                                        TValue<String> module_name,
-                                        LanguageMode language_mode,
-                                        ModuleResultMode result_mode)
+    CodeObject *codegen_module_in_module(const AstVector &av,
+                                         ModuleObject *module,
+                                         LanguageMode language_mode,
+                                         ModuleResultMode result_mode)
     {
-        CodeObjectBuilder module_obj(av.compilation_unit, module_scope, nullptr,
-                                     module_name);
-        AstCodegen builder{av,
-                           module_scope,
-                           &module_obj,
-                           CodegenMode::Module,
-                           language_mode,
-                           av.root_node,
-                           {},
-                           result_mode};
+        module->get_or_create_legacy_module_scope();
+        TValue<ModuleObject> defining_module =
+            TValue<ModuleObject>::from_oop(module);
+        CodeObjectBuilder module_obj(
+            av.compilation_unit, defining_module, nullptr,
+            TValue<String>::from_value_assumed(module->get_name_binding()));
+        AstCodegen builder{
+            av,           &module_obj, CodegenMode::Module, language_mode,
+            av.root_node, {},          result_mode};
         return builder.run_module();
     }
 
     CodeObject *codegen_module(const AstVector &av, TValue<String> module_name,
                                LanguageMode language_mode)
     {
-        Scope *module_scope =
-            make_internal_raw<Scope>(active_vm()->builtin_scope_ptr());
-        return codegen_module_in_scope(av, module_scope, module_name,
-                                       language_mode);
+        ModuleObject *module = active_thread()->make_module_object(module_name);
+        return codegen_module_in_module(av, module, language_mode,
+                                        ModuleResultMode::File);
     }
 
 }  // namespace cl

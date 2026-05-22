@@ -227,25 +227,25 @@ First test hooks for the new path:
 
 ## Stage 4: Module Context In Code Objects, Functions, And Frames
 
-- [ ] Add an explicit defining-module reference to `CodeObject` or its successor
+- [x] Add an explicit defining-module reference to `CodeObject` or its successor
       module-context holder.
-- [ ] Keep `CodeObject::module_scope` alongside the defining-module reference
-      while old `Scope`-slot bytecode still exists.
-- [ ] Add an explicit defining-module reference to managed `Function` objects.
-- [ ] Decide whether resolved builtins are captured by functions or resolved into
-      frames at entry.
-- [ ] Add the chosen resolved-builtins field to `Function` or frame setup state.
-- [ ] Thread `ModuleObject` through module code-object construction.
-- [ ] Thread `ModuleObject` through function code-object construction.
-- [ ] Thread `ModuleObject` through class code-object construction.
-- [ ] Thread `ModuleObject` through native-to-managed entry helpers.
-- [ ] Thread the shared interactive module object through REPL compilation.
-- [ ] Treat the double context as the migration bridge:
-      `module_scope` serves old instructions, and `defining_module` serves new
+- [x] Move the transitional legacy module scope onto `ModuleObject` instead of
+      keeping duplicate module context on `CodeObject`.
+- [x] Route old `Scope`-slot global bytecode through
+      `CodeObject::defining_module` and the module object's legacy scope.
+- [x] Keep managed `Function` objects deriving their module context from their
+      code object's defining module.
+- [x] Use late builtins resolution from the defining module for now; do not add
+      a resolved-builtins field to `Function` or frame state in this stage.
+- [x] Thread `ModuleObject` through module code-object construction.
+- [x] Thread `ModuleObject` through function code-object construction.
+- [x] Thread `ModuleObject` through class code-object construction.
+- [x] Thread `ModuleObject` through native-to-managed entry helpers.
+- [x] Thread the shared interactive module object through REPL compilation.
+- [x] Treat the module-owned legacy scope as the migration bridge:
+      the legacy scope serves old instructions, and `defining_module` serves new
       helpers, instructions, and caches.
-- [ ] Add tests that functions use their defining module, not the caller's
-      module, for global lookup.
-- [ ] Add tests that interactive compilation preserves one shared module object.
+- [x] Preserve one shared interactive module object during REPL compilation.
 
 ## Stage 5: New Module Global Instructions
 
@@ -323,8 +323,6 @@ First test hooks for the new path:
 - [ ] Preserve `Scope` insertion-order metadata for dictionary-like presentation
       when needed.
 - [ ] Rename remaining `module_scope` fields and helpers to semantic names.
-- [ ] Remove the double `CodeObject` module context once no old `Scope`-slot
-      global instructions or tests depend on `module_scope`.
 - [ ] Delete transitional compatibility paths.
 
 ## Stage 9: Module Attributes And Mapping Views
@@ -344,7 +342,12 @@ First test hooks for the new path:
 - [ ] Add tests that builtin fallback does not appear as a module own attribute
       or `module.__dict__` entry.
 
-## Stage 10: Class Namespace Follow-Up
+## Stage 10: Import And Multi-Module Execution
+
+- [ ] Add tests that functions use their defining module, not the caller's
+      module, for global lookup.
+
+## Stage 11: Class Namespace Follow-Up
 
 - [ ] Add `active_locals_namespace` to frame state.
 - [ ] Add `LOAD_NAME`.
@@ -360,7 +363,7 @@ First test hooks for the new path:
 - [ ] Add tests that nested methods do not capture ordinary class-body names as
       closure locals.
 
-## Stage 11: Verification And Cleanup
+## Stage 12: Verification And Cleanup
 
 - [ ] Update docs that mention module globals as `Scope` storage.
 - [ ] Update architecture references if new module/object docs were added during

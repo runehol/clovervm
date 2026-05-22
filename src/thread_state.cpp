@@ -321,7 +321,7 @@ namespace cl
 
     CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule)
     {
-        return compile(str, start_rule, L"<module>");
+        return compile(str, start_rule, L"__main__");
     }
 
     CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule,
@@ -335,11 +335,9 @@ namespace cl
         ModuleResultMode result_mode = start_rule == StartRule::Interactive
                                            ? ModuleResultMode::Interactive
                                            : ModuleResultMode::File;
-        Scope *module_scope =
-            make_internal_raw<Scope>(machine->builtin_scope_ptr());
-        return codegen_module_in_scope(
-            av, module_scope, interned_string(module_name),
-            LanguageMode::StandardsCompliant, result_mode);
+        ModuleObject *module = make_module_object(interned_string(module_name));
+        return codegen_module_in_module(
+            av, module, LanguageMode::StandardsCompliant, result_mode);
     }
 
     CodeObject *ThreadState::compile_in_scope(const wchar_t *str,
@@ -356,9 +354,25 @@ namespace cl
         ModuleResultMode result_mode = start_rule == StartRule::Interactive
                                            ? ModuleResultMode::Interactive
                                            : ModuleResultMode::File;
-        return codegen_module_in_scope(av, module_scope,
-                                       interned_string(module_name),
-                                       language_mode, result_mode);
+        ModuleObject *module = make_module_object(interned_string(module_name));
+        module->set_legacy_module_scope(module_scope);
+        return codegen_module_in_module(av, module, language_mode, result_mode);
+    }
+
+    CodeObject *ThreadState::compile_in_module(const wchar_t *str,
+                                               StartRule start_rule,
+                                               ModuleObject *module,
+                                               LanguageMode language_mode)
+    {
+        ActivationScope activation_scope(this);
+
+        CompilationUnit input(str);
+        TokenVector tv = tokenize(input);
+        AstVector av = parse(*machine, tv, start_rule);
+        ModuleResultMode result_mode = start_rule == StartRule::Interactive
+                                           ? ModuleResultMode::Interactive
+                                           : ModuleResultMode::File;
+        return codegen_module_in_module(av, module, language_mode, result_mode);
     }
 
     void ThreadState::add_to_active_zero_count_table_if_needed(HeapObject *obj)

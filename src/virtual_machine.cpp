@@ -129,8 +129,7 @@ namespace cl
     VirtualMachine::VirtualMachine()
         : refcounted_global_heap(GlobalHeap::refcounted_heap()),
           interned_global_heap(GlobalHeap::interned_heap()),
-          interned_strings(&interned_global_heap), range_builtin(Value::None()),
-          global_builtins_module_(Value::None())
+          interned_strings(&interned_global_heap), range_builtin(Value::None())
     {
         // make the main thread
         ThreadState *default_thread = make_new_thread();
@@ -143,7 +142,7 @@ namespace cl
         catch(...)
         {
             range_builtin = Value::None();
-            global_builtins_module_ = Value::None();
+            global_builtins_module_ = nullptr;
             builtin_scope = nullptr;
             throw;
         }
@@ -155,7 +154,7 @@ namespace cl
         {
             ThreadState::ActivationScope activation_scope(threads[0].get());
             range_builtin = Value::None();
-            global_builtins_module_ = Value::None();
+            global_builtins_module_ = nullptr;
             builtin_scope = nullptr;
         }
     }
@@ -346,6 +345,11 @@ namespace cl
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_float_class(this));
         register_builtin_class(make_module_class(this));
+        TValue<String> builtins_name =
+            get_or_create_interned_string_value(L"builtins");
+        ModuleObject *builtins_module =
+            make_immortal_object_raw<ModuleObject>(builtins_name);
+        global_builtins_module_ = builtins_module;
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));
@@ -380,6 +384,7 @@ namespace cl
         register_builtin_class(
             make_exception_subclass(this, L"KeyError", exception));
         register_builtin_class(make_stop_iteration_class(this, exception));
+
         install_object_class_methods(this);
         install_str_class_methods(this);
         install_int_class_methods(this);
@@ -398,6 +403,13 @@ namespace cl
 
         builtin_scope = HeapPtr<Scope>(
             get_default_thread()->make_internal_raw<Scope>(nullptr));
+        ModuleObject *builtins_module = global_builtins_module().extract();
+        builtins_module->set_legacy_module_scope(builtin_scope.extract());
+
+        auto install_builtin_binding = [&](TValue<String> name, Value value) {
+            builtin_scope.extract()->set_by_name(name, value);
+            assert(builtins_module->set_own_property(name, value));
+        };
 
         for(ClassObject *cls: builtin_classes)
         {
@@ -405,16 +417,15 @@ namespace cl
             {
                 continue;
             }
-            builtin_scope.extract()->set_by_name(cls->get_name(),
-                                                 Value::from_oop(cls));
+            install_builtin_binding(cls->get_name(), Value::from_oop(cls));
         }
 
-        builtin_scope.extract()->set_by_name(
-            get_or_create_interned_string_value(L"True"), Value::True());
-        builtin_scope.extract()->set_by_name(
-            get_or_create_interned_string_value(L"False"), Value::False());
-        builtin_scope.extract()->set_by_name(
-            get_or_create_interned_string_value(L"None"), Value::None());
+        install_builtin_binding(get_or_create_interned_string_value(L"True"),
+                                Value::True());
+        install_builtin_binding(get_or_create_interned_string_value(L"False"),
+                                Value::False());
+        install_builtin_binding(get_or_create_interned_string_value(L"None"),
+                                Value::None());
 
         TValue<String> range_name =
             get_or_create_interned_string_value(L"range");
@@ -425,21 +436,35 @@ namespace cl
             make_native_function(this, builtin_range,
                                  Optional<TValue<Tuple>>::some(range_defaults))
                 .raw_value();
-        builtin_scope.extract()->set_by_name(range_name, range_builtin);
+        install_builtin_binding(range_name, range_builtin);
 
         TValue<String> sqrt_name = get_or_create_interned_string_value(L"sqrt");
-        builtin_scope.extract()->set_by_name(
+        install_builtin_binding(
             sqrt_name, make_native_function(this, builtin_sqrt).raw_value());
 
         ThreadState *thread = get_default_thread();
-        CodeObject *builtins_code = thread->compile_in_scope(
-            trusted_builtin_source, StartRule::File, L"<builtins>",
-            builtin_scope.extract(), LanguageMode::TrustedCloverExtensions);
+        CodeObject *builtins_code = thread->compile_in_module(
+            trusted_builtin_source, StartRule::File, builtins_module,
+            LanguageMode::TrustedCloverExtensions);
         Value result = thread->run_clovervm_code_object(builtins_code);
         if(result.is_exception_marker())
         {
             throw std::runtime_error(
                 "failed to initialize trusted builtins.py");
+        }
+        for(uint32_t entry_idx = 0; entry_idx < builtin_scope->entry_count();
+            ++entry_idx)
+        {
+            if(!builtin_scope->entry_is_live(entry_idx))
+            {
+                continue;
+            }
+            TValue<String> name = builtin_scope->get_entry_key(entry_idx);
+            Value value = builtin_scope->get_by_name(name);
+            if(!value.is_not_present())
+            {
+                assert(builtins_module->set_own_property(name, value));
+            }
         }
     }
 

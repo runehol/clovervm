@@ -68,7 +68,8 @@ namespace cl
         : SlotObject(cls, native_layout), name_binding(_name.raw_value()),
           builtins_binding(_builtins), module_globals_validity_cell(nullptr),
           module_builtins_validity_cell(nullptr),
-          attached_module_builtins_validity_cells()
+          attached_module_builtins_validity_cells(),
+          legacy_module_scope_(nullptr)
     {
         if(!_builtins.is_not_present())
         {
@@ -108,7 +109,7 @@ namespace cl
         Value builtins = get_builtins_binding();
         if(builtins.is_not_present())
         {
-            builtins = active_vm()->global_builtins_module();
+            builtins = active_vm()->global_builtins_module().raw_value();
         }
         if(!can_convert_to<ModuleObject>(builtins))
         {
@@ -188,6 +189,18 @@ namespace cl
             module_builtins_validity_cell->invalidate();
             module_builtins_validity_cell = nullptr;
         }
+    }
+
+    Scope *ModuleObject::get_or_create_legacy_module_scope()
+    {
+        Scope *scope = legacy_module_scope();
+        if(scope != nullptr)
+        {
+            return scope;
+        }
+        scope = make_internal_raw<Scope>(active_vm()->builtin_scope_ptr());
+        legacy_module_scope_ = scope;
+        return scope;
     }
 
     static void install_module_instance_root_shape(ClassObject *cls)

@@ -2,6 +2,7 @@
 
 #include "global_heap.h"
 #include "heap_reclamation.h"
+#include "module_object.h"
 #include "refcount.h"
 #include "shape.h"
 #include "tuple.h"
@@ -241,8 +242,10 @@ namespace cl
         String *child = thread->make_object_raw<String>(L"code-constant");
         TValue<String> code_name =
             context.vm().get_or_create_interned_string_value(L"<test>");
+        ModuleObject *module = thread->make_module_object(code_name);
         CodeObject *code_object = thread->make_object_raw<CodeObject>(
-            nullptr, nullptr, nullptr, code_name);
+            nullptr, TValue<ModuleObject>::from_oop(module), nullptr,
+            code_name);
         code_object->constant_table.emplace_back(Value::from_oop(child));
         code_object->function_call_caches.push_back(FunctionCallInlineCache{});
         code_object->function_call_caches.back().guard_value =
@@ -253,11 +256,11 @@ namespace cl
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(code_object));
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(child));
         uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
-        ASSERT_EQ(valid_objects_before_alloc + 2, valid_objects_after_alloc);
+        ASSERT_EQ(valid_objects_before_alloc + 3, valid_objects_after_alloc);
 
         context.vm().run_heap_reclamation();
 
-        EXPECT_EQ(valid_objects_after_alloc - 2,
+        EXPECT_EQ(valid_objects_after_alloc - 3,
                   heap.count_valid_objects_slow());
         EXPECT_FALSE(
             thread->zero_count_table_contains_for_testing(code_object));

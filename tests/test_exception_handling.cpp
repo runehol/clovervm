@@ -2,6 +2,7 @@
 #include "code_object_builder.h"
 #include "exception_object.h"
 #include "exception_propagation.h"
+#include "module_object.h"
 #include "test_helpers.h"
 #include "thread_state.h"
 #include "virtual_machine.h"
@@ -49,8 +50,11 @@ make_lda_active_exception_handler_code(test::VmTestContext &test_context,
 {
     TValue<String> name = test_context.vm().get_or_create_interned_string_value(
         L"<active-exception-test>");
-    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
-                              name);
+    CodeObjectBuilder builder(
+        &test_context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(
+            test_context.thread()->make_module_object(name)),
+        nullptr, name);
     uint32_t constant_idx = builder.allocate_constant(raised);
     JumpTarget handler(&builder);
 
@@ -73,8 +77,11 @@ make_clear_active_exception_handler_code(test::VmTestContext &test_context,
 {
     TValue<String> name = test_context.vm().get_or_create_interned_string_value(
         L"<clear-active-exception-test>");
-    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
-                              name);
+    CodeObjectBuilder builder(
+        &test_context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(
+            test_context.thread()->make_module_object(name)),
+        nullptr, name);
     uint32_t constant_idx = builder.allocate_constant(raised);
     JumpTarget handler(&builder);
 
@@ -98,8 +105,11 @@ make_drain_active_exception_handler_code(test::VmTestContext &test_context,
 {
     TValue<String> name = test_context.vm().get_or_create_interned_string_value(
         L"<drain-active-exception-test>");
-    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
-                              name);
+    CodeObjectBuilder builder(
+        &test_context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(
+            test_context.thread()->make_module_object(name)),
+        nullptr, name);
     uint32_t constant_idx = builder.allocate_constant(raised);
     JumpTarget handler(&builder);
 
@@ -126,8 +136,11 @@ make_reraise_active_exception_handler_code(test::VmTestContext &test_context,
 {
     TValue<String> name = test_context.vm().get_or_create_interned_string_value(
         L"<reraise-active-exception-test>");
-    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
-                              name);
+    CodeObjectBuilder builder(
+        &test_context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(
+            test_context.thread()->make_module_object(name)),
+        nullptr, name);
     uint32_t constant_idx = builder.allocate_constant(raised);
     JumpTarget inner_handler(&builder);
     JumpTarget outer_handler(&builder);
@@ -158,8 +171,11 @@ make_lda_active_exception_code(test::VmTestContext &test_context)
 {
     TValue<String> name = test_context.vm().get_or_create_interned_string_value(
         L"<lda-active-exception-test>");
-    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
-                              name);
+    CodeObjectBuilder builder(
+        &test_context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(
+            test_context.thread()->make_module_object(name)),
+        nullptr, name);
     builder.emit_lda_active_exception(0);
     builder.emit_return(0);
     return builder.finalize();
@@ -171,8 +187,11 @@ make_active_exception_is_instance_code(test::VmTestContext &test_context,
 {
     TValue<String> name = test_context.vm().get_or_create_interned_string_value(
         L"<active-exception-is-instance-test>");
-    CodeObjectBuilder builder(&test_context.vm(), nullptr, nullptr, nullptr,
-                              name);
+    CodeObjectBuilder builder(
+        &test_context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(
+            test_context.thread()->make_module_object(name)),
+        nullptr, name);
     uint32_t constant_idx = builder.allocate_constant(handler_class);
     builder.emit_lda_constant(0, uint8_t(constant_idx));
     builder.emit_active_exception_is_instance(0);

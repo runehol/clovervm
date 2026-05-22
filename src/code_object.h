@@ -4,8 +4,8 @@
 #include "attribute_cache.h"
 #include "builtin_class_registry.h"
 #include "bytecode.h"
+#include "module_object.h"
 #include "owned.h"
-#include "scope.h"
 #include "typed_value.h"
 #include "value.h"
 #include <algorithm>
@@ -131,16 +131,16 @@ namespace cl
             NativeLayoutId::CodeObject;
 
         CodeObject(ClassObject *cls, const CompilationUnit *_compilation_unit,
-                   Scope *_module_scope, Scope *_local_scope,
+                   TValue<ModuleObject> _defining_module, Scope *_local_scope,
                    TValue<String> _name)
-            : Object(cls, native_layout), module_scope(_module_scope),
+            : Object(cls, native_layout), defining_module(_defining_module),
               local_scope(_local_scope), name(_name),
               docstring(Optional<TValue<String>>::none()),
               compilation_unit(_compilation_unit)
         {
         }
 
-        MemberHeapPtr<Scope> module_scope;
+        Member<TValue<ModuleObject>> defining_module;
         MemberHeapPtr<Scope> local_scope;
         Member<TValue<String>> name;
         Member<Optional<TValue<String>>> docstring;
@@ -154,6 +154,14 @@ namespace cl
         uint32_t n_outgoing_call_slots = 0;
 
         Scope *get_local_scope_ptr() const { return local_scope.extract(); }
+        TValue<ModuleObject> get_defining_module() const
+        {
+            return defining_module.value();
+        }
+        Scope *get_legacy_module_scope_ptr() const
+        {
+            return get_defining_module().extract()->legacy_module_scope();
+        }
 
         bool has_varargs() const
         {

@@ -3,6 +3,7 @@
 #include "attribute_descriptor.h"
 #include "class_object.h"
 #include "code_object_builder.h"
+#include "module_object.h"
 #include "thread_state.h"
 #include "tuple.h"
 #include "virtual_machine.h"
@@ -17,7 +18,8 @@ namespace cl
         Optional<TValue<Tuple>> default_parameters =
             Optional<TValue<Tuple>>::none())
     {
-        CodeObjectBuilder builder(vm, nullptr, nullptr, nullptr, name);
+        CodeObjectBuilder builder(vm, nullptr, vm->global_builtins_module(),
+                                  nullptr, name);
         builder.n_parameters() = n_parameters;
         builder.n_positional_parameters() = n_parameters;
         uint32_t target_idx = builder.add_native_function_target(target);

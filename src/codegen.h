@@ -18,6 +18,7 @@ namespace cl
     };
 
     class AstVector;
+    class ModuleObject;
     class Scope;
     class String;
     template <typename T> class TValue;
@@ -25,8 +26,8 @@ namespace cl
     CodeObject *codegen_module(
         const AstVector &av, TValue<String> module_name,
         LanguageMode language_mode = LanguageMode::StandardsCompliant);
-    CodeObject *codegen_module_in_scope(
-        const AstVector &av, Scope *module_scope, TValue<String> module_name,
+    CodeObject *codegen_module_in_module(
+        const AstVector &av, ModuleObject *module,
         LanguageMode language_mode = LanguageMode::StandardsCompliant,
         ModuleResultMode result_mode = ModuleResultMode::File);
 

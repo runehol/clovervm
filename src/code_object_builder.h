@@ -133,12 +133,12 @@ namespace cl
         };
 
         CodeObjectBuilder(const CompilationUnit *compilation_unit,
-                          Scope *module_scope, Scope *local_scope,
-                          TValue<String> name);
+                          TValue<ModuleObject> defining_module,
+                          Scope *local_scope, TValue<String> name);
         CodeObjectBuilder(VirtualMachine *vm,
                           const CompilationUnit *compilation_unit,
-                          Scope *module_scope, Scope *local_scope,
-                          TValue<String> name);
+                          TValue<ModuleObject> defining_module,
+                          Scope *local_scope, TValue<String> name);
 
         CodeObjectBuilder(const CodeObjectBuilder &) = delete;
         CodeObjectBuilder &operator=(const CodeObjectBuilder &) = delete;
@@ -165,13 +165,19 @@ namespace cl
         Scope *module_scope() const
         {
             assert(code_obj != nullptr);
-            return code_obj->module_scope.extract();
+            return code_obj->get_legacy_module_scope_ptr();
         }
 
         Scope *local_scope() const
         {
             assert(code_obj != nullptr);
             return code_obj->local_scope.extract();
+        }
+
+        TValue<ModuleObject> defining_module() const
+        {
+            assert(code_obj != nullptr);
+            return code_obj->get_defining_module();
         }
 
         TValue<String> name() const

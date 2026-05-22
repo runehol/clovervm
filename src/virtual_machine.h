@@ -2,6 +2,7 @@
 #define CL_VIRTUAL_MACHINE_H
 
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -13,6 +14,7 @@
 #include "clover_entry.h"
 #include "global_heap.h"
 #include "intern_store.h"
+#include "module_object.h"
 #include "owned.h"
 #include "scope.h"
 #include "str.h"
@@ -94,11 +96,15 @@ namespace cl
         HeapPtr<Scope> get_builtin_scope() const { return builtin_scope; }
         Scope *builtin_scope_ptr() const { return builtin_scope.extract(); }
         Value get_range_builtin() const { return range_builtin; }
-        Value global_builtins_module() const { return global_builtins_module_; }
-        void set_global_builtins_module(Value value)
+        TValue<ModuleObject> global_builtins_module() const
         {
-            value.assert_not_vm_sentinel();
-            global_builtins_module_ = value;
+            assert(global_builtins_module_ != nullptr);
+            return TValue<ModuleObject>::from_oop(global_builtins_module_);
+        }
+        void set_global_builtins_module(ModuleObject *module)
+        {
+            assert(module != nullptr);
+            global_builtins_module_ = module;
         }
         void write_stdout(TValue<String> value);
         void set_stdout_file(FILE *file)
@@ -277,7 +283,7 @@ namespace cl
         std::vector<ClassObject *> builtin_classes;
         OwnedHeapPtr<Scope> builtin_scope;
         Owned<Value> range_builtin;
-        Owned<Value> global_builtins_module_;
+        ModuleObject *global_builtins_module_ = nullptr;
         bool safepoint_requested_ = false;
         bool fire_every_safepoint_for_testing_ = false;
         SafepointCallbackForTesting safepoint_callback_for_testing_ = nullptr;

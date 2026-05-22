@@ -2,6 +2,7 @@
 
 #include "code_object.h"
 #include "code_object_builder.h"
+#include "module_object.h"
 #include "runtime_helpers.h"
 #include "scope.h"
 #include "virtual_machine.h"
@@ -33,7 +34,8 @@ namespace cl
         TValue<String> adapter_name = vm->get_or_create_interned_string_value(
             L"<clover_function_entry_adapter>");
         Scope *local_scope = vm->make_immortal_internal_raw<Scope>(nullptr);
-        CodeObjectBuilder code(vm, nullptr, nullptr, local_scope, adapter_name);
+        CodeObjectBuilder code(vm, nullptr, vm->global_builtins_module(),
+                               local_scope, adapter_name);
         code.n_parameters() = n_args + 1;
         code.n_positional_parameters() = n_args + 1;
         reserve_parameter_slots_and_frame_header(&code);

@@ -211,18 +211,20 @@ namespace cl
     }
 
     CodeObjectBuilder::CodeObjectBuilder(
-        const CompilationUnit *compilation_unit, Scope *module_scope,
-        Scope *local_scope, TValue<String> name)
-        : code_obj(make_object_raw<CodeObject>(compilation_unit, module_scope,
-                                               local_scope, name))
+        const CompilationUnit *compilation_unit,
+        TValue<ModuleObject> defining_module, Scope *local_scope,
+        TValue<String> name)
+        : code_obj(make_object_raw<CodeObject>(
+              compilation_unit, defining_module, local_scope, name))
     {
     }
 
     CodeObjectBuilder::CodeObjectBuilder(
         VirtualMachine *vm, const CompilationUnit *compilation_unit,
-        Scope *module_scope, Scope *local_scope, TValue<String> name)
+        TValue<ModuleObject> defining_module, Scope *local_scope,
+        TValue<String> name)
         : code_obj(vm->make_immortal_object_raw<CodeObject>(
-              compilation_unit, module_scope, local_scope, name))
+              compilation_unit, defining_module, local_scope, name))
     {
     }
 
