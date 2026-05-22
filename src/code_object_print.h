@@ -445,6 +445,21 @@ template <> struct fmt::formatter<cl::CodeObject>
     }
 
     template <typename Out>
+    void disassemble_module_global_read_cache(const cl::CodeObject &code_obj,
+                                              Out &out, uint32_t pc) const
+    {
+        format_to(out, "module_global_read_ic[{}]", code_obj.code[pc]);
+    }
+
+    template <typename Out>
+    void
+    disassemble_module_global_mutation_cache(const cl::CodeObject &code_obj,
+                                             Out &out, uint32_t pc) const
+    {
+        format_to(out, "module_global_mutation_ic[{}]", code_obj.code[pc]);
+    }
+
+    template <typename Out>
     void disassemble_function_call_cache(const cl::CodeObject &code_obj,
                                          Out &out, uint32_t pc) const
     {
@@ -565,7 +580,19 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::LdaModuleGlobal:
+                format_to(out, " ");
+                disassemble_constant(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_module_global_read_cache(code_obj, out, pc++);
+                break;
+
             case cl::Bytecode::StaModuleGlobal:
+                format_to(out, " ");
+                disassemble_constant(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_module_global_mutation_cache(code_obj, out, pc++);
+                break;
+
             case cl::Bytecode::DelModuleGlobal:
                 format_to(out, " ");
                 disassemble_constant(code_obj, out, pc++);

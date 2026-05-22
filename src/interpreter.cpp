@@ -1887,15 +1887,49 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_lda_module_global(PARAMS)
+    static ALWAYSINLINE Value
+    load_module_global_slot_from_plan_inline(const ModuleGlobalReadPlan &plan)
     {
-        START(2);
+        assert(plan.kind == ModuleGlobalReadPlanKind::Slot);
+        assert(plan.storage_owner != nullptr);
+        if(unlikely(plan.storage_location.kind != StorageKind::Inline))
+        {
+            return plan.storage_owner->read_storage_location(
+                plan.storage_location);
+        }
+        return plan.storage_owner
+            ->inline_slot_base()[plan.storage_location.physical_idx];
+    }
+
+    static ALWAYSINLINE bool store_module_global_from_plan_inline_fast(
+        const ModuleGlobalMutationPlan &plan, Value value)
+    {
+        if(unlikely(plan.kind != ModuleGlobalMutationPlanKind::StoreExisting))
+        {
+            return false;
+        }
+        assert(plan.storage_owner != nullptr);
+        plan.storage_owner->write_existing_storage_location(
+            plan.storage_location(), value);
+        return true;
+    }
+
+    NOINLINE static INTERP_CC Value op_lda_module_global_cache_miss(PARAMS)
+    {
+        START(3);
         uint8_t name_idx = pc[1];
+        uint8_t cache_idx = pc[2];
         TValue<String> name = TValue<String>::from_value_assumed(
             code_object->constant_table[name_idx].value());
         ModuleObject *module = code_object->get_defining_module().extract();
+        ModuleGlobalReadInlineCache &cache =
+            code_object->module_global_read_caches[cache_idx];
         ModuleGlobalReadDescriptor descriptor =
             resolve_module_global_read_descriptor(module, name);
+        if(descriptor.is_cacheable())
+        {
+            cache.populate(descriptor);
+        }
         accumulator = load_module_global_from_plan(descriptor.plan);
         if(unlikely(accumulator.is_not_present()))
         {
@@ -1904,24 +1938,65 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_sta_module_global(PARAMS)
+    static INTERP_CC Value op_lda_module_global(PARAMS)
     {
-        START(2);
+        START(3);
+        uint8_t cache_idx = pc[2];
+        ModuleGlobalReadInlineCache &cache =
+            code_object->module_global_read_caches[cache_idx];
+        if(unlikely(!cache.matches()))
+        {
+            MUSTTAIL return op_lda_module_global_cache_miss(ARGS);
+        }
+        assert(cache.plan.kind == ModuleGlobalReadPlanKind::Slot);
+        accumulator = load_module_global_slot_from_plan_inline(cache.plan);
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_sta_module_global_cache_miss(PARAMS)
+    {
+        START(3);
         uint8_t name_idx = pc[1];
+        uint8_t cache_idx = pc[2];
         TValue<String> name = TValue<String>::from_value_assumed(
             code_object->constant_table[name_idx].value());
         ModuleObject *module = code_object->get_defining_module().extract();
+        ModuleGlobalMutationInlineCache &cache =
+            code_object->module_global_mutation_caches[cache_idx];
         ModuleGlobalWriteDescriptor descriptor =
             resolve_module_global_write_descriptor(module, name);
         if(unlikely(!descriptor.is_found()))
         {
             MUSTTAIL return module_global_assignment_error(ARGS);
         }
+        if(descriptor.is_cacheable())
+        {
+            cache.populate(descriptor);
+        }
         bool stored =
             store_module_global_from_plan(module, descriptor.plan, accumulator);
         if(unlikely(!stored))
         {
             MUSTTAIL return module_global_assignment_error(ARGS);
+        }
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_sta_module_global(PARAMS)
+    {
+        START(3);
+        uint8_t cache_idx = pc[2];
+        ModuleGlobalMutationInlineCache &cache =
+            code_object->module_global_mutation_caches[cache_idx];
+        if(unlikely(!cache.matches()))
+        {
+            MUSTTAIL return op_sta_module_global_cache_miss(ARGS);
+        }
+        assert(cache.plan.kind == ModuleGlobalMutationPlanKind::StoreExisting);
+        if(unlikely(!store_module_global_from_plan_inline_fast(cache.plan,
+                                                               accumulator)))
+        {
+            MUSTTAIL return op_sta_module_global_cache_miss(ARGS);
         }
         COMPLETE();
     }

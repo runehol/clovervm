@@ -266,27 +266,26 @@ First test hooks for the new path:
 
 ## Stage 6: Inline Caches For New Global Instructions
 
-- [ ] Add side-array cache storage for the new module-global load instruction.
-- [ ] Add an uninitialized cache state.
-- [ ] Add a module-hit cache state.
-- [ ] Add a builtin-hit-through-module-miss cache state.
-- [ ] Add a missing-in-both cache state.
-- [ ] Guard module-hit caches with module shape/membership validity and storage
-      location.
-- [ ] Guard builtin-hit caches with module miss validity plus builtins
-      shape/membership validity and storage location.
-- [ ] Guard missing caches with module miss validity plus builtins miss validity.
-- [ ] Guard caches that depend on resolved builtins with module `__builtins__`
-      binding validity.
-- [ ] Keep dict-like or arbitrary builtins mappings out of the first cacheable
+- [x] Add side-array cache storage for the new module-global load instruction.
+- [x] Add side-array cache storage for the new module-global store instruction.
+- [x] Add an uninitialized cache state.
+- [x] Add a module-hit cache state.
+- [x] Add a builtin-hit-through-module-miss cache state.
+- [x] Keep missing-in-both uncached; missing immediately raises `NameError` and
+      should not allocate cells for repeated failed lookups.
+- [x] Guard cached slot plans with a single plan-owned validity cell.
+- [x] Keep delete uncached; delete plans intentionally carry no validity cell.
+- [x] Guard caches that depend on resolved builtins with module `__builtins__`
+      binding validity through the plan-owned validity cell.
+- [x] Keep dict-like or arbitrary builtins mappings out of the first cacheable
       module-global path; add them only after their lookup semantics and
       invalidation rules are designed separately.
-- [ ] Add storage-location validity guards only if the location can move without
-      shape or membership invalidation.
-- [ ] Add tests that cache entries observe module rebinding.
-- [ ] Add tests that cache entries observe module deletion revealing builtins.
-- [ ] Add tests that cache entries observe builtins mutation.
-- [ ] Add tests that cache entries observe `__builtins__` reassignment.
+- [x] Do not add storage-location validity guards; current module storage
+      locations are guarded by the plan-owned validity cell.
+- [x] Add tests that cache entries observe module rebinding.
+- [x] Add tests that cache entries observe module deletion revealing builtins.
+- [x] Add tests that cache entries observe builtins mutation.
+- [x] Add tests that cache entries observe `__builtins__` reassignment.
 
 ## Stage 7: Switch Codegen To ModuleObject Globals
 

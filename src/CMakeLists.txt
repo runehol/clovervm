@@ -78,6 +78,7 @@ add_library(libclovervm STATIC
     list_iterator.h
     module_object.cpp
     module_object.h
+    module_global_cache.h
     module_global.cpp
     module_global.h
     module_global_descriptor.h

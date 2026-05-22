@@ -386,6 +386,12 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsModuleSlot)
 
     EXPECT_EQ(Value::from_smi(42),
               context.thread()->run_clovervm_code_object(code));
+    ASSERT_EQ(1u, code->module_global_read_caches.size());
+    const ModuleGlobalReadInlineCache &cache =
+        code->module_global_read_caches[0];
+    EXPECT_TRUE(cache.matches());
+    EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, cache.plan.kind);
+    EXPECT_EQ(module, cache.plan.storage_owner);
 }
 
 TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsBuiltinsAfterModuleMiss)
@@ -415,6 +421,12 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsBuiltinsAfterModuleMiss)
 
     EXPECT_EQ(Value::from_smi(7),
               context.thread()->run_clovervm_code_object(code));
+    ASSERT_EQ(1u, code->module_global_read_caches.size());
+    const ModuleGlobalReadInlineCache &cache =
+        code->module_global_read_caches[0];
+    EXPECT_TRUE(cache.matches());
+    EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, cache.plan.kind);
+    EXPECT_EQ(builtins, cache.plan.storage_owner);
 }
 
 TEST(ModuleGlobalBytecode, LoadModuleGlobalMissingNameRaisesNameError)
@@ -439,6 +451,8 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalMissingNameRaisesNameError)
     Value result = context.thread()->run_clovervm_code_object(code);
 
     EXPECT_TRUE(result.is_exception_marker());
+    ASSERT_EQ(1u, code->module_global_read_caches.size());
+    EXPECT_FALSE(code->module_global_read_caches[0].matches());
     EXPECT_STREQ(L"NameError: name 'not_present' is not defined",
                  module_global_pending_python_error(context.thread()).c_str());
     context.thread()->clear_pending_exception();
@@ -465,6 +479,21 @@ TEST(ModuleGlobalBytecode, StoreModuleGlobalWritesModuleSlot)
             builder.emit_return(0);
         });
 
+    EXPECT_EQ(Value::from_smi(11),
+              context.thread()->run_clovervm_code_object(code));
+    EXPECT_EQ(Value::from_smi(11), module->get_own_property(global_name));
+    ASSERT_EQ(1u, code->module_global_mutation_caches.size());
+    EXPECT_FALSE(code->module_global_mutation_caches[0].matches());
+
+    EXPECT_EQ(Value::from_smi(11),
+              context.thread()->run_clovervm_code_object(code));
+    const ModuleGlobalMutationInlineCache &cache =
+        code->module_global_mutation_caches[0];
+    EXPECT_TRUE(cache.matches());
+    EXPECT_EQ(ModuleGlobalMutationPlanKind::StoreExisting, cache.plan.kind);
+    EXPECT_EQ(module, cache.plan.storage_owner);
+
+    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(5)));
     EXPECT_EQ(Value::from_smi(11),
               context.thread()->run_clovervm_code_object(code));
     EXPECT_EQ(Value::from_smi(11), module->get_own_property(global_name));
@@ -501,6 +530,11 @@ TEST(ModuleGlobalBytecode, DeleteModuleGlobalDeletesModuleSlot)
               context.thread()->run_clovervm_code_object(code));
     EXPECT_TRUE(module->get_own_property(global_name).is_not_present());
     EXPECT_EQ(Value::from_smi(2), builtins->get_own_property(global_name));
+    ASSERT_EQ(1u, code->module_global_read_caches.size());
+    const ModuleGlobalReadInlineCache &cache =
+        code->module_global_read_caches[0];
+    EXPECT_TRUE(cache.matches());
+    EXPECT_EQ(builtins, cache.plan.storage_owner);
 }
 
 TEST(ModuleGlobalBytecode, DeleteModuleGlobalMissingNameRaisesNameError)
@@ -528,4 +562,157 @@ TEST(ModuleGlobalBytecode, DeleteModuleGlobalMissingNameRaisesNameError)
     EXPECT_STREQ(L"NameError: name 'not_present' is not defined",
                  module_global_pending_python_error(context.thread()).c_str());
     context.thread()->clear_pending_exception();
+}
+
+TEST(ModuleGlobalBytecode, CachedLoadReadsReboundModuleValue)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> module_name =
+        context.vm().get_or_create_interned_string_value(L"module");
+    TValue<String> global_name =
+        context.vm().get_or_create_interned_string_value(L"value");
+    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(1)));
+
+    CodeObject *code = make_module_global_test_code(
+        context, module, L"<module-global-cached-rebind-test>",
+        [&](CodeObjectBuilder &builder) {
+            uint8_t name_idx = allocate_name_constant(builder, global_name);
+            builder.emit_lda_module_global(0, name_idx);
+            builder.emit_return(0);
+        });
+
+    EXPECT_EQ(Value::from_smi(1),
+              context.thread()->run_clovervm_code_object(code));
+    ASSERT_TRUE(code->module_global_read_caches[0].matches());
+
+    ASSERT_TRUE(store_module_global(module, global_name, Value::from_smi(2)));
+
+    EXPECT_EQ(Value::from_smi(2),
+              context.thread()->run_clovervm_code_object(code));
+    EXPECT_TRUE(code->module_global_read_caches[0].matches());
+}
+
+TEST(ModuleGlobalBytecode, CachedModuleLoadInvalidatesAndRevealsBuiltin)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> module_name =
+        context.vm().get_or_create_interned_string_value(L"module");
+    TValue<String> builtins_name =
+        context.vm().get_or_create_interned_string_value(L"builtins");
+    TValue<String> global_name =
+        context.vm().get_or_create_interned_string_value(L"value");
+    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *builtins =
+        context.thread()->make_module_object(builtins_name);
+    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(1)));
+    ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(2)));
+    module->set_builtins_binding(Value::from_oop(builtins));
+
+    CodeObject *code = make_module_global_test_code(
+        context, module, L"<module-global-cached-delete-test>",
+        [&](CodeObjectBuilder &builder) {
+            uint8_t name_idx = allocate_name_constant(builder, global_name);
+            builder.emit_lda_module_global(0, name_idx);
+            builder.emit_return(0);
+        });
+
+    EXPECT_EQ(Value::from_smi(1),
+              context.thread()->run_clovervm_code_object(code));
+    ValidityCell *module_cell =
+        code->module_global_read_caches[0].plan.lookup_validity_cell;
+    ASSERT_TRUE(delete_module_global(module, global_name));
+    EXPECT_FALSE(module_cell->is_valid());
+
+    EXPECT_EQ(Value::from_smi(2),
+              context.thread()->run_clovervm_code_object(code));
+    EXPECT_TRUE(code->module_global_read_caches[0].matches());
+    EXPECT_EQ(builtins, code->module_global_read_caches[0].plan.storage_owner);
+}
+
+TEST(ModuleGlobalBytecode, CachedBuiltinsLoadReadsReboundBuiltinsValue)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> module_name =
+        context.vm().get_or_create_interned_string_value(L"module");
+    TValue<String> builtins_name =
+        context.vm().get_or_create_interned_string_value(L"builtins");
+    TValue<String> global_name =
+        context.vm().get_or_create_interned_string_value(L"value");
+    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *builtins =
+        context.thread()->make_module_object(builtins_name);
+    ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(1)));
+    module->set_builtins_binding(Value::from_oop(builtins));
+
+    CodeObject *code = make_module_global_test_code(
+        context, module, L"<module-global-cached-builtin-rebind-test>",
+        [&](CodeObjectBuilder &builder) {
+            uint8_t name_idx = allocate_name_constant(builder, global_name);
+            builder.emit_lda_module_global(0, name_idx);
+            builder.emit_return(0);
+        });
+
+    EXPECT_EQ(Value::from_smi(1),
+              context.thread()->run_clovervm_code_object(code));
+    ASSERT_TRUE(code->module_global_read_caches[0].matches());
+
+    ASSERT_TRUE(store_module_global(builtins, global_name, Value::from_smi(2)));
+
+    EXPECT_EQ(Value::from_smi(2),
+              context.thread()->run_clovervm_code_object(code));
+    EXPECT_TRUE(code->module_global_read_caches[0].matches());
+}
+
+TEST(ModuleGlobalBytecode, CachedBuiltinsLoadInvalidatesOnBuiltinsReassignment)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> module_name =
+        context.vm().get_or_create_interned_string_value(L"module");
+    TValue<String> first_builtins_name =
+        context.vm().get_or_create_interned_string_value(L"first_builtins");
+    TValue<String> second_builtins_name =
+        context.vm().get_or_create_interned_string_value(L"second_builtins");
+    TValue<String> global_name =
+        context.vm().get_or_create_interned_string_value(L"value");
+    ModuleObject *module = context.thread()->make_module_object(module_name);
+    ModuleObject *first_builtins =
+        context.thread()->make_module_object(first_builtins_name);
+    ModuleObject *second_builtins =
+        context.thread()->make_module_object(second_builtins_name);
+    ASSERT_TRUE(
+        first_builtins->set_own_property(global_name, Value::from_smi(1)));
+    ASSERT_TRUE(
+        second_builtins->set_own_property(global_name, Value::from_smi(2)));
+    module->set_builtins_binding(Value::from_oop(first_builtins));
+
+    CodeObject *code = make_module_global_test_code(
+        context, module, L"<module-global-cached-builtin-reassign-test>",
+        [&](CodeObjectBuilder &builder) {
+            uint8_t name_idx = allocate_name_constant(builder, global_name);
+            builder.emit_lda_module_global(0, name_idx);
+            builder.emit_return(0);
+        });
+
+    EXPECT_EQ(Value::from_smi(1),
+              context.thread()->run_clovervm_code_object(code));
+    ValidityCell *builtins_cell =
+        code->module_global_read_caches[0].plan.lookup_validity_cell;
+
+    module->set_builtins_binding(Value::from_oop(second_builtins));
+    EXPECT_FALSE(builtins_cell->is_valid());
+
+    EXPECT_EQ(Value::from_smi(2),
+              context.thread()->run_clovervm_code_object(code));
+    EXPECT_TRUE(code->module_global_read_caches[0].matches());
+    EXPECT_EQ(second_builtins,
+              code->module_global_read_caches[0].plan.storage_owner);
 }

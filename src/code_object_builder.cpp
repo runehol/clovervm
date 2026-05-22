@@ -264,8 +264,9 @@ namespace cl
     uint32_t CodeObjectBuilder::emit_lda_module_global(uint32_t source_offset,
                                                        uint8_t name_idx)
     {
-        return emit_opcode_constant_idx(source_offset,
-                                        Bytecode::LdaModuleGlobal, name_idx);
+        uint8_t cache_idx = allocate_module_global_read_cache();
+        return emit_opcode_constant_idx_cache_idx(
+            source_offset, Bytecode::LdaModuleGlobal, name_idx, cache_idx);
     }
 
     uint32_t CodeObjectBuilder::emit_star(uint32_t source_offset, uint32_t reg)
@@ -288,8 +289,9 @@ namespace cl
     uint32_t CodeObjectBuilder::emit_sta_module_global(uint32_t source_offset,
                                                        uint8_t name_idx)
     {
-        return emit_opcode_constant_idx(source_offset,
-                                        Bytecode::StaModuleGlobal, name_idx);
+        uint8_t cache_idx = allocate_module_global_mutation_cache();
+        return emit_opcode_constant_idx_cache_idx(
+            source_offset, Bytecode::StaModuleGlobal, name_idx, cache_idx);
     }
 
     uint32_t CodeObjectBuilder::emit_del_local(uint32_t source_offset,
@@ -768,6 +770,22 @@ namespace cl
         return idx;
     }
 
+    uint32_t CodeObjectBuilder::allocate_module_global_read_cache()
+    {
+        uint32_t idx = code_obj->module_global_read_caches.size();
+        code_obj->module_global_read_caches.emplace_back();
+        assert(idx < 256);
+        return idx;
+    }
+
+    uint32_t CodeObjectBuilder::allocate_module_global_mutation_cache()
+    {
+        uint32_t idx = code_obj->module_global_mutation_caches.size();
+        code_obj->module_global_mutation_caches.emplace_back();
+        assert(idx < 256);
+        return idx;
+    }
+
     uint32_t CodeObjectBuilder::allocate_function_call_cache()
     {
         uint32_t idx = code_obj->function_call_caches.size();
@@ -807,6 +825,17 @@ namespace cl
         assert(c != Bytecode::Invalid);
         uint32_t result = emplace_back(source_offset, uint8_t(c));
         emplace_back(source_offset, constant_idx);
+        return result;
+    }
+
+    uint32_t CodeObjectBuilder::emit_opcode_constant_idx_cache_idx(
+        uint32_t source_offset, Bytecode c, uint8_t constant_idx,
+        uint8_t cache_idx)
+    {
+        assert(c != Bytecode::Invalid);
+        uint32_t result = emplace_back(source_offset, uint8_t(c));
+        emplace_back(source_offset, constant_idx);
+        emplace_back(source_offset, cache_idx);
         return result;
     }
 

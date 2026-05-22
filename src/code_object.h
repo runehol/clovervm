@@ -4,6 +4,7 @@
 #include "attribute_cache.h"
 #include "builtin_class_registry.h"
 #include "bytecode.h"
+#include "module_global_cache.h"
 #include "module_object.h"
 #include "owned.h"
 #include "typed_value.h"
@@ -175,6 +176,9 @@ namespace cl
         std::vector<Owned<Value>> constant_table;
         std::vector<AttributeReadInlineCache> attribute_read_caches;
         std::vector<AttributeMutationInlineCache> attribute_mutation_caches;
+        std::vector<ModuleGlobalReadInlineCache> module_global_read_caches;
+        std::vector<ModuleGlobalMutationInlineCache>
+            module_global_mutation_caches;
         std::vector<FunctionCallInlineCache> function_call_caches;
         std::vector<NativeFunctionTarget> native_function_targets;
         std::vector<ExceptionTableEntry> exception_table;

@@ -30,6 +30,16 @@ namespace cl
         {
             cache.clear();
         }
+        for(ModuleGlobalReadInlineCache &cache:
+            code_object->module_global_read_caches)
+        {
+            cache.clear();
+        }
+        for(ModuleGlobalMutationInlineCache &cache:
+            code_object->module_global_mutation_caches)
+        {
+            cache.clear();
+        }
         for(FunctionCallInlineCache &cache: code_object->function_call_caches)
         {
             cache = FunctionCallInlineCache{};
