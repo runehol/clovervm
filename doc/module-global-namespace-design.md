@@ -217,16 +217,23 @@ visible `__builtins__` attribute.
 
 Because frame builtins resolution depends on the value of the module
 `__builtins__` binding, that binding should be treated as a distinguished
-predefined module slot. Every `ModuleObject` should reserve a fixed
-`__builtins__` storage location so C++ runtime code can find the binding without
-doing a general namespace lookup first.
+predefined module slot. Every `ModuleObject` should reserve fixed predefined
+slots for:
+
+```text
+slot 0: __name__
+slot 1: __builtins__
+```
+
+This lets C++ runtime code find both bindings without doing a general namespace
+lookup first.
 
 Shape membership alone is not enough: assigning a new value to an existing
 `__builtins__` slot changes future builtins resolution even though the slot
 location is unchanged.
 
-The module object should therefore carry a dedicated builtins-binding validity
-cell, or equivalent flag, attached to the `__builtins__` slot:
+The module object will eventually need a dedicated builtins-binding validity
+cell, or equivalent flag, for the `__builtins__` slot:
 
 ```text
 insert __builtins__ -> invalidate builtins-binding validity
@@ -526,6 +533,7 @@ important names should fit without spilling:
 - imported hot functions
 - names introduced by `from module import *`
 - module constants
+- `__name__`
 - `__builtins__`
 - common shadowed builtins
 
@@ -539,6 +547,11 @@ batch of important names after the module has already accumulated boilerplate
 bindings. The layout policy should therefore provide enough module-specific
 headroom, and later profiling may justify promotion or other storage tuning for
 hot globals that land in overflow storage.
+
+The first implementation should use a `ClassObject`-style fixed inline storage
+layout with 256 module inline slots. Validity-cell fields should not be placed
+where they can alias the inline slots; add that state later once the cache layout
+is explicit.
 
 ## Refactor Direction
 

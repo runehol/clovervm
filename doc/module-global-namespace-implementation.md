@@ -23,8 +23,8 @@ These are design constraints, not checklist items:
 
 - `ModuleObject` owns module identity and module global storage.
 - Module global storage is shape-backed from the start of the new path.
-- `__builtins__` is a predefined module slot so C++ runtime code has a fixed
-  place to resolve the hidden frame builtins namespace.
+- `__name__` and `__builtins__` are predefined module slots, in that order, so
+  C++ runtime code has fixed locations for both.
 - Module/global lookup uses explicit runtime state: defining module first,
   resolved builtins second.
 - Builtin fallback is a lookup rule, not a value copied into the module.
@@ -36,11 +36,12 @@ These are design constraints, not checklist items:
 
 ## Validity Cells
 
-Validity cells should be introduced before the final codegen switch, even if the
-first tests exercise them through focused C++ or interpreter hooks rather than a
-full optimized path.
+Validity cells are not part of the first `ModuleObject` layout. The first
+module object should mirror the `ClassObject` slot-layout trick: fixed metadata
+and predefined slots first, then a large inline slot area. Later validity state
+can be added deliberately once the cache design is clearer.
 
-Required validity state:
+Expected later validity state:
 
 - module shape or module namespace membership validity for assumptions that a
   global name is present or absent in the module
@@ -135,9 +136,8 @@ First test hooks for the new path:
 
 - C++ helper tests for constructing a shape-backed `ModuleObject`.
 - C++ helper tests for ordinary module property get/set/delete.
-- C++ helper tests for predefined `__builtins__` get/set/delete.
-- C++ helper tests for validity invalidation on module insert/delete and
-  `__builtins__` assignment.
+- C++ helper tests for predefined `__name__` and `__builtins__`
+  get/set/delete.
 - Direct interpreter or bytecode-builder tests for new module-global opcodes
   before ordinary codegen switches over.
 
@@ -148,9 +148,13 @@ First test hooks for the new path:
 - [ ] Add builtin type/class bootstrap support for module objects if required by
       the current object model.
 - [ ] Give module objects shape-backed own-property storage.
-- [ ] Reserve a predefined `__builtins__` slot on every module object.
+- [ ] Use a `ClassObject`-style layout with C++ fields stored before the inline
+      slot area.
+- [ ] Reserve 256 inline slots for module object storage.
+- [ ] Reserve predefined slot 0 for `__name__`.
+- [ ] Reserve predefined slot 1 for `__builtins__`.
+- [ ] Add C++ accessors for the predefined `__name__` slot.
 - [ ] Add C++ accessors for the predefined `__builtins__` slot.
-- [ ] Add module name storage.
 - [ ] Add construction helpers on `ThreadState`.
 - [ ] Create a startup module object.
 - [ ] Create or reuse a shared interactive module object.
@@ -159,8 +163,12 @@ First test hooks for the new path:
 - [ ] Add tests for constructing a module object.
 - [ ] Add tests for reading and writing ordinary shape-backed module properties
       through C++ helpers.
+- [ ] Add tests for reading and writing the predefined `__name__` slot through
+      C++ helpers.
 - [ ] Add tests for reading and writing the predefined `__builtins__` slot
       through C++ helpers.
+- [ ] Add tests that the first ordinary module global does not overlap the
+      predefined slots.
 
 ## Stage 2: Module Shape Mutation And Validity
 
@@ -170,7 +178,9 @@ First test hooks for the new path:
 - [ ] Add module membership validity cells if shape guards alone are not enough
       for the chosen storage representation.
 - [ ] Add builtins namespace shape guards or membership validity cells.
-- [ ] Add dedicated `__builtins__` binding validity to `ModuleObject`.
+- [ ] Design where dedicated `__builtins__` binding validity lives without
+      aliasing module inline slots.
+- [ ] Add dedicated `__builtins__` binding validity once the layout is explicit.
 - [ ] Invalidate module miss assumptions when a module property is inserted.
 - [ ] Invalidate module hit assumptions when a module property is deleted.
 - [ ] Invalidate builtins hit/miss assumptions when the builtins namespace
