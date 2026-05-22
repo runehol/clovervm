@@ -48,12 +48,7 @@ namespace cl
         for(int32_t entry_idx = 0; entry_idx < int32_t(entries.size());
             ++entry_idx)
         {
-            int32_t slot_idx = entries[entry_idx].get_slot_idx();
-            if(slot_idx < 0)
-            {
-                continue;
-            }
-
+            int32_t slot_idx = entries[entry_idx];
             int32_t *name_table_entry = find_name_table_entry(
                 TValue<String>::from_value_unchecked(slot_names[slot_idx]));
             *name_table_entry = slot_idx;
@@ -64,34 +59,15 @@ namespace cl
     {
         int32_t entry_idx = entries.size();
         entries.emplace_back(slot_idx);
-        slot_current_entry_indices[slot_idx] = entry_idx;
         return entry_idx;
     }
 
-    int32_t Scope::allocate_slot(TValue<String> key, Value initial_value)
+    int32_t Scope::allocate_named_slot(TValue<String> key)
     {
-        int32_t slot_idx = slot_values.size();
-        slot_values.push_back(initial_value);
+        int32_t slot_idx = slot_names.size();
         slot_names.emplace_back(key.raw_value());
-        slot_current_entry_indices.emplace_back(-1);
+        append_entry(slot_idx);
         return slot_idx;
-    }
-
-    void Scope::revive_slot(int32_t slot_idx)
-    {
-        int32_t current_entry_idx = slot_current_entry_indices[slot_idx];
-        if(current_entry_idx >= 0)
-        {
-            entries[current_entry_idx].set_slot_idx(-1);
-        }
-
-        int32_t new_entry_idx = append_entry(slot_idx);
-        (void)new_entry_idx;
-
-        TValue<String> name =
-            TValue<String>::from_value_unchecked(slot_names[slot_idx]);
-        int32_t *name_table_entry = find_name_table_entry(name);
-        *name_table_entry = slot_idx;
     }
 
     TValue<String> Scope::get_name_by_slot_index(int32_t slot_idx) const
@@ -108,7 +84,7 @@ namespace cl
             return slot_idx;
         }
 
-        slot_idx = allocate_slot(key, Value::not_present());
+        slot_idx = allocate_named_slot(key);
         maybe_grow_name_table();
         int32_t *name_table_entry = find_name_table_entry(key);
         *name_table_entry = slot_idx;
@@ -131,36 +107,11 @@ namespace cl
         return slot_idx;
     }
 
-    Value Scope::get_by_name(TValue<String> name) const
-    {
-        int32_t slot_idx = lookup_slot_index_local(name);
-        if(slot_idx >= 0)
-        {
-            return get_by_slot_index(slot_idx);
-        }
-        return Value::not_present();
-    }
-
-    void Scope::set_by_name(TValue<String> name, Value val)
-    {
-        int32_t slot_idx = lookup_slot_index_local(name);
-        if(slot_idx < 0)
-        {
-            slot_idx = allocate_slot(name, Value::not_present());
-            maybe_grow_name_table();
-            int32_t *name_table_entry = find_name_table_entry(name);
-            *name_table_entry = slot_idx;
-        }
-        set_by_slot_index(slot_idx, val);
-    }
-
     void Scope::reserve_empty_slots(size_t n_slots)
     {
         for(size_t i = 0; i < n_slots; ++i)
         {
-            slot_values.push_back(Value::not_present());
             slot_names.emplace_back(Value::None());
-            slot_current_entry_indices.emplace_back(-1);
         }
     }
 

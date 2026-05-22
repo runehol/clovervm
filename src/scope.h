@@ -25,70 +25,10 @@ namespace cl
 
         int32_t lookup_slot_index_local(TValue<String> name) const;
 
-        Value get_by_name(TValue<String> name) const;
-
-        ALWAYSINLINE bool slot_is_live(int32_t slot_idx) const
-        {
-            return !slot_values[slot_idx].is_not_present();
-        }
-
-        ALWAYSINLINE bool entry_is_live(int32_t entry_idx) const
-        {
-            return entries[entry_idx].get_slot_idx() >= 0;
-        }
-
-        INLINE Value get_by_slot_index_fastpath_only(int32_t slot_idx) const
-        {
-            assert(slot_idx >= 0);
-            Value v = slot_values[slot_idx];
-            if(slot_is_live(slot_idx))
-                return v;
-            return Value::not_present();
-        }
-
-        NOINLINE Value get_by_slot_index(int32_t slot_idx) const
-        {
-            assert(slot_idx >= 0);
-            Value v = slot_values[slot_idx];
-            if(slot_is_live(slot_idx))
-                return v;
-            return Value::not_present();
-        }
-
-        void set_by_name(TValue<String> name, Value val);
-
-        ALWAYSINLINE void set_by_slot_index(int32_t slot_idx, Value val)
-        {
-            val.assert_not_exception_marker();
-            if(unlikely(!slot_is_live(slot_idx) && !val.is_not_present() &&
-                        slot_names[slot_idx] != Value::None()))
-            {
-                revive_slot(slot_idx);
-            }
-            slot_values.set(slot_idx, val);
-        }
-
-        ALWAYSINLINE bool set_by_slot_index_needs_slow_path(int32_t slot_idx,
-                                                            Value val) const
-        {
-            assert(slot_idx >= 0);
-            val.assert_not_exception_marker();
-            return !slot_is_live(slot_idx) && !val.is_not_present() &&
-                   slot_names[slot_idx] != Value::None();
-        }
-
-        ALWAYSINLINE HeapObject *
-        write_by_slot_index_returning_zero_ref(int32_t slot_idx, Value val)
-        {
-            val.assert_not_vm_sentinel();
-            assert(!set_by_slot_index_needs_slow_path(slot_idx, val));
-            return slot_values.write_slot_returning_zero_ref(slot_idx, val);
-        }
-
         void reserve_empty_slots(size_t n_slots);
 
-        uint32_t size() const { return slot_values.size(); }
-        bool empty() const { return slot_values.empty(); }
+        uint32_t size() const { return slot_names.size(); }
+        bool empty() const { return slot_names.empty(); }
         bool slot_is_named(int32_t slot_idx) const
         {
             return slot_names[slot_idx] != Value::None();
@@ -97,28 +37,15 @@ namespace cl
         uint32_t entry_count() const { return entries.size(); }
         int32_t get_entry_slot_index(uint32_t entry_idx) const
         {
-            return entries[entry_idx].get_slot_idx();
+            return entries[entry_idx];
         }
         TValue<String> get_entry_key(uint32_t entry_idx) const
         {
-            int32_t slot_idx = entries[entry_idx].get_slot_idx();
-            assert(slot_idx >= 0);
+            int32_t slot_idx = entries[entry_idx];
             return TValue<String>::from_value_unchecked(slot_names[slot_idx]);
         }
 
     private:
-        class Entry
-        {
-        public:
-            explicit Entry(int32_t _slot_idx) : slot_idx(_slot_idx) {}
-
-            int32_t get_slot_idx() const { return slot_idx; }
-            void set_slot_idx(int32_t idx) { slot_idx = idx; }
-
-        private:
-            int32_t slot_idx;
-        };
-
         static constexpr uint32_t max_load_nom = 3;
         static constexpr uint32_t max_load_denom = 4;
         static constexpr int32_t hash_not_present = -1;
@@ -127,7 +54,7 @@ namespace cl
         int32_t *find_name_table_entry(TValue<String> key);
         void maybe_grow_name_table()
         {
-            if(slot_values.size() >
+            if(slot_names.size() >
                name_table.size() * max_load_nom / max_load_denom)
             {
                 grow_name_table();
@@ -135,24 +62,19 @@ namespace cl
         }
         void grow_name_table();
         int32_t append_entry(int32_t slot_idx);
-        int32_t allocate_slot(TValue<String> key, Value initial_value);
-        void revive_slot(int32_t slot_idx);
+        int32_t allocate_named_slot(TValue<String> key);
 
         MemberHeapPtr<Scope> parent_scope;
         RawArray<int32_t> name_table;
-        RawArray<Entry> entries;
-        ValueArray<Value> slot_values;
+        RawArray<int32_t> entries;
         ValueArray<Value> slot_names;
-        RawArray<int32_t> slot_current_entry_indices;
 
     public:
         CL_DECLARE_STATIC_VALUE_SPAN(
             Scope, parent_scope,
             1 + decltype(name_table)::embedded_value_count +
                 decltype(entries)::embedded_value_count +
-                decltype(slot_values)::embedded_value_count +
-                decltype(slot_names)::embedded_value_count +
-                decltype(slot_current_entry_indices)::embedded_value_count);
+                decltype(slot_names)::embedded_value_count);
         CL_DECLARE_STATIC_OBJECT_SIZE(Scope);
     };
 

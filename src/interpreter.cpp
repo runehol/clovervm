@@ -399,8 +399,7 @@ namespace cl
             {
                 continue;
             }
-            fp[body_code->encode_reg(slot_idx)] =
-                local_scope->get_by_slot_index_fastpath_only(slot_idx);
+            fp[body_code->encode_reg(slot_idx)] = Value::not_present();
         }
     }
 

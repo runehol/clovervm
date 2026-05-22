@@ -358,10 +358,10 @@ metadata they need for frame storage and class namespace harvesting.
 - [x] Remove interpreter use of `Scope` APIs for module runtime stores.
 - [x] Remove interpreter use of `Scope` APIs for module runtime deletes.
 - [x] Remove parent-slot encoding for module/builtin lookup from `Scope`.
-- [ ] Remove scope-owned runtime value cells once no remaining non-module user
+- [x] Remove scope-owned runtime value cells once no remaining non-module user
       depends on them.
-- [ ] Preserve `Scope` name-to-slot metadata.
-- [ ] Preserve `Scope` insertion-order metadata for dictionary-like presentation
+- [x] Preserve `Scope` name-to-slot metadata.
+- [x] Preserve `Scope` insertion-order metadata for dictionary-like presentation
       when needed.
 - [ ] Replace Stage 3 semantic C++ helper coverage with Python-level interpreter
       tests once codegen emits module-global instructions; keep only low-level
@@ -391,6 +391,12 @@ lookups read the builtins module instead of `Scope`.
 `register_slot_index_for_read` now allocates the same local missing slot as
 `register_slot_index_for_write`, and `get_by_name` / `get_by_slot_index` report
 missing local values directly instead of walking parent scopes.
+
+`Scope` no longer owns runtime value cells. Function locals and class bodies use
+frame slots for runtime storage; `Scope` now keeps only parent-scope identity,
+name-to-slot lookup, slot-name metadata, and insertion-order entries. Class body
+frame initialization writes `not_present` directly into named frame slots, and
+the old indexed `Value::not_present(parent_slot_idx)` encoding has been deleted.
 
 ## Stage 9: Module Attributes And Mapping Views
 

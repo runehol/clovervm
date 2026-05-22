@@ -140,13 +140,10 @@ namespace cl
             return as.integer == value_exception;
         }
 
-        static inline Value not_present(int32_t next_idx = -1)
+        static inline Value not_present()
         {
             Value val;
-            val.as.integer =
-                (int64_t(next_idx) << 32) |
-                value_not_present;  // special value to mark deleted/not present
-                                    // entries in scopes.
+            val.as.integer = value_not_present;
             return val;
         }
 
@@ -167,12 +164,6 @@ namespace cl
         }
 
         void assert_not_vm_sentinel() const { assert(!is_vm_sentinel()); }
-
-        int32_t get_not_present_index() const
-        {
-            assert(is_not_present());
-            return as.integer >> 32;
-        }
 
         union
         {
