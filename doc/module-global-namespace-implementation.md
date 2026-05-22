@@ -218,7 +218,7 @@ First test hooks for the new path:
 - [x] Add tests for missing name through the helper.
 - [x] Add tests that repeated module-valued builtins lookup does not attach
       duplicate validity cells to the provider module.
-- [ ] Add tests that deleting a module binding reveals a builtin without mutating
+- [x] Add tests that deleting a module binding reveals a builtin without mutating
       the builtins namespace.
 - [x] Add tests for assigning and deleting module `__builtins__` while it remains
       read-only through normal module-global store/delete helpers.
@@ -320,6 +320,9 @@ First test hooks for the new path:
 - [ ] Preserve `Scope` name-to-slot metadata.
 - [ ] Preserve `Scope` insertion-order metadata for dictionary-like presentation
       when needed.
+- [ ] Replace Stage 3 semantic C++ helper coverage with Python-level interpreter
+      tests once codegen emits module-global instructions; keep only low-level
+      descriptor/validity helper tests that are not observable from Python.
 - [ ] Rename remaining `module_scope` fields and helpers to semantic names.
 - [ ] Delete transitional compatibility paths.
 
