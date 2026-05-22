@@ -380,8 +380,12 @@ creates a legacy module scope for generated modules, functions, or classes.
 The module-owned legacy scope bridge has been removed. `ModuleObject` no longer
 stores a legacy scope pointer, `CodeObject` no longer exposes a legacy module
 scope accessor, and the transitional `ThreadState::compile_in_scope` entrypoint
-has been deleted. The remaining `Scope` uses are local/class frame metadata and
-the separate builtin-scope table.
+has been deleted. The remaining `Scope` uses are local/class frame metadata.
+
+Builtin initialization now writes directly into the global builtins module.
+`VirtualMachine::initialize_builtin_scope` has become `initialize_builtins`, the
+temporary builtin `Scope` mirror and copy-back pass are gone, and builtin class
+lookups read the builtins module instead of `Scope`.
 
 ## Stage 9: Module Attributes And Mapping Views
 

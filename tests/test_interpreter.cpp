@@ -3285,7 +3285,7 @@ TEST(Interpreter, raise_unwind_rejects_non_exception)
                                L"BaseException");
 }
 
-TEST(Interpreter, builtin_scope_lookup)
+TEST(Interpreter, builtin_module_lookup)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
@@ -3361,22 +3361,23 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
     }
 }
 
-TEST(Interpreter, builtin_scope_exposes_singleton_values)
+TEST(Interpreter, builtin_module_exposes_singleton_values)
 {
     test::VmTestContext test_context;
-    Scope *builtins = test_context.vm().builtin_scope_ptr();
+    ModuleObject *builtins =
+        test_context.vm().global_builtins_module().extract();
 
     EXPECT_EQ(
         Value::True(),
-        builtins->get_by_name(
+        builtins->get_own_property(
             test_context.vm().get_or_create_interned_string_value(L"True")));
     EXPECT_EQ(
         Value::False(),
-        builtins->get_by_name(
+        builtins->get_own_property(
             test_context.vm().get_or_create_interned_string_value(L"False")));
     EXPECT_EQ(
         Value::None(),
-        builtins->get_by_name(
+        builtins->get_own_property(
             test_context.vm().get_or_create_interned_string_value(L"None")));
 }
 
@@ -3441,7 +3442,8 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         {NativeLayoutId::Instance, L"object"},
     };
 
-    Scope *builtins = test_context.vm().get_builtin_scope().extract();
+    ModuleObject *builtins =
+        test_context.vm().global_builtins_module().extract();
     ClassObject *type_class = test_context.vm().type_class();
     ASSERT_NE(nullptr, type_class);
 
@@ -3504,11 +3506,11 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
 
         if(expected.native_layout_id == NativeLayoutId::CodeObject)
         {
-            EXPECT_EQ(Value::not_present(), builtins->get_by_name(name));
+            EXPECT_EQ(Value::not_present(), builtins->get_own_property(name));
         }
         else
         {
-            EXPECT_EQ(Value::from_oop(cls), builtins->get_by_name(name));
+            EXPECT_EQ(Value::from_oop(cls), builtins->get_own_property(name));
         }
     }
 

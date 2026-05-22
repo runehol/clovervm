@@ -18,7 +18,6 @@
 #include "none_type.h"
 #include "parser.h"
 #include "range_iterator.h"
-#include "scope.h"
 #include "shape.h"
 #include "thread_state.h"
 #include "tuple.h"
@@ -136,14 +135,13 @@ namespace cl
         ThreadState::ActivationScope activation_scope(default_thread);
         try
         {
-            initialize_builtin_scope();
+            initialize_builtins();
             default_thread->switch_to_new_heap_slabs();
         }
         catch(...)
         {
             range_builtin = Value::None();
             global_builtins_module_ = nullptr;
-            builtin_scope = nullptr;
             throw;
         }
     }
@@ -155,7 +153,6 @@ namespace cl
             ThreadState::ActivationScope activation_scope(threads[0].get());
             range_builtin = Value::None();
             global_builtins_module_ = nullptr;
-            builtin_scope = nullptr;
         }
     }
 
@@ -396,17 +393,14 @@ namespace cl
         install_float_class_methods(this);
     }
 
-    void VirtualMachine::initialize_builtin_scope()
+    void VirtualMachine::initialize_builtins()
     {
         initialize_builtin_types();
         get_default_thread()->refresh_class_for_native_layout_cache();
 
-        builtin_scope = HeapPtr<Scope>(
-            get_default_thread()->make_internal_raw<Scope>(nullptr));
         ModuleObject *builtins_module = global_builtins_module().extract();
 
         auto install_builtin_binding = [&](TValue<String> name, Value value) {
-            builtin_scope.extract()->set_by_name(name, value);
             bool installed = builtins_module->set_own_property(name, value);
             assert(installed);
             (void)installed;
@@ -452,22 +446,6 @@ namespace cl
         {
             throw std::runtime_error(
                 "failed to initialize trusted builtins.py");
-        }
-        for(uint32_t entry_idx = 0; entry_idx < builtin_scope->entry_count();
-            ++entry_idx)
-        {
-            if(!builtin_scope->entry_is_live(entry_idx))
-            {
-                continue;
-            }
-            TValue<String> name = builtin_scope->get_entry_key(entry_idx);
-            Value value = builtin_scope->get_by_name(name);
-            if(!value.is_not_present())
-            {
-                bool installed = builtins_module->set_own_property(name, value);
-                assert(installed);
-                (void)installed;
-            }
         }
     }
 

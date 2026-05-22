@@ -7,6 +7,7 @@
 #include "module_global_cache.h"
 #include "module_object.h"
 #include "owned.h"
+#include "scope.h"
 #include "typed_value.h"
 #include "value.h"
 #include <algorithm>

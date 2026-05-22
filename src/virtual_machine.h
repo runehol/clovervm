@@ -16,7 +16,6 @@
 #include "intern_store.h"
 #include "module_object.h"
 #include "owned.h"
-#include "scope.h"
 #include "str.h"
 #include "typed_value.h"
 #include "value.h"
@@ -93,8 +92,6 @@ namespace cl
                 });
         }
 
-        HeapPtr<Scope> get_builtin_scope() const { return builtin_scope; }
-        Scope *builtin_scope_ptr() const { return builtin_scope.extract(); }
         Value get_range_builtin() const { return range_builtin; }
         TValue<ModuleObject> global_builtins_module() const
         {
@@ -260,7 +257,7 @@ namespace cl
         void install_bootstrap_string_class();
         void install_bootstrap_tuple_class();
         void initialize_builtin_types();
-        void initialize_builtin_scope();
+        void initialize_builtins();
 
         GlobalHeap refcounted_global_heap;
         GlobalHeap interned_global_heap;
@@ -281,7 +278,6 @@ namespace cl
         std::array<CodeObject *, MaxCloverFunctionEntryAdapterArgs + 1>
             clover_function_entry_adapters = {};
         std::vector<ClassObject *> builtin_classes;
-        OwnedHeapPtr<Scope> builtin_scope;
         Owned<Value> range_builtin;
         ModuleObject *global_builtins_module_ = nullptr;
         bool safepoint_requested_ = false;

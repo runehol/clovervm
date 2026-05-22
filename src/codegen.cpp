@@ -560,7 +560,10 @@ namespace cl
             }
 
             TValue<String> name = ast_string_constant(av, node_idx);
-            Value value = active_vm()->builtin_scope_ptr()->get_by_name(name);
+            Value value = active_vm()
+                              ->global_builtins_module()
+                              .extract()
+                              ->get_own_property(name);
             if(!value.is_ptr() || value.get_ptr<Object>()->native_layout_id() !=
                                       NativeLayoutId::ClassObject)
             {
