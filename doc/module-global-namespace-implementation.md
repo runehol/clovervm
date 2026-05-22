@@ -156,8 +156,8 @@ First test hooks for the new path:
 - [x] Add C++ accessors for the predefined `__name__` slot.
 - [x] Add C++ accessors for the predefined `__builtins__` slot.
 - [x] Add construction helpers on `ThreadState`.
-- [ ] Create a startup module object.
-- [ ] Create or reuse a shared interactive module object.
+- [x] Create a startup module object.
+- [x] Create or reuse a shared interactive module object.
 - [x] Keep current `Scope`-backed global execution unchanged while module objects
       are introduced.
 - [x] Add tests for constructing a module object.
@@ -222,8 +222,6 @@ First test hooks for the new path:
       the builtins namespace.
 - [x] Add tests for assigning and deleting module `__builtins__` while it remains
       read-only through normal module-global store/delete helpers.
-- [ ] Add dict-like `__builtins__` traversal later, after dict namespace
-      semantics and cache invalidation have a dedicated design.
 
 ## Stage 4: Module Context In Code Objects, Functions, And Frames
 
@@ -346,6 +344,8 @@ First test hooks for the new path:
 
 - [ ] Add tests that functions use their defining module, not the caller's
       module, for global lookup.
+- [ ] Add dict-like `__builtins__` traversal later, after dict namespace
+      semantics and cache invalidation have a dedicated design.
 
 ## Stage 11: Class Namespace Follow-Up
 
@@ -368,6 +368,5 @@ First test hooks for the new path:
 - [ ] Update docs that mention module globals as `Scope` storage.
 - [ ] Update architecture references if new module/object docs were added during
       implementation.
-- [ ] Run `ninja -C build-debug all check`.
 - [ ] For performance-sensitive cache or interpreter changes, run release
       benchmarks or relevant targeted benchmarks.
