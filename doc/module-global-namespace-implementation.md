@@ -363,7 +363,7 @@ metadata they need for frame storage and class namespace harvesting.
 - [x] Preserve `Scope` name-to-slot metadata.
 - [x] Preserve `Scope` insertion-order metadata for dictionary-like presentation
       when needed.
-- [ ] Replace Stage 3 semantic C++ helper coverage with Python-level interpreter
+- [x] Replace Stage 3 semantic C++ helper coverage with Python-level interpreter
       tests once codegen emits module-global instructions; keep only low-level
       descriptor/validity helper tests that are not observable from Python.
 - [x] Rename remaining `module_scope` fields and helpers to semantic names.

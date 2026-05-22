@@ -123,34 +123,6 @@ TEST(ModuleGlobal, ReadBuiltinsModuleSlotHitIsCacheableAndAttached)
     EXPECT_EQ(1u, builtins->attached_module_builtins_validity_cell_count());
 }
 
-TEST(ModuleGlobal, MissingBuiltinsBindingUsesVirtualMachineDefault)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-
-    TValue<String> module_name =
-        context.vm().get_or_create_interned_string_value(L"module");
-    TValue<String> builtins_name =
-        context.vm().get_or_create_interned_string_value(L"builtins");
-    TValue<String> global_name =
-        context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
-    ModuleObject *builtins =
-        context.thread()->make_module_object(builtins_name);
-    ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(9)));
-    context.vm().set_global_builtins_module(builtins);
-
-    ModuleGlobalReadDescriptor descriptor =
-        resolve_module_global_read_descriptor(module, global_name);
-
-    ASSERT_TRUE(descriptor.is_found());
-    EXPECT_TRUE(descriptor.is_cacheable());
-    EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, descriptor.plan.kind);
-    EXPECT_EQ(builtins, descriptor.plan.slot_plan.storage_owner);
-    EXPECT_EQ(Value::from_smi(9),
-              load_module_global_from_plan(descriptor.plan));
-}
-
 TEST(ModuleGlobal, NonModuleBuiltinsBindingProducesUncacheablePlan)
 {
     test::VmTestContext context;
@@ -202,40 +174,6 @@ TEST(ModuleGlobal, MissingNameInModuleBuiltinsIsUncacheableMiss)
     EXPECT_TRUE(load_module_global_from_plan(descriptor.plan).is_not_present());
 }
 
-TEST(ModuleGlobal, DeletingModuleBindingRevealsBuiltinWithoutMutatingModule)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-
-    TValue<String> module_name =
-        context.vm().get_or_create_interned_string_value(L"module");
-    TValue<String> builtins_name =
-        context.vm().get_or_create_interned_string_value(L"builtins");
-    TValue<String> global_name =
-        context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
-    ModuleObject *builtins =
-        context.thread()->make_module_object(builtins_name);
-    ASSERT_TRUE(module->set_own_property(global_name, Value::from_smi(1)));
-    ASSERT_TRUE(builtins->set_own_property(global_name, Value::from_smi(2)));
-    module->set_builtins_binding(Value::from_oop(builtins));
-
-    ASSERT_TRUE(delete_module_global(module, global_name));
-
-    ModuleGlobalReadDescriptor descriptor =
-        resolve_module_global_read_descriptor(module, global_name);
-
-    ASSERT_TRUE(descriptor.is_found());
-    EXPECT_TRUE(descriptor.is_cacheable());
-    EXPECT_EQ(ModuleGlobalReadPlanKind::Slot, descriptor.plan.kind);
-    EXPECT_EQ(builtins, descriptor.plan.slot_plan.storage_owner);
-    EXPECT_EQ(Value::from_smi(2), descriptor.lookup_value);
-    EXPECT_EQ(Value::from_smi(2),
-              load_module_global_from_plan(descriptor.plan));
-    EXPECT_TRUE(module->get_own_property(global_name).is_not_present());
-    EXPECT_EQ(Value::from_smi(2), builtins->get_own_property(global_name));
-}
-
 TEST(ModuleGlobal, StoreExistingModuleSlotIsCacheableAndDoesNotInvalidate)
 {
     test::VmTestContext context;
@@ -261,30 +199,6 @@ TEST(ModuleGlobal, StoreExistingModuleSlotIsCacheableAndDoesNotInvalidate)
 
     EXPECT_TRUE(cell->is_valid());
     EXPECT_EQ(Value::from_smi(2), module->get_own_property(global_name));
-}
-
-TEST(ModuleGlobal, StoreMissingModuleSlotAddsUncacheableProperty)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-
-    TValue<String> module_name =
-        context.vm().get_or_create_interned_string_value(L"module");
-    TValue<String> global_name =
-        context.vm().get_or_create_interned_string_value(L"value");
-    ModuleObject *module = context.thread()->make_module_object(module_name);
-
-    ModuleGlobalWriteDescriptor descriptor =
-        resolve_module_global_write_descriptor(module, global_name);
-    ASSERT_TRUE(descriptor.is_found());
-    EXPECT_FALSE(descriptor.is_cacheable());
-    EXPECT_EQ(ModuleGlobalMutationPlanKind::AddOwnProperty,
-              descriptor.plan.kind);
-
-    EXPECT_TRUE(store_module_global_from_plan(module, descriptor.plan,
-                                              Value::from_smi(3)));
-
-    EXPECT_EQ(Value::from_smi(3), module->get_own_property(global_name));
 }
 
 TEST(ModuleGlobal, StoreBuiltinsBindingIsReadOnly)

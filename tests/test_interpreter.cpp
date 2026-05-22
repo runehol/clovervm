@@ -554,6 +554,16 @@ TEST(Interpreter, del_missing_global_raises_name_error)
                         L"NameError: name 'missing' is not defined");
 }
 
+TEST(Interpreter, module_without_explicit_builtins_uses_default_builtins)
+{
+    test::FileRunner file_runner(L"range(1)\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(actual.is_ptr());
+    ASSERT_EQ(NativeLayoutId::RangeIterator,
+              actual.get_ptr<Object>()->native_layout_id());
+}
+
 TEST(Interpreter, del_local_variable_removes_binding)
 {
     expect_python_error(L"def clear(value):\n"
