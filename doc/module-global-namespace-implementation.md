@@ -56,18 +56,90 @@ shape-backed and every membership change transitions shape.
 
 ## Stage 0: Map The Current Scope World
 
-- [ ] Inventory every `CodeObject::module_scope` use.
-- [ ] Inventory every codegen path that allocates module/global `Scope` slots.
-- [ ] Inventory where codegen creates holes in module scope for builtin
+- [x] Inventory every `CodeObject::module_scope` use.
+- [x] Inventory every codegen path that allocates module/global `Scope` slots.
+- [x] Inventory where codegen creates holes in module scope for builtin
       shadowing or parent lookup.
-- [ ] Inventory interpreter handlers that read module globals by scope slot.
-- [ ] Inventory interpreter handlers that write or delete module globals by scope
+- [x] Inventory interpreter handlers that read module globals by scope slot.
+- [x] Inventory interpreter handlers that write or delete module globals by scope
       slot.
-- [ ] Inventory tests that directly inspect `module_scope`.
-- [ ] Inventory startup, REPL, and interactive paths that create or reuse a
+- [x] Inventory tests that directly inspect `module_scope`.
+- [x] Inventory startup, REPL, and interactive paths that create or reuse a
       module/global `Scope`.
-- [ ] Identify the smallest test hooks needed to exercise module-object global
+- [x] Identify the smallest test hooks needed to exercise module-object global
       storage before codegen emits the new instructions.
+
+### Stage 0 Notes
+
+Current ownership:
+
+- `CodeObject` owns `MemberHeapPtr<Scope> module_scope`.
+- `ThreadState::compile` creates a fresh `Scope` parented to
+  `VirtualMachine::builtin_scope_ptr()`.
+- `ThreadState::compile_in_scope` and the REPL reuse a caller-provided
+  `module_scope` for interactive persistence.
+- `codegen_module` creates a fresh module `Scope`; `codegen_module_in_scope`
+  threads an existing one into `CodeObjectBuilder`.
+- Function and class codegen receive the surrounding `module_scope`, so nested
+  code objects keep using the defining module scope.
+
+Current codegen path:
+
+- Scope analysis allocates global read slots with
+  `Scope::register_slot_index_for_read`.
+- Scope analysis allocates global write/delete slots with
+  `Scope::register_slot_index_for_write`.
+- Global variable reads emit `LdaGlobal [slot]`.
+- Global variable writes emit `StaGlobal [slot]`.
+- Global variable deletes emit `DelGlobal [slot]`.
+- Trusted Clover builtin-class constants still consult
+  `VirtualMachine::builtin_scope_ptr()` directly during codegen.
+
+Current builtin-shadowing hole:
+
+- `Scope::register_slot_index_for_read` recursively registers the name in the
+  parent scope.
+- The module slot value is initialized as `Value::not_present(parent_slot_idx)`.
+- `Scope::get_by_slot_index_fastpath_only` follows that encoded parent slot for
+  builtin fallback.
+- `Scope::register_slot_index_for_write` initializes
+  `Value::not_present(-1)`, so stores and deletes target only the module scope.
+
+Current interpreter path:
+
+- `op_lda_global` reads `code_object->module_scope` by slot index and uses the
+  parent-slot hole for builtin fallback.
+- `op_sta_global` writes `code_object->module_scope` by slot index and uses the
+  slow path when reviving a deleted named slot.
+- `op_del_global` checks module slot liveness and writes `Value::not_present()`;
+  it does not delete from the builtin parent scope.
+- Error formatting recovers global names from
+  `module_scope->get_name_by_slot_index`.
+
+Current tests:
+
+- Codegen tests assert `LdaGlobal`, `StaGlobal`, and `DelGlobal` slot operands.
+- `Interpreter.builtin_scope_lookup` asserts that a module global slot can hold a
+  builtin fallback value through the parent-slot fast path.
+- `Interpreter.global_delete_does_not_delete_builtin_fallback` and
+  `Interpreter.global_delete_reveals_builtin_after_shadow_delete` cover delete
+  behavior around builtin fallback.
+- `Interpreter.interactive_assignment_returns_none_and_persists_scope` covers
+  interactive persistence through a shared module `Scope`.
+- Many interpreter and attribute tests inspect `code_obj->module_scope`
+  directly to fetch top-level definitions or inject globals.
+- There is no dedicated `__builtins__` behavior test yet.
+- There is no dedicated cross-module caller/defining-module test yet.
+
+First test hooks for the new path:
+
+- C++ helper tests for constructing a shape-backed `ModuleObject`.
+- C++ helper tests for ordinary module property get/set/delete.
+- C++ helper tests for predefined `__builtins__` get/set/delete.
+- C++ helper tests for validity invalidation on module insert/delete and
+  `__builtins__` assignment.
+- Direct interpreter or bytecode-builder tests for new module-global opcodes
+  before ordinary codegen switches over.
 
 ## Stage 1: Minimal Shape-Backed ModuleObject
 
@@ -137,6 +209,8 @@ shape-backed and every membership change transitions shape.
 
 - [ ] Add an explicit defining-module reference to `CodeObject` or its successor
       module-context holder.
+- [ ] Keep `CodeObject::module_scope` alongside the defining-module reference
+      while old `Scope`-slot bytecode still exists.
 - [ ] Add an explicit defining-module reference to managed `Function` objects.
 - [ ] Decide whether resolved builtins are captured by functions or resolved into
       frames at entry.
@@ -146,8 +220,9 @@ shape-backed and every membership change transitions shape.
 - [ ] Thread `ModuleObject` through class code-object construction.
 - [ ] Thread `ModuleObject` through native-to-managed entry helpers.
 - [ ] Thread the shared interactive module object through REPL compilation.
-- [ ] Keep `module_scope` compatibility fields only as a bridge while old
-      bytecode still needs them.
+- [ ] Treat the double context as the migration bridge:
+      `module_scope` serves old instructions, and `defining_module` serves new
+      helpers, instructions, and caches.
 - [ ] Add tests that functions use their defining module, not the caller's
       module, for global lookup.
 - [ ] Add tests that interactive compilation preserves one shared module object.
@@ -225,6 +300,8 @@ shape-backed and every membership change transitions shape.
 - [ ] Preserve `Scope` insertion-order metadata for dictionary-like presentation
       when needed.
 - [ ] Rename remaining `module_scope` fields and helpers to semantic names.
+- [ ] Remove the double `CodeObject` module context once no old `Scope`-slot
+      global instructions or tests depend on `module_scope`.
 - [ ] Delete transitional compatibility paths.
 
 ## Stage 9: Module Attributes And Mapping Views

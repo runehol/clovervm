@@ -120,14 +120,18 @@ builtins.
 
 ## Code Objects, Functions, And Frames
 
-The current implementation stores module context on `CodeObject`. The
-replacement for `CodeObject::module_scope` should be semantic module references,
-not a parent scope chain.
+The current implementation stores module context on `CodeObject` as
+`module_scope`. During migration, `CodeObject` should carry both the old
+`module_scope` and a semantic defining-module reference. The old scope pointer
+keeps existing slot-index bytecode working while the new module-object path is
+built. The end state should remove `CodeObject::module_scope`, not replace it
+with another parent scope chain.
 
 Conceptually:
 
 ```text
 CodeObject
+  module scope (migration only)
   defining module
 
 Function
@@ -256,18 +260,18 @@ The exact storage may be shape-backed module storage, a Python dict-like
 namespace, or a future namespace wrapper. The semantic operation is mapping
 lookup, not module attribute lookup.
 
-The important field names should remain semantic. Prefer an explicit defining
-module plus resolved builtins namespace:
+The important field names should remain semantic. `CodeObject` needs a defining
+module reference, not a generic namespace search path:
 
 ```cpp
 MemberHeapPtr<ModuleObject> defining_module;
-Member<Value> builtins_namespace;
 ```
 
-over a generic search-path array. There are exactly two namespaces in normal
-global lookup, and they have different meanings. The first is named for the
-module that defined the code, not for the `LOAD_GLOBAL` operation that happens
-to use that module's namespace. The second is not necessarily a module.
+Resolved builtins belong on the function/frame side of execution context, not on
+`CodeObject`. There are exactly two namespaces in normal global lookup, and they
+have different meanings. The first is named for the module that defined the code,
+not for the `LOAD_GLOBAL` operation that happens to use that module's namespace.
+The second is not necessarily a module.
 
 ## Module Objects
 
