@@ -162,12 +162,6 @@ namespace cl
             return code_obj->get_local_scope_ptr();
         }
 
-        Scope *module_scope() const
-        {
-            assert(code_obj != nullptr);
-            return code_obj->get_legacy_module_scope_ptr();
-        }
-
         Scope *local_scope() const
         {
             assert(code_obj != nullptr);
@@ -255,16 +249,13 @@ namespace cl
         uint32_t emit_clear_local(uint32_t source_offset, uint32_t reg);
         uint32_t emit_ldar(uint32_t source_offset, uint32_t reg);
         uint32_t emit_load_local_checked(uint32_t source_offset, uint32_t reg);
-        uint32_t emit_lda_global(uint32_t source_offset, uint32_t slot_idx);
         uint32_t emit_lda_module_global(uint32_t source_offset,
                                         uint8_t name_idx);
         uint32_t emit_star(uint32_t source_offset, uint32_t reg);
         uint32_t emit_star(uint32_t source_offset, OutgoingArgReg reg);
-        uint32_t emit_sta_global(uint32_t source_offset, uint32_t slot_idx);
         uint32_t emit_sta_module_global(uint32_t source_offset,
                                         uint8_t name_idx);
         uint32_t emit_del_local(uint32_t source_offset, uint32_t reg);
-        uint32_t emit_del_global(uint32_t source_offset, uint32_t slot_idx);
         uint32_t emit_del_module_global(uint32_t source_offset,
                                         uint8_t name_idx);
         uint32_t emit_lda_none(uint32_t source_offset);
@@ -420,8 +411,6 @@ namespace cl
                                      uint32_t first_reg, uint32_t second_reg);
         uint32_t emit_opcode_reg_jump(uint32_t source_offset, Bytecode c,
                                       uint32_t reg, JumpTarget &target);
-        uint32_t emit_opcode_uint32(uint32_t source_offset, Bytecode c,
-                                    uint32_t k);
         uint32_t emit_jump(uint32_t source_offset, Bytecode c,
                            JumpTarget &target);
         void set_int16(uint32_t pos, int16_t v);

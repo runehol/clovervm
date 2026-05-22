@@ -255,12 +255,6 @@ namespace cl
         return emit_opcode_reg(source_offset, Bytecode::LoadLocalChecked, reg);
     }
 
-    uint32_t CodeObjectBuilder::emit_lda_global(uint32_t source_offset,
-                                                uint32_t slot_idx)
-    {
-        return emit_opcode_uint32(source_offset, Bytecode::LdaGlobal, slot_idx);
-    }
-
     uint32_t CodeObjectBuilder::emit_lda_module_global(uint32_t source_offset,
                                                        uint8_t name_idx)
     {
@@ -280,12 +274,6 @@ namespace cl
         return emit_opcode_reg(source_offset, Bytecode::Star, reg);
     }
 
-    uint32_t CodeObjectBuilder::emit_sta_global(uint32_t source_offset,
-                                                uint32_t slot_idx)
-    {
-        return emit_opcode_uint32(source_offset, Bytecode::StaGlobal, slot_idx);
-    }
-
     uint32_t CodeObjectBuilder::emit_sta_module_global(uint32_t source_offset,
                                                        uint8_t name_idx)
     {
@@ -298,12 +286,6 @@ namespace cl
                                                uint32_t reg)
     {
         return emit_opcode_reg(source_offset, Bytecode::DelLocal, reg);
-    }
-
-    uint32_t CodeObjectBuilder::emit_del_global(uint32_t source_offset,
-                                                uint32_t slot_idx)
-    {
-        return emit_opcode_uint32(source_offset, Bytecode::DelGlobal, slot_idx);
     }
 
     uint32_t CodeObjectBuilder::emit_del_module_global(uint32_t source_offset,
@@ -997,19 +979,6 @@ namespace cl
         emplace_back(source_offset, 0);
         emplace_back(source_offset, 0);
         target.add_relocation(pos);
-
-        return result;
-    }
-
-    uint32_t CodeObjectBuilder::emit_opcode_uint32(uint32_t source_offset,
-                                                   Bytecode c, uint32_t k)
-    {
-        assert(c != Bytecode::Invalid);
-        uint32_t result = emplace_back(source_offset, uint8_t(c));
-        emplace_back(source_offset, (k >> 0) & 0xff);
-        emplace_back(source_offset, (k >> 8) & 0xff);
-        emplace_back(source_offset, (k >> 16) & 0xff);
-        emplace_back(source_offset, (k >> 24) & 0xff);
 
         return result;
     }

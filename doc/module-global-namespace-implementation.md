@@ -322,10 +322,9 @@ First test hooks for the new path:
 
 Slice 1 has landed: ordinary global reads, writes, and deletes now emit
 `LdaModuleGlobal`, `StaModuleGlobal`, and `DelModuleGlobal`. The new bytecode
-instructions carry name constants, so new global read/delete `NameError`
-reporting no longer depends on scope-owned runtime slots. Legacy `LdaGlobal`,
-`StaGlobal`, and `DelGlobal` still recover names through the module-owned legacy
-scope until those opcodes are removed.
+instructions carry name constants, so global read/delete `NameError` reporting
+no longer depends on scope-owned runtime slots. The legacy `LdaGlobal`,
+`StaGlobal`, and `DelGlobal` bytecodes have now been removed.
 
 Nested functions and class bodies now receive the defining module from their
 enclosing code object. Function globals therefore resolve through the defining
@@ -355,9 +354,9 @@ metadata they need for frame storage and class namespace harvesting.
 
 ## Stage 8: Retire Module Values From Scope
 
-- [ ] Remove interpreter use of `Scope` APIs for module runtime value lookup.
-- [ ] Remove interpreter use of `Scope` APIs for module runtime stores.
-- [ ] Remove interpreter use of `Scope` APIs for module runtime deletes.
+- [x] Remove interpreter use of `Scope` APIs for module runtime value lookup.
+- [x] Remove interpreter use of `Scope` APIs for module runtime stores.
+- [x] Remove interpreter use of `Scope` APIs for module runtime deletes.
 - [ ] Remove parent-slot encoding for module/builtin lookup from `Scope`.
 - [ ] Remove scope-owned runtime value cells once no remaining non-module user
       depends on them.
@@ -369,6 +368,14 @@ metadata they need for frame storage and class namespace harvesting.
       descriptor/validity helper tests that are not observable from Python.
 - [ ] Rename remaining `module_scope` fields and helpers to semantic names.
 - [ ] Delete transitional compatibility paths.
+
+### Stage 8 Notes
+
+The legacy slot-index global bytecodes are gone. `LdaGlobal`, `StaGlobal`, and
+`DelGlobal` no longer exist in the bytecode enum, builder API, disassembler, or
+interpreter dispatch table, so interpreter module-global execution now goes
+through the module-object opcodes exclusively. Codegen also no longer eagerly
+creates a legacy module scope for generated modules, functions, or classes.
 
 ## Stage 9: Module Attributes And Mapping Views
 

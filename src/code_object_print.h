@@ -158,12 +158,6 @@ template <> struct fmt::formatter<cl::Bytecode>
             case cl::Bytecode::Star15:
                 return format_to(out, "Star15");
 
-            case cl::Bytecode::LdaGlobal:
-                return format_to(out, "LdaGlobal");
-            case cl::Bytecode::StaGlobal:
-                return format_to(out, "StaGlobal");
-            case cl::Bytecode::DelGlobal:
-                return format_to(out, "DelGlobal");
             case cl::Bytecode::LdaModuleGlobal:
                 return format_to(out, "LdaModuleGlobal");
             case cl::Bytecode::StaModuleGlobal:
@@ -488,19 +482,6 @@ template <> struct fmt::formatter<cl::CodeObject>
         format_to(out, "{}", actual_target);
     }
 
-    static uint32_t read_uint32_le(const uint8_t *p)
-    {
-        return (p[0] << 0) | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
-    }
-
-    template <typename Out>
-    void disassemble_global_ref(const cl::CodeObject &code_obj, Out &out,
-                                uint32_t pc) const
-    {
-        uint32_t v = read_uint32_le(&code_obj.code[pc]);
-        format_to(out, "[{}]", v);
-    }
-
     template <typename Out>
     uint32_t disassemble_instruction(const cl::CodeObject &code_obj, Out &out,
                                      uint32_t pc) const
@@ -569,14 +550,6 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::Star13:
             case cl::Bytecode::Star14:
             case cl::Bytecode::Star15:
-                break;
-
-            case cl::Bytecode::LdaGlobal:
-            case cl::Bytecode::StaGlobal:
-            case cl::Bytecode::DelGlobal:
-                format_to(out, " ");
-                disassemble_global_ref(code_obj, out, pc);
-                pc += 4;
                 break;
 
             case cl::Bytecode::LdaModuleGlobal:

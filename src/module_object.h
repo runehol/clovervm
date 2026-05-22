@@ -85,7 +85,6 @@ namespace cl
         {
             legacy_module_scope_ = scope;
         }
-        Scope *get_or_create_legacy_module_scope();
 
     private:
         static constexpr uint32_t module_extra_inline_attribute_slot_count =

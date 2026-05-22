@@ -191,18 +191,6 @@ namespace cl
         }
     }
 
-    Scope *ModuleObject::get_or_create_legacy_module_scope()
-    {
-        Scope *scope = legacy_module_scope();
-        if(scope != nullptr)
-        {
-            return scope;
-        }
-        scope = make_internal_raw<Scope>(active_vm()->builtin_scope_ptr());
-        legacy_module_scope_ = scope;
-        return scope;
-    }
-
     static void install_module_instance_root_shape(ClassObject *cls)
     {
         TValue<String> dunder_class_name = interned_string(L"__class__");

@@ -2260,7 +2260,6 @@ namespace cl
                                  CodeObjectBuilder *parent_code_obj,
                                  int32_t node_idx, LanguageMode language_mode)
     {
-        module->get_or_create_legacy_module_scope();
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
         AstChildren param_children = av.children[children[0]];
@@ -2299,7 +2298,6 @@ namespace cl
                               CodeObjectBuilder *parent_code_obj,
                               int32_t node_idx, LanguageMode language_mode)
     {
-        module->get_or_create_legacy_module_scope();
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
         int32_t body_idx = children[1];
@@ -2344,7 +2342,6 @@ namespace cl
                                          LanguageMode language_mode,
                                          ModuleResultMode result_mode)
     {
-        module->get_or_create_legacy_module_scope();
         TValue<ModuleObject> defining_module =
             TValue<ModuleObject>::from_oop(module);
         CodeObjectBuilder module_obj(

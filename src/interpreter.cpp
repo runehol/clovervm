@@ -81,11 +81,6 @@ namespace cl
 #define A_OR_B_REFCOUNTED_PTR()                                                \
     (((a.as.integer | b.as.integer) & value_refcounted_ptr_tag) != 0)
 
-    static uint32_t read_uint32_le(const uint8_t *p)
-    {
-        return (p[0] << 0) | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
-    }
-
     static int16_t read_int16_le(const uint8_t *p)
     {
 #if 1
@@ -185,20 +180,6 @@ namespace cl
         ExceptionalTarget target = set_name_error_and_resolve_frame_exit(
             thread, fp, pc, code_object,
             code_object->local_scope.extract()->get_name_by_slot_index(
-                slot_idx));
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
-    }
-
-    NOINLINE INTERP_CC Value global_name_error(PARAMS)
-    {
-        int32_t slot_idx = read_uint32_le(&pc[1]);
-        ExceptionalTarget target = set_name_error_and_resolve_frame_exit(
-            thread, fp, pc, code_object,
-            code_object->get_legacy_module_scope_ptr()->get_name_by_slot_index(
                 slot_idx));
         fp = target.fp;
         code_object = target.code_object;
@@ -1817,76 +1798,6 @@ namespace cl
     LDAR_STAR_FASTPATH(14);
     LDAR_STAR_FASTPATH(15);
 #undef LDAR_STAR_FASTPATH
-
-    NOINLINE static INTERP_CC Value op_lda_global_slow_path(PARAMS)
-    {
-        START(5);
-        int32_t slot_idx = read_uint32_le(&pc[1]);
-        Value v = code_object->get_legacy_module_scope_ptr()->get_by_slot_index(
-            slot_idx);
-        if(unlikely(v.is_not_present()))
-        {
-            MUSTTAIL return global_name_error(ARGS);
-        }
-        accumulator = v;
-        COMPLETE();
-    }
-
-    static INTERP_CC Value op_lda_global(PARAMS)
-    {
-        START(5);
-        int32_t slot_idx = read_uint32_le(&pc[1]);
-        Value v = code_object->get_legacy_module_scope_ptr()
-                      ->get_by_slot_index_fastpath_only(slot_idx);
-        if(unlikely(v.is_not_present()))
-        {
-            MUSTTAIL return op_lda_global_slow_path(ARGS);
-        }
-        accumulator = v;
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_sta_global_slow(PARAMS)
-    {
-        START(5);
-        int32_t slot_idx = read_uint32_le(&pc[1]);
-        code_object->get_legacy_module_scope_ptr()->set_by_slot_index(
-            slot_idx, accumulator);
-        COMPLETE();
-    }
-
-    static INTERP_CC Value op_sta_global(PARAMS)
-    {
-        START(5);
-        int32_t slot_idx = read_uint32_le(&pc[1]);
-        Scope *module_scope = code_object->get_legacy_module_scope_ptr();
-        if(unlikely(module_scope->set_by_slot_index_needs_slow_path(
-               slot_idx, accumulator)))
-        {
-            MUSTTAIL return op_sta_global_slow(ARGS);
-        }
-        HeapObject *zct_object =
-            module_scope->write_by_slot_index_returning_zero_ref(slot_idx,
-                                                                 accumulator);
-        if(unlikely(zct_object != nullptr))
-        {
-            thread->add_to_zero_count_table_if_needed(zct_object);
-        }
-        COMPLETE();
-    }
-
-    static INTERP_CC Value op_del_global(PARAMS)
-    {
-        START(5);
-        int32_t slot_idx = read_uint32_le(&pc[1]);
-        Scope *module_scope = code_object->get_legacy_module_scope_ptr();
-        if(unlikely(!module_scope->slot_is_live(slot_idx)))
-        {
-            MUSTTAIL return global_name_error(ARGS);
-        }
-        module_scope->set_by_slot_index(slot_idx, Value::not_present());
-        COMPLETE();
-    }
 
     static ALWAYSINLINE Value
     load_module_global_slot_from_plan_inline(const ModuleGlobalSlotPlan &plan)
@@ -3604,9 +3515,6 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::TestGreaterEqual, op_test_greater_equal);
         SET_TABLE_ENTRY(Bytecode::TestGreater, op_test_greater);
 
-        SET_TABLE_ENTRY(Bytecode::LdaGlobal, op_lda_global);
-        SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);
-        SET_TABLE_ENTRY(Bytecode::DelGlobal, op_del_global);
         SET_TABLE_ENTRY(Bytecode::LdaModuleGlobal, op_lda_module_global);
         SET_TABLE_ENTRY(Bytecode::StaModuleGlobal, op_sta_module_global);
         SET_TABLE_ENTRY(Bytecode::DelModuleGlobal, op_del_module_global);
