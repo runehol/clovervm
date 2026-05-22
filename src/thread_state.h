@@ -290,10 +290,6 @@ namespace cl
         CodeObject *compile(const wchar_t *str, StartRule start_rule);
         CodeObject *compile(const wchar_t *str, StartRule start_rule,
                             const wchar_t *module_name);
-        CodeObject *compile_in_scope(const wchar_t *str, StartRule start_rule,
-                                     const wchar_t *module_name,
-                                     Scope *module_scope,
-                                     LanguageMode language_mode);
         CodeObject *compile_in_module(const wchar_t *str, StartRule start_rule,
                                       ModuleObject *module,
                                       LanguageMode language_mode);

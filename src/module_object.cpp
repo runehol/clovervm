@@ -68,8 +68,7 @@ namespace cl
         : SlotObject(cls, native_layout), name_binding(_name.raw_value()),
           builtins_binding(_builtins), module_globals_validity_cell(nullptr),
           module_builtins_validity_cell(nullptr),
-          attached_module_builtins_validity_cells(),
-          legacy_module_scope_(nullptr)
+          attached_module_builtins_validity_cells()
     {
         if(!_builtins.is_not_present())
         {

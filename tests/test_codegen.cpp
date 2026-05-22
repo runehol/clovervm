@@ -2,8 +2,8 @@
 #include "code_object_print.h"
 #include "codegen.h"
 #include "float.h"
+#include "module_object.h"
 #include "parser.h"
-#include "scope.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -32,10 +32,13 @@ std::string bytecode_str_from_interactive(const wchar_t *expr)
 std::string trusted_builtin_bytecode_str_from_file(const wchar_t *expr)
 {
     test::VmTestContext test_context;
-    CodeObject *code_obj = test_context.thread()->compile_in_scope(
-        expr, StartRule::File, L"<test-builtin>",
-        test_context.vm().builtin_scope_ptr(),
-        LanguageMode::TrustedCloverExtensions);
+    TValue<String> module_name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"<test-builtin>");
+    ModuleObject *module =
+        test_context.thread()->make_module_object(module_name);
+    CodeObject *code_obj = test_context.thread()->compile_in_module(
+        expr, StartRule::File, module, LanguageMode::TrustedCloverExtensions);
     return fmt::to_string(*code_obj);
 }
 
@@ -53,21 +56,6 @@ TEST(Codegen, simple2)
     std::string actual = bytecode_str_from_file(L"(1 << 4) + 3");
 
     EXPECT_EQ(expected, actual);
-}
-
-TEST(Codegen, module_globals_do_not_allocate_legacy_scope_slots)
-{
-    test::VmTestContext test_context;
-    CodeObject *code_obj = test_context.compile_file(L"value = 1\n"
-                                                     L"value\n"
-                                                     L"len\n"
-                                                     L"del value\n");
-    Scope *legacy_scope = code_obj->get_legacy_module_scope_ptr();
-
-    if(legacy_scope != nullptr)
-    {
-        EXPECT_EQ(0u, legacy_scope->size());
-    }
 }
 
 TEST(Codegen, assignment2)

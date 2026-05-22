@@ -159,10 +159,6 @@ namespace cl
         {
             return defining_module.value();
         }
-        Scope *get_legacy_module_scope_ptr() const
-        {
-            return get_defining_module().extract()->legacy_module_scope();
-        }
 
         bool has_varargs() const
         {

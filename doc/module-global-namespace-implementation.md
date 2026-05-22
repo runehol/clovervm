@@ -366,8 +366,8 @@ metadata they need for frame storage and class namespace harvesting.
 - [ ] Replace Stage 3 semantic C++ helper coverage with Python-level interpreter
       tests once codegen emits module-global instructions; keep only low-level
       descriptor/validity helper tests that are not observable from Python.
-- [ ] Rename remaining `module_scope` fields and helpers to semantic names.
-- [ ] Delete transitional compatibility paths.
+- [x] Rename remaining `module_scope` fields and helpers to semantic names.
+- [x] Delete transitional compatibility paths.
 
 ### Stage 8 Notes
 
@@ -376,6 +376,12 @@ The legacy slot-index global bytecodes are gone. `LdaGlobal`, `StaGlobal`, and
 interpreter dispatch table, so interpreter module-global execution now goes
 through the module-object opcodes exclusively. Codegen also no longer eagerly
 creates a legacy module scope for generated modules, functions, or classes.
+
+The module-owned legacy scope bridge has been removed. `ModuleObject` no longer
+stores a legacy scope pointer, `CodeObject` no longer exposes a legacy module
+scope accessor, and the transitional `ThreadState::compile_in_scope` entrypoint
+has been deleted. The remaining `Scope` uses are local/class frame metadata and
+the separate builtin-scope table.
 
 ## Stage 9: Module Attributes And Mapping Views
 

@@ -340,25 +340,6 @@ namespace cl
             av, module, LanguageMode::StandardsCompliant, result_mode);
     }
 
-    CodeObject *ThreadState::compile_in_scope(const wchar_t *str,
-                                              StartRule start_rule,
-                                              const wchar_t *module_name,
-                                              Scope *module_scope,
-                                              LanguageMode language_mode)
-    {
-        ActivationScope activation_scope(this);
-
-        CompilationUnit input(str);
-        TokenVector tv = tokenize(input);
-        AstVector av = parse(*machine, tv, start_rule);
-        ModuleResultMode result_mode = start_rule == StartRule::Interactive
-                                           ? ModuleResultMode::Interactive
-                                           : ModuleResultMode::File;
-        ModuleObject *module = make_module_object(interned_string(module_name));
-        module->set_legacy_module_scope(module_scope);
-        return codegen_module_in_module(av, module, language_mode, result_mode);
-    }
-
     CodeObject *ThreadState::compile_in_module(const wchar_t *str,
                                                StartRule start_rule,
                                                ModuleObject *module,

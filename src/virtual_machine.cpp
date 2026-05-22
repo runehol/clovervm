@@ -404,7 +404,6 @@ namespace cl
         builtin_scope = HeapPtr<Scope>(
             get_default_thread()->make_internal_raw<Scope>(nullptr));
         ModuleObject *builtins_module = global_builtins_module().extract();
-        builtins_module->set_legacy_module_scope(builtin_scope.extract());
 
         auto install_builtin_binding = [&](TValue<String> name, Value value) {
             builtin_scope.extract()->set_by_name(name, value);

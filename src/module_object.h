@@ -4,7 +4,6 @@
 #include "builtin_class_registry.h"
 #include "object.h"
 #include "owned.h"
-#include "scope.h"
 #include "typed_value.h"
 #include "validity_cell.h"
 #include "value.h"
@@ -77,14 +76,6 @@ namespace cl
         }
         void attach_module_builtins_validity_cell(ValidityCell *cell) const;
         void invalidate_module_lookup_validity_cells();
-        Scope *legacy_module_scope() const
-        {
-            return legacy_module_scope_.extract();
-        }
-        void set_legacy_module_scope(Scope *scope)
-        {
-            legacy_module_scope_ = scope;
-        }
 
     private:
         static constexpr uint32_t module_extra_inline_attribute_slot_count =
@@ -102,7 +93,6 @@ namespace cl
         mutable MemberHeapPtr<ValidityCell> module_builtins_validity_cell;
         mutable HeapPtrArray<ValidityCell>
             attached_module_builtins_validity_cells;
-        MemberHeapPtr<Scope> legacy_module_scope_;
 
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
