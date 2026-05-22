@@ -19,15 +19,8 @@ namespace cl
 
         Scope(Scope *_parent_scope);
 
-        /* For a write, we just insert a regular not-present value with no
-         * parent scope slot indication (-1) */
         int32_t register_slot_index_for_write(TValue<String> key);
 
-        /* whereas for a read, if the value isn't present, we also
-         * register the slot in the parent scope and save that slot in
-         * the not-present value. This is to accelerate access to
-         * builtins, which live in the parent scope
-         */
         int32_t register_slot_index_for_read(TValue<String> key);
 
         int32_t lookup_slot_index_local(TValue<String> name) const;
@@ -50,16 +43,7 @@ namespace cl
             Value v = slot_values[slot_idx];
             if(slot_is_live(slot_idx))
                 return v;
-            int32_t parent_slot_idx = v.get_not_present_index();
-            if(likely(parent_slot_idx >= 0))
-            {
-                MUSTTAIL return get_parent_scope_ptr()
-                    ->get_by_slot_index_fastpath_only(parent_slot_idx);
-            }
-            else
-            {
-                return Value::not_present();
-            }
+            return Value::not_present();
         }
 
         NOINLINE Value get_by_slot_index(int32_t slot_idx) const
@@ -68,21 +52,7 @@ namespace cl
             Value v = slot_values[slot_idx];
             if(slot_is_live(slot_idx))
                 return v;
-            int32_t parent_slot_idx = v.get_not_present_index();
-            if(likely(parent_slot_idx >= 0))
-            {
-                return get_parent_scope_ptr()->get_by_slot_index(
-                    parent_slot_idx);
-            }
-            else
-            {
-                if(unlikely(parent_scope != nullptr))
-                {
-                    return get_parent_scope_ptr()->get_by_name(
-                        get_name_by_slot_index(slot_idx));
-                }
-                return Value::not_present();
-            }
+            return Value::not_present();
         }
 
         void set_by_name(TValue<String> name, Value val);
@@ -153,7 +123,6 @@ namespace cl
         static constexpr uint32_t max_load_denom = 4;
         static constexpr int32_t hash_not_present = -1;
 
-        Scope *get_parent_scope_ptr() const { return parent_scope.extract(); }
         const int32_t *find_name_table_entry(TValue<String> key) const;
         int32_t *find_name_table_entry(TValue<String> key);
         void maybe_grow_name_table()

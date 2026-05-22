@@ -50,7 +50,7 @@ TEST(Scope, ReadTrackingSlotStartsWithoutEntryUntilBound)
     int32_t slot_idx = child->register_slot_index_for_read(name);
     EXPECT_EQ(0, slot_idx);
     EXPECT_EQ(0u, child->entry_count());
-    EXPECT_EQ(Value::from_smi(7), child->get_by_name(name));
+    EXPECT_EQ(Value::not_present(), child->get_by_name(name));
 
     child->set_by_name(name, Value::from_smi(11));
 
@@ -59,7 +59,7 @@ TEST(Scope, ReadTrackingSlotStartsWithoutEntryUntilBound)
     EXPECT_EQ(Value::from_smi(11), child->get_by_name(name));
 }
 
-TEST(Scope, DeletedChildSlotFallsBackToParentByCurrentEntryName)
+TEST(Scope, DeletedChildSlotStaysMissing)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -72,7 +72,7 @@ TEST(Scope, DeletedChildSlotFallsBackToParentByCurrentEntryName)
     parent->set_by_name(name, Value::from_smi(7));
 
     int32_t slot_idx = child->register_slot_index_for_read(name);
-    EXPECT_EQ(Value::from_smi(7), child->get_by_slot_index(slot_idx));
+    EXPECT_EQ(Value::not_present(), child->get_by_slot_index(slot_idx));
 
     child->set_by_name(name, Value::from_smi(11));
     ASSERT_EQ(1u, child->entry_count());
@@ -80,7 +80,7 @@ TEST(Scope, DeletedChildSlotFallsBackToParentByCurrentEntryName)
 
     child->set_by_slot_index(slot_idx, Value::not_present());
 
-    EXPECT_EQ(Value::from_smi(7), child->get_by_name(name));
+    EXPECT_EQ(Value::not_present(), child->get_by_name(name));
 }
 
 TEST(Scope, SetBySlotIndexEnqueuesOverwrittenObject)

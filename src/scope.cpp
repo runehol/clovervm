@@ -100,8 +100,6 @@ namespace cl
         return TValue<String>::from_value_unchecked(slot_names[slot_idx]);
     }
 
-    /* For a write, we just insert a regular not-present value with no parent
-     * scope slot indication (-1) */
     int32_t Scope::register_slot_index_for_write(TValue<String> key)
     {
         int32_t slot_idx = lookup_slot_index_local(key);
@@ -110,38 +108,16 @@ namespace cl
             return slot_idx;
         }
 
-        slot_idx = allocate_slot(key, Value::not_present(-1));
+        slot_idx = allocate_slot(key, Value::not_present());
         maybe_grow_name_table();
         int32_t *name_table_entry = find_name_table_entry(key);
         *name_table_entry = slot_idx;
         return slot_idx;
     }
 
-    /* whereas for a read, if the value isn't present, we also
-     * register the slot in the parent scope and save that slot in
-     * the not-present value. This is to accelerate access to
-     * builtins, which live in the parent scope
-     */
     int32_t Scope::register_slot_index_for_read(TValue<String> key)
     {
-        int32_t slot_idx = lookup_slot_index_local(key);
-        if(slot_idx >= 0)
-        {
-            return slot_idx;
-        }
-
-        int32_t parent_idx = -1;
-        if(parent_scope != nullptr)
-        {
-            parent_idx =
-                get_parent_scope_ptr()->register_slot_index_for_read(key);
-        }
-
-        slot_idx = allocate_slot(key, Value::not_present(parent_idx));
-        maybe_grow_name_table();
-        int32_t *name_table_entry = find_name_table_entry(key);
-        *name_table_entry = slot_idx;
-        return slot_idx;
+        return register_slot_index_for_write(key);
     }
 
     int32_t Scope::lookup_slot_index_local(TValue<String> name) const
@@ -162,10 +138,6 @@ namespace cl
         {
             return get_by_slot_index(slot_idx);
         }
-        if(parent_scope != nullptr)
-        {
-            return get_parent_scope_ptr()->get_by_name(name);
-        }
         return Value::not_present();
     }
 
@@ -174,7 +146,7 @@ namespace cl
         int32_t slot_idx = lookup_slot_index_local(name);
         if(slot_idx < 0)
         {
-            slot_idx = allocate_slot(name, Value::not_present(-1));
+            slot_idx = allocate_slot(name, Value::not_present());
             maybe_grow_name_table();
             int32_t *name_table_entry = find_name_table_entry(name);
             *name_table_entry = slot_idx;

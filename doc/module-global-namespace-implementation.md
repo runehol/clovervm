@@ -357,7 +357,7 @@ metadata they need for frame storage and class namespace harvesting.
 - [x] Remove interpreter use of `Scope` APIs for module runtime value lookup.
 - [x] Remove interpreter use of `Scope` APIs for module runtime stores.
 - [x] Remove interpreter use of `Scope` APIs for module runtime deletes.
-- [ ] Remove parent-slot encoding for module/builtin lookup from `Scope`.
+- [x] Remove parent-slot encoding for module/builtin lookup from `Scope`.
 - [ ] Remove scope-owned runtime value cells once no remaining non-module user
       depends on them.
 - [ ] Preserve `Scope` name-to-slot metadata.
@@ -386,6 +386,11 @@ Builtin initialization now writes directly into the global builtins module.
 `VirtualMachine::initialize_builtin_scope` has become `initialize_builtins`, the
 temporary builtin `Scope` mirror and copy-back pass are gone, and builtin class
 lookups read the builtins module instead of `Scope`.
+
+`Scope` no longer encodes parent-scope fallback slots in `not_present` values.
+`register_slot_index_for_read` now allocates the same local missing slot as
+`register_slot_index_for_write`, and `get_by_name` / `get_by_slot_index` report
+missing local values directly instead of walking parent scopes.
 
 ## Stage 9: Module Attributes And Mapping Views
 
