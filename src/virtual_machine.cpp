@@ -13,6 +13,7 @@
 #include "int.h"
 #include "list.h"
 #include "list_iterator.h"
+#include "module_object.h"
 #include "native_function.h"
 #include "none_type.h"
 #include "parser.h"
@@ -341,6 +342,7 @@ namespace cl
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_float_class(this));
+        register_builtin_class(make_module_class(this));
         register_builtin_class(make_function_class(this));
         register_builtin_class(make_code_object_class(this));
         register_builtin_class(make_range_iterator_class(this));

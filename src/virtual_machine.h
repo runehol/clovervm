@@ -138,6 +138,10 @@ namespace cl
         {
             return class_for_native_layout(NativeLayoutId::Function);
         }
+        ClassObject *module_class() const
+        {
+            return class_for_native_layout(NativeLayoutId::ModuleObject);
+        }
         ClassObject *code_class() const
         {
             return class_for_native_layout(NativeLayoutId::CodeObject);

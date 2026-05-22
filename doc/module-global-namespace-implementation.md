@@ -143,31 +143,31 @@ First test hooks for the new path:
 
 ## Stage 1: Minimal Shape-Backed ModuleObject
 
-- [ ] Add a `ModuleObject` heap type.
-- [ ] Give `ModuleObject` ordinary object identity.
-- [ ] Add builtin type/class bootstrap support for module objects if required by
+- [x] Add a `ModuleObject` heap type.
+- [x] Give `ModuleObject` ordinary object identity.
+- [x] Add builtin type/class bootstrap support for module objects if required by
       the current object model.
-- [ ] Give module objects shape-backed own-property storage.
-- [ ] Use a `ClassObject`-style layout with C++ fields stored before the inline
+- [x] Give module objects shape-backed own-property storage.
+- [x] Use a `ClassObject`-style layout with C++ fields stored before the inline
       slot area.
-- [ ] Reserve 256 inline slots for module object storage.
-- [ ] Reserve predefined slot 0 for `__name__`.
-- [ ] Reserve predefined slot 1 for `__builtins__`.
-- [ ] Add C++ accessors for the predefined `__name__` slot.
-- [ ] Add C++ accessors for the predefined `__builtins__` slot.
-- [ ] Add construction helpers on `ThreadState`.
+- [x] Reserve 256 inline slots for module object storage.
+- [x] Reserve predefined slot 0 for `__name__`.
+- [x] Reserve predefined slot 1 for `__builtins__`.
+- [x] Add C++ accessors for the predefined `__name__` slot.
+- [x] Add C++ accessors for the predefined `__builtins__` slot.
+- [x] Add construction helpers on `ThreadState`.
 - [ ] Create a startup module object.
 - [ ] Create or reuse a shared interactive module object.
-- [ ] Keep current `Scope`-backed global execution unchanged while module objects
+- [x] Keep current `Scope`-backed global execution unchanged while module objects
       are introduced.
-- [ ] Add tests for constructing a module object.
-- [ ] Add tests for reading and writing ordinary shape-backed module properties
+- [x] Add tests for constructing a module object.
+- [x] Add tests for reading and writing ordinary shape-backed module properties
       through C++ helpers.
-- [ ] Add tests for reading and writing the predefined `__name__` slot through
+- [x] Add tests for reading and writing the predefined `__name__` slot through
       C++ helpers.
-- [ ] Add tests for reading and writing the predefined `__builtins__` slot
+- [x] Add tests for reading and writing the predefined `__builtins__` slot
       through C++ helpers.
-- [ ] Add tests that the first ordinary module global does not overlap the
+- [x] Add tests that the first ordinary module global does not overlap the
       predefined slots.
 
 ## Stage 2: Module Shape Mutation And Validity

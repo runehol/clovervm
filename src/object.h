@@ -107,6 +107,7 @@ namespace cl
         return native_layout == NativeLayoutId::Instance ||
                native_layout == NativeLayoutId::ClassObject ||
                native_layout == NativeLayoutId::Function ||
+               native_layout == NativeLayoutId::ModuleObject ||
                native_layout == NativeLayoutId::Exception ||
                native_layout == NativeLayoutId::StopIteration;
     }

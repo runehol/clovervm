@@ -9,6 +9,7 @@
 #include "function.h"
 #include "heap_reclamation.h"
 #include "interpreter.h"
+#include "module_object.h"
 #include "parser.h"
 #include "runtime_helpers.h"
 #include "tokenizer.h"
@@ -310,6 +311,12 @@ namespace cl
         assert(value.get_ptr<Object>()->native_layout_id() ==
                NativeLayoutId::ClassObject);
         return value.get_ptr<ClassObject>();
+    }
+
+    ModuleObject *ThreadState::make_module_object(TValue<String> name,
+                                                  Value builtins)
+    {
+        return make_object_raw<ModuleObject>(name, builtins);
     }
 
     CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule)

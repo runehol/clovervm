@@ -23,6 +23,7 @@ target_sources(test_clovervm PRIVATE
 	test_tokenizer.cpp
 	test_interpreter.cpp
 	test_list.cpp
+	test_module_object.cpp
 	test_native_layout_descriptor.cpp
 	test_shape.cpp
 	test_scope.cpp
