@@ -72,6 +72,8 @@ namespace cl
         bool set_own_property(TValue<String> name, Value value);
         bool delete_own_property(TValue<String> name);
         Value read_storage_location(StorageLocation location) const;
+        HeapObject *write_existing_storage_location_returning_zero_ref(
+            StorageLocation location, Value value);
         void write_existing_storage_location(StorageLocation location,
                                              Value value);
         // Writes a storage location whose previous logical value is known to

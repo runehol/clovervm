@@ -21,6 +21,7 @@ op_jump_if_true_float_truthiness
 op_lda_constant
 op_lda_false
 op_lda_global
+op_lda_module_global
 op_lda_none
 op_lda_smi
 op_lda_true
@@ -56,6 +57,7 @@ op_return_or_raise_exception
 op_right_shift
 op_right_shift_smi
 op_sta_global
+op_sta_module_global
 op_star
 op_star0
 op_star1

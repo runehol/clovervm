@@ -107,11 +107,12 @@ namespace cl
                    slot_names[slot_idx] != Value::None();
         }
 
-        ALWAYSINLINE HeapObject *swap_by_slot_index(int32_t slot_idx, Value val)
+        ALWAYSINLINE HeapObject *
+        write_by_slot_index_returning_zero_ref(int32_t slot_idx, Value val)
         {
             val.assert_not_vm_sentinel();
             assert(!set_by_slot_index_needs_slow_path(slot_idx, val));
-            return slot_values.swap_slot(slot_idx, val);
+            return slot_values.write_slot_returning_zero_ref(slot_idx, val);
         }
 
         void reserve_empty_slots(size_t n_slots);

@@ -326,9 +326,9 @@ namespace cl
         __builtin_unreachable();
     }
 
-    ALWAYSINLINE void
-    Object::write_existing_storage_location(StorageLocation location,
-                                            Value value)
+    ALWAYSINLINE HeapObject *
+    Object::write_existing_storage_location_returning_zero_ref(
+        StorageLocation location, Value value)
     {
         Value *slots = nullptr;
         switch(location.kind)
@@ -355,7 +355,20 @@ namespace cl
         slots[location.physical_idx] = value;
         if(old_value.is_refcounted_ptr() && --old_value.as.ptr->refcount == 0)
         {
-            add_to_active_zero_count_table_if_needed(old_value.as.ptr);
+            return old_value.as.ptr;
+        }
+        return nullptr;
+    }
+
+    ALWAYSINLINE void
+    Object::write_existing_storage_location(StorageLocation location,
+                                            Value value)
+    {
+        HeapObject *zct_object =
+            write_existing_storage_location_returning_zero_ref(location, value);
+        if(unlikely(zct_object != nullptr))
+        {
+            add_to_active_zero_count_table_if_needed(zct_object);
         }
     }
 }  // namespace cl

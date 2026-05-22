@@ -405,7 +405,7 @@ namespace cl
             incref_element(slot);
         }
 
-        HeapObject *swap_slot(size_t idx, Value value)
+        HeapObject *write_slot_returning_zero_ref(size_t idx, Value value)
         {
             static_assert(std::is_same_v<T, Value>);
             assert(idx < size());

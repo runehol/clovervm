@@ -1866,7 +1866,8 @@ namespace cl
             MUSTTAIL return op_sta_global_slow(ARGS);
         }
         HeapObject *zct_object =
-            module_scope->swap_by_slot_index(slot_idx, accumulator);
+            module_scope->write_by_slot_index_returning_zero_ref(slot_idx,
+                                                                 accumulator);
         if(unlikely(zct_object != nullptr))
         {
             thread->add_to_zero_count_table_if_needed(zct_object);
@@ -1901,17 +1902,19 @@ namespace cl
             ->inline_slot_base()[plan.storage_location.physical_idx];
     }
 
-    static ALWAYSINLINE bool store_module_global_from_plan_inline_fast(
-        const ModuleGlobalMutationPlan &plan, Value value)
+    static ALWAYSINLINE HeapObject *store_module_global_from_plan_inline_fast(
+        const ModuleGlobalMutationPlan &plan, Value value, bool &stored)
     {
         if(unlikely(plan.kind != ModuleGlobalMutationPlanKind::StoreExisting))
         {
-            return false;
+            stored = false;
+            return nullptr;
         }
         assert(plan.storage_owner != nullptr);
-        plan.storage_owner->write_existing_storage_location(
-            plan.storage_location(), value);
-        return true;
+        stored = true;
+        return plan.storage_owner
+            ->write_existing_storage_location_returning_zero_ref(
+                plan.storage_location(), value);
     }
 
     NOINLINE static INTERP_CC Value op_lda_module_global_cache_miss(PARAMS)
@@ -1993,10 +1996,16 @@ namespace cl
             MUSTTAIL return op_sta_module_global_cache_miss(ARGS);
         }
         assert(cache.plan.kind == ModuleGlobalMutationPlanKind::StoreExisting);
-        if(unlikely(!store_module_global_from_plan_inline_fast(cache.plan,
-                                                               accumulator)))
+        bool stored = false;
+        HeapObject *zct_object = store_module_global_from_plan_inline_fast(
+            cache.plan, accumulator, stored);
+        if(unlikely(!stored))
         {
             MUSTTAIL return op_sta_module_global_cache_miss(ARGS);
+        }
+        if(unlikely(zct_object != nullptr))
+        {
+            thread->add_to_zero_count_table_if_needed(zct_object);
         }
         COMPLETE();
     }
