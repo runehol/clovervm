@@ -3311,6 +3311,32 @@ TEST(Interpreter, raise_unwind_rejects_non_exception)
                                L"BaseException");
 }
 
+TEST(Interpreter, import_exception_classes_are_builtins)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(),
+              test_context.run_file(L"ImportError.__mro__[1] is Exception\n"));
+    EXPECT_EQ(Value::True(),
+              test_context.run_file(
+                  L"ModuleNotFoundError.__mro__[1] is ImportError\n"));
+    EXPECT_EQ(Value::True(),
+              test_context.run_file(
+                  L"ModuleNotFoundError.__mro__[2] is Exception\n"));
+}
+
+TEST(Interpreter, module_not_found_error_is_caught_by_import_error)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(42),
+              test_context.run_file(L"try:\n"
+                                    L"    raise ModuleNotFoundError\n"
+                                    L"except ImportError:\n"
+                                    L"    result = 42\n"
+                                    L"result\n"));
+}
+
 TEST(Interpreter, builtin_module_lookup)
 {
     test::VmTestContext test_context;

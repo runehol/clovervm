@@ -383,6 +383,12 @@ namespace cl
             make_exception_class(this, base_exception);
         ClassObject *exception = exception_definition.cls;
         register_builtin_class(exception_definition);
+        BuiltinClassDefinition import_error_definition =
+            make_exception_subclass(this, L"ImportError", exception);
+        ClassObject *import_error = import_error_definition.cls;
+        register_builtin_class(import_error_definition);
+        register_builtin_class(make_exception_subclass(
+            this, L"ModuleNotFoundError", import_error));
         register_builtin_class(
             make_exception_subclass(this, L"NameError", exception));
         register_builtin_class(
