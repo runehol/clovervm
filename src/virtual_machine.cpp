@@ -622,11 +622,14 @@ namespace cl
         imported_modules_ = make_immortal_object_raw<Dict>();
 
         TValue<String> dot = get_or_create_interned_string_value(L".");
+        TValue<String> build_stdlib_dir =
+            get_or_create_interned_string_value(CL_BUILD_STDLIB_DIR);
         TValue<String> stdlib_dir =
             get_or_create_interned_string_value(CL_STDLIB_DIR);
-        List *path = make_immortal_object_raw<List>(2);
+        List *path = make_immortal_object_raw<List>(3);
         path->set_item_unchecked(0, dot.raw_value());
-        path->set_item_unchecked(1, stdlib_dir.raw_value());
+        path->set_item_unchecked(1, build_stdlib_dir.raw_value());
+        path->set_item_unchecked(2, stdlib_dir.raw_value());
 
         TValue<String> modules_name =
             get_or_create_interned_string_value(L"modules");

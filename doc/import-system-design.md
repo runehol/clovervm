@@ -60,8 +60,11 @@ Implemented pieces used by the import design:
 - A VM-owned immortal `sys` module exists with `sys.modules` and `sys.path`.
 - `sys.modules` is the VM-owned imported-modules cache, initially containing
   `"builtins"` and `"sys"`.
-- `sys.path` is a mutable list initialized to `[".", CL_STDLIB_DIR]`.
+- `sys.path` is a mutable list initialized to
+  `[".", CL_BUILD_STDLIB_DIR, CL_STDLIB_DIR]`.
 - `CL_STDLIB_DIR` is an absolute build-configured path to `stdlib/`.
+- `CL_BUILD_STDLIB_DIR` is an absolute build-configured path to generated or
+  compiled stdlib artifacts under the build tree.
 - Trusted VM bootstrap code stays in `src/builtins.py`; ordinary importable
   system modules live under `stdlib/`.
 - `__main__` is created as a real module, receives the standard entry-module
@@ -837,7 +840,7 @@ The current implementation has the bootstrap import spine in place:
 - `__main__` is a real module inserted into `sys.modules`.
 - `sys` is a VM-owned module exposing `sys.modules` and `sys.path`.
 - `sys.modules` is the VM-owned imported-modules cache.
-- `sys.path` starts as `[".", CL_STDLIB_DIR]`.
+- `sys.path` starts as `[".", CL_BUILD_STDLIB_DIR, CL_STDLIB_DIR]`.
 - The internal C++ finder chain uses value-shaped specs and enum dispatch for
   builtin, source, and namespace loaders. The path finder walks `sys.path` or
   parent package `__path__`, ignores non-string path entries, and recognizes

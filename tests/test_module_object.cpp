@@ -103,7 +103,7 @@ TEST(ModuleObject, SysModulesIsCanonicalImportedModulesDict)
               modules->get_item(builtins_name.raw_value()));
 }
 
-TEST(ModuleObject, SysPathStartsWithCurrentDirectoryAndStdlib)
+TEST(ModuleObject, SysPathStartsWithCurrentDirectoryBuildStdlibAndStdlib)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -115,9 +115,10 @@ TEST(ModuleObject, SysPathStartsWithCurrentDirectoryAndStdlib)
     ASSERT_TRUE(can_convert_to<List>(path_value));
     List *path = path_value.get_ptr<List>();
     EXPECT_EQ(-1, path->refcount);
-    ASSERT_EQ(2u, path->size());
+    ASSERT_EQ(3u, path->size());
     EXPECT_EQ(L".", value_as_wstring(path->item_unchecked(0)));
-    EXPECT_EQ(CL_STDLIB_DIR, value_as_wstring(path->item_unchecked(1)));
+    EXPECT_EQ(CL_BUILD_STDLIB_DIR, value_as_wstring(path->item_unchecked(1)));
+    EXPECT_EQ(CL_STDLIB_DIR, value_as_wstring(path->item_unchecked(2)));
 }
 
 TEST(ModuleObject, PredefinedSlotLocationsAreStable)

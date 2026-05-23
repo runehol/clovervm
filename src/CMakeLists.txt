@@ -10,6 +10,7 @@ configure_file(
     @ONLY)
 
 set(CL_STDLIB_DIR "${CMAKE_SOURCE_DIR}/stdlib")
+set(CL_BUILD_STDLIB_DIR "${CMAKE_BINARY_DIR}/stdlib")
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/build_config.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/build_config.h"
