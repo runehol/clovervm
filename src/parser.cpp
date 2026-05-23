@@ -1339,14 +1339,21 @@ namespace cl
             uint32_t name_source_pos = source_pos_for_previous_token();
             std::wstring name = std::wstring(
                 string_for_name_token(*ast.compilation_unit, name_source_pos));
-            TValue<String> v = vm.get_or_create_interned_string_value(name);
-            int32_t target = ast.emplace_back(
-                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE, name_source_pos, v);
-
-            if(peek() == Token::DOT)
+            std::wstring store_name = name;
+            while(match(Token::DOT))
             {
-                return not_implemented("dotted import statement");
+                consume(Token::NAME);
+                uint32_t component_source_pos = source_pos_for_previous_token();
+                name += L".";
+                name += std::wstring(string_for_name_token(
+                    *ast.compilation_unit, component_source_pos));
             }
+
+            TValue<String> store_name_value =
+                vm.get_or_create_interned_string_value(store_name);
+            int32_t target =
+                ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
+                                 name_source_pos, store_name_value);
             if(peek() == Token::AS)
             {
                 return not_implemented("import alias");
@@ -1356,8 +1363,10 @@ namespace cl
                 return not_implemented("multiple import statement");
             }
 
+            TValue<String> full_name_value =
+                vm.get_or_create_interned_string_value(name);
             return ast.emplace_back(AstNodeKind::STATEMENT_IMPORT, source_pos,
-                                    target);
+                                    {target}, full_name_value);
         }
 
         int32_t del_stmt()

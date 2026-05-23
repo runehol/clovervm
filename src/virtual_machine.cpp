@@ -153,8 +153,37 @@ namespace cl
                 L"ImportError", L"relative imports are not supported");
         }
 
-        return import_module_absolute(active_thread(),
-                                      TValue<String>::from_value_assumed(name));
+        TValue<String> module_name = TValue<String>::from_value_assumed(name);
+        Value imported = import_module_absolute(active_thread(), module_name);
+        bool wants_leaf_module = !fromlist.is_none();
+        if(can_convert_to<Tuple>(fromlist))
+        {
+            wants_leaf_module = !fromlist.get_ptr<Tuple>()->empty();
+        }
+        else if(can_convert_to<List>(fromlist))
+        {
+            wants_leaf_module = fromlist.get_ptr<List>()->size() != 0;
+        }
+        if(imported.is_exception_marker() || wants_leaf_module)
+        {
+            return imported;
+        }
+
+        std::wstring full_name = string_as_wchar_t(module_name);
+        size_t dot = full_name.find(L'.');
+        if(dot == std::wstring::npos)
+        {
+            return imported;
+        }
+
+        TValue<String> top_name =
+            active_thread()->get_machine()->get_or_create_interned_string_value(
+                full_name.substr(0, dot));
+        return active_thread()
+            ->get_machine()
+            ->imported_modules()
+            .extract()
+            ->get_item(top_name.raw_value());
     }
 
     VirtualMachine::VirtualMachine()

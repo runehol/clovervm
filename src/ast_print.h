@@ -519,8 +519,9 @@ template <> struct fmt::formatter<cl::AstVector>
             case cl::AstNodeKind::STATEMENT_IMPORT:
                 emit_indent(out, indent);
                 format_to(out, "import ");
-                render_node(av, out, children[0], indent,
-                            cl::ExpressionPrecedence::Lowest);
+                format_to(out, "{}",
+                          narrow_wstring_view_ast(string_as_wchar_t(
+                              ast_print_string_constant(av, node_idx))));
                 format_to(out, "\n");
                 break;
 

@@ -118,6 +118,21 @@ TEST(Codegen, import_statement_uses_import_name_and_normal_store)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, dotted_import_statement_imports_full_name_and_stores_head)
+{
+    std::string expected =
+        "Code object:\n"
+        "    0 LdaNone\n"
+        "    1 ImportName c[0], 0\n"
+        "    4 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    7 Return\n"
+        "Constant 0: \"pkg.mod\"\n"
+        "Constant 1: \"pkg\"\n";
+    std::string actual = bytecode_str_from_file(L"import pkg.mod\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, if_elif_else)
 {
     const wchar_t *test_case = L"if a:\n"

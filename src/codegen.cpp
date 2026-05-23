@@ -1721,8 +1721,8 @@ namespace cl
                 case AstNodeKind::STATEMENT_IMPORT:
                     {
                         int32_t target_idx = children[0];
-                        uint8_t name_idx = code_obj->allocate_constant(
-                            av.constants[target_idx]);
+                        uint8_t name_idx =
+                            code_obj->allocate_constant(av.constants[node_idx]);
                         code_obj->emit_lda_none(source_offset);
                         code_obj->emit_import_name(source_offset, name_idx, 0);
                         emit_store_accumulator_to_target(source_offset,

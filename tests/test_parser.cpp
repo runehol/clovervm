@@ -751,12 +751,12 @@ TEST(Parser, import_stmt)
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Parser, dotted_import_stmt_not_implemented)
+TEST(Parser, dotted_import_stmt)
 {
-    expect_parse_error(L"import os.path\n",
-                       "Not implemented: dotted import statement (token DOT) "
-                       "at offset 9 (line 1, column 10), near \"import "
-                       "os.path\"");
+    std::string expected = "import os.path\n";
+    std::string actual = parse(L"import os.path\n");
+
+    EXPECT_EQ(expected, actual);
 }
 
 TEST(Parser, class_def)

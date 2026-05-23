@@ -259,6 +259,37 @@ TEST(ImportSystem, ImportModuleAbsoluteUsesCachedModuleWithoutReexecution)
     EXPECT_EQ(Value::from_smi(99), module_attr(context, module, L"marker"));
 }
 
+TEST(ImportSystem, ImportModuleAbsoluteLoadsDottedModuleAndBindsParentAttribute)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "package_marker = 7\n");
+    root.write_file(L"pkg/mod.py", "value = 42\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value imported = import_module_absolute(context.thread(),
+                                            module_name(context, L"pkg.mod"));
+    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ModuleObject *child = imported.get_ptr<ModuleObject>();
+    EXPECT_EQ(L"pkg.mod",
+              value_as_wstring(module_attr(context, child, L"__name__")));
+    EXPECT_EQ(L"pkg",
+              value_as_wstring(module_attr(context, child, L"__package__")));
+    EXPECT_EQ(Value::from_smi(42), module_attr(context, child, L"value"));
+
+    Value parent_value = context.vm().imported_modules().extract()->get_item(
+        module_name(context, L"pkg").raw_value());
+    ASSERT_TRUE(can_convert_to<ModuleObject>(parent_value));
+    ModuleObject *parent = parent_value.get_ptr<ModuleObject>();
+    EXPECT_EQ(imported, module_attr(context, parent, L"mod"));
+    EXPECT_EQ(imported, context.vm().imported_modules().extract()->get_item(
+                            module_name(context, L"pkg.mod").raw_value()));
+}
+
 TEST(ImportSystem, ImportModuleAbsoluteRaisesModuleNotFoundForMiss)
 {
     test::VmTestContext context;
@@ -277,6 +308,33 @@ TEST(ImportSystem, ImportModuleAbsoluteRaisesModuleNotFoundForMiss)
               value_as_wstring(exception.extract()->message.value()));
     EXPECT_FALSE(
         context.vm().imported_modules().extract()->contains(name.raw_value()));
+}
+
+TEST(ImportSystem, ImportModuleAbsoluteRaisesWhenParentIsNotPackage)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg.py", "value = 1\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    TValue<String> name = module_name(context, L"pkg.mod");
+    Value imported = import_module_absolute(context.thread(), name);
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ModuleNotFoundError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"No module named 'pkg.mod'; 'pkg' is not a package",
+              value_as_wstring(exception.extract()->message.value()));
+    EXPECT_TRUE(context.vm().imported_modules().extract()->contains(
+        module_name(context, L"pkg").raw_value()));
+    EXPECT_FALSE(context.vm().imported_modules().extract()->contains(
+        module_name(context, L"pkg.mod").raw_value()));
 }
 
 TEST(ImportSystem, ImportModuleAbsoluteRemovesModuleOnExecutionFailure)
@@ -351,6 +409,29 @@ TEST(ImportSystem, BuiltinImportUsesDefaultsAndReturnsCachedValue)
               context.run_file(L"__import__('assignment')\n"));
 }
 
+TEST(ImportSystem, BuiltinImportOfDottedModuleReturnsTopLevelPackage)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "package_marker = 7\n");
+    root.write_file(L"pkg/mod.py", "value = 42\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value imported = context.run_file(L"__import__('pkg.mod')\n");
+    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ModuleObject *parent = imported.get_ptr<ModuleObject>();
+    EXPECT_EQ(L"pkg",
+              value_as_wstring(module_attr(context, parent, L"__name__")));
+    Value child = module_attr(context, parent, L"mod");
+    ASSERT_TRUE(can_convert_to<ModuleObject>(child));
+    EXPECT_EQ(Value::from_smi(42),
+              module_attr(context, child.get_ptr<ModuleObject>(), L"value"));
+}
+
 TEST(ImportSystem, BuiltinImportRejectsNonStringName)
 {
     test::VmTestContext context;
@@ -393,6 +474,45 @@ TEST(ImportSystem, ImportStatementLoadsModuleAndStoresBinding)
     Value marker = context.run_file(L"import assignment\n"
                                     L"assignment.marker\n");
     EXPECT_EQ(Value::from_smi(3), marker);
+}
+
+TEST(ImportSystem, ImportStatementLoadsDottedModuleAndStoresTopLevelBinding)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "package_marker = 7\n");
+    root.write_file(L"pkg/mod.py", "value = 42\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value marker = context.run_file(L"import pkg.mod\n"
+                                    L"pkg.mod.value\n");
+    EXPECT_EQ(Value::from_smi(42), marker);
+}
+
+TEST(ImportSystem, ImportStatementUsesParentPackagePathForChildLookup)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    std::filesystem::path sysroot = root.path / L"sysroot";
+    std::filesystem::path childroot = root.path / L"childroot";
+    std::filesystem::create_directories(sysroot / L"pkg");
+    std::filesystem::create_directories(childroot);
+    root.write_file(L"sysroot/pkg/__init__.py",
+                    "__path__ = [r'" + childroot.string() + "']\n");
+    root.write_file(L"childroot/mod.py", "value = 99\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, sysroot.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value marker = context.run_file(L"import pkg.mod\n"
+                                    L"pkg.mod.value\n");
+    EXPECT_EQ(Value::from_smi(99), marker);
 }
 
 TEST(ImportSystem, ImportStatementStoresLocalBindingInFunction)

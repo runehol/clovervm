@@ -15,6 +15,7 @@
 #include "virtual_machine.h"
 #include <filesystem>
 #include <system_error>
+#include <vector>
 
 namespace cl
 {
@@ -44,7 +45,8 @@ namespace cl
         }
 
         std::optional<ModuleSpec>
-        find_source_module_spec_in_path_entry(const std::wstring &module_name,
+        find_source_module_spec_in_path_entry(const std::wstring &full_name,
+                                              const std::wstring &leaf_name,
                                               Value path_entry)
         {
             if(!can_convert_to<String>(path_entry))
@@ -58,23 +60,23 @@ namespace cl
             {
                 base = L".";
             }
-            std::filesystem::path package_dir = base / module_name;
+            std::filesystem::path package_dir = base / leaf_name;
             std::filesystem::path package_init = package_dir / L"__init__.py";
             if(file_exists(package_init))
             {
                 return ModuleSpec{
-                    module_name,
+                    full_name,
                     absolute_wstring_path(package_init),
                     true,
                     {absolute_wstring_path(package_dir)},
                 };
             }
 
-            std::filesystem::path module_file = base / (module_name + L".py");
+            std::filesystem::path module_file = base / (leaf_name + L".py");
             if(file_exists(module_file))
             {
                 return ModuleSpec{
-                    module_name,
+                    full_name,
                     absolute_wstring_path(module_file),
                     false,
                     {},
@@ -89,6 +91,34 @@ namespace cl
         {
             return thread->get_machine()->get_or_create_interned_string_value(
                 text);
+        }
+
+        std::vector<std::wstring> split_module_name(const std::wstring &name)
+        {
+            std::vector<std::wstring> components;
+            size_t start = 0;
+            while(start <= name.size())
+            {
+                size_t dot = name.find(L'.', start);
+                size_t end = dot == std::wstring::npos ? name.size() : dot;
+                components.push_back(name.substr(start, end - start));
+                if(dot == std::wstring::npos)
+                {
+                    break;
+                }
+                start = dot + 1;
+            }
+            return components;
+        }
+
+        std::wstring parent_module_name(const std::wstring &name)
+        {
+            size_t dot = name.rfind(L'.');
+            if(dot == std::wstring::npos)
+            {
+                return std::wstring();
+            }
+            return name.substr(0, dot);
         }
 
         TValue<String> interned_string(ThreadState *thread, const wchar_t *text)
@@ -129,6 +159,19 @@ namespace cl
                 L"ModuleNotFoundError", interned_string(thread, message));
         }
 
+        Value set_not_a_package(ThreadState *thread,
+                                const std::wstring &module_name,
+                                const std::wstring &parent_name)
+        {
+            std::wstring message = L"No module named '";
+            message += module_name;
+            message += L"'; '";
+            message += parent_name;
+            message += L"' is not a package";
+            return thread->set_pending_builtin_exception_string(
+                L"ModuleNotFoundError", interned_string(thread, message));
+        }
+
         Value set_module_load_failed(ThreadState *thread,
                                      const std::wstring &module_name)
         {
@@ -145,7 +188,7 @@ namespace cl
         {
             set_module_attr(thread, module, L"__doc__", Value::None());
             const std::wstring package_name =
-                spec.is_package ? spec.name : std::wstring();
+                spec.is_package ? spec.name : parent_module_name(spec.name);
             set_module_attr(thread, module, L"__package__",
                             interned_string(thread, package_name).raw_value());
             set_module_attr(thread, module, L"__loader__", Value::None());
@@ -190,6 +233,115 @@ namespace cl
             }
             return hook;
         }
+
+        std::optional<ModuleSpec> find_source_module_spec_on_path(
+            ThreadState *thread, const std::wstring &full_name,
+            const std::wstring &leaf_name, List *path)
+        {
+            (void)thread;
+            for(size_t path_idx = 0; path_idx < path->size(); ++path_idx)
+            {
+                std::optional<ModuleSpec> spec =
+                    find_source_module_spec_in_path_entry(
+                        full_name, leaf_name, path->item_unchecked(path_idx));
+                if(spec.has_value())
+                {
+                    return spec;
+                }
+            }
+
+            return std::nullopt;
+        }
+
+        List *sys_path(ThreadState *thread)
+        {
+            TValue<String> path_name = interned_string(thread, L"path");
+            Value path_value =
+                thread->get_machine()->sys_module().extract()->get_own_property(
+                    path_name);
+            if(!can_convert_to<List>(path_value))
+            {
+                return nullptr;
+            }
+            return path_value.get_ptr<List>();
+        }
+
+        Value package_path(ThreadState *thread, Value parent,
+                           const std::wstring &full_name,
+                           const std::wstring &parent_name)
+        {
+            if(!can_convert_to<ModuleObject>(parent))
+            {
+                return set_not_a_package(thread, full_name, parent_name);
+            }
+
+            TValue<String> path_name = interned_string(thread, L"__path__");
+            Value path =
+                parent.get_ptr<ModuleObject>()->get_own_property(path_name);
+            if(!can_convert_to<List>(path))
+            {
+                return set_not_a_package(thread, full_name, parent_name);
+            }
+            return path;
+        }
+
+        Value load_module_from_path(ThreadState *thread,
+                                    const std::wstring &full_name,
+                                    const std::wstring &leaf_name, List *path)
+        {
+            TValue<String> name = interned_string(thread, full_name);
+            Dict *modules = thread->get_machine()->imported_modules().extract();
+            if(modules->contains(name.raw_value()))
+            {
+                return modules->get_item(name.raw_value());
+            }
+            if(path == nullptr)
+            {
+                return set_module_not_found(thread, full_name);
+            }
+
+            std::optional<ModuleSpec> spec = find_source_module_spec_on_path(
+                thread, full_name, leaf_name, path);
+            if(!spec.has_value())
+            {
+                return set_module_not_found(thread, full_name);
+            }
+
+            Owned<TValue<ModuleObject>> module(TValue<ModuleObject>::from_oop(
+                thread->make_module_object(name, thread->get_machine()
+                                                     ->global_builtins_module()
+                                                     .raw_value())));
+            install_module_import_metadata(thread, module.extract(), *spec);
+            modules->set_item(name.raw_value(), module.raw_value());
+
+            try
+            {
+                std::optional<std::wstring> source =
+                    read_source_text_file(spec->origin);
+                if(!source.has_value())
+                {
+                    remove_imported_module(thread, name);
+                    return set_module_load_failed(thread, full_name);
+                }
+
+                CodeObject *code = thread->compile_in_module(
+                    source->c_str(), StartRule::File, module.extract(),
+                    LanguageMode::StandardsCompliant);
+                Value result = thread->run_clovervm_code_object(code);
+                if(result.is_exception_marker())
+                {
+                    remove_imported_module(thread, name);
+                    return result;
+                }
+            }
+            catch(...)
+            {
+                remove_imported_module(thread, name);
+                throw;
+            }
+
+            return module.raw_value();
+        }
     }  // namespace
 
     std::optional<ModuleSpec> find_source_module_spec(ThreadState *thread,
@@ -201,80 +353,72 @@ namespace cl
             return std::nullopt;
         }
 
-        TValue<String> path_name =
-            thread->get_machine()->get_or_create_interned_string_value(L"path");
-        Value path_value =
-            thread->get_machine()->sys_module().extract()->get_own_property(
-                path_name);
-        if(!can_convert_to<List>(path_value))
+        List *path = sys_path(thread);
+        if(path == nullptr)
         {
             return std::nullopt;
         }
 
-        List *path = path_value.get_ptr<List>();
-        for(size_t path_idx = 0; path_idx < path->size(); ++path_idx)
-        {
-            std::optional<ModuleSpec> spec =
-                find_source_module_spec_in_path_entry(
-                    module_name, path->item_unchecked(path_idx));
-            if(spec.has_value())
-            {
-                return spec;
-            }
-        }
-
-        return std::nullopt;
+        return find_source_module_spec_on_path(thread, module_name, module_name,
+                                               path);
     }
 
     Value import_module_absolute(ThreadState *thread, TValue<String> name)
     {
         std::wstring module_name = string_to_wstring(name);
-        Dict *modules = thread->get_machine()->imported_modules().extract();
-        if(modules->contains(name.raw_value()))
-        {
-            return modules->get_item(name.raw_value());
-        }
-
-        std::optional<ModuleSpec> spec = find_source_module_spec(thread, name);
-        if(!spec.has_value())
+        if(module_name.empty())
         {
             return set_module_not_found(thread, module_name);
         }
-
-        Owned<TValue<ModuleObject>> module(
-            TValue<ModuleObject>::from_oop(thread->make_module_object(
-                name,
-                thread->get_machine()->global_builtins_module().raw_value())));
-        install_module_import_metadata(thread, module.extract(), *spec);
-        modules->set_item(name.raw_value(), module.raw_value());
-
-        try
+        std::vector<std::wstring> components = split_module_name(module_name);
+        for(const std::wstring &component: components)
         {
-            std::optional<std::wstring> source =
-                read_source_text_file(spec->origin);
-            if(!source.has_value())
+            if(component.empty())
             {
-                remove_imported_module(thread, name);
-                return set_module_load_failed(thread, module_name);
-            }
-
-            CodeObject *code = thread->compile_in_module(
-                source->c_str(), StartRule::File, module.extract(),
-                LanguageMode::StandardsCompliant);
-            Value result = thread->run_clovervm_code_object(code);
-            if(result.is_exception_marker())
-            {
-                remove_imported_module(thread, name);
-                return result;
+                return set_module_not_found(thread, module_name);
             }
         }
-        catch(...)
+
+        List *top_path = sys_path(thread);
+        std::wstring current_name = components[0];
+        Owned<Value> current(load_module_from_path(thread, current_name,
+                                                   components[0], top_path));
+        if(current.value().is_exception_marker())
         {
-            remove_imported_module(thread, name);
-            throw;
+            return current.value();
         }
 
-        return module.raw_value();
+        for(size_t component_idx = 1; component_idx < components.size();
+            ++component_idx)
+        {
+            std::wstring parent_name = current_name;
+            current_name += L".";
+            current_name += components[component_idx];
+            Owned<Value> path(package_path(thread, current.value(),
+                                           current_name, parent_name));
+            if(path.value().is_exception_marker())
+            {
+                return path.value();
+            }
+
+            Owned<Value> child(load_module_from_path(
+                thread, current_name, components[component_idx],
+                path.value().get_ptr<List>()));
+            if(child.value().is_exception_marker())
+            {
+                return child.value();
+            }
+
+            bool stored =
+                current.value().get_ptr<ModuleObject>()->set_own_property(
+                    interned_string(thread, components[component_idx]),
+                    child.value());
+            assert(stored);
+            (void)stored;
+            current = child.value();
+        }
+
+        return current.value();
     }
 
     Value import_name_from_code(ThreadState *thread, CodeObject *code_object,
