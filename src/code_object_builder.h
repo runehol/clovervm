@@ -340,6 +340,8 @@ namespace cl
                                        uint8_t argc);
         uint32_t emit_import_name(uint32_t source_offset, uint8_t name_idx,
                                   uint8_t level);
+        uint32_t emit_import_from(uint32_t source_offset, uint32_t module_reg,
+                                  uint8_t name_idx);
         uint32_t emit_call_native(uint32_t source_offset, Bytecode op,
                                   uint8_t target_idx);
         uint32_t emit_call_intrinsic0(uint32_t source_offset,
@@ -397,6 +399,9 @@ namespace cl
                                        uint32_t reg, uint8_t n_regs);
         uint32_t emit_opcode_reg_range(uint32_t source_offset, Bytecode c,
                                        OutgoingArgReg reg, uint8_t n_regs);
+        uint32_t emit_opcode_reg_constant_idx(uint32_t source_offset,
+                                              Bytecode c, uint32_t reg,
+                                              uint8_t constant_idx);
         uint32_t emit_opcode_native_target_idx(uint32_t source_offset,
                                                Bytecode c, uint8_t target_idx);
         uint32_t emit_opcode_reg_constant_idx_cache_idx(uint32_t source_offset,

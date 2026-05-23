@@ -759,6 +759,14 @@ TEST(Parser, dotted_import_stmt)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, from_import_stmt)
+{
+    std::string expected = "from pkg.mod import value, other\n";
+    std::string actual = parse(L"from pkg.mod import value, other\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, class_def)
 {
     std::string expected = ("class C:\n"

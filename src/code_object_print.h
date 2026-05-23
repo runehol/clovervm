@@ -4,6 +4,7 @@
 #include "class_object.h"
 #include "code_object.h"
 #include "str.h"
+#include "tuple.h"
 #include <fmt/format.h>
 #include <fmt/xchar.h>
 
@@ -52,6 +53,36 @@ namespace cl
         out = format_to(out, "\"");
         out = format_string_contents(out, str);
         return format_to(out, "\"");
+    }
+
+    template <typename Out> Out format_tuple_constant(Out out, Tuple *tuple)
+    {
+        format_to(out, "(");
+        for(size_t idx = 0; idx < tuple->size(); ++idx)
+        {
+            if(idx > 0)
+            {
+                format_to(out, ", ");
+            }
+            Value item = tuple->item_unchecked(idx);
+            if(can_convert_to<String>(item))
+            {
+                out = format_string_constant(out, item.get_ptr<String>());
+            }
+            else if(item.is_smi())
+            {
+                format_to(out, "{}", item.get_smi());
+            }
+            else
+            {
+                format_to(out, "<object>");
+            }
+        }
+        if(tuple->size() == 1)
+        {
+            format_to(out, ",");
+        }
+        return format_to(out, ")");
     }
 
     template <typename Out> Out format_class_constant(Out out, ClassObject *cls)
@@ -308,6 +339,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "CallCodeObject");
             case cl::Bytecode::ImportName:
                 return format_to(out, "ImportName");
+            case cl::Bytecode::ImportFrom:
+                return format_to(out, "ImportFrom");
             case cl::Bytecode::ForIter:
                 return format_to(out, "ForIter");
             case cl::Bytecode::ForPrepRange1:
@@ -758,6 +791,13 @@ template <> struct fmt::formatter<cl::CodeObject>
                 format_to(out, ", {}", code_obj.code[pc++]);
                 break;
 
+            case cl::Bytecode::ImportFrom:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_constant(code_obj, out, pc++);
+                break;
+
             case cl::Bytecode::ForIter:
             case cl::Bytecode::ForPrepRange1:
             case cl::Bytecode::ForPrepRange2:
@@ -898,6 +938,11 @@ template <> struct fmt::formatter<cl::CodeObject>
                                       cl::NativeLayoutId::String)
             {
                 out = cl::format_string_constant(out, c.get_ptr<cl::String>());
+            }
+            else if(c.is_ptr() && c.get_ptr<cl::Object>()->native_layout_id() ==
+                                      cl::NativeLayoutId::Tuple)
+            {
+                out = cl::format_tuple_constant(out, c.get_ptr<cl::Tuple>());
             }
             else if(c.is_ptr() && c.get_ptr<cl::Object>()->native_layout_id() ==
                                       cl::NativeLayoutId::ClassObject)

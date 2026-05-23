@@ -182,6 +182,35 @@ namespace cl
                 L"ImportError", interned_string(thread, message));
         }
 
+        Value set_cannot_import_name(ThreadState *thread, Value module,
+                                     TValue<String> name)
+        {
+            std::wstring message = L"cannot import name '";
+            message += string_to_wstring(name);
+            message += L"' from '";
+            if(can_convert_to<ModuleObject>(module))
+            {
+                Value module_name =
+                    module.get_ptr<ModuleObject>()->get_name_binding();
+                if(can_convert_to<String>(module_name))
+                {
+                    message += string_to_wstring(
+                        TValue<String>::from_value_assumed(module_name));
+                }
+                else
+                {
+                    message += L"<unknown>";
+                }
+            }
+            else
+            {
+                message += L"<unknown>";
+            }
+            message += L"'";
+            return thread->set_pending_builtin_exception_string(
+                L"ImportError", interned_string(thread, message));
+        }
+
         void install_module_import_metadata(ThreadState *thread,
                                             ModuleObject *module,
                                             const ModuleSpec &spec)
@@ -447,6 +476,20 @@ namespace cl
             name.raw_value(), globals.value(), locals.value(),
             owned_fromlist.value(), Value::from_smi(level));
         return result;
+    }
+
+    Value import_from(ThreadState *thread, Value module, TValue<String> name)
+    {
+        if(!can_convert_to<ModuleObject>(module))
+        {
+            return set_cannot_import_name(thread, module, name);
+        }
+        Value imported = module.get_ptr<ModuleObject>()->get_own_property(name);
+        if(imported.is_not_present())
+        {
+            return set_cannot_import_name(thread, module, name);
+        }
+        return imported;
     }
 
 }  // namespace cl

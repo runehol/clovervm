@@ -142,6 +142,7 @@ namespace cl
         CallIntrinsic0,
         CallCodeObject,
         ImportName,
+        ImportFrom,
 
         // iteration
         ForIter,

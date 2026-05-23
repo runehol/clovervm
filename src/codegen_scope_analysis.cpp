@@ -464,6 +464,14 @@ namespace cl
                             state, av.constants[children[0]]);
                         return;
 
+                    case AstNodeKind::STATEMENT_IMPORT_FROM:
+                        for(int32_t name_idx: children)
+                        {
+                            mark_global_validation_assignment(
+                                state, av.constants[name_idx]);
+                        }
+                        return;
+
                     case AstNodeKind::STATEMENT_ASSIGN:
                     case AstNodeKind::EXPRESSION_ASSIGN:
                         {
@@ -648,6 +656,13 @@ namespace cl
                         ensure_binding(analysis, av.constants[children[0]]);
                         return;
 
+                    case AstNodeKind::STATEMENT_IMPORT_FROM:
+                        for(int32_t name_idx: children)
+                        {
+                            ensure_binding(analysis, av.constants[name_idx]);
+                        }
+                        return;
+
                     case AstNodeKind::STATEMENT_ASSIGN:
                     case AstNodeKind::EXPRESSION_ASSIGN:
                         {
@@ -765,6 +780,13 @@ namespace cl
 
                     case AstNodeKind::STATEMENT_IMPORT:
                         mark_name(av.constants[children[0]]);
+                        return;
+
+                    case AstNodeKind::STATEMENT_IMPORT_FROM:
+                        for(int32_t name_idx: children)
+                        {
+                            mark_name(av.constants[name_idx]);
+                        }
                         return;
 
                     case AstNodeKind::STATEMENT_ASSIGN:
@@ -955,6 +977,13 @@ namespace cl
 
                     case AstNodeKind::STATEMENT_IMPORT:
                         annotate_write(children[0]);
+                        break;
+
+                    case AstNodeKind::STATEMENT_IMPORT_FROM:
+                        for(int32_t name_idx: children)
+                        {
+                            annotate_write(name_idx);
+                        }
                         break;
 
                     case AstNodeKind::STATEMENT_ANN_ASSIGN:

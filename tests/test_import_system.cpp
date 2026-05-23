@@ -593,3 +593,114 @@ TEST(ImportSystem, ImportStatementRejectsNonModuleBuiltinsBinding)
     EXPECT_EQ(L"__builtins__ must be a module",
               value_as_wstring(exception.extract()->message.value()));
 }
+
+TEST(ImportSystem, FromImportStatementLoadsNames)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value actual = context.run_file(L"from assignment import marker, value\n"
+                                    L"marker + value\n");
+    EXPECT_EQ(Value::from_smi(10), actual);
+}
+
+TEST(ImportSystem, FromImportStatementStoresLocalBindingInFunction)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value actual = context.run_file(L"def f():\n"
+                                    L"    from assignment import marker\n"
+                                    L"    return marker\n"
+                                    L"f()\n");
+    EXPECT_EQ(Value::from_smi(3), actual);
+}
+
+TEST(ImportSystem, FromImportStatementHonorsGlobalDeclaration)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value actual = context.run_file(L"def f():\n"
+                                    L"    global marker\n"
+                                    L"    from assignment import marker\n"
+                                    L"f()\n"
+                                    L"marker\n");
+    EXPECT_EQ(Value::from_smi(3), actual);
+}
+
+TEST(ImportSystem, FromImportMissingModuleRaisesModuleNotFound)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value imported = context.run_file(L"from notpresent import marker\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ModuleNotFoundError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"No module named 'notpresent'",
+              value_as_wstring(exception.extract()->message.value()));
+}
+
+TEST(ImportSystem, FromImportMissingNameRaisesImportError)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value imported = context.run_file(L"from assignment import notpresent\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"cannot import name 'notpresent' from 'assignment'",
+              value_as_wstring(exception.extract()->message.value()));
+}
+
+TEST(ImportSystem, FromImportPassesFullFromlistToImportHook)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value actual = context.run_file(
+        L"original = __builtins__.__import__\n"
+        L"def fake(name, globals, locals, fromlist, level):\n"
+        L"    global seen\n"
+        L"    seen = fromlist\n"
+        L"    return original(name, globals, locals, fromlist, level)\n"
+        L"__builtins__.__import__ = fake\n"
+        L"from assignment import marker, value\n"
+        L"seen[0] == \"marker\" and seen[1] == \"value\"\n");
+    EXPECT_EQ(Value::True(), actual);
+}
+
+TEST(ImportSystem, FromImportNonModuleHookReturnRaisesImportError)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value imported = context.run_file(L"def fake(name, globals, locals, "
+                                      L"fromlist, level):\n"
+                                      L"    return 42\n"
+                                      L"__builtins__.__import__ = fake\n"
+                                      L"from assignment import marker\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"cannot import name 'marker' from '<unknown>'",
+              value_as_wstring(exception.extract()->message.value()));
+}

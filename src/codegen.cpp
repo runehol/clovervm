@@ -7,6 +7,7 @@
 #include "scope.h"
 #include "str.h"
 #include "tokenizer.h"
+#include "tuple.h"
 #include "typed_value.h"
 #include <fmt/core.h>
 #include <optional>
@@ -1227,6 +1228,18 @@ namespace cl
                 "attributes, and subscripts yet");
         }
 
+        uint8_t allocate_import_fromlist_constant(AstChildren targets)
+        {
+            TValue<Tuple> fromlist =
+                active_thread()->make_object_value<Tuple>(targets.size());
+            for(size_t idx = 0; idx < targets.size(); ++idx)
+            {
+                fromlist.extract()->initialize_item_unchecked(
+                    idx, av.constants[targets[idx]]);
+            }
+            return code_obj->allocate_constant(fromlist.raw_value());
+        }
+
         void codegen_with_statement_from_item(AstChildren with_children,
                                               size_t item_offset)
         {
@@ -1727,6 +1740,30 @@ namespace cl
                         code_obj->emit_import_name(source_offset, name_idx, 0);
                         emit_store_accumulator_to_target(source_offset,
                                                          target_idx);
+                        break;
+                    }
+
+                case AstNodeKind::STATEMENT_IMPORT_FROM:
+                    {
+                        uint8_t fromlist_idx =
+                            allocate_import_fromlist_constant(children);
+                        uint8_t module_name_idx =
+                            code_obj->allocate_constant(av.constants[node_idx]);
+                        code_obj->emit_lda_constant(source_offset,
+                                                    fromlist_idx);
+                        code_obj->emit_import_name(source_offset,
+                                                   module_name_idx, 0);
+                        TemporaryReg module_reg(*code_obj);
+                        code_obj->emit_star(source_offset, module_reg);
+                        for(int32_t target_idx: children)
+                        {
+                            uint8_t name_idx = code_obj->allocate_constant(
+                                av.constants[target_idx]);
+                            code_obj->emit_import_from(source_offset,
+                                                       module_reg, name_idx);
+                            emit_store_accumulator_to_target(source_offset,
+                                                             target_idx);
+                        }
                         break;
                     }
 

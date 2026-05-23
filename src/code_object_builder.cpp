@@ -657,6 +657,14 @@ namespace cl
         return result;
     }
 
+    uint32_t CodeObjectBuilder::emit_import_from(uint32_t source_offset,
+                                                 uint32_t module_reg,
+                                                 uint8_t name_idx)
+    {
+        return emit_opcode_reg_constant_idx(source_offset, Bytecode::ImportFrom,
+                                            module_reg, name_idx);
+    }
+
     uint32_t CodeObjectBuilder::emit_call_native(uint32_t source_offset,
                                                  Bytecode op,
                                                  uint8_t target_idx)
@@ -936,6 +944,15 @@ namespace cl
         emplace_back(source_offset, reg.slot_offset);
         add_outgoing_arg_relocation(operand_offset, reg.slot_offset);
         emplace_back(source_offset, n_regs);
+        return result;
+    }
+
+    uint32_t CodeObjectBuilder::emit_opcode_reg_constant_idx(
+        uint32_t source_offset, Bytecode c, uint32_t reg, uint8_t constant_idx)
+    {
+        uint32_t result = emplace_back(source_offset, uint8_t(c));
+        emplace_back(source_offset, encode_reg(reg));
+        emplace_back(source_offset, constant_idx);
         return result;
     }
 

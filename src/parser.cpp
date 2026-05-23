@@ -1331,7 +1331,59 @@ namespace cl
             int32_t source_pos = source_pos_for_token();
             if(match(Token::FROM))
             {
-                return not_implemented("from import statement");
+                if(peek() == Token::DOT)
+                {
+                    return not_implemented("relative import statement");
+                }
+                consume(Token::NAME);
+                uint32_t module_source_pos = source_pos_for_previous_token();
+                std::wstring module_name = std::wstring(string_for_name_token(
+                    *ast.compilation_unit, module_source_pos));
+                while(match(Token::DOT))
+                {
+                    consume(Token::NAME);
+                    uint32_t component_source_pos =
+                        source_pos_for_previous_token();
+                    module_name += L".";
+                    module_name += std::wstring(string_for_name_token(
+                        *ast.compilation_unit, component_source_pos));
+                }
+                consume(Token::IMPORT);
+                if(peek() == Token::STAR)
+                {
+                    return not_implemented("star import statement");
+                }
+
+                AstChildren targets;
+                while(true)
+                {
+                    consume(Token::NAME);
+                    uint32_t name_source_pos = source_pos_for_previous_token();
+                    std::wstring name = std::wstring(string_for_name_token(
+                        *ast.compilation_unit, name_source_pos));
+                    TValue<String> name_value =
+                        vm.get_or_create_interned_string_value(name);
+                    targets.push_back(ast.emplace_back(
+                        AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
+                        name_source_pos, name_value));
+                    if(peek() == Token::AS)
+                    {
+                        return not_implemented("import alias");
+                    }
+                    if(!match(Token::COMMA))
+                    {
+                        break;
+                    }
+                    if(peek() == Token::NEWLINE || peek() == Token::SEMI)
+                    {
+                        break;
+                    }
+                }
+
+                TValue<String> module_name_value =
+                    vm.get_or_create_interned_string_value(module_name);
+                return ast.emplace_back(AstNodeKind::STATEMENT_IMPORT_FROM,
+                                        source_pos, targets, module_name_value);
             }
 
             consume(Token::IMPORT);

@@ -30,6 +30,7 @@ namespace cl
         // STATEMENT_MATCH,
         STATEMENT_RETURN,
         STATEMENT_IMPORT,
+        STATEMENT_IMPORT_FROM,
         STATEMENT_RAISE,
         STATEMENT_PASS,
         STATEMENT_DEL,
@@ -82,6 +83,7 @@ namespace cl
             case AstNodeKind::STATEMENT_WHILE:
             case AstNodeKind::STATEMENT_RETURN:
             case AstNodeKind::STATEMENT_IMPORT:
+            case AstNodeKind::STATEMENT_IMPORT_FROM:
             case AstNodeKind::STATEMENT_RAISE:
             case AstNodeKind::STATEMENT_PASS:
             case AstNodeKind::STATEMENT_DEL:

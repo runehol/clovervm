@@ -28,6 +28,8 @@ namespace cl
                                               CodeObject *code_object,
                                               TValue<String> name,
                                               Value fromlist, int64_t level);
+    [[nodiscard]] Value import_from(ThreadState *thread, Value module,
+                                    TValue<String> name);
 
 }  // namespace cl
 
