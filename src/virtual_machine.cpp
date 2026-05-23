@@ -1,5 +1,6 @@
 #include "virtual_machine.h"
 #include "bool.h"
+#include "build_config.h"
 #include "clover_entry.h"
 #include "code_object.h"
 #include "codegen.h"
@@ -427,8 +428,11 @@ namespace cl
         imported_modules_ = make_immortal_object_raw<Dict>();
 
         TValue<String> dot = get_or_create_interned_string_value(L".");
-        List *path = make_immortal_object_raw<List>(1);
+        TValue<String> stdlib_dir =
+            get_or_create_interned_string_value(CL_STDLIB_DIR);
+        List *path = make_immortal_object_raw<List>(2);
         path->set_item_unchecked(0, dot.raw_value());
+        path->set_item_unchecked(1, stdlib_dir.raw_value());
 
         TValue<String> modules_name =
             get_or_create_interned_string_value(L"modules");

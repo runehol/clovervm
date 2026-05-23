@@ -1,0 +1,6 @@
+#ifndef CL_BUILD_CONFIG_H
+#define CL_BUILD_CONFIG_H
+
+#define CL_STDLIB_DIR L"@CL_STDLIB_DIR@"
+
+#endif  // CL_BUILD_CONFIG_H

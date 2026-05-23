@@ -68,7 +68,9 @@ Known performance note:
 - [x] Bootstrap an immortal `sys` module.
 - [x] Bootstrap `sys.modules` as the VM-owned imported-modules dict with
       `"builtins"` and `"sys"` entries.
-- [x] Bootstrap `sys.path` as a list initialized to `["."]`.
+- [x] Bootstrap `sys.path` as a list initialized to `[".", CL_STDLIB_DIR]`.
+- [x] Add a source-tree `stdlib/` directory for ordinary importable system
+      modules.
 - [ ] Add tests that functions use their defining module, not the caller's
       module, for global lookup.
 - [ ] Add dict-like `__builtins__` traversal after dict namespace semantics and

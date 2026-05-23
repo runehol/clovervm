@@ -9,6 +9,12 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/builtins.inc"
     @ONLY)
 
+set(CL_STDLIB_DIR "${CMAKE_SOURCE_DIR}/stdlib")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/build_config.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/build_config.h"
+    @ONLY)
+
 add_library(libclovervm STATIC
     attr.cpp
     attr.h
@@ -135,7 +141,7 @@ set_target_properties(libclovervm PROPERTIES
 
 # add project sources to include path
 target_include_directories(libclovervm PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
-target_include_directories(libclovervm PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/")
+target_include_directories(libclovervm PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/")
 target_include_directories(
     libclovervm PRIVATE "${PROJECT_BINARY_DIR}/_deps/ctre-src/include")
 

@@ -66,7 +66,10 @@ Already implemented pieces used by the import design:
 - A VM-owned immortal `sys` module exists with `sys.modules` and `sys.path`.
 - `sys.modules` is the VM-owned imported-modules cache, initially containing
   `"builtins"` and `"sys"`.
-- `sys.path` is a mutable list initialized to `["."]`.
+- `sys.path` is a mutable list initialized to `[".", CL_STDLIB_DIR]`.
+- `CL_STDLIB_DIR` is an absolute build-configured path to `stdlib/`.
+- Trusted VM bootstrap code stays in `src/builtins.py`; ordinary importable
+  system modules live under `stdlib/`.
 
 ## CPython Import Sequence
 
@@ -838,7 +841,10 @@ observes mutations to the builtins module.
 - Implemented: `sys` is an immortal VM-owned module with `__builtins__`.
 - Implemented: `sys.modules` is an immortal `Dict` also kept by the VM as
   `imported_modules`.
-- Implemented: `sys.path` is an immortal `List` initialized to `["."]`.
+- Implemented: `sys.path` is an immortal `List` initialized to
+  `[".", CL_STDLIB_DIR]`.
+- Implemented: `CL_STDLIB_DIR` is baked into the binary at CMake configure time
+  as the absolute source-tree `stdlib/` path.
 - Deferred: `__main__` insertion waits for the future import runner/main entry
   path.
 

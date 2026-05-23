@@ -1,3 +1,4 @@
+#include "build_config.h"
 #include "dict.h"
 #include "list.h"
 #include "module_object.h"
@@ -90,7 +91,7 @@ TEST(ModuleObject, SysModulesIsCanonicalImportedModulesDict)
               modules->get_item(builtins_name.raw_value()));
 }
 
-TEST(ModuleObject, SysPathStartsWithCurrentDirectoryList)
+TEST(ModuleObject, SysPathStartsWithCurrentDirectoryAndStdlib)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -102,8 +103,9 @@ TEST(ModuleObject, SysPathStartsWithCurrentDirectoryList)
     ASSERT_TRUE(can_convert_to<List>(path_value));
     List *path = path_value.get_ptr<List>();
     EXPECT_EQ(-1, path->refcount);
-    ASSERT_EQ(1u, path->size());
+    ASSERT_EQ(2u, path->size());
     EXPECT_EQ(L".", value_as_wstring(path->item_unchecked(0)));
+    EXPECT_EQ(CL_STDLIB_DIR, value_as_wstring(path->item_unchecked(1)));
 }
 
 TEST(ModuleObject, PredefinedSlotLocationsAreStable)
