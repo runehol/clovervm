@@ -27,8 +27,8 @@ loader architecture.
 
 - Implement the full CPython importlib protocol in the first step.
 - Require module globals to be an exact Python `dict`.
-- Add namespace packages, zip imports, extension modules, or bytecode cache
-  handling in the first implementation.
+- Add namespace packages, zip imports, public third-party extension-module ABI,
+  or bytecode cache handling in the first implementation.
 - Make global lookup invoke module attribute lookup or descriptors.
 - Model the core loader around arbitrary `globals` and `locals` dictionaries.
 
@@ -552,7 +552,7 @@ The bootstrap importer should deliberately defer:
 - `sys.path_importer_cache`
 - multi-portion namespace package merging
 - zip imports
-- extension modules
+- stable third-party extension-module ABI
 - frozen modules, unless needed for VM boot
 - `.pyc` loading and invalidation
 - `importlib.reload`
@@ -907,8 +907,9 @@ The current implementation has the bootstrap import spine in place:
 - Add multi-portion namespace package merging.
 - Add bytecode cache loading and invalidation.
 - Add frozen modules if VM bootstrap starts needing them.
-- Add extension modules only after the native ABI/module initialization design
-  exists.
+- Add native extension modules through the loader/build design in
+  [Native C Modules](native-c-modules.md) and the builder-based API in
+  [Clover C API](clover-c-api.md).
 - Add zip imports only after path hooks and path entry finders exist.
 
 ## Remaining Tests

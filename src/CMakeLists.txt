@@ -15,7 +15,7 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/build_config.h"
     @ONLY)
 
-add_library(libclovervm STATIC
+add_library(libclovervm_objects OBJECT
     attr.cpp
     attr.h
     attribute_cache.h
@@ -65,6 +65,8 @@ add_library(libclovervm STATIC
     parser.h
     range_iterator.cpp
     range_iterator.h
+    repl.cpp
+    repl.h
     runtime_helpers.h
     heap_reclamation.cpp
     heap_reclamation.h
@@ -141,28 +143,45 @@ add_library(libclovervm STATIC
     vm_array.h
 )
 
+add_library(libclovervm SHARED)
+target_link_libraries(libclovervm PRIVATE libclovervm_objects)
+
+set_target_properties(libclovervm_objects PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+
 set_target_properties(libclovervm PROPERTIES
+    OUTPUT_NAME clovervm
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED YES
     CXX_EXTENSIONS NO
 )
 
 # add project sources to include path
-target_include_directories(libclovervm PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
-target_include_directories(libclovervm PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/")
 target_include_directories(
-    libclovervm PRIVATE "${PROJECT_BINARY_DIR}/_deps/ctre-src/include")
+    libclovervm_objects PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/")
+target_include_directories(
+    libclovervm_objects PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/")
+target_include_directories(
+    libclovervm_objects PRIVATE "${PROJECT_BINARY_DIR}/_deps/ctre-src/include")
 
-target_link_libraries(libclovervm PRIVATE project_options project_warnings)
+target_link_libraries(
+    libclovervm_objects PRIVATE project_options project_warnings)
+target_link_libraries(
+    libclovervm_objects PUBLIC absl::inlined_vector absl::flat_hash_map
+                              absl::flat_hash_set)
+target_link_libraries(libclovervm_objects PUBLIC fmt::fmt)
+
 target_link_libraries(
     libclovervm PUBLIC absl::inlined_vector absl::flat_hash_map
-                     absl::flat_hash_set)
+                       absl::flat_hash_set)
 target_link_libraries(libclovervm PUBLIC fmt::fmt)
 
 add_executable(clovervm
     clovervm.cpp
-    repl.cpp
-    repl.h
 )
 
 set_target_properties(clovervm PROPERTIES

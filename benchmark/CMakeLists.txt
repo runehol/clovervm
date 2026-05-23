@@ -46,7 +46,7 @@ set_target_properties(bench_clovervm PROPERTIES
 enable_sanitizers(bench_clovervm)
 
 target_link_libraries(bench_clovervm PRIVATE benchmark::benchmark)
-target_link_libraries(bench_clovervm PRIVATE libclovervm)
+target_link_libraries(bench_clovervm PRIVATE libclovervm_objects)
 target_link_libraries(bench_clovervm PRIVATE project_options project_warnings)
 target_compile_definitions(bench_clovervm
     PRIVATE CLOVERVM_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
