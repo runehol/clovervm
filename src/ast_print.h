@@ -519,9 +519,16 @@ template <> struct fmt::formatter<cl::AstVector>
             case cl::AstNodeKind::STATEMENT_IMPORT:
                 emit_indent(out, indent);
                 format_to(out, "import ");
-                format_to(out, "{}",
-                          narrow_wstring_view_ast(string_as_wchar_t(
-                              ast_print_string_constant(av, node_idx))));
+                for(size_t child_offset = 0; child_offset < children.size();
+                    ++child_offset)
+                {
+                    if(child_offset > 0)
+                    {
+                        format_to(out, ", ");
+                    }
+                    render_node(av, out, children[child_offset], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                }
                 format_to(out, "\n");
                 break;
 
@@ -542,6 +549,22 @@ template <> struct fmt::formatter<cl::AstVector>
                 }
                 format_to(out, "\n");
                 break;
+
+            case cl::AstNodeKind::IMPORT_ALIAS:
+                {
+                    std::string import_name =
+                        narrow_wstring_view_ast(string_as_wchar_t(
+                            ast_print_string_constant(av, node_idx)));
+                    std::string store_name =
+                        narrow_wstring_view_ast(string_as_wchar_t(
+                            ast_print_string_constant(av, children[0])));
+                    format_to(out, "{}", import_name);
+                    if(children.size() > 1)
+                    {
+                        format_to(out, " as {}", store_name);
+                    }
+                    break;
+                }
 
             case cl::AstNodeKind::STATEMENT_PASS:
                 emit_indent(out, indent);

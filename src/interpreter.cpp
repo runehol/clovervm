@@ -3306,11 +3306,10 @@ namespace cl
 
     static INTERP_CC Value op_import_from(PARAMS)
     {
-        START(3);
-        int8_t module_reg = pc[1];
-        uint8_t name_idx = pc[2];
+        START(2);
+        uint8_t name_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
-        accumulator = import_from(thread, fp[module_reg],
+        accumulator = import_from(thread, accumulator,
                                   TValue<String>::from_value_assumed(
                                       code_object->constant_table[name_idx]));
         if(unlikely(accumulator.is_exception_marker()))

@@ -658,11 +658,10 @@ namespace cl
     }
 
     uint32_t CodeObjectBuilder::emit_import_from(uint32_t source_offset,
-                                                 uint32_t module_reg,
                                                  uint8_t name_idx)
     {
-        return emit_opcode_reg_constant_idx(source_offset, Bytecode::ImportFrom,
-                                            module_reg, name_idx);
+        return emit_opcode_constant_idx(source_offset, Bytecode::ImportFrom,
+                                        name_idx);
     }
 
     uint32_t CodeObjectBuilder::emit_call_native(uint32_t source_offset,

@@ -460,15 +460,18 @@ namespace cl
                         return;
 
                     case AstNodeKind::STATEMENT_IMPORT:
-                        mark_global_validation_assignment(
-                            state, av.constants[children[0]]);
+                        for(int32_t alias_idx: children)
+                        {
+                            mark_global_validation_assignment(
+                                state, av.constants[av.children[alias_idx][0]]);
+                        }
                         return;
 
                     case AstNodeKind::STATEMENT_IMPORT_FROM:
-                        for(int32_t name_idx: children)
+                        for(int32_t alias_idx: children)
                         {
                             mark_global_validation_assignment(
-                                state, av.constants[name_idx]);
+                                state, av.constants[av.children[alias_idx][0]]);
                         }
                         return;
 
@@ -653,13 +656,20 @@ namespace cl
                         return;
 
                     case AstNodeKind::STATEMENT_IMPORT:
-                        ensure_binding(analysis, av.constants[children[0]]);
+                        for(int32_t alias_idx: children)
+                        {
+                            ensure_binding(
+                                analysis,
+                                av.constants[av.children[alias_idx][0]]);
+                        }
                         return;
 
                     case AstNodeKind::STATEMENT_IMPORT_FROM:
-                        for(int32_t name_idx: children)
+                        for(int32_t alias_idx: children)
                         {
-                            ensure_binding(analysis, av.constants[name_idx]);
+                            ensure_binding(
+                                analysis,
+                                av.constants[av.children[alias_idx][0]]);
                         }
                         return;
 
@@ -779,13 +789,16 @@ namespace cl
                         return;
 
                     case AstNodeKind::STATEMENT_IMPORT:
-                        mark_name(av.constants[children[0]]);
+                        for(int32_t alias_idx: children)
+                        {
+                            mark_name(av.constants[av.children[alias_idx][0]]);
+                        }
                         return;
 
                     case AstNodeKind::STATEMENT_IMPORT_FROM:
-                        for(int32_t name_idx: children)
+                        for(int32_t alias_idx: children)
                         {
-                            mark_name(av.constants[name_idx]);
+                            mark_name(av.constants[av.children[alias_idx][0]]);
                         }
                         return;
 
@@ -976,13 +989,16 @@ namespace cl
                         }
 
                     case AstNodeKind::STATEMENT_IMPORT:
-                        annotate_write(children[0]);
+                        for(int32_t alias_idx: children)
+                        {
+                            annotate_write(av.children[alias_idx][0]);
+                        }
                         break;
 
                     case AstNodeKind::STATEMENT_IMPORT_FROM:
-                        for(int32_t name_idx: children)
+                        for(int32_t alias_idx: children)
                         {
-                            annotate_write(name_idx);
+                            annotate_write(av.children[alias_idx][0]);
                         }
                         break;
 

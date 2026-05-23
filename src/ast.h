@@ -46,6 +46,7 @@ namespace cl
         // The simple bit is stored in AstVector::constants as True/False.
         STATEMENT_ANN_ASSIGN,
         STATEMENT_EXPRESSION,
+        IMPORT_ALIAS,
         PARAMETER_SEQUENCE,
         PARAMETER,
         PARAMETER_VARARGS,
@@ -96,6 +97,7 @@ namespace cl
             case AstNodeKind::STATEMENT_ASSIGN:
             case AstNodeKind::STATEMENT_ANN_ASSIGN:
             case AstNodeKind::STATEMENT_EXPRESSION:
+            case AstNodeKind::IMPORT_ALIAS:
             case AstNodeKind::PARAMETER_SEQUENCE:
             case AstNodeKind::PARAMETER:
             case AstNodeKind::PARAMETER_VARARGS:

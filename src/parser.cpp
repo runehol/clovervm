@@ -1361,15 +1361,31 @@ namespace cl
                     uint32_t name_source_pos = source_pos_for_previous_token();
                     std::wstring name = std::wstring(string_for_name_token(
                         *ast.compilation_unit, name_source_pos));
+                    std::wstring store_name = name;
+                    if(match(Token::AS))
+                    {
+                        consume(Token::NAME);
+                        store_name = std::wstring(string_for_name_token(
+                            *ast.compilation_unit,
+                            source_pos_for_previous_token()));
+                    }
+                    TValue<String> store_name_value =
+                        vm.get_or_create_interned_string_value(store_name);
+                    int32_t target = ast.emplace_back(
+                        AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
+                        name_source_pos, store_name_value);
                     TValue<String> name_value =
                         vm.get_or_create_interned_string_value(name);
-                    targets.push_back(ast.emplace_back(
-                        AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
-                        name_source_pos, name_value));
-                    if(peek() == Token::AS)
+                    AstChildren alias_children{target};
+                    if(store_name != name)
                     {
-                        return not_implemented("import alias");
+                        alias_children.push_back(
+                            ast.emplace_back(AstNodeKind::EXPRESSION_LITERAL,
+                                             name_source_pos, Value::True()));
                     }
+                    targets.push_back(ast.emplace_back(
+                        AstNodeKind::IMPORT_ALIAS, name_source_pos,
+                        alias_children, name_value));
                     if(!match(Token::COMMA))
                     {
                         break;
@@ -1387,38 +1403,64 @@ namespace cl
             }
 
             consume(Token::IMPORT);
-            consume(Token::NAME);
-            uint32_t name_source_pos = source_pos_for_previous_token();
-            std::wstring name = std::wstring(
-                string_for_name_token(*ast.compilation_unit, name_source_pos));
-            std::wstring store_name = name;
-            while(match(Token::DOT))
+            AstChildren aliases;
+            while(true)
             {
                 consume(Token::NAME);
-                uint32_t component_source_pos = source_pos_for_previous_token();
-                name += L".";
-                name += std::wstring(string_for_name_token(
-                    *ast.compilation_unit, component_source_pos));
+                uint32_t name_source_pos = source_pos_for_previous_token();
+                std::wstring name = std::wstring(string_for_name_token(
+                    *ast.compilation_unit, name_source_pos));
+                std::wstring store_name = name;
+                bool has_alias = false;
+                while(match(Token::DOT))
+                {
+                    consume(Token::NAME);
+                    uint32_t component_source_pos =
+                        source_pos_for_previous_token();
+                    name += L".";
+                    name += std::wstring(string_for_name_token(
+                        *ast.compilation_unit, component_source_pos));
+                }
+
+                if(match(Token::AS))
+                {
+                    has_alias = true;
+                    consume(Token::NAME);
+                    store_name = std::wstring(
+                        string_for_name_token(*ast.compilation_unit,
+                                              source_pos_for_previous_token()));
+                }
+
+                TValue<String> store_name_value =
+                    vm.get_or_create_interned_string_value(store_name);
+                int32_t target =
+                    ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
+                                     name_source_pos, store_name_value);
+                TValue<String> full_name_value =
+                    vm.get_or_create_interned_string_value(name);
+                AstChildren alias_children{target};
+                if(has_alias)
+                {
+                    alias_children.push_back(
+                        ast.emplace_back(AstNodeKind::EXPRESSION_LITERAL,
+                                         name_source_pos, Value::True()));
+                }
+                aliases.push_back(
+                    ast.emplace_back(AstNodeKind::IMPORT_ALIAS, name_source_pos,
+                                     alias_children, full_name_value));
+
+                if(!match(Token::COMMA))
+                {
+                    break;
+                }
+                if(peek() == Token::NEWLINE || peek() == Token::SEMI)
+                {
+                    break;
+                }
             }
 
-            TValue<String> store_name_value =
-                vm.get_or_create_interned_string_value(store_name);
-            int32_t target =
-                ast.emplace_back(AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
-                                 name_source_pos, store_name_value);
-            if(peek() == Token::AS)
-            {
-                return not_implemented("import alias");
-            }
-            if(peek() == Token::COMMA)
-            {
-                return not_implemented("multiple import statement");
-            }
-
-            TValue<String> full_name_value =
-                vm.get_or_create_interned_string_value(name);
             return ast.emplace_back(AstNodeKind::STATEMENT_IMPORT, source_pos,
-                                    {target}, full_name_value);
+                                    aliases);
         }
 
         int32_t del_stmt()

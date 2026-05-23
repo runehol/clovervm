@@ -793,8 +793,6 @@ template <> struct fmt::formatter<cl::CodeObject>
 
             case cl::Bytecode::ImportFrom:
                 format_to(out, " ");
-                disassemble_reg(code_obj, out, pc++);
-                format_to(out, ", ");
                 disassemble_constant(code_obj, out, pc++);
                 break;
 

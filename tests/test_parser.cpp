@@ -745,8 +745,8 @@ TEST(Parser, missing_colon_in_if_stmt)
 
 TEST(Parser, import_stmt)
 {
-    std::string expected = "import math\n";
-    std::string actual = parse(L"import math\n");
+    std::string expected = "import math, os.path as p\n";
+    std::string actual = parse(L"import math, os.path as p\n");
 
     EXPECT_EQ(expected, actual);
 }
@@ -761,8 +761,8 @@ TEST(Parser, dotted_import_stmt)
 
 TEST(Parser, from_import_stmt)
 {
-    std::string expected = "from pkg.mod import value, other\n";
-    std::string actual = parse(L"from pkg.mod import value, other\n");
+    std::string expected = "from pkg.mod import value, other as alias\n";
+    std::string actual = parse(L"from pkg.mod import value, other as alias\n");
 
     EXPECT_EQ(expected, actual);
 }

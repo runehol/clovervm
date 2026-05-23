@@ -1228,16 +1228,42 @@ namespace cl
                 "attributes, and subscripts yet");
         }
 
-        uint8_t allocate_import_fromlist_constant(AstChildren targets)
+        uint8_t allocate_import_fromlist_constant(AstChildren aliases)
         {
             TValue<Tuple> fromlist =
-                active_thread()->make_object_value<Tuple>(targets.size());
-            for(size_t idx = 0; idx < targets.size(); ++idx)
+                active_thread()->make_object_value<Tuple>(aliases.size());
+            for(size_t idx = 0; idx < aliases.size(); ++idx)
             {
                 fromlist.extract()->initialize_item_unchecked(
-                    idx, av.constants[targets[idx]]);
+                    idx, av.constants[aliases[idx]]);
             }
             return code_obj->allocate_constant(fromlist.raw_value());
+        }
+
+        std::vector<std::wstring> split_import_name(int32_t alias_idx)
+        {
+            std::wstring import_name = string_as_wchar_t(
+                TValue<String>::from_value_assumed(av.constants[alias_idx]));
+            std::vector<std::wstring> components;
+            size_t start = 0;
+            while(start <= import_name.size())
+            {
+                size_t dot = import_name.find(L'.', start);
+                size_t end =
+                    dot == std::wstring::npos ? import_name.size() : dot;
+                components.push_back(import_name.substr(start, end - start));
+                if(dot == std::wstring::npos)
+                {
+                    break;
+                }
+                start = dot + 1;
+            }
+            return components;
+        }
+
+        bool import_alias_has_explicit_target(int32_t alias_idx) const
+        {
+            return av.children[alias_idx].size() > 1;
         }
 
         void codegen_with_statement_from_item(AstChildren with_children,
@@ -1732,16 +1758,32 @@ namespace cl
                     }
 
                 case AstNodeKind::STATEMENT_IMPORT:
+                    for(int32_t alias_idx: children)
                     {
-                        int32_t target_idx = children[0];
-                        uint8_t name_idx =
-                            code_obj->allocate_constant(av.constants[node_idx]);
+                        int32_t target_idx = av.children[alias_idx][0];
+                        uint8_t name_idx = code_obj->allocate_constant(
+                            av.constants[alias_idx]);
                         code_obj->emit_lda_none(source_offset);
                         code_obj->emit_import_name(source_offset, name_idx, 0);
+                        if(import_alias_has_explicit_target(alias_idx))
+                        {
+                            std::vector<std::wstring> components =
+                                split_import_name(alias_idx);
+                            for(size_t component_idx = 1;
+                                component_idx < components.size();
+                                ++component_idx)
+                            {
+                                uint8_t component_name_idx =
+                                    code_obj->allocate_constant(interned_string(
+                                        components[component_idx]));
+                                code_obj->emit_import_from(source_offset,
+                                                           component_name_idx);
+                            }
+                        }
                         emit_store_accumulator_to_target(source_offset,
                                                          target_idx);
-                        break;
                     }
+                    break;
 
                 case AstNodeKind::STATEMENT_IMPORT_FROM:
                     {
@@ -1753,16 +1795,29 @@ namespace cl
                                                     fromlist_idx);
                         code_obj->emit_import_name(source_offset,
                                                    module_name_idx, 0);
-                        TemporaryReg module_reg(*code_obj);
-                        code_obj->emit_star(source_offset, module_reg);
-                        for(int32_t target_idx: children)
+                        if(children.size() == 1)
                         {
+                            int32_t alias_idx = children[0];
                             uint8_t name_idx = code_obj->allocate_constant(
-                                av.constants[target_idx]);
-                            code_obj->emit_import_from(source_offset,
-                                                       module_reg, name_idx);
-                            emit_store_accumulator_to_target(source_offset,
-                                                             target_idx);
+                                av.constants[alias_idx]);
+                            code_obj->emit_import_from(source_offset, name_idx);
+                            emit_store_accumulator_to_target(
+                                source_offset, av.children[alias_idx][0]);
+                        }
+                        else
+                        {
+                            TemporaryReg module_reg(*code_obj);
+                            code_obj->emit_star(source_offset, module_reg);
+                            for(int32_t alias_idx: children)
+                            {
+                                uint8_t name_idx = code_obj->allocate_constant(
+                                    av.constants[alias_idx]);
+                                code_obj->emit_ldar(source_offset, module_reg);
+                                code_obj->emit_import_from(source_offset,
+                                                           name_idx);
+                                emit_store_accumulator_to_target(
+                                    source_offset, av.children[alias_idx][0]);
+                            }
                         }
                         break;
                     }
@@ -2265,9 +2320,10 @@ namespace cl
                         "STATEMENT_TRY");
 
                 case AstNodeKind::WITH_ITEM:
+                case AstNodeKind::IMPORT_ALIAS:
                     throw std::runtime_error(
                         "should not end here - this is handled by "
-                        "STATEMENT_WITH");
+                        "the owning statement");
 
                 case AstNodeKind::PARAMETER_SEQUENCE:
                 case AstNodeKind::PARAMETER:

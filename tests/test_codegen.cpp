@@ -118,6 +118,29 @@ TEST(Codegen, import_statement_uses_import_name_and_normal_store)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, multiple_import_statement_loops_over_aliases)
+{
+    std::string expected =
+        "Code object:\n"
+        "    0 LdaNone\n"
+        "    1 ImportName c[0], 0\n"
+        "    4 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    7 LdaNone\n"
+        "    8 ImportName c[2], 0\n"
+        "   11 ImportFrom c[3]\n"
+        "   13 StaGlobal c[4], module_global_mutation_ic[1]\n"
+        "   16 Return\n"
+        "Constant 0: \"assignment\"\n"
+        "Constant 1: \"assignment\"\n"
+        "Constant 2: \"pkg.mod\"\n"
+        "Constant 3: \"mod\"\n"
+        "Constant 4: \"alias\"\n";
+    std::string actual =
+        bytecode_str_from_file(L"import assignment, pkg.mod as alias\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, dotted_import_statement_imports_full_name_and_stores_head)
 {
     std::string expected =
@@ -140,9 +163,11 @@ TEST(Codegen, from_import_statement_uses_fromlist_and_import_from)
         "    0 LdaConstant c[0]\n"
         "    2 ImportName c[1], 0\n"
         "    5 Star0\n"
-        "    6 ImportFrom r0, c[2]\n"
+        "    6 Ldar0\n"
+        "    7 ImportFrom c[2]\n"
         "    9 StaGlobal c[3], module_global_mutation_ic[0]\n"
-        "   12 ImportFrom r0, c[4]\n"
+        "   12 Ldar0\n"
+        "   13 ImportFrom c[4]\n"
         "   15 StaGlobal c[5], module_global_mutation_ic[1]\n"
         "   18 Return\n"
         "Constant 0: (\"marker\", \"value\")\n"
@@ -150,9 +175,9 @@ TEST(Codegen, from_import_statement_uses_fromlist_and_import_from)
         "Constant 2: \"marker\"\n"
         "Constant 3: \"marker\"\n"
         "Constant 4: \"value\"\n"
-        "Constant 5: \"value\"\n";
-    std::string actual =
-        bytecode_str_from_file(L"from assignment import marker, value\n");
+        "Constant 5: \"alias\"\n";
+    std::string actual = bytecode_str_from_file(
+        L"from assignment import marker, value as alias\n");
 
     EXPECT_EQ(expected, actual);
 }

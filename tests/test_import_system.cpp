@@ -493,6 +493,42 @@ TEST(ImportSystem, ImportStatementLoadsDottedModuleAndStoresTopLevelBinding)
     EXPECT_EQ(Value::from_smi(42), marker);
 }
 
+TEST(ImportSystem, ImportStatementSupportsMultipleImportsAndAliases)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "package_marker = 7\n");
+    root.write_file(L"pkg/mod.py", "value = 42\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    path->append(module_name(context, L"tests/python").raw_value());
+    replace_sys_path(context, path);
+
+    Value actual =
+        context.run_file(L"import assignment as a, pkg.mod as alias\n"
+                         L"a.marker + alias.value\n");
+    EXPECT_EQ(Value::from_smi(45), actual);
+}
+
+TEST(ImportSystem, ImportStatementExplicitAliasToHeadStoresLeafModule)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "package_marker = 7\n");
+    root.write_file(L"pkg/mod.py", "value = 42\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(L"import pkg.mod as pkg\n"
+                                    L"pkg.value\n");
+    EXPECT_EQ(Value::from_smi(42), actual);
+}
+
 TEST(ImportSystem, ImportStatementUsesParentPackagePathForChildLookup)
 {
     test::VmTestContext context;
@@ -605,6 +641,18 @@ TEST(ImportSystem, FromImportStatementLoadsNames)
     EXPECT_EQ(Value::from_smi(10), actual);
 }
 
+TEST(ImportSystem, FromImportStatementSupportsAliases)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value actual =
+        context.run_file(L"from assignment import marker as m, value\n"
+                         L"m + value\n");
+    EXPECT_EQ(Value::from_smi(10), actual);
+}
+
 TEST(ImportSystem, FromImportStatementStoresLocalBindingInFunction)
 {
     test::VmTestContext context;
@@ -629,6 +677,20 @@ TEST(ImportSystem, FromImportStatementHonorsGlobalDeclaration)
                                     L"    from assignment import marker\n"
                                     L"f()\n"
                                     L"marker\n");
+    EXPECT_EQ(Value::from_smi(3), actual);
+}
+
+TEST(ImportSystem, FromImportStatementAliasHonorsGlobalDeclaration)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value actual = context.run_file(L"def f():\n"
+                                    L"    global m\n"
+                                    L"    from assignment import marker as m\n"
+                                    L"f()\n"
+                                    L"m\n");
     EXPECT_EQ(Value::from_smi(3), actual);
 }
 
