@@ -56,8 +56,8 @@ Known performance note:
 
 - [x] Implement `globals()` as a live mutable view over module object storage.
 - [x] Implement module-scope `locals()` as the same live mutable view.
-- [ ] Decide whether `module.__dict__` lands with `globals()` or remains a
-      separate follow-up.
+- [x] Expose `module.__dict__` as a live `SlotDict` view over module object
+      storage.
 - [x] Add tests that top-level stores and `globals()["x"]` observe the same own
       module binding where supported.
 - [x] Add tests that builtin fallback does not appear as a module own attribute
@@ -71,8 +71,10 @@ Known performance note:
 - [x] Bootstrap `sys.path` as a list initialized to `[".", CL_STDLIB_DIR]`.
 - [x] Add a source-tree `stdlib/` directory for ordinary importable system
       modules.
-- [ ] Add tests that functions use their defining module, not the caller's
+- [x] Add tests that functions use their defining module, not the caller's
       module, for global lookup.
+- [x] Add tests that module-object `__builtins__` reassignment and deletion
+      affect builtin fallback and cache invalidation correctly.
 - [ ] Add dict-like `__builtins__` traversal after dict namespace semantics and
       cache invalidation have a dedicated design.
 
