@@ -52,7 +52,14 @@ namespace cl
             first = false;
             CL_PROPAGATE_EXCEPTION(builder.append_repr(entry.key));
             builder.append_c_str(L": ");
-            CL_PROPAGATE_EXCEPTION(builder.append_repr(entry.value));
+            if(entry.value == self)
+            {
+                builder.append_c_str(L"{...}");
+            }
+            else
+            {
+                CL_PROPAGATE_EXCEPTION(builder.append_repr(entry.value));
+            }
         }
         builder.append_char(L'}');
         return builder.finish();

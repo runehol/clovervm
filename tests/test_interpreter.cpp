@@ -3536,6 +3536,18 @@ TEST(Interpreter, globals_slotdict_repr_is_dict_style)
     EXPECT_NE(std::wstring::npos, text.find(L"'x': 1"));
 }
 
+TEST(Interpreter, globals_slotdict_repr_handles_self_reference)
+{
+    test::VmTestContext test_context;
+
+    Value actual = test_context.run_file(L"a = globals()\n"
+                                         L"repr(a)\n");
+    ASSERT_TRUE(can_convert_to<String>(actual));
+    std::wstring text =
+        string_as_wchar_t(TValue<String>::from_value_assumed(actual));
+    EXPECT_NE(std::wstring::npos, text.find(L"'a': {...}"));
+}
+
 TEST(Interpreter, globals_slotdict_writes_and_deletes_module_bindings)
 {
     test::VmTestContext test_context;
