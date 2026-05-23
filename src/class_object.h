@@ -14,9 +14,11 @@
 #include "value.h"
 #include "vm_array.h"
 #include <cstdint>
+#include <vector>
 
 namespace cl
 {
+    class ClassObject;
     class Function;
     class Tuple;
 
@@ -38,6 +40,39 @@ namespace cl
         Value value;
     };
 
+    enum class BuiltinInstanceShapeDefaults
+    {
+        None,
+        DunderClass,
+        DunderClassAndDict,
+    };
+
+    class BuiltinInstanceShapeBuilder
+    {
+    public:
+        BuiltinInstanceShapeBuilder(ClassObject *cls,
+                                    BuiltinInstanceShapeDefaults defaults,
+                                    uint32_t predefined_slot_count);
+
+        BuiltinInstanceShapeBuilder &add_slot(const wchar_t *name,
+                                              uint32_t slot_index);
+        BuiltinInstanceShapeBuilder &add_slot(TValue<String> name,
+                                              uint32_t slot_index);
+        BuiltinInstanceShapeBuilder &reserve_slot(uint32_t slot_index);
+        BuiltinInstanceShapeBuilder &add_descriptor(TValue<String> name,
+                                                    DescriptorInfo info);
+
+        void install(ShapeFlags shape_flags);
+
+    private:
+        ClassObject *cls;
+        uint32_t predefined_slot_count;
+        std::vector<ShapeRootDescriptor> descriptors;
+        std::vector<bool> declared_slots;
+        uint32_t declared_slot_count;
+        uint64_t declared_slot_index_sum;
+    };
+
     struct ConstructorThunkLookup
     {
         Function *thunk;
@@ -49,6 +84,8 @@ namespace cl
     class ClassObject : public SlotObject
     {
     public:
+        friend class BuiltinInstanceShapeBuilder;
+
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::ClassObject;
         static constexpr uint32_t class_metadata_slot_name = 0;
@@ -132,13 +169,6 @@ namespace cl
         {
             return instance_root_shape.extract();
         }
-        void install_builtin_instance_root_shape(
-            const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
-            int32_t next_slot_index, ShapeFlags shape_flags);
-        void install_builtin_instance_root_shape(
-            const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
-            int32_t next_slot_index, uint32_t present_count,
-            ShapeFlags shape_flags);
         ValidityCell *current_mro_shape_and_contents_validity_cell() const
         {
             return mro_shape_and_contents_validity_cell.extract();
@@ -202,6 +232,11 @@ namespace cl
     private:
         static constexpr uint32_t class_extra_inline_attribute_slot_count =
             class_inline_storage_slot_count - class_metadata_slot_count;
+
+        void install_instance_root_shape_from_builder(
+            const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
+            int32_t next_slot_index, uint32_t present_count,
+            ShapeFlags shape_flags);
 
         Value make_bases_tuple(ClassObject *single_base) const;
         static void validate_bases(TValue<Tuple> bases);

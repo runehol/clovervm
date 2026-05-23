@@ -23,6 +23,8 @@ namespace cl
         static constexpr NativeLayoutId native_layout =
             NativeLayoutId::Function;
         static constexpr uint32_t VarArgs = UINT32_MAX;
+        static constexpr uint32_t kCodeObjectSlot = 0;
+        static constexpr uint32_t kDefaultParametersSlot = 1;
         static constexpr uint32_t kDocstringSlot = 2;
         static constexpr uint32_t kInlineSlotCount = 3;
 

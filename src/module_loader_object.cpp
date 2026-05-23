@@ -18,42 +18,13 @@ namespace cl
 
     static void install_module_loader_instance_root_shape(ClassObject *cls)
     {
-        TValue<String> dunder_class_name = interned_string(L"__class__");
-        TValue<String> kind_name = interned_string(L"kind");
-        TValue<String> name_name = interned_string(L"name");
-        TValue<String> path_name = interned_string(L"path");
-        DescriptorFlags class_flags =
-            descriptor_flag(DescriptorFlag::ReadOnly) |
-            descriptor_flag(DescriptorFlag::StableSlot) |
-            descriptor_flag(DescriptorFlag::SpecialRead) |
-            descriptor_flag(DescriptorFlag::SpecialMutate);
-        DescriptorFlags slot_flags =
-            descriptor_flag(DescriptorFlag::StableSlot);
-        ShapeRootDescriptor descriptors[] = {
-            ShapeRootDescriptor{
-                dunder_class_name,
-                DescriptorInfo::make(StorageLocation::not_found(), class_flags,
-                                     DescriptorSpecialKind::ShapeClass)},
-            ShapeRootDescriptor{
-                kind_name, DescriptorInfo::make(
-                               StorageLocation{ModuleLoaderObject::kKindSlot,
-                                               StorageKind::Inline},
-                               slot_flags)},
-            ShapeRootDescriptor{
-                name_name, DescriptorInfo::make(
-                               StorageLocation{ModuleLoaderObject::kNameSlot,
-                                               StorageKind::Inline},
-                               slot_flags)},
-            ShapeRootDescriptor{
-                path_name, DescriptorInfo::make(
-                               StorageLocation{ModuleLoaderObject::kPathSlot,
-                                               StorageKind::Inline},
-                               slot_flags)},
-        };
-        cls->install_builtin_instance_root_shape(
-            descriptors, std::size(descriptors),
-            ModuleLoaderObject::kInlineSlotCount,
-            shape_flag(ShapeFlag::DisallowAttributeAddDelete));
+        BuiltinInstanceShapeBuilder(
+            cls, BuiltinInstanceShapeDefaults::DunderClassAndDict,
+            ModuleLoaderObject::kInlineSlotCount)
+            .add_slot(L"kind", ModuleLoaderObject::kKindSlot)
+            .add_slot(L"name", ModuleLoaderObject::kNameSlot)
+            .add_slot(L"path", ModuleLoaderObject::kPathSlot)
+            .install(shape_flag(ShapeFlag::DisallowAttributeAddDelete));
     }
 
     BuiltinClassDefinition make_module_loader_class(VirtualMachine *vm)

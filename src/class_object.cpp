@@ -187,35 +187,12 @@ namespace cl
               _instance_default_inline_slot_count),
           instance_native_layout_id_(_instance_native_layout_id)
     {
+        BuiltinInstanceShapeBuilder(
+            this, BuiltinInstanceShapeDefaults::DunderClassAndDict, 0)
+            .install(instance_shape_flags);
+
         TValue<String> dunder_class_name = interned_string(L"__class__");
         TValue<String> dunder_dict_name = interned_string(L"__dict__");
-        DescriptorFlags instance_class_flags =
-            descriptor_flag(DescriptorFlag::ReadOnly);
-        instance_class_flags |= descriptor_flag(DescriptorFlag::StableSlot);
-        instance_class_flags |= descriptor_flag(DescriptorFlag::SpecialRead);
-        instance_class_flags |= descriptor_flag(DescriptorFlag::SpecialMutate);
-        DescriptorFlags instance_dict_flags =
-            descriptor_flag(DescriptorFlag::ReadOnly) |
-            descriptor_flag(DescriptorFlag::StableSlot) |
-            descriptor_flag(DescriptorFlag::SpecialRead) |
-            descriptor_flag(DescriptorFlag::SpecialMutate);
-        ShapeRootDescriptor instance_descriptors[] = {
-            ShapeRootDescriptor{
-                dunder_class_name,
-                DescriptorInfo::make(StorageLocation::not_found(),
-                                     instance_class_flags,
-                                     DescriptorSpecialKind::ShapeClass)},
-            ShapeRootDescriptor{
-                dunder_dict_name,
-                DescriptorInfo::make(StorageLocation::not_found(),
-                                     instance_dict_flags,
-                                     DescriptorSpecialKind::SlotDict)},
-        };
-        instance_root_shape = Shape::make_root_with_descriptors(
-            TValue<ClassObject>::from_oop(this), instance_descriptors,
-            std::size(instance_descriptors), 0, std::size(instance_descriptors),
-            instance_default_inline_slot_count, instance_shape_flags);
-
         TValue<String> dunder_name_name = interned_string(L"__name__");
         TValue<String> dunder_bases_name = interned_string(L"__bases__");
         TValue<String> dunder_mro_name = interned_string(L"__mro__");
@@ -471,43 +448,120 @@ namespace cl
         return builtin_class_definition(cls, native_layout_ids);
     }
 
-    void ClassObject::install_builtin_instance_root_shape(
-        const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
-        int32_t next_slot_index, ShapeFlags shape_flags)
-    {
-        install_builtin_instance_root_shape(descriptors, descriptor_count,
-                                            next_slot_index, descriptor_count,
-                                            shape_flags);
-    }
-
-    void ClassObject::install_builtin_instance_root_shape(
+    void ClassObject::install_instance_root_shape_from_builder(
         const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
         int32_t next_slot_index, uint32_t present_count, ShapeFlags shape_flags)
     {
-        TValue<String> dunder_dict_name = interned_string(L"__dict__");
-        DescriptorFlags dict_flags =
-            descriptor_flag(DescriptorFlag::ReadOnly) |
-            descriptor_flag(DescriptorFlag::StableSlot) |
-            descriptor_flag(DescriptorFlag::SpecialRead) |
-            descriptor_flag(DescriptorFlag::SpecialMutate);
-        std::vector<ShapeRootDescriptor> root_descriptors;
-        root_descriptors.reserve(descriptor_count + 1);
-        for(uint32_t idx = 0; idx < present_count; ++idx)
-        {
-            root_descriptors.push_back(descriptors[idx]);
-        }
-        root_descriptors.push_back(ShapeRootDescriptor{
-            dunder_dict_name,
-            DescriptorInfo::make(StorageLocation::not_found(), dict_flags,
-                                 DescriptorSpecialKind::SlotDict)});
-        for(uint32_t idx = present_count; idx < descriptor_count; ++idx)
-        {
-            root_descriptors.push_back(descriptors[idx]);
-        }
         instance_root_shape = Shape::make_root_with_descriptors(
-            TValue<ClassObject>::from_oop(this), root_descriptors.data(),
-            root_descriptors.size(), next_slot_index, present_count + 1,
-            instance_default_inline_slot_count, shape_flags);
+            TValue<ClassObject>::from_oop(this), descriptors, descriptor_count,
+            next_slot_index, present_count, instance_default_inline_slot_count,
+            shape_flags);
+    }
+
+    static DescriptorFlags dunder_class_descriptor_flags()
+    {
+        return descriptor_flag(DescriptorFlag::ReadOnly) |
+               descriptor_flag(DescriptorFlag::StableSlot) |
+               descriptor_flag(DescriptorFlag::SpecialRead) |
+               descriptor_flag(DescriptorFlag::SpecialMutate);
+    }
+
+    static DescriptorFlags dunder_dict_descriptor_flags()
+    {
+        return descriptor_flag(DescriptorFlag::ReadOnly) |
+               descriptor_flag(DescriptorFlag::StableSlot) |
+               descriptor_flag(DescriptorFlag::SpecialRead) |
+               descriptor_flag(DescriptorFlag::SpecialMutate);
+    }
+
+    BuiltinInstanceShapeBuilder::BuiltinInstanceShapeBuilder(
+        ClassObject *_cls, BuiltinInstanceShapeDefaults defaults,
+        uint32_t _predefined_slot_count)
+        : cls(_cls), predefined_slot_count(_predefined_slot_count),
+          descriptors(), declared_slots(_predefined_slot_count, false),
+          declared_slot_count(0), declared_slot_index_sum(0)
+    {
+        assert(cls != nullptr);
+        switch(defaults)
+        {
+            case BuiltinInstanceShapeDefaults::None:
+                break;
+            case BuiltinInstanceShapeDefaults::DunderClass:
+            case BuiltinInstanceShapeDefaults::DunderClassAndDict:
+                add_descriptor(
+                    interned_string(L"__class__"),
+                    DescriptorInfo::make(StorageLocation::not_found(),
+                                         dunder_class_descriptor_flags(),
+                                         DescriptorSpecialKind::ShapeClass));
+                break;
+        }
+        if(defaults == BuiltinInstanceShapeDefaults::DunderClassAndDict)
+        {
+            add_descriptor(
+                interned_string(L"__dict__"),
+                DescriptorInfo::make(StorageLocation::not_found(),
+                                     dunder_dict_descriptor_flags(),
+                                     DescriptorSpecialKind::SlotDict));
+        }
+    }
+
+    BuiltinInstanceShapeBuilder &
+    BuiltinInstanceShapeBuilder::add_slot(const wchar_t *name,
+                                          uint32_t slot_index)
+    {
+        return add_slot(interned_string(name), slot_index);
+    }
+
+    BuiltinInstanceShapeBuilder &
+    BuiltinInstanceShapeBuilder::add_slot(TValue<String> name,
+                                          uint32_t slot_index)
+    {
+        reserve_slot(slot_index);
+        return add_descriptor(
+            name, DescriptorInfo::make(
+                      StorageLocation{int32_t(slot_index), StorageKind::Inline},
+                      descriptor_flag(DescriptorFlag::StableSlot)));
+    }
+
+    BuiltinInstanceShapeBuilder &
+    BuiltinInstanceShapeBuilder::reserve_slot(uint32_t slot_index)
+    {
+        assert(slot_index < predefined_slot_count);
+        assert(!declared_slots[slot_index]);
+        declared_slots[slot_index] = true;
+        ++declared_slot_count;
+        declared_slot_index_sum += slot_index;
+        return *this;
+    }
+
+    BuiltinInstanceShapeBuilder &
+    BuiltinInstanceShapeBuilder::add_descriptor(TValue<String> name,
+                                                DescriptorInfo info)
+    {
+        descriptors.push_back(ShapeRootDescriptor{name, info});
+        return *this;
+    }
+
+    void BuiltinInstanceShapeBuilder::install(ShapeFlags shape_flags)
+    {
+        for(const ShapeRootDescriptor &descriptor: descriptors)
+        {
+            DescriptorInfo info = descriptor.info;
+            if(info.physical_idx < 0)
+            {
+                continue;
+            }
+            assert(info.kind == StorageKind::Inline);
+            assert(uint32_t(info.physical_idx) < predefined_slot_count);
+            assert(declared_slots[info.physical_idx]);
+        }
+        assert(declared_slot_count == predefined_slot_count);
+        assert(declared_slot_index_sum == uint64_t(predefined_slot_count) *
+                                              (predefined_slot_count - 1) / 2);
+        cls->install_instance_root_shape_from_builder(
+            descriptors.data(), uint32_t(descriptors.size()),
+            int32_t(predefined_slot_count), uint32_t(descriptors.size()),
+            shape_flags);
     }
 
     void ClassObject::install_bootstrap_inheritance(Value bases_tuple,

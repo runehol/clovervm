@@ -10,29 +10,13 @@ namespace cl
 {
     static void install_function_instance_root_shape(ClassObject *cls)
     {
-        TValue<String> dunder_class_name = interned_string(L"__class__");
-        TValue<String> dunder_doc_name = interned_string(L"__doc__");
-        DescriptorFlags class_flags =
-            descriptor_flag(DescriptorFlag::ReadOnly) |
-            descriptor_flag(DescriptorFlag::StableSlot) |
-            descriptor_flag(DescriptorFlag::SpecialRead) |
-            descriptor_flag(DescriptorFlag::SpecialMutate);
-        DescriptorFlags docstring_flags =
-            descriptor_flag(DescriptorFlag::StableSlot);
-        ShapeRootDescriptor descriptors[] = {
-            ShapeRootDescriptor{
-                dunder_class_name,
-                DescriptorInfo::make(StorageLocation::not_found(), class_flags,
-                                     DescriptorSpecialKind::ShapeClass)},
-            ShapeRootDescriptor{
-                dunder_doc_name,
-                DescriptorInfo::make(StorageLocation{Function::kDocstringSlot,
-                                                     StorageKind::Inline},
-                                     docstring_flags)},
-        };
-        cls->install_builtin_instance_root_shape(
-            descriptors, std::size(descriptors), Function::kInlineSlotCount,
-            shape_flag(ShapeFlag::DisallowAttributeAddDelete));
+        BuiltinInstanceShapeBuilder(
+            cls, BuiltinInstanceShapeDefaults::DunderClassAndDict,
+            Function::kInlineSlotCount)
+            .reserve_slot(Function::kCodeObjectSlot)
+            .reserve_slot(Function::kDefaultParametersSlot)
+            .add_slot(L"__doc__", Function::kDocstringSlot)
+            .install(shape_flag(ShapeFlag::DisallowAttributeAddDelete));
     }
 
     BuiltinClassDefinition make_function_class(VirtualMachine *vm)

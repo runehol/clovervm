@@ -25,63 +25,21 @@ namespace cl
 
     static void install_exception_instance_root_shape(ClassObject *cls)
     {
-        TValue<String> dunder_class_name = interned_string(L"__class__");
-        TValue<String> message_name = interned_string(L"message");
-        DescriptorFlags class_flags =
-            descriptor_flag(DescriptorFlag::ReadOnly) |
-            descriptor_flag(DescriptorFlag::StableSlot) |
-            descriptor_flag(DescriptorFlag::SpecialRead) |
-            descriptor_flag(DescriptorFlag::SpecialMutate);
-        DescriptorFlags message_flags =
-            descriptor_flag(DescriptorFlag::StableSlot);
-        ShapeRootDescriptor descriptors[] = {
-            ShapeRootDescriptor{
-                dunder_class_name,
-                DescriptorInfo::make(StorageLocation::not_found(), class_flags,
-                                     DescriptorSpecialKind::ShapeClass)},
-            ShapeRootDescriptor{
-                message_name, DescriptorInfo::make(
-                                  StorageLocation{ExceptionObject::kMessageSlot,
-                                                  StorageKind::Inline},
-                                  message_flags)},
-        };
-        cls->install_builtin_instance_root_shape(
-            descriptors, std::size(descriptors),
-            ExceptionObject::kInlineSlotCount, mutable_attribute_shape_flags());
+        BuiltinInstanceShapeBuilder(
+            cls, BuiltinInstanceShapeDefaults::DunderClassAndDict,
+            ExceptionObject::kInlineSlotCount)
+            .add_slot(L"message", ExceptionObject::kMessageSlot)
+            .install(mutable_attribute_shape_flags());
     }
 
     static void install_stop_iteration_instance_root_shape(ClassObject *cls)
     {
-        TValue<String> dunder_class_name = interned_string(L"__class__");
-        TValue<String> message_name = interned_string(L"message");
-        TValue<String> value_name = interned_string(L"value");
-        DescriptorFlags class_flags =
-            descriptor_flag(DescriptorFlag::ReadOnly) |
-            descriptor_flag(DescriptorFlag::StableSlot) |
-            descriptor_flag(DescriptorFlag::SpecialRead) |
-            descriptor_flag(DescriptorFlag::SpecialMutate);
-        DescriptorFlags attribute_flags =
-            descriptor_flag(DescriptorFlag::StableSlot);
-        ShapeRootDescriptor descriptors[] = {
-            ShapeRootDescriptor{
-                dunder_class_name,
-                DescriptorInfo::make(StorageLocation::not_found(), class_flags,
-                                     DescriptorSpecialKind::ShapeClass)},
-            ShapeRootDescriptor{
-                message_name, DescriptorInfo::make(
-                                  StorageLocation{ExceptionObject::kMessageSlot,
-                                                  StorageKind::Inline},
-                                  attribute_flags)},
-            ShapeRootDescriptor{
-                value_name, DescriptorInfo::make(
-                                StorageLocation{StopIterationObject::kValueSlot,
-                                                StorageKind::Inline},
-                                attribute_flags)},
-        };
-        cls->install_builtin_instance_root_shape(
-            descriptors, std::size(descriptors),
-            StopIterationObject::kInlineSlotCount,
-            mutable_attribute_shape_flags());
+        BuiltinInstanceShapeBuilder(
+            cls, BuiltinInstanceShapeDefaults::DunderClassAndDict,
+            StopIterationObject::kInlineSlotCount)
+            .add_slot(L"message", ExceptionObject::kMessageSlot)
+            .add_slot(L"value", StopIterationObject::kValueSlot)
+            .install(mutable_attribute_shape_flags());
     }
 
     static ClassObject *make_exception_class_raw(VirtualMachine *vm,

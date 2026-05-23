@@ -23,64 +23,17 @@ namespace cl
 
     static void install_module_spec_instance_root_shape(ClassObject *cls)
     {
-        TValue<String> dunder_class_name = interned_string(L"__class__");
-        TValue<String> name_name = interned_string(L"name");
-        TValue<String> loader_name = interned_string(L"loader");
-        TValue<String> origin_name = interned_string(L"origin");
-        TValue<String> submodule_search_locations_name =
-            interned_string(L"submodule_search_locations");
-        TValue<String> has_location_name = interned_string(L"has_location");
-        TValue<String> parent_name = interned_string(L"parent");
-        DescriptorFlags class_flags =
-            descriptor_flag(DescriptorFlag::ReadOnly) |
-            descriptor_flag(DescriptorFlag::StableSlot) |
-            descriptor_flag(DescriptorFlag::SpecialRead) |
-            descriptor_flag(DescriptorFlag::SpecialMutate);
-        DescriptorFlags slot_flags =
-            descriptor_flag(DescriptorFlag::StableSlot);
-        ShapeRootDescriptor descriptors[] = {
-            ShapeRootDescriptor{
-                dunder_class_name,
-                DescriptorInfo::make(StorageLocation::not_found(), class_flags,
-                                     DescriptorSpecialKind::ShapeClass)},
-            ShapeRootDescriptor{name_name,
-                                DescriptorInfo::make(
-                                    StorageLocation{ModuleSpecObject::kNameSlot,
-                                                    StorageKind::Inline},
-                                    slot_flags)},
-            ShapeRootDescriptor{
-                loader_name, DescriptorInfo::make(
-                                 StorageLocation{ModuleSpecObject::kLoaderSlot,
-                                                 StorageKind::Inline},
-                                 slot_flags)},
-            ShapeRootDescriptor{
-                origin_name, DescriptorInfo::make(
-                                 StorageLocation{ModuleSpecObject::kOriginSlot,
-                                                 StorageKind::Inline},
-                                 slot_flags)},
-            ShapeRootDescriptor{
-                submodule_search_locations_name,
-                DescriptorInfo::make(
-                    StorageLocation{
-                        ModuleSpecObject::kSubmoduleSearchLocationsSlot,
-                        StorageKind::Inline},
-                    slot_flags)},
-            ShapeRootDescriptor{
-                has_location_name,
-                DescriptorInfo::make(
-                    StorageLocation{ModuleSpecObject::kHasLocationSlot,
-                                    StorageKind::Inline},
-                    slot_flags)},
-            ShapeRootDescriptor{
-                parent_name, DescriptorInfo::make(
-                                 StorageLocation{ModuleSpecObject::kParentSlot,
-                                                 StorageKind::Inline},
-                                 slot_flags)},
-        };
-        cls->install_builtin_instance_root_shape(
-            descriptors, std::size(descriptors),
-            ModuleSpecObject::kInlineSlotCount,
-            shape_flag(ShapeFlag::DisallowAttributeAddDelete));
+        BuiltinInstanceShapeBuilder(
+            cls, BuiltinInstanceShapeDefaults::DunderClassAndDict,
+            ModuleSpecObject::kInlineSlotCount)
+            .add_slot(L"name", ModuleSpecObject::kNameSlot)
+            .add_slot(L"loader", ModuleSpecObject::kLoaderSlot)
+            .add_slot(L"origin", ModuleSpecObject::kOriginSlot)
+            .add_slot(L"submodule_search_locations",
+                      ModuleSpecObject::kSubmoduleSearchLocationsSlot)
+            .add_slot(L"has_location", ModuleSpecObject::kHasLocationSlot)
+            .add_slot(L"parent", ModuleSpecObject::kParentSlot)
+            .install(shape_flag(ShapeFlag::DisallowAttributeAddDelete));
     }
 
     BuiltinClassDefinition make_module_spec_class(VirtualMachine *vm)

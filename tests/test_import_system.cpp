@@ -544,7 +544,9 @@ TEST(ImportSystem, BuiltinModuleExposesSpecAndLoader)
                          L"sys.__spec__.submodule_search_locations "
                          L"is None and "
                          L"not sys.__spec__.has_location and "
-                         L"sys.__spec__.parent == \"\"\n");
+                         L"sys.__spec__.parent == \"\" and "
+                         L"sys.__spec__.__dict__[\"name\"] == \"sys\" and "
+                         L"sys.__loader__.__dict__[\"kind\"] == \"builtin\"\n");
     EXPECT_EQ(Value::True(), actual);
 }
 
