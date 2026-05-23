@@ -533,22 +533,30 @@ template <> struct fmt::formatter<cl::AstVector>
                 break;
 
             case cl::AstNodeKind::STATEMENT_IMPORT_FROM:
-                emit_indent(out, indent);
-                format_to(out, "from {} import ",
-                          narrow_wstring_view_ast(string_as_wchar_t(
-                              ast_print_string_constant(av, node_idx))));
-                for(size_t child_offset = 0; child_offset < children.size();
-                    ++child_offset)
                 {
-                    if(child_offset > 0)
+                    emit_indent(out, indent);
+                    format_to(out, "from ");
+                    int64_t level = av.constants[children[0]].value().get_smi();
+                    for(int64_t dot_idx = 0; dot_idx < level; ++dot_idx)
                     {
-                        format_to(out, ", ");
+                        format_to(out, ".");
                     }
-                    render_node(av, out, children[child_offset], indent,
-                                cl::ExpressionPrecedence::Lowest);
+                    format_to(out, "{} import ",
+                              narrow_wstring_view_ast(string_as_wchar_t(
+                                  ast_print_string_constant(av, node_idx))));
+                    for(size_t child_offset = 1; child_offset < children.size();
+                        ++child_offset)
+                    {
+                        if(child_offset > 1)
+                        {
+                            format_to(out, ", ");
+                        }
+                        render_node(av, out, children[child_offset], indent,
+                                    cl::ExpressionPrecedence::Lowest);
+                    }
+                    format_to(out, "\n");
+                    break;
                 }
-                format_to(out, "\n");
-                break;
 
             case cl::AstNodeKind::IMPORT_ALIAS:
                 {

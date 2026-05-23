@@ -131,7 +131,6 @@ namespace cl
     static Value builtin_import(Value name, Value globals, Value locals,
                                 Value fromlist, Value level)
     {
-        (void)globals;
         (void)locals;
         (void)fromlist;
 
@@ -147,13 +146,98 @@ namespace cl
                 L"TypeError", L"__import__ level must be int");
         }
 
-        if(level.get_smi() != 0)
-        {
+        auto import_error = [](const wchar_t *message) {
             return active_thread()->set_pending_builtin_exception_string(
-                L"ImportError", L"relative imports are not supported");
+                L"ImportError", message);
+        };
+
+        auto globals_item = [](Value globals_arg, TValue<String> key) {
+            if(can_convert_to<SlotDict>(globals_arg))
+            {
+                return globals_arg.get_ptr<SlotDict>()->get_item(
+                    key.raw_value());
+            }
+            if(can_convert_to<Dict>(globals_arg))
+            {
+                Value result =
+                    globals_arg.get_ptr<Dict>()->get_item(key.raw_value());
+                if(result.is_exception_marker())
+                {
+                    active_thread()->clear_pending_exception();
+                    return Value::not_present();
+                }
+                return result;
+            }
+            return Value::not_present();
+        };
+
+        auto resolve_relative_name =
+            [&](TValue<String> relative_name,
+                int64_t relative_level) -> Optional<TValue<String>> {
+            if(relative_level == 0)
+            {
+                return Optional<TValue<String>>::some(relative_name);
+            }
+
+            TValue<String> package_key =
+                active_thread()
+                    ->get_machine()
+                    ->get_or_create_interned_string_value(L"__package__");
+            Value package_value = globals_item(globals, package_key);
+            if(!can_convert_to<String>(package_value))
+            {
+                import_error(
+                    L"attempted relative import with no known parent package");
+                return Optional<TValue<String>>::none();
+            }
+
+            std::wstring package = string_as_wchar_t(
+                TValue<String>::from_value_assumed(package_value));
+            if(package.empty())
+            {
+                import_error(
+                    L"attempted relative import with no known parent package");
+                return Optional<TValue<String>>::none();
+            }
+
+            for(int64_t level_idx = 1; level_idx < relative_level; ++level_idx)
+            {
+                size_t dot = package.rfind(L'.');
+                if(dot == std::wstring::npos)
+                {
+                    import_error(
+                        L"attempted relative import beyond top-level package");
+                    return Optional<TValue<String>>::none();
+                }
+                package.resize(dot);
+            }
+
+            std::wstring tail = string_as_wchar_t(relative_name);
+            std::wstring absolute_name = package;
+            if(!tail.empty())
+            {
+                absolute_name += L".";
+                absolute_name += tail;
+            }
+            return Optional<TValue<String>>::some(
+                active_thread()
+                    ->get_machine()
+                    ->get_or_create_interned_string_value(absolute_name));
+        };
+
+        if(level.get_smi() < 0)
+        {
+            return import_error(L"level must be >= 0");
         }
 
-        TValue<String> module_name = TValue<String>::from_value_assumed(name);
+        Optional<TValue<String>> maybe_module_name = resolve_relative_name(
+            TValue<String>::from_value_assumed(name), level.get_smi());
+        if(!maybe_module_name.has_value())
+        {
+            return Value::exception_marker();
+        }
+
+        TValue<String> module_name = maybe_module_name.value();
         Value imported = import_module_absolute(active_thread(), module_name);
         bool wants_leaf_module = !fromlist.is_none();
         if(can_convert_to<Tuple>(fromlist))

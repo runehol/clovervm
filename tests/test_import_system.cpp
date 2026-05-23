@@ -448,7 +448,7 @@ TEST(ImportSystem, BuiltinImportRejectsNonStringName)
               value_as_wstring(exception.extract()->message.value()));
 }
 
-TEST(ImportSystem, BuiltinImportRejectsRelativeImportForNow)
+TEST(ImportSystem, BuiltinImportRelativeImportWithoutPackageRaisesImportError)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -461,7 +461,7 @@ TEST(ImportSystem, BuiltinImportRejectsRelativeImportForNow)
     TValue<Exception> exception = context.thread()->pending_exception_object();
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
               exception.extract()->get_shape()->get_class());
-    EXPECT_EQ(L"relative imports are not supported",
+    EXPECT_EQ(L"attempted relative import with no known parent package",
               value_as_wstring(exception.extract()->message.value()));
 }
 
@@ -764,5 +764,77 @@ TEST(ImportSystem, FromImportNonModuleHookReturnRaisesImportError)
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"cannot import name 'marker' from '<unknown>'",
+              value_as_wstring(exception.extract()->message.value()));
+}
+
+TEST(ImportSystem, RelativeFromImportLoadsSiblingModule)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "from . import sibling\n"
+                                        "value = sibling.value\n");
+    root.write_file(L"pkg/sibling.py", "value = 12\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(L"import pkg\n"
+                                    L"pkg.value\n");
+    EXPECT_EQ(Value::from_smi(12), actual);
+}
+
+TEST(ImportSystem, RelativeFromImportLoadsSiblingModuleAttribute)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "from .sibling import value\n");
+    root.write_file(L"pkg/sibling.py", "value = 13\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(L"import pkg\n"
+                                    L"pkg.value\n");
+    EXPECT_EQ(Value::from_smi(13), actual);
+}
+
+TEST(ImportSystem, RelativeFromImportCanClimbToParentPackage)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "root_value = 1\n");
+    root.write_file(L"pkg/sibling.py", "value = 14\n");
+    root.write_file(L"pkg/sub/__init__.py", "pass\n");
+    root.write_file(L"pkg/sub/mod.py", "from .. import sibling\n"
+                                       "value = sibling.value\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(L"import pkg.sub.mod\n"
+                                    L"pkg.sub.mod.value\n");
+    EXPECT_EQ(Value::from_smi(14), actual);
+}
+
+TEST(ImportSystem, RelativeFromImportWithoutPackageRaisesImportError)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value imported = context.run_file(L"from .assignment import marker\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"attempted relative import with no known parent package",
               value_as_wstring(exception.extract()->message.value()));
 }

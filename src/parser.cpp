@@ -1331,22 +1331,33 @@ namespace cl
             int32_t source_pos = source_pos_for_token();
             if(match(Token::FROM))
             {
-                if(peek() == Token::DOT)
-                {
-                    return not_implemented("relative import statement");
-                }
-                consume(Token::NAME);
-                uint32_t module_source_pos = source_pos_for_previous_token();
-                std::wstring module_name = std::wstring(string_for_name_token(
-                    *ast.compilation_unit, module_source_pos));
+                int64_t level = 0;
                 while(match(Token::DOT))
                 {
+                    ++level;
+                }
+
+                std::wstring module_name;
+                uint32_t module_source_pos = source_pos;
+                if(peek() != Token::IMPORT)
+                {
                     consume(Token::NAME);
-                    uint32_t component_source_pos =
-                        source_pos_for_previous_token();
-                    module_name += L".";
-                    module_name += std::wstring(string_for_name_token(
-                        *ast.compilation_unit, component_source_pos));
+                    module_source_pos = source_pos_for_previous_token();
+                    module_name = std::wstring(string_for_name_token(
+                        *ast.compilation_unit, module_source_pos));
+                    while(match(Token::DOT))
+                    {
+                        consume(Token::NAME);
+                        uint32_t component_source_pos =
+                            source_pos_for_previous_token();
+                        module_name += L".";
+                        module_name += std::wstring(string_for_name_token(
+                            *ast.compilation_unit, component_source_pos));
+                    }
+                }
+                else if(level == 0)
+                {
+                    consume(Token::NAME);
                 }
                 consume(Token::IMPORT);
                 if(peek() == Token::STAR)
@@ -1355,6 +1366,9 @@ namespace cl
                 }
 
                 AstChildren targets;
+                targets.push_back(ast.emplace_back(
+                    AstNodeKind::EXPRESSION_LITERAL, module_source_pos,
+                    Value::from_smi(level)));
                 while(true)
                 {
                     consume(Token::NAME);

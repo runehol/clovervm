@@ -767,6 +767,14 @@ TEST(Parser, from_import_stmt)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, relative_from_import_stmt)
+{
+    std::string expected = "from ..pkg import value\n";
+    std::string actual = parse(L"from ..pkg import value\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, class_def)
 {
     std::string expected = ("class C:\n"

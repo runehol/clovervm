@@ -468,8 +468,10 @@ namespace cl
                         return;
 
                     case AstNodeKind::STATEMENT_IMPORT_FROM:
-                        for(int32_t alias_idx: children)
+                        for(size_t child_offset = 1;
+                            child_offset < children.size(); ++child_offset)
                         {
+                            int32_t alias_idx = children[child_offset];
                             mark_global_validation_assignment(
                                 state, av.constants[av.children[alias_idx][0]]);
                         }
@@ -665,8 +667,10 @@ namespace cl
                         return;
 
                     case AstNodeKind::STATEMENT_IMPORT_FROM:
-                        for(int32_t alias_idx: children)
+                        for(size_t child_offset = 1;
+                            child_offset < children.size(); ++child_offset)
                         {
+                            int32_t alias_idx = children[child_offset];
                             ensure_binding(
                                 analysis,
                                 av.constants[av.children[alias_idx][0]]);
@@ -796,8 +800,10 @@ namespace cl
                         return;
 
                     case AstNodeKind::STATEMENT_IMPORT_FROM:
-                        for(int32_t alias_idx: children)
+                        for(size_t child_offset = 1;
+                            child_offset < children.size(); ++child_offset)
                         {
+                            int32_t alias_idx = children[child_offset];
                             mark_name(av.constants[av.children[alias_idx][0]]);
                         }
                         return;
@@ -996,8 +1002,10 @@ namespace cl
                         break;
 
                     case AstNodeKind::STATEMENT_IMPORT_FROM:
-                        for(int32_t alias_idx: children)
+                        for(size_t child_offset = 1;
+                            child_offset < children.size(); ++child_offset)
                         {
+                            int32_t alias_idx = children[child_offset];
                             annotate_write(av.children[alias_idx][0]);
                         }
                         break;

@@ -182,6 +182,25 @@ TEST(Codegen, from_import_statement_uses_fromlist_and_import_from)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, relative_from_import_statement_emits_level)
+{
+    std::string expected =
+        "Code object:\n"
+        "    0 LdaConstant c[0]\n"
+        "    2 ImportName c[1], 1\n"
+        "    5 ImportFrom c[2]\n"
+        "    7 StaGlobal c[3], module_global_mutation_ic[0]\n"
+        "   10 Return\n"
+        "Constant 0: (\"marker\",)\n"
+        "Constant 1: \"assignment\"\n"
+        "Constant 2: \"marker\"\n"
+        "Constant 3: \"marker\"\n";
+    std::string actual =
+        bytecode_str_from_file(L"from .assignment import marker\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, if_elif_else)
 {
     const wchar_t *test_case = L"if a:\n"

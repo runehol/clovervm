@@ -484,9 +484,39 @@ namespace cl
         {
             return set_cannot_import_name(thread, module, name);
         }
-        Value imported = module.get_ptr<ModuleObject>()->get_own_property(name);
+        ModuleObject *module_object = module.get_ptr<ModuleObject>();
+        Value imported = module_object->get_own_property(name);
         if(imported.is_not_present())
         {
+            Value package_path = module_object->get_own_property(
+                interned_string(thread, L"__path__"));
+            Value module_name = module_object->get_name_binding();
+            if(can_convert_to<List>(package_path) &&
+               can_convert_to<String>(module_name))
+            {
+                std::wstring child_name = string_to_wstring(
+                    TValue<String>::from_value_assumed(module_name));
+                child_name += L".";
+                child_name += string_to_wstring(name);
+                Value child = import_module_absolute(
+                    thread, interned_string(thread, child_name));
+                if(!child.is_exception_marker())
+                {
+                    return child;
+                }
+                if(thread->pending_exception_kind() ==
+                       PendingExceptionKind::Object &&
+                   thread->pending_exception_object()
+                           .extract()
+                           ->get_shape()
+                           ->get_class() ==
+                       thread->class_for_builtin_name(L"ModuleNotFoundError"))
+                {
+                    thread->clear_pending_exception();
+                    return set_cannot_import_name(thread, module, name);
+                }
+                return child;
+            }
             return set_cannot_import_name(thread, module, name);
         }
         return imported;

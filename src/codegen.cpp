@@ -1787,17 +1787,27 @@ namespace cl
 
                 case AstNodeKind::STATEMENT_IMPORT_FROM:
                     {
+                        AstChildren aliases;
+                        for(size_t child_offset = 1;
+                            child_offset < children.size(); ++child_offset)
+                        {
+                            aliases.push_back(children[child_offset]);
+                        }
                         uint8_t fromlist_idx =
-                            allocate_import_fromlist_constant(children);
+                            allocate_import_fromlist_constant(aliases);
                         uint8_t module_name_idx =
                             code_obj->allocate_constant(av.constants[node_idx]);
+                        int64_t level =
+                            av.constants[children[0]].value().get_smi();
+                        assert(level >= 0 && level <= 255);
                         code_obj->emit_lda_constant(source_offset,
                                                     fromlist_idx);
                         code_obj->emit_import_name(source_offset,
-                                                   module_name_idx, 0);
-                        if(children.size() == 1)
+                                                   module_name_idx,
+                                                   static_cast<uint8_t>(level));
+                        if(aliases.size() == 1)
                         {
-                            int32_t alias_idx = children[0];
+                            int32_t alias_idx = aliases[0];
                             uint8_t name_idx = code_obj->allocate_constant(
                                 av.constants[alias_idx]);
                             code_obj->emit_import_from(source_offset, name_idx);
@@ -1808,7 +1818,7 @@ namespace cl
                         {
                             TemporaryReg module_reg(*code_obj);
                             code_obj->emit_star(source_offset, module_reg);
-                            for(int32_t alias_idx: children)
+                            for(int32_t alias_idx: aliases)
                             {
                                 uint8_t name_idx = code_obj->allocate_constant(
                                     av.constants[alias_idx]);
