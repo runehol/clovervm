@@ -57,6 +57,14 @@ static uint8_t allocate_name_constant(CodeObjectBuilder &builder,
     return uint8_t(name_idx);
 }
 
+static ValidityCell *
+module_global_test_builtins_lookup_cell(ModuleObject *module)
+{
+    ModuleBuiltinsLookup lookup = module->get_module_builtins_lookup();
+    assert(lookup.is_module());
+    return lookup.lookup_validity_cell;
+}
+
 TEST(ModuleGlobal, ReadModuleSlotHitIsCacheable)
 {
     test::VmTestContext context;
@@ -206,7 +214,7 @@ TEST(ModuleGlobal, StoreExistingModuleSlotIsCacheableAndDoesNotInvalidate)
     EXPECT_EQ(Value::from_smi(2), module->get_own_property(global_name));
 }
 
-TEST(ModuleGlobal, StoreBuiltinsBindingIsReadOnly)
+TEST(ModuleGlobal, StoreBuiltinsBindingIsUncacheableAndInvalidatesBindingCell)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -217,12 +225,27 @@ TEST(ModuleGlobal, StoreBuiltinsBindingIsReadOnly)
         context.vm().get_or_create_interned_string_value(L"__builtins__");
     ModuleObject *module = context.thread()->make_module_object(
         module_name, context.vm().global_builtins_module().raw_value());
+    ValidityCell *globals_cell =
+        module->get_or_create_module_globals_validity_cell();
+    ValidityCell *builtins_cell =
+        module_global_test_builtins_lookup_cell(module);
 
     ModuleGlobalWriteDescriptor descriptor =
         resolve_module_global_write_descriptor(module, dunder_builtins);
 
-    EXPECT_FALSE(descriptor.is_found());
-    EXPECT_EQ(ModuleGlobalWriteStatus::ReadOnly, descriptor.status);
+    ASSERT_TRUE(descriptor.is_found());
+    EXPECT_FALSE(descriptor.is_cacheable());
+    EXPECT_EQ(ModuleGlobalMutationPlanKind::StoreExisting,
+              descriptor.plan.kind);
+    EXPECT_EQ(nullptr,
+              descriptor.plan.store_existing_plan.lookup_validity_cell);
+
+    EXPECT_TRUE(store_module_global_from_plan(module, descriptor.plan,
+                                              Value::from_smi(4)));
+
+    EXPECT_TRUE(globals_cell->is_valid());
+    EXPECT_FALSE(builtins_cell->is_valid());
+    EXPECT_EQ(Value::from_smi(4), module->get_builtins_binding());
 }
 
 TEST(ModuleGlobal, DeleteExistingModuleSlotIsUncacheable)
@@ -269,7 +292,7 @@ TEST(ModuleGlobal, DeleteMissingModuleSlotIsNotFound)
     EXPECT_EQ(ModuleGlobalDeleteStatus::NotFound, descriptor.status);
 }
 
-TEST(ModuleGlobal, DeleteBuiltinsBindingIsReadOnly)
+TEST(ModuleGlobal, DeleteBuiltinsBindingIsUncacheableAndInvalidatesBindingCell)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -280,12 +303,24 @@ TEST(ModuleGlobal, DeleteBuiltinsBindingIsReadOnly)
         context.vm().get_or_create_interned_string_value(L"__builtins__");
     ModuleObject *module = context.thread()->make_module_object(
         module_name, context.vm().global_builtins_module().raw_value());
+    ValidityCell *globals_cell =
+        module->get_or_create_module_globals_validity_cell();
+    ValidityCell *builtins_cell =
+        module_global_test_builtins_lookup_cell(module);
 
     ModuleGlobalDeleteDescriptor descriptor =
         resolve_module_global_delete_descriptor(module, dunder_builtins);
 
-    EXPECT_FALSE(descriptor.is_found());
-    EXPECT_EQ(ModuleGlobalDeleteStatus::ReadOnly, descriptor.status);
+    ASSERT_TRUE(descriptor.is_found());
+    EXPECT_FALSE(descriptor.is_cacheable());
+    EXPECT_EQ(ModuleGlobalMutationPlanKind::DeleteOwnProperty,
+              descriptor.plan.kind);
+
+    EXPECT_TRUE(delete_module_global_from_plan(module, descriptor.plan));
+
+    EXPECT_FALSE(globals_cell->is_valid());
+    EXPECT_FALSE(builtins_cell->is_valid());
+    EXPECT_TRUE(module->get_builtins_binding().is_not_present());
 }
 
 TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsModuleSlot)

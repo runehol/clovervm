@@ -419,7 +419,10 @@ namespace cl
             EXPECT_FALSE(lookup.storage_location().is_found());
             EXPECT_TRUE(lookup.info.has_flag(DescriptorFlag::ReadOnly));
             EXPECT_TRUE(lookup.info.has_flag(DescriptorFlag::StableSlot));
-            EXPECT_TRUE(lookup.info.has_flag(DescriptorFlag::ShapeClassValue));
+            EXPECT_TRUE(lookup.info.has_flag(DescriptorFlag::SpecialRead));
+            EXPECT_TRUE(lookup.info.has_flag(DescriptorFlag::SpecialMutate));
+            EXPECT_EQ(DescriptorSpecialKind::ShapeClass,
+                      lookup.info.special_kind());
         }
     }
 

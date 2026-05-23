@@ -53,6 +53,7 @@ namespace cl
         StoreExisting,
         AddOwnProperty,
         DeleteOwnProperty,
+        ChangeClass,
     };
 
     enum class AttributeReadPlanPath : uint8_t
@@ -243,6 +244,17 @@ namespace cl
             return plan;
         }
 
+        static AttributeMutationPlan change_class()
+        {
+            AttributeMutationPlan plan;
+            plan.next_shape = nullptr;
+            plan.lookup_validity_cell = nullptr;
+            plan.physical_idx = -1;
+            plan.storage_kind = StorageKind::Inline;
+            plan.kind = AttributeMutationPlanKind::ChangeClass;
+            return plan;
+        }
+
         StorageLocation storage_location() const
         {
             return StorageLocation{physical_idx, storage_kind};
@@ -256,6 +268,11 @@ namespace cl
         bool is_delete_own_property() const
         {
             return kind == AttributeMutationPlanKind::DeleteOwnProperty;
+        }
+
+        bool is_change_class() const
+        {
+            return kind == AttributeMutationPlanKind::ChangeClass;
         }
     };
 

@@ -15,13 +15,15 @@ namespace cl
         DescriptorFlags class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot) |
-            descriptor_flag(DescriptorFlag::ShapeClassValue);
+            descriptor_flag(DescriptorFlag::SpecialRead) |
+            descriptor_flag(DescriptorFlag::SpecialMutate);
         DescriptorFlags docstring_flags =
             descriptor_flag(DescriptorFlag::StableSlot);
         ShapeRootDescriptor descriptors[] = {
-            ShapeRootDescriptor{dunder_class_name,
-                                DescriptorInfo::make(
-                                    StorageLocation::not_found(), class_flags)},
+            ShapeRootDescriptor{
+                dunder_class_name,
+                DescriptorInfo::make(StorageLocation::not_found(), class_flags,
+                                     DescriptorSpecialKind::ShapeClass)},
             ShapeRootDescriptor{
                 dunder_doc_name,
                 DescriptorInfo::make(StorageLocation{Function::kDocstringSlot,

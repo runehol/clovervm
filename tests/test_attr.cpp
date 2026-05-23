@@ -1195,7 +1195,7 @@ TEST(Attr, ClassMetadataAttributesAreReadonly)
               load_attr(Value::from_oop(cls), dunder_name_name));
 }
 
-TEST(Attr, StoreAttrRejectsDunderClassAndUnsupportedInlineValues)
+TEST(Attr, StoreAttrChangesDunderClassAndRejectsUnsupportedInlineValues)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -1212,10 +1212,12 @@ TEST(Attr, StoreAttrRejectsDunderClassAndUnsupportedInlineValues)
         cls_name, 2, context.vm().object_class());
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
-    EXPECT_FALSE(store_attr(Value::from_oop(instance), dunder_class_name,
-                            Value::from_oop(cls)));
-    EXPECT_FALSE(store_attr(Value::from_oop(instance), dunder_class_name,
-                            Value::from_oop(other_cls)));
+    EXPECT_TRUE(store_attr(Value::from_oop(instance), dunder_class_name,
+                           Value::from_oop(other_cls)));
+    EXPECT_EQ(Value::from_oop(other_cls),
+              load_attr(Value::from_oop(instance), dunder_class_name));
+    EXPECT_TRUE(store_attr(Value::from_oop(instance), dunder_class_name,
+                           Value::from_oop(cls)));
     EXPECT_EQ(Value::from_oop(cls),
               load_attr(Value::from_oop(instance), dunder_class_name));
 

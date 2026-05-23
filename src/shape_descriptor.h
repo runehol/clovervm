@@ -1,6 +1,7 @@
 #ifndef CL_SHAPE_DESCRIPTOR_H
 #define CL_SHAPE_DESCRIPTOR_H
 
+#include <cassert>
 #include <cstdint>
 
 namespace cl
@@ -30,7 +31,8 @@ namespace cl
         None = 0,
         ReadOnly = 1 << 0,
         StableSlot = 1 << 1,
-        ShapeClassValue = 1 << 2,
+        SpecialRead = 1 << 2,
+        SpecialMutate = 1 << 3,
     };
 
     using DescriptorFlags = uint16_t;
@@ -45,6 +47,14 @@ namespace cl
     {
         return (flags & descriptor_flag(flag)) != 0;
     }
+
+    enum class DescriptorSpecialKind : uint8_t
+    {
+        None = 0,
+        ShapeClass,
+        SlotDict,
+        ModuleBuiltins,
+    };
 
     class DescriptorInfo
     {
@@ -62,10 +72,16 @@ namespace cl
 
         static DescriptorInfo
         make(StorageLocation location,
-             DescriptorFlags flags = descriptor_flag(DescriptorFlag::None))
+             DescriptorFlags flags = descriptor_flag(DescriptorFlag::None),
+             DescriptorSpecialKind special_kind = DescriptorSpecialKind::None)
         {
-            return DescriptorInfo{location.physical_idx, location.kind, 0,
-                                  flags};
+            bool has_special_flags =
+                has_descriptor_flag(flags, DescriptorFlag::SpecialRead) ||
+                has_descriptor_flag(flags, DescriptorFlag::SpecialMutate);
+            assert(has_special_flags ==
+                   (special_kind != DescriptorSpecialKind::None));
+            return DescriptorInfo{location.physical_idx, location.kind,
+                                  static_cast<uint8_t>(special_kind), flags};
         }
 
         StorageLocation storage_location() const
@@ -76,6 +92,11 @@ namespace cl
         bool has_flag(DescriptorFlag flag) const
         {
             return has_descriptor_flag(flags, flag);
+        }
+
+        DescriptorSpecialKind special_kind() const
+        {
+            return static_cast<DescriptorSpecialKind>(reserved);
         }
     };
 

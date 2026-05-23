@@ -61,6 +61,25 @@ namespace cl
             shape->lookup_descriptor_including_latent(name);
         if(descriptor.is_present())
         {
+            if(descriptor.info.has_flag(DescriptorFlag::SpecialMutate))
+            {
+                switch(descriptor.info.special_kind())
+                {
+                    case DescriptorSpecialKind::ModuleBuiltins:
+                        module
+                            ->invalidate_module_builtins_binding_validity_cell();
+                        return ModuleGlobalWriteDescriptor::found(
+                            ModuleGlobalMutationPlan::store_existing(
+                                module, descriptor.info.storage_location(),
+                                nullptr));
+                    case DescriptorSpecialKind::ShapeClass:
+                    case DescriptorSpecialKind::SlotDict:
+                        return ModuleGlobalWriteDescriptor::read_only();
+                    case DescriptorSpecialKind::None:
+                        break;
+                }
+                __builtin_unreachable();
+            }
             if(descriptor.info.has_flag(DescriptorFlag::ReadOnly))
             {
                 return ModuleGlobalWriteDescriptor::read_only();
@@ -109,6 +128,29 @@ namespace cl
                            descriptor.info.has_flag(DescriptorFlag::ReadOnly)
                        ? ModuleGlobalDeleteDescriptor::read_only()
                        : ModuleGlobalDeleteDescriptor::not_found();
+        }
+        if(descriptor.info.has_flag(DescriptorFlag::SpecialMutate))
+        {
+            switch(descriptor.info.special_kind())
+            {
+                case DescriptorSpecialKind::ModuleBuiltins:
+                    {
+                        module
+                            ->invalidate_module_builtins_binding_validity_cell();
+                        Shape *next_shape = shape->derive_transition(
+                            name, ShapeTransitionVerb::Delete);
+                        return ModuleGlobalDeleteDescriptor::found(
+                            ModuleGlobalMutationPlan::delete_own_property(
+                                next_shape,
+                                descriptor.info.storage_location()));
+                    }
+                case DescriptorSpecialKind::ShapeClass:
+                case DescriptorSpecialKind::SlotDict:
+                    return ModuleGlobalDeleteDescriptor::read_only();
+                case DescriptorSpecialKind::None:
+                    break;
+            }
+            __builtin_unreachable();
         }
         if(descriptor.info.has_flag(DescriptorFlag::ReadOnly))
         {

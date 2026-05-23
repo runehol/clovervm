@@ -40,6 +40,33 @@ namespace cl
 
             DescriptorInfo info =
                 current_shape->get_descriptor_info(descriptor_idx);
+            if(info.has_flag(DescriptorFlag::SpecialMutate))
+            {
+                switch(info.special_kind())
+                {
+                    case DescriptorSpecialKind::ModuleBuiltins:
+                        {
+                            if(!can_convert_to<ModuleObject>(object))
+                            {
+                                return AttributeWriteDescriptor::disallowed();
+                            }
+                            assume_convert_to<ModuleObject>(object)
+                                ->invalidate_module_builtins_binding_validity_cell();
+                            return AttributeWriteDescriptor::found(
+                                AttributeMutationPlan::store_existing(
+                                    nullptr, info.storage_location(), nullptr));
+                        }
+                    case DescriptorSpecialKind::ShapeClass:
+                        return AttributeWriteDescriptor::found(
+                            AttributeMutationPlan::change_class());
+                    case DescriptorSpecialKind::SlotDict:
+                        return AttributeWriteDescriptor::read_only();
+                    case DescriptorSpecialKind::None:
+                        break;
+                }
+                __builtin_unreachable();
+            }
+
             if(info.has_flag(DescriptorFlag::ReadOnly))
             {
                 return AttributeWriteDescriptor::read_only();
@@ -69,6 +96,35 @@ namespace cl
 
             DescriptorInfo info =
                 current_shape->get_descriptor_info(descriptor_idx);
+            if(info.has_flag(DescriptorFlag::SpecialMutate))
+            {
+                switch(info.special_kind())
+                {
+                    case DescriptorSpecialKind::ModuleBuiltins:
+                        {
+                            if(!can_convert_to<ModuleObject>(object))
+                            {
+                                return AttributeDeleteDescriptor::disallowed();
+                            }
+                            assume_convert_to<ModuleObject>(object)
+                                ->invalidate_module_builtins_binding_validity_cell();
+                            Shape *next_shape =
+                                current_shape->derive_transition(
+                                    name, ShapeTransitionVerb::Delete);
+                            return AttributeDeleteDescriptor::found(
+                                AttributeMutationPlan::delete_own_property(
+                                    next_shape, info.storage_location(),
+                                    nullptr));
+                        }
+                    case DescriptorSpecialKind::ShapeClass:
+                    case DescriptorSpecialKind::SlotDict:
+                        return AttributeDeleteDescriptor::read_only();
+                    case DescriptorSpecialKind::None:
+                        break;
+                }
+                __builtin_unreachable();
+            }
+
             if(info.has_flag(DescriptorFlag::ReadOnly))
             {
                 return AttributeDeleteDescriptor::read_only();

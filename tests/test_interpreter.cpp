@@ -696,7 +696,7 @@ TEST(Interpreter, class_body_assignment_becomes_class_member)
               value_location.physical_idx);
     EXPECT_EQ(Value::from_smi(7), cls->read_storage_location(value_location));
     constexpr uint32_t class_metadata_descriptor_count =
-        ClassObject::class_metadata_slot_count + 1;
+        ClassObject::class_metadata_slot_count + 2;
     ASSERT_EQ(class_metadata_descriptor_count + 1, shape->present_count());
     EXPECT_STREQ(L"value",
                  shape->get_property_name(class_metadata_descriptor_count)
@@ -732,7 +732,7 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
 
     TValue<String> names[] = {first_name, second_name, third_name};
     constexpr uint32_t class_metadata_descriptor_count =
-        ClassObject::class_metadata_slot_count + 1;
+        ClassObject::class_metadata_slot_count + 2;
     for(uint32_t idx = 0; idx < 3; ++idx)
     {
         EXPECT_STREQ(string_as_wchar_t(names[idx]),
@@ -3583,6 +3583,107 @@ TEST(Interpreter, globals_slotdict_class_is_not_builtin_binding)
         string_as_wchar_t(TValue<String>::from_value_assumed(class_name)));
     expect_python_error(L"slotdict\n",
                         L"NameError: name 'slotdict' is not defined");
+}
+
+TEST(Interpreter, instance_dict_returns_fresh_live_slotdict_views)
+{
+    test::VmTestContext test_context;
+
+    Value actual = test_context.run_file(L"class C:\n"
+                                         L"    pass\n"
+                                         L"c = C()\n"
+                                         L"c.__dict__\n");
+    ASSERT_TRUE(can_convert_to<SlotDict>(actual));
+
+    EXPECT_EQ(Value::False(),
+              test_context.run_file(L"class C:\n"
+                                    L"    pass\n"
+                                    L"c = C()\n"
+                                    L"c.__dict__ is c.__dict__\n"));
+
+    EXPECT_EQ(Value::from_smi(42),
+              test_context.run_file(L"class C:\n"
+                                    L"    pass\n"
+                                    L"c = C()\n"
+                                    L"c.__dict__[\"x\"] = 42\n"
+                                    L"c.x\n"));
+
+    EXPECT_EQ(Value::from_smi(7),
+              test_context.run_file(L"class C:\n"
+                                    L"    pass\n"
+                                    L"c = C()\n"
+                                    L"c.x = 7\n"
+                                    L"c.__dict__[\"x\"]\n"));
+}
+
+TEST(Interpreter, slotdict_hides_virtual_special_descriptors)
+{
+    expect_python_error(L"class C:\n"
+                        L"    pass\n"
+                        L"c = C()\n"
+                        L"c.__dict__[\"__class__\"]\n",
+                        L"KeyError");
+    expect_python_error(L"class C:\n"
+                        L"    pass\n"
+                        L"c = C()\n"
+                        L"c.__dict__[\"__dict__\"]\n",
+                        L"KeyError");
+}
+
+TEST(Interpreter, class_assignment_changes_receiver_shape_class)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(), test_context.run_file(L"class C:\n"
+                                                   L"    pass\n"
+                                                   L"class D:\n"
+                                                   L"    marker = 42\n"
+                                                   L"c = C()\n"
+                                                   L"c.__class__ = D\n"
+                                                   L"c.__class__ is D\n"));
+    EXPECT_EQ(Value::from_smi(42), test_context.run_file(L"class C:\n"
+                                                         L"    pass\n"
+                                                         L"class D:\n"
+                                                         L"    marker = 42\n"
+                                                         L"c = C()\n"
+                                                         L"c.__class__ = D\n"
+                                                         L"c.marker\n"));
+}
+
+TEST(Interpreter, class_dict_exposes_class_namespace_entries)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(3),
+              test_context.run_file(L"class C:\n"
+                                    L"    x = 3\n"
+                                    L"C.__dict__[\"x\"]\n"));
+
+    EXPECT_EQ(Value::from_smi(9),
+              test_context.run_file(L"class C:\n"
+                                    L"    pass\n"
+                                    L"C.__dict__[\"y\"] = 9\n"
+                                    L"C.y\n"));
+}
+
+TEST(Interpreter, function_and_module_dicts_are_slotdicts)
+{
+    test::VmTestContext test_context;
+
+    Value function_dict = test_context.run_file(L"def f():\n"
+                                                L"    pass\n"
+                                                L"f.__dict__\n");
+    ASSERT_TRUE(can_convert_to<SlotDict>(function_dict));
+
+    Value module_dict = test_context.run_file(L"__builtins__.__dict__\n");
+    ASSERT_TRUE(can_convert_to<SlotDict>(module_dict));
+}
+
+TEST(Interpreter, builtin_container_instances_do_not_expose_dict)
+{
+    EXPECT_THROW(test::FileRunner(L"[].__dict__\n"), std::runtime_error);
+    EXPECT_THROW(test::FileRunner(L"{}.__dict__\n"), std::runtime_error);
+    EXPECT_THROW(test::FileRunner(L"().__dict__\n"), std::runtime_error);
 }
 
 TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)

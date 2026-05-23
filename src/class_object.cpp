@@ -8,6 +8,7 @@
 #include "virtual_machine.h"
 #include <algorithm>
 #include <deque>
+#include <iterator>
 #include <stdexcept>
 #include <vector>
 
@@ -185,16 +186,33 @@ namespace cl
               _instance_default_inline_slot_count)
     {
         TValue<String> dunder_class_name = interned_string(L"__class__");
+        TValue<String> dunder_dict_name = interned_string(L"__dict__");
         DescriptorFlags instance_class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly);
         instance_class_flags |= descriptor_flag(DescriptorFlag::StableSlot);
-        instance_class_flags |=
-            descriptor_flag(DescriptorFlag::ShapeClassValue);
-        instance_root_shape = Shape::make_root_with_single_descriptor(
-            TValue<ClassObject>::from_oop(this), dunder_class_name,
-            DescriptorInfo::make(StorageLocation::not_found(),
-                                 instance_class_flags),
-            0, instance_default_inline_slot_count, instance_shape_flags);
+        instance_class_flags |= descriptor_flag(DescriptorFlag::SpecialRead);
+        instance_class_flags |= descriptor_flag(DescriptorFlag::SpecialMutate);
+        DescriptorFlags instance_dict_flags =
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+            descriptor_flag(DescriptorFlag::StableSlot) |
+            descriptor_flag(DescriptorFlag::SpecialRead) |
+            descriptor_flag(DescriptorFlag::SpecialMutate);
+        ShapeRootDescriptor instance_descriptors[] = {
+            ShapeRootDescriptor{
+                dunder_class_name,
+                DescriptorInfo::make(StorageLocation::not_found(),
+                                     instance_class_flags,
+                                     DescriptorSpecialKind::ShapeClass)},
+            ShapeRootDescriptor{
+                dunder_dict_name,
+                DescriptorInfo::make(StorageLocation::not_found(),
+                                     instance_dict_flags,
+                                     DescriptorSpecialKind::SlotDict)},
+        };
+        instance_root_shape = Shape::make_root_with_descriptors(
+            TValue<ClassObject>::from_oop(this), instance_descriptors,
+            std::size(instance_descriptors), 0, std::size(instance_descriptors),
+            instance_default_inline_slot_count, instance_shape_flags);
 
         TValue<String> dunder_name_name = interned_string(L"__name__");
         TValue<String> dunder_bases_name = interned_string(L"__bases__");
@@ -206,14 +224,26 @@ namespace cl
             descriptor_flag(DescriptorFlag::StableSlot);
         DescriptorFlags class_value_flags =
             class_metadata_flags |
-            descriptor_flag(DescriptorFlag::ShapeClassValue);
+            descriptor_flag(DescriptorFlag::SpecialRead) |
+            descriptor_flag(DescriptorFlag::SpecialMutate);
+        DescriptorFlags class_dict_flags =
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+            descriptor_flag(DescriptorFlag::StableSlot) |
+            descriptor_flag(DescriptorFlag::SpecialRead) |
+            descriptor_flag(DescriptorFlag::SpecialMutate);
         DescriptorFlags class_predefined_flags =
             descriptor_flag(DescriptorFlag::StableSlot);
         ShapeRootDescriptor descriptors[class_predefined_descriptor_count] = {
             ShapeRootDescriptor{
                 dunder_class_name,
                 DescriptorInfo::make(StorageLocation::not_found(),
-                                     class_value_flags)},
+                                     class_value_flags,
+                                     DescriptorSpecialKind::ShapeClass)},
+            ShapeRootDescriptor{
+                dunder_dict_name,
+                DescriptorInfo::make(StorageLocation::not_found(),
+                                     class_dict_flags,
+                                     DescriptorSpecialKind::SlotDict)},
             ShapeRootDescriptor{
                 dunder_name_name,
                 DescriptorInfo::make(StorageLocation{class_metadata_slot_name,
@@ -243,7 +273,7 @@ namespace cl
         set_shape(Shape::make_root_with_descriptors(
             TValue<ClassObject>::from_oop(this), descriptors,
             class_predefined_descriptor_count, class_predefined_slot_count,
-            class_metadata_slot_count + 1, class_inline_storage_slot_count,
+            class_metadata_slot_count + 2, class_inline_storage_slot_count,
             class_shape_flags));
 
         for(uint32_t slot_idx = 0;
@@ -441,10 +471,30 @@ namespace cl
         const ShapeRootDescriptor *descriptors, uint32_t descriptor_count,
         int32_t next_slot_index, uint32_t present_count, ShapeFlags shape_flags)
     {
+        TValue<String> dunder_dict_name = interned_string(L"__dict__");
+        DescriptorFlags dict_flags =
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+            descriptor_flag(DescriptorFlag::StableSlot) |
+            descriptor_flag(DescriptorFlag::SpecialRead) |
+            descriptor_flag(DescriptorFlag::SpecialMutate);
+        std::vector<ShapeRootDescriptor> root_descriptors;
+        root_descriptors.reserve(descriptor_count + 1);
+        for(uint32_t idx = 0; idx < present_count; ++idx)
+        {
+            root_descriptors.push_back(descriptors[idx]);
+        }
+        root_descriptors.push_back(ShapeRootDescriptor{
+            dunder_dict_name,
+            DescriptorInfo::make(StorageLocation::not_found(), dict_flags,
+                                 DescriptorSpecialKind::SlotDict)});
+        for(uint32_t idx = present_count; idx < descriptor_count; ++idx)
+        {
+            root_descriptors.push_back(descriptors[idx]);
+        }
         instance_root_shape = Shape::make_root_with_descriptors(
-            TValue<ClassObject>::from_oop(this), descriptors, descriptor_count,
-            next_slot_index, present_count, instance_default_inline_slot_count,
-            shape_flags);
+            TValue<ClassObject>::from_oop(this), root_descriptors.data(),
+            root_descriptors.size(), next_slot_index, present_count + 1,
+            instance_default_inline_slot_count, shape_flags);
     }
 
     void ClassObject::install_bootstrap_inheritance(Value bases_tuple,

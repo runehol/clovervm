@@ -312,12 +312,14 @@ namespace cl
         DescriptorFlags inline_class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot) |
-            descriptor_flag(DescriptorFlag::ShapeClassValue);
+            descriptor_flag(DescriptorFlag::SpecialRead) |
+            descriptor_flag(DescriptorFlag::SpecialMutate);
         smi_shape_ = Shape::make_immortal_root_with_single_descriptor(
             this, TValue<ClassObject>::from_oop(int_class_),
             dunder_class_name(),
             DescriptorInfo::make(StorageLocation::not_found(),
-                                 inline_class_flags),
+                                 inline_class_flags,
+                                 DescriptorSpecialKind::ShapeClass),
             0, 0, fixed_attribute_shape_flags());
         BuiltinClassDefinition bool_definition =
             make_bool_class(this, int_class_);
@@ -327,7 +329,8 @@ namespace cl
             this, TValue<ClassObject>::from_oop(bool_class_),
             dunder_class_name(),
             DescriptorInfo::make(StorageLocation::not_found(),
-                                 inline_class_flags),
+                                 inline_class_flags,
+                                 DescriptorSpecialKind::ShapeClass),
             0, 0, fixed_attribute_shape_flags());
         BuiltinClassDefinition none_type_definition =
             make_none_type_class(this);
@@ -337,7 +340,8 @@ namespace cl
             this, TValue<ClassObject>::from_oop(none_type_class_),
             dunder_class_name(),
             DescriptorInfo::make(StorageLocation::not_found(),
-                                 inline_class_flags),
+                                 inline_class_flags,
+                                 DescriptorSpecialKind::ShapeClass),
             0, 0, fixed_attribute_shape_flags());
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_dict_class(this));

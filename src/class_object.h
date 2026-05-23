@@ -57,7 +57,7 @@ namespace cl
         static constexpr uint32_t class_predefined_slot_new = 3;
         static constexpr uint32_t class_predefined_slot_init = 4;
         static constexpr uint32_t class_predefined_slot_count = 5;
-        static constexpr uint32_t class_predefined_descriptor_count = 6;
+        static constexpr uint32_t class_predefined_descriptor_count = 7;
         static constexpr uint32_t class_inline_storage_slot_count = 48;
 
         ClassObject(

@@ -17,7 +17,7 @@ using namespace cl;
 static uint32_t class_property_count(ClassObject *cls)
 {
     constexpr uint32_t class_metadata_descriptor_count =
-        ClassObject::class_metadata_slot_count + 1;
+        ClassObject::class_metadata_slot_count + 2;
     Shape *shape = cls->get_shape();
     assert(shape->present_count() >= class_metadata_descriptor_count);
     return shape->present_count() - class_metadata_descriptor_count;
@@ -26,7 +26,7 @@ static uint32_t class_property_count(ClassObject *cls)
 static TValue<String> class_property_name(ClassObject *cls, uint32_t idx)
 {
     constexpr uint32_t class_metadata_descriptor_count =
-        ClassObject::class_metadata_slot_count + 1;
+        ClassObject::class_metadata_slot_count + 2;
     return cls->get_shape()->get_property_name(class_metadata_descriptor_count +
                                                idx);
 }
@@ -34,7 +34,7 @@ static TValue<String> class_property_name(ClassObject *cls, uint32_t idx)
 static Value class_property_value(ClassObject *cls, uint32_t idx)
 {
     constexpr uint32_t class_metadata_descriptor_count =
-        ClassObject::class_metadata_slot_count + 1;
+        ClassObject::class_metadata_slot_count + 2;
     DescriptorInfo info = cls->get_shape()->get_descriptor_info(
         class_metadata_descriptor_count + idx);
     return cls->read_storage_location(info.storage_location());
@@ -54,8 +54,8 @@ TEST(Shape, InstanceRootShapeCarriesPresentedClass)
     ASSERT_NE(nullptr, root_shape);
     EXPECT_EQ(cls, root_shape->get_class());
     EXPECT_EQ(nullptr, root_shape->get_previous_shape());
-    ASSERT_EQ(1u, root_shape->property_count());
-    EXPECT_EQ(1u, root_shape->present_count());
+    ASSERT_EQ(2u, root_shape->property_count());
+    EXPECT_EQ(2u, root_shape->present_count());
     EXPECT_EQ(0u, root_shape->latent_count());
     EXPECT_FALSE(root_shape->has_flag(ShapeFlag::IsClassObject));
     EXPECT_STREQ(L"__class__",
@@ -66,7 +66,23 @@ TEST(Shape, InstanceRootShapeCarriesPresentedClass)
     EXPECT_TRUE(root_shape->get_descriptor_info(0).has_flag(
         DescriptorFlag::StableSlot));
     EXPECT_TRUE(root_shape->get_descriptor_info(0).has_flag(
-        DescriptorFlag::ShapeClassValue));
+        DescriptorFlag::SpecialRead));
+    EXPECT_TRUE(root_shape->get_descriptor_info(0).has_flag(
+        DescriptorFlag::SpecialMutate));
+    EXPECT_EQ(DescriptorSpecialKind::ShapeClass,
+              root_shape->get_descriptor_info(0).special_kind());
+    EXPECT_STREQ(L"__dict__", root_shape->get_property_name(1).extract()->data);
+    EXPECT_FALSE(root_shape->get_property_storage_location(1).is_found());
+    EXPECT_TRUE(
+        root_shape->get_descriptor_info(1).has_flag(DescriptorFlag::ReadOnly));
+    EXPECT_TRUE(root_shape->get_descriptor_info(1).has_flag(
+        DescriptorFlag::StableSlot));
+    EXPECT_TRUE(root_shape->get_descriptor_info(1).has_flag(
+        DescriptorFlag::SpecialRead));
+    EXPECT_TRUE(root_shape->get_descriptor_info(1).has_flag(
+        DescriptorFlag::SpecialMutate));
+    EXPECT_EQ(DescriptorSpecialKind::SlotDict,
+              root_shape->get_descriptor_info(1).special_kind());
     EXPECT_EQ(0, root_shape->get_next_slot_index());
     EXPECT_EQ(2u, root_shape->get_instance_default_inline_slot_count());
 }
@@ -135,38 +151,44 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
     EXPECT_EQ(shape_with_a, shape_with_a_again);
     EXPECT_EQ(shape_with_b, shape_with_b_again);
 
-    ASSERT_EQ(2u, shape_with_a->property_count());
-    EXPECT_EQ(2u, shape_with_a->present_count());
+    ASSERT_EQ(3u, shape_with_a->property_count());
+    EXPECT_EQ(3u, shape_with_a->present_count());
     EXPECT_EQ(0u, shape_with_a->latent_count());
     EXPECT_STREQ(L"__class__",
                  shape_with_a->get_property_name(0).extract()->data);
-    EXPECT_STREQ(L"a", shape_with_a->get_property_name(1).extract()->data);
+    EXPECT_STREQ(L"__dict__",
+                 shape_with_a->get_property_name(1).extract()->data);
+    EXPECT_STREQ(L"a", shape_with_a->get_property_name(2).extract()->data);
     EXPECT_EQ(StorageKind::Inline,
-              shape_with_a->get_property_storage_location(1).kind);
-    EXPECT_EQ(0, shape_with_a->get_property_storage_location(1).physical_idx);
-    EXPECT_FALSE(shape_with_a->get_descriptor_info(1).has_flag(
+              shape_with_a->get_property_storage_location(2).kind);
+    EXPECT_EQ(0, shape_with_a->get_property_storage_location(2).physical_idx);
+    EXPECT_FALSE(shape_with_a->get_descriptor_info(2).has_flag(
         DescriptorFlag::ReadOnly));
     EXPECT_EQ(1, shape_with_a->get_next_slot_index());
 
-    ASSERT_EQ(3u, shape_with_ab->property_count());
-    EXPECT_EQ(3u, shape_with_ab->present_count());
+    ASSERT_EQ(4u, shape_with_ab->property_count());
+    EXPECT_EQ(4u, shape_with_ab->present_count());
     EXPECT_EQ(0u, shape_with_ab->latent_count());
     EXPECT_STREQ(L"__class__",
                  shape_with_ab->get_property_name(0).extract()->data);
-    EXPECT_STREQ(L"a", shape_with_ab->get_property_name(1).extract()->data);
-    EXPECT_STREQ(L"b", shape_with_ab->get_property_name(2).extract()->data);
+    EXPECT_STREQ(L"__dict__",
+                 shape_with_ab->get_property_name(1).extract()->data);
+    EXPECT_STREQ(L"a", shape_with_ab->get_property_name(2).extract()->data);
+    EXPECT_STREQ(L"b", shape_with_ab->get_property_name(3).extract()->data);
     EXPECT_EQ(StorageKind::Inline,
-              shape_with_ab->get_property_storage_location(2).kind);
-    EXPECT_EQ(1, shape_with_ab->get_property_storage_location(2).physical_idx);
+              shape_with_ab->get_property_storage_location(3).kind);
+    EXPECT_EQ(1, shape_with_ab->get_property_storage_location(3).physical_idx);
     EXPECT_EQ(shape_with_a, shape_with_ab->get_previous_shape());
     EXPECT_EQ(2, shape_with_ab->get_next_slot_index());
 
-    ASSERT_EQ(2u, shape_with_b->property_count());
-    EXPECT_EQ(2u, shape_with_b->present_count());
+    ASSERT_EQ(3u, shape_with_b->property_count());
+    EXPECT_EQ(3u, shape_with_b->present_count());
     EXPECT_EQ(0u, shape_with_b->latent_count());
     EXPECT_STREQ(L"__class__",
                  shape_with_b->get_property_name(0).extract()->data);
-    EXPECT_STREQ(L"b", shape_with_b->get_property_name(1).extract()->data);
+    EXPECT_STREQ(L"__dict__",
+                 shape_with_b->get_property_name(1).extract()->data);
+    EXPECT_STREQ(L"b", shape_with_b->get_property_name(2).extract()->data);
     EXPECT_EQ(shape_with_ab, shape_with_b->get_previous_shape());
     EXPECT_EQ(2, shape_with_b->get_next_slot_index());
 }
@@ -194,7 +216,7 @@ TEST(Shape, DescriptorLookupReportsPresentAndAbsentProperties)
     EXPECT_EQ(DescriptorPresence::Present, a_lookup.presence);
     EXPECT_TRUE(a_lookup.is_present());
     EXPECT_FALSE(a_lookup.is_latent());
-    EXPECT_EQ(1, a_lookup.descriptor_idx);
+    EXPECT_EQ(2, a_lookup.descriptor_idx);
     EXPECT_TRUE(a_lookup.storage_location().is_found());
 
     DescriptorLookup b_lookup =
@@ -309,8 +331,8 @@ TEST(Shape, StableSlotDeleteMovesDescriptorToLatentAndReAddReusesSlot)
     Shape *shape_without_a =
         shape_with_a->derive_transition(a_name, ShapeTransitionVerb::Delete);
 
-    EXPECT_EQ(2u, shape_without_a->property_count());
-    EXPECT_EQ(1u, shape_without_a->present_count());
+    EXPECT_EQ(3u, shape_without_a->property_count());
+    EXPECT_EQ(2u, shape_without_a->present_count());
     EXPECT_EQ(1u, shape_without_a->latent_count());
     DescriptorLookup latent_lookup =
         shape_without_a->lookup_descriptor_including_latent(a_name);
@@ -325,8 +347,8 @@ TEST(Shape, StableSlotDeleteMovesDescriptorToLatentAndReAddReusesSlot)
         shape_with_a_again->lookup_descriptor_including_latent(a_name);
     EXPECT_TRUE(present_lookup.is_present());
     EXPECT_EQ(0, present_lookup.info.physical_idx);
-    EXPECT_EQ(2u, shape_with_a_again->property_count());
-    EXPECT_EQ(2u, shape_with_a_again->present_count());
+    EXPECT_EQ(3u, shape_with_a_again->property_count());
+    EXPECT_EQ(3u, shape_with_a_again->present_count());
     EXPECT_EQ(0u, shape_with_a_again->latent_count());
     EXPECT_EQ(1, shape_with_a_again->get_next_slot_index());
 }
@@ -355,14 +377,16 @@ TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
     Shape *shape_with_ba =
         shape_with_b->derive_transition(a_name, ShapeTransitionVerb::Add);
 
-    ASSERT_EQ(3u, shape_with_ba->property_count());
+    ASSERT_EQ(4u, shape_with_ba->property_count());
     EXPECT_STREQ(L"__class__",
                  shape_with_ba->get_property_name(0).extract()->data);
-    EXPECT_STREQ(L"b", shape_with_ba->get_property_name(1).extract()->data);
-    EXPECT_STREQ(L"a", shape_with_ba->get_property_name(2).extract()->data);
+    EXPECT_STREQ(L"__dict__",
+                 shape_with_ba->get_property_name(1).extract()->data);
+    EXPECT_STREQ(L"b", shape_with_ba->get_property_name(2).extract()->data);
+    EXPECT_STREQ(L"a", shape_with_ba->get_property_name(3).extract()->data);
     EXPECT_EQ(StorageKind::Overflow,
-              shape_with_ba->get_property_storage_location(2).kind);
-    EXPECT_EQ(1, shape_with_ba->get_property_storage_location(2).physical_idx);
+              shape_with_ba->get_property_storage_location(3).kind);
+    EXPECT_EQ(1, shape_with_ba->get_property_storage_location(3).physical_idx);
     EXPECT_EQ(3, shape_with_ba->get_next_slot_index());
     EXPECT_EQ(1u, shape_with_ba->get_instance_default_inline_slot_count());
 }
@@ -403,12 +427,16 @@ TEST(Shape, InstanceShapeDescribesDunderClassWithoutStorageSlot)
         shape->get_descriptor_info(0).has_flag(DescriptorFlag::ReadOnly));
     EXPECT_TRUE(
         shape->get_descriptor_info(0).has_flag(DescriptorFlag::StableSlot));
-    EXPECT_TRUE(shape->get_descriptor_info(0).has_flag(
-        DescriptorFlag::ShapeClassValue));
+    EXPECT_TRUE(
+        shape->get_descriptor_info(0).has_flag(DescriptorFlag::SpecialRead));
+    EXPECT_TRUE(
+        shape->get_descriptor_info(0).has_flag(DescriptorFlag::SpecialMutate));
+    EXPECT_EQ(DescriptorSpecialKind::ShapeClass,
+              shape->get_descriptor_info(0).special_kind());
     EXPECT_EQ(Value::not_present(),
               instance->get_own_property(dunder_class_name));
 
-    EXPECT_FALSE(
+    EXPECT_TRUE(
         instance->set_own_property(dunder_class_name, Value::from_oop(cls)));
     EXPECT_EQ(Value::not_present(),
               instance->get_own_property(dunder_class_name));
@@ -430,7 +458,7 @@ TEST(Shape, InstanceStoresAndLoadsInlineOwnProperty)
     instance->set_own_property(a_name, Value::from_smi(7));
 
     EXPECT_EQ(Value::from_smi(7), instance->get_own_property(a_name));
-    EXPECT_EQ(2u, instance->get_shape()->property_count());
+    EXPECT_EQ(3u, instance->get_shape()->property_count());
     EXPECT_EQ(1, instance->get_shape()->get_next_slot_index());
 }
 
@@ -585,7 +613,7 @@ TEST(ClassObject, ClassPropertiesUseShapeBackedInlineAndOverflowStorage)
 
     Shape *shape = cls->get_shape();
     constexpr uint32_t class_metadata_descriptor_count =
-        ClassObject::class_metadata_slot_count + 1;
+        ClassObject::class_metadata_slot_count + 2;
     ASSERT_EQ(ClassObject::class_predefined_descriptor_count + property_count,
               shape->property_count());
     EXPECT_EQ(class_metadata_descriptor_count + property_count,
@@ -644,16 +672,17 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     ASSERT_NE(nullptr, shape);
     EXPECT_TRUE(shape->has_flag(ShapeFlag::IsClassObject));
     EXPECT_FALSE(shape->has_flag(ShapeFlag::IsImmutableType));
-    ASSERT_EQ(6u, shape->property_count());
-    EXPECT_EQ(4u, shape->present_count());
+    ASSERT_EQ(7u, shape->property_count());
+    EXPECT_EQ(5u, shape->present_count());
     EXPECT_EQ(2u, shape->latent_count());
     EXPECT_EQ(5, shape->get_next_slot_index());
     EXPECT_EQ(ClassObject::class_inline_storage_slot_count,
               shape->get_inline_slot_count());
 
-    const cl_wchar *expected_names[] = {L"__class__", L"__name__", L"__bases__",
-                                        L"__mro__"};
-    const int32_t expected_slots[] = {-1, ClassObject::class_metadata_slot_name,
+    const cl_wchar *expected_names[] = {L"__class__", L"__dict__", L"__name__",
+                                        L"__bases__", L"__mro__"};
+    const int32_t expected_slots[] = {-1, -1,
+                                      ClassObject::class_metadata_slot_name,
                                       ClassObject::class_metadata_slot_bases,
                                       ClassObject::class_metadata_slot_mro};
     for(uint32_t idx = 0; idx < std::size(expected_names); ++idx)
@@ -678,12 +707,27 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
         if(idx == 0)
         {
             EXPECT_TRUE(shape->get_descriptor_info(idx).has_flag(
-                DescriptorFlag::ShapeClassValue));
+                DescriptorFlag::SpecialRead));
+            EXPECT_TRUE(shape->get_descriptor_info(idx).has_flag(
+                DescriptorFlag::SpecialMutate));
+            EXPECT_EQ(DescriptorSpecialKind::ShapeClass,
+                      shape->get_descriptor_info(idx).special_kind());
+        }
+        else if(idx == 1)
+        {
+            EXPECT_TRUE(shape->get_descriptor_info(idx).has_flag(
+                DescriptorFlag::SpecialRead));
+            EXPECT_TRUE(shape->get_descriptor_info(idx).has_flag(
+                DescriptorFlag::SpecialMutate));
+            EXPECT_EQ(DescriptorSpecialKind::SlotDict,
+                      shape->get_descriptor_info(idx).special_kind());
         }
         else
         {
             EXPECT_FALSE(shape->get_descriptor_info(idx).has_flag(
-                DescriptorFlag::ShapeClassValue));
+                DescriptorFlag::SpecialRead));
+            EXPECT_FALSE(shape->get_descriptor_info(idx).has_flag(
+                DescriptorFlag::SpecialMutate));
         }
     }
 

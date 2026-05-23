@@ -14,8 +14,8 @@ namespace cl
 
     static DescriptorFlags module_builtins_descriptor_flags()
     {
-        return descriptor_flag(DescriptorFlag::ReadOnly) |
-               descriptor_flag(DescriptorFlag::StableSlot);
+        return descriptor_flag(DescriptorFlag::StableSlot) |
+               descriptor_flag(DescriptorFlag::SpecialMutate);
     }
 
     static void ensure_module_builtins_descriptor_present(ModuleObject *module)
@@ -204,13 +204,15 @@ namespace cl
         DescriptorFlags class_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
             descriptor_flag(DescriptorFlag::StableSlot) |
-            descriptor_flag(DescriptorFlag::ShapeClassValue);
+            descriptor_flag(DescriptorFlag::SpecialRead) |
+            descriptor_flag(DescriptorFlag::SpecialMutate);
         DescriptorFlags name_flags =
             descriptor_flag(DescriptorFlag::StableSlot);
         ShapeRootDescriptor descriptors[] = {
-            ShapeRootDescriptor{dunder_class_name,
-                                DescriptorInfo::make(
-                                    StorageLocation::not_found(), class_flags)},
+            ShapeRootDescriptor{
+                dunder_class_name,
+                DescriptorInfo::make(StorageLocation::not_found(), class_flags,
+                                     DescriptorSpecialKind::ShapeClass)},
             ShapeRootDescriptor{
                 dunder_name_name,
                 DescriptorInfo::make(
@@ -223,7 +225,8 @@ namespace cl
                     StorageLocation{
                         ModuleObject::module_predefined_slot_builtins,
                         StorageKind::Inline},
-                    module_builtins_descriptor_flags())},
+                    module_builtins_descriptor_flags(),
+                    DescriptorSpecialKind::ModuleBuiltins)},
         };
         cls->install_builtin_instance_root_shape(
             descriptors, std::size(descriptors),

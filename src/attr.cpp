@@ -3,7 +3,9 @@
 #include "attribute_descriptor.h"
 #include "class_object.h"
 #include "function.h"
+#include "module_object.h"
 #include "runtime_helpers.h"
+#include "slot_dict.h"
 #include "thread_state.h"
 #include "tuple.h"
 
@@ -110,6 +112,53 @@ namespace cl
             AttributeReadPlan::constant(class_value), class_value);
     }
 
+    static AttributeReadDescriptor special_read_descriptor(Value receiver,
+                                                           DescriptorInfo info)
+    {
+        assert(info.has_flag(DescriptorFlag::SpecialRead));
+        switch(info.special_kind())
+        {
+            case DescriptorSpecialKind::ShapeClass:
+                return shape_class_value_descriptor(receiver);
+            case DescriptorSpecialKind::SlotDict:
+                {
+                    assert(receiver.is_ptr());
+                    Object *object = receiver.get_ptr<Object>();
+                    if(!native_layout_has_slots(object->native_layout_id()))
+                    {
+                        return AttributeReadDescriptor::not_found();
+                    }
+                    Value slotdict =
+                        make_object_value<SlotDict>(object).raw_value();
+                    return AttributeReadDescriptor::found(
+                        AttributeReadPlan::constant(slotdict), slotdict,
+                        attribute_cache_blocker(
+                            AttributeCacheBlocker::UnsupportedDescriptorKind));
+                }
+            case DescriptorSpecialKind::ModuleBuiltins:
+            case DescriptorSpecialKind::None:
+                break;
+        }
+        __builtin_unreachable();
+    }
+
+    static bool store_attr_change_class(Value receiver, Value value)
+    {
+        assert(receiver.is_ptr());
+        Object *object = receiver.get_ptr<Object>();
+        if(!can_convert_to<ClassObject>(value))
+        {
+            (void)active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"__class__ assignment requires a class object");
+            return false;
+        }
+        TValue<ClassObject> new_class =
+            TValue<ClassObject>::from_value_assumed(value);
+
+        object->set_shape(object->get_shape()->clone_with_class(new_class));
+        return true;
+    }
+
     static Value
     class_chain_shape_class_receiver(const ClassObject *class_object,
                                      AttributeReadPlanPath path,
@@ -134,9 +183,9 @@ namespace cl
         {
             return AttributeReadDescriptor::not_found();
         }
-        if(lookup.info.has_flag(DescriptorFlag::ShapeClassValue))
+        if(lookup.info.has_flag(DescriptorFlag::SpecialRead))
         {
-            return shape_class_value_descriptor(receiver);
+            return special_read_descriptor(receiver, lookup.info);
         }
         return AttributeReadDescriptor::not_found();
     }
@@ -230,11 +279,11 @@ namespace cl
                 return AttributeReadDescriptor::not_found();
             }
 
-            if(lookup.info.has_flag(DescriptorFlag::ShapeClassValue))
+            if(lookup.info.has_flag(DescriptorFlag::SpecialRead))
             {
-                return shape_class_value_descriptor(
-                    class_chain_shape_class_receiver(class_object, path,
-                                                     binding));
+                return special_read_descriptor(class_chain_shape_class_receiver(
+                                                   class_object, path, binding),
+                                               lookup.info);
             }
 
             Value own_value =
@@ -263,11 +312,11 @@ namespace cl
                 continue;
             }
 
-            if(lookup.info.has_flag(DescriptorFlag::ShapeClassValue))
+            if(lookup.info.has_flag(DescriptorFlag::SpecialRead))
             {
-                return shape_class_value_descriptor(
-                    class_chain_shape_class_receiver(class_object, path,
-                                                     binding));
+                return special_read_descriptor(class_chain_shape_class_receiver(
+                                                   class_object, path, binding),
+                                               lookup.info);
             }
 
             Value value = cls->read_storage_location(lookup.storage_location());
@@ -416,11 +465,11 @@ namespace cl
             DescriptorLookup own_lookup =
                 object->get_shape()->lookup_descriptor_including_latent(name);
             if(own_lookup.is_present() &&
-               own_lookup.info.has_flag(DescriptorFlag::ShapeClassValue))
+               own_lookup.info.has_flag(DescriptorFlag::SpecialRead))
             {
                 return with_mro_shape_and_contents_validity_cell_if_unblocked(
                     with_cache_blockers(
-                        shape_class_value_descriptor(obj),
+                        special_read_descriptor(obj, own_lookup.info),
                         superseded_class_read_descriptor_cache_blockers(
                             class_descriptor)),
                     class_object);
@@ -632,6 +681,10 @@ namespace cl
     {
         value.assert_not_vm_sentinel();
 
+        if(unlikely(plan.is_change_class()))
+        {
+            return store_attr_change_class(receiver, value);
+        }
         if(likely(!plan.is_add_own_property()))
         {
             Object *storage_owner = plan.storage_owner;
@@ -672,12 +725,13 @@ namespace cl
 
     // Attribute mapping entries are the stored own namespace entries that back
     // live mapping views like globals() and, later, obj.__dict__. They are
-    // deliberately narrower than attribute lookup: synthetic shape values,
-    // descriptors, and inherited/class-chain results do not appear here.
+    // deliberately narrower than attribute lookup: special-read descriptors,
+    // synthetic shape values, and inherited/class-chain results do not appear
+    // here.
     bool descriptor_is_attribute_mapping_entry(DescriptorInfo info)
     {
         return info.storage_location().is_found() &&
-               !info.has_flag(DescriptorFlag::ShapeClassValue);
+               !info.has_flag(DescriptorFlag::SpecialRead);
     }
 
     bool own_attribute_mapping_entry_at(Object *object, uint32_t descriptor_idx,
