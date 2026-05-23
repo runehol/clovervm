@@ -567,6 +567,7 @@ namespace cl
         install_dict_class_methods(this);
         install_slotdict_class_methods(this);
         install_float_class_methods(this);
+        install_module_class_methods(this);
     }
 
     void VirtualMachine::initialize_module_bootstrap()

@@ -107,6 +107,7 @@ namespace cl
     static_assert(std::is_trivially_destructible_v<ModuleObject>);
 
     BuiltinClassDefinition make_module_class(VirtualMachine *vm);
+    void install_module_class_methods(VirtualMachine *vm);
 
 }  // namespace cl
 

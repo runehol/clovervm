@@ -510,6 +510,17 @@ TEST(ImportSystem,
     EXPECT_EQ(Value::True(), actual);
 }
 
+TEST(ImportSystem, ModuleReprFormatsBuiltinModule)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value actual = context.run_file(L"import sys\n"
+                                    L"repr(sys)\n");
+    ASSERT_TRUE(can_convert_to<String>(actual));
+    EXPECT_EQ(L"<module 'sys' (built-in)>", value_as_wstring(actual));
+}
+
 TEST(ImportSystem, BuiltinImportOfDottedModuleReturnsTopLevelPackage)
 {
     test::VmTestContext context;
@@ -594,6 +605,26 @@ TEST(ImportSystem, ImportStatementLoadsDottedModuleAndStoresTopLevelBinding)
     EXPECT_EQ(Value::from_smi(42), marker);
 }
 
+TEST(ImportSystem, ModuleReprFormatsSourceModule)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"mod.py", "value = 42\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(L"import mod\n"
+                                    L"repr(mod)\n");
+    ASSERT_TRUE(can_convert_to<String>(actual));
+    std::wstring expected = L"<module 'mod' from '";
+    expected += (root.path / L"mod.py").lexically_normal().wstring();
+    expected += L"'>";
+    EXPECT_EQ(expected, value_as_wstring(actual));
+}
+
 TEST(ImportSystem, ImportStatementSupportsMultipleImportsAndAliases)
 {
     test::VmTestContext context;
@@ -666,6 +697,26 @@ TEST(ImportSystem, ImportStatementLoadsDottedModuleThroughNamespacePackages)
     Value actual = context.run_file(L"import tests.python.arithmetic\n"
                                     L"tests.python.arithmetic.value\n");
     EXPECT_EQ(Value::from_smi(37), actual);
+}
+
+TEST(ImportSystem, ModuleReprFormatsNamespacePackage)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"tests/python/arithmetic.py", "value = 37\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(L"import tests.python.arithmetic\n"
+                                    L"repr(tests)\n");
+    ASSERT_TRUE(can_convert_to<String>(actual));
+    std::wstring expected = L"<module 'tests' (namespace) from ['";
+    expected += (root.path / L"tests").lexically_normal().wstring();
+    expected += L"']>";
+    EXPECT_EQ(expected, value_as_wstring(actual));
 }
 
 TEST(ImportSystem, FromImportLoadsModuleThroughNamespacePackages)

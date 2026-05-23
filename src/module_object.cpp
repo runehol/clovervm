@@ -1,9 +1,12 @@
 #include "module_object.h"
 #include "attribute_descriptor.h"
 #include "class_object.h"
+#include "exception_propagation.h"
+#include "native_function.h"
 #include "runtime_helpers.h"
 #include "shape.h"
 #include "str.h"
+#include "string_builder.h"
 #include "virtual_machine.h"
 #include <algorithm>
 #include <iterator>
@@ -69,6 +72,50 @@ namespace cl
         bool stored = module->set_own_property(interned_string(name), value);
         assert(stored);
         (void)stored;
+    }
+
+    static Value native_module_repr(Value self)
+    {
+        if(!can_convert_to<ModuleObject>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"module.__repr__ expects a module receiver");
+        }
+
+        ModuleObject *module = self.get_ptr<ModuleObject>();
+        Value name = module->get_name_binding();
+        StringBuilder builder;
+        builder.append_c_str(L"<module '");
+        if(can_convert_to<String>(name))
+        {
+            builder.append_string(TValue<String>::from_value_assumed(name));
+        }
+        else
+        {
+            builder.append_c_str(L"<unknown>");
+        }
+        builder.append_char(L'\'');
+
+        Value file = module->get_own_property(interned_string(L"__file__"));
+        if(can_convert_to<String>(file))
+        {
+            builder.append_c_str(L" from '");
+            builder.append_string(TValue<String>::from_value_assumed(file));
+            builder.append_c_str(L"'>");
+            return builder.finish();
+        }
+
+        Value path = module->get_own_property(interned_string(L"__path__"));
+        if(!path.is_not_present())
+        {
+            builder.append_c_str(L" (namespace) from ");
+            CL_PROPAGATE_EXCEPTION(builder.append_repr(path));
+            builder.append_char(L'>');
+            return builder.finish();
+        }
+
+        builder.append_c_str(L" (built-in)>");
+        return builder.finish();
     }
 
     ModuleObject::ModuleObject(ClassObject *cls, TValue<String> _name,
@@ -262,6 +309,16 @@ namespace cl
             vm->object_class());
         install_module_instance_root_shape(cls);
         return builtin_class_definition(cls, native_layout_ids);
+    }
+
+    void install_module_class_methods(VirtualMachine *vm)
+    {
+        BuiltinNativeMethod methods[] = {
+            builtin_native_method(L"__repr__", native_module_repr,
+                                  L"Return repr(self)."),
+        };
+        install_builtin_native_methods(vm, vm->module_class(), methods,
+                                       std::size(methods));
     }
 
 }  // namespace cl
