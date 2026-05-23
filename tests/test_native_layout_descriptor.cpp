@@ -5,6 +5,7 @@
 #include "instance.h"
 #include "list.h"
 #include "list_iterator.h"
+#include "module_object.h"
 #include "native_layout_descriptor.h"
 #include "object.h"
 #include "overflow_slots.h"
@@ -86,6 +87,15 @@ TEST(NativeLayoutDescriptor, SlotObjectCarriesAttributeStorageCells)
     EXPECT_FALSE(native_layout_has_slots(NativeLayoutId::List));
     EXPECT_EQ(Object::native_static_release_count() + 1,
               SlotObject::native_static_release_count());
+}
+
+TEST(NativeLayoutDescriptor, ModuleObjectReleaseCountCoversManagedFields)
+{
+    EXPECT_EQ(SlotObject::native_static_release_count() +
+                  ModuleObject::module_inline_storage_slot_count + 2 +
+                  HeapPtrArray<ValidityCell>::embedded_value_count,
+              ModuleObject::native_static_release_count());
+    expect_static_native_layout_descriptor<ModuleObject>();
 }
 
 TEST(NativeLayout, ObjectAndValueConversionHelpersUseExactLayout)
