@@ -8,6 +8,7 @@
 
 namespace cl
 {
+    class CodeObject;
     class String;
     class ThreadState;
 
@@ -23,6 +24,10 @@ namespace cl
                                                       TValue<String> name);
     [[nodiscard]] Value import_module_absolute(ThreadState *thread,
                                                TValue<String> name);
+    [[nodiscard]] Value import_name_from_code(ThreadState *thread,
+                                              CodeObject *code_object,
+                                              TValue<String> name,
+                                              Value fromlist, int64_t level);
 
 }  // namespace cl
 

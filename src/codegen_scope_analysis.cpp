@@ -448,6 +448,11 @@ namespace cl
                             state, av.constants[node_idx]);
                         return;
 
+                    case AstNodeKind::STATEMENT_IMPORT:
+                        mark_global_validation_assignment(
+                            state, av.constants[children[0]]);
+                        return;
+
                     case AstNodeKind::STATEMENT_ASSIGN:
                     case AstNodeKind::EXPRESSION_ASSIGN:
                         {
@@ -632,6 +637,14 @@ namespace cl
                         }
                         return;
 
+                    case AstNodeKind::STATEMENT_IMPORT:
+                        if(analysis.result.mode != CodegenMode::Module)
+                        {
+                            ensure_local_binding(analysis,
+                                                 av.constants[children[0]]);
+                        }
+                        return;
+
                     case AstNodeKind::STATEMENT_ASSIGN:
                     case AstNodeKind::EXPRESSION_ASSIGN:
                         {
@@ -756,6 +769,10 @@ namespace cl
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
                     case AstNodeKind::STATEMENT_CLASS_DEF:
                         mark_name(av.constants[node_idx]);
+                        return;
+
+                    case AstNodeKind::STATEMENT_IMPORT:
+                        mark_name(av.constants[children[0]]);
                         return;
 
                     case AstNodeKind::STATEMENT_ASSIGN:
@@ -943,6 +960,10 @@ namespace cl
                             analyze_flow_node(analysis, children[1], state);
                             break;
                         }
+
+                    case AstNodeKind::STATEMENT_IMPORT:
+                        annotate_write(children[0]);
+                        break;
 
                     case AstNodeKind::STATEMENT_ANN_ASSIGN:
                         if(children.size() == 3)

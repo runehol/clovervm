@@ -647,6 +647,16 @@ namespace cl
             first_arg_reg, argc);
     }
 
+    uint32_t CodeObjectBuilder::emit_import_name(uint32_t source_offset,
+                                                 uint8_t name_idx,
+                                                 uint8_t level)
+    {
+        uint32_t result = emit_opcode_constant_idx(
+            source_offset, Bytecode::ImportName, name_idx);
+        emplace_back(source_offset, level);
+        return result;
+    }
+
     uint32_t CodeObjectBuilder::emit_call_native(uint32_t source_offset,
                                                  Bytecode op,
                                                  uint8_t target_idx)

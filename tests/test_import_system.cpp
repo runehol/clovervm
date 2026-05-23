@@ -383,3 +383,93 @@ TEST(ImportSystem, BuiltinImportRejectsRelativeImportForNow)
     EXPECT_EQ(L"relative imports are not supported",
               value_as_wstring(exception.extract()->message.value()));
 }
+
+TEST(ImportSystem, ImportStatementLoadsModuleAndStoresBinding)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value marker = context.run_file(L"import assignment\n"
+                                    L"assignment.marker\n");
+    EXPECT_EQ(Value::from_smi(3), marker);
+}
+
+TEST(ImportSystem, ImportStatementStoresLocalBindingInFunction)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value marker = context.run_file(L"def f():\n"
+                                    L"    import assignment\n"
+                                    L"    return assignment.marker\n"
+                                    L"f()\n");
+    EXPECT_EQ(Value::from_smi(3), marker);
+}
+
+TEST(ImportSystem, ImportStatementIgnoresGlobalImportBinding)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value marker = context.run_file(L"def __import__(name, globals, locals, "
+                                    L"fromlist, level):\n"
+                                    L"    return 99\n"
+                                    L"import assignment\n"
+                                    L"assignment.marker\n");
+    EXPECT_EQ(Value::from_smi(3), marker);
+}
+
+TEST(ImportSystem, ImportStatementUsesBuiltinsImportBinding)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value imported = context.run_file(L"def fake(name, globals, locals, "
+                                      L"fromlist, level):\n"
+                                      L"    return 42\n"
+                                      L"__builtins__.__import__ = fake\n"
+                                      L"import assignment\n"
+                                      L"assignment\n");
+    EXPECT_EQ(Value::from_smi(42), imported);
+}
+
+TEST(ImportSystem, ImportStatementPropagatesBuiltinsImportException)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value imported = context.run_file(L"def fake(name, globals, locals, "
+                                      L"fromlist, level):\n"
+                                      L"    raise ValueError\n"
+                                      L"__builtins__.__import__ = fake\n"
+                                      L"import assignment\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ValueError"),
+              exception.extract()->get_shape()->get_class());
+}
+
+TEST(ImportSystem, ImportStatementRejectsNonModuleBuiltinsBinding)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value imported = context.run_file(L"__builtins__ = \"boom\"\n"
+                                      L"import assignment\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"__builtins__ must be a module",
+              value_as_wstring(exception.extract()->message.value()));
+}

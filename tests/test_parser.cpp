@@ -743,11 +743,20 @@ TEST(Parser, missing_colon_in_if_stmt)
                        "column 8), near \"if True\"");
 }
 
-TEST(Parser, import_stmt_not_implemented)
+TEST(Parser, import_stmt)
 {
-    expect_parse_error(L"import math\n",
-                       "Not implemented: import statement (token IMPORT) at "
-                       "offset 0 (line 1, column 1), near \"import math\"");
+    std::string expected = "import math\n";
+    std::string actual = parse(L"import math\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, dotted_import_stmt_not_implemented)
+{
+    expect_parse_error(L"import os.path\n",
+                       "Not implemented: dotted import statement (token DOT) "
+                       "at offset 9 (line 1, column 10), near \"import "
+                       "os.path\"");
 }
 
 TEST(Parser, class_def)

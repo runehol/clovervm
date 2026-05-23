@@ -1326,7 +1326,39 @@ namespace cl
                                     ch);
         }
 
-        int32_t import_stmt() { return not_implemented("import statement"); }
+        int32_t import_stmt()
+        {
+            int32_t source_pos = source_pos_for_token();
+            if(match(Token::FROM))
+            {
+                return not_implemented("from import statement");
+            }
+
+            consume(Token::IMPORT);
+            consume(Token::NAME);
+            uint32_t name_source_pos = source_pos_for_previous_token();
+            std::wstring name = std::wstring(
+                string_for_name_token(*ast.compilation_unit, name_source_pos));
+            TValue<String> v = vm.get_or_create_interned_string_value(name);
+            int32_t target = ast.emplace_back(
+                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE, name_source_pos, v);
+
+            if(peek() == Token::DOT)
+            {
+                return not_implemented("dotted import statement");
+            }
+            if(peek() == Token::AS)
+            {
+                return not_implemented("import alias");
+            }
+            if(peek() == Token::COMMA)
+            {
+                return not_implemented("multiple import statement");
+            }
+
+            return ast.emplace_back(AstNodeKind::STATEMENT_IMPORT, source_pos,
+                                    target);
+        }
 
         int32_t del_stmt()
         {

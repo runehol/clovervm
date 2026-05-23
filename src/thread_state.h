@@ -123,6 +123,22 @@ namespace cl
         [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
                                                    Value arg0, Value arg1,
                                                    Value arg2);
+        [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
+                                                   Value arg0, Value arg1,
+                                                   Value arg2, Value arg3);
+        [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
+                                                   Value arg0, Value arg1,
+                                                   Value arg2, Value arg3,
+                                                   Value arg4);
+        [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
+                                                   Value arg0, Value arg1,
+                                                   Value arg2, Value arg3,
+                                                   Value arg4, Value arg5);
+        [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
+                                                   Value arg0, Value arg1,
+                                                   Value arg2, Value arg3,
+                                                   Value arg4, Value arg5,
+                                                   Value arg6);
         [[nodiscard]] Value call_clovervm_method(Value receiver,
                                                  TValue<String> name);
         [[nodiscard]] Value

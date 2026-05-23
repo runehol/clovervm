@@ -9,6 +9,7 @@
 #include "exception_object.h"
 #include "float.h"
 #include "function.h"
+#include "import_system.h"
 #include "instance.h"
 #include "list.h"
 #include "module_global.h"
@@ -3284,6 +3285,25 @@ namespace cl
         __builtin_unreachable();
     }
 
+    static INTERP_CC Value op_import_name(PARAMS)
+    {
+        START(3);
+        uint8_t name_idx = pc[1];
+        uint8_t level = pc[2];
+        Value fromlist = accumulator;
+        thread->set_clover_frame_frontier(fp);
+        accumulator =
+            import_name_from_code(thread, code_object,
+                                  TValue<String>::from_value_assumed(
+                                      code_object->constant_table[name_idx]),
+                                  fromlist, level);
+        if(unlikely(accumulator.is_exception_marker()))
+        {
+            MUSTTAIL return propagate_pending_exception(ARGS);
+        }
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_for_iter(PARAMS)
     {
         int8_t reg = pc[1];
@@ -3682,6 +3702,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CallNative7, op_call_native7);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic0, op_call_intrinsic0);
         SET_TABLE_ENTRY(Bytecode::CallCodeObject, op_call_code_object);
+        SET_TABLE_ENTRY(Bytecode::ImportName, op_import_name);
         SET_TABLE_ENTRY(Bytecode::ForIter, op_for_iter);
         SET_TABLE_ENTRY(Bytecode::ForPrepRange1, op_for_prep_range1);
         SET_TABLE_ENTRY(Bytecode::ForPrepRange2, op_for_prep_range2);

@@ -103,6 +103,21 @@ TEST(Codegen, interactive_assignment_returns_none)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, import_statement_uses_import_name_and_normal_store)
+{
+    std::string expected =
+        "Code object:\n"
+        "    0 LdaNone\n"
+        "    1 ImportName c[0], 0\n"
+        "    4 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    7 Return\n"
+        "Constant 0: \"assignment\"\n"
+        "Constant 1: \"assignment\"\n";
+    std::string actual = bytecode_str_from_file(L"import assignment\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, if_elif_else)
 {
     const wchar_t *test_case = L"if a:\n"

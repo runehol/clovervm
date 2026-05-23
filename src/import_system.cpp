@@ -3,10 +3,12 @@
 #include "code_object.h"
 #include "codegen.h"
 #include "dict.h"
+#include "function.h"
 #include "list.h"
 #include "module_object.h"
 #include "owned.h"
 #include "parser.h"
+#include "slot_dict.h"
 #include "source_text.h"
 #include "str.h"
 #include "thread_state.h"
@@ -162,6 +164,32 @@ namespace cl
                 set_module_attr(thread, module, L"__path__", path.raw_value());
             }
         }
+
+        Value import_hook_from_module_builtins(ThreadState *thread,
+                                               ModuleObject *module)
+        {
+            Value builtins = module->get_builtins_binding();
+            if(builtins.is_not_present())
+            {
+                builtins =
+                    thread->get_machine()->global_builtins_module().raw_value();
+            }
+            if(!can_convert_to<ModuleObject>(builtins))
+            {
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError", L"__builtins__ must be a module");
+            }
+
+            TValue<String> import_name = interned_string(thread, L"__import__");
+            Value hook =
+                builtins.get_ptr<ModuleObject>()->get_own_property(import_name);
+            if(hook.is_not_present())
+            {
+                return thread->set_pending_builtin_exception_string(
+                    L"ImportError", L"__import__ not found");
+            }
+            return hook;
+        }
     }  // namespace
 
     std::optional<ModuleSpec> find_source_module_spec(ThreadState *thread,
@@ -247,6 +275,34 @@ namespace cl
         }
 
         return module.raw_value();
+    }
+
+    Value import_name_from_code(ThreadState *thread, CodeObject *code_object,
+                                TValue<String> name, Value fromlist,
+                                int64_t level)
+    {
+        ModuleObject *module = code_object->get_defining_module().extract();
+        Owned<Value> import_hook(
+            import_hook_from_module_builtins(thread, module));
+        if(import_hook.value().is_exception_marker())
+        {
+            return import_hook.value();
+        }
+        if(!can_convert_to<Function>(import_hook.value()))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"object is not callable");
+        }
+
+        Owned<Value> globals(
+            thread->make_object_value<SlotDict>(module).raw_value());
+        Owned<Value> locals(globals.value());
+        Owned<Value> owned_fromlist(fromlist);
+        Value result = thread->call_clovervm_function(
+            TValue<Function>::from_value_assumed(import_hook.value()),
+            name.raw_value(), globals.value(), locals.value(),
+            owned_fromlist.value(), Value::from_smi(level));
+        return result;
     }
 
 }  // namespace cl

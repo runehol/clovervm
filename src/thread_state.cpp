@@ -180,6 +180,42 @@ namespace cl
         return call_clovervm_function_with_args(function, args, 3);
     }
 
+    Value ThreadState::call_clovervm_function(TValue<Function> function,
+                                              Value arg0, Value arg1,
+                                              Value arg2, Value arg3)
+    {
+        Value args[] = {arg0, arg1, arg2, arg3};
+        return call_clovervm_function_with_args(function, args, 4);
+    }
+
+    Value ThreadState::call_clovervm_function(TValue<Function> function,
+                                              Value arg0, Value arg1,
+                                              Value arg2, Value arg3,
+                                              Value arg4)
+    {
+        Value args[] = {arg0, arg1, arg2, arg3, arg4};
+        return call_clovervm_function_with_args(function, args, 5);
+    }
+
+    Value ThreadState::call_clovervm_function(TValue<Function> function,
+                                              Value arg0, Value arg1,
+                                              Value arg2, Value arg3,
+                                              Value arg4, Value arg5)
+    {
+        Value args[] = {arg0, arg1, arg2, arg3, arg4, arg5};
+        return call_clovervm_function_with_args(function, args, 6);
+    }
+
+    Value ThreadState::call_clovervm_function(TValue<Function> function,
+                                              Value arg0, Value arg1,
+                                              Value arg2, Value arg3,
+                                              Value arg4, Value arg5,
+                                              Value arg6)
+    {
+        Value args[] = {arg0, arg1, arg2, arg3, arg4, arg5, arg6};
+        return call_clovervm_function_with_args(function, args, 7);
+    }
+
     Value ThreadState::call_clovervm_method_with_args(Value receiver,
                                                       TValue<String> name,
                                                       const Value *args,

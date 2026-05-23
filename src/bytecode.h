@@ -141,6 +141,7 @@ namespace cl
         CallNative7,
         CallIntrinsic0,
         CallCodeObject,
+        ImportName,
 
         // iteration
         ForIter,

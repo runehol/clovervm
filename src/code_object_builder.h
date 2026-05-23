@@ -338,6 +338,8 @@ namespace cl
                                        uint8_t code_object_idx,
                                        OutgoingArgReg first_arg_reg,
                                        uint8_t argc);
+        uint32_t emit_import_name(uint32_t source_offset, uint8_t name_idx,
+                                  uint8_t level);
         uint32_t emit_call_native(uint32_t source_offset, Bytecode op,
                                   uint8_t target_idx);
         uint32_t emit_call_intrinsic0(uint32_t source_offset,
