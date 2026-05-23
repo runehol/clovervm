@@ -3201,6 +3201,27 @@ namespace cl
                             .raw_value();
                     COMPLETE();
                 }
+            case Intrinsic0::Locals:
+                {
+                    CodeObject *caller_code_object =
+                        fp[FrameHeaderReturnCodeObjectOffset]
+                            .get_ptr<CodeObject>();
+                    if(caller_code_object->local_scope != nullptr)
+                    {
+                        accumulator =
+                            thread->set_pending_builtin_exception_string(
+                                L"UnimplementedError",
+                                L"locals() is only implemented for module "
+                                L"scope");
+                        COMPLETE();
+                    }
+                    ModuleObject *caller_module =
+                        caller_code_object->get_defining_module().extract();
+                    accumulator =
+                        thread->make_object_value<SlotDict>(caller_module)
+                            .raw_value();
+                    COMPLETE();
+                }
         }
         __builtin_unreachable();
     }

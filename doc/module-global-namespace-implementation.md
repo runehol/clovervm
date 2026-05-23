@@ -35,6 +35,10 @@ Implemented behavior:
   `__clover_globals__()` to an interpreter intrinsic.
 - The `Globals` intrinsic returns a fresh live `SlotDict` view over the caller
   code object's defining module storage.
+- Module-scope `locals()` is implemented as a trusted builtin that lowers
+  `__clover_locals__()` to an interpreter intrinsic.
+- The `Locals` intrinsic returns a fresh live `SlotDict` view for module code
+  and raises `UnimplementedError` for code objects with non-null local scope.
 - `Scope` no longer owns runtime value cells and no longer encodes parent-scope
   fallback in `not_present`.
 - The legacy scope bridge, legacy global bytecodes, and transitional
@@ -51,7 +55,7 @@ Known performance note:
 ### Module Mapping Views
 
 - [x] Implement `globals()` as a live mutable view over module object storage.
-- [ ] Implement module-scope `locals()` as the same live mutable view.
+- [x] Implement module-scope `locals()` as the same live mutable view.
 - [ ] Decide whether `module.__dict__` lands with `globals()` or remains a
       separate follow-up.
 - [x] Add tests that top-level stores and `globals()["x"]` observe the same own

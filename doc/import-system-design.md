@@ -58,10 +58,12 @@ The remaining missing pieces are:
 Already implemented pieces used by the import design:
 
 - `globals()` is a builtin implemented through trusted builtins code.
-- The trusted `__clover_globals__()` helper lowers to an interpreter intrinsic,
-  so ordinary user code cannot call the helper by name.
-- The intrinsic returns a live `SlotDict` view over the caller's defining module
-  storage.
+- Module-scope `locals()` is implemented through the same trusted builtins /
+  intrinsic path.
+- The trusted `__clover_globals__()` and `__clover_locals__()` helpers lower to
+  interpreter intrinsics, so ordinary user code cannot call the helpers by name.
+- The intrinsics return live `SlotDict` views over the caller's defining module
+  storage when the caller is module code.
 
 ## CPython Import Sequence
 
@@ -668,6 +670,22 @@ Initial tests should cover:
 - a function's `globals()` returns its defining module's global mapping
 - builtin fallback names do not appear as module own mapping entries
 
+## `locals()` Builtin
+
+Module-scope `locals()` currently returns the same kind of fresh live `SlotDict`
+view as `globals()`.
+
+For code objects with a non-null local scope, `locals()` currently raises
+`UnimplementedError`. That is intentionally incomplete for functions and class
+bodies. The next correct versions are:
+
+- function code: materialize a snapshot from scope metadata and frame storage
+- class body code: return the active class namespace mapping
+
+The module-scope behavior is enough for the first import bootstrap because
+import statements can pass a real locals mapping from module code without
+pretending that fast locals or class namespaces are already correct.
+
 ## Core Import API
 
 The internal loader should be the bootstrap subset's `find_spec` /
@@ -808,6 +826,9 @@ observes mutations to the builtins module.
 
 - Implemented: `globals()` is defined in trusted builtins and lowered through
   the `Globals` intrinsic.
+- Implemented: module-scope `locals()` is defined in trusted builtins and
+  lowered through the `Locals` intrinsic.
+- Deferred: function and class-body `locals()` semantics.
 
 ### 3. Minimal `sys`
 

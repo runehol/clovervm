@@ -48,6 +48,11 @@ def globals():
     return __clover_globals__()
 
 
+def locals():
+    """Return a dictionary containing the current scope's local variables."""
+    return __clover_locals__()
+
+
 def print(*args):
     """print(*args)
 

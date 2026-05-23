@@ -13,6 +13,7 @@ namespace cl
     enum class Intrinsic0 : uint8_t
     {
         Globals,
+        Locals,
     };
 
     enum class Bytecode : uint8_t

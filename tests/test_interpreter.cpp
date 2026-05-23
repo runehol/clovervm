@@ -3497,6 +3497,22 @@ TEST(Interpreter, user_defined_clover_globals_name_is_ordinary_function)
     EXPECT_EQ(Value::from_smi(789), file_runner.return_value);
 }
 
+TEST(Interpreter, user_code_cannot_use_clover_locals_as_intrinsic)
+{
+    expect_python_error(L"__clover_locals__()\n",
+                        L"NameError: name '__clover_locals__' is not "
+                        L"defined");
+}
+
+TEST(Interpreter, user_defined_clover_locals_name_is_ordinary_function)
+{
+    test::FileRunner file_runner(L"def __clover_locals__():\n"
+                                 L"    return 987\n"
+                                 L"__clover_locals__()\n");
+
+    EXPECT_EQ(Value::from_smi(987), file_runner.return_value);
+}
+
 TEST(Interpreter, globals_builtin_returns_fresh_slotdict_views)
 {
     test::VmTestContext test_context;
@@ -3595,6 +3611,33 @@ TEST(Interpreter, globals_slotdict_class_is_not_builtin_binding)
         string_as_wchar_t(TValue<String>::from_value_assumed(class_name)));
     expect_python_error(L"slotdict\n",
                         L"NameError: name 'slotdict' is not defined");
+}
+
+TEST(Interpreter, locals_builtin_returns_module_slotdict_at_module_scope)
+{
+    test::VmTestContext test_context;
+
+    Value actual = test_context.run_file(L"locals()\n");
+    ASSERT_TRUE(can_convert_to<SlotDict>(actual));
+}
+
+TEST(Interpreter, locals_slotdict_reads_and_writes_module_bindings)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"x = 1\n"
+                                                        L"locals()[\"y\"] = 2\n"
+                                                        L"x + y\n"));
+    expect_python_error(L"locals()[\"len\"]\n", L"KeyError");
+}
+
+TEST(Interpreter, locals_builtin_is_unimplemented_in_function_scope)
+{
+    expect_python_error(
+        L"def f():\n"
+        L"    return locals()\n"
+        L"f()\n",
+        L"UnimplementedError: locals() is only implemented for module scope");
 }
 
 TEST(Interpreter, instance_dict_returns_fresh_live_slotdict_views)
