@@ -71,7 +71,8 @@ Implemented pieces used by the import design:
   from `sys.modules` on load failure.
 - Dotted absolute imports, regular packages, package `__path__`, submodule
   parent binding, relative `from` imports, import aliases, comma import lists,
-  and parenthesized `from` import lists are implemented.
+  parenthesized `from` import lists, and module-scope star imports are
+  implemented.
 
 ## CPython Import Sequence
 
@@ -506,20 +507,20 @@ from pkg import mod
 from pkg.mod import name
 from . import sibling
 from ..pkg import name
+from module import *
 ```
 
 Import aliases, comma import lists, parenthesized `from` import lists, and
 explicit relative `from` imports are also implemented.
 
-The important remaining statement form is:
-
-```python
-from module import *
-```
-
-Star imports are a name-binding feature layered over the same loader behavior,
-but they need their own semantics for `__all__`, underscore filtering, and the
-set of local/global names that may be updated.
+Star imports are implemented for module code. They are a name-binding feature
+layered over the same loader behavior: the import hook receives a `("*",)`
+fromlist, and then an `ImportStar` intrinsic copies names into the importing
+module. When the imported module defines `__all__`, each `__all__` item is
+resolved with the same `ImportFrom` semantics used by explicit from-imports.
+Without `__all__`, the fallback snapshots the source module namespace and
+copies public string names that do not start with `_`. Star import inside
+function and class bodies is rejected for now.
 
 The builtin accepts the full public signature:
 
@@ -850,18 +851,20 @@ The current implementation has the bootstrap import spine in place:
 - Absolute imports, dotted imports, from-imports, aliases, comma import lists,
   parenthesized from-import lists, and explicit relative from-imports are
   implemented.
+- Module-scope `from module import *` is implemented through an `ImportStar`
+  intrinsic. It passes `("*",)` to the public import hook, honors `__all__`
+  when present, falls back to non-underscore public module names, can import
+  package submodules named by `__all__`, and snapshots the source names before
+  copying them.
 
 ## Remaining Checklist
 
 ### Import Statement Forms
 
-- Implement `from module import *`.
-- Use `module.__all__` for star import when present.
-- Without `__all__`, star import should import public names that do not start
-  with `_`.
-- Reject or handle function-scope star import according to Python syntax rules.
-- Store star-imported names through the same normal binding path as other
-  imports.
+- Support star import in class bodies if and when class-body locals become a
+  proper writable mapping target for import binding.
+- Decide whether function-scope star import remains a syntax/codegen rejection
+  or becomes a parser-level error matching CPython more closely.
 
 ### Python-Visible Specs And Loaders
 
@@ -916,13 +919,6 @@ The current implementation has the bootstrap import spine in place:
 
 Prefer interpreter tests for user-visible import semantics:
 
-- `from module import *` uses `__all__` when present.
-- `from module import *` imports public non-underscore names when `__all__` is
-  absent.
-- `from module import *` stores into module globals through the normal store
-  path.
-- star import rejects or avoids unsupported function/class scope according to
-  the parser/codegen rule we choose.
 - builtin module imports work after deleting `sys.modules["sys"]` or
   `sys.modules["builtins"]`, once the builtin finder exists.
 - Python-visible `__spec__` exposes the minimum fields needed by relative

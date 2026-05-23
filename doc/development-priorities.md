@@ -103,13 +103,14 @@ JIT, language, and runtime work.
    bootstrap source finder, and import statements call the mutable public
    `builtins.__import__` hook. Absolute imports, dotted imports, packages,
    aliases, comma import lists, parenthesized from-import lists, submodule
-   parent binding, and explicit relative from-imports are implemented.
+   parent binding, explicit relative from-imports, and module-scope star imports
+   are implemented.
 
    The remaining import work is no longer "invent the module system"; it is
-   completion and compatibility. The near-term gaps are `from module import *`,
-   a builtin-module finder so `sys` and `builtins` are discoverable rather than
-   only preloaded, and a small Python-visible spec/loader surface instead of
-   exposing `__spec__` and `__loader__` as `None`.
+   completion and compatibility. The near-term gaps are a builtin-module finder
+   so `sys` and `builtins` are discoverable rather than only preloaded, and a
+   small Python-visible spec/loader surface instead of exposing `__spec__` and
+   `__loader__` as `None`.
 
    The larger follow-ups remain public `sys.meta_path`, path hooks/importer
    cache, namespace packages, bytecode caches, frozen modules, extension
@@ -157,29 +158,25 @@ document last listed module work as a future design option.
 
 Near-term order:
 
-1. Implement `from module import *`, including `__all__`, underscore filtering,
-   and normal binding behavior.
-2. Add a builtin-module finder/loader path for `sys` and `builtins`.
-3. Replace exposed `module.__spec__ = None` and `module.__loader__ = None` with
+1. Add a builtin-module finder/loader path for `sys` and `builtins`.
+2. Replace exposed `module.__spec__ = None` and `module.__loader__ = None` with
    a small Python-visible spec/loader surface.
-4. Revisit `sys.meta_path` only after internal finder/loader objects have a
+3. Revisit `sys.meta_path` only after internal finder/loader objects have a
    stable shape worth exposing.
-5. Return to the reusable public `range` object and fresh `iter(range_obj)`
+4. Return to the reusable public `range` object and fresh `iter(range_obj)`
    behavior.
-6. Continue replacing generic runtime failures with specific VM exceptions and
+5. Continue replacing generic runtime failures with specific VM exceptions and
    typed `Expected<T>` results where useful.
-7. Add guarded binary-operation plans and polymorphic inline caches so operator
+6. Add guarded binary-operation plans and polymorphic inline caches so operator
    sites collect useful type profiles for the future JIT.
-8. Continue moving descriptor execution into explicit interpreter/VM-controlled
+7. Continue moving descriptor execution into explicit interpreter/VM-controlled
    paths rather than hidden lookup helpers.
-9. Add keyword calls for ordinary functions and constructors.
+8. Add keyword calls for ordinary functions and constructors.
 
 ## Revisit Triggers
 
 Revisit this ordering when:
 
-- `from module import *` is implemented with CPython-compatible `__all__` and
-  public-name behavior;
 - builtin modules are imported through a finder/loader path rather than only
   initial `sys.modules` population;
 - source modules expose a useful Python-visible `__spec__` and `__loader__`;

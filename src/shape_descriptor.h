@@ -75,11 +75,10 @@ namespace cl
              DescriptorFlags flags = descriptor_flag(DescriptorFlag::None),
              DescriptorSpecialKind special_kind = DescriptorSpecialKind::None)
         {
-            bool has_special_flags =
-                has_descriptor_flag(flags, DescriptorFlag::SpecialRead) ||
-                has_descriptor_flag(flags, DescriptorFlag::SpecialMutate);
-            assert(has_special_flags ==
-                   (special_kind != DescriptorSpecialKind::None));
+            assert(
+                (has_descriptor_flag(flags, DescriptorFlag::SpecialRead) ||
+                 has_descriptor_flag(flags, DescriptorFlag::SpecialMutate)) ==
+                (special_kind != DescriptorSpecialKind::None));
             return DescriptorInfo{location.physical_idx, location.kind,
                                   static_cast<uint8_t>(special_kind), flags};
         }
