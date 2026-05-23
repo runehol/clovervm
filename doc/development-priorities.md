@@ -73,28 +73,27 @@ JIT, language, and runtime work.
    the current string-key-oriented internal assumptions. This matters for real
    Python code, imports, module namespaces, mappings, and future library work.
 
-7. **Module objects and import system**
+7. **Import system completion**
 
-   Imports are a major usability milestone, but should be built on a coherent
-   module/global namespace model. One attractive direction is shape-backed
-   module objects so bytecode global access, `module.x`, `globals()`, and
-   eventual module `__dict__` views agree on one semantic store while preserving
-   builtin fallback rules.
+   The import foundation has landed: module globals are shape-backed
+   `ModuleObject` storage, `globals()` and module-scope `locals()` expose live
+   `SlotDict` views, `sys.modules` and `sys.path` exist, `__main__` is a real
+   module in `sys.modules`, source modules and regular packages load through the
+   bootstrap source finder, and import statements call the mutable public
+   `builtins.__import__` hook. Absolute imports, dotted imports, packages,
+   aliases, comma import lists, parenthesized from-import lists, submodule
+   parent binding, and explicit relative from-imports are implemented.
 
-   A broader version of this would move modules and scopes further onto the
-   shape/inline-cache/validity-cell path, using cached global lookup results
-   rather than the current slot shortcut machinery. That could simplify the
-   runtime model and make global lookups resemble the rest of the object-cache
-   system. The stronger motivation is lookup cost and JIT shape: a cached
-   builtin or module-global lookup can be guarded by validity cells instead of
-   repeatedly walking module/builtin scope state. That gives future JIT code a
-   compact guard-and-load model for globals rather than baking in scope-chain
-   traversal.
+   The remaining import work is no longer "invent the module system"; it is
+   completion and compatibility. The near-term gaps are `from module import *`,
+   a builtin-module finder so `sys` and `builtins` are discoverable rather than
+   only preloaded, and a small Python-visible spec/loader surface instead of
+   exposing `__spec__` and `__loader__` as `None`.
 
-   Treat this as a design option, not a prerequisite: the current scope slot
-   system works well enough that this should be driven by import/module
-   semantics, cache invalidation needs, JIT/root-map needs, or measured
-   complexity rather than by aesthetic unification alone.
+   The larger follow-ups remain public `sys.meta_path`, path hooks/importer
+   cache, namespace packages, bytecode caches, frozen modules, extension
+   modules, importlib surface area, and exact module namespace compatibility
+   such as stable `module.__dict__` identity.
 
 8. **Attribute hooks and escaped bound methods**
 
@@ -107,8 +106,8 @@ JIT, language, and runtime work.
 
     Add parse, lowering, and runtime support for `a[i:j:k]`, including
     list/tuple/string slicing and slice assignment/deletion where appropriate.
-    This is useful and contained, but less foundational than memory, iteration,
-    call, descriptor, and module work.
+    This is useful and contained, but less foundational than iteration, call,
+    descriptor, and module work.
 
 10. **Range object completeness**
 
@@ -116,25 +115,13 @@ JIT, language, and runtime work.
     the remaining range surface: length, indexing, containment, representation,
     equality where appropriate, and edge-case arithmetic semantics.
 
-11. **Memory substrate policy and placement**
-
-    Deferred reference counting now has a correct single-threaded baseline:
-    safepoint root filtering, ZCT processing, bitmap-discovered young objects,
-    descriptor-driven teardown, and slab release are in place. Remaining memory
-    work is important but no longer the main roadmap blocker: production
-    reclamation triggers, useful counters, threshold tuning, and size-partitioned
-    thread-local heaps should proceed when memory growth, fragmentation, or
-    benchmark evidence makes them urgent. The design should remain compatible
-    with later explicit native-transition roots, multi-threaded safepoint
-    coordination, and no-GIL atomic refcount/lifecycle state.
-
-12. **Generators, `yield`, and `yield from`**
+11. **Generators, `yield`, and `yield from`**
 
     Generators create long-lived suspended frames, so they should wait until the
     memory/root model is reliable. `yield from` also needs careful interaction
     with `StopIteration.value` and internal no-value sentinels.
 
-13. **Comprehensions and richer syntax**
+12. **Comprehensions and richer syntax**
 
     Add list/dict/set comprehensions, generator expressions, more assignment
     targets, richer string syntax, and other surface-area features after the
@@ -142,40 +129,43 @@ JIT, language, and runtime work.
 
 ## Near-Term Track
 
-The recommended next major track is language/runtime behavior, starting with the
-remaining iterator/range work. It is high impact, mostly interpreter-local, and
-keeps future JIT assumptions honest without requiring the JIT to exist first.
+The recommended immediate track is to finish the current import bootstrap slice
+before switching contexts. Imports now work well enough that the remaining
+near-term pieces are smaller and more sharply defined than they were when this
+document last listed module work as a future design option.
 
 Near-term order:
 
-1. Introduce a reusable public `range` object and fresh `iter(range_obj)`
+1. Implement `from module import *`, including `__all__`, underscore filtering,
+   and normal binding behavior.
+2. Add a builtin-module finder/loader path for `sys` and `builtins`.
+3. Replace exposed `module.__spec__ = None` and `module.__loader__ = None` with
+   a small Python-visible spec/loader surface.
+4. Revisit `sys.meta_path` only after internal finder/loader objects have a
+   stable shape worth exposing.
+5. Return to the reusable public `range` object and fresh `iter(range_obj)`
    behavior.
-2. Keep range/list/tuple fast iteration paths aligned with generic
-   `iter()` / `next()` semantics and exception-table loop exit behavior.
-3. Replace generic runtime failures with specific VM exceptions, and move
-   fallible internal helpers toward typed `Expected<T>` results where useful.
-4. Continue moving descriptor execution into explicit interpreter/VM-controlled
+6. Continue replacing generic runtime failures with specific VM exceptions and
+   typed `Expected<T>` results where useful.
+7. Continue moving descriptor execution into explicit interpreter/VM-controlled
    paths rather than hidden lookup helpers.
-5. Add keyword calls for ordinary functions and constructors.
-
-Memory substrate follow-ups are still tracked in the refcounting, slab, bitmap,
-and native-layout docs, but they should not outrank the language/runtime work
-unless measurements show memory growth, reclamation policy, or slab
-fragmentation has become the limiting problem.
+8. Add keyword calls for ordinary functions and constructors.
 
 ## Revisit Triggers
 
 Revisit this ordering when:
 
+- `from module import *` is implemented with CPython-compatible `__all__` and
+  public-name behavior;
+- builtin modules are imported through a finder/loader path rather than only
+  initial `sys.modules` population;
+- source modules expose a useful Python-visible `__spec__` and `__loader__`;
 - `range()` is a reusable object and range/list/tuple/generic iterator paths are
   semantically complete enough for normal loops;
 - descriptor `__get__`, `__set__`, and `__delete__` execution no longer hides
   Python-visible behavior inside lookup helpers;
 - keyword calls land for ordinary functions and constructors;
-- module/import work becomes necessary to run broader Python source;
-- module/global scope behavior starts duplicating enough shape/cache machinery
-  that moving global lookups onto shape-backed ICs would simplify the runtime;
-- memory measurements show that reclamation policy or ordinary slab mixing has
-  become a practical limiter; or
+- module namespace compatibility, especially `module.__dict__`, becomes
+  necessary for broader Python source;
 - performance measurements show that a lower-priority item has become a
   bottleneck for existing benchmarks.
