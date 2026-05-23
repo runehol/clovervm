@@ -192,6 +192,19 @@ TEST(Codegen, from_import_statement_uses_fromlist_and_import_from)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, parenthesized_from_import_statement_matches_flat_form)
+{
+    std::string flat = bytecode_str_from_file(
+        L"from assignment import marker, value as alias\n");
+    std::string parenthesized =
+        bytecode_str_from_file(L"from assignment import (\n"
+                               L"    marker,\n"
+                               L"    value as alias,\n"
+                               L")\n");
+
+    EXPECT_EQ(flat, parenthesized);
+}
+
 TEST(Codegen, relative_from_import_statement_emits_level)
 {
     std::string expected =

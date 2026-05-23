@@ -774,6 +774,17 @@ TEST(Parser, from_import_stmt)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, parenthesized_from_import_stmt)
+{
+    std::string expected = "from pkg.mod import value, other as alias\n";
+    std::string actual = parse(L"from pkg.mod import (\n"
+                               L"    value,\n"
+                               L"    other as alias,\n"
+                               L")\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Parser, relative_from_import_stmt)
 {
     std::string expected = "from ..pkg import value\n";

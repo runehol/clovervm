@@ -1365,6 +1365,7 @@ namespace cl
                     return not_implemented("star import statement");
                 }
 
+                bool parenthesized = match(Token::LPAR);
                 AstChildren targets;
                 targets.push_back(ast.emplace_back(
                     AstNodeKind::EXPRESSION_LITERAL, module_source_pos,
@@ -1404,10 +1405,25 @@ namespace cl
                     {
                         break;
                     }
-                    if(peek() == Token::NEWLINE || peek() == Token::SEMI)
+                    while(parenthesized && match(Token::NEWLINE))
+                    {
+                    }
+                    if(parenthesized && peek() == Token::RPAR)
                     {
                         break;
                     }
+                    if(!parenthesized &&
+                       (peek() == Token::NEWLINE || peek() == Token::SEMI))
+                    {
+                        break;
+                    }
+                }
+                if(parenthesized)
+                {
+                    while(match(Token::NEWLINE))
+                    {
+                    }
+                    consume(Token::RPAR);
                 }
 
                 TValue<String> module_name_value =
