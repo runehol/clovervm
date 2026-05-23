@@ -119,6 +119,10 @@ source tree. Source modules still live under `CL_STDLIB_DIR`.
 If `CL_BUILD_STDLIB_DIR` does not exist, startup can still include it in
 `sys.path`; the finder will simply miss it.
 
+Loaded native libraries stay loaded for the rest of the process. Clover keeps
+the platform library handles in a VM-owned cache keyed by absolute origin path,
+but it intentionally never calls `dlclose` manually.
+
 ## CMake Helper
 
 The build system should expose a helper for native modules:
@@ -391,6 +395,7 @@ messages:
 no matching dynamic library             -> continue finder search / ModuleNotFoundError
 dynamic library cannot be opened        -> ImportError
 init symbol is missing                  -> ImportError
+builder is not implemented yet          -> ImportError
 init function returns failure           -> propagate pending exception
 init function returns failure without pending exception -> ImportError
 ```

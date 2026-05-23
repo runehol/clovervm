@@ -101,6 +101,10 @@ add_library(libclovervm_objects OBJECT
     module_spec_object.cpp
     module_spec_object.h
     module_global_cache.h
+    native_module_loader.cpp
+    native_module_loader.h
+    native_module_loader_internal.h
+    native_module_loader_posix.cpp
     module_global.cpp
     module_global.h
     module_global_descriptor.h
@@ -184,6 +188,7 @@ target_link_libraries(
     libclovervm_objects PUBLIC absl::inlined_vector absl::flat_hash_map
                               absl::flat_hash_set)
 target_link_libraries(libclovervm_objects PUBLIC fmt::fmt)
+target_link_libraries(libclovervm_objects PUBLIC ${CMAKE_DL_LIBS})
 
 target_include_directories(libclovervm PUBLIC "${CMAKE_SOURCE_DIR}/include")
 

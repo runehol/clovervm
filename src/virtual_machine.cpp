@@ -19,6 +19,7 @@
 #include "module_object.h"
 #include "module_spec_object.h"
 #include "native_function.h"
+#include "native_module_loader_internal.h"
 #include "none_type.h"
 #include "parser.h"
 #include "range_iterator.h"
@@ -275,7 +276,8 @@ namespace cl
     VirtualMachine::VirtualMachine()
         : refcounted_global_heap(GlobalHeap::refcounted_heap()),
           interned_global_heap(GlobalHeap::interned_heap()),
-          interned_strings(&interned_global_heap), range_builtin(Value::None())
+          interned_strings(&interned_global_heap), range_builtin(Value::None()),
+          native_library_handles_(std::make_unique<NativeLibraryHandleCache>())
     {
         // make the main thread
         ThreadState *default_thread = make_new_thread();
@@ -305,6 +307,11 @@ namespace cl
             sys_module_ = nullptr;
             imported_modules_ = nullptr;
         }
+    }
+
+    NativeLibraryHandleCache &VirtualMachine::native_library_handle_cache()
+    {
+        return *native_library_handles_;
     }
 
     ThreadState *VirtualMachine::make_new_thread()

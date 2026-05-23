@@ -11,6 +11,7 @@
 #include "module_loader_object.h"
 #include "module_object.h"
 #include "module_spec_object.h"
+#include "native_module_loader.h"
 #include "owned.h"
 #include "parser.h"
 #include "slot_dict.h"
@@ -436,14 +437,22 @@ namespace cl
         }
 
         Value load_native_extension_module(ThreadState *thread,
-                                           const ModuleSpec &spec)
+                                           const ModuleSpec &spec,
+                                           TValue<String> name)
         {
-            std::wstring message =
-                L"native extension loading is not implemented for '";
-            message += spec.name;
-            message += L"'";
-            return thread->set_pending_builtin_exception_string(
-                L"ImportError", interned_string(thread, message));
+            Dict *modules = thread->get_machine()->imported_modules().extract();
+            Owned<TValue<ModuleObject>> module(
+                create_module_from_spec(thread, spec, name));
+            modules->set_item(name.raw_value(), module.raw_value());
+
+            Value result =
+                exec_native_extension_module(thread, spec, module.extract());
+            if(result.is_exception_marker())
+            {
+                remove_imported_module(thread, name);
+                return result;
+            }
+            return module_from_sys_modules_after_exec(thread, name);
         }
 
         Value load_from_spec(ThreadState *thread, const ModuleSpec &spec,
@@ -458,7 +467,7 @@ namespace cl
                 case ModuleSpecKind::Namespace:
                     return load_namespace_module(thread, spec, name);
                 case ModuleSpecKind::NativeExtension:
-                    return load_native_extension_module(thread, spec);
+                    return load_native_extension_module(thread, spec, name);
             }
             __builtin_unreachable();
         }

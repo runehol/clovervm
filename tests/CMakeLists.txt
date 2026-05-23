@@ -45,6 +45,11 @@ clovervm_add_native_module(_test_native
 	SOURCES
 		native_modules/_test_native.c)
 add_dependencies(test_clovervm clovervm_native_module__test_native)
+clovervm_add_native_module(_test_native_missing_symbol
+	SOURCES
+		native_modules/_test_native_missing_symbol.c)
+add_dependencies(test_clovervm
+	clovervm_native_module__test_native_missing_symbol)
 
 gtest_discover_tests(test_clovervm
 	WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"

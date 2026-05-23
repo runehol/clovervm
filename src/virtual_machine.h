@@ -26,6 +26,7 @@ namespace cl
     class CodeObject;
     class Dict;
     class List;
+    struct NativeLibraryHandleCache;
     struct SafepointScanRecord;
 
     using SafepointCallbackForTesting =
@@ -102,6 +103,7 @@ namespace cl
         }
         TValue<ModuleObject> sys_module() const;
         TValue<Dict> imported_modules() const;
+        NativeLibraryHandleCache &native_library_handle_cache();
         void set_global_builtins_module(ModuleObject *module)
         {
             assert(module != nullptr);
@@ -299,6 +301,7 @@ namespace cl
         ModuleObject *global_builtins_module_ = nullptr;
         ModuleObject *sys_module_ = nullptr;
         Dict *imported_modules_ = nullptr;
+        std::unique_ptr<NativeLibraryHandleCache> native_library_handles_;
         bool safepoint_requested_ = false;
         bool fire_every_safepoint_for_testing_ = false;
         SafepointCallbackForTesting safepoint_callback_for_testing_ = nullptr;
