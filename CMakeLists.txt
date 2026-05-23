@@ -34,6 +34,10 @@ enable_doxygen()
 # allow for static analysis options
 include(cmake/StaticAnalyzers.cmake)
 
+set(CL_STDLIB_DIR "${CMAKE_SOURCE_DIR}/stdlib")
+set(CL_BUILD_STDLIB_DIR "${CMAKE_BINARY_DIR}/stdlib")
+include(cmake/CloverNativeModules.cmake)
+
 
 
 

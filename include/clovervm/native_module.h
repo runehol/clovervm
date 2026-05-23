@@ -3,6 +3,12 @@
 
 #include <clovervm/clovervm.h>
 
+#ifdef _WIN32
+#define CL_NATIVE_MODULE_EXPORT __declspec(dllexport)
+#else
+#define CL_NATIVE_MODULE_EXPORT __attribute__((visibility("default")))
+#endif
+
 #ifdef __cplusplus
 extern "C"
 {

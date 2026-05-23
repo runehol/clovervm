@@ -17,6 +17,7 @@ target_sources(test_clovervm PRIVATE
 	test_exception_handling.cpp
 	test_heap.cpp
 	test_import_system.cpp
+	test_native_module_build.cpp
 	test_python_source_files.cpp
 	test_attr.cpp
 	test_dict.cpp
@@ -39,6 +40,11 @@ target_sources(test_clovervm PRIVATE
 target_link_libraries(test_clovervm PRIVATE gtest_main)
 target_link_libraries(test_clovervm PRIVATE libclovervm_objects)
 target_link_libraries(test_clovervm PRIVATE project_options project_warnings)
+
+clovervm_add_native_module(_test_native
+	SOURCES
+		native_modules/_test_native.c)
+add_dependencies(test_clovervm clovervm_native_module__test_native)
 
 gtest_discover_tests(test_clovervm
 	WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"

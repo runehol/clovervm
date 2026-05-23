@@ -132,7 +132,7 @@ clovervm_add_native_module(_time
 The helper should:
 
 ```text
-create a dynamic library/module target
+create a CMake MODULE library target
 compile against Clover C API headers
 name the output with the platform clover extension suffix
 write the output under ${CMAKE_BINARY_DIR}/stdlib
@@ -140,6 +140,12 @@ avoid linking a second copy of the VM into the module
 apply project warning and sanitizer settings
 make the module build as part of the normal stdlib/native-module target
 ```
+
+The initial helper is named `clovervm_add_native_module`. It creates a target
+named `clovervm_native_module_<cmake-safe import name>` and adds that target to
+the aggregate `clovervm_native_modules` target. Module targets link against
+`libclovervm`, include only the public `include/` headers, and hide symbols by
+default; init functions should use `CL_NATIVE_MODULE_EXPORT`.
 
 For package-private modules, the helper should support an import-name/output
 subdirectory distinction:
