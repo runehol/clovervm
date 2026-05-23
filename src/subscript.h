@@ -3,6 +3,7 @@
 
 #include "dict.h"
 #include "list.h"
+#include "slot_dict.h"
 #include "tuple.h"
 #include "value.h"
 
@@ -63,6 +64,10 @@ namespace cl
         {
             return static_cast<Dict *>(object)->get_item(key);
         }
+        if(native_layout_id == NativeLayoutId::SlotDict)
+        {
+            return static_cast<SlotDict *>(object)->get_item(key);
+        }
 
         return Value::not_present();
     }
@@ -115,6 +120,10 @@ namespace cl
         {
             static_cast<Dict *>(object)->set_item(key, value);
             return Value::None();
+        }
+        if(native_layout_id == NativeLayoutId::SlotDict)
+        {
+            return static_cast<SlotDict *>(object)->set_item(key, value);
         }
 
         return Value::not_present();

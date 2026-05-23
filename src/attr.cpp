@@ -4,6 +4,7 @@
 #include "class_object.h"
 #include "function.h"
 #include "runtime_helpers.h"
+#include "thread_state.h"
 #include "tuple.h"
 
 namespace cl
@@ -667,6 +668,83 @@ namespace cl
         object->write_storage_location(plan.storage_location(),
                                        Value::not_present());
         return true;
+    }
+
+    // Attribute mapping entries are the stored own namespace entries that back
+    // live mapping views like globals() and, later, obj.__dict__. They are
+    // deliberately narrower than attribute lookup: synthetic shape values,
+    // descriptors, and inherited/class-chain results do not appear here.
+    bool descriptor_is_attribute_mapping_entry(DescriptorInfo info)
+    {
+        return info.storage_location().is_found() &&
+               !info.has_flag(DescriptorFlag::ShapeClassValue);
+    }
+
+    bool own_attribute_mapping_entry_at(Object *object, uint32_t descriptor_idx,
+                                        AttributeMappingEntry &entry)
+    {
+        assert(object != nullptr);
+        Shape *shape = object->get_shape();
+        assert(shape != nullptr);
+        if(descriptor_idx >= shape->present_count())
+        {
+            return false;
+        }
+
+        DescriptorInfo info = shape->get_descriptor_info(descriptor_idx);
+        if(!descriptor_is_attribute_mapping_entry(info))
+        {
+            return false;
+        }
+
+        Value value = object->read_storage_location(info.storage_location());
+        if(value.is_not_present())
+        {
+            return false;
+        }
+
+        entry = AttributeMappingEntry{
+            shape->get_property_name(descriptor_idx).raw_value(), value};
+        return true;
+    }
+
+    Value load_own_attribute_mapping_entry(Object *object, TValue<String> name)
+    {
+        assert(object != nullptr);
+        Shape *shape = object->get_shape();
+        assert(shape != nullptr);
+        int32_t descriptor_idx = shape->lookup_descriptor_index(name);
+        if(descriptor_idx < 0)
+        {
+            return active_thread()->set_pending_builtin_exception_none(
+                L"KeyError");
+        }
+
+        AttributeMappingEntry entry;
+        if(!own_attribute_mapping_entry_at(
+               object, static_cast<uint32_t>(descriptor_idx), entry))
+        {
+            return active_thread()->set_pending_builtin_exception_none(
+                L"KeyError");
+        }
+        return entry.value;
+    }
+
+    size_t count_own_attribute_mapping_entries(Object *object)
+    {
+        assert(object != nullptr);
+        Shape *shape = object->get_shape();
+        assert(shape != nullptr);
+        size_t count = 0;
+        AttributeMappingEntry entry;
+        for(uint32_t idx = 0; idx < shape->present_count(); ++idx)
+        {
+            if(own_attribute_mapping_entry_at(object, idx, entry))
+            {
+                ++count;
+            }
+        }
+        return count;
     }
 
     bool store_attr(Value obj, TValue<String> name, Value value)

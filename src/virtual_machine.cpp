@@ -19,6 +19,7 @@
 #include "parser.h"
 #include "range_iterator.h"
 #include "shape.h"
+#include "slot_dict.h"
 #include "thread_state.h"
 #include "tuple.h"
 #include "tuple_iterator.h"
@@ -340,6 +341,7 @@ namespace cl
             0, 0, fixed_attribute_shape_flags());
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_dict_class(this));
+        register_builtin_class(make_slotdict_class(this));
         register_builtin_class(make_float_class(this));
         register_builtin_class(make_module_class(this));
         TValue<String> builtins_name =
@@ -390,6 +392,7 @@ namespace cl
         install_list_class_methods(this);
         install_tuple_class_methods(this);
         install_dict_class_methods(this);
+        install_slotdict_class_methods(this);
         install_float_class_methods(this);
     }
 
@@ -408,7 +411,7 @@ namespace cl
 
         for(ClassObject *cls: builtin_classes)
         {
-            if(cls == code_class())
+            if(cls == code_class() || cls == slotdict_class())
             {
                 continue;
             }

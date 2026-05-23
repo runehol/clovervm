@@ -340,6 +340,8 @@ namespace cl
                                        uint8_t argc);
         uint32_t emit_call_native(uint32_t source_offset, Bytecode op,
                                   uint8_t target_idx);
+        uint32_t emit_call_intrinsic0(uint32_t source_offset,
+                                      Intrinsic0 intrinsic);
         uint32_t emit_call_simple(uint32_t source_offset, uint32_t callable_reg,
                                   OutgoingArgReg first_arg_reg, uint8_t argc);
         uint32_t add_exception_table_entry(JumpTarget &start, JumpTarget &end,

@@ -43,6 +43,11 @@ def len(obj):
     )
 
 
+def globals():
+    """Return the dictionary containing the current scope's global variables."""
+    return __clover_globals__()
+
+
 def print(*args):
     """print(*args)
 

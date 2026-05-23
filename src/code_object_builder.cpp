@@ -656,6 +656,15 @@ namespace cl
         return emit_opcode_native_target_idx(source_offset, op, target_idx);
     }
 
+    uint32_t CodeObjectBuilder::emit_call_intrinsic0(uint32_t source_offset,
+                                                     Intrinsic0 intrinsic)
+    {
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::CallIntrinsic0));
+        emplace_back(source_offset, uint8_t(intrinsic));
+        return result;
+    }
+
     uint32_t CodeObjectBuilder::emit_call_simple(uint32_t source_offset,
                                                  uint32_t callable_reg,
                                                  OutgoingArgReg first_arg_reg,

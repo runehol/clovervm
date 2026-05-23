@@ -19,6 +19,7 @@
 #include "range_iterator.h"
 #include "scope.h"
 #include "shape.h"
+#include "slot_dict.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -3384,6 +3385,9 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
          L"For many object types, including most builtins, eval(repr(obj)) "
          L"== obj."},
         {L"len", L"Return the number of items in a container."},
+        {L"globals",
+         L"Return the dictionary containing the current scope's global "
+         L"variables."},
         {L"print",
          L"print(*args)\n"
          L"\n"
@@ -3465,6 +3469,110 @@ TEST(Interpreter, user_defined_clover_write_stdout_name_is_ordinary_function)
     EXPECT_TRUE(run.stdout_text.empty());
 }
 
+TEST(Interpreter, user_code_cannot_use_clover_globals_as_intrinsic)
+{
+    expect_python_error(L"__clover_globals__()\n",
+                        L"NameError: name '__clover_globals__' is not "
+                        L"defined");
+}
+
+TEST(Interpreter, user_defined_clover_globals_name_is_ordinary_function)
+{
+    test::FileRunner file_runner(L"def __clover_globals__():\n"
+                                 L"    return 789\n"
+                                 L"__clover_globals__()\n");
+
+    EXPECT_EQ(Value::from_smi(789), file_runner.return_value);
+}
+
+TEST(Interpreter, globals_builtin_returns_fresh_slotdict_views)
+{
+    test::VmTestContext test_context;
+
+    Value actual = test_context.run_file(L"globals()\n");
+    ASSERT_TRUE(can_convert_to<SlotDict>(actual));
+}
+
+TEST(Interpreter, globals_slotdict_reads_current_module_bindings_only)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(11),
+              test_context.run_file(L"x = 11\n"
+                                    L"globals()[\"x\"]\n"));
+    Value name_value = test_context.run_file(L"globals()[\"__name__\"]\n");
+    ASSERT_TRUE(can_convert_to<String>(name_value));
+    EXPECT_STREQ(
+        L"__main__",
+        string_as_wchar_t(TValue<String>::from_value_assumed(name_value)));
+    Value builtins_value =
+        test_context.run_file(L"globals()[\"__builtins__\"]\n");
+    ASSERT_TRUE(can_convert_to<ModuleObject>(builtins_value));
+    expect_python_error(L"globals()[\"len\"]\n", L"KeyError");
+}
+
+TEST(Interpreter, globals_slotdict_len_counts_visible_module_bindings)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(2),
+              test_context.run_file(L"globals()[\"x\"] = 1\n"
+                                    L"before = len(globals())\n"
+                                    L"globals()[\"y\"] = 2\n"
+                                    L"len(globals()) - before\n"));
+}
+
+TEST(Interpreter, globals_slotdict_repr_is_dict_style)
+{
+    test::VmTestContext test_context;
+
+    Value actual = test_context.run_file(L"x = 1\n"
+                                         L"repr(globals())\n");
+    ASSERT_TRUE(can_convert_to<String>(actual));
+    std::wstring text =
+        string_as_wchar_t(TValue<String>::from_value_assumed(actual));
+    EXPECT_EQ(L'{', text.front());
+    EXPECT_EQ(L'}', text.back());
+    EXPECT_NE(std::wstring::npos, text.find(L"'x': 1"));
+}
+
+TEST(Interpreter, globals_slotdict_writes_and_deletes_module_bindings)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(42),
+              test_context.run_file(L"globals()[\"written\"] = 42\n"
+                                    L"written\n"));
+
+    Value range_value = test_context.run_file(L"globals()[\"range\"] = 42\n"
+                                              L"del globals()[\"range\"]\n"
+                                              L"range(1)\n");
+    ASSERT_TRUE(can_convert_to<RangeIterator>(range_value));
+}
+
+TEST(Interpreter, globals_slotdict_rejects_non_string_keys)
+{
+    expect_python_error(L"globals()[1] = 2\n",
+                        L"TypeError: slotdict keys must be strings");
+    expect_python_error(L"globals()[1]\n",
+                        L"TypeError: slotdict keys must be strings");
+    expect_python_error(L"del globals()[1]\n",
+                        L"TypeError: slotdict keys must be strings");
+}
+
+TEST(Interpreter, globals_slotdict_class_is_not_builtin_binding)
+{
+    test::VmTestContext test_context;
+
+    Value class_name = test_context.run_file(L"globals().__class__.__name__\n");
+    ASSERT_TRUE(can_convert_to<String>(class_name));
+    EXPECT_STREQ(
+        L"slotdict",
+        string_as_wchar_t(TValue<String>::from_value_assumed(class_name)));
+    expect_python_error(L"slotdict\n",
+                        L"NameError: name 'slotdict' is not defined");
+}
+
 TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
 {
     test::VmTestContext test_context;
@@ -3482,6 +3590,7 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
         {NativeLayoutId::List, L"list"},
         {NativeLayoutId::Tuple, L"tuple"},
         {NativeLayoutId::Dict, L"dict"},
+        {NativeLayoutId::SlotDict, L"slotdict"},
         {NativeLayoutId::Float, L"float"},
         {NativeLayoutId::Function, L"function"},
         {NativeLayoutId::CodeObject, L"code"},
@@ -3553,7 +3662,8 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
                       mro->item_unchecked(1));
         }
 
-        if(expected.native_layout_id == NativeLayoutId::CodeObject)
+        if(expected.native_layout_id == NativeLayoutId::CodeObject ||
+           expected.native_layout_id == NativeLayoutId::SlotDict)
         {
             EXPECT_EQ(Value::not_present(), builtins->get_own_property(name));
         }

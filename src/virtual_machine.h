@@ -139,6 +139,10 @@ namespace cl
         {
             return class_for_native_layout(NativeLayoutId::Dict);
         }
+        ClassObject *slotdict_class() const
+        {
+            return class_for_native_layout(NativeLayoutId::SlotDict);
+        }
         ClassObject *float_class() const
         {
             return class_for_native_layout(NativeLayoutId::Float);

@@ -15,6 +15,7 @@
 #include "range_iterator.h"
 #include "refcount.h"
 #include "runtime_helpers.h"
+#include "slot_dict.h"
 #include "subscript.h"
 #include "thread_state.h"
 #include "tuple.h"
@@ -3166,6 +3167,28 @@ namespace cl
         COMPLETE();
     }
 
+    static INTERP_CC Value op_call_intrinsic0(PARAMS)
+    {
+        START(2);
+        Intrinsic0 intrinsic = Intrinsic0(pc[1]);
+        switch(intrinsic)
+        {
+            case Intrinsic0::Globals:
+                {
+                    CodeObject *caller_code_object =
+                        fp[FrameHeaderReturnCodeObjectOffset]
+                            .get_ptr<CodeObject>();
+                    ModuleObject *caller_module =
+                        caller_code_object->get_defining_module().extract();
+                    accumulator =
+                        thread->make_object_value<SlotDict>(caller_module)
+                            .raw_value();
+                    COMPLETE();
+                }
+        }
+        __builtin_unreachable();
+    }
+
     static INTERP_CC Value op_for_iter(PARAMS)
     {
         int8_t reg = pc[1];
@@ -3558,6 +3581,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CallNative1, op_call_native1);
         SET_TABLE_ENTRY(Bytecode::CallNative2, op_call_native2);
         SET_TABLE_ENTRY(Bytecode::CallNative3, op_call_native3);
+        SET_TABLE_ENTRY(Bytecode::CallIntrinsic0, op_call_intrinsic0);
         SET_TABLE_ENTRY(Bytecode::CallCodeObject, op_call_code_object);
         SET_TABLE_ENTRY(Bytecode::ForIter, op_for_iter);
         SET_TABLE_ENTRY(Bytecode::ForPrepRange1, op_for_prep_range1);

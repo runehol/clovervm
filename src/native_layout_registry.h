@@ -15,6 +15,7 @@
 #include "range_iterator.h"
 #include "scope.h"
 #include "shape.h"
+#include "slot_dict.h"
 #include "str.h"
 #include "tuple.h"
 #include "tuple_iterator.h"
@@ -33,6 +34,7 @@
     V(Float);                                                                  \
     V(Function);                                                               \
     V(Dict);                                                                   \
+    V(SlotDict);                                                               \
     V(String);                                                                 \
     V(Instance);                                                               \
     V(CodeObject);                                                             \

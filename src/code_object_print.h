@@ -62,6 +62,24 @@ namespace cl
     }
 }  // namespace cl
 
+template <> struct fmt::formatter<cl::Intrinsic0>
+{
+    constexpr auto parse(format_parse_context &ctx) { return ctx.end(); }
+
+    template <typename FormatContext>
+    auto format(const cl::Intrinsic0 intrinsic, FormatContext &ctx) const
+        -> decltype(ctx.out())
+    {
+        auto &&out = ctx.out();
+        switch(intrinsic)
+        {
+            case cl::Intrinsic0::Globals:
+                return format_to(out, "Globals");
+        }
+        return format_to(out, "<unknown>");
+    }
+};
+
 template <> struct fmt::formatter<cl::Bytecode>
 {
     constexpr auto parse(format_parse_context &ctx) { return ctx.end(); }
@@ -274,6 +292,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "CallNative2");
             case cl::Bytecode::CallNative3:
                 return format_to(out, "CallNative3");
+            case cl::Bytecode::CallIntrinsic0:
+                return format_to(out, "CallIntrinsic0");
             case cl::Bytecode::CallCodeObject:
                 return format_to(out, "CallCodeObject");
             case cl::Bytecode::ForIter:
@@ -702,6 +722,10 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::CallNative2:
             case cl::Bytecode::CallNative3:
                 format_to(out, " {}", code_obj.code[pc++]);
+                break;
+
+            case cl::Bytecode::CallIntrinsic0:
+                format_to(out, " {}", cl::Intrinsic0(code_obj.code[pc++]));
                 break;
 
             case cl::Bytecode::CallCodeObject:

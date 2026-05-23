@@ -12,6 +12,7 @@
 #include "range_iterator.h"
 #include "scope.h"
 #include "shape.h"
+#include "slot_dict.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -139,6 +140,7 @@ TEST(NativeLayoutDescriptor, FixedObjectSubclassesUseNativeStaticDescriptors)
     expect_static_native_layout_descriptor<StopIterationObject>();
     expect_static_native_layout_descriptor<Function>();
     expect_static_native_layout_descriptor<Dict>();
+    expect_static_native_layout_descriptor<SlotDict>();
     expect_static_native_layout_descriptor<ClassObject>();
 }
 

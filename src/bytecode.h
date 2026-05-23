@@ -10,6 +10,11 @@ namespace cl
 
     inline constexpr int32_t n_fastpath_ldar_star = 16;
 
+    enum class Intrinsic0 : uint8_t
+    {
+        Globals,
+    };
+
     enum class Bytecode : uint8_t
     {
         // load value into accumulator from various constants
@@ -129,6 +134,7 @@ namespace cl
         CallNative1,
         CallNative2,
         CallNative3,
+        CallIntrinsic0,
         CallCodeObject,
 
         // iteration

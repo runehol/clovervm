@@ -62,6 +62,8 @@ add_library(libclovervm STATIC
     heap_reclamation.h
     shape.cpp
     shape.h
+    slot_dict.cpp
+    slot_dict.h
     token.cpp
     token.h
     token_print.h

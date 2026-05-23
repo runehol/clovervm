@@ -1102,3 +1102,23 @@ TEST(Codegen, user_clover_write_stdout_name_is_ordinary_call)
     EXPECT_EQ(std::string::npos, actual.find("WriteStdout"));
     EXPECT_NE(std::string::npos, actual.find("CallSimple"));
 }
+
+TEST(Codegen, trusted_clover_globals_lowers_to_intrinsic)
+{
+    std::string actual = trusted_builtin_bytecode_str_from_file(
+        L"def read_globals():\n"
+        L"    return __clover_globals__()\n");
+
+    EXPECT_NE(std::string::npos, actual.find("CallIntrinsic0 Globals"));
+    EXPECT_EQ(std::string::npos, actual.find("CallSimple"));
+}
+
+TEST(Codegen, user_clover_globals_name_is_ordinary_call)
+{
+    std::string actual =
+        bytecode_str_from_file(L"def read_globals():\n"
+                               L"    return __clover_globals__()\n");
+
+    EXPECT_EQ(std::string::npos, actual.find("CallIntrinsic0 Globals"));
+    EXPECT_NE(std::string::npos, actual.find("CallSimple"));
+}

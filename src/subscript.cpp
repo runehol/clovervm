@@ -3,6 +3,7 @@
 #include "dict.h"
 #include "exception_propagation.h"
 #include "list.h"
+#include "slot_dict.h"
 #include "thread_state.h"
 #include "tuple.h"
 #include <stdexcept>
@@ -59,6 +60,12 @@ namespace cl
             CL_PROPAGATE_EXCEPTION(result);
             return result;
         }
+        if(object->native_layout_id() == NativeLayoutId::SlotDict)
+        {
+            Value result = static_cast<SlotDict *>(object)->get_item(key);
+            CL_PROPAGATE_EXCEPTION(result);
+            return result;
+        }
 
         return Value::not_present();
     }
@@ -92,6 +99,12 @@ namespace cl
             static_cast<Dict *>(object)->set_item(key, value);
             return Value::None();
         }
+        if(object->native_layout_id() == NativeLayoutId::SlotDict)
+        {
+            CL_PROPAGATE_EXCEPTION(
+                static_cast<SlotDict *>(object)->set_item(key, value));
+            return Value::None();
+        }
 
         return Value::not_present();
     }
@@ -119,6 +132,12 @@ namespace cl
         if(object->native_layout_id() == NativeLayoutId::Dict)
         {
             CL_PROPAGATE_EXCEPTION(static_cast<Dict *>(object)->del_item(key));
+            return Value::None();
+        }
+        if(object->native_layout_id() == NativeLayoutId::SlotDict)
+        {
+            CL_PROPAGATE_EXCEPTION(
+                static_cast<SlotDict *>(object)->del_item(key));
             return Value::None();
         }
 
