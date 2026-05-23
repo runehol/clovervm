@@ -45,16 +45,10 @@ ModuleObject
   shape-backed own properties
   __name__
   __builtins__
-  future import metadata
+  standard import metadata
 ```
 
-The remaining missing pieces are:
-
-- an internal spec/search/load path
-- `builtins.__import__` as the public wrapper
-- import statement lowering/execution that calls `builtins.__import__`
-
-Already implemented pieces used by the import design:
+Implemented pieces used by the import design:
 
 - `globals()` is a builtin implemented through trusted builtins code.
 - Module-scope `locals()` is implemented through the same trusted builtins /
@@ -70,6 +64,14 @@ Already implemented pieces used by the import design:
 - `CL_STDLIB_DIR` is an absolute build-configured path to `stdlib/`.
 - Trusted VM bootstrap code stays in `src/builtins.py`; ordinary importable
   system modules live under `stdlib/`.
+- `__main__` is created as a real module, receives the standard entry-module
+  metadata, and is inserted into `sys.modules`.
+- Source modules and packages are found through an internal C++ source finder,
+  preinserted into `sys.modules`, executed in their module object, and removed
+  from `sys.modules` on load failure.
+- Dotted absolute imports, regular packages, package `__path__`, submodule
+  parent binding, relative `from` imports, import aliases, comma import lists,
+  and parenthesized `from` import lists are implemented.
 
 ## CPython Import Sequence
 
@@ -433,13 +435,11 @@ submodule_search_locations, None for non-packages
 This lets the loader and module initializer share one structured record, and it
 leaves room to expose a Python `ModuleSpec` object later.
 
-The bootstrap `module.__spec__` should be a real small `ModuleSpec`-like object
-with the fields above.
-
-Using `None` would be simpler for a very first import experiment, but it is the
-wrong default for the design. Relative imports, package metadata, module repr,
-and later `importlib` all want `__spec__`, so the bootstrap path should create a
-small spec object even before exact CPython `ModuleSpec` compatibility exists.
+The current bootstrap path records this as a C++ `ModuleSpec` and still exposes
+`module.__spec__ = None`. That is acceptable only as a temporary bootstrap
+state. Relative imports currently use the legacy module metadata path, but
+module repr, later `importlib`, and more exact CPython compatibility all want a
+real Python-visible spec object.
 
 ### Bootstrap Metadata
 
@@ -447,10 +447,10 @@ For source modules, initialize:
 
 ```text
 __name__      = fully qualified module name
-__spec__      = internal/small spec object
+__spec__      = None today; later, an internal/small spec object
 __package__   = spec.parent for normal modules, spec.name for packages,
                 empty string for top-level non-packages
-__loader__    = internal source loader object or marker
+__loader__    = None today; later, an internal source loader object or marker
 __file__      = source path
 __cached__    = None or omitted until bytecode cache exists
 __builtins__  = VM builtins module
@@ -463,8 +463,9 @@ For regular packages:
 __path__ = list containing the package directory
 ```
 
-This is enough for relative imports and submodule search to have the right
-shape later.
+The current relative-import implementation uses `__package__`, `__name__`, and
+`__path__` rather than `__spec__`. Moving to a visible spec object should keep
+those legacy attributes coherent with the spec.
 
 ### `sys` Bootstrap
 
@@ -496,30 +497,37 @@ without rewriting the loader.
 
 ### `builtins.__import__` In The Subset
 
-The bootstrap target for `__import__` should support:
+The bootstrap `__import__` now supports:
 
 ```python
 import mod
 import pkg.mod
 from pkg import mod
 from pkg.mod import name
+from . import sibling
+from ..pkg import name
 ```
 
-This does not require full `from ... import *`, import aliases, or relative
-imports in the first increment. Those are statement-lowering and name-binding
-features layered over the same loader behavior.
+Import aliases, comma import lists, parenthesized `from` import lists, and
+explicit relative `from` imports are also implemented.
 
-It should accept the full public signature:
+The important remaining statement form is:
+
+```python
+from module import *
+```
+
+Star imports are a name-binding feature layered over the same loader behavior,
+but they need their own semantics for `__all__`, underscore filtering, and the
+set of local/global names that may be updated.
+
+The builtin accepts the full public signature:
 
 ```python
 __import__(name, globals=None, locals=None, fromlist=(), level=0)
 ```
 
-Absolute imports should work first. Relative imports should either work for
-regular packages or fail deliberately with a clear `ImportError`/`ValueError`
-rather than accidentally treating a relative name as absolute.
-
-The return rules should match CPython from the start:
+The return rules match CPython:
 
 ```text
 empty fromlist -> return top-level package/module
@@ -817,101 +825,114 @@ The VM's import statement path should therefore use ordinary global/builtin
 lookup semantics to find `__import__`, or an equivalent builtins lookup that
 observes mutations to the builtins module.
 
-## Initial Implementation Stages
+## Current Implementation Snapshot
 
-### 1. Module Globals Mapping And Frame Globals
+The current implementation has the bootstrap import spine in place:
 
-- Implemented: `SlotDict` provides a live module-globals mapping view over
-  `ModuleObject`.
-- Implemented: read, write, delete, `len`, subscript operations, and repr use
-  centralized object storage behavior.
-- Implemented: the current globals source is the caller code object's defining
-  module.
+- `ModuleObject` construction installs standard metadata up front.
+- `__main__` is a real module inserted into `sys.modules`.
+- `sys` is a VM-owned module exposing `sys.modules` and `sys.path`.
+- `sys.modules` is the VM-owned imported-modules cache.
+- `sys.path` starts as `[".", CL_STDLIB_DIR]`.
+- The C++ source finder walks `sys.path` or parent package `__path__`, ignores
+  non-string path entries, and recognizes `name.py` and `name/__init__.py`.
+- The C++ `ModuleSpec` records name, origin, package state, and package search
+  locations, but it is not yet Python-visible.
+- Source modules are inserted into `sys.modules` before read/compile/execute and
+  removed on load failure.
+- Regular packages receive `__path__`.
+- Dotted imports import parents left to right, require package parents, search
+  parent `__path__`, and bind loaded submodules onto their parent package.
+- `builtins.__import__` is a native builtin with the CPython-shaped public
+  signature.
+- Import statement bytecode calls the public import hook and binds names through
+  the normal store path.
+- Absolute imports, dotted imports, from-imports, aliases, comma import lists,
+  parenthesized from-import lists, and explicit relative from-imports are
+  implemented.
 
-### 2. `globals()`
+## Remaining Checklist
 
-- Implemented: `globals()` is defined in trusted builtins and lowered through
-  the `Globals` intrinsic.
-- Implemented: module-scope `locals()` is defined in trusted builtins and
-  lowered through the `Locals` intrinsic.
-- Deferred: function and class-body `locals()` semantics.
+### Import Statement Forms
 
-### 3. Minimal `sys`
+- Implement `from module import *`.
+- Use `module.__all__` for star import when present.
+- Without `__all__`, star import should import public names that do not start
+  with `_`.
+- Reject or handle function-scope star import according to Python syntax rules.
+- Store star-imported names through the same normal binding path as other
+  imports.
 
-- Implemented: `sys` is an immortal VM-owned module with `__builtins__`.
-- Implemented: `sys.modules` is an immortal `Dict` also kept by the VM as
-  `imported_modules`.
-- Implemented: `sys.path` is an immortal `List` initialized to
-  `[".", CL_STDLIB_DIR]`.
-- Implemented: `CL_STDLIB_DIR` is baked into the binary at CMake configure time
-  as the absolute source-tree `stdlib/` path.
-- Deferred: `__main__` insertion waits for the future import runner/main entry
+### Python-Visible Specs And Loaders
+
+- Replace exposed `module.__spec__ = None` with a small Python-visible
+  `ModuleSpec`-like object.
+- Give modules a meaningful `__loader__` value instead of `None`.
+- Add `__cached__` as `None` or a real cache path once the spec surface has a
+  place for it.
+- Keep the C++ spec-to-module construction path as the internal source of truth.
+
+### Builtin Module Importer
+
+- Add an internal builtin-module finder/loader path.
+- Let `import sys` and `import builtins` be satisfied by finder/loader behavior,
+  not only by their initial `sys.modules` entries.
+- Decide the first Python-visible metadata for builtin modules: origin, loader,
+  package, and file absence.
+
+### `sys` And Importlib Surface
+
+- Add public `sys.meta_path` once finder objects exist.
+- Add `sys.path_hooks` and `sys.path_importer_cache` when path entry finders are
+  split out of the hardcoded source finder.
+- Start a minimal `importlib` surface only after specs/loaders are objects.
+
+### Loader Semantics
+
+- Match CPython's behavior when a loader replaces its module in `sys.modules`.
+- Preserve already-existing `sys.modules` entries on failed reload/import
+  attempts.
+- Add import reentrancy/import-lock semantics if recursive imports expose a
+  correctness hole.
+
+### Module Namespace Compatibility
+
+- Decide whether and when `module.__dict__` should expose a stable mapping
+  identity.
+- Decide whether exact `dict` globals are needed for `exec` compatibility, and
+  how that interacts with shape-backed module storage.
+- Finish function and class-body `locals()` semantics independently of import.
+
+### Search Backends
+
+- Add namespace packages.
+- Add bytecode cache loading and invalidation.
+- Add frozen modules if VM bootstrap starts needing them.
+- Add extension modules only after the native ABI/module initialization design
+  exists.
+- Add zip imports only after path hooks and path entry finders exist.
+
+## Remaining Tests
+
+Prefer interpreter tests for user-visible import semantics:
+
+- `from module import *` uses `__all__` when present.
+- `from module import *` imports public non-underscore names when `__all__` is
+  absent.
+- `from module import *` stores into module globals through the normal store
   path.
-
-### 4. Bootstrap Spec And Source Finder
-
-- Implemented: a C++-only `ModuleSpec` records `name`, `origin`, package state,
-  and package search locations.
-- Implemented: the bootstrap source-path finder walks `sys.path`, ignores
-  non-string entries, checks `name/__init__.py` before `name.py`, and returns an
-  empty result for ordinary misses.
-- Deferred: dotted names, a Python-visible spec object, and public
-  `sys.meta_path`.
-
-### 5. Minimal Core Importer
-
-- Implemented: `import_module_absolute` supports non-dotted source-module
-  imports by name.
-- Implemented: cached `sys.modules` entries are returned as-is.
-- Implemented: imported modules receive `__name__`, `__doc__`, `__package__`,
-  `__loader__`, `__spec__`, `__file__`, `__builtins__`, and package `__path__`.
-- Implemented: modules are inserted into `sys.modules` before source read,
-  compile, and execution; failures after insertion remove the new module entry.
-- Implemented: source files are read through the shared source-text reader;
-  open/decode failure raises `ImportError`.
-- Deferred: dotted imports.
-
-### 6. `builtins.__import__`
-
-- Implemented: `builtins.__import__` is a native builtin with the CPython-shaped
-  five-argument signature and defaults.
-- Implemented: non-dotted absolute imports call `import_module_absolute`.
-- Implemented: non-string names raise `TypeError`; nonzero `level` raises
-  `ImportError` until relative imports are supported.
-- Deferred: dotted-name return behavior, `fromlist`, and real relative imports.
-
-### 7. Import Statement Runtime
-
-- Lower or execute import statements by calling `builtins.__import__`.
-- Pass current frame globals, current frame locals, `fromlist`, and `level`.
-- Bind the returned module/name according to the import statement form.
-
-### 8. Packages And Relative Imports
-
-- Import parent packages before submodules.
-- Use parent package `__path__` for submodule search.
-- Bind submodules as attributes of parent packages.
-- Resolve relative imports from caller globals metadata.
-
-## Tests
-
-Start with interpreter tests for user-visible semantics:
-
-- `globals()` observes module assignment.
-- assignment through `globals()` creates a module global.
-- `globals()` inside a function returns the defining module's globals.
-- builtin fallback does not appear as a module-global own entry.
-- replacing `__builtins__.__import__` intercepts import statements.
-- the replacement import hook receives `(name, globals, locals, fromlist,
-  level)`.
-- absolute import consults `sys.modules`.
-- recursive imports see the partially initialized module.
-- failed module execution removes the failed module from `sys.modules`.
-- `import a.b` returns/binds the top-level module as Python expects.
-- `from a.b import c` uses the `fromlist` return behavior.
+- star import rejects or avoids unsupported function/class scope according to
+  the parser/codegen rule we choose.
+- builtin module imports work after deleting `sys.modules["sys"]` or
+  `sys.modules["builtins"]`, once the builtin finder exists.
+- Python-visible `__spec__` exposes the minimum fields needed by relative
+  imports and user inspection.
+- loader replacement through `sys.modules` returns the replacement module once
+  that behavior is implemented.
 
 Add lower-level C++ tests only where interpreter tests cannot pin the intended
-structure, such as stable mapping identity or direct module-storage invariants.
+structure, such as direct spec fields, finder ordering, or module-storage
+invariants.
 
 ## Design Risks
 
