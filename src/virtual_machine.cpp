@@ -143,6 +143,8 @@ namespace cl
         {
             range_builtin = Value::None();
             global_builtins_module_ = nullptr;
+            sys_module_ = nullptr;
+            imported_modules_ = nullptr;
             throw;
         }
     }
@@ -154,6 +156,8 @@ namespace cl
             ThreadState::ActivationScope activation_scope(threads[0].get());
             range_builtin = Value::None();
             global_builtins_module_ = nullptr;
+            sys_module_ = nullptr;
+            imported_modules_ = nullptr;
         }
     }
 
@@ -185,6 +189,18 @@ namespace cl
         {
             std::fputwc(string->data[idx], stdout_file_);
         }
+    }
+
+    TValue<ModuleObject> VirtualMachine::sys_module() const
+    {
+        assert(sys_module_ != nullptr);
+        return TValue<ModuleObject>::from_oop(sys_module_);
+    }
+
+    TValue<Dict> VirtualMachine::imported_modules() const
+    {
+        assert(imported_modules_ != nullptr);
+        return TValue<Dict>::from_oop(imported_modules_);
     }
 
     CodeObject *VirtualMachine::clover_function_entry_adapter(uint32_t n_args)
@@ -400,10 +416,46 @@ namespace cl
         install_float_class_methods(this);
     }
 
+    void VirtualMachine::initialize_module_bootstrap()
+    {
+        TValue<ModuleObject> builtins_module = global_builtins_module();
+
+        TValue<String> sys_name = get_or_create_interned_string_value(L"sys");
+        sys_module_ = make_immortal_object_raw<ModuleObject>(
+            sys_name, builtins_module.raw_value());
+
+        imported_modules_ = make_immortal_object_raw<Dict>();
+
+        TValue<String> dot = get_or_create_interned_string_value(L".");
+        List *path = make_immortal_object_raw<List>(1);
+        path->set_item_unchecked(0, dot.raw_value());
+
+        TValue<String> modules_name =
+            get_or_create_interned_string_value(L"modules");
+        TValue<String> path_name = get_or_create_interned_string_value(L"path");
+        bool installed_modules = sys_module_->set_own_property(
+            modules_name, Value::from_oop(imported_modules_));
+        bool installed_path =
+            sys_module_->set_own_property(path_name, Value::from_oop(path));
+        assert(installed_modules);
+        assert(installed_path);
+        (void)installed_modules;
+        (void)installed_path;
+
+        TValue<String> builtins_name =
+            get_or_create_interned_string_value(L"builtins");
+        imported_modules_->set_item(sys_name.raw_value(),
+                                    Value::from_oop(sys_module_));
+        imported_modules_->set_item(builtins_name.raw_value(),
+                                    builtins_module.raw_value());
+    }
+
     void VirtualMachine::initialize_builtins()
     {
         initialize_builtin_types();
         get_default_thread()->refresh_class_for_native_layout_cache();
+
+        initialize_module_bootstrap();
 
         ModuleObject *builtins_module = global_builtins_module().extract();
 

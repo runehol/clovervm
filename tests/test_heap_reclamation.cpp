@@ -237,7 +237,6 @@ namespace cl
         ThreadState::ActivationScope active_thread(thread);
         GlobalHeap &heap = context.vm().get_refcounted_global_heap();
         context.vm().run_heap_reclamation();
-        uint64_t valid_objects_before_alloc = heap.count_valid_objects_slow();
 
         String *child = thread->make_object_raw<String>(L"code-constant");
         TValue<String> code_name =
@@ -252,20 +251,28 @@ namespace cl
         code_object->function_call_caches.back().guard_value =
             Value::from_oop(child);
         ASSERT_EQ(1, child->refcount);
+        SlabAllocator *child_slab = heap.slab_for_object_unlocked(child);
+        SlabAllocator *module_slab = heap.slab_for_object_unlocked(module);
+        SlabAllocator *code_object_slab =
+            heap.slab_for_object_unlocked(code_object);
+        ASSERT_TRUE(slab_has_valid_object(child_slab, child));
+        ASSERT_TRUE(slab_has_valid_object(module_slab, module));
+        ASSERT_TRUE(slab_has_valid_object(code_object_slab, code_object));
 
         thread->add_to_zero_count_table_if_needed(code_object);
         ASSERT_TRUE(thread->zero_count_table_contains_for_testing(code_object));
         ASSERT_FALSE(thread->zero_count_table_contains_for_testing(child));
-        uint64_t valid_objects_after_alloc = heap.count_valid_objects_slow();
-        ASSERT_EQ(valid_objects_before_alloc + 4, valid_objects_after_alloc);
+        ASSERT_FALSE(thread->zero_count_table_contains_for_testing(module));
 
         context.vm().run_heap_reclamation();
 
-        EXPECT_EQ(valid_objects_after_alloc - 3,
-                  heap.count_valid_objects_slow());
+        EXPECT_FALSE(slab_has_valid_object(child_slab, child));
+        EXPECT_FALSE(slab_has_valid_object(module_slab, module));
+        EXPECT_FALSE(slab_has_valid_object(code_object_slab, code_object));
         EXPECT_FALSE(
             thread->zero_count_table_contains_for_testing(code_object));
         EXPECT_FALSE(thread->zero_count_table_contains_for_testing(child));
+        EXPECT_FALSE(thread->zero_count_table_contains_for_testing(module));
     }
 
     TEST(HeapReclamation, ShapeCustomDeallocReclaimsTransitionTarget)

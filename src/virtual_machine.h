@@ -24,6 +24,8 @@ namespace cl
 {
     class ThreadState;
     class CodeObject;
+    class Dict;
+    class List;
     struct SafepointScanRecord;
 
     using SafepointCallbackForTesting =
@@ -98,6 +100,8 @@ namespace cl
             assert(global_builtins_module_ != nullptr);
             return TValue<ModuleObject>::from_oop(global_builtins_module_);
         }
+        TValue<ModuleObject> sys_module() const;
+        TValue<Dict> imported_modules() const;
         void set_global_builtins_module(ModuleObject *module)
         {
             assert(module != nullptr);
@@ -261,6 +265,7 @@ namespace cl
         void install_bootstrap_string_class();
         void install_bootstrap_tuple_class();
         void initialize_builtin_types();
+        void initialize_module_bootstrap();
         void initialize_builtins();
 
         GlobalHeap refcounted_global_heap;
@@ -284,6 +289,8 @@ namespace cl
         std::vector<ClassObject *> builtin_classes;
         Owned<Value> range_builtin;
         ModuleObject *global_builtins_module_ = nullptr;
+        ModuleObject *sys_module_ = nullptr;
+        Dict *imported_modules_ = nullptr;
         bool safepoint_requested_ = false;
         bool fire_every_safepoint_for_testing_ = false;
         SafepointCallbackForTesting safepoint_callback_for_testing_ = nullptr;

@@ -50,7 +50,6 @@ ModuleObject
 
 The remaining missing pieces are:
 
-- a minimal `sys` module with `sys.modules` and `sys.path`
 - an internal spec/search/load path
 - `builtins.__import__` as the public wrapper
 - import statement lowering/execution that calls `builtins.__import__`
@@ -64,6 +63,10 @@ Already implemented pieces used by the import design:
   interpreter intrinsics, so ordinary user code cannot call the helpers by name.
 - The intrinsics return live `SlotDict` views over the caller's defining module
   storage when the caller is module code.
+- A VM-owned immortal `sys` module exists with `sys.modules` and `sys.path`.
+- `sys.modules` is the VM-owned imported-modules cache, initially containing
+  `"builtins"` and `"sys"`.
+- `sys.path` is a mutable list initialized to `["."]`.
 
 ## CPython Import Sequence
 
@@ -832,8 +835,12 @@ observes mutations to the builtins module.
 
 ### 3. Minimal `sys`
 
-- Add `sys.modules` storage if it does not already exist.
-- Add `sys.path` as the initial top-level import path.
+- Implemented: `sys` is an immortal VM-owned module with `__builtins__`.
+- Implemented: `sys.modules` is an immortal `Dict` also kept by the VM as
+  `imported_modules`.
+- Implemented: `sys.path` is an immortal `List` initialized to `["."]`.
+- Deferred: `__main__` insertion waits for the future import runner/main entry
+  path.
 
 ### 4. Bootstrap Spec And Source Finder
 

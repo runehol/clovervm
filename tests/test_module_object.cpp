@@ -1,5 +1,8 @@
+#include "dict.h"
+#include "list.h"
 #include "module_object.h"
 #include "shape.h"
+#include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
 #include "validity_cell.h"
@@ -7,6 +10,11 @@
 #include <gtest/gtest.h>
 
 using namespace cl;
+
+static std::wstring value_as_wstring(Value value)
+{
+    return string_as_wchar_t(TValue<String>::from_value_assumed(value));
+}
 
 static ValidityCell *module_builtins_lookup_cell(ModuleObject *module)
 {
@@ -42,6 +50,60 @@ TEST(ModuleObject, ConstructedWithModuleClassAndPredefinedSlots)
     EXPECT_TRUE(module->get_shape()
                     ->resolve_present_property(dunder_builtins)
                     .is_found());
+}
+
+TEST(ModuleObject, SysModuleIsBootstrappedAsImmortalModule)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    ModuleObject *sys = context.vm().sys_module().extract();
+    EXPECT_EQ(NativeLayoutId::ModuleObject, sys->native_layout_id());
+    EXPECT_EQ(-1, sys->refcount);
+    EXPECT_EQ(L"sys", value_as_wstring(sys->get_name_binding()));
+
+    TValue<String> dunder_builtins =
+        context.vm().get_or_create_interned_string_value(L"__builtins__");
+    EXPECT_EQ(context.vm().global_builtins_module().raw_value(),
+              sys->get_own_property(dunder_builtins));
+}
+
+TEST(ModuleObject, SysModulesIsCanonicalImportedModulesDict)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    ModuleObject *sys = context.vm().sys_module().extract();
+    Dict *modules = context.vm().imported_modules().extract();
+    EXPECT_EQ(-1, modules->refcount);
+
+    TValue<String> modules_name =
+        context.vm().get_or_create_interned_string_value(L"modules");
+    EXPECT_EQ(Value::from_oop(modules), sys->get_own_property(modules_name));
+
+    TValue<String> sys_name =
+        context.vm().get_or_create_interned_string_value(L"sys");
+    TValue<String> builtins_name =
+        context.vm().get_or_create_interned_string_value(L"builtins");
+    EXPECT_EQ(Value::from_oop(sys), modules->get_item(sys_name.raw_value()));
+    EXPECT_EQ(context.vm().global_builtins_module().raw_value(),
+              modules->get_item(builtins_name.raw_value()));
+}
+
+TEST(ModuleObject, SysPathStartsWithCurrentDirectoryList)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    ModuleObject *sys = context.vm().sys_module().extract();
+    TValue<String> path_name =
+        context.vm().get_or_create_interned_string_value(L"path");
+    Value path_value = sys->get_own_property(path_name);
+    ASSERT_TRUE(can_convert_to<List>(path_value));
+    List *path = path_value.get_ptr<List>();
+    EXPECT_EQ(-1, path->refcount);
+    ASSERT_EQ(1u, path->size());
+    EXPECT_EQ(L".", value_as_wstring(path->item_unchecked(0)));
 }
 
 TEST(ModuleObject, PredefinedSlotLocationsAreStable)
