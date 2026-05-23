@@ -159,6 +159,14 @@ namespace cl
         {
             return class_for_native_layout(NativeLayoutId::ModuleObject);
         }
+        ClassObject *module_loader_class() const
+        {
+            return class_for_native_layout(NativeLayoutId::ModuleLoaderObject);
+        }
+        ClassObject *module_spec_class() const
+        {
+            return class_for_native_layout(NativeLayoutId::ModuleSpecObject);
+        }
         ClassObject *code_class() const
         {
             return class_for_native_layout(NativeLayoutId::CodeObject);

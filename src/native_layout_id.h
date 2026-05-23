@@ -20,6 +20,8 @@ namespace cl
         TupleIterator,
         ListIterator,
         ModuleObject,
+        ModuleLoaderObject,
+        ModuleSpecObject,
         CodeObject,
         ClassObject,
         Exception,

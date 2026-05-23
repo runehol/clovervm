@@ -422,7 +422,10 @@ user-defined finders.
 ### Internal Spec Object
 
 Even the bootstrap importer should produce an internal module spec record.
-It does not need to be a complete Python-visible `ModuleSpec` class at first.
+It also creates a small Python-visible spec object for each loaded module. This
+object is not CPython's exact `importlib.machinery.ModuleSpec` type yet, but it
+has the fields clovervm currently needs for introspection and future importlib
+work.
 
 Minimum fields:
 
@@ -432,19 +435,15 @@ kind: source module | regular package | builtin module
 origin
 source_path
 cached_path, optional and initially None
-loader, initially an internal loader enum/object
+loader, a small Python-visible loader object
 parent
 submodule_search_locations, None for non-packages
 ```
 
-This lets the loader and module initializer share one structured record, and it
-leaves room to expose a Python `ModuleSpec` object later.
-
-The current bootstrap path records this as a C++ `ModuleSpec` and still exposes
-`module.__spec__ = None`. That is acceptable only as a temporary bootstrap
-state. Relative imports currently use the legacy module metadata path, but
-module repr, later `importlib`, and more exact CPython compatibility all want a
-real Python-visible spec object.
+The C++ `ModuleSpec` remains the internal source of truth. Loading converts it
+into a `ModuleSpecObject` with `name`, `loader`, `origin`,
+`submodule_search_locations`, `has_location`, and `parent` slots. Loader values
+are `ModuleLoaderObject` instances with `kind`, `name`, and `path` slots.
 
 ### Bootstrap Metadata
 
@@ -452,10 +451,10 @@ For source modules, initialize:
 
 ```text
 __name__      = fully qualified module name
-__spec__      = None today; later, an internal/small spec object
+__spec__      = ModuleSpecObject
 __package__   = spec.parent for normal modules, spec.name for packages,
                 empty string for top-level non-packages
-__loader__    = None today; later, an internal source loader object or marker
+__loader__    = ModuleLoaderObject, equal to __spec__.loader
 __file__      = source path
 __cached__    = None or omitted until bytecode cache exists
 __builtins__  = VM builtins module
@@ -843,7 +842,10 @@ The current implementation has the bootstrap import spine in place:
   non-string path entries, and recognizes `name.py`, `name/__init__.py`, and
   single-portion namespace package directories.
 - The C++ `ModuleSpec` records name, origin, package state, and package search
-  locations, but it is not yet Python-visible.
+  locations. Loaded modules expose a small Python-visible `ModuleSpecObject` as
+  `__spec__`.
+- Loaded modules expose a small Python-visible `ModuleLoaderObject` as
+  `__loader__`, and `module.__loader__ is module.__spec__.loader`.
 - Source modules are inserted into `sys.modules` before read/compile/execute and
   removed on load failure. Namespace packages are inserted without source
   execution.
@@ -875,23 +877,14 @@ The current implementation has the bootstrap import spine in place:
 - Decide whether function-scope star import remains a syntax/codegen rejection
   or becomes a parser-level error matching CPython more closely.
 
-### Python-Visible Specs And Loaders
-
-- Replace exposed `module.__spec__ = None` with a small Python-visible
-  `ModuleSpec`-like object.
-- Give modules a meaningful `__loader__` value instead of `None`.
-- Add `__cached__` as `None` or a real cache path once the spec surface has a
-  place for it.
-- Keep the C++ spec-to-module construction path as the internal source of truth.
-
 ### `sys` And Importlib Surface
 
 - Add public `sys.meta_path` once finder objects exist.
 - Add `sys.path_hooks` and `sys.path_importer_cache` when path entry finders are
   split out of the hardcoded source finder.
 - Start a minimal `importlib` surface only after specs/loaders are objects.
-- Decide the first Python-visible metadata for builtin modules: origin, loader,
-  package, and file absence.
+- Add `__cached__` as `None` or a real cache path once bytecode cache behavior
+  exists.
 
 ### Loader Semantics
 
@@ -922,8 +915,6 @@ The current implementation has the bootstrap import spine in place:
 
 Prefer interpreter tests for user-visible import semantics:
 
-- Python-visible `__spec__` exposes the minimum fields needed by relative
-  imports and user inspection.
 - loader replacement through `sys.modules` returns the replacement module once
   that behavior is implemented.
 

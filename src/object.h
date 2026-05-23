@@ -110,6 +110,8 @@ namespace cl
                native_layout == NativeLayoutId::ClassObject ||
                native_layout == NativeLayoutId::Function ||
                native_layout == NativeLayoutId::ModuleObject ||
+               native_layout == NativeLayoutId::ModuleLoaderObject ||
+               native_layout == NativeLayoutId::ModuleSpecObject ||
                native_layout == NativeLayoutId::Exception ||
                native_layout == NativeLayoutId::StopIteration;
     }

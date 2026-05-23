@@ -7,7 +7,9 @@
 #include "exception_object.h"
 #include "function.h"
 #include "list.h"
+#include "module_loader_object.h"
 #include "module_object.h"
+#include "module_spec_object.h"
 #include "owned.h"
 #include "parser.h"
 #include "slot_dict.h"
@@ -302,6 +304,78 @@ namespace cl
             }
         }
 
+        Value make_search_locations(ThreadState *thread, const ModuleSpec &spec)
+        {
+            if(!spec.is_package)
+            {
+                return Value::None();
+            }
+
+            Owned<TValue<List>> locations(thread->make_object_value<List>());
+            for(const std::wstring &location: spec.submodule_search_locations)
+            {
+                locations.extract()->append(
+                    interned_string(thread, location).raw_value());
+            }
+            return locations.raw_value();
+        }
+
+        std::wstring parent_name_for_spec(const ModuleSpec &spec)
+        {
+            return spec.is_package ? spec.name : parent_module_name(spec.name);
+        }
+
+        const wchar_t *loader_kind_for_spec(const ModuleSpec &spec)
+        {
+            switch(spec.kind)
+            {
+                case ModuleSpecKind::Source:
+                    return L"source";
+                case ModuleSpecKind::Builtin:
+                    return L"builtin";
+                case ModuleSpecKind::Namespace:
+                    return L"namespace";
+            }
+            __builtin_unreachable();
+        }
+
+        Value loader_path_for_spec(ThreadState *thread, const ModuleSpec &spec)
+        {
+            if(spec.kind == ModuleSpecKind::Source)
+            {
+                return interned_string(thread, spec.origin).raw_value();
+            }
+            return Value::None();
+        }
+
+        Owned<TValue<ModuleLoaderObject>>
+        make_module_loader(ThreadState *thread, const ModuleSpec &spec)
+        {
+            Value name = spec.kind == ModuleSpecKind::Builtin
+                             ? Value::None()
+                             : interned_string(thread, spec.name).raw_value();
+            return Owned<TValue<ModuleLoaderObject>>(
+                thread->make_object_value<ModuleLoaderObject>(
+                    interned_string(thread, loader_kind_for_spec(spec))
+                        .raw_value(),
+                    name, loader_path_for_spec(thread, spec)));
+        }
+
+        Owned<TValue<ModuleSpecObject>>
+        make_module_spec_object(ThreadState *thread, const ModuleSpec &spec,
+                                Value loader, Value search_locations)
+        {
+            return Owned<TValue<ModuleSpecObject>>(
+                thread->make_object_value<ModuleSpecObject>(
+                    interned_string(thread, spec.name).raw_value(), loader,
+                    interned_string(thread, spec.origin).raw_value(),
+                    search_locations,
+                    spec.kind == ModuleSpecKind::Source ? Value::True()
+                                                        : Value::False(),
+                    interned_string(thread, parent_name_for_spec(spec))
+                        .raw_value()));
+        }
+
         std::optional<ModuleSpec>
         find_builtin_module_spec(const std::wstring &full_name)
         {
@@ -445,6 +519,11 @@ namespace cl
 
             const std::wstring package_name =
                 spec->is_package ? spec->name : parent_module_name(spec->name);
+            Owned<Value> search_locations(make_search_locations(thread, *spec));
+            Owned<TValue<ModuleLoaderObject>> loader(
+                make_module_loader(thread, *spec));
+            Owned<TValue<ModuleSpecObject>> spec_object(make_module_spec_object(
+                thread, *spec, loader.raw_value(), search_locations.value()));
             Value file =
                 spec->kind == ModuleSpecKind::Namespace
                     ? Value::not_present()
@@ -455,7 +534,7 @@ namespace cl
                     thread->get_machine()->global_builtins_module().raw_value(),
                     Value::None(),
                     interned_string(thread, package_name).raw_value(),
-                    Value::None(), Value::None(), file)));
+                    loader.raw_value(), spec_object.raw_value(), file)));
             install_package_import_metadata(thread, module.extract(), *spec);
             modules->set_item(name.raw_value(), module.raw_value());
 

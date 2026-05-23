@@ -15,7 +15,9 @@
 #include "int.h"
 #include "list.h"
 #include "list_iterator.h"
+#include "module_loader_object.h"
 #include "module_object.h"
+#include "module_spec_object.h"
 #include "native_function.h"
 #include "none_type.h"
 #include "parser.h"
@@ -508,6 +510,8 @@ namespace cl
         register_builtin_class(make_slotdict_class(this));
         register_builtin_class(make_float_class(this));
         register_builtin_class(make_module_class(this));
+        register_builtin_class(make_module_loader_class(this));
+        register_builtin_class(make_module_spec_class(this));
         TValue<String> builtins_name =
             get_or_create_interned_string_value(L"builtins");
         TValue<String> empty_package = get_or_create_interned_string_value(L"");
@@ -575,11 +579,45 @@ namespace cl
         TValue<ModuleObject> builtins_module = global_builtins_module();
 
         TValue<String> sys_name = get_or_create_interned_string_value(L"sys");
+        TValue<String> builtins_name =
+            get_or_create_interned_string_value(L"builtins");
+        TValue<String> builtin_kind =
+            get_or_create_interned_string_value(L"builtin");
+        TValue<String> builtin_origin =
+            get_or_create_interned_string_value(L"built-in");
         TValue<String> empty_package = get_or_create_interned_string_value(L"");
+        ModuleLoaderObject *builtins_loader =
+            make_immortal_object_raw<ModuleLoaderObject>(
+                builtin_kind.raw_value(), Value::None(), Value::None());
+        ModuleSpecObject *builtins_spec =
+            make_immortal_object_raw<ModuleSpecObject>(
+                builtins_name.raw_value(), Value::from_oop(builtins_loader),
+                builtin_origin.raw_value(), Value::None(), Value::False(),
+                empty_package.raw_value());
+        bool installed_builtins_loader =
+            builtins_module.extract()->set_own_property(
+                get_or_create_interned_string_value(L"__loader__"),
+                Value::from_oop(builtins_loader));
+        bool installed_builtins_spec =
+            builtins_module.extract()->set_own_property(
+                get_or_create_interned_string_value(L"__spec__"),
+                Value::from_oop(builtins_spec));
+        assert(installed_builtins_loader);
+        assert(installed_builtins_spec);
+        (void)installed_builtins_loader;
+        (void)installed_builtins_spec;
+
+        ModuleLoaderObject *sys_loader =
+            make_immortal_object_raw<ModuleLoaderObject>(
+                builtin_kind.raw_value(), Value::None(), Value::None());
+        ModuleSpecObject *sys_spec = make_immortal_object_raw<ModuleSpecObject>(
+            sys_name.raw_value(), Value::from_oop(sys_loader),
+            builtin_origin.raw_value(), Value::None(), Value::False(),
+            empty_package.raw_value());
         sys_module_ = make_immortal_object_raw<ModuleObject>(
             sys_name, builtins_module.raw_value(), Value::None(),
-            empty_package.raw_value(), Value::None(), Value::None(),
-            Value::not_present());
+            empty_package.raw_value(), Value::from_oop(sys_loader),
+            Value::from_oop(sys_spec), Value::not_present());
 
         imported_modules_ = make_immortal_object_raw<Dict>();
 
@@ -602,8 +640,6 @@ namespace cl
         (void)installed_modules;
         (void)installed_path;
 
-        TValue<String> builtins_name =
-            get_or_create_interned_string_value(L"builtins");
         imported_modules_->set_item(sys_name.raw_value(),
                                     Value::from_oop(sys_module_));
         imported_modules_->set_item(builtins_name.raw_value(),

@@ -10,7 +10,9 @@
 #include "instance.h"
 #include "list.h"
 #include "list_iterator.h"
+#include "module_loader_object.h"
 #include "module_object.h"
+#include "module_spec_object.h"
 #include "overflow_slots.h"
 #include "range_iterator.h"
 #include "scope.h"
@@ -29,6 +31,8 @@
     V(TupleIterator);                                                          \
     V(ListIterator);                                                           \
     V(ModuleObject);                                                           \
+    V(ModuleLoaderObject);                                                     \
+    V(ModuleSpecObject);                                                       \
     V(ExceptionObject);                                                        \
     V(StopIterationObject);                                                    \
     V(Float);                                                                  \

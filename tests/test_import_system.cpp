@@ -1,7 +1,9 @@
 #include "dict.h"
 #include "import_system.h"
 #include "list.h"
+#include "module_loader_object.h"
 #include "module_object.h"
+#include "module_spec_object.h"
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
@@ -212,8 +214,13 @@ TEST(ImportSystem, ImportModuleAbsoluteLoadsExistingSourceTreeModule)
     EXPECT_EQ(Value::None(), module_attr(context, module, L"__doc__"));
     EXPECT_EQ(L"",
               value_as_wstring(module_attr(context, module, L"__package__")));
-    EXPECT_EQ(Value::None(), module_attr(context, module, L"__loader__"));
-    EXPECT_EQ(Value::None(), module_attr(context, module, L"__spec__"));
+    Value loader = module_attr(context, module, L"__loader__");
+    ASSERT_TRUE(can_convert_to<ModuleLoaderObject>(loader));
+    EXPECT_EQ(L"source",
+              value_as_wstring(loader.get_ptr<ModuleLoaderObject>()->kind));
+    Value spec = module_attr(context, module, L"__spec__");
+    ASSERT_TRUE(can_convert_to<ModuleSpecObject>(spec));
+    EXPECT_EQ(loader, spec.get_ptr<ModuleSpecObject>()->loader);
     EXPECT_EQ(context.vm().global_builtins_module().raw_value(),
               module_attr(context, module, L"__builtins__"));
     EXPECT_EQ(std::filesystem::absolute("tests/python/assignment.py")
@@ -521,6 +528,26 @@ TEST(ImportSystem, ModuleReprFormatsBuiltinModule)
     EXPECT_EQ(L"<module 'sys' (built-in)>", value_as_wstring(actual));
 }
 
+TEST(ImportSystem, BuiltinModuleExposesSpecAndLoader)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value actual =
+        context.run_file(L"import sys\n"
+                         L"sys.__spec__.name == \"sys\" and "
+                         L"sys.__spec__.origin == \"built-in\" and "
+                         L"sys.__spec__.loader is sys.__loader__ and "
+                         L"sys.__spec__.loader.kind == \"builtin\" and "
+                         L"sys.__spec__.loader.name is None and "
+                         L"sys.__spec__.loader.path is None and "
+                         L"sys.__spec__.submodule_search_locations "
+                         L"is None and "
+                         L"not sys.__spec__.has_location and "
+                         L"sys.__spec__.parent == \"\"\n");
+    EXPECT_EQ(Value::True(), actual);
+}
+
 TEST(ImportSystem, BuiltinImportOfDottedModuleReturnsTopLevelPackage)
 {
     test::VmTestContext context;
@@ -625,6 +652,56 @@ TEST(ImportSystem, ModuleReprFormatsSourceModule)
     EXPECT_EQ(expected, value_as_wstring(actual));
 }
 
+TEST(ImportSystem, SourceModuleExposesSpecAndLoader)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"mod.py", "value = 42\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual =
+        context.run_file(L"import mod\n"
+                         L"mod.__spec__.name == \"mod\" and "
+                         L"mod.__spec__.origin == mod.__file__ and "
+                         L"mod.__spec__.loader is mod.__loader__ and "
+                         L"mod.__loader__.kind == \"source\" and "
+                         L"mod.__loader__.name == \"mod\" and "
+                         L"mod.__loader__.path == mod.__file__ and "
+                         L"mod.__spec__.submodule_search_locations is None and "
+                         L"mod.__spec__.has_location and "
+                         L"mod.__spec__.parent == \"\"\n");
+    EXPECT_EQ(Value::True(), actual);
+}
+
+TEST(ImportSystem, SourcePackageExposesSpecSearchLocations)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "value = 42\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(
+        L"import pkg\n"
+        L"pkg.__spec__.name == \"pkg\" and "
+        L"pkg.__spec__.origin == pkg.__file__ and "
+        L"pkg.__spec__.loader is pkg.__loader__ and "
+        L"pkg.__loader__.kind == \"source\" and "
+        L"pkg.__loader__.name == \"pkg\" and "
+        L"pkg.__loader__.path == pkg.__file__ and "
+        L"pkg.__spec__.submodule_search_locations[0] == pkg.__path__[0] and "
+        L"pkg.__spec__.has_location and "
+        L"pkg.__spec__.parent == \"pkg\"\n");
+    EXPECT_EQ(Value::True(), actual);
+}
+
 TEST(ImportSystem, ImportStatementSupportsMultipleImportsAndAliases)
 {
     test::VmTestContext context;
@@ -717,6 +794,32 @@ TEST(ImportSystem, ModuleReprFormatsNamespacePackage)
     expected += (root.path / L"tests").lexically_normal().wstring();
     expected += L"']>";
     EXPECT_EQ(expected, value_as_wstring(actual));
+}
+
+TEST(ImportSystem, NamespacePackageExposesSpecAndLoader)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"tests/python/arithmetic.py", "value = 37\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual =
+        context.run_file(L"import tests.python.arithmetic\n"
+                         L"tests.__spec__.name == \"tests\" and "
+                         L"tests.__spec__.origin == \"namespace\" and "
+                         L"tests.__spec__.loader is tests.__loader__ and "
+                         L"tests.__loader__.kind == \"namespace\" and "
+                         L"tests.__loader__.name == \"tests\" and "
+                         L"tests.__loader__.path is None and "
+                         L"tests.__spec__.submodule_search_locations[0] == "
+                         L"tests.__path__[0] and "
+                         L"not tests.__spec__.has_location and "
+                         L"tests.__spec__.parent == \"tests\"\n");
+    EXPECT_EQ(Value::True(), actual);
 }
 
 TEST(ImportSystem, FromImportLoadsModuleThroughNamespacePackages)
