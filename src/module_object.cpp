@@ -68,7 +68,7 @@ namespace cl
         : SlotObject(cls, native_layout), name_binding(_name.raw_value()),
           builtins_binding(_builtins), module_globals_validity_cell(nullptr),
           module_builtins_validity_cell(nullptr),
-          attached_module_builtins_validity_cells()
+          attached_dependent_lookup_validity_cells()
     {
         if(!_builtins.is_not_present())
         {
@@ -93,14 +93,14 @@ namespace cl
         value.assert_not_vm_sentinel();
         ensure_module_builtins_descriptor_present(this);
         builtins_binding = value;
-        invalidate_module_lookup_validity_cells();
+        invalidate_module_builtins_binding_validity_cell();
     }
 
     void ModuleObject::delete_builtins_binding()
     {
         builtins_binding = Value::not_present();
         ensure_module_builtins_descriptor_absent(this);
-        invalidate_module_lookup_validity_cells();
+        invalidate_module_builtins_binding_validity_cell();
     }
 
     ModuleBuiltinsLookup ModuleObject::get_module_builtins_lookup() const
@@ -124,7 +124,7 @@ namespace cl
         }
 
         cell = create_module_builtins_validity_cell_slow();
-        builtins_module->attach_module_builtins_validity_cell(cell);
+        builtins_module->attach_dependent_lookup_validity_cell(cell);
         return ModuleBuiltinsLookup::module(builtins_module, cell);
     }
 
@@ -143,27 +143,27 @@ namespace cl
         return cell;
     }
 
-    void
-    ModuleObject::attach_module_builtins_validity_cell(ValidityCell *cell) const
+    void ModuleObject::attach_dependent_lookup_validity_cell(
+        ValidityCell *cell) const
     {
         assert(cell != nullptr);
         assert(cell->is_valid());
 
         size_t reuse_scan_count =
-            std::min(attached_module_builtins_validity_cells.size(),
+            std::min(attached_dependent_lookup_validity_cells.size(),
                      kMaxAttachedValidityCellReuseScan);
         for(size_t idx = 0; idx < reuse_scan_count; ++idx)
         {
             ValidityCell *attached_cell =
-                attached_module_builtins_validity_cells[idx];
+                attached_dependent_lookup_validity_cells[idx];
             if(!attached_cell->is_valid())
             {
-                attached_module_builtins_validity_cells.set(idx, cell);
+                attached_dependent_lookup_validity_cells.set(idx, cell);
                 return;
             }
         }
 
-        attached_module_builtins_validity_cells.push_back(cell);
+        attached_dependent_lookup_validity_cells.push_back(cell);
     }
 
     static void invalidate_attached_cells(HeapPtrArray<ValidityCell> &cells)
@@ -175,19 +175,24 @@ namespace cl
         cells.clear();
     }
 
-    void ModuleObject::invalidate_module_lookup_validity_cells()
+    void ModuleObject::invalidate_module_builtins_binding_validity_cell()
     {
-        invalidate_attached_cells(attached_module_builtins_validity_cells);
-        if(module_globals_validity_cell != nullptr)
-        {
-            module_globals_validity_cell->invalidate();
-            module_globals_validity_cell = nullptr;
-        }
         if(module_builtins_validity_cell != nullptr)
         {
             module_builtins_validity_cell->invalidate();
             module_builtins_validity_cell = nullptr;
         }
+    }
+
+    void ModuleObject::invalidate_module_lookup_validity_cells()
+    {
+        invalidate_attached_cells(attached_dependent_lookup_validity_cells);
+        if(module_globals_validity_cell != nullptr)
+        {
+            module_globals_validity_cell->invalidate();
+            module_globals_validity_cell = nullptr;
+        }
+        invalidate_module_builtins_binding_validity_cell();
     }
 
     static void install_module_instance_root_shape(ClassObject *cls)

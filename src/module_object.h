@@ -69,11 +69,12 @@ namespace cl
             return create_module_globals_validity_cell_slow();
         }
         ModuleBuiltinsLookup get_module_builtins_lookup() const;
-        uint32_t attached_module_builtins_validity_cell_count() const
+        uint32_t attached_dependent_lookup_validity_cell_count() const
         {
-            return attached_module_builtins_validity_cells.size();
+            return attached_dependent_lookup_validity_cells.size();
         }
-        void attach_module_builtins_validity_cell(ValidityCell *cell) const;
+        void attach_dependent_lookup_validity_cell(ValidityCell *cell) const;
+        void invalidate_module_builtins_binding_validity_cell();
         void invalidate_module_lookup_validity_cells();
 
     private:
@@ -91,7 +92,7 @@ namespace cl
         mutable MemberHeapPtr<ValidityCell> module_globals_validity_cell;
         mutable MemberHeapPtr<ValidityCell> module_builtins_validity_cell;
         mutable HeapPtrArray<ValidityCell>
-            attached_module_builtins_validity_cells;
+            attached_dependent_lookup_validity_cells;
 
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(

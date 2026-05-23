@@ -114,7 +114,7 @@ TEST(ModuleGlobal, ReadBuiltinsModuleSlotHitIsCacheableAndAttached)
               load_module_global_from_plan(descriptor.plan));
     EXPECT_EQ(module->current_module_builtins_validity_cell(),
               descriptor.plan.slot_plan.lookup_validity_cell);
-    EXPECT_EQ(1u, builtins->attached_module_builtins_validity_cell_count());
+    EXPECT_EQ(1u, builtins->attached_dependent_lookup_validity_cell_count());
 
     ModuleGlobalReadDescriptor second_descriptor =
         resolve_module_global_read_descriptor(module, global_name);
@@ -122,7 +122,7 @@ TEST(ModuleGlobal, ReadBuiltinsModuleSlotHitIsCacheableAndAttached)
     EXPECT_TRUE(second_descriptor.is_found());
     EXPECT_EQ(descriptor.plan.slot_plan.lookup_validity_cell,
               second_descriptor.plan.slot_plan.lookup_validity_cell);
-    EXPECT_EQ(1u, builtins->attached_module_builtins_validity_cell_count());
+    EXPECT_EQ(1u, builtins->attached_dependent_lookup_validity_cell_count());
 }
 
 TEST(ModuleGlobal, NonModuleBuiltinsBindingProducesUncacheablePlan)

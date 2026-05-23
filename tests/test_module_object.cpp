@@ -289,15 +289,15 @@ TEST(ModuleObject, InvalidatingModuleLookupCellsKillsAttachedCells)
 
     ValidityCell *consumer_builtins_cell =
         module_builtins_lookup_cell(consumer);
-    EXPECT_EQ(1u, provider->attached_module_builtins_validity_cell_count());
+    EXPECT_EQ(1u, provider->attached_dependent_lookup_validity_cell_count());
 
     provider->invalidate_module_lookup_validity_cells();
 
     EXPECT_FALSE(consumer_builtins_cell->is_valid());
-    EXPECT_EQ(0u, provider->attached_module_builtins_validity_cell_count());
+    EXPECT_EQ(0u, provider->attached_dependent_lookup_validity_cell_count());
 }
 
-TEST(ModuleObject, BuiltinsBindingMutationInvalidatesLookupCells)
+TEST(ModuleObject, BuiltinsBindingAssignmentInvalidatesOnlyBindingCell)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -322,13 +322,13 @@ TEST(ModuleObject, BuiltinsBindingMutationInvalidatesLookupCells)
 
     provider->set_builtins_binding(provider_name.raw_value());
 
-    EXPECT_FALSE(provider_globals_cell->is_valid());
+    EXPECT_TRUE(provider_globals_cell->is_valid());
     EXPECT_FALSE(provider_builtins_cell->is_valid());
-    EXPECT_FALSE(consumer_builtins_cell->is_valid());
-    EXPECT_EQ(0u, provider->attached_module_builtins_validity_cell_count());
+    EXPECT_TRUE(consumer_builtins_cell->is_valid());
+    EXPECT_EQ(2u, provider->attached_dependent_lookup_validity_cell_count());
 }
 
-TEST(ModuleObject, AttachModuleBuiltinsValidityCellReusesInvalidEntries)
+TEST(ModuleObject, AttachDependentLookupValidityCellReusesInvalidEntries)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -349,14 +349,14 @@ TEST(ModuleObject, AttachModuleBuiltinsValidityCellReusesInvalidEntries)
     second->set_builtins_binding(Value::from_oop(provider));
 
     ValidityCell *first_cell = module_builtins_lookup_cell(first);
-    EXPECT_EQ(1u, provider->attached_module_builtins_validity_cell_count());
+    EXPECT_EQ(1u, provider->attached_dependent_lookup_validity_cell_count());
 
     first->invalidate_module_lookup_validity_cells();
     EXPECT_FALSE(first_cell->is_valid());
 
     ValidityCell *second_cell = module_builtins_lookup_cell(second);
 
-    EXPECT_EQ(1u, provider->attached_module_builtins_validity_cell_count());
+    EXPECT_EQ(1u, provider->attached_dependent_lookup_validity_cell_count());
     provider->invalidate_module_lookup_validity_cells();
     EXPECT_FALSE(first_cell->is_valid());
     EXPECT_FALSE(second_cell->is_valid());
