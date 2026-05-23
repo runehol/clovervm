@@ -205,6 +205,17 @@ namespace cl
                 return analysis.result.bindings.back();
             }
 
+            BindingInfo *
+            ensure_binding(AnalysisState &analysis, Value name,
+                           Presence initial_presence = Presence::Missing)
+            {
+                if(analysis.result.mode == CodegenMode::Module)
+                {
+                    return nullptr;
+                }
+                return &ensure_local_binding(analysis, name, initial_presence);
+            }
+
             BindingInfo &ensure_global_binding(AnalysisState &analysis,
                                                Value name)
             {
@@ -630,43 +641,31 @@ namespace cl
                 {
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
                     case AstNodeKind::STATEMENT_CLASS_DEF:
-                        if(analysis.result.mode != CodegenMode::Module)
-                        {
-                            ensure_local_binding(analysis,
-                                                 av.constants[node_idx]);
-                        }
+                        ensure_binding(analysis, av.constants[node_idx]);
                         return;
 
                     case AstNodeKind::STATEMENT_IMPORT:
-                        if(analysis.result.mode != CodegenMode::Module)
-                        {
-                            ensure_local_binding(analysis,
-                                                 av.constants[children[0]]);
-                        }
+                        ensure_binding(analysis, av.constants[children[0]]);
                         return;
 
                     case AstNodeKind::STATEMENT_ASSIGN:
                     case AstNodeKind::EXPRESSION_ASSIGN:
                         {
                             int32_t lhs_idx = children[0];
-                            if(analysis.result.mode != CodegenMode::Module &&
-                               av.kinds[lhs_idx].node_kind ==
-                                   AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                            if(av.kinds[lhs_idx].node_kind ==
+                               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                             {
-                                ensure_local_binding(analysis,
-                                                     av.constants[lhs_idx]);
+                                ensure_binding(analysis, av.constants[lhs_idx]);
                             }
                             break;
                         }
 
                     case AstNodeKind::STATEMENT_ANN_ASSIGN:
                         if(children.size() == 3 &&
-                           analysis.result.mode != CodegenMode::Module &&
                            av.kinds[children[0]].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
-                            ensure_local_binding(analysis,
-                                                 av.constants[children[0]]);
+                            ensure_binding(analysis, av.constants[children[0]]);
                         }
                         if(children.size() == 3)
                         {
@@ -679,54 +678,47 @@ namespace cl
                         return;
 
                     case AstNodeKind::STATEMENT_DEL:
-                        if(analysis.result.mode != CodegenMode::Module)
+                        for(int32_t target_idx: children)
                         {
-                            for(int32_t target_idx: children)
+                            if(av.kinds[target_idx].node_kind ==
+                               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                             {
-                                if(av.kinds[target_idx].node_kind ==
-                                   AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
-                                {
-                                    ensure_local_binding(
-                                        analysis, av.constants[target_idx]);
-                                }
+                                ensure_binding(analysis,
+                                               av.constants[target_idx]);
                             }
                         }
                         break;
 
                     case AstNodeKind::STATEMENT_FOR:
-                        if(analysis.result.mode != CodegenMode::Module)
                         {
                             int32_t target_idx = children[0];
                             if(av.kinds[target_idx].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                             {
-                                ensure_local_binding(analysis,
-                                                     av.constants[target_idx]);
+                                ensure_binding(analysis,
+                                               av.constants[target_idx]);
                             }
                         }
                         break;
 
                     case AstNodeKind::WITH_ITEM:
-                        if(children.size() == 2 &&
-                           analysis.result.mode != CodegenMode::Module)
+                        if(children.size() == 2)
                         {
                             int32_t target_idx = children[1];
                             if(av.kinds[target_idx].node_kind ==
                                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                             {
-                                ensure_local_binding(analysis,
-                                                     av.constants[target_idx]);
+                                ensure_binding(analysis,
+                                               av.constants[target_idx]);
                             }
                         }
                         break;
 
                     case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
-                        if(handler_has_name(children) &&
-                           analysis.result.mode != CodegenMode::Module)
+                        if(handler_has_name(children))
                         {
                             int32_t name_idx = handler_name_idx(children);
-                            ensure_local_binding(analysis,
-                                                 av.constants[name_idx]);
+                            ensure_binding(analysis, av.constants[name_idx]);
                         }
                         if(handler_has_type(children))
                         {
