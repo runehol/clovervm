@@ -21,6 +21,8 @@ namespace cl
 
     std::optional<ModuleSpec> find_source_module_spec(ThreadState *thread,
                                                       TValue<String> name);
+    [[nodiscard]] Value import_module_absolute(ThreadState *thread,
+                                               TValue<String> name);
 
 }  // namespace cl
 

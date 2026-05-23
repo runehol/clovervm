@@ -72,6 +72,8 @@ add_library(libclovervm STATIC
     shape.h
     slot_dict.cpp
     slot_dict.h
+    source_text.cpp
+    source_text.h
     token.cpp
     token.h
     token_print.h

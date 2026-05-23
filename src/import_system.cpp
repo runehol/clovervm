@@ -1,7 +1,13 @@
 #include "import_system.h"
 
+#include "code_object.h"
+#include "codegen.h"
+#include "dict.h"
 #include "list.h"
 #include "module_object.h"
+#include "owned.h"
+#include "parser.h"
+#include "source_text.h"
 #include "str.h"
 #include "thread_state.h"
 #include "virtual_machine.h"
@@ -46,6 +52,10 @@ namespace cl
 
             std::filesystem::path base(string_to_wstring(
                 TValue<String>::from_value_assumed(path_entry)));
+            if(base.empty())
+            {
+                base = L".";
+            }
             std::filesystem::path package_dir = base / module_name;
             std::filesystem::path package_init = package_dir / L"__init__.py";
             if(file_exists(package_init))
@@ -70,6 +80,87 @@ namespace cl
             }
 
             return std::nullopt;
+        }
+
+        TValue<String> interned_string(ThreadState *thread,
+                                       const std::wstring &text)
+        {
+            return thread->get_machine()->get_or_create_interned_string_value(
+                text);
+        }
+
+        TValue<String> interned_string(ThreadState *thread, const wchar_t *text)
+        {
+            return thread->get_machine()->get_or_create_interned_string_value(
+                text);
+        }
+
+        void set_module_attr(ThreadState *thread, ModuleObject *module,
+                             const wchar_t *name, Value value)
+        {
+            bool stored =
+                module->set_own_property(interned_string(thread, name), value);
+            assert(stored);
+            (void)stored;
+        }
+
+        void remove_imported_module(ThreadState *thread, TValue<String> name)
+        {
+            Dict *modules = thread->get_machine()->imported_modules().extract();
+            if(modules->contains(name.raw_value()))
+            {
+                Value deleted = modules->del_item(name.raw_value());
+                if(deleted.is_exception_marker())
+                {
+                    thread->clear_pending_exception();
+                }
+            }
+        }
+
+        Value set_module_not_found(ThreadState *thread,
+                                   const std::wstring &module_name)
+        {
+            std::wstring message = L"No module named '";
+            message += module_name;
+            message += L"'";
+            return thread->set_pending_builtin_exception_string(
+                L"ModuleNotFoundError", interned_string(thread, message));
+        }
+
+        Value set_module_load_failed(ThreadState *thread,
+                                     const std::wstring &module_name)
+        {
+            std::wstring message = L"cannot load module '";
+            message += module_name;
+            message += L"'";
+            return thread->set_pending_builtin_exception_string(
+                L"ImportError", interned_string(thread, message));
+        }
+
+        void install_module_import_metadata(ThreadState *thread,
+                                            ModuleObject *module,
+                                            const ModuleSpec &spec)
+        {
+            set_module_attr(thread, module, L"__doc__", Value::None());
+            const std::wstring package_name =
+                spec.is_package ? spec.name : std::wstring();
+            set_module_attr(thread, module, L"__package__",
+                            interned_string(thread, package_name).raw_value());
+            set_module_attr(thread, module, L"__loader__", Value::None());
+            set_module_attr(thread, module, L"__spec__", Value::None());
+            set_module_attr(thread, module, L"__file__",
+                            interned_string(thread, spec.origin).raw_value());
+            if(spec.is_package)
+            {
+                Owned<TValue<List>> path(thread->make_object_value<List>());
+                for(const std::wstring &location:
+                    spec.submodule_search_locations)
+                {
+                    path.extract()->append(
+                        interned_string(thread, location).raw_value());
+                }
+                set_module_attr(thread, module, L"__path__", path.raw_value());
+            }
         }
     }  // namespace
 
@@ -105,6 +196,57 @@ namespace cl
         }
 
         return std::nullopt;
+    }
+
+    Value import_module_absolute(ThreadState *thread, TValue<String> name)
+    {
+        std::wstring module_name = string_to_wstring(name);
+        Dict *modules = thread->get_machine()->imported_modules().extract();
+        if(modules->contains(name.raw_value()))
+        {
+            return modules->get_item(name.raw_value());
+        }
+
+        std::optional<ModuleSpec> spec = find_source_module_spec(thread, name);
+        if(!spec.has_value())
+        {
+            return set_module_not_found(thread, module_name);
+        }
+
+        Owned<TValue<ModuleObject>> module(
+            TValue<ModuleObject>::from_oop(thread->make_module_object(
+                name,
+                thread->get_machine()->global_builtins_module().raw_value())));
+        install_module_import_metadata(thread, module.extract(), *spec);
+        modules->set_item(name.raw_value(), module.raw_value());
+
+        try
+        {
+            std::optional<std::wstring> source =
+                read_source_text_file(spec->origin);
+            if(!source.has_value())
+            {
+                remove_imported_module(thread, name);
+                return set_module_load_failed(thread, module_name);
+            }
+
+            CodeObject *code = thread->compile_in_module(
+                source->c_str(), StartRule::File, module.extract(),
+                LanguageMode::StandardsCompliant);
+            Value result = thread->run_clovervm_code_object(code);
+            if(result.is_exception_marker())
+            {
+                remove_imported_module(thread, name);
+                return result;
+            }
+        }
+        catch(...)
+        {
+            remove_imported_module(thread, name);
+            throw;
+        }
+
+        return module.raw_value();
     }
 
 }  // namespace cl

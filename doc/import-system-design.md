@@ -860,10 +860,16 @@ observes mutations to the builtins module.
 
 ### 5. Minimal Core Importer
 
-- Support absolute source-module import by name.
-- Create module objects with import metadata.
-- Insert into `sys.modules` before executing module code.
-- Clean up the failing module entry if execution fails.
+- Implemented: `import_module_absolute` supports non-dotted source-module
+  imports by name.
+- Implemented: cached `sys.modules` entries are returned as-is.
+- Implemented: imported modules receive `__name__`, `__doc__`, `__package__`,
+  `__loader__`, `__spec__`, `__file__`, `__builtins__`, and package `__path__`.
+- Implemented: modules are inserted into `sys.modules` before source read,
+  compile, and execution; failures after insertion remove the new module entry.
+- Implemented: source files are read through the shared source-text reader;
+  open/decode failure raises `ImportError`.
+- Deferred: dotted imports and Python-level `__import__`.
 
 ### 6. `builtins.__import__`
 
