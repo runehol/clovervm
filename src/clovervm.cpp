@@ -134,10 +134,10 @@ int main(int argc, const char *argv[])
     {
         VirtualMachine vm;
         std::wstring file_contents = read_file(source_file);
-        std::wstring module_name = widen_string(source_file);
+        std::wstring main_file = widen_string(source_file);
         ThreadState *thr = vm.get_default_thread();
-        CodeObject *code_obj = thr->compile(
-            file_contents.c_str(), StartRule::File, module_name.c_str());
+        CodeObject *code_obj = thr->compile(file_contents.c_str(),
+                                            StartRule::File, main_file.c_str());
         if(print_bytecode)
         {
             fmt::print("{}\n", *code_obj);

@@ -3582,10 +3582,50 @@ TEST(Interpreter, globals_slotdict_reads_current_module_bindings_only)
     EXPECT_STREQ(
         L"__main__",
         string_as_wchar_t(TValue<String>::from_value_assumed(name_value)));
+    EXPECT_EQ(Value::None(),
+              test_context.run_file(L"globals()[\"__doc__\"]\n"));
+    EXPECT_EQ(Value::None(),
+              test_context.run_file(L"globals()[\"__package__\"]\n"));
+    EXPECT_EQ(Value::None(),
+              test_context.run_file(L"globals()[\"__loader__\"]\n"));
+    EXPECT_EQ(Value::None(),
+              test_context.run_file(L"globals()[\"__spec__\"]\n"));
     Value builtins_value =
         test_context.run_file(L"globals()[\"__builtins__\"]\n");
     ASSERT_TRUE(can_convert_to<ModuleObject>(builtins_value));
     expect_python_error(L"globals()[\"len\"]\n", L"KeyError");
+}
+
+TEST(Interpreter, main_module_is_inserted_into_sys_modules)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(17),
+              test_context.run_file(L"import sys\n"
+                                    L"x = 17\n"
+                                    L"sys.modules[\"__main__\"].x\n"));
+}
+
+TEST(Interpreter, main_module_file_sets_file_not_name)
+{
+    test::VmTestContext test_context;
+
+    CodeObject *code = test_context.thread()->compile(
+        L"(__name__, __file__)\n", StartRule::File, L"/tmp/script.py");
+    Value result = test_context.thread()->run_clovervm_code_object(code);
+    ASSERT_TRUE(can_convert_to<Tuple>(result));
+    Tuple *tuple = result.get_ptr<Tuple>();
+    ASSERT_EQ(2, tuple->size());
+
+    Value name = tuple->item_unchecked(0);
+    ASSERT_TRUE(can_convert_to<String>(name));
+    EXPECT_STREQ(L"__main__",
+                 string_as_wchar_t(TValue<String>::from_value_assumed(name)));
+
+    Value file = tuple->item_unchecked(1);
+    ASSERT_TRUE(can_convert_to<String>(file));
+    EXPECT_STREQ(L"/tmp/script.py",
+                 string_as_wchar_t(TValue<String>::from_value_assumed(file)));
 }
 
 TEST(Interpreter, globals_slotdict_len_counts_visible_module_bindings)

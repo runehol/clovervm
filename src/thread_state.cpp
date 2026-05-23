@@ -5,6 +5,7 @@
 #include "code_object.h"
 #include "codegen.h"
 #include "compilation_unit.h"
+#include "dict.h"
 #include "exception_object.h"
 #include "function.h"
 #include "heap_reclamation.h"
@@ -357,27 +358,56 @@ namespace cl
         return make_object_raw<ModuleObject>(name, builtins);
     }
 
-    CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule)
+    static void set_module_attr(ThreadState *thread, ModuleObject *module,
+                                const wchar_t *name, Value value)
     {
-        return compile(str, start_rule, L"__main__");
+        bool stored = module->set_own_property(
+            thread->get_machine()->get_or_create_interned_string_value(name),
+            value);
+        assert(stored);
+        (void)stored;
     }
 
-    CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule,
-                                     const wchar_t *module_name)
+    ModuleObject *ThreadState::make_main_module(Value file)
     {
         ActivationScope activation_scope(this);
 
-        CompilationUnit input(str);
-        TokenVector tv = tokenize(input);
-        AstVector av = parse(*machine, tv, start_rule);
-        ModuleResultMode result_mode = start_rule == StartRule::Interactive
-                                           ? ModuleResultMode::Interactive
-                                           : ModuleResultMode::File;
-        ModuleObject *module =
-            make_module_object(interned_string(module_name),
-                               machine->global_builtins_module().raw_value());
-        return codegen_module_in_module(
-            av, module, LanguageMode::StandardsCompliant, result_mode);
+        TValue<String> main_name =
+            machine->get_or_create_interned_string_value(L"__main__");
+        ModuleObject *module = make_module_object(
+            main_name, machine->global_builtins_module().raw_value());
+
+        set_module_attr(this, module, L"__doc__", Value::None());
+        set_module_attr(this, module, L"__package__", Value::None());
+        set_module_attr(this, module, L"__loader__", Value::None());
+        set_module_attr(this, module, L"__spec__", Value::None());
+        if(!file.is_not_present())
+        {
+            set_module_attr(this, module, L"__file__", file);
+        }
+
+        machine->imported_modules().extract()->set_item(
+            main_name.raw_value(), Value::from_oop(module));
+        return module;
+    }
+
+    CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule)
+    {
+        ModuleObject *module = make_main_module(Value::not_present());
+        return compile_in_module(str, start_rule, module,
+                                 LanguageMode::StandardsCompliant);
+    }
+
+    CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule,
+                                     const wchar_t *main_file)
+    {
+        ActivationScope activation_scope(this);
+
+        Value file =
+            machine->get_or_create_interned_string_value(main_file).raw_value();
+        ModuleObject *module = make_main_module(file);
+        return compile_in_module(str, start_rule, module,
+                                 LanguageMode::StandardsCompliant);
     }
 
     CodeObject *ThreadState::compile_in_module(const wchar_t *str,

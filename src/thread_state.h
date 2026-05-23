@@ -284,6 +284,7 @@ namespace cl
         }
         ClassObject *class_for_builtin_name(const wchar_t *name) const;
         ModuleObject *make_module_object(TValue<String> name, Value builtins);
+        ModuleObject *make_main_module(Value file);
 
         template <typename T, typename... Args>
         T *make_object_raw(Args &&...args)
@@ -304,7 +305,7 @@ namespace cl
 
         CodeObject *compile(const wchar_t *str, StartRule start_rule);
         CodeObject *compile(const wchar_t *str, StartRule start_rule,
-                            const wchar_t *module_name);
+                            const wchar_t *main_file);
         CodeObject *compile_in_module(const wchar_t *str, StartRule start_rule,
                                       ModuleObject *module,
                                       LanguageMode language_mode);
