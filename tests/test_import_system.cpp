@@ -322,3 +322,64 @@ TEST(ImportSystem, ImportModuleAbsoluteRemovesModuleOnCompileFailure)
     EXPECT_FALSE(
         context.vm().imported_modules().extract()->contains(name.raw_value()));
 }
+
+TEST(ImportSystem, BuiltinImportLoadsAbsoluteModule)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value imported = context.run_file(L"__import__('assignment')\n");
+    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ModuleObject *module = imported.get_ptr<ModuleObject>();
+    EXPECT_EQ(L"assignment",
+              value_as_wstring(module_attr(context, module, L"__name__")));
+    EXPECT_EQ(Value::from_smi(3), module_attr(context, module, L"marker"));
+}
+
+TEST(ImportSystem, BuiltinImportUsesDefaultsAndReturnsCachedValue)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    TValue<String> name = module_name(context, L"assignment");
+    context.vm().imported_modules().extract()->set_item(name.raw_value(),
+                                                        Value::from_smi(55));
+
+    EXPECT_EQ(Value::from_smi(55),
+              context.run_file(L"__import__('assignment')\n"));
+}
+
+TEST(ImportSystem, BuiltinImportRejectsNonStringName)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value imported = context.run_file(L"__import__(1)\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"__import__ name must be str",
+              value_as_wstring(exception.extract()->message.value()));
+}
+
+TEST(ImportSystem, BuiltinImportRejectsRelativeImportForNow)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value imported =
+        context.run_file(L"__import__('assignment', None, None, (), 1)\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ImportError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"relative imports are not supported",
+              value_as_wstring(exception.extract()->message.value()));
+}

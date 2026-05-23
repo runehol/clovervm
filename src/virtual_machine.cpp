@@ -10,6 +10,7 @@
 #include "float.h"
 #include "function.h"
 #include "heap_reclamation.h"
+#include "import_system.h"
 #include "instance.h"
 #include "int.h"
 #include "list.h"
@@ -125,6 +126,35 @@ namespace cl
         return active_thread()
             ->make_object_value<Float>(std::sqrt(value))
             .raw_value();
+    }
+
+    static Value builtin_import(Value name, Value globals, Value locals,
+                                Value fromlist, Value level)
+    {
+        (void)globals;
+        (void)locals;
+        (void)fromlist;
+
+        if(!can_convert_to<String>(name))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"__import__ name must be str");
+        }
+
+        if(!level.is_smi())
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"__import__ level must be int");
+        }
+
+        if(level.get_smi() != 0)
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"ImportError", L"relative imports are not supported");
+        }
+
+        return import_module_absolute(active_thread(),
+                                      TValue<String>::from_value_assumed(name));
     }
 
     VirtualMachine::VirtualMachine()
@@ -505,6 +535,21 @@ namespace cl
         TValue<String> sqrt_name = get_or_create_interned_string_value(L"sqrt");
         install_builtin_binding(
             sqrt_name, make_native_function(this, builtin_sqrt).raw_value());
+
+        TValue<String> import_name =
+            get_or_create_interned_string_value(L"__import__");
+        TValue<Tuple> import_defaults = make_object_value<Tuple>(4);
+        import_defaults.extract()->initialize_item_unchecked(0, Value::None());
+        import_defaults.extract()->initialize_item_unchecked(1, Value::None());
+        import_defaults.extract()->initialize_item_unchecked(
+            2, make_object_value<Tuple>(0).raw_value());
+        import_defaults.extract()->initialize_item_unchecked(
+            3, Value::from_smi(0));
+        install_builtin_binding(
+            import_name,
+            make_native_function(this, builtin_import,
+                                 Optional<TValue<Tuple>>::some(import_defaults))
+                .raw_value());
 
         ThreadState *thread = get_default_thread();
         CodeObject *builtins_code = thread->compile_in_module(

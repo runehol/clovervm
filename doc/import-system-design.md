@@ -869,15 +869,16 @@ observes mutations to the builtins module.
   compile, and execution; failures after insertion remove the new module entry.
 - Implemented: source files are read through the shared source-text reader;
   open/decode failure raises `ImportError`.
-- Deferred: dotted imports and Python-level `__import__`.
+- Deferred: dotted imports.
 
 ### 6. `builtins.__import__`
 
-- Add the public builtin wrapper.
-- Support absolute imports first.
-- Implement CPython-compatible return behavior for dotted names and `fromlist`.
-- Add relative-import argument validation before full relative import support, so
-  unsupported cases fail deliberately.
+- Implemented: `builtins.__import__` is a native builtin with the CPython-shaped
+  five-argument signature and defaults.
+- Implemented: non-dotted absolute imports call `import_module_absolute`.
+- Implemented: non-string names raise `TypeError`; nonzero `level` raises
+  `ImportError` until relative imports are supported.
+- Deferred: dotted-name return behavior, `fromlist`, and real relative imports.
 
 ### 7. Import Statement Runtime
 
