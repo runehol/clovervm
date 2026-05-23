@@ -50,13 +50,18 @@ ModuleObject
 
 The remaining missing pieces are:
 
-- a Python-visible mapping view over that module storage
-- frame state that can hand out the current global namespace
-- the `globals()` builtin
 - a minimal `sys` module with `sys.modules` and `sys.path`
 - an internal spec/search/load path
 - `builtins.__import__` as the public wrapper
 - import statement lowering/execution that calls `builtins.__import__`
+
+Already implemented pieces used by the import design:
+
+- `globals()` is a builtin implemented through trusted builtins code.
+- The trusted `__clover_globals__()` helper lowers to an interpreter intrinsic,
+  so ordinary user code cannot call the helper by name.
+- The intrinsic returns a live `SlotDict` view over the caller's defining module
+  storage.
 
 ## CPython Import Sequence
 
@@ -633,26 +638,28 @@ first version should leave mapping deletion unsupported rather than fake it.
 
 ### Identity
 
-The mapping should probably have stable identity per module:
+The first implementation returns fresh `SlotDict` view objects over the same
+module storage. Mutating any view mutates the module namespace, but view identity
+is not stable:
 
 ```python
-def f():
-    return globals()
-
-assert f() is globals()
+globals() is globals()
+# false in clovervm's current implementation
 ```
 
-CPython returns the module dictionary. clovervm does not need the same concrete
-type immediately, but stable identity avoids surprising user-visible behavior
-and makes the mapping a plausible future `module.__dict__` value.
+This differs from CPython, where `globals()` returns the module dictionary
+itself. Stable identity can be revisited with `module.__dict__` if exact dict
+compatibility becomes a goal.
 
 ## `globals()` Builtin
 
-`globals()` returns the current frame's global mapping.
+`globals()` returns a live `SlotDict` view over the current frame's global
+mapping.
 
-It does not compute a namespace by inspecting the call stack's code object every
-time. The frame should already carry the global namespace needed by global name
-lookup and import execution.
+Today that global mapping is the caller code object's defining module storage.
+Future `exec` support may require code-object cloning or another binding layer
+for arbitrary globals mappings, but import bootstrapping can use the current
+module-backed implementation.
 
 Initial tests should cover:
 
@@ -790,17 +797,17 @@ observes mutations to the builtins module.
 
 ### 1. Module Globals Mapping And Frame Globals
 
-- Add a module-globals mapping object over `ModuleObject`.
-- Implement read, write, membership, and basic `get`.
-- Reuse centralized module/object own-name storage helpers.
-- Defer deletion unless own-name deletion is already cleanly available.
-- Add explicit frame access to the defining module's global mapping.
-- Make module frames use the module mapping as both globals and locals.
-- Make function frames preserve their defining module mapping as globals.
+- Implemented: `SlotDict` provides a live module-globals mapping view over
+  `ModuleObject`.
+- Implemented: read, write, delete, `len`, subscript operations, and repr use
+  centralized object storage behavior.
+- Implemented: the current globals source is the caller code object's defining
+  module.
 
 ### 2. `globals()`
 
-- Add `globals()` as a builtin over current frame state.
+- Implemented: `globals()` is defined in trusted builtins and lowered through
+  the `Globals` intrinsic.
 
 ### 3. Minimal `sys`
 

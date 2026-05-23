@@ -31,6 +31,10 @@ Implemented behavior:
   the same shape-backed module storage.
 - Trusted builtins initialization writes directly into the global builtins
   module.
+- `globals()` is implemented as a trusted builtin that lowers
+  `__clover_globals__()` to an interpreter intrinsic.
+- The `Globals` intrinsic returns a fresh live `SlotDict` view over the caller
+  code object's defining module storage.
 - `Scope` no longer owns runtime value cells and no longer encodes parent-scope
   fallback in `not_present`.
 - The legacy scope bridge, legacy global bytecodes, and transitional
@@ -46,13 +50,13 @@ Known performance note:
 
 ### Module Mapping Views
 
-- [ ] Implement `globals()` as a live mutable view over module object storage.
+- [x] Implement `globals()` as a live mutable view over module object storage.
 - [ ] Implement module-scope `locals()` as the same live mutable view.
 - [ ] Decide whether `module.__dict__` lands with `globals()` or remains a
       separate follow-up.
-- [ ] Add tests that top-level stores, `globals()["x"]`, and `module.x` observe
-      the same own module binding where supported.
-- [ ] Add tests that builtin fallback does not appear as a module own attribute
+- [x] Add tests that top-level stores and `globals()["x"]` observe the same own
+      module binding where supported.
+- [x] Add tests that builtin fallback does not appear as a module own attribute
       or module mapping entry.
 
 ### Import And Multi-Module Execution
@@ -91,4 +95,3 @@ Known performance note:
       `Scope` storage.
 - [ ] For performance-sensitive cache or interpreter changes, run release
       benchmarks or targeted benchmarks.
-
