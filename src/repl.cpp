@@ -112,9 +112,8 @@ namespace cl
         });
     }
 
-    int run_repl(bool print_bytecode)
+    int run_repl(VirtualMachine &vm, bool print_bytecode)
     {
-        VirtualMachine vm;
         ThreadState *thr = vm.get_default_thread();
         ThreadState::ActivationScope active_thread(thr);
         ModuleObject *module = thr->make_main_module(Value::not_present());

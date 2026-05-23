@@ -3,7 +3,9 @@
 
 namespace cl
 {
-    int run_repl(bool print_bytecode);
-}
+    class VirtualMachine;
+
+    int run_repl(VirtualMachine &vm, bool print_bytecode);
+}  // namespace cl
 
 #endif  // CL_REPL_H

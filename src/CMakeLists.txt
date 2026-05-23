@@ -24,6 +24,9 @@ add_library(libclovervm_objects OBJECT
     ast_print.h
     builtin_class_registry.h
     bytecode.h
+    clover_api.cpp
+    "${CMAKE_SOURCE_DIR}/include/clovervm/clovervm.h"
+    "${CMAKE_SOURCE_DIR}/include/clovervm/native_module.h"
     code_object.cpp
     code_object.h
     code_object_builder.cpp
@@ -148,6 +151,8 @@ target_link_libraries(libclovervm PRIVATE libclovervm_objects)
 
 set_target_properties(libclovervm_objects PROPERTIES
     POSITION_INDEPENDENT_CODE ON
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED YES
     CXX_EXTENSIONS NO
@@ -166,19 +171,46 @@ target_include_directories(
 target_include_directories(
     libclovervm_objects PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/")
 target_include_directories(
+    libclovervm_objects PUBLIC "${CMAKE_SOURCE_DIR}/include")
+target_include_directories(
     libclovervm_objects PRIVATE "${PROJECT_BINARY_DIR}/_deps/ctre-src/include")
 
 target_link_libraries(
     libclovervm_objects PRIVATE project_options project_warnings)
+target_compile_definitions(libclovervm_objects
+    PRIVATE CLOVERVM_BUILDING_SHARED)
 target_link_libraries(
     libclovervm_objects PUBLIC absl::inlined_vector absl::flat_hash_map
                               absl::flat_hash_set)
 target_link_libraries(libclovervm_objects PUBLIC fmt::fmt)
 
-target_link_libraries(
-    libclovervm PUBLIC absl::inlined_vector absl::flat_hash_map
-                       absl::flat_hash_set)
-target_link_libraries(libclovervm PUBLIC fmt::fmt)
+target_include_directories(libclovervm PUBLIC "${CMAKE_SOURCE_DIR}/include")
+
+set(CLOVERVM_PUBLIC_SYMBOLS
+    clover_vm_destroy
+    clover_vm_new
+    clover_vm_run_file
+    clover_vm_run_interactive)
+
+if(APPLE)
+    set(CLOVERVM_EXPORTED_SYMBOL_OPTIONS)
+    foreach(symbol IN LISTS CLOVERVM_PUBLIC_SYMBOLS)
+        list(APPEND CLOVERVM_EXPORTED_SYMBOL_OPTIONS
+            "LINKER:-exported_symbol,_${symbol}")
+    endforeach()
+    target_link_options(libclovervm PRIVATE
+        ${CLOVERVM_EXPORTED_SYMBOL_OPTIONS})
+elseif(UNIX)
+    set(CLOVERVM_VERSION_SCRIPT
+        "${CMAKE_CURRENT_BINARY_DIR}/clovervm.exports")
+    file(WRITE "${CLOVERVM_VERSION_SCRIPT}" "{\n    global:\n")
+    foreach(symbol IN LISTS CLOVERVM_PUBLIC_SYMBOLS)
+        file(APPEND "${CLOVERVM_VERSION_SCRIPT}" "        ${symbol};\n")
+    endforeach()
+    file(APPEND "${CLOVERVM_VERSION_SCRIPT}" "    local:\n        *;\n};\n")
+    target_link_options(libclovervm PRIVATE
+        LINKER:--version-script,${CLOVERVM_VERSION_SCRIPT})
+endif()
 
 add_executable(clovervm
     clovervm.cpp
@@ -193,6 +225,7 @@ set_target_properties(clovervm PROPERTIES
 target_link_libraries(clovervm PRIVATE ${CMAKE_THREAD_LIBS_INIT})
 target_link_libraries(clovervm PRIVATE project_options project_warnings)
 target_link_libraries(clovervm PRIVATE libclovervm)
+target_include_directories(clovervm PRIVATE "${CMAKE_SOURCE_DIR}/include")
 
 install(TARGETS clovervm DESTINATION bin)
 
