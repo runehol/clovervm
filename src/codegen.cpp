@@ -538,6 +538,66 @@ namespace cl
                    interned_string(name).raw_value();
         }
 
+        bool string_starts_with(TValue<String> str, const wchar_t *prefix) const
+        {
+            String *string = str.extract();
+            size_t prefix_len = wcslen(prefix);
+            return size_t(string->count.extract()) >= prefix_len &&
+                   wcsncmp(string->data, prefix, prefix_len) == 0;
+        }
+
+        enum class TrustedCloverCall
+        {
+            None,
+            CallSpecial,
+            WriteStdout,
+            Globals,
+            Locals,
+        };
+
+        TrustedCloverCall trusted_clover_call_kind(int32_t node_idx) const
+        {
+            if(language_mode != LanguageMode::TrustedCloverExtensions)
+            {
+                return TrustedCloverCall::None;
+            }
+
+            AstChildren children = av.children[node_idx];
+            if(av.kinds[children[0]].node_kind !=
+               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+            {
+                return TrustedCloverCall::None;
+            }
+
+            TValue<String> name =
+                TValue<String>::from_value_assumed(av.constants[children[0]]);
+            if(!string_starts_with(name, L"__clover_"))
+            {
+                return TrustedCloverCall::None;
+            }
+
+            Value name_value = name.raw_value();
+            if(name_value ==
+               interned_string(L"__clover_call_special__").raw_value())
+            {
+                return TrustedCloverCall::CallSpecial;
+            }
+            if(name_value ==
+               interned_string(L"__clover_write_stdout__").raw_value())
+            {
+                return TrustedCloverCall::WriteStdout;
+            }
+            if(name_value == interned_string(L"__clover_globals__").raw_value())
+            {
+                return TrustedCloverCall::Globals;
+            }
+            if(name_value == interned_string(L"__clover_locals__").raw_value())
+            {
+                return TrustedCloverCall::Locals;
+            }
+            throw std::runtime_error("unknown trusted __clover_* helper");
+        }
+
         Value literal_string_constant(int32_t node_idx,
                                       const char *error_message) const
         {
@@ -572,22 +632,9 @@ namespace cl
             return value;
         }
 
-        bool try_codegen_trusted_clover_call_special(int32_t node_idx)
+        void codegen_trusted_clover_call_special(uint32_t source_offset,
+                                                 AstChildren args)
         {
-            if(language_mode != LanguageMode::TrustedCloverExtensions)
-            {
-                return false;
-            }
-
-            AstChildren children = av.children[node_idx];
-            if(!is_variable_reference_named(children[0],
-                                            L"__clover_call_special__"))
-            {
-                return false;
-            }
-
-            uint32_t source_offset = av.source_offsets[node_idx];
-            AstChildren args = av.children[children[1]];
             if(args.size() < 4)
             {
                 throw std::runtime_error(
@@ -622,84 +669,63 @@ namespace cl
                 source_offset, OutgoingArgReg(0), method_name_idx,
                 uint8_t(args.size() - 4), missing_exception_type_idx,
                 missing_exception_message_idx);
-            return true;
         }
 
-        bool try_codegen_trusted_clover_write_stdout(int32_t node_idx)
+        void codegen_trusted_clover_write_stdout(uint32_t source_offset,
+                                                 AstChildren args)
         {
-            if(language_mode != LanguageMode::TrustedCloverExtensions)
-            {
-                return false;
-            }
-
-            AstChildren children = av.children[node_idx];
-            if(!is_variable_reference_named(children[0],
-                                            L"__clover_write_stdout__"))
-            {
-                return false;
-            }
-
-            AstChildren args = av.children[children[1]];
             if(args.size() != 1)
             {
                 throw std::runtime_error(
                     "__clover_write_stdout__ expects exactly 1 argument");
             }
 
-            uint32_t source_offset = av.source_offsets[node_idx];
             codegen_node(args[0]);
             code_obj->emit_write_stdout(source_offset);
-            return true;
         }
 
-        bool try_codegen_trusted_clover_globals(int32_t node_idx)
+        void codegen_trusted_clover_intrinsic0(uint32_t source_offset,
+                                               AstChildren args,
+                                               Intrinsic0 intrinsic,
+                                               const char *helper_name)
         {
-            if(language_mode != LanguageMode::TrustedCloverExtensions)
-            {
-                return false;
-            }
-
-            AstChildren children = av.children[node_idx];
-            if(!is_variable_reference_named(children[0], L"__clover_globals__"))
-            {
-                return false;
-            }
-
-            AstChildren args = av.children[children[1]];
             if(args.size() != 0)
             {
                 throw std::runtime_error(
-                    "__clover_globals__ expects exactly 0 arguments");
+                    fmt::format("{} expects exactly 0 arguments", helper_name));
             }
 
-            uint32_t source_offset = av.source_offsets[node_idx];
-            code_obj->emit_call_intrinsic0(source_offset, Intrinsic0::Globals);
-            return true;
+            code_obj->emit_call_intrinsic0(source_offset, intrinsic);
         }
 
-        bool try_codegen_trusted_clover_locals(int32_t node_idx)
+        bool try_codegen_trusted_clover_call(int32_t node_idx)
         {
-            if(language_mode != LanguageMode::TrustedCloverExtensions)
-            {
-                return false;
-            }
-
             AstChildren children = av.children[node_idx];
-            if(!is_variable_reference_named(children[0], L"__clover_locals__"))
-            {
-                return false;
-            }
-
             AstChildren args = av.children[children[1]];
-            if(args.size() != 0)
-            {
-                throw std::runtime_error(
-                    "__clover_locals__ expects exactly 0 arguments");
-            }
-
             uint32_t source_offset = av.source_offsets[node_idx];
-            code_obj->emit_call_intrinsic0(source_offset, Intrinsic0::Locals);
-            return true;
+
+            switch(trusted_clover_call_kind(node_idx))
+            {
+                case TrustedCloverCall::None:
+                    return false;
+                case TrustedCloverCall::CallSpecial:
+                    codegen_trusted_clover_call_special(source_offset, args);
+                    return true;
+                case TrustedCloverCall::WriteStdout:
+                    codegen_trusted_clover_write_stdout(source_offset, args);
+                    return true;
+                case TrustedCloverCall::Globals:
+                    codegen_trusted_clover_intrinsic0(source_offset, args,
+                                                      Intrinsic0::Globals,
+                                                      "__clover_globals__");
+                    return true;
+                case TrustedCloverCall::Locals:
+                    codegen_trusted_clover_intrinsic0(source_offset, args,
+                                                      Intrinsic0::Locals,
+                                                      "__clover_locals__");
+                    return true;
+            }
+            __builtin_unreachable();
         }
 
         void codegen_function_call(int32_t node_idx)
@@ -708,19 +734,7 @@ namespace cl
             uint32_t source_offset = av.source_offsets[node_idx];
             AstChildren args = av.children[children[1]];
 
-            if(try_codegen_trusted_clover_call_special(node_idx))
-            {
-                return;
-            }
-            if(try_codegen_trusted_clover_write_stdout(node_idx))
-            {
-                return;
-            }
-            if(try_codegen_trusted_clover_globals(node_idx))
-            {
-                return;
-            }
-            if(try_codegen_trusted_clover_locals(node_idx))
+            if(try_codegen_trusted_clover_call(node_idx))
             {
                 return;
             }
