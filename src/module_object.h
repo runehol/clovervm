@@ -96,7 +96,7 @@ namespace cl
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
             ModuleObject, SlotObject,
-            module_inline_storage_slot_count + 3 +
+            module_inline_storage_slot_count + 2 +
                 HeapPtrArray<ValidityCell>::embedded_value_count);
         CL_DECLARE_STATIC_OBJECT_SIZE(ModuleObject);
     };
