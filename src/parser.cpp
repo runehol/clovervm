@@ -2028,10 +2028,16 @@ namespace cl
             while(match(Token::NEWLINE))
             {
             }
+            int32_t source_pos = source_pos_for_token();
             int32_t idx = -1;
             if(!is_at_end())
             {
                 idx = statements();
+            }
+            else
+            {
+                idx = ast.emplace_back(AstNodeKind::STATEMENT_SEQUENCE,
+                                       source_pos, AstChildren{});
             }
             consume(Token::ENDMARKER);
             return idx;

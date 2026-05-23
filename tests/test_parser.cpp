@@ -54,6 +54,13 @@ TEST(Parser, simple)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, empty_file)
+{
+    std::string actual = parse(L"");
+
+    EXPECT_EQ("", actual);
+}
+
 TEST(Parser, simple2)
 {
     std::string expected = "(1 << 4) + 3\n";

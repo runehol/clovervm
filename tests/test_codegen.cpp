@@ -103,6 +103,16 @@ TEST(Codegen, interactive_assignment_returns_none)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, empty_file_returns_none)
+{
+    std::string expected = "Code object:\n"
+                           "    0 LdaNone\n"
+                           "    1 Return\n";
+    std::string actual = bytecode_str_from_file(L"");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, import_statement_uses_import_name_and_normal_store)
 {
     std::string expected =

@@ -2353,6 +2353,13 @@ namespace cl
             CodeObject *result = code_obj->finalize();
             return incref(result);
         }
+        if(av.children[body_idx].empty())
+        {
+            code_obj->emit_lda_none(0);
+            code_obj->emit_return(0);
+            CodeObject *result = code_obj->finalize();
+            return incref(result);
+        }
 
         if(result_mode == ModuleResultMode::Interactive)
         {

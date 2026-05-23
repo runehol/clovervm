@@ -809,7 +809,7 @@ TEST(ImportSystem, RelativeFromImportCanClimbToParentPackage)
     TemporaryImportRoot root;
     root.write_file(L"pkg/__init__.py", "root_value = 1\n");
     root.write_file(L"pkg/sibling.py", "value = 14\n");
-    root.write_file(L"pkg/sub/__init__.py", "pass\n");
+    root.write_file(L"pkg/sub/__init__.py", "");
     root.write_file(L"pkg/sub/mod.py", "from .. import sibling\n"
                                        "value = sibling.value\n");
 
