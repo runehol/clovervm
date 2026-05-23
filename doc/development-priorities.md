@@ -99,23 +99,24 @@ JIT, language, and runtime work.
    The import foundation has landed: module globals are shape-backed
    `ModuleObject` storage, `globals()` and module-scope `locals()` expose live
    `SlotDict` views, `sys.modules` and `sys.path` exist, `__main__` is a real
-   module in `sys.modules`, source modules and regular packages load through the
-   bootstrap source finder, and import statements call the mutable public
+   module in `sys.modules`, source modules and regular packages load through
+   the bootstrap source finder, `sys` and `builtins` can be rediscovered by an
+   internal builtin finder, simple namespace package directories can be used as
+   package parents, and import statements call the mutable public
    `builtins.__import__` hook. Absolute imports, dotted imports, packages,
    aliases, comma import lists, parenthesized from-import lists, submodule
    parent binding, explicit relative from-imports, and module-scope star imports
    are implemented.
 
    The remaining import work is no longer "invent the module system"; it is
-   completion and compatibility. The near-term gaps are a builtin-module finder
-   so `sys` and `builtins` are discoverable rather than only preloaded, and a
-   small Python-visible spec/loader surface instead of exposing `__spec__` and
-   `__loader__` as `None`.
+   completion and compatibility. The near-term gap is a small Python-visible
+   spec/loader surface instead of exposing `__spec__` and `__loader__` as
+   `None`.
 
    The larger follow-ups remain public `sys.meta_path`, path hooks/importer
-   cache, namespace packages, bytecode caches, frozen modules, extension
-   modules, importlib surface area, and exact module namespace compatibility
-   such as stable `module.__dict__` identity.
+   cache, multi-portion namespace package merging, bytecode caches, frozen
+   modules, extension modules, importlib surface area, and exact module
+   namespace compatibility such as stable `module.__dict__` identity.
 
 9. **Attribute hooks and escaped bound methods**
 
@@ -158,27 +159,24 @@ document last listed module work as a future design option.
 
 Near-term order:
 
-1. Add a builtin-module finder/loader path for `sys` and `builtins`.
-2. Replace exposed `module.__spec__ = None` and `module.__loader__ = None` with
+1. Replace exposed `module.__spec__ = None` and `module.__loader__ = None` with
    a small Python-visible spec/loader surface.
-3. Revisit `sys.meta_path` only after internal finder/loader objects have a
+2. Revisit `sys.meta_path` only after internal finder/loader objects have a
    stable shape worth exposing.
-4. Return to the reusable public `range` object and fresh `iter(range_obj)`
+3. Return to the reusable public `range` object and fresh `iter(range_obj)`
    behavior.
-5. Continue replacing generic runtime failures with specific VM exceptions and
+4. Continue replacing generic runtime failures with specific VM exceptions and
    typed `Expected<T>` results where useful.
-6. Add guarded binary-operation plans and polymorphic inline caches so operator
+5. Add guarded binary-operation plans and polymorphic inline caches so operator
    sites collect useful type profiles for the future JIT.
-7. Continue moving descriptor execution into explicit interpreter/VM-controlled
+6. Continue moving descriptor execution into explicit interpreter/VM-controlled
    paths rather than hidden lookup helpers.
-8. Add keyword calls for ordinary functions and constructors.
+7. Add keyword calls for ordinary functions and constructors.
 
 ## Revisit Triggers
 
 Revisit this ordering when:
 
-- builtin modules are imported through a finder/loader path rather than only
-  initial `sys.modules` population;
 - source modules expose a useful Python-visible `__spec__` and `__loader__`;
 - `range()` is a reusable object and range/list/tuple/generic iterator paths are
   semantically complete enough for normal loops;

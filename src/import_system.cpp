@@ -35,6 +35,12 @@ namespace cl
             return std::filesystem::is_regular_file(path, ec);
         }
 
+        bool directory_exists(const std::filesystem::path &path)
+        {
+            std::error_code ec;
+            return std::filesystem::is_directory(path, ec);
+        }
+
         std::wstring absolute_wstring_path(const std::filesystem::path &path)
         {
             std::error_code ec;
@@ -68,6 +74,7 @@ namespace cl
             if(file_exists(package_init))
             {
                 return ModuleSpec{
+                    ModuleSpecKind::Source,
                     full_name,
                     absolute_wstring_path(package_init),
                     true,
@@ -79,10 +86,22 @@ namespace cl
             if(file_exists(module_file))
             {
                 return ModuleSpec{
+                    ModuleSpecKind::Source,
                     full_name,
                     absolute_wstring_path(module_file),
                     false,
                     {},
+                };
+            }
+
+            if(directory_exists(package_dir))
+            {
+                return ModuleSpec{
+                    ModuleSpecKind::Namespace,
+                    full_name,
+                    L"namespace",
+                    true,
+                    {absolute_wstring_path(package_dir)},
                 };
             }
 
@@ -283,6 +302,42 @@ namespace cl
             }
         }
 
+        std::optional<ModuleSpec>
+        find_builtin_module_spec(const std::wstring &full_name)
+        {
+            if(full_name == L"sys" || full_name == L"builtins")
+            {
+                return ModuleSpec{
+                    ModuleSpecKind::Builtin, full_name, L"built-in", false, {},
+                };
+            }
+            return std::nullopt;
+        }
+
+        Value load_builtin_module(ThreadState *thread, const ModuleSpec &spec,
+                                  TValue<String> name)
+        {
+            assert(spec.kind == ModuleSpecKind::Builtin);
+            VirtualMachine *machine = thread->get_machine();
+            Value module = Value::not_present();
+            if(spec.name == L"sys")
+            {
+                module = machine->sys_module().raw_value();
+            }
+            else if(spec.name == L"builtins")
+            {
+                module = machine->global_builtins_module().raw_value();
+            }
+            else
+            {
+                return set_module_not_found(thread, spec.name);
+            }
+
+            machine->imported_modules().extract()->set_item(name.raw_value(),
+                                                            module);
+            return module;
+        }
+
         Value import_hook_from_module_builtins(ThreadState *thread,
                                                ModuleObject *module)
         {
@@ -370,6 +425,12 @@ namespace cl
             {
                 return modules->get_item(name.raw_value());
             }
+            std::optional<ModuleSpec> builtin_spec =
+                find_builtin_module_spec(full_name);
+            if(builtin_spec.has_value())
+            {
+                return load_builtin_module(thread, *builtin_spec, name);
+            }
             if(path == nullptr)
             {
                 return set_module_not_found(thread, full_name);
@@ -384,16 +445,24 @@ namespace cl
 
             const std::wstring package_name =
                 spec->is_package ? spec->name : parent_module_name(spec->name);
+            Value file =
+                spec->kind == ModuleSpecKind::Namespace
+                    ? Value::not_present()
+                    : interned_string(thread, spec->origin).raw_value();
             Owned<TValue<ModuleObject>> module(
                 TValue<ModuleObject>::from_oop(thread->make_module_object(
                     name,
                     thread->get_machine()->global_builtins_module().raw_value(),
                     Value::None(),
                     interned_string(thread, package_name).raw_value(),
-                    Value::None(), Value::None(),
-                    interned_string(thread, spec->origin).raw_value())));
+                    Value::None(), Value::None(), file)));
             install_package_import_metadata(thread, module.extract(), *spec);
             modules->set_item(name.raw_value(), module.raw_value());
+
+            if(spec->kind == ModuleSpecKind::Namespace)
+            {
+                return module.raw_value();
+            }
 
             try
             {

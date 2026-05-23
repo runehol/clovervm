@@ -135,6 +135,28 @@ TEST(ImportSystem, SourceFinderFindsPackageInitBeforeModuleFile)
               spec->submodule_search_locations[0]);
 }
 
+TEST(ImportSystem, SourceFinderFindsNamespacePackageDirectory)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    std::filesystem::create_directories(root.path / L"sample");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    std::optional<ModuleSpec> spec = find_source_module_spec(
+        context.thread(), module_name(context, L"sample"));
+    ASSERT_TRUE(spec.has_value());
+    EXPECT_EQ(ModuleSpecKind::Namespace, spec->kind);
+    EXPECT_EQ(L"sample", spec->name);
+    EXPECT_TRUE(spec->is_package);
+    ASSERT_EQ(1u, spec->submodule_search_locations.size());
+    EXPECT_EQ((root.path / L"sample").lexically_normal().wstring(),
+              spec->submodule_search_locations[0]);
+}
+
 TEST(ImportSystem, SourceFinderIgnoresNonStringSysPathEntries)
 {
     test::VmTestContext context;
@@ -456,6 +478,38 @@ TEST(ImportSystem, BuiltinImportUsesDefaultsAndReturnsCachedValue)
               context.run_file(L"__import__('assignment')\n"));
 }
 
+TEST(ImportSystem, ImportSysAfterDeletingSysModulesEntryReloadsBuiltinModule)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value actual = context.run_file(L"import sys\n"
+                                    L"original = sys\n"
+                                    L"del sys.modules[\"sys\"]\n"
+                                    L"del sys\n"
+                                    L"import sys\n"
+                                    L"sys is original and "
+                                    L"sys.modules[\"sys\"] is sys\n");
+    EXPECT_EQ(Value::True(), actual);
+}
+
+TEST(ImportSystem,
+     ImportBuiltinsAfterDeletingSysModulesEntryReloadsBuiltinModule)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value actual = context.run_file(L"import sys\n"
+                                    L"import builtins\n"
+                                    L"original = builtins\n"
+                                    L"del sys.modules[\"builtins\"]\n"
+                                    L"del builtins\n"
+                                    L"import builtins\n"
+                                    L"builtins is original and "
+                                    L"sys.modules[\"builtins\"] is builtins\n");
+    EXPECT_EQ(Value::True(), actual);
+}
+
 TEST(ImportSystem, BuiltinImportOfDottedModuleReturnsTopLevelPackage)
 {
     test::VmTestContext context;
@@ -596,6 +650,38 @@ TEST(ImportSystem, ImportStatementUsesParentPackagePathForChildLookup)
     Value marker = context.run_file(L"import pkg.mod\n"
                                     L"pkg.mod.value\n");
     EXPECT_EQ(Value::from_smi(99), marker);
+}
+
+TEST(ImportSystem, ImportStatementLoadsDottedModuleThroughNamespacePackages)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"tests/python/arithmetic.py", "value = 37\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(L"import tests.python.arithmetic\n"
+                                    L"tests.python.arithmetic.value\n");
+    EXPECT_EQ(Value::from_smi(37), actual);
+}
+
+TEST(ImportSystem, FromImportLoadsModuleThroughNamespacePackages)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"tests/python/arithmetic.py", "value = 38\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(L"from tests.python import arithmetic\n"
+                                    L"arithmetic.value\n");
+    EXPECT_EQ(Value::from_smi(38), actual);
 }
 
 TEST(ImportSystem, ImportStatementStoresLocalBindingInFunction)

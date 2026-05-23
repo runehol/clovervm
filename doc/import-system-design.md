@@ -358,8 +358,10 @@ package executes that `__init__.py` as the package module body, and the package'
 
 Namespace packages have no single `__init__.py`. They are composed from one or
 more package portions found across import search locations. Their `__path__` is
-a dynamic iterable of search locations. clovervm can defer namespace packages,
-but the regular package design should not make them impossible later.
+a dynamic iterable of search locations. clovervm's bootstrap importer supports
+a first-cut single-portion namespace package: if `name/` exists without
+`name/__init__.py`, the directory becomes the package `__path__` and no source
+body is executed. Multi-portion namespace merging remains future work.
 
 ## CloverVM Bootstrap Subset
 
@@ -401,19 +403,21 @@ Supported file shapes:
 ```text
 name.py
 name/__init__.py
+name/
 ```
 
 For `import pkg.mod`, the bootstrap importer should:
 
 1. import `pkg`
 2. require `pkg` to have `__path__`
-3. search `pkg.__path__` for `mod.py` or `mod/__init__.py`
+3. search `pkg.__path__` for `mod.py`, `mod/__init__.py`, or `mod/`
 4. load `pkg.mod`
 5. bind the loaded child module onto the parent package under the final
    component name
 
-This gives us regular packages without needing namespace packages, path hooks,
-zip import, frozen modules, extension modules, or user-defined finders.
+This gives us regular packages and simple single-portion namespace packages
+without needing path hooks, zip import, frozen modules, extension modules, or
+user-defined finders.
 
 ### Internal Spec Object
 
@@ -547,7 +551,7 @@ The bootstrap importer should deliberately defer:
 - user-defined finders and loaders
 - `sys.path_hooks`
 - `sys.path_importer_cache`
-- namespace packages
+- multi-portion namespace package merging
 - zip imports
 - extension modules
 - frozen modules, unless needed for VM boot
@@ -836,16 +840,21 @@ The current implementation has the bootstrap import spine in place:
 - `sys.modules` is the VM-owned imported-modules cache.
 - `sys.path` starts as `[".", CL_STDLIB_DIR]`.
 - The C++ source finder walks `sys.path` or parent package `__path__`, ignores
-  non-string path entries, and recognizes `name.py` and `name/__init__.py`.
+  non-string path entries, and recognizes `name.py`, `name/__init__.py`, and
+  single-portion namespace package directories.
 - The C++ `ModuleSpec` records name, origin, package state, and package search
   locations, but it is not yet Python-visible.
 - Source modules are inserted into `sys.modules` before read/compile/execute and
-  removed on load failure.
-- Regular packages receive `__path__`.
+  removed on load failure. Namespace packages are inserted without source
+  execution.
+- Regular packages and namespace packages receive `__path__`.
 - Dotted imports import parents left to right, require package parents, search
   parent `__path__`, and bind loaded submodules onto their parent package.
 - `builtins.__import__` is a native builtin with the CPython-shaped public
   signature.
+- The internal finder chain checks a hardcoded builtin finder before source
+  lookup. For now it recognizes `sys` and `builtins` and reloads their VM-owned
+  module objects into `sys.modules` if those cache entries are deleted.
 - Import statement bytecode calls the public import hook and binds names through
   the normal store path.
 - Absolute imports, dotted imports, from-imports, aliases, comma import lists,
@@ -875,20 +884,14 @@ The current implementation has the bootstrap import spine in place:
   place for it.
 - Keep the C++ spec-to-module construction path as the internal source of truth.
 
-### Builtin Module Importer
-
-- Add an internal builtin-module finder/loader path.
-- Let `import sys` and `import builtins` be satisfied by finder/loader behavior,
-  not only by their initial `sys.modules` entries.
-- Decide the first Python-visible metadata for builtin modules: origin, loader,
-  package, and file absence.
-
 ### `sys` And Importlib Surface
 
 - Add public `sys.meta_path` once finder objects exist.
 - Add `sys.path_hooks` and `sys.path_importer_cache` when path entry finders are
   split out of the hardcoded source finder.
 - Start a minimal `importlib` surface only after specs/loaders are objects.
+- Decide the first Python-visible metadata for builtin modules: origin, loader,
+  package, and file absence.
 
 ### Loader Semantics
 
@@ -908,7 +911,7 @@ The current implementation has the bootstrap import spine in place:
 
 ### Search Backends
 
-- Add namespace packages.
+- Add multi-portion namespace package merging.
 - Add bytecode cache loading and invalidation.
 - Add frozen modules if VM bootstrap starts needing them.
 - Add extension modules only after the native ABI/module initialization design
@@ -919,8 +922,6 @@ The current implementation has the bootstrap import spine in place:
 
 Prefer interpreter tests for user-visible import semantics:
 
-- builtin module imports work after deleting `sys.modules["sys"]` or
-  `sys.modules["builtins"]`, once the builtin finder exists.
 - Python-visible `__spec__` exposes the minimum fields needed by relative
   imports and user inspection.
 - loader replacement through `sys.modules` returns the replacement module once

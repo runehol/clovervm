@@ -12,8 +12,16 @@ namespace cl
     class String;
     class ThreadState;
 
+    enum class ModuleSpecKind
+    {
+        Source,
+        Builtin,
+        Namespace,
+    };
+
     struct ModuleSpec
     {
+        ModuleSpecKind kind = ModuleSpecKind::Source;
         std::wstring name;
         std::wstring origin;
         bool is_package = false;
