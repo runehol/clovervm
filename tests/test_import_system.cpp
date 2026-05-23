@@ -244,6 +244,47 @@ TEST(ImportSystem, ImportModuleAbsoluteReturnsExistingSysModulesValue)
               import_module_absolute(context.thread(), name));
 }
 
+TEST(ImportSystem, ImportModuleAbsoluteRaisesWhenSysModulesValueIsNone)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    TValue<String> name = module_name(context, L"assignment");
+    context.vm().imported_modules().extract()->set_item(name.raw_value(),
+                                                        Value::None());
+
+    Value imported = import_module_absolute(context.thread(), name);
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ModuleNotFoundError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"No module named 'assignment'",
+              value_as_wstring(exception.extract()->message.value()));
+}
+
+TEST(ImportSystem, ImportModuleAbsoluteReturnsSysModulesReplacementAfterExec)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"replacement.py", "import sys\n"
+                                       "sys.modules[\"replacement\"] = 42\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    TValue<String> name = module_name(context, L"replacement");
+    Value imported = import_module_absolute(context.thread(), name);
+    EXPECT_EQ(Value::from_smi(42), imported);
+    EXPECT_EQ(
+        Value::from_smi(42),
+        context.vm().imported_modules().extract()->get_item(name.raw_value()));
+}
+
 TEST(ImportSystem, ImportModuleAbsoluteInstallsPackagePath)
 {
     test::VmTestContext context;

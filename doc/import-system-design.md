@@ -838,17 +838,21 @@ The current implementation has the bootstrap import spine in place:
 - `sys` is a VM-owned module exposing `sys.modules` and `sys.path`.
 - `sys.modules` is the VM-owned imported-modules cache.
 - `sys.path` starts as `[".", CL_STDLIB_DIR]`.
-- The C++ source finder walks `sys.path` or parent package `__path__`, ignores
-  non-string path entries, and recognizes `name.py`, `name/__init__.py`, and
-  single-portion namespace package directories.
+- The internal C++ finder chain uses value-shaped specs and enum dispatch for
+  builtin, source, and namespace loaders. The path finder walks `sys.path` or
+  parent package `__path__`, ignores non-string path entries, and recognizes
+  `name.py`, `name/__init__.py`, and single-portion namespace package
+  directories.
 - The C++ `ModuleSpec` records name, origin, package state, and package search
   locations. Loaded modules expose a small Python-visible `ModuleSpecObject` as
   `__spec__`.
 - Loaded modules expose a small Python-visible `ModuleLoaderObject` as
   `__loader__`, and `module.__loader__ is module.__spec__.loader`.
-- Source modules are inserted into `sys.modules` before read/compile/execute and
-  removed on load failure. Namespace packages are inserted without source
-  execution.
+- `sys.modules` entries are authoritative: cached `None` raises
+  `ModuleNotFoundError`. Source modules are inserted into `sys.modules` before
+  read/compile/execute and removed on load failure. After execution, import
+  returns the current `sys.modules[name]` value so modules can replace
+  themselves. Namespace packages are inserted without source execution.
 - Regular packages and namespace packages receive `__path__`.
 - Dotted imports import parents left to right, require package parents, search
   parent `__path__`, and bind loaded submodules onto their parent package.

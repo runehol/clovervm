@@ -183,6 +183,22 @@ namespace cl
                 L"ModuleNotFoundError", interned_string(thread, message));
         }
 
+        Value get_cached_module(ThreadState *thread, TValue<String> name)
+        {
+            Dict *modules = thread->get_machine()->imported_modules().extract();
+            if(!modules->contains(name.raw_value()))
+            {
+                return Value::not_present();
+            }
+
+            Value module = modules->get_item(name.raw_value());
+            if(module == Value::None())
+            {
+                return set_module_not_found(thread, string_to_wstring(name));
+            }
+            return module;
+        }
+
         Value set_not_a_package(ThreadState *thread,
                                 const std::wstring &module_name,
                                 const std::wstring &parent_name)
@@ -412,6 +428,117 @@ namespace cl
             return module;
         }
 
+        Owned<TValue<ModuleObject>>
+        create_module_from_spec(ThreadState *thread, const ModuleSpec &spec,
+                                TValue<String> name)
+        {
+            const std::wstring package_name =
+                spec.is_package ? spec.name : parent_module_name(spec.name);
+            Owned<Value> search_locations(make_search_locations(thread, spec));
+            Owned<TValue<ModuleLoaderObject>> loader(
+                make_module_loader(thread, spec));
+            Owned<TValue<ModuleSpecObject>> spec_object(make_module_spec_object(
+                thread, spec, loader.raw_value(), search_locations.value()));
+            Value file = spec.kind == ModuleSpecKind::Namespace
+                             ? Value::not_present()
+                             : interned_string(thread, spec.origin).raw_value();
+            Owned<TValue<ModuleObject>> module(
+                TValue<ModuleObject>::from_oop(thread->make_module_object(
+                    name,
+                    thread->get_machine()->global_builtins_module().raw_value(),
+                    Value::None(),
+                    interned_string(thread, package_name).raw_value(),
+                    loader.raw_value(), spec_object.raw_value(), file)));
+            install_package_import_metadata(thread, module.extract(), spec);
+            return module;
+        }
+
+        Value module_from_sys_modules_after_exec(ThreadState *thread,
+                                                 TValue<String> name)
+        {
+            Dict *modules = thread->get_machine()->imported_modules().extract();
+            if(!modules->contains(name.raw_value()))
+            {
+                return thread->set_pending_builtin_exception_string(
+                    L"ImportError",
+                    L"loader removed module from sys.modules during import");
+            }
+
+            Value module = modules->get_item(name.raw_value());
+            if(module == Value::None())
+            {
+                return set_module_not_found(thread, string_to_wstring(name));
+            }
+            return module;
+        }
+
+        Value exec_source_module(ThreadState *thread, const ModuleSpec &spec,
+                                 TValue<String> name, ModuleObject *module)
+        {
+            try
+            {
+                std::optional<std::wstring> source =
+                    read_source_text_file(spec.origin);
+                if(!source.has_value())
+                {
+                    remove_imported_module(thread, name);
+                    return set_module_load_failed(thread, spec.name);
+                }
+
+                CodeObject *code = thread->compile_in_module(
+                    source->c_str(), StartRule::File, module,
+                    LanguageMode::StandardsCompliant);
+                Value result = thread->run_clovervm_code_object(code);
+                if(result.is_exception_marker())
+                {
+                    remove_imported_module(thread, name);
+                    return result;
+                }
+            }
+            catch(...)
+            {
+                remove_imported_module(thread, name);
+                throw;
+            }
+
+            return module_from_sys_modules_after_exec(thread, name);
+        }
+
+        Value load_source_module(ThreadState *thread, const ModuleSpec &spec,
+                                 TValue<String> name)
+        {
+            Dict *modules = thread->get_machine()->imported_modules().extract();
+            Owned<TValue<ModuleObject>> module(
+                create_module_from_spec(thread, spec, name));
+            modules->set_item(name.raw_value(), module.raw_value());
+            return exec_source_module(thread, spec, name, module.extract());
+        }
+
+        Value load_namespace_module(ThreadState *thread, const ModuleSpec &spec,
+                                    TValue<String> name)
+        {
+            Dict *modules = thread->get_machine()->imported_modules().extract();
+            Owned<TValue<ModuleObject>> module(
+                create_module_from_spec(thread, spec, name));
+            modules->set_item(name.raw_value(), module.raw_value());
+            return module.raw_value();
+        }
+
+        Value load_from_spec(ThreadState *thread, const ModuleSpec &spec,
+                             TValue<String> name)
+        {
+            switch(spec.kind)
+            {
+                case ModuleSpecKind::Builtin:
+                    return load_builtin_module(thread, spec, name);
+                case ModuleSpecKind::Source:
+                    return load_source_module(thread, spec, name);
+                case ModuleSpecKind::Namespace:
+                    return load_namespace_module(thread, spec, name);
+            }
+            __builtin_unreachable();
+        }
+
         Value import_hook_from_module_builtins(ThreadState *thread,
                                                ModuleObject *module)
         {
@@ -457,6 +584,26 @@ namespace cl
             return std::nullopt;
         }
 
+        std::optional<ModuleSpec>
+        find_module_spec(ThreadState *thread, const std::wstring &full_name,
+                         const std::wstring &leaf_name, List *path)
+        {
+            std::optional<ModuleSpec> builtin_spec =
+                find_builtin_module_spec(full_name);
+            if(builtin_spec.has_value())
+            {
+                return builtin_spec;
+            }
+
+            if(path == nullptr)
+            {
+                return std::nullopt;
+            }
+
+            return find_source_module_spec_on_path(thread, full_name, leaf_name,
+                                                   path);
+        }
+
         List *sys_path(ThreadState *thread)
         {
             TValue<String> path_name = interned_string(thread, L"path");
@@ -494,82 +641,20 @@ namespace cl
                                     const std::wstring &leaf_name, List *path)
         {
             TValue<String> name = interned_string(thread, full_name);
-            Dict *modules = thread->get_machine()->imported_modules().extract();
-            if(modules->contains(name.raw_value()))
+            Value cached = get_cached_module(thread, name);
+            if(!cached.is_not_present())
             {
-                return modules->get_item(name.raw_value());
-            }
-            std::optional<ModuleSpec> builtin_spec =
-                find_builtin_module_spec(full_name);
-            if(builtin_spec.has_value())
-            {
-                return load_builtin_module(thread, *builtin_spec, name);
-            }
-            if(path == nullptr)
-            {
-                return set_module_not_found(thread, full_name);
+                return cached;
             }
 
-            std::optional<ModuleSpec> spec = find_source_module_spec_on_path(
-                thread, full_name, leaf_name, path);
+            std::optional<ModuleSpec> spec =
+                find_module_spec(thread, full_name, leaf_name, path);
             if(!spec.has_value())
             {
                 return set_module_not_found(thread, full_name);
             }
 
-            const std::wstring package_name =
-                spec->is_package ? spec->name : parent_module_name(spec->name);
-            Owned<Value> search_locations(make_search_locations(thread, *spec));
-            Owned<TValue<ModuleLoaderObject>> loader(
-                make_module_loader(thread, *spec));
-            Owned<TValue<ModuleSpecObject>> spec_object(make_module_spec_object(
-                thread, *spec, loader.raw_value(), search_locations.value()));
-            Value file =
-                spec->kind == ModuleSpecKind::Namespace
-                    ? Value::not_present()
-                    : interned_string(thread, spec->origin).raw_value();
-            Owned<TValue<ModuleObject>> module(
-                TValue<ModuleObject>::from_oop(thread->make_module_object(
-                    name,
-                    thread->get_machine()->global_builtins_module().raw_value(),
-                    Value::None(),
-                    interned_string(thread, package_name).raw_value(),
-                    loader.raw_value(), spec_object.raw_value(), file)));
-            install_package_import_metadata(thread, module.extract(), *spec);
-            modules->set_item(name.raw_value(), module.raw_value());
-
-            if(spec->kind == ModuleSpecKind::Namespace)
-            {
-                return module.raw_value();
-            }
-
-            try
-            {
-                std::optional<std::wstring> source =
-                    read_source_text_file(spec->origin);
-                if(!source.has_value())
-                {
-                    remove_imported_module(thread, name);
-                    return set_module_load_failed(thread, full_name);
-                }
-
-                CodeObject *code = thread->compile_in_module(
-                    source->c_str(), StartRule::File, module.extract(),
-                    LanguageMode::StandardsCompliant);
-                Value result = thread->run_clovervm_code_object(code);
-                if(result.is_exception_marker())
-                {
-                    remove_imported_module(thread, name);
-                    return result;
-                }
-            }
-            catch(...)
-            {
-                remove_imported_module(thread, name);
-                throw;
-            }
-
-            return module.raw_value();
+            return load_from_spec(thread, *spec, name);
         }
     }  // namespace
 
