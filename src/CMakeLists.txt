@@ -96,6 +96,8 @@ add_library(libclovervm_objects OBJECT
     module_object.h
     module_loader_object.cpp
     module_loader_object.h
+    module_finder.cpp
+    module_finder.h
     module_spec_object.cpp
     module_spec_object.h
     module_global_cache.h

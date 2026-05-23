@@ -1,10 +1,8 @@
 #ifndef CL_IMPORT_SYSTEM_H
 #define CL_IMPORT_SYSTEM_H
 
+#include "module_finder.h"
 #include "typed_value.h"
-#include <optional>
-#include <string>
-#include <vector>
 
 namespace cl
 {
@@ -12,24 +10,6 @@ namespace cl
     class String;
     class ThreadState;
 
-    enum class ModuleSpecKind
-    {
-        Source,
-        Builtin,
-        Namespace,
-    };
-
-    struct ModuleSpec
-    {
-        ModuleSpecKind kind = ModuleSpecKind::Source;
-        std::wstring name;
-        std::wstring origin;
-        bool is_package = false;
-        std::vector<std::wstring> submodule_search_locations;
-    };
-
-    std::optional<ModuleSpec> find_source_module_spec(ThreadState *thread,
-                                                      TValue<String> name);
     [[nodiscard]] Value import_module_absolute(ThreadState *thread,
                                                TValue<String> name);
     [[nodiscard]] Value import_name_from_code(ThreadState *thread,
