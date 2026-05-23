@@ -17,6 +17,7 @@ namespace cl
         Source,
         Builtin,
         Namespace,
+        NativeExtension,
     };
 
     struct ModuleSpec

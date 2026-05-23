@@ -1,5 +1,6 @@
 #include "module_finder.h"
 
+#include "build_config.h"
 #include "list.h"
 #include "module_object.h"
 #include "str.h"
@@ -77,6 +78,19 @@ namespace cl
                     ModuleSpecKind::Source,
                     full_name,
                     absolute_wstring_path(module_file),
+                    false,
+                    {},
+                };
+            }
+
+            std::filesystem::path native_module_file =
+                base / (leaf_name + CL_NATIVE_MODULE_SUFFIX);
+            if(file_exists(native_module_file))
+            {
+                return ModuleSpec{
+                    ModuleSpecKind::NativeExtension,
+                    full_name,
+                    absolute_wstring_path(native_module_file),
                     false,
                     {},
                 };

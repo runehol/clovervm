@@ -844,9 +844,10 @@ The current implementation has the bootstrap import spine in place:
 - `sys.modules` is the VM-owned imported-modules cache.
 - `sys.path` starts as `["", CL_BUILD_STDLIB_DIR, CL_STDLIB_DIR]`.
 - The internal C++ finder chain uses value-shaped specs and enum dispatch for
-  builtin, source, and namespace loaders. The path finder walks `sys.path` or
-  parent package `__path__`, ignores non-string path entries, and recognizes
-  `name.py`, `name/__init__.py`, and single-portion namespace package
+  builtin, source, namespace, and native-extension loaders. The path finder
+  walks `sys.path` or parent package `__path__`, ignores non-string path
+  entries, and recognizes `name.py`, `name/__init__.py`,
+  `name + CL_NATIVE_MODULE_SUFFIX`, and single-portion namespace package
   directories.
 - The C++ `ModuleSpec` records name, origin, package state, and package search
   locations. Loaded modules expose a small Python-visible `ModuleSpecObject` as

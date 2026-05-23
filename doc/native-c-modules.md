@@ -411,6 +411,8 @@ test executable can resolve the C API symbols needed by the module
 Minimum import tests:
 
 ```text
+finder discovers _test_native as a native extension from CL_BUILD_STDLIB_DIR
+import _test_native raises ImportError until the dynamic loader is implemented
 import _test_native loads a dynamic module from CL_BUILD_STDLIB_DIR
 metadata matches the extension spec
 sys.modules contains the module before native init runs

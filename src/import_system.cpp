@@ -271,13 +271,16 @@ namespace cl
                     return L"builtin";
                 case ModuleSpecKind::Namespace:
                     return L"namespace";
+                case ModuleSpecKind::NativeExtension:
+                    return L"native_extension";
             }
             __builtin_unreachable();
         }
 
         Value loader_path_for_spec(ThreadState *thread, const ModuleSpec &spec)
         {
-            if(spec.kind == ModuleSpecKind::Source)
+            if(spec.kind == ModuleSpecKind::Source ||
+               spec.kind == ModuleSpecKind::NativeExtension)
             {
                 return interned_string(thread, spec.origin).raw_value();
             }
@@ -432,6 +435,17 @@ namespace cl
             return module.raw_value();
         }
 
+        Value load_native_extension_module(ThreadState *thread,
+                                           const ModuleSpec &spec)
+        {
+            std::wstring message =
+                L"native extension loading is not implemented for '";
+            message += spec.name;
+            message += L"'";
+            return thread->set_pending_builtin_exception_string(
+                L"ImportError", interned_string(thread, message));
+        }
+
         Value load_from_spec(ThreadState *thread, const ModuleSpec &spec,
                              TValue<String> name)
         {
@@ -443,6 +457,8 @@ namespace cl
                     return load_source_module(thread, spec, name);
                 case ModuleSpecKind::Namespace:
                     return load_namespace_module(thread, spec, name);
+                case ModuleSpecKind::NativeExtension:
+                    return load_native_extension_module(thread, spec);
             }
             __builtin_unreachable();
         }
