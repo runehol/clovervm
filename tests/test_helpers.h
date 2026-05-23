@@ -3,6 +3,7 @@
 
 #include "code_object.h"
 #include "compilation_unit.h"
+#include "module_object.h"
 #include "parser.h"
 #include "thread_state.h"
 #include "token.h"
@@ -18,6 +19,14 @@ namespace cl::test
     public:
         VirtualMachine &vm() { return vm_; }
         ThreadState *thread() { return vm_.get_default_thread(); }
+
+        ModuleObject *make_test_module_object(TValue<String> name,
+                                              Value builtins)
+        {
+            return thread()->make_module_object(
+                name, builtins, Value::None(), Value::None(), Value::None(),
+                Value::None(), Value::not_present());
+        }
 
         CodeObject *compile_file(const wchar_t *source)
         {

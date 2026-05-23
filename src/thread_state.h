@@ -283,7 +283,9 @@ namespace cl
             return shape_of_value(value)->get_class();
         }
         ClassObject *class_for_builtin_name(const wchar_t *name) const;
-        ModuleObject *make_module_object(TValue<String> name, Value builtins);
+        ModuleObject *make_module_object(TValue<String> name, Value builtins,
+                                         Value doc, Value package, Value loader,
+                                         Value spec, Value file);
         ModuleObject *make_main_module(Value file);
 
         template <typename T, typename... Args>

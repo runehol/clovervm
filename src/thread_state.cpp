@@ -353,19 +353,12 @@ namespace cl
     }
 
     ModuleObject *ThreadState::make_module_object(TValue<String> name,
-                                                  Value builtins)
+                                                  Value builtins, Value doc,
+                                                  Value package, Value loader,
+                                                  Value spec, Value file)
     {
-        return make_object_raw<ModuleObject>(name, builtins);
-    }
-
-    static void set_module_attr(ThreadState *thread, ModuleObject *module,
-                                const wchar_t *name, Value value)
-    {
-        bool stored = module->set_own_property(
-            thread->get_machine()->get_or_create_interned_string_value(name),
-            value);
-        assert(stored);
-        (void)stored;
+        return make_object_raw<ModuleObject>(name, builtins, doc, package,
+                                             loader, spec, file);
     }
 
     ModuleObject *ThreadState::make_main_module(Value file)
@@ -375,16 +368,8 @@ namespace cl
         TValue<String> main_name =
             machine->get_or_create_interned_string_value(L"__main__");
         ModuleObject *module = make_module_object(
-            main_name, machine->global_builtins_module().raw_value());
-
-        set_module_attr(this, module, L"__doc__", Value::None());
-        set_module_attr(this, module, L"__package__", Value::None());
-        set_module_attr(this, module, L"__loader__", Value::None());
-        set_module_attr(this, module, L"__spec__", Value::None());
-        if(!file.is_not_present())
-        {
-            set_module_attr(this, module, L"__file__", file);
-        }
+            main_name, machine->global_builtins_module().raw_value(),
+            Value::None(), Value::None(), Value::None(), Value::None(), file);
 
         machine->imported_modules().extract()->set_item(
             main_name.raw_value(), Value::from_oop(module));

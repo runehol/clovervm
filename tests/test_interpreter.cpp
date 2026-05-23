@@ -387,9 +387,8 @@ static CodeObject *make_raise_unwind_code(test::VmTestContext &test_context,
         test_context.vm().get_or_create_interned_string_value(L"<raise-test>");
     CodeObjectBuilder builder(
         &test_context.vm(), nullptr,
-        TValue<ModuleObject>::from_oop(
-            test_context.thread()->make_module_object(
-                name, test_context.vm().global_builtins_module().raw_value())),
+        TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
+            name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
     uint32_t constant_idx = builder.allocate_constant(raised);
     builder.emit_lda_constant(0, uint8_t(constant_idx));
@@ -441,9 +440,8 @@ static CodeObject *make_return_to_native_code(test::VmTestContext &test_context)
         L"<return-to-native-test>");
     CodeObjectBuilder builder(
         &test_context.vm(), nullptr,
-        TValue<ModuleObject>::from_oop(
-            test_context.thread()->make_module_object(
-                name, test_context.vm().global_builtins_module().raw_value())),
+        TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
+            name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
     builder.emit_lda_smi(0, 42);
     builder.emit_return_to_native(0);
@@ -457,9 +455,8 @@ make_return_pending_exception_to_native_code(test::VmTestContext &test_context)
         L"<return-pending-exception-to-native-test>");
     CodeObjectBuilder builder(
         &test_context.vm(), nullptr,
-        TValue<ModuleObject>::from_oop(
-            test_context.thread()->make_module_object(
-                name, test_context.vm().global_builtins_module().raw_value())),
+        TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
+            name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
     builder.emit_return_pending_exception_to_native(0);
     return builder.finalize();
@@ -4393,7 +4390,7 @@ TEST(Interpreter, interactive_assignment_returns_none_and_persists_scope)
     ThreadState::ActivationScope active_thread(test_context.thread());
     TValue<String> module_name =
         test_context.vm().get_or_create_interned_string_value(L"<interactive>");
-    ModuleObject *module = test_context.thread()->make_module_object(
+    ModuleObject *module = test_context.make_test_module_object(
         module_name, test_context.vm().global_builtins_module().raw_value());
 
     CodeObject *assignment = test_context.thread()->compile_in_module(

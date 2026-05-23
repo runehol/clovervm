@@ -43,7 +43,9 @@ namespace cl
         static constexpr uint32_t module_predefined_slot_count = 2;
         static constexpr uint32_t module_inline_storage_slot_count = 256;
 
-        ModuleObject(ClassObject *cls, TValue<String> name, Value builtins);
+        ModuleObject(ClassObject *cls, TValue<String> name, Value builtins,
+                     Value doc, Value package, Value loader, Value spec,
+                     Value file);
 
         Value get_name_binding() const { return name_binding.value(); }
         void set_name_binding(Value value);

@@ -63,8 +63,17 @@ namespace cl
         return ModuleBuiltinsLookup{builtins_object, nullptr, nullptr};
     }
 
+    static void set_module_attr(ModuleObject *module, const wchar_t *name,
+                                Value value)
+    {
+        bool stored = module->set_own_property(interned_string(name), value);
+        assert(stored);
+        (void)stored;
+    }
+
     ModuleObject::ModuleObject(ClassObject *cls, TValue<String> _name,
-                               Value _builtins)
+                               Value _builtins, Value doc, Value package,
+                               Value loader, Value spec, Value file)
         : SlotObject(cls, native_layout), name_binding(_name.raw_value()),
           builtins_binding(_builtins), module_globals_validity_cell(nullptr),
           module_builtins_validity_cell(nullptr),
@@ -79,6 +88,14 @@ namespace cl
         {
             module_extra_inline_attribute_slots[slot_idx] =
                 Value::not_present();
+        }
+        set_module_attr(this, L"__doc__", doc);
+        set_module_attr(this, L"__package__", package);
+        set_module_attr(this, L"__loader__", loader);
+        set_module_attr(this, L"__spec__", spec);
+        if(!file.is_not_present())
+        {
+            set_module_attr(this, L"__file__", file);
         }
     }
 

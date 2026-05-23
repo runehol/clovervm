@@ -241,7 +241,7 @@ namespace cl
         String *child = thread->make_object_raw<String>(L"code-constant");
         TValue<String> code_name =
             context.vm().get_or_create_interned_string_value(L"<test>");
-        ModuleObject *module = thread->make_module_object(
+        ModuleObject *module = context.make_test_module_object(
             code_name, context.vm().global_builtins_module().raw_value());
         CodeObject *code_object = thread->make_object_raw<CodeObject>(
             nullptr, TValue<ModuleObject>::from_oop(module), nullptr,

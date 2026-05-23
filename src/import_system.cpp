@@ -211,19 +211,10 @@ namespace cl
                 L"ImportError", interned_string(thread, message));
         }
 
-        void install_module_import_metadata(ThreadState *thread,
-                                            ModuleObject *module,
-                                            const ModuleSpec &spec)
+        void install_package_import_metadata(ThreadState *thread,
+                                             ModuleObject *module,
+                                             const ModuleSpec &spec)
         {
-            set_module_attr(thread, module, L"__doc__", Value::None());
-            const std::wstring package_name =
-                spec.is_package ? spec.name : parent_module_name(spec.name);
-            set_module_attr(thread, module, L"__package__",
-                            interned_string(thread, package_name).raw_value());
-            set_module_attr(thread, module, L"__loader__", Value::None());
-            set_module_attr(thread, module, L"__spec__", Value::None());
-            set_module_attr(thread, module, L"__file__",
-                            interned_string(thread, spec.origin).raw_value());
             if(spec.is_package)
             {
                 Owned<TValue<List>> path(thread->make_object_value<List>());
@@ -336,11 +327,17 @@ namespace cl
                 return set_module_not_found(thread, full_name);
             }
 
-            Owned<TValue<ModuleObject>> module(TValue<ModuleObject>::from_oop(
-                thread->make_module_object(name, thread->get_machine()
-                                                     ->global_builtins_module()
-                                                     .raw_value())));
-            install_module_import_metadata(thread, module.extract(), *spec);
+            const std::wstring package_name =
+                spec->is_package ? spec->name : parent_module_name(spec->name);
+            Owned<TValue<ModuleObject>> module(
+                TValue<ModuleObject>::from_oop(thread->make_module_object(
+                    name,
+                    thread->get_machine()->global_builtins_module().raw_value(),
+                    Value::None(),
+                    interned_string(thread, package_name).raw_value(),
+                    Value::None(), Value::None(),
+                    interned_string(thread, spec->origin).raw_value())));
+            install_package_import_metadata(thread, module.extract(), *spec);
             modules->set_item(name.raw_value(), module.raw_value());
 
             try

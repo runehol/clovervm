@@ -2554,7 +2554,9 @@ namespace cl
                                LanguageMode language_mode)
     {
         ModuleObject *module = active_thread()->make_module_object(
-            module_name, active_vm()->global_builtins_module().raw_value());
+            module_name, active_vm()->global_builtins_module().raw_value(),
+            Value::None(), Value::None(), Value::None(), Value::None(),
+            Value::not_present());
         return codegen_module_in_module(av, module, language_mode,
                                         ModuleResultMode::File);
     }
