@@ -108,12 +108,13 @@ CL_BUILD_STDLIB_DIR  = <build>/stdlib
 `sys.path` should start with:
 
 ```python
-[".", CL_BUILD_STDLIB_DIR, CL_STDLIB_DIR]
+["", CL_BUILD_STDLIB_DIR, CL_STDLIB_DIR]
 ```
 
-The build stdlib path comes before the source stdlib path so a compiled native
-module backing a public Python wrapper is found without copying artifacts into
-the source tree. Source modules still live under `CL_STDLIB_DIR`.
+The empty string means the current working directory at import time. The build
+stdlib path comes before the source stdlib path so a compiled native module
+backing a public Python wrapper is found without copying artifacts into the
+source tree. Source modules still live under `CL_STDLIB_DIR`.
 
 If `CL_BUILD_STDLIB_DIR` does not exist, startup can still include it in
 `sys.path`; the finder will simply miss it.
