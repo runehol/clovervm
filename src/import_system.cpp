@@ -1,8 +1,10 @@
 #include "import_system.h"
 
+#include "class_object.h"
 #include "code_object.h"
 #include "codegen.h"
 #include "dict.h"
+#include "exception_object.h"
 #include "function.h"
 #include "list.h"
 #include "module_object.h"
@@ -12,6 +14,7 @@
 #include "source_text.h"
 #include "str.h"
 #include "thread_state.h"
+#include "tuple.h"
 #include "virtual_machine.h"
 #include <filesystem>
 #include <system_error>
@@ -209,6 +212,58 @@ namespace cl
             message += L"'";
             return thread->set_pending_builtin_exception_string(
                 L"ImportError", interned_string(thread, message));
+        }
+
+        std::wstring module_name_for_message(Value module)
+        {
+            if(can_convert_to<ModuleObject>(module))
+            {
+                Value module_name =
+                    module.get_ptr<ModuleObject>()->get_name_binding();
+                if(can_convert_to<String>(module_name))
+                {
+                    return string_to_wstring(
+                        TValue<String>::from_value_assumed(module_name));
+                }
+            }
+            return L"<unknown>";
+        }
+
+        bool pending_exception_is_stop_iteration(ThreadState *thread)
+        {
+            switch(thread->pending_exception_kind())
+            {
+                case PendingExceptionKind::StopIteration:
+                    return true;
+                case PendingExceptionKind::Object:
+                    return is_subclass_of(thread->pending_exception_object()
+                                              .extract()
+                                              ->get_shape()
+                                              ->get_class(),
+                                          thread->class_for_native_layout(
+                                              NativeLayoutId::StopIteration));
+                case PendingExceptionKind::None:
+                    return false;
+            }
+            __builtin_unreachable();
+        }
+
+        Value set_bad_all_item(ThreadState *thread,
+                               const std::wstring &module_name, Value item)
+        {
+            std::wstring message = L"Item in ";
+            message += module_name;
+            message += L".__all__ must be str, not ";
+            message +=
+                string_to_wstring(thread->class_of_value(item)->get_name());
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", interned_string(thread, message));
+        }
+
+        bool string_starts_with_underscore(TValue<String> name)
+        {
+            String *str = name.extract();
+            return str->count.extract() > 0 && str->data[0] == L'_';
         }
 
         void install_package_import_metadata(ThreadState *thread,
@@ -517,6 +572,102 @@ namespace cl
             return set_cannot_import_name(thread, module, name);
         }
         return imported;
+    }
+
+    Value import_star(ThreadState *thread, CodeObject *code_object,
+                      Value module)
+    {
+        if(!can_convert_to<ModuleObject>(module))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"ImportError",
+                L"from-import-* object has no __dict__ and no __all__");
+        }
+
+        Owned<TValue<ModuleObject>> source(
+            TValue<ModuleObject>::from_value_assumed(module));
+        Owned<TValue<ModuleObject>> target(code_object->get_defining_module());
+        std::vector<Owned<TValue<String>>> names;
+        TValue<String> dunder_all = interned_string(thread, L"__all__");
+        Value all = source.extract()->get_own_property(dunder_all);
+        if(!all.is_not_present())
+        {
+            Owned<Value> iterator(thread->call_clovervm_method(
+                all, interned_string(thread, L"__iter__")));
+            if(iterator.value().is_exception_marker())
+            {
+                return iterator.value();
+            }
+
+            const std::wstring module_name =
+                module_name_for_message(source.raw_value());
+            while(true)
+            {
+                Owned<Value> item(thread->call_clovervm_method(
+                    iterator.value(), interned_string(thread, L"__next__")));
+                if(item.value().is_exception_marker())
+                {
+                    if(pending_exception_is_stop_iteration(thread))
+                    {
+                        thread->clear_pending_exception();
+                        break;
+                    }
+                    return item.value();
+                }
+                if(!can_convert_to<String>(item.value()))
+                {
+                    return set_bad_all_item(thread, module_name, item.value());
+                }
+                names.emplace_back(
+                    TValue<String>::from_value_assumed(item.value()));
+            }
+
+            for(const Owned<TValue<String>> &name: names)
+            {
+                Owned<Value> imported(
+                    import_from(thread, source.raw_value(), name.value()));
+                if(imported.value().is_exception_marker())
+                {
+                    return imported.value();
+                }
+                if(!target.extract()->set_own_property(name.value(),
+                                                       imported.value()))
+                {
+                    return thread->set_pending_builtin_exception_string(
+                        L"TypeError",
+                        L"module globals do not allow star import binding");
+                }
+            }
+            return Value::None();
+        }
+
+        Owned<TValue<SlotDict>> source_dict(
+            thread->make_object_value<SlotDict>(source.extract()));
+        for(SlotDict::EntryView entry: *source_dict.extract())
+        {
+            assert(can_convert_to<String>(entry.key));
+            TValue<String> name = TValue<String>::from_value_assumed(entry.key);
+            if(!string_starts_with_underscore(name))
+            {
+                names.emplace_back(name);
+            }
+        }
+
+        for(const Owned<TValue<String>> &name: names)
+        {
+            Value value = source.extract()->get_own_property(name.value());
+            if(value.is_not_present())
+            {
+                continue;
+            }
+            if(!target.extract()->set_own_property(name.value(), value))
+            {
+                return thread->set_pending_builtin_exception_string(
+                    L"TypeError",
+                    L"module globals do not allow star import binding");
+            }
+        }
+        return Value::None();
     }
 
 }  // namespace cl

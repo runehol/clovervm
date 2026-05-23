@@ -1362,7 +1362,17 @@ namespace cl
                 consume(Token::IMPORT);
                 if(peek() == Token::STAR)
                 {
-                    return not_implemented("star import statement");
+                    consume(Token::STAR);
+                    AstChildren targets;
+                    targets.push_back(ast.emplace_back(
+                        AstNodeKind::EXPRESSION_LITERAL, module_source_pos,
+                        Value::from_smi(level)));
+                    targets.push_back(ast.emplace_back(
+                        AstNodeKind::IMPORT_STAR,
+                        source_pos_for_previous_token(), AstChildren{}));
+                    return ast.emplace_back(
+                        AstNodeKind::STATEMENT_IMPORT_FROM, source_pos, targets,
+                        vm.get_or_create_interned_string_value(module_name));
                 }
 
                 bool parenthesized = match(Token::LPAR);

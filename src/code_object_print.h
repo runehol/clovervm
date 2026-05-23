@@ -108,6 +108,8 @@ template <> struct fmt::formatter<cl::Intrinsic0>
                 return format_to(out, "Globals");
             case cl::Intrinsic0::Locals:
                 return format_to(out, "Locals");
+            case cl::Intrinsic0::ImportStar:
+                return format_to(out, "ImportStar");
         }
         return format_to(out, "<unknown>");
     }

@@ -574,6 +574,10 @@ template <> struct fmt::formatter<cl::AstVector>
                     break;
                 }
 
+            case cl::AstNodeKind::IMPORT_STAR:
+                format_to(out, "*");
+                break;
+
             case cl::AstNodeKind::STATEMENT_PASS:
                 emit_indent(out, indent);
                 format_to(out, "pass\n");

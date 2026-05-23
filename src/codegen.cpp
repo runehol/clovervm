@@ -1240,6 +1240,15 @@ namespace cl
             return code_obj->allocate_constant(fromlist.raw_value());
         }
 
+        uint8_t allocate_star_import_fromlist_constant()
+        {
+            TValue<Tuple> fromlist =
+                active_thread()->make_object_value<Tuple>(1);
+            fromlist.extract()->initialize_item_unchecked(
+                0, interned_string(L"*").raw_value());
+            return code_obj->allocate_constant(fromlist.raw_value());
+        }
+
         std::vector<std::wstring> split_import_name(int32_t alias_idx)
         {
             std::wstring import_name = string_as_wchar_t(
@@ -1787,14 +1796,27 @@ namespace cl
 
                 case AstNodeKind::STATEMENT_IMPORT_FROM:
                     {
-                        AstChildren aliases;
-                        for(size_t child_offset = 1;
-                            child_offset < children.size(); ++child_offset)
+                        bool is_star_import = children.size() == 2 &&
+                                              av.kinds[children[1]].node_kind ==
+                                                  AstNodeKind::IMPORT_STAR;
+                        if(is_star_import && mode() != CodegenMode::Module)
                         {
-                            aliases.push_back(children[child_offset]);
+                            throw std::runtime_error(
+                                "import * only allowed at module level");
+                        }
+                        AstChildren aliases;
+                        if(!is_star_import)
+                        {
+                            for(size_t child_offset = 1;
+                                child_offset < children.size(); ++child_offset)
+                            {
+                                aliases.push_back(children[child_offset]);
+                            }
                         }
                         uint8_t fromlist_idx =
-                            allocate_import_fromlist_constant(aliases);
+                            is_star_import
+                                ? allocate_star_import_fromlist_constant()
+                                : allocate_import_fromlist_constant(aliases);
                         uint8_t module_name_idx =
                             code_obj->allocate_constant(av.constants[node_idx]);
                         int64_t level =
@@ -1805,6 +1827,12 @@ namespace cl
                         code_obj->emit_import_name(source_offset,
                                                    module_name_idx,
                                                    static_cast<uint8_t>(level));
+                        if(is_star_import)
+                        {
+                            code_obj->emit_call_intrinsic0(
+                                source_offset, Intrinsic0::ImportStar);
+                            break;
+                        }
                         if(aliases.size() == 1)
                         {
                             int32_t alias_idx = aliases[0];
@@ -2331,6 +2359,7 @@ namespace cl
 
                 case AstNodeKind::WITH_ITEM:
                 case AstNodeKind::IMPORT_ALIAS:
+                case AstNodeKind::IMPORT_STAR:
                     throw std::runtime_error(
                         "should not end here - this is handled by "
                         "the owning statement");

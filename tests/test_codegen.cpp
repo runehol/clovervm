@@ -205,6 +205,20 @@ TEST(Codegen, parenthesized_from_import_statement_matches_flat_form)
     EXPECT_EQ(flat, parenthesized);
 }
 
+TEST(Codegen, star_from_import_statement_uses_import_star_intrinsic)
+{
+    std::string expected = "Code object:\n"
+                           "    0 LdaConstant c[0]\n"
+                           "    2 ImportName c[1], 0\n"
+                           "    5 CallIntrinsic0 ImportStar\n"
+                           "    7 Return\n"
+                           "Constant 0: (\"*\",)\n"
+                           "Constant 1: \"assignment\"\n";
+    std::string actual = bytecode_str_from_file(L"from assignment import *\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, relative_from_import_statement_emits_level)
 {
     std::string expected =

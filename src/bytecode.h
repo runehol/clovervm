@@ -14,6 +14,7 @@ namespace cl
     {
         Globals,
         Locals,
+        ImportStar,
     };
 
     enum class Bytecode : uint8_t

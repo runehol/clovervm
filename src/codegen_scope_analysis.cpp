@@ -472,6 +472,11 @@ namespace cl
                             child_offset < children.size(); ++child_offset)
                         {
                             int32_t alias_idx = children[child_offset];
+                            if(av.kinds[alias_idx].node_kind ==
+                               AstNodeKind::IMPORT_STAR)
+                            {
+                                continue;
+                            }
                             mark_global_validation_assignment(
                                 state, av.constants[av.children[alias_idx][0]]);
                         }
@@ -671,6 +676,11 @@ namespace cl
                             child_offset < children.size(); ++child_offset)
                         {
                             int32_t alias_idx = children[child_offset];
+                            if(av.kinds[alias_idx].node_kind ==
+                               AstNodeKind::IMPORT_STAR)
+                            {
+                                continue;
+                            }
                             ensure_binding(
                                 analysis,
                                 av.constants[av.children[alias_idx][0]]);
@@ -804,6 +814,11 @@ namespace cl
                             child_offset < children.size(); ++child_offset)
                         {
                             int32_t alias_idx = children[child_offset];
+                            if(av.kinds[alias_idx].node_kind ==
+                               AstNodeKind::IMPORT_STAR)
+                            {
+                                continue;
+                            }
                             mark_name(av.constants[av.children[alias_idx][0]]);
                         }
                         return;
@@ -1006,6 +1021,11 @@ namespace cl
                             child_offset < children.size(); ++child_offset)
                         {
                             int32_t alias_idx = children[child_offset];
+                            if(av.kinds[alias_idx].node_kind ==
+                               AstNodeKind::IMPORT_STAR)
+                            {
+                                continue;
+                            }
                             annotate_write(av.children[alias_idx][0]);
                         }
                         break;

@@ -259,6 +259,53 @@ TEST(ImportSystem, ImportModuleAbsoluteUsesCachedModuleWithoutReexecution)
     EXPECT_EQ(Value::from_smi(99), module_attr(context, module, L"marker"));
 }
 
+TEST(ImportSystem, ImportModuleAbsoluteAllowsSelfImportDuringExecution)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"self_import.py", "started = 1\n"
+                                       "import self_import\n"
+                                       "seen_during_import = "
+                                       "self_import.started\n"
+                                       "started = 2\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value imported = import_module_absolute(
+        context.thread(), module_name(context, L"self_import"));
+    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ModuleObject *module = imported.get_ptr<ModuleObject>();
+    EXPECT_EQ(Value::from_smi(1),
+              module_attr(context, module, L"seen_during_import"));
+    EXPECT_EQ(Value::from_smi(2), module_attr(context, module, L"started"));
+}
+
+TEST(ImportSystem, ImportModuleAbsoluteAllowsSelfStarImportDuringExecution)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"self_import.py", "started = 1\n"
+                                       "from self_import import *\n"
+                                       "seen_during_import = started\n"
+                                       "started = 2\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value imported = import_module_absolute(
+        context.thread(), module_name(context, L"self_import"));
+    ASSERT_TRUE(can_convert_to<ModuleObject>(imported));
+    ModuleObject *module = imported.get_ptr<ModuleObject>();
+    EXPECT_EQ(Value::from_smi(1),
+              module_attr(context, module, L"seen_during_import"));
+    EXPECT_EQ(Value::from_smi(2), module_attr(context, module, L"started"));
+}
+
 TEST(ImportSystem, ImportModuleAbsoluteLoadsDottedModuleAndBindsParentAttribute)
 {
     test::VmTestContext context;
@@ -765,6 +812,120 @@ TEST(ImportSystem, FromImportNonModuleHookReturnRaisesImportError)
               exception.extract()->get_shape()->get_class());
     EXPECT_EQ(L"cannot import name 'marker' from '<unknown>'",
               value_as_wstring(exception.extract()->message.value()));
+}
+
+TEST(ImportSystem, FromImportStarLoadsPublicNamesWithoutAll)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"mod.py", "public = 7\n_private = 9\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(L"from mod import *\n"
+                                    L"hidden = 0\n"
+                                    L"try:\n"
+                                    L"    _private\n"
+                                    L"except NameError:\n"
+                                    L"    hidden = 1\n"
+                                    L"public * 10 + hidden\n");
+    EXPECT_EQ(Value::from_smi(71), actual);
+}
+
+TEST(ImportSystem, FromImportStarUsesAll)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"mod.py", "__all__ = (\"_private\",)\n"
+                               "_private = 11\n"
+                               "public = 7\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(L"from mod import *\n"
+                                    L"hidden = 0\n"
+                                    L"try:\n"
+                                    L"    public\n"
+                                    L"except NameError:\n"
+                                    L"    hidden = 1\n"
+                                    L"_private * 10 + hidden\n");
+    EXPECT_EQ(Value::from_smi(111), actual);
+}
+
+TEST(ImportSystem, FromImportStarAllCanImportPackageSubmodule)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"pkg/__init__.py", "__all__ = (\"child\",)\n");
+    root.write_file(L"pkg/child.py", "value = 12\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value actual = context.run_file(L"from pkg import *\n"
+                                    L"child.value\n");
+    EXPECT_EQ(Value::from_smi(12), actual);
+}
+
+TEST(ImportSystem, FromImportStarRejectsBadAllItem)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    TemporaryImportRoot root;
+    root.write_file(L"mod.py", "__all__ = (1,)\n");
+
+    List *path = make_sys_path(context);
+    path->append(module_name(context, root.path.wstring().c_str()).raw_value());
+    replace_sys_path(context, path);
+
+    Value imported = context.run_file(L"from mod import *\n");
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"Item in mod.__all__ must be str, not int",
+              value_as_wstring(exception.extract()->message.value()));
+}
+
+TEST(ImportSystem, FromImportStarPassesStarFromlistToImportHook)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    use_source_tree_python_path(context);
+
+    Value actual = context.run_file(
+        L"original = __builtins__.__import__\n"
+        L"def fake(name, globals, locals, fromlist, level):\n"
+        L"    global seen\n"
+        L"    seen = fromlist\n"
+        L"    return original(name, globals, locals, fromlist, level)\n"
+        L"__builtins__.__import__ = fake\n"
+        L"from assignment import *\n"
+        L"seen[0]\n");
+    ASSERT_TRUE(can_convert_to<String>(actual));
+    EXPECT_EQ(L"*", value_as_wstring(actual));
+}
+
+TEST(ImportSystem, FromImportStarInFunctionIsRejectedByCodegen)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    EXPECT_THROW((void)context.thread()->compile(L"def f():\n"
+                                                 L"    from assignment import "
+                                                 L"*\n",
+                                                 StartRule::File),
+                 std::runtime_error);
 }
 
 TEST(ImportSystem, RelativeFromImportLoadsSiblingModule)

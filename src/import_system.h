@@ -30,6 +30,8 @@ namespace cl
                                               Value fromlist, int64_t level);
     [[nodiscard]] Value import_from(ThreadState *thread, Value module,
                                     TValue<String> name);
+    [[nodiscard]] Value import_star(ThreadState *thread,
+                                    CodeObject *code_object, Value module);
 
 }  // namespace cl
 

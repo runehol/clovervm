@@ -47,6 +47,7 @@ namespace cl
         STATEMENT_ANN_ASSIGN,
         STATEMENT_EXPRESSION,
         IMPORT_ALIAS,
+        IMPORT_STAR,
         PARAMETER_SEQUENCE,
         PARAMETER,
         PARAMETER_VARARGS,
@@ -98,6 +99,7 @@ namespace cl
             case AstNodeKind::STATEMENT_ANN_ASSIGN:
             case AstNodeKind::STATEMENT_EXPRESSION:
             case AstNodeKind::IMPORT_ALIAS:
+            case AstNodeKind::IMPORT_STAR:
             case AstNodeKind::PARAMETER_SEQUENCE:
             case AstNodeKind::PARAMETER:
             case AstNodeKind::PARAMETER_VARARGS:

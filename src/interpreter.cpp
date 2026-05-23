@@ -3281,6 +3281,16 @@ namespace cl
                             .raw_value();
                     COMPLETE();
                 }
+            case Intrinsic0::ImportStar:
+                {
+                    thread->set_clover_frame_frontier(fp);
+                    accumulator = import_star(thread, code_object, accumulator);
+                    if(unlikely(accumulator.is_exception_marker()))
+                    {
+                        MUSTTAIL return propagate_pending_exception(ARGS);
+                    }
+                    COMPLETE();
+                }
         }
         __builtin_unreachable();
     }
