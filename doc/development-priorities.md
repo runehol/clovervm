@@ -53,27 +53,48 @@ JIT, language, and runtime work.
    or VM-controlled dispatch so Python-visible execution, allocation, and
    exceptions are not hidden inside lookup/classification helpers.
 
-4. **Keyword calls and richer call adaptation**
+4. **Guarded binary-operation plans and type profiling**
+
+   Preserve direct SMI-plus-SMI arithmetic as the primary hot path. The common
+   integer case should remain a direct tag check and checked arithmetic path,
+   without paying for uniform shape lookup or generic cache probing.
+
+   For cases that fall out of that hot path, move binary operators such as `+`
+   from ad hoc special cases plus generic failure into explicit guarded plans.
+   The resolver should own Python operator semantics, including type special
+   cases, special-method lookup on the type, reflected methods,
+   `NotImplemented`, and eventual `TypeError` formation. Executing a Python
+   `__add__` or `__radd__` should reuse the call-plan machinery as a
+   special-method call, not perform ordinary instance attribute lookup.
+
+   The fallback inline cache should be polymorphic and keyed by operand shape
+   pairs, using heap-object shapes and the VM's inline-value shapes as the same
+   profiling vocabulary. Each cache entry gives both the interpreter and the
+   future JIT a type profile: guarded shape-pair fast paths, exact
+   special-method call targets, validity cells, and a megamorphic fallback when
+   the site stops being predictable.
+
+5. **Keyword calls and richer call adaptation**
 
    Add keyword call support for ordinary functions and constructors, then
    extend toward `**kwargs` and richer call forms. This should extend the
    existing call-plan model rather than turning `CallSimple` into one generic
    slow path.
 
-5. **Constructor semantics beyond tier-1 thunks**
+6. **Constructor semantics beyond tier-1 thunks**
 
    Expand constructor behavior past the current ordinary-class path. Remaining
    work includes keyword constructor calls, custom `__new__`, custom metaclass
    `__call__`, and normalization of constructor failures into specific VM
    exceptions.
 
-6. **Full Python dict hashing and equality**
+7. **Full Python dict hashing and equality**
 
    Python `dict` needs arbitrary-key hashing and equality semantics rather than
    the current string-key-oriented internal assumptions. This matters for real
    Python code, imports, module namespaces, mappings, and future library work.
 
-7. **Import system completion**
+8. **Import system completion**
 
    The import foundation has landed: module globals are shape-backed
    `ModuleObject` storage, `globals()` and module-scope `locals()` expose live
@@ -95,33 +116,33 @@ JIT, language, and runtime work.
    modules, importlib surface area, and exact module namespace compatibility
    such as stable `module.__dict__` identity.
 
-8. **Attribute hooks and escaped bound methods**
+9. **Attribute hooks and escaped bound methods**
 
     Implement `__getattribute__`, `__getattr__`, `__setattr__`, and
     `__delattr__`, and add observable bound-method objects for escaped method
     values such as `f = obj.m`. Direct method-call fast paths should remain
     allocation-free when the bound method does not escape.
 
-9. **Slices**
+10. **Slices**
 
     Add parse, lowering, and runtime support for `a[i:j:k]`, including
     list/tuple/string slicing and slice assignment/deletion where appropriate.
     This is useful and contained, but less foundational than iteration, call,
     descriptor, and module work.
 
-10. **Range object completeness**
+11. **Range object completeness**
 
     After public `range()` stops returning a mutable iterator directly, finish
     the remaining range surface: length, indexing, containment, representation,
     equality where appropriate, and edge-case arithmetic semantics.
 
-11. **Generators, `yield`, and `yield from`**
+12. **Generators, `yield`, and `yield from`**
 
     Generators create long-lived suspended frames, so they should wait until the
     memory/root model is reliable. `yield from` also needs careful interaction
     with `StopIteration.value` and internal no-value sentinels.
 
-12. **Comprehensions and richer syntax**
+13. **Comprehensions and richer syntax**
 
     Add list/dict/set comprehensions, generator expressions, more assignment
     targets, richer string syntax, and other surface-area features after the
@@ -147,9 +168,11 @@ Near-term order:
    behavior.
 6. Continue replacing generic runtime failures with specific VM exceptions and
    typed `Expected<T>` results where useful.
-7. Continue moving descriptor execution into explicit interpreter/VM-controlled
+7. Add guarded binary-operation plans and polymorphic inline caches so operator
+   sites collect useful type profiles for the future JIT.
+8. Continue moving descriptor execution into explicit interpreter/VM-controlled
    paths rather than hidden lookup helpers.
-8. Add keyword calls for ordinary functions and constructors.
+9. Add keyword calls for ordinary functions and constructors.
 
 ## Revisit Triggers
 
@@ -164,6 +187,8 @@ Revisit this ordering when:
   semantically complete enough for normal loops;
 - descriptor `__get__`, `__set__`, and `__delete__` execution no longer hides
   Python-visible behavior inside lookup helpers;
+- binary operators use guarded plans/PICs for type-specialized fast paths,
+  special-method calls, reflected methods, and `NotImplemented` fallback;
 - keyword calls land for ordinary functions and constructors;
 - module namespace compatibility, especially `module.__dict__`, becomes
   necessary for broader Python source;
