@@ -2,6 +2,7 @@
 include(FetchContent)
 
 set(CMAKE_CXX_CLANG_TIDY "") # turn off clang-tidy for third-party code
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(CLOVERVM_BUILD_BENCHMARK_DEPS "Fetch and build googlebenchmark dependencies" ON)
 
