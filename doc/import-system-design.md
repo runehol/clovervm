@@ -850,10 +850,13 @@ observes mutations to the builtins module.
 
 ### 4. Bootstrap Spec And Source Finder
 
-- Add the small internal/Python-visible spec object.
-- Add the bootstrap source-path finder for `name.py` and `name/__init__.py`.
-- Keep the API shaped as `find_spec(fullname, path)` even before public
-  `sys.meta_path` exists.
+- Implemented: a C++-only `ModuleSpec` records `name`, `origin`, package state,
+  and package search locations.
+- Implemented: the bootstrap source-path finder walks `sys.path`, ignores
+  non-string entries, checks `name/__init__.py` before `name.py`, and returns an
+  empty result for ordinary misses.
+- Deferred: dotted names, a Python-visible spec object, and public
+  `sys.meta_path`.
 
 ### 5. Minimal Core Importer
 

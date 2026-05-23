@@ -54,6 +54,8 @@ add_library(libclovervm STATIC
     instance.h
     int.cpp
     int.h
+    import_system.cpp
+    import_system.h
     interpreter.cpp
     bool.cpp
     bool.h
