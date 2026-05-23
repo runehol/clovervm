@@ -30,6 +30,18 @@ namespace cl
     BuiltinNativeMethod builtin_native_method(const wchar_t *name,
                                               NativeFunction3 function,
                                               const wchar_t *doc = nullptr);
+    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
+                                              NativeFunction4 function,
+                                              const wchar_t *doc = nullptr);
+    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
+                                              NativeFunction5 function,
+                                              const wchar_t *doc = nullptr);
+    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
+                                              NativeFunction6 function,
+                                              const wchar_t *doc = nullptr);
+    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
+                                              NativeFunction7 function,
+                                              const wchar_t *doc = nullptr);
 
     TValue<Function>
     make_native_function(VirtualMachine *vm, NativeFunction0 function,
@@ -45,6 +57,22 @@ namespace cl
                              Optional<TValue<Tuple>>::none());
     TValue<Function>
     make_native_function(VirtualMachine *vm, NativeFunction3 function,
+                         Optional<TValue<Tuple>> default_parameters =
+                             Optional<TValue<Tuple>>::none());
+    TValue<Function>
+    make_native_function(VirtualMachine *vm, NativeFunction4 function,
+                         Optional<TValue<Tuple>> default_parameters =
+                             Optional<TValue<Tuple>>::none());
+    TValue<Function>
+    make_native_function(VirtualMachine *vm, NativeFunction5 function,
+                         Optional<TValue<Tuple>> default_parameters =
+                             Optional<TValue<Tuple>>::none());
+    TValue<Function>
+    make_native_function(VirtualMachine *vm, NativeFunction6 function,
+                         Optional<TValue<Tuple>> default_parameters =
+                             Optional<TValue<Tuple>>::none());
+    TValue<Function>
+    make_native_function(VirtualMachine *vm, NativeFunction7 function,
                          Optional<TValue<Tuple>> default_parameters =
                              Optional<TValue<Tuple>>::none());
     TValue<Function> make_native_function(VirtualMachine *vm,

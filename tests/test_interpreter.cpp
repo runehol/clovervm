@@ -201,6 +201,14 @@ static Value native_next_counter() { return Value::from_smi(g_next_counter++); }
 
 static Value native_zero() { return Value::from_smi(17); }
 
+static Value native_sum7(Value arg0, Value arg1, Value arg2, Value arg3,
+                         Value arg4, Value arg5, Value arg6)
+{
+    return Value::from_smi(arg0.get_smi() + arg1.get_smi() + arg2.get_smi() +
+                           arg3.get_smi() + arg4.get_smi() + arg5.get_smi() +
+                           arg6.get_smi());
+}
+
 static Value native_frame_frontier_result(int64_t result)
 {
     g_native_frame_frontier_seen = active_thread()->clover_frame_frontier();
@@ -2015,6 +2023,21 @@ TEST(Interpreter, call_native_zero_arg_function)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
+}
+
+TEST(Interpreter, call_native_seven_arg_function)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *code_obj =
+        test_context.compile_file(L"native_sum7(1, 2, 3, 4, 5, 6, 7)\n");
+
+    store_global_to_module_for_test(
+        test_context, code_obj, L"native_sum7",
+        make_native_function(&test_context.vm(), native_sum7));
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::from_smi(28), actual);
 }
 
 TEST(Interpreter, every_safepoint_reclamation_reclaims_unrooted_object)

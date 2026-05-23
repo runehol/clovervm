@@ -45,6 +45,11 @@ namespace cl
     using NativeFunction1 = Value (*)(Value);
     using NativeFunction2 = Value (*)(Value, Value);
     using NativeFunction3 = Value (*)(Value, Value, Value);
+    using NativeFunction4 = Value (*)(Value, Value, Value, Value);
+    using NativeFunction5 = Value (*)(Value, Value, Value, Value, Value);
+    using NativeFunction6 = Value (*)(Value, Value, Value, Value, Value, Value);
+    using NativeFunction7 = Value (*)(Value, Value, Value, Value, Value, Value,
+                                      Value);
 
     union NativeFunctionTarget
     {
@@ -52,6 +57,10 @@ namespace cl
         NativeFunction1 fixed1;
         NativeFunction2 fixed2;
         NativeFunction3 fixed3;
+        NativeFunction4 fixed4;
+        NativeFunction5 fixed5;
+        NativeFunction6 fixed6;
+        NativeFunction7 fixed7;
     };
 
     struct CompilationUnit;

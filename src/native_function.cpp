@@ -59,6 +59,14 @@ namespace cl
                 return Bytecode::CallNative2;
             case 3:
                 return Bytecode::CallNative3;
+            case 4:
+                return Bytecode::CallNative4;
+            case 5:
+                return Bytecode::CallNative5;
+            case 6:
+                return Bytecode::CallNative6;
+            case 7:
+                return Bytecode::CallNative7;
             default:
                 assert(false && "unsupported native function arity");
                 return Bytecode::CallNative0;
@@ -101,6 +109,42 @@ namespace cl
         return BuiltinNativeMethod{name, target, 3, doc};
     }
 
+    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
+                                              NativeFunction4 function,
+                                              const wchar_t *doc)
+    {
+        NativeFunctionTarget target;
+        target.fixed4 = function;
+        return BuiltinNativeMethod{name, target, 4, doc};
+    }
+
+    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
+                                              NativeFunction5 function,
+                                              const wchar_t *doc)
+    {
+        NativeFunctionTarget target;
+        target.fixed5 = function;
+        return BuiltinNativeMethod{name, target, 5, doc};
+    }
+
+    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
+                                              NativeFunction6 function,
+                                              const wchar_t *doc)
+    {
+        NativeFunctionTarget target;
+        target.fixed6 = function;
+        return BuiltinNativeMethod{name, target, 6, doc};
+    }
+
+    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
+                                              NativeFunction7 function,
+                                              const wchar_t *doc)
+    {
+        NativeFunctionTarget target;
+        target.fixed7 = function;
+        return BuiltinNativeMethod{name, target, 7, doc};
+    }
+
     TValue<Function>
     make_native_function(VirtualMachine *vm, NativeFunction0 function,
                          Optional<TValue<Tuple>> default_parameters)
@@ -139,6 +183,46 @@ namespace cl
         target.fixed3 = function;
         return make_native_function_with_target(
             vm, target, Bytecode::CallNative3, 3, default_parameters);
+    }
+
+    TValue<Function>
+    make_native_function(VirtualMachine *vm, NativeFunction4 function,
+                         Optional<TValue<Tuple>> default_parameters)
+    {
+        NativeFunctionTarget target;
+        target.fixed4 = function;
+        return make_native_function_with_target(
+            vm, target, Bytecode::CallNative4, 4, default_parameters);
+    }
+
+    TValue<Function>
+    make_native_function(VirtualMachine *vm, NativeFunction5 function,
+                         Optional<TValue<Tuple>> default_parameters)
+    {
+        NativeFunctionTarget target;
+        target.fixed5 = function;
+        return make_native_function_with_target(
+            vm, target, Bytecode::CallNative5, 5, default_parameters);
+    }
+
+    TValue<Function>
+    make_native_function(VirtualMachine *vm, NativeFunction6 function,
+                         Optional<TValue<Tuple>> default_parameters)
+    {
+        NativeFunctionTarget target;
+        target.fixed6 = function;
+        return make_native_function_with_target(
+            vm, target, Bytecode::CallNative6, 6, default_parameters);
+    }
+
+    TValue<Function>
+    make_native_function(VirtualMachine *vm, NativeFunction7 function,
+                         Optional<TValue<Tuple>> default_parameters)
+    {
+        NativeFunctionTarget target;
+        target.fixed7 = function;
+        return make_native_function_with_target(
+            vm, target, Bytecode::CallNative7, 7, default_parameters);
     }
 
     TValue<Function> make_native_function(VirtualMachine *vm,

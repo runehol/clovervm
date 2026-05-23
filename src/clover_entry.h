@@ -8,7 +8,7 @@ namespace cl
     class CodeObject;
     class VirtualMachine;
 
-    constexpr uint32_t MaxCloverFunctionEntryAdapterArgs = 3;
+    constexpr uint32_t MaxCloverFunctionEntryAdapterArgs = 7;
 
     CodeObject *
     make_clover_function_entry_adapter_code_object(VirtualMachine *vm,

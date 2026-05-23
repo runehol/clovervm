@@ -294,6 +294,14 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "CallNative2");
             case cl::Bytecode::CallNative3:
                 return format_to(out, "CallNative3");
+            case cl::Bytecode::CallNative4:
+                return format_to(out, "CallNative4");
+            case cl::Bytecode::CallNative5:
+                return format_to(out, "CallNative5");
+            case cl::Bytecode::CallNative6:
+                return format_to(out, "CallNative6");
+            case cl::Bytecode::CallNative7:
+                return format_to(out, "CallNative7");
             case cl::Bytecode::CallIntrinsic0:
                 return format_to(out, "CallIntrinsic0");
             case cl::Bytecode::CallCodeObject:
@@ -723,6 +731,10 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::CallNative1:
             case cl::Bytecode::CallNative2:
             case cl::Bytecode::CallNative3:
+            case cl::Bytecode::CallNative4:
+            case cl::Bytecode::CallNative5:
+            case cl::Bytecode::CallNative6:
+            case cl::Bytecode::CallNative7:
                 format_to(out, " {}", code_obj.code[pc++]);
                 break;
 

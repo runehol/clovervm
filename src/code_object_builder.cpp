@@ -652,7 +652,9 @@ namespace cl
                                                  uint8_t target_idx)
     {
         assert(op == Bytecode::CallNative0 || op == Bytecode::CallNative1 ||
-               op == Bytecode::CallNative2 || op == Bytecode::CallNative3);
+               op == Bytecode::CallNative2 || op == Bytecode::CallNative3 ||
+               op == Bytecode::CallNative4 || op == Bytecode::CallNative5 ||
+               op == Bytecode::CallNative6 || op == Bytecode::CallNative7);
         return emit_opcode_native_target_idx(source_offset, op, target_idx);
     }
 

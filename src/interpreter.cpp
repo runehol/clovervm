@@ -3183,6 +3183,64 @@ namespace cl
         COMPLETE();
     }
 
+    static INTERP_CC Value op_call_native4(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
+        accumulator = code_object->native_function_targets[target_idx].fixed4(
+            get_native_arg(fp, code_object, 0),
+            get_native_arg(fp, code_object, 1),
+            get_native_arg(fp, code_object, 2),
+            get_native_arg(fp, code_object, 3));
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_call_native5(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
+        accumulator = code_object->native_function_targets[target_idx].fixed5(
+            get_native_arg(fp, code_object, 0),
+            get_native_arg(fp, code_object, 1),
+            get_native_arg(fp, code_object, 2),
+            get_native_arg(fp, code_object, 3),
+            get_native_arg(fp, code_object, 4));
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_call_native6(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
+        accumulator = code_object->native_function_targets[target_idx].fixed6(
+            get_native_arg(fp, code_object, 0),
+            get_native_arg(fp, code_object, 1),
+            get_native_arg(fp, code_object, 2),
+            get_native_arg(fp, code_object, 3),
+            get_native_arg(fp, code_object, 4),
+            get_native_arg(fp, code_object, 5));
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_call_native7(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
+        accumulator = code_object->native_function_targets[target_idx].fixed7(
+            get_native_arg(fp, code_object, 0),
+            get_native_arg(fp, code_object, 1),
+            get_native_arg(fp, code_object, 2),
+            get_native_arg(fp, code_object, 3),
+            get_native_arg(fp, code_object, 4),
+            get_native_arg(fp, code_object, 5),
+            get_native_arg(fp, code_object, 6));
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_call_intrinsic0(PARAMS)
     {
         START(2);
@@ -3618,6 +3676,10 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CallNative1, op_call_native1);
         SET_TABLE_ENTRY(Bytecode::CallNative2, op_call_native2);
         SET_TABLE_ENTRY(Bytecode::CallNative3, op_call_native3);
+        SET_TABLE_ENTRY(Bytecode::CallNative4, op_call_native4);
+        SET_TABLE_ENTRY(Bytecode::CallNative5, op_call_native5);
+        SET_TABLE_ENTRY(Bytecode::CallNative6, op_call_native6);
+        SET_TABLE_ENTRY(Bytecode::CallNative7, op_call_native7);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic0, op_call_intrinsic0);
         SET_TABLE_ENTRY(Bytecode::CallCodeObject, op_call_code_object);
         SET_TABLE_ENTRY(Bytecode::ForIter, op_for_iter);

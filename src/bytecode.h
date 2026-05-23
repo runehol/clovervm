@@ -135,6 +135,10 @@ namespace cl
         CallNative1,
         CallNative2,
         CallNative3,
+        CallNative4,
+        CallNative5,
+        CallNative6,
+        CallNative7,
         CallIntrinsic0,
         CallCodeObject,
 
