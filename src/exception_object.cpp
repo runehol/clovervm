@@ -88,7 +88,7 @@ namespace cl
                                                  const wchar_t *name,
                                                  ClassObject *base)
     {
-        ClassObject *cls = ClassObject::make_builtin_class(
+        ClassObject *cls = ClassObject::make_builtin_class<ExceptionObject>(
             vm->get_or_create_interned_string_value(name),
             ExceptionObject::kInlineSlotCount, nullptr, 0, base);
         install_exception_instance_root_shape(cls);
@@ -124,7 +124,7 @@ namespace cl
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::StopIteration};
-        ClassObject *cls = ClassObject::make_builtin_class(
+        ClassObject *cls = ClassObject::make_builtin_class<StopIterationObject>(
             vm->get_or_create_interned_string_value(L"StopIteration"),
             StopIterationObject::kInlineSlotCount, nullptr, 0, base);
         install_stop_iteration_instance_root_shape(cls);

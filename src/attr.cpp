@@ -6,6 +6,7 @@
 #include "module_object.h"
 #include "runtime_helpers.h"
 #include "slot_dict.h"
+#include "str.h"
 #include "thread_state.h"
 #include "tuple.h"
 
@@ -146,6 +147,16 @@ namespace cl
     {
         assert(receiver.is_ptr());
         Object *object = receiver.get_ptr<Object>();
+        NativeLayoutId receiver_layout = object->native_layout_id();
+        if(receiver_layout != NativeLayoutId::Instance &&
+           receiver_layout != NativeLayoutId::ModuleObject)
+        {
+            (void)active_thread()->set_pending_builtin_exception_string(
+                L"TypeError",
+                L"__class__ assignment only supported for mutable types or "
+                L"ModuleType subclasses");
+            return false;
+        }
         if(!can_convert_to<ClassObject>(value))
         {
             (void)active_thread()->set_pending_builtin_exception_string(
@@ -154,6 +165,14 @@ namespace cl
         }
         TValue<ClassObject> new_class =
             TValue<ClassObject>::from_value_assumed(value);
+        if(new_class.extract()->instance_native_layout_id() != receiver_layout)
+        {
+            (void)active_thread()->set_pending_builtin_exception_string(
+                L"TypeError",
+                L"__class__ assignment only supported for mutable types or "
+                L"ModuleType subclasses");
+            return false;
+        }
 
         object->set_shape(object->get_shape()->clone_with_class(new_class));
         return true;
@@ -637,6 +656,11 @@ namespace cl
             object->lookup_own_attribute_write_descriptor(name);
         if(!own_descriptor.is_found())
         {
+            if(string_eq(name, active_vm()->dunder_class_name()))
+            {
+                return AttributeWriteDescriptor::found(
+                    AttributeMutationPlan::change_class());
+            }
             return own_descriptor;
         }
 

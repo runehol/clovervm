@@ -24,7 +24,7 @@ namespace cl
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::SlotDict};
-        ClassObject *cls = ClassObject::make_builtin_class(
+        ClassObject *cls = ClassObject::make_builtin_class<SlotDict>(
             vm->get_or_create_interned_string_value(L"slotdict"),
             SlotDict::native_static_release_count(), nullptr, 0,
             vm->object_class());
@@ -139,9 +139,18 @@ namespace cl
             object->lookup_own_attribute_write_descriptor(name);
         if(descriptor.is_found())
         {
-            store_attr_from_plan(Value::from_oop(object), descriptor.plan,
-                                 value);
-            return Value::None();
+            if(store_attr_from_plan(Value::from_oop(object), descriptor.plan,
+                                    value))
+            {
+                return Value::None();
+            }
+            if(active_thread()->has_pending_exception())
+            {
+                return Value::exception_marker();
+            }
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError",
+                L"slotdict target does not allow attribute updates");
         }
         if(descriptor.status == AttributeWriteStatus::NotFound)
         {

@@ -23,7 +23,7 @@ TEST(Attr, LoadAttrReturnsInstanceOwnPropertyBeforeClassMember)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     cls->set_own_property(attr_name, Value::from_smi(1));
 
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
@@ -51,14 +51,16 @@ TEST(Attr, DataDescriptorReadDescriptorTakesPrecedenceOverInstanceOwnProperty)
 
     ClassObject *descriptor_cls =
         context.thread()->make_internal_raw<ClassObject>(
-            descriptor_cls_name, 2, context.vm().object_class());
+            descriptor_cls_name, 2, context.vm().object_class(),
+            NativeLayoutId::Instance);
     descriptor_cls->set_own_property(get_name, Value::from_smi(1));
     descriptor_cls->set_own_property(set_name, Value::from_smi(2));
 
     Instance *descriptor =
         context.thread()->make_internal_raw<Instance>(descriptor_cls);
     ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
-        owner_cls_name, 2, context.vm().object_class());
+        owner_cls_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
 
     Instance *instance =
@@ -89,13 +91,15 @@ TEST(Attr, NonDataDescriptorReadDescriptorRunsAfterInstanceOwnProperty)
 
     ClassObject *descriptor_cls =
         context.thread()->make_internal_raw<ClassObject>(
-            descriptor_cls_name, 2, context.vm().object_class());
+            descriptor_cls_name, 2, context.vm().object_class(),
+            NativeLayoutId::Instance);
     descriptor_cls->set_own_property(get_name, Value::from_smi(1));
 
     Instance *descriptor =
         context.thread()->make_internal_raw<Instance>(descriptor_cls);
     ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
-        owner_cls_name, 2, context.vm().object_class());
+        owner_cls_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
 
     Instance *instance =
@@ -133,11 +137,13 @@ TEST(Attr, InstanceOwnReadDescriptorKeepsClassCacheBlockers)
 
     ClassObject *descriptor_cls =
         context.thread()->make_internal_raw<ClassObject>(
-            descriptor_cls_name, 2, context.vm().object_class());
+            descriptor_cls_name, 2, context.vm().object_class(),
+            NativeLayoutId::Instance);
     Instance *descriptor =
         context.thread()->make_internal_raw<Instance>(descriptor_cls);
     ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
-        owner_cls_name, 2, context.vm().object_class());
+        owner_cls_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
 
     Instance *instance =
@@ -172,11 +178,13 @@ TEST(Attr, InstanceClassReadDescriptorDoesNotBlockOnWinningMutableValue)
 
     ClassObject *descriptor_cls =
         context.thread()->make_internal_raw<ClassObject>(
-            descriptor_cls_name, 2, context.vm().object_class());
+            descriptor_cls_name, 2, context.vm().object_class(),
+            NativeLayoutId::Instance);
     Instance *descriptor =
         context.thread()->make_internal_raw<Instance>(descriptor_cls);
     ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
-        owner_cls_name, 2, context.vm().object_class());
+        owner_cls_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
 
     Instance *instance =
@@ -206,7 +214,7 @@ TEST(Attr, InstanceClassReadDescriptorSurvivesClassContentsWriteAndReloadsSlot)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)));
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
@@ -244,9 +252,11 @@ TEST(Attr,
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"field"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        context.vm().type_class(), meta_name, 2, context.vm().object_class());
+        context.vm().type_class(), meta_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        meta, cls_name, 2, context.vm().object_class());
+        meta, cls_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)));
 
     AttributeReadDescriptor descriptor =
@@ -282,9 +292,11 @@ TEST(Attr, ClassReadDescriptorMetaclassFallbackReloadsSlot)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"field"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        context.vm().type_class(), meta_name, 2, context.vm().object_class());
+        context.vm().type_class(), meta_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        meta, cls_name, 2, context.vm().object_class());
+        meta, cls_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     EXPECT_TRUE(meta->set_own_property(attr_name, Value::from_smi(7)));
 
     AttributeReadDescriptor descriptor =
@@ -307,7 +319,7 @@ TEST(Attr, ClassReadDescriptorSurvivesClassContentsWriteAndReloadsSlot)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)));
 
     AttributeReadDescriptor descriptor =
@@ -343,9 +355,9 @@ TEST(Attr, ClassReadDescriptorSurvivesBaseContentsWriteAndReloadsSlot)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
     EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(7)));
 
     AttributeReadDescriptor descriptor =
@@ -383,9 +395,9 @@ TEST(Attr, ClassReadDescriptorInvalidatesOnBaseShapeChange)
     TValue<String> other_name(
         context.vm().get_or_create_interned_string_value(L"other"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
     EXPECT_TRUE(base->set_own_property(attr_name, Value::from_smi(7)));
 
     AttributeReadDescriptor descriptor =
@@ -417,9 +429,11 @@ TEST(Attr, ClassReadDescriptorInvalidatesOnMetaclassContentsWrite)
     TValue<String> meta_attr_name(
         context.vm().get_or_create_interned_string_value(L"meta_attr"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        context.vm().type_class(), meta_name, 2, context.vm().object_class());
+        context.vm().type_class(), meta_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        meta, cls_name, 2, context.vm().object_class());
+        meta, cls_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(7)));
     EXPECT_TRUE(meta->set_own_property(meta_attr_name, Value::from_smi(1)));
 
@@ -450,10 +464,10 @@ TEST(Attr, LoadAttrFallsBackToClassAndBaseMembers)
     TValue<String> inherited_name(
         context.vm().get_or_create_interned_string_value(L"inherited"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     base->set_own_property(inherited_name, Value::from_smi(7));
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
 
     Instance *instance = context.thread()->make_internal_raw<Instance>(child);
 
@@ -475,10 +489,11 @@ TEST(Attr, LoadAttrOnClassFallsBackToMetaclass)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"meta_attr"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        meta_name, 2, context.vm().object_class());
+        meta_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     meta->set_own_property(attr_name, Value::from_smi(7));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        meta, cls_name, 2, context.vm().object_class());
+        meta, cls_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
 
     EXPECT_EQ(Value::from_smi(7), load_attr(Value::from_oop(cls), attr_name));
 }
@@ -495,10 +510,11 @@ TEST(Attr, LoadAttrOnClassPrefersClassPathOverMetaclass)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        meta_name, 2, context.vm().object_class());
+        meta_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     meta->set_own_property(attr_name, Value::from_smi(7));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        meta, cls_name, 2, context.vm().object_class());
+        meta, cls_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     cls->set_own_property(attr_name, Value::from_smi(11));
 
     EXPECT_EQ(Value::from_smi(11), load_attr(Value::from_oop(cls), attr_name));
@@ -516,9 +532,9 @@ TEST(Attr, LoadAttrClassFallbackContinuesPastLatentDescriptor)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
 
     base->set_own_property(attr_name, Value::from_smi(7));
@@ -548,7 +564,7 @@ TEST(Attr, LoadAttrReturnsDunderClassForObjectBackedValues)
     TValue<String> dunder_class_name(
         context.vm().get_or_create_interned_string_value(L"__class__"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     EXPECT_EQ(Value::not_present(),
@@ -741,7 +757,7 @@ TEST(Attr, StoreAttrWritesInstanceOwnProperty)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     EXPECT_TRUE(
@@ -760,7 +776,7 @@ TEST(Attr, ReceiverSlotPlansExecuteAgainstCurrentReceiver)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *first = context.thread()->make_internal_raw<Instance>(cls);
     Instance *second = context.thread()->make_internal_raw<Instance>(cls);
 
@@ -800,7 +816,7 @@ TEST(Attr, StoreAttrWritesClassMember)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     EXPECT_TRUE(
         store_attr(Value::from_oop(cls), attr_name, Value::from_smi(5)));
@@ -821,9 +837,11 @@ TEST(Attr, ClassWriteDescriptorUsesMetaclassMroShapeAndContentsValidityCell)
     TValue<String> descriptor_name(
         context.vm().get_or_create_interned_string_value(L"descriptor"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        context.vm().type_class(), meta_name, 2, context.vm().object_class());
+        context.vm().type_class(), meta_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        meta, cls_name, 2, context.vm().object_class());
+        meta, cls_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
 
     EXPECT_TRUE(cls->set_own_property(attr_name, Value::from_smi(1)));
 
@@ -856,11 +874,13 @@ TEST(Attr, AttributeWriteDescriptorCarriesSupersededClassCacheBlockers)
 
     ClassObject *descriptor_cls =
         context.thread()->make_internal_raw<ClassObject>(
-            descriptor_cls_name, 2, context.vm().object_class());
+            descriptor_cls_name, 2, context.vm().object_class(),
+            NativeLayoutId::Instance);
     Instance *descriptor =
         context.thread()->make_internal_raw<Instance>(descriptor_cls);
     ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
-        owner_cls_name, 2, context.vm().object_class());
+        owner_cls_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
 
     Instance *instance =
@@ -896,12 +916,14 @@ TEST(Attr, AttributeWriteDescriptorRejectsClassDataDescriptor)
 
     ClassObject *descriptor_cls =
         context.thread()->make_internal_raw<ClassObject>(
-            descriptor_cls_name, 2, context.vm().object_class());
+            descriptor_cls_name, 2, context.vm().object_class(),
+            NativeLayoutId::Instance);
     descriptor_cls->set_own_property(set_name, Value::from_smi(1));
     Instance *descriptor =
         context.thread()->make_internal_raw<Instance>(descriptor_cls);
     ClassObject *owner_cls = context.thread()->make_internal_raw<ClassObject>(
-        owner_cls_name, 2, context.vm().object_class());
+        owner_cls_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     owner_cls->set_own_property(attr_name, Value::from_oop(descriptor));
 
     Instance *instance =
@@ -928,7 +950,7 @@ TEST(Attr, AttributeWritesInvalidateLookupCellsForClassTargets)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     ValidityCell *add_cell =
@@ -978,9 +1000,9 @@ TEST(Attr, AttributeWriteDescriptorMissDoesNotCreateLookupValidityCell)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(child);
 
     AttributeWriteDescriptor descriptor =
@@ -1007,9 +1029,9 @@ TEST(Attr, AttributeDeleteDescriptorMissDoesNotCreateLookupValidityCell)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"value"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(child);
 
     AttributeDeleteDescriptor descriptor =
@@ -1038,9 +1060,9 @@ TEST(Attr, AttributeWriteDescriptorCarriesLookupValidityForDescriptorMiss)
     TValue<String> descriptor_name(
         context.vm().get_or_create_interned_string_value(L"descriptor"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(child);
 
     EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));
@@ -1080,9 +1102,9 @@ TEST(Attr, AttributeDeleteDescriptorCarriesLookupValidityForOwnDelete)
     TValue<String> descriptor_name(
         context.vm().get_or_create_interned_string_value(L"descriptor"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(child);
 
     EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));
@@ -1130,9 +1152,9 @@ TEST(Attr, InstanceOwnReadDescriptorCarriesLookupValidityCell)
     TValue<String> descriptor_name(
         context.vm().get_or_create_interned_string_value(L"descriptor"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(child);
     EXPECT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));
 
@@ -1166,7 +1188,7 @@ TEST(Attr, ShapePolicyCanDisallowInstanceAttributeAddDelete)
     ShapeFlags instance_shape_flags =
         shape_flag(ShapeFlag::DisallowAttributeAddDelete);
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class(),
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance,
         shape_flag(ShapeFlag::IsClassObject), instance_shape_flags);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
@@ -1185,7 +1207,7 @@ TEST(Attr, ClassMetadataAttributesAreReadonly)
     TValue<String> dunder_name_name(
         context.vm().get_or_create_interned_string_value(L"__name__"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     EXPECT_EQ(cls_name.raw_value(),
               load_attr(Value::from_oop(cls), dunder_name_name));
@@ -1207,9 +1229,9 @@ TEST(Attr, StoreAttrChangesDunderClassAndRejectsUnsupportedInlineValues)
     TValue<String> dunder_class_name(
         context.vm().get_or_create_interned_string_value(L"__class__"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     ClassObject *other_cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     EXPECT_TRUE(store_attr(Value::from_oop(instance), dunder_class_name,
@@ -1246,7 +1268,7 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
         method_code->get_defining_module().extract(), method_name);
 
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     cls->set_own_property(method_name, method_value);
     cls->set_own_property(value_name, Value::from_smi(42));
 
@@ -1298,7 +1320,7 @@ TEST(Attr, ClassFunctionMethodPlanSurvivesClassContentsWriteAndReloadsSlot)
         method_code->get_defining_module().extract(), second_method_name);
 
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     EXPECT_TRUE(cls->set_own_property(attr_name, first_method));
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 

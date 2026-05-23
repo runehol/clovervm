@@ -143,7 +143,7 @@ namespace cl
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::Instance};
-        ClassObject *cls = ClassObject::make_bootstrap_builtin_class(
+        ClassObject *cls = ClassObject::make_bootstrap_builtin_class<Instance>(
             vm->get_or_create_interned_string_value(L"object"), 0, nullptr, 0);
         return builtin_class_definition(cls, native_layout_ids);
     }

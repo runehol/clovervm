@@ -239,7 +239,7 @@ namespace cl
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::ModuleObject};
-        ClassObject *cls = ClassObject::make_builtin_class(
+        ClassObject *cls = ClassObject::make_builtin_class<ModuleObject>(
             vm->get_or_create_interned_string_value(L"module"),
             ModuleObject::module_inline_storage_slot_count, nullptr, 0,
             vm->object_class());

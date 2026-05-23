@@ -59,7 +59,7 @@ namespace cl
             {vm->get_or_create_interned_string_value(L"__next__"),
              make_native_function(vm, native_range_iterator_next).raw_value()},
         };
-        ClassObject *cls = ClassObject::make_builtin_class(
+        ClassObject *cls = ClassObject::make_builtin_class<RangeIterator>(
             vm->get_or_create_interned_string_value(L"range_iterator"),
             RangeIterator::native_static_release_count(), methods,
             std::size(methods), vm->object_class());

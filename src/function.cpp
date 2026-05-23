@@ -39,7 +39,7 @@ namespace cl
     {
         static constexpr NativeLayoutId native_layout_ids[] = {
             NativeLayoutId::Function};
-        ClassObject *cls = ClassObject::make_builtin_class(
+        ClassObject *cls = ClassObject::make_builtin_class<Function>(
             vm->get_or_create_interned_string_value(L"function"),
             Function::kInlineSlotCount, nullptr, 0, vm->object_class());
         install_function_instance_root_shape(cls);

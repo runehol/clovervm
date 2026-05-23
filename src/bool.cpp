@@ -27,7 +27,7 @@ namespace cl
     {
         ClassObject *cls = ClassObject::make_builtin_class(
             vm->get_or_create_interned_string_value(L"bool"), 0, nullptr, 0,
-            int_class);
+            int_class, NativeLayoutId::Invalid);
         return builtin_class_definition(cls);
     }
 

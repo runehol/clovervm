@@ -3,6 +3,7 @@
 
 #include "attribute_descriptor.h"
 #include "builtin_class_registry.h"
+#include "heap_construction.h"
 #include "instance.h"
 #include "object.h"
 #include "owned.h"
@@ -63,44 +64,67 @@ namespace cl
         ClassObject(
             BootstrapObjectTag, TValue<String> name,
             uint32_t instance_default_inline_slot_count,
-            ClassObject *single_base,
+            ClassObject *single_base, NativeLayoutId instance_native_layout_id,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
             ClassObject *metaclass, TValue<String> name,
             uint32_t instance_default_inline_slot_count,
-            ClassObject *single_base,
+            ClassObject *single_base, NativeLayoutId instance_native_layout_id,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
             ClassObject *metaclass, TValue<String> name,
             uint32_t instance_default_inline_slot_count, TValue<Tuple> bases,
+            NativeLayoutId instance_native_layout_id,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
             TValue<String> name, uint32_t instance_default_inline_slot_count,
-            ClassObject *single_base,
+            ClassObject *single_base, NativeLayoutId instance_native_layout_id,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
+        template <typename T>
         static ClassObject *make_bootstrap_builtin_class(
             TValue<String> name, uint32_t instance_default_inline_slot_count,
-            const BuiltinClassMethod *methods, uint32_t method_count);
+            const BuiltinClassMethod *methods, uint32_t method_count)
+        {
+            static_assert(HasNativeLayoutId<T>::value);
+            return make_bootstrap_builtin_class(
+                name, instance_default_inline_slot_count, methods, method_count,
+                T::native_layout);
+        }
 
+        static ClassObject *make_builtin_class(
+            TValue<String> name, uint32_t instance_default_inline_slot_count,
+            const BuiltinClassMethod *methods, uint32_t method_count,
+            ClassObject *single_base, NativeLayoutId instance_native_layout_id);
+        template <typename T>
         static ClassObject *
         make_builtin_class(TValue<String> name,
                            uint32_t instance_default_inline_slot_count,
                            const BuiltinClassMethod *methods,
-                           uint32_t method_count, ClassObject *single_base);
+                           uint32_t method_count, ClassObject *single_base)
+        {
+            static_assert(HasNativeLayoutId<T>::value);
+            return make_builtin_class(name, instance_default_inline_slot_count,
+                                      methods, method_count, single_base,
+                                      T::native_layout);
+        }
 
         TValue<String> get_name() const { return name.value(); }
         Value get_mro_value() const { return mro; }
         uint32_t get_instance_default_inline_slot_count() const
         {
             return instance_default_inline_slot_count;
+        }
+        NativeLayoutId instance_native_layout_id() const
+        {
+            return instance_native_layout_id_;
         }
         static void validate_inline_slot_layout();
         void install_bootstrap_inheritance(Value bases_tuple, Value mro_tuple);
@@ -209,6 +233,12 @@ namespace cl
         MemberHeapPtr<Shape> instance_root_shape;
         mutable MemberHeapPtr<Function> constructor_thunk;
         uint32_t instance_default_inline_slot_count;
+        NativeLayoutId instance_native_layout_id_;
+
+        static ClassObject *make_bootstrap_builtin_class(
+            TValue<String> name, uint32_t instance_default_inline_slot_count,
+            const BuiltinClassMethod *methods, uint32_t method_count,
+            NativeLayoutId instance_native_layout_id);
 
     public:
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(

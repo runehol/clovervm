@@ -48,7 +48,7 @@ TEST(Shape, InstanceRootShapeCarriesPresentedClass)
     TValue<String> name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        name, 2, context.vm().object_class());
+        name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     Shape *root_shape = cls->get_instance_root_shape();
     ASSERT_NE(nullptr, root_shape);
@@ -95,9 +95,30 @@ TEST(Shape, ClassObjectShapeCarriesMetaclass)
     TValue<String> name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        name, 2, context.vm().object_class());
+        name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     EXPECT_EQ(context.vm().type_class(), cls->get_shape()->get_class());
+}
+
+TEST(ClassObject, BuiltinClassesCarryInstanceNativeLayoutIds)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    EXPECT_EQ(NativeLayoutId::Instance,
+              context.vm().object_class()->instance_native_layout_id());
+    EXPECT_EQ(NativeLayoutId::ModuleObject,
+              context.vm().module_class()->instance_native_layout_id());
+    EXPECT_EQ(NativeLayoutId::List,
+              context.vm().list_class()->instance_native_layout_id());
+    EXPECT_EQ(NativeLayoutId::ClassObject,
+              context.vm().type_class()->instance_native_layout_id());
+    EXPECT_EQ(NativeLayoutId::Invalid,
+              context.vm().int_class()->instance_native_layout_id());
+    EXPECT_EQ(NativeLayoutId::Invalid,
+              context.vm().bool_class()->instance_native_layout_id());
+    EXPECT_EQ(NativeLayoutId::Invalid,
+              context.vm().none_type_class()->instance_native_layout_id());
 }
 
 TEST(Shape, ShapeFlagsAreStoredOnShape)
@@ -108,7 +129,7 @@ TEST(Shape, ShapeFlagsAreStoredOnShape)
     TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     ShapeFlags flags = shape_flag(ShapeFlag::IsClassObject);
     flags |= shape_flag(ShapeFlag::IsImmutableType);
 
@@ -134,7 +155,7 @@ TEST(Shape, AddAndDeleteTransitionsAreCached)
     TValue<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     Shape *root_shape = cls->get_instance_root_shape();
     Shape *shape_with_a =
@@ -205,7 +226,7 @@ TEST(Shape, DescriptorLookupReportsPresentAndAbsentProperties)
     TValue<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     Shape *root_shape = cls->get_instance_root_shape();
     Shape *shape_with_a =
@@ -259,7 +280,7 @@ TEST(Shape, AddTransitionCanCarryDescriptorFlags)
     TValue<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly);
     flags |= descriptor_flag(DescriptorFlag::StableSlot);
 
@@ -288,7 +309,7 @@ TEST(Shape, InstanceRejectsStoreToReadOnlyDescriptor)
     TValue<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::ReadOnly);
 
     Shape *shape_with_readonly =
@@ -322,7 +343,7 @@ TEST(Shape, StableSlotDeleteMovesDescriptorToLatentAndReAddReusesSlot)
     TValue<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
 
     Shape *root_shape = cls->get_instance_root_shape();
@@ -365,7 +386,7 @@ TEST(Shape, ReAddAfterDeleteAppendsAndAllocatesFreshPhysicalSlot)
     TValue<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 1, context.vm().object_class());
+        cls_name, 1, context.vm().object_class(), NativeLayoutId::Instance);
 
     Shape *root_shape = cls->get_instance_root_shape();
     Shape *shape_with_a =
@@ -399,7 +420,7 @@ TEST(Shape, InstanceStoresClassAndShapeSeparately)
     TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     EXPECT_EQ(cls, instance->get_shape()->get_class());
@@ -416,7 +437,7 @@ TEST(Shape, InstanceShapeDescribesDunderClassWithoutStorageSlot)
     TValue<String> dunder_class_name(
         context.vm().get_or_create_interned_string_value(L"__class__"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     Shape *shape = instance->get_shape();
@@ -452,7 +473,7 @@ TEST(Shape, InstanceStoresAndLoadsInlineOwnProperty)
     TValue<String> a_name(
         context.vm().get_or_create_interned_string_value(L"a"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     instance->set_own_property(a_name, Value::from_smi(7));
@@ -482,7 +503,7 @@ TEST(Shape, InstanceSpillsIntoGeometricallyGrowingOverflowStorage)
     TValue<String> f_name(
         context.vm().get_or_create_interned_string_value(L"f"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 1, context.vm().object_class());
+        cls_name, 1, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     instance->set_own_property(a_name, Value::from_smi(1));
@@ -509,7 +530,7 @@ TEST(Shape, DeleteClearsSlotAndAllowsFreshReAdd)
     TValue<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 1, context.vm().object_class());
+        cls_name, 1, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     instance->set_own_property(a_name, Value::from_smi(10));
@@ -536,7 +557,7 @@ TEST(Shape, TwoInstancesShareShapeTransitionsButHoldDistinctValues)
     TValue<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 1, context.vm().object_class());
+        cls_name, 1, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *first = context.thread()->make_internal_raw<Instance>(cls);
     Instance *second = context.thread()->make_internal_raw<Instance>(cls);
 
@@ -564,7 +585,7 @@ TEST(ClassObject, ClassPropertiesPreserveInsertionOrderAndCompactOnDelete)
     TValue<String> b_name(
         context.vm().get_or_create_interned_string_value(L"b"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     cls->set_own_property(a_name, Value::from_smi(1));
     cls->set_own_property(b_name, Value::from_smi(2));
@@ -604,7 +625,7 @@ TEST(ClassObject, ClassPropertiesUseShapeBackedInlineAndOverflowStorage)
         names.push_back(context.vm().get_or_create_interned_string_value(name));
     }
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     for(uint32_t idx = 0; idx < property_count; ++idx)
     {
@@ -666,7 +687,7 @@ TEST(ClassObject, PredefinedMetadataSlotsArePresentAndReadonly)
     TValue<String> dunder_init_name(
         context.vm().get_or_create_interned_string_value(L"__init__"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     Shape *shape = cls->get_shape();
     ASSERT_NE(nullptr, shape);
@@ -801,7 +822,7 @@ TEST(ClassObject, PredefinedConstructorSlotsAreReadWriteStableSlots)
     TValue<String> dunder_init_name(
         context.vm().get_or_create_interned_string_value(L"__init__"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     DescriptorLookup latent_lookup =
         cls->get_shape()->lookup_descriptor_including_latent(dunder_init_name);
@@ -849,7 +870,8 @@ TEST(ClassObject, BuiltinClassRegistersReadonlyFixedMethods)
     };
 
     ClassObject *cls = ClassObject::make_builtin_class(
-        cls_name, 2, methods, 2, context.vm().object_class());
+        cls_name, 2, methods, 2, context.vm().object_class(),
+        NativeLayoutId::Invalid);
 
     Shape *shape = cls->get_shape();
     ASSERT_NE(nullptr, shape);
@@ -889,7 +911,7 @@ TEST(ClassObject, DefineAndSetExistingOwnPropertyHaveSeparateSemantics)
     TValue<String> missing_name(
         context.vm().get_or_create_interned_string_value(L"missing"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     EXPECT_FALSE(cls->set_existing_own_property(attr_name, Value::from_smi(1)));
     EXPECT_TRUE(
@@ -920,9 +942,9 @@ TEST(ClassObject, PredefinedBasesAndMroReflectSingleBaseChain)
     TValue<String> dunder_mro_name(
         context.vm().get_or_create_interned_string_value(L"__mro__"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
 
     Value bases_value = child->get_own_property(dunder_bases_name);
     ASSERT_TRUE(bases_value.is_ptr());
@@ -957,11 +979,11 @@ TEST(ClassObject, IsSubclassOfAndIsInstanceOfFollowMro)
     TValue<String> sibling_name(
         context.vm().get_or_create_interned_string_value(L"Sibling"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
     ClassObject *sibling = context.thread()->make_internal_raw<ClassObject>(
-        sibling_name, 2, context.vm().object_class());
+        sibling_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(child);
 
     EXPECT_TRUE(is_subclass_of(child, child));
@@ -988,9 +1010,9 @@ TEST(ClassObject, OwnPropertyApiDoesNotFallBackToBaseChain)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
 
     base->set_own_property(attr_name, Value::from_smi(7));
 
@@ -1017,7 +1039,7 @@ TEST(ClassObject, MutationDistinguishesSlotUpdateAddAndDelete)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     Shape *root_shape = cls->get_shape();
     EXPECT_TRUE(root_shape->has_flag(ShapeFlag::IsClassObject));
@@ -1050,7 +1072,7 @@ TEST(ClassObject, MroShapeAndContentsValidityCellStartsNullAndIsCreatedLazily)
     TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"Cls"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     EXPECT_EQ(nullptr, cls->current_mro_shape_and_contents_validity_cell());
 
@@ -1075,9 +1097,9 @@ TEST(ClassObject,
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
 
     ValidityCell *child_cell =
         child->get_or_create_mro_shape_and_contents_validity_cell();
@@ -1113,7 +1135,7 @@ TEST(ClassObject,
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, context.vm().object_class());
+        cls_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
 
     ValidityCell *cell =
         cls->get_or_create_mro_shape_and_contents_validity_cell();
@@ -1149,9 +1171,9 @@ TEST(ClassObject,
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
 
     ValidityCell *first_cell =
         child->get_or_create_mro_shape_and_contents_validity_cell();
@@ -1188,9 +1210,11 @@ TEST(ClassObject,
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *meta = context.thread()->make_internal_raw<ClassObject>(
-        context.vm().type_class(), meta_name, 2, context.vm().object_class());
+        context.vm().type_class(), meta_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        meta, cls_name, 2, context.vm().object_class());
+        meta, cls_name, 2, context.vm().object_class(),
+        NativeLayoutId::Instance);
 
     EXPECT_EQ(
         nullptr,
@@ -1248,9 +1272,9 @@ TEST(ClassObject, ClassLookupWalksMaterializedMro)
     TValue<String> method_name(
         context.vm().get_or_create_interned_string_value(L"m"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
 
     base->set_own_property(method_name, Value::from_smi(7));
 
@@ -1270,9 +1294,9 @@ TEST(ClassObject, ClassLookupContinuesPastLatentDescriptor)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *base = context.thread()->make_internal_raw<ClassObject>(
-        base_name, 2, context.vm().object_class());
-    ClassObject *child =
-        context.thread()->make_internal_raw<ClassObject>(child_name, 2, base);
+        base_name, 2, context.vm().object_class(), NativeLayoutId::Instance);
+    ClassObject *child = context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
     DescriptorFlags flags = descriptor_flag(DescriptorFlag::StableSlot);
 
     base->set_own_property(attr_name, Value::from_smi(7));

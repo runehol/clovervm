@@ -221,7 +221,7 @@ TEST(NativeLayoutDescriptor, NewObjectSizeReportsCurrentLayoutExtent)
     TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"SizedInstance"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 4, context.vm().object_class());
+        cls_name, 4, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
     EXPECT_EQ(Instance::size_for(uint32_t{0}), object_size_in_bytes(instance));
 }
@@ -337,9 +337,9 @@ TEST(NativeLayoutDescriptor, InstanceAuxCountTracksInitializedInlineSlots)
     TValue<String> large_name(
         context.vm().get_or_create_interned_string_value(L"Large"));
     ClassObject *small_cls = context.thread()->make_internal_raw<ClassObject>(
-        small_name, 1, context.vm().object_class());
+        small_name, 1, context.vm().object_class(), NativeLayoutId::Instance);
     ClassObject *large_cls = context.thread()->make_internal_raw<ClassObject>(
-        large_name, 7, context.vm().object_class());
+        large_name, 7, context.vm().object_class(), NativeLayoutId::Instance);
 
     Instance *small = context.thread()->make_internal_raw<Instance>(small_cls);
     Instance *large = context.thread()->make_internal_raw<Instance>(large_cls);
@@ -363,7 +363,7 @@ TEST(NativeLayoutDescriptor, InstanceCustomObjectSizeUsesInitializedInlineSlots)
     TValue<String> cls_name(
         context.vm().get_or_create_interned_string_value(L"SizedInstance"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 4, context.vm().object_class());
+        cls_name, 4, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     const ObjectSizeDescriptor &object_size =
@@ -390,7 +390,7 @@ TEST(NativeLayoutDescriptor, InstanceShapeTransitionsDoNotChangeAuxCount)
     TValue<String> c_name(
         context.vm().get_or_create_interned_string_value(L"c"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 1, context.vm().object_class());
+        cls_name, 1, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     ASSERT_EQ(0u, instance->native_layout_aux_count_value());
@@ -415,7 +415,7 @@ TEST(NativeLayoutDescriptor,
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"attr"));
     ClassObject *cls = context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 0, context.vm().object_class());
+        cls_name, 0, context.vm().object_class(), NativeLayoutId::Instance);
     Instance *instance = context.thread()->make_internal_raw<Instance>(cls);
 
     ASSERT_TRUE(instance->set_own_property(attr_name, Value::from_smi(1)));

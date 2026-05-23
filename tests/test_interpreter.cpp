@@ -1496,7 +1496,8 @@ TEST(Interpreter, del_attr_deletes_instance_property_and_caches_plan)
     ASSERT_EQ(1u, function_code->attribute_mutation_caches.size());
 
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, test_context.vm().object_class());
+        cls_name, 2, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
     Instance *first = test_context.thread()->make_internal_raw<Instance>(cls);
     ASSERT_TRUE(first->set_own_property(value_name, Value::from_smi(7)));
 
@@ -1548,7 +1549,8 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
 
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
-        cls_name, 2, test_context.vm().object_class());
+        cls_name, 2, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
     Instance *obj = test_context.thread()->make_internal_raw<Instance>(cls);
     CodeObject *call_code = test_context.compile_file(L"clear(obj)\n");
     store_global_to_module_for_test(test_context, call_code, L"clear",
@@ -1597,11 +1599,12 @@ TEST(Interpreter, cached_class_chain_attribute_read_observes_mro_mutations)
         test_context.vm().get_or_create_interned_string_value(L"value"));
 
     ClassObject *base = test_context.thread()->make_internal_raw<ClassObject>(
-        base_name, 4, test_context.vm().object_class());
+        base_name, 4, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
     ClassObject *mid = test_context.thread()->make_internal_raw<ClassObject>(
-        mid_name, 4, base);
+        mid_name, 4, base, NativeLayoutId::Instance);
     ClassObject *leaf = test_context.thread()->make_internal_raw<ClassObject>(
-        leaf_name, 4, mid);
+        leaf_name, 4, mid, NativeLayoutId::Instance);
     Instance *obj = test_context.thread()->make_internal_raw<Instance>(leaf);
 
     ASSERT_TRUE(base->set_own_property(value_name, Value::from_smi(1)));
@@ -1680,11 +1683,12 @@ TEST(Interpreter, cached_direct_method_call_observes_mro_mutations)
         test_context.vm().get_or_create_interned_string_value(L"method"));
 
     ClassObject *base = test_context.thread()->make_internal_raw<ClassObject>(
-        base_name, 4, test_context.vm().object_class());
+        base_name, 4, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
     ClassObject *mid = test_context.thread()->make_internal_raw<ClassObject>(
-        mid_name, 4, base);
+        mid_name, 4, base, NativeLayoutId::Instance);
     ClassObject *leaf = test_context.thread()->make_internal_raw<ClassObject>(
-        leaf_name, 4, mid);
+        leaf_name, 4, mid, NativeLayoutId::Instance);
     Instance *obj = test_context.thread()->make_internal_raw<Instance>(leaf);
 
     Value base_method_1 = make_test_function(test_context, L"base_method_1",
@@ -1760,11 +1764,12 @@ TEST(Interpreter, cached_attribute_stores_invalidate_class_chain_reads)
         test_context.vm().get_or_create_interned_string_value(L"value"));
 
     ClassObject *base = test_context.thread()->make_internal_raw<ClassObject>(
-        base_name, 4, test_context.vm().object_class());
+        base_name, 4, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
     ClassObject *mid = test_context.thread()->make_internal_raw<ClassObject>(
-        mid_name, 4, base);
+        mid_name, 4, base, NativeLayoutId::Instance);
     ClassObject *leaf = test_context.thread()->make_internal_raw<ClassObject>(
-        leaf_name, 4, mid);
+        leaf_name, 4, mid, NativeLayoutId::Instance);
     Instance *obj = test_context.thread()->make_internal_raw<Instance>(leaf);
 
     ASSERT_TRUE(base->set_own_property(value_name, Value::from_smi(1)));
@@ -2368,7 +2373,8 @@ TEST(Interpreter, call_clovervm_method_binds_class_function_receiver)
     TValue<String> method_name(
         test_context.vm().get_or_create_interned_string_value(L"method"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
-        class_name, 2, test_context.vm().object_class());
+        class_name, 2, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
     Instance *instance =
         test_context.thread()->make_internal_raw<Instance>(cls);
     Value method = make_test_function(test_context, L"method",
@@ -2394,7 +2400,8 @@ TEST(Interpreter, call_clovervm_method_calls_unbound_own_function)
     TValue<String> method_name(
         test_context.vm().get_or_create_interned_string_value(L"method"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
-        class_name, 2, test_context.vm().object_class());
+        class_name, 2, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
     Instance *instance =
         test_context.thread()->make_internal_raw<Instance>(cls);
     Value method = make_test_function(test_context, L"method",
@@ -2420,7 +2427,8 @@ TEST(Interpreter, call_clovervm_method_uses_function_call_adaptation)
     TValue<String> method_name(
         test_context.vm().get_or_create_interned_string_value(L"method"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
-        class_name, 2, test_context.vm().object_class());
+        class_name, 2, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
     Instance *instance =
         test_context.thread()->make_internal_raw<Instance>(cls);
     Value method = make_test_function(test_context, L"method",
@@ -2446,7 +2454,8 @@ TEST(Interpreter, value_repr_uses_special_method_lookup)
     TValue<String> dunder_repr_name(
         test_context.vm().get_or_create_interned_string_value(L"__repr__"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
-        class_name, 2, test_context.vm().object_class());
+        class_name, 2, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
     Instance *instance =
         test_context.thread()->make_internal_raw<Instance>(cls);
     Value class_repr = make_test_function(test_context, L"class_repr",
@@ -2581,7 +2590,8 @@ TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)
     TValue<String> class_name(
         test_context.vm().get_or_create_interned_string_value(L"Plain"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
-        class_name, 2, test_context.vm().object_class());
+        class_name, 2, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
     Instance *instance =
         test_context.thread()->make_internal_raw<Instance>(cls);
     expect_method_string(Value::from_oop(instance), dunder_repr_name,
@@ -2599,7 +2609,8 @@ TEST(Interpreter, call_clovervm_method_reports_missing_method)
     TValue<String> method_name(
         test_context.vm().get_or_create_interned_string_value(L"method"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
-        class_name, 2, test_context.vm().object_class());
+        class_name, 2, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
     Instance *instance =
         test_context.thread()->make_internal_raw<Instance>(cls);
     Value *caller_fp = test_context.thread()->clover_frame_frontier();
@@ -2622,7 +2633,8 @@ TEST(Interpreter, call_clovervm_method_reports_non_callable_method)
     TValue<String> method_name(
         test_context.vm().get_or_create_interned_string_value(L"method"));
     ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
-        class_name, 2, test_context.vm().object_class());
+        class_name, 2, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
     Instance *instance =
         test_context.thread()->make_internal_raw<Instance>(cls);
     ASSERT_TRUE(cls->set_own_property(method_name, Value::from_smi(7)));
@@ -3648,6 +3660,54 @@ TEST(Interpreter, class_assignment_changes_receiver_shape_class)
                                                          L"c = C()\n"
                                                          L"c.__class__ = D\n"
                                                          L"c.marker\n"));
+}
+
+TEST(Interpreter, class_assignment_rejects_builtin_and_class_object_receivers)
+{
+    expect_python_error(
+        L"a = []\n"
+        L"a.__class__ = list\n",
+        L"TypeError: __class__ assignment only supported for mutable types or "
+        L"ModuleType subclasses");
+    expect_python_error(
+        L"class F:\n"
+        L"    pass\n"
+        L"F.__class__ = type\n",
+        L"TypeError: __class__ assignment only supported for mutable types or "
+        L"ModuleType subclasses");
+}
+
+TEST(Interpreter, class_assignment_rejects_instance_module_category_switch)
+{
+    expect_python_error(
+        L"class F:\n"
+        L"    pass\n"
+        L"f = F()\n"
+        L"f.__class__ = __builtins__.__class__\n",
+        L"TypeError: __class__ assignment only supported for mutable types or "
+        L"ModuleType subclasses");
+}
+
+TEST(Interpreter, class_assignment_rejects_module_instance_category_switch)
+{
+    expect_python_error(
+        L"class F:\n"
+        L"    pass\n"
+        L"m = __builtins__\n"
+        L"m.__class__ = F\n",
+        L"TypeError: __class__ assignment only supported for mutable types or "
+        L"ModuleType subclasses");
+}
+
+TEST(Interpreter, module_class_assignment_accepts_module_class)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(),
+              test_context.run_file(L"m = __builtins__\n"
+                                    L"module_class = m.__class__\n"
+                                    L"m.__class__ = module_class\n"
+                                    L"m.__class__ is module_class\n"));
 }
 
 TEST(Interpreter, class_dict_exposes_class_namespace_entries)

@@ -45,7 +45,7 @@ namespace cl
             {vm->get_or_create_interned_string_value(L"__next__"),
              make_native_function(vm, native_list_iterator_next).raw_value()},
         };
-        ClassObject *cls = ClassObject::make_builtin_class(
+        ClassObject *cls = ClassObject::make_builtin_class<ListIterator>(
             vm->get_or_create_interned_string_value(L"list_iterator"),
             ListIterator::native_static_release_count(), methods,
             std::size(methods), vm->object_class());

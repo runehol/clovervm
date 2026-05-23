@@ -449,7 +449,7 @@ namespace cl
 
         TValue<ClassObject> cls = thread->make_internal_value<ClassObject>(
             thread->get_machine()->type_class(), class_name,
-            kDefaultFactoryInlineSlotCount, bases);
+            kDefaultFactoryInlineSlotCount, bases, NativeLayoutId::Instance);
         Scope *local_scope = body_code->get_local_scope_ptr();
         for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
         {
@@ -1615,7 +1615,15 @@ namespace cl
             {
                 cache.populate(receiver, descriptor);
             }
-            store_attr_from_plan(receiver, descriptor.plan, accumulator);
+            if(unlikely(!store_attr_from_plan(receiver, descriptor.plan,
+                                              accumulator)))
+            {
+                if(thread->has_pending_exception())
+                {
+                    MUSTTAIL return propagate_pending_exception(ARGS);
+                }
+                MUSTTAIL return attribute_assignment_error(ARGS);
+            }
             COMPLETE();
         }
         if(descriptor.status == AttributeWriteStatus::NotFound &&
@@ -1966,7 +1974,15 @@ namespace cl
         }
         if(cache.plan.kind == AttributeMutationPlanKind::StoreExisting)
         {
-            store_attr_from_plan(receiver, cache.plan, accumulator);
+            if(unlikely(
+                   !store_attr_from_plan(receiver, cache.plan, accumulator)))
+            {
+                if(thread->has_pending_exception())
+                {
+                    MUSTTAIL return propagate_pending_exception(ARGS);
+                }
+                MUSTTAIL return attribute_assignment_error(ARGS);
+            }
             COMPLETE();
         }
         MUSTTAIL return op_store_attr_cache_miss(ARGS);
