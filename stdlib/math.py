@@ -1,1 +1,2 @@
-from _math import sqrt
+def sqrt(x):
+    return __clover_sqrt__(x)

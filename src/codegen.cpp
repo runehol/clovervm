@@ -555,6 +555,7 @@ namespace cl
             WriteStdout,
             Globals,
             Locals,
+            Sqrt,
         };
 
         TrustedCloverCall trusted_clover_call_kind(int32_t node_idx) const
@@ -596,6 +597,10 @@ namespace cl
             if(name_value == interned_string(L"__clover_locals__").raw_value())
             {
                 return TrustedCloverCall::Locals;
+            }
+            if(name_value == interned_string(L"__clover_sqrt__").raw_value())
+            {
+                return TrustedCloverCall::Sqrt;
             }
             throw std::runtime_error("unknown trusted __clover_* helper");
         }
@@ -700,6 +705,19 @@ namespace cl
             code_obj->emit_call_runtime_intrinsic0(source_offset, intrinsic);
         }
 
+        void codegen_trusted_clover_sqrt(uint32_t source_offset,
+                                         AstChildren args)
+        {
+            if(args.size() != 1)
+            {
+                throw std::runtime_error(
+                    "__clover_sqrt__ expects exactly 1 argument");
+            }
+
+            codegen_node(args[0]);
+            code_obj->emit_unary_op(source_offset, Bytecode::Sqrt);
+        }
+
         bool try_codegen_trusted_clover_call(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
@@ -725,6 +743,9 @@ namespace cl
                     codegen_trusted_clover_intrinsic0(source_offset, args,
                                                       RuntimeIntrinsic0::Locals,
                                                       "__clover_locals__");
+                    return true;
+                case TrustedCloverCall::Sqrt:
+                    codegen_trusted_clover_sqrt(source_offset, args);
                     return true;
             }
             __builtin_unreachable();

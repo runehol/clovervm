@@ -397,9 +397,12 @@ namespace cl
                     return set_module_load_failed(thread, spec.name);
                 }
 
+                LanguageMode language_mode =
+                    spec.trusted_clover_extensions
+                        ? LanguageMode::TrustedCloverExtensions
+                        : LanguageMode::StandardsCompliant;
                 CodeObject *code = thread->compile_in_module(
-                    source->c_str(), StartRule::File, module,
-                    LanguageMode::StandardsCompliant);
+                    source->c_str(), StartRule::File, module, language_mode);
                 Value result = thread->run_clovervm_code_object(code);
                 if(result.is_exception_marker())
                 {

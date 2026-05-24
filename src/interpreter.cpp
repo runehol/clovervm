@@ -24,6 +24,7 @@
 #include "validity_cell.h"
 #include "value.h"
 #include "virtual_machine.h"
+#include <cmath>
 #include <cstdint>
 #include <fmt/core.h>
 #include <stdexcept>
@@ -1098,6 +1099,29 @@ namespace cl
         }
 
         accumulator = thread->make_object_value<Float>(value).raw_value();
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_sqrt_type_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"sqrt() argument must be int or float");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_sqrt_domain_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"ValueError", L"math domain error");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
         COMPLETE();
     }
 
@@ -2390,6 +2414,34 @@ namespace cl
             MUSTTAIL return op_plus_float_arithmetic(ARGS);
         }
 
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_sqrt(PARAMS)
+    {
+        START_UNARY_ACC();
+
+        double value;
+        if(a.is_smi())
+        {
+            value = static_cast<double>(a.get_smi());
+        }
+        else if(can_convert_to<Float>(a))
+        {
+            value = a.get_ptr<Float>()->value;
+        }
+        else
+        {
+            MUSTTAIL return op_sqrt_type_error(ARGS);
+        }
+
+        if(unlikely(value < 0.0))
+        {
+            MUSTTAIL return op_sqrt_domain_error(ARGS);
+        }
+
+        accumulator =
+            thread->make_object_value<Float>(std::sqrt(value)).raw_value();
         COMPLETE();
     }
 
@@ -3809,6 +3861,7 @@ namespace cl
 
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
         SET_TABLE_ENTRY(Bytecode::Plus, op_plus);
+        SET_TABLE_ENTRY(Bytecode::Sqrt, op_sqrt);
         SET_TABLE_ENTRY(Bytecode::Not, op_not);
 
         SET_TABLE_ENTRY(Bytecode::CreateDict, op_create_dict);

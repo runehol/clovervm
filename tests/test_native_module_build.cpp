@@ -193,7 +193,53 @@ TEST(NativeModuleBuild, TimeSleepRejectsNegativeValues)
         std::wstring(string_as_wchar_t(exception.extract()->message.value())));
 }
 
-TEST(NativeModuleBuild, MathWrapperImportsNativeSqrt)
+TEST(NativeModuleBuild, NativeMathModuleExportsSqrt)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value result = context.run_file(L"import _math\n"
+                                    L"result = _math.sqrt(3) > 1.7 and "
+                                    L"_math.sqrt(3) < 1.8 and "
+                                    L"_math.sqrt(4.0) == 2.0\n"
+                                    L"result\n");
+    EXPECT_EQ(Value::True(), result);
+}
+
+TEST(NativeModuleBuild, NativeMathSqrtReportsErrors)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value negative_result = context.run_file(L"import _math\n"
+                                             L"_math.sqrt(-1.0)\n");
+    EXPECT_TRUE(negative_result.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> negative_exception =
+        context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ValueError"),
+              negative_exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"math domain error",
+              std::wstring(string_as_wchar_t(
+                  negative_exception.extract()->message.value())));
+    context.thread()->clear_pending_exception();
+
+    Value type_result = context.run_file(L"import _math\n"
+                                         L"_math.sqrt(None)\n");
+    EXPECT_TRUE(type_result.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> type_exception =
+        context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+              type_exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"value cannot be converted to float",
+              std::wstring(string_as_wchar_t(
+                  type_exception.extract()->message.value())));
+}
+
+TEST(NativeModuleBuild, StdlibMathWrapperUsesTrustedSqrt)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -206,7 +252,7 @@ TEST(NativeModuleBuild, MathWrapperImportsNativeSqrt)
     EXPECT_EQ(Value::True(), result);
 }
 
-TEST(NativeModuleBuild, MathSqrtReportsErrors)
+TEST(NativeModuleBuild, StdlibMathSqrtReportsTrustedErrors)
 {
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
@@ -234,7 +280,7 @@ TEST(NativeModuleBuild, MathSqrtReportsErrors)
         context.thread()->pending_exception_object();
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
               type_exception.extract()->get_shape()->get_class());
-    EXPECT_EQ(L"value cannot be converted to float",
+    EXPECT_EQ(L"sqrt() argument must be int or float",
               std::wstring(string_as_wchar_t(
                   type_exception.extract()->message.value())));
 }

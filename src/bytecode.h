@@ -126,6 +126,7 @@ namespace cl
         Not,
         Negate,
         Plus,
+        Sqrt,
         BitwiseNot,
 
         Nop,

@@ -1327,3 +1327,23 @@ TEST(Codegen, user_clover_locals_name_is_ordinary_call)
     EXPECT_EQ(std::string::npos, actual.find("CallRuntimeIntrinsic0 Locals"));
     EXPECT_NE(std::string::npos, actual.find("CallSimple"));
 }
+
+TEST(Codegen, trusted_clover_sqrt_lowers_to_opcode)
+{
+    std::string actual = trusted_builtin_bytecode_str_from_file(
+        L"def root(value):\n"
+        L"    return __clover_sqrt__(value)\n");
+
+    EXPECT_NE(std::string::npos, actual.find("Sqrt"));
+    EXPECT_EQ(std::string::npos, actual.find("CallSimple"));
+}
+
+TEST(Codegen, user_clover_sqrt_name_is_ordinary_call)
+{
+    std::string actual =
+        bytecode_str_from_file(L"def root(value):\n"
+                               L"    return __clover_sqrt__(value)\n");
+
+    EXPECT_EQ(std::string::npos, actual.find("Sqrt"));
+    EXPECT_NE(std::string::npos, actual.find("CallSimple"));
+}

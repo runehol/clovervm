@@ -26,6 +26,7 @@ namespace cl
         std::wstring name;
         std::wstring origin;
         bool is_package = false;
+        bool trusted_clover_extensions = false;
         std::vector<std::wstring> submodule_search_locations;
     };
 

@@ -42,6 +42,34 @@ namespace cl
             return absolute_path.lexically_normal().wstring();
         }
 
+        bool path_is_at_or_under(const std::wstring &path,
+                                 const std::wstring &root)
+        {
+            if(path == root)
+            {
+                return true;
+            }
+            std::wstring root_prefix = root;
+            if(!root_prefix.empty() &&
+               root_prefix.back() != std::filesystem::path::preferred_separator)
+            {
+                root_prefix += std::filesystem::path::preferred_separator;
+            }
+            return path.rfind(root_prefix, 0) == 0;
+        }
+
+        bool is_stdlib_path_entry(const std::filesystem::path &base)
+        {
+            std::wstring absolute_base = absolute_wstring_path(base);
+            return path_is_at_or_under(
+                       absolute_base,
+                       absolute_wstring_path(
+                           std::filesystem::path(CL_BUILD_STDLIB_DIR))) ||
+                   path_is_at_or_under(absolute_base, absolute_wstring_path(
+                                                          std::filesystem::path(
+                                                              CL_STDLIB_DIR)));
+        }
+
         std::optional<ModuleSpec>
         find_source_module_spec_in_path_entry(const std::wstring &full_name,
                                               const std::wstring &leaf_name,
@@ -58,6 +86,7 @@ namespace cl
             {
                 base = L".";
             }
+            bool trusted_source = is_stdlib_path_entry(base);
             std::filesystem::path package_dir = base / leaf_name;
             std::filesystem::path package_init = package_dir / L"__init__.py";
             if(file_exists(package_init))
@@ -67,6 +96,7 @@ namespace cl
                     full_name,
                     absolute_wstring_path(package_init),
                     true,
+                    trusted_source,
                     {absolute_wstring_path(package_dir)},
                 };
             }
@@ -79,6 +109,7 @@ namespace cl
                     full_name,
                     absolute_wstring_path(module_file),
                     false,
+                    trusted_source,
                     {},
                 };
             }
@@ -92,6 +123,7 @@ namespace cl
                     full_name,
                     absolute_wstring_path(native_module_file),
                     false,
+                    false,
                     {},
                 };
             }
@@ -103,6 +135,7 @@ namespace cl
                     full_name,
                     L"namespace",
                     true,
+                    false,
                     {absolute_wstring_path(package_dir)},
                 };
             }
@@ -122,7 +155,12 @@ namespace cl
             if(full_name == L"sys" || full_name == L"builtins")
             {
                 return ModuleSpec{
-                    ModuleSpecKind::Builtin, full_name, L"built-in", false, {},
+                    ModuleSpecKind::Builtin,
+                    full_name,
+                    L"built-in",
+                    false,
+                    false,
+                    {},
                 };
             }
             return std::nullopt;

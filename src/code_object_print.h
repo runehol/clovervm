@@ -314,6 +314,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "Negate");
             case cl::Bytecode::Plus:
                 return format_to(out, "Plus");
+            case cl::Bytecode::Sqrt:
+                return format_to(out, "Sqrt");
             case cl::Bytecode::BitwiseNot:
                 return format_to(out, "BitwiseNot");
 
@@ -761,6 +763,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::Not:
             case cl::Bytecode::Negate:
             case cl::Bytecode::Plus:
+            case cl::Bytecode::Sqrt:
             case cl::Bytecode::BitwiseNot:
                 break;
 
