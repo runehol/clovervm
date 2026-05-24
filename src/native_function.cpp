@@ -11,10 +11,10 @@
 
 namespace cl
 {
-    static TValue<Function> make_intrinsic_function_with_target(
+    static TValue<Function> make_native_function_with_target(
         VirtualMachine *vm, TValue<String> name, NativeFunctionTarget target,
         Bytecode call_opcode, uint32_t n_parameters,
-        Optional<TValue<String>> docstring,
+        Optional<TValue<String>> docstring, bool is_extension,
         Optional<TValue<Tuple>> default_parameters =
             Optional<TValue<Tuple>>::none())
     {
@@ -23,7 +23,14 @@ namespace cl
         builder.n_parameters() = n_parameters;
         builder.n_positional_parameters() = n_parameters;
         uint32_t target_idx = builder.add_native_function_target(target);
-        builder.emit_call_intrinsic(0, call_opcode, uint8_t(target_idx));
+        if(is_extension)
+        {
+            builder.emit_call_extension(0, call_opcode, uint8_t(target_idx));
+        }
+        else
+        {
+            builder.emit_call_intrinsic(0, call_opcode, uint8_t(target_idx));
+        }
         builder.emit_return_or_raise_exception(0);
         TValue<CodeObject> code =
             TValue<CodeObject>::from_oop(builder.finalize());
@@ -41,9 +48,9 @@ namespace cl
         Optional<TValue<Tuple>> default_parameters =
             Optional<TValue<Tuple>>::none())
     {
-        return make_intrinsic_function_with_target(
+        return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(L"<native>"), target,
-            call_opcode, n_parameters, Optional<TValue<String>>::none(),
+            call_opcode, n_parameters, Optional<TValue<String>>::none(), false,
             default_parameters);
     }
 
@@ -234,10 +241,32 @@ namespace cl
                 ? Optional<TValue<String>>::none()
                 : Optional<TValue<String>>::some(
                       vm->get_or_create_interned_string_value(method.doc));
-        return make_intrinsic_function_with_target(
+        return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(method.name),
             method.target, call_intrinsic_opcode_for_arity(method.n_parameters),
-            method.n_parameters, docstring);
+            method.n_parameters, docstring, false);
+    }
+
+    TValue<Function> make_extension_function(VirtualMachine *vm,
+                                             TValue<String> name,
+                                             clover_extension_fn_0 function)
+    {
+        NativeFunctionTarget target;
+        target.extension0 = function;
+        return make_native_function_with_target(
+            vm, name, target, Bytecode::CallExtension0, 0,
+            Optional<TValue<String>>::none(), true);
+    }
+
+    TValue<Function> make_extension_function(VirtualMachine *vm,
+                                             TValue<String> name,
+                                             clover_extension_fn_1 function)
+    {
+        NativeFunctionTarget target;
+        target.extension1 = function;
+        return make_native_function_with_target(
+            vm, name, target, Bytecode::CallExtension1, 1,
+            Optional<TValue<String>>::none(), true);
     }
 
     void

@@ -691,6 +691,15 @@ namespace cl
         return emit_opcode_native_target_idx(source_offset, op, target_idx);
     }
 
+    uint32_t CodeObjectBuilder::emit_call_extension(uint32_t source_offset,
+                                                    Bytecode op,
+                                                    uint8_t target_idx)
+    {
+        assert(op == Bytecode::CallExtension0 ||
+               op == Bytecode::CallExtension1);
+        return emit_opcode_native_target_idx(source_offset, op, target_idx);
+    }
+
     uint32_t
     CodeObjectBuilder::emit_call_runtime_intrinsic0(uint32_t source_offset,
                                                     RuntimeIntrinsic0 intrinsic)

@@ -343,6 +343,8 @@ namespace cl
         uint32_t emit_import_from(uint32_t source_offset, uint8_t name_idx);
         uint32_t emit_call_intrinsic(uint32_t source_offset, Bytecode op,
                                      uint8_t target_idx);
+        uint32_t emit_call_extension(uint32_t source_offset, Bytecode op,
+                                     uint8_t target_idx);
         uint32_t emit_call_runtime_intrinsic0(uint32_t source_offset,
                                               RuntimeIntrinsic0 intrinsic);
         uint32_t emit_call_simple(uint32_t source_offset, uint32_t callable_reg,

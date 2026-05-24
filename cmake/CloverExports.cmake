@@ -6,8 +6,13 @@ set(CLOVERVM_EMBEDDER_API_SYMBOLS
 
 set(CLOVERVM_EXTENSION_API_SYMBOLS)
 list(APPEND CLOVERVM_EXTENSION_API_SYMBOLS
+    clover_error
+    clover_int64
     clover_module_add_int_constant
-    clover_module_add_string_constant)
+    clover_module_add_function_0
+    clover_module_add_function_1
+    clover_module_add_string_constant
+    clover_none)
 
 function(clovervm_export_symbols target_name)
     cmake_parse_arguments(ARG "EMBEDDER_API;EXTENSION_API" "" "" ${ARGN})

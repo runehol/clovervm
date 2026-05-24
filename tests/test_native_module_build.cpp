@@ -1,6 +1,7 @@
 #include "build_config.h"
 #include "dict.h"
 #include "exception_object.h"
+#include "function.h"
 #include "import_system.h"
 #include "list.h"
 #include "module_finder.h"
@@ -66,6 +67,22 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     EXPECT_EQ(std::wstring(L"hello \u03bb"),
               std::wstring(
                   string_view(TValue<String>::from_value_assumed(greeting))));
+    TValue<String> answer_func_name =
+        context.vm().get_or_create_interned_string_value(L"answer_func");
+    Value answer_func = module->get_own_property(answer_func_name);
+    ASSERT_TRUE(can_convert_to<Function>(answer_func));
+    EXPECT_EQ(Value::from_smi(42),
+              context.thread()->call_clovervm_function(
+                  TValue<Function>::from_value_assumed(answer_func)));
+
+    TValue<String> identity_func_name =
+        context.vm().get_or_create_interned_string_value(L"identity_func");
+    Value identity_func = module->get_own_property(identity_func_name);
+    ASSERT_TRUE(can_convert_to<Function>(identity_func));
+    EXPECT_EQ(Value::from_smi(123),
+              context.thread()->call_clovervm_function(
+                  TValue<Function>::from_value_assumed(identity_func),
+                  Value::from_smi(123)));
     EXPECT_EQ(imported, context.vm().imported_modules().extract()->get_item(
                             name.raw_value()));
 }

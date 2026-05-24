@@ -11,6 +11,7 @@
 #include "typed_value.h"
 #include "value.h"
 #include <algorithm>
+#include <clovervm/native_module.h>
 #include <cstdint>
 #include <vector>
 
@@ -62,6 +63,8 @@ namespace cl
         IntrinsicFunction5 fixed5;
         IntrinsicFunction6 fixed6;
         IntrinsicFunction7 fixed7;
+        clover_extension_fn_0 extension0;
+        clover_extension_fn_1 extension1;
     };
 
     struct CompilationUnit;

@@ -13,6 +13,7 @@
 #include "instance.h"
 #include "list.h"
 #include "module_global.h"
+#include "native_module_api_internal.h"
 #include "range_iterator.h"
 #include "refcount.h"
 #include "runtime_helpers.h"
@@ -3242,6 +3243,29 @@ namespace cl
         COMPLETE();
     }
 
+    static INTERP_CC Value op_call_extension0(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
+        clover_call_context ctx{thread};
+        accumulator = unwrap_clover_value(
+            code_object->native_function_targets[target_idx].extension0(&ctx));
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_call_extension1(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
+        clover_call_context ctx{thread};
+        accumulator = unwrap_clover_value(
+            code_object->native_function_targets[target_idx].extension1(
+                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0))));
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_call_runtime_intrinsic0(PARAMS)
     {
         START(2);
@@ -3725,6 +3749,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic5, op_call_intrinsic5);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic6, op_call_intrinsic6);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic7, op_call_intrinsic7);
+        SET_TABLE_ENTRY(Bytecode::CallExtension0, op_call_extension0);
+        SET_TABLE_ENTRY(Bytecode::CallExtension1, op_call_extension1);
         SET_TABLE_ENTRY(Bytecode::CallRuntimeIntrinsic0,
                         op_call_runtime_intrinsic0);
         SET_TABLE_ENTRY(Bytecode::CallCodeObject, op_call_code_object);

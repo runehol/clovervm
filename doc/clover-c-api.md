@@ -162,7 +162,7 @@ instance.
 All `const char *` strings accepted by the native extension API are UTF-8
 encoded unless a function explicitly documents a narrower temporary
 restriction. Invalid UTF-8 is an API error. Name arguments such as module
-constant names and native function names must be non-null and non-empty.
+constant names and extension function names must be non-null and non-empty.
 
 ## Native Function Registration
 
@@ -175,42 +175,37 @@ The naming convention is:
 ```c
 clover_module_add_function_0
 clover_module_add_function_1
-clover_module_add_function_2
+clover_module_add_function_N
 ```
 
-and so on for additional fixed arities.
+and so on for additional fixed arities. Arity 0 and 1 are implemented first.
 
 Sketch:
 
 ```c
 typedef struct clover_call_context clover_call_context;
-typedef struct clover_value clover_value;
+typedef uintptr_t clover_value;
 
-typedef clover_value (*clover_native_fn_0)(clover_call_context *ctx);
-typedef clover_value (*clover_native_fn_1)(clover_call_context *ctx,
-                                           clover_value arg0);
-typedef clover_value (*clover_native_fn_2)(clover_call_context *ctx,
-                                           clover_value arg0,
-                                           clover_value arg1);
+typedef clover_value (*clover_extension_fn_0)(clover_call_context *ctx);
+typedef clover_value (*clover_extension_fn_1)(clover_call_context *ctx,
+                                              clover_value arg0);
 
 clover_status clover_module_add_function_0(
     clover_native_module_builder *builder,
     const char *name,
-    clover_native_fn_0 fn);
+    clover_extension_fn_0 fn);
 
 clover_status clover_module_add_function_1(
     clover_native_module_builder *builder,
     const char *name,
-    clover_native_fn_1 fn);
-
-clover_status clover_module_add_function_2(
-    clover_native_module_builder *builder,
-    const char *name,
-    clover_native_fn_2 fn);
+    clover_extension_fn_1 fn);
 ```
 
 This avoids passing an arity integer that can disagree with the function
 pointer type. C and C++ compilers will reject wrong callback shapes.
+`clover_value` is sized so callbacks can pass and return it by value, but it is
+still opaque: extension modules must create and inspect values through API
+helpers.
 
 ## Native Call Context
 
@@ -218,23 +213,27 @@ Native function callbacks receive a call context and typed opaque argument
 handles. They return a `clover_value`: a normal value on success, or the
 context's error marker after setting a pending exception.
 
-Sketch:
+Initial implemented surface:
+
+```c
+clover_value clover_error(clover_call_context *ctx);
+clover_value clover_none(clover_call_context *ctx);
+clover_value clover_int64(clover_call_context *ctx, int64_t value);
+```
+
+Planned conversion and allocation helpers:
 
 ```c
 int clover_is_error(clover_value value);
 
-clover_value clover_error(clover_call_context *ctx);
+clover_status clover_value_as_int64(clover_call_context *ctx,
+                                    clover_value value,
+                                    int64_t *out);
 
-clover_status clover_arg_as_int64(clover_call_context *ctx,
-                                  clover_value value,
-                                  int64_t *out);
+clover_status clover_value_as_double(clover_call_context *ctx,
+                                     clover_value value,
+                                     double *out);
 
-clover_status clover_arg_as_double(clover_call_context *ctx,
-                                   clover_value value,
-                                   double *out);
-
-clover_value clover_none(clover_call_context *ctx);
-clover_value clover_int64(clover_call_context *ctx, int64_t value);
 clover_value clover_double(clover_call_context *ctx, double value);
 clover_value clover_string_utf8(clover_call_context *ctx, const char *value);
 
@@ -259,7 +258,7 @@ Example:
 static clover_value sleep_fn(clover_call_context *ctx, clover_value secs)
 {
     double seconds;
-    if(clover_arg_as_double(ctx, secs, &seconds) != CLOVER_STATUS_OK)
+    if(clover_value_as_double(ctx, secs, &seconds) != CLOVER_STATUS_OK)
     {
         return clover_error(ctx);
     }
@@ -336,8 +335,8 @@ clover_is_error() is false for ordinary values
 clover_is_error() is true for clover_error(ctx)
 conversion helper failure sets a pending exception
 raise helpers set a pending exception and return an error value
-native callback success returns its clover_value result
-native callback error propagates through the managed Function wrapper
+extension callback success returns its clover_value result
+extension callback error propagates through the managed Function wrapper
 ```
 
 Minimum import-level coverage:
@@ -410,16 +409,16 @@ return conventions because it is compiled as part of the VM.
 The C API described here is a different boundary:
 
 ```text
-internal VM native functions:
+intrinsic functions:
   C++ implementation convenience
   direct Value and ThreadState access
   no dynamic library boundary
 
-native extension C API:
+extension functions:
   opaque handles
   module builder
   arity-typed C function registration
-  native callbacks return clover_value or clover_error(ctx)
+  extension callbacks return clover_value or clover_error(ctx)
   dynamic library boundary
 ```
 

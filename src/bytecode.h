@@ -140,6 +140,8 @@ namespace cl
         CallIntrinsic5,
         CallIntrinsic6,
         CallIntrinsic7,
+        CallExtension0,
+        CallExtension1,
         CallRuntimeIntrinsic0,
         CallCodeObject,
         ImportName,
