@@ -4,28 +4,17 @@
 
 #include "module_finder.h"
 #include "module_object.h"
+#include "native_module_api_internal.h"
 #include "native_module_loader_internal.h"
 #include "str.h"
 #include "thread_state.h"
 #include "virtual_machine.h"
-#include <cerrno>
-#include <cwchar>
-#include <optional>
 #include <string>
-
-struct clover_native_module_builder
-{
-    cl::ThreadState *thread;
-    cl::ModuleObject *module;
-};
 
 namespace cl
 {
     namespace
     {
-        constexpr int64_t kMinSmi = -(int64_t{1} << 58);
-        constexpr int64_t kMaxSmi = (int64_t{1} << 58) - 1;
-
         TValue<String> interned_string(ThreadState *thread,
                                        const std::wstring &text)
         {
@@ -38,45 +27,6 @@ namespace cl
         {
             return thread->set_pending_builtin_exception_string(
                 L"ImportError", interned_string(thread, message));
-        }
-
-        clover_status
-        set_builder_import_error(clover_native_module_builder *builder,
-                                 const std::wstring &message)
-        {
-            if(builder != nullptr && builder->thread != nullptr)
-            {
-                set_native_import_error(builder->thread, message);
-            }
-            return CLOVER_STATUS_ERROR;
-        }
-
-        std::optional<std::wstring> decode_native_api_string(const char *str)
-        {
-            if(str == nullptr)
-            {
-                return std::nullopt;
-            }
-
-            const char *src = str;
-            std::mbstate_t state = std::mbstate_t();
-            errno = 0;
-            size_t size = std::mbsrtowcs(nullptr, &src, 0, &state);
-            if(size == static_cast<size_t>(-1))
-            {
-                return std::nullopt;
-            }
-
-            std::wstring result(size, L'\0');
-            src = str;
-            state = std::mbstate_t();
-            errno = 0;
-            if(std::mbsrtowcs(result.data(), &src, result.size(), &state) ==
-               static_cast<size_t>(-1))
-            {
-                return std::nullopt;
-            }
-            return result;
         }
 
         Value native_init_symbol_name(ThreadState *thread,
@@ -171,41 +121,6 @@ namespace cl
             return set_native_import_error(thread, message);
         }
     }  // namespace
-
-    extern "C" CL_EXPORT clover_status clover_module_add_int_constant(
-        clover_native_module_builder *builder, const char *name, int64_t value)
-    {
-        if(builder == nullptr || builder->thread == nullptr ||
-           builder->module == nullptr)
-        {
-            return CLOVER_STATUS_ERROR;
-        }
-
-        std::optional<std::wstring> decoded_name =
-            decode_native_api_string(name);
-        if(!decoded_name.has_value() || decoded_name->empty())
-        {
-            return set_builder_import_error(
-                builder, L"native module int constant name must be non-empty");
-        }
-
-        if(value < kMinSmi || value > kMaxSmi)
-        {
-            return set_builder_import_error(
-                builder,
-                L"native module int constant is outside the supported range");
-        }
-
-        bool stored = builder->module->set_own_property(
-            interned_string(builder->thread, *decoded_name),
-            Value::from_smi(value));
-        if(!stored)
-        {
-            return set_builder_import_error(
-                builder, L"native module could not set int constant");
-        }
-        return CLOVER_STATUS_OK;
-    }
 
     Value exec_native_extension_module(ThreadState *thread,
                                        const ModuleSpec &spec,

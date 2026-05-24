@@ -101,6 +101,8 @@ add_library(libclovervm_objects OBJECT
     module_spec_object.cpp
     module_spec_object.h
     module_global_cache.h
+    native_module_api.cpp
+    native_module_api_internal.h
     native_module_loader.cpp
     native_module_loader.h
     native_module_loader_internal.h
