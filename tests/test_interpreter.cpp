@@ -30,6 +30,7 @@
 #include "typed_value.h"
 #include "value_string.h"
 #include "virtual_machine.h"
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cwchar>
@@ -842,6 +843,26 @@ TEST(Interpreter, float_literal_values)
     expect_float_literal(L"1E3\n", 1000.0);
     expect_float_literal(L"1.2e-3\n", 0.0012);
     expect_float_literal(L"1_2.3_4\n", 12.34);
+
+    Value huge_actual = test_context.run_file(L"1e1000\n");
+    ASSERT_TRUE(can_convert_to<Float>(huge_actual));
+    EXPECT_TRUE(std::isinf(huge_actual.get_ptr<Float>()->value));
+    EXPECT_FALSE(std::signbit(huge_actual.get_ptr<Float>()->value));
+
+    Value negative_huge_actual = test_context.run_file(L"-1e1000\n");
+    ASSERT_TRUE(can_convert_to<Float>(negative_huge_actual));
+    EXPECT_TRUE(std::isinf(negative_huge_actual.get_ptr<Float>()->value));
+    EXPECT_TRUE(std::signbit(negative_huge_actual.get_ptr<Float>()->value));
+
+    Value tiny_actual = test_context.run_file(L"1e-1000\n");
+    ASSERT_TRUE(can_convert_to<Float>(tiny_actual));
+    EXPECT_EQ(0.0, tiny_actual.get_ptr<Float>()->value);
+    EXPECT_FALSE(std::signbit(tiny_actual.get_ptr<Float>()->value));
+
+    Value negative_tiny_actual = test_context.run_file(L"-1e-1000\n");
+    ASSERT_TRUE(can_convert_to<Float>(negative_tiny_actual));
+    EXPECT_EQ(0.0, negative_tiny_actual.get_ptr<Float>()->value);
+    EXPECT_TRUE(std::signbit(negative_tiny_actual.get_ptr<Float>()->value));
 }
 
 TEST(Interpreter, float_arithmetic_values)
@@ -900,6 +921,119 @@ TEST(Interpreter, true_division_reports_unsupported_operands)
                         L"TypeError: unsupported operand type(s) for /");
     expect_python_error(L"1 / \"a\"\n",
                         L"TypeError: unsupported operand type(s) for /");
+}
+
+TEST(Interpreter, floor_division_values)
+{
+    test::VmTestContext test_context;
+
+    auto expect_float_result = [&](const wchar_t *source, double expected) {
+        Value actual = test_context.run_file(source);
+        ASSERT_TRUE(can_convert_to<Float>(actual));
+        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
+    };
+
+    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"5 // 2\n"));
+    EXPECT_EQ(Value::from_smi(-3), test_context.run_file(L"-5 // 2\n"));
+    EXPECT_EQ(Value::from_smi(-3), test_context.run_file(L"5 // -2\n"));
+    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"-5 // -2\n"));
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"True // 1\n"));
+    expect_float_result(L"5.0 // 2\n", 2.0);
+    expect_float_result(L"5 // 2.0\n", 2.0);
+    expect_float_result(L"-5.0 // 2\n", -3.0);
+}
+
+TEST(Interpreter, floor_division_reports_errors)
+{
+    expect_python_error(L"1 // 0\n", L"ZeroDivisionError: division by zero");
+    expect_python_error(L"1 // 0.0\n", L"ZeroDivisionError: division by zero");
+    expect_python_error(L"\"a\" // 1\n",
+                        L"TypeError: unsupported operand type(s) for //");
+    expect_python_error(L"1 // \"a\"\n",
+                        L"TypeError: unsupported operand type(s) for //");
+}
+
+TEST(Interpreter, modulo_values)
+{
+    test::VmTestContext test_context;
+
+    auto expect_float_result = [&](const wchar_t *source, double expected) {
+        Value actual = test_context.run_file(source);
+        ASSERT_TRUE(can_convert_to<Float>(actual));
+        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
+    };
+
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"5 % 2\n"));
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"-5 % 2\n"));
+    EXPECT_EQ(Value::from_smi(-1), test_context.run_file(L"5 % -2\n"));
+    EXPECT_EQ(Value::from_smi(-1), test_context.run_file(L"-5 % -2\n"));
+    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"False % 1\n"));
+    expect_float_result(L"5.0 % 2\n", 1.0);
+    expect_float_result(L"5 % 2.0\n", 1.0);
+    expect_float_result(L"-5.0 % 2\n", 1.0);
+    expect_float_result(L"5.0 % -2\n", -1.0);
+}
+
+TEST(Interpreter, modulo_reports_errors)
+{
+    expect_python_error(L"1 % 0\n", L"ZeroDivisionError: division by zero");
+    expect_python_error(L"1 % 0.0\n", L"ZeroDivisionError: division by zero");
+    expect_python_error(L"\"a\" % 1\n",
+                        L"TypeError: unsupported operand type(s) for %");
+    expect_python_error(L"1 % \"a\"\n",
+                        L"TypeError: unsupported operand type(s) for %");
+}
+
+TEST(Interpreter, shortcutting_boolean_operators_return_operand_values)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"0 and missing\n"));
+    EXPECT_EQ(Value::from_smi(7), test_context.run_file(L"1 and 7\n"));
+    EXPECT_EQ(Value::from_smi(5), test_context.run_file(L"5 or missing\n"));
+    EXPECT_EQ(Value::from_smi(8), test_context.run_file(L"0 or 8\n"));
+}
+
+TEST(Interpreter, shortcutting_boolean_operators_skip_unneeded_operand)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(4),
+              test_context.run_file(L"def fail():\n"
+                                    L"    raise ValueError\n"
+                                    L"if True or fail():\n"
+                                    L"    x = 4\n"
+                                    L"else:\n"
+                                    L"    x = 1\n"
+                                    L"x\n"));
+    EXPECT_EQ(Value::from_smi(4),
+              test_context.run_file(L"def fail():\n"
+                                    L"    raise ValueError\n"
+                                    L"if False and fail():\n"
+                                    L"    x = 1\n"
+                                    L"else:\n"
+                                    L"    x = 4\n"
+                                    L"x\n"));
+}
+
+TEST(Interpreter, shortcutting_boolean_operators_compile_math_shaped_cases)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(), test_context.run_file(
+                                 L"def isinf(x):\n"
+                                 L"    return False\n"
+                                 L"def isnan(x):\n"
+                                 L"    return False\n"
+                                 L"def finite(x):\n"
+                                 L"    return not isinf(x) and not isnan(x)\n"
+                                 L"finite(1)\n"));
+    EXPECT_EQ(Value::from_smi(3),
+              test_context.run_file(L"result = 0\n"
+                                    L"value = 1\n"
+                                    L"if result == 0 or value == 0:\n"
+                                    L"    result = 3\n"
+                                    L"result\n"));
 }
 
 TEST(Interpreter, sqrt_is_not_a_builtin)

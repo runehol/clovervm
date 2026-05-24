@@ -4,6 +4,7 @@
 #include "virtual_machine.h"
 
 #include <algorithm>
+#include <exception>
 #include <stdexcept>
 #include <string>
 
@@ -25,6 +26,10 @@ namespace cl
 
     JumpTarget::~JumpTarget()
     {
+        if(std::uncaught_exceptions() > 0)
+        {
+            return;
+        }
         assert(target != -1);
         assert(unresolved_relocations.empty());
     }

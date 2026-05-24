@@ -159,10 +159,14 @@ clover_status clover_module_add_value(
 `name` is a UTF-8 string. Values are manufactured through the runtime API:
 
 ```c
-clover_module_add_value(builder, "answer", clover_int64(ctx, 42));
+clover_module_add_value(builder, "answer", clover_int_from_int64(ctx, 42));
 clover_module_add_value(builder, "greeting",
                         clover_string_from_utf8(ctx, "hello"));
 clover_module_add_value(builder, "nothing", clover_none(ctx));
+clover_module_add_value(builder, "pair",
+                        clover_tuple_from_pair(
+                            ctx, clover_int_from_int64(ctx, 1),
+                            clover_int_from_int64(ctx, 2)));
 ```
 
 ## Function Registration
@@ -216,13 +220,24 @@ Implemented runtime APIs:
 ```c
 clover_value clover_propagate_error(clover_context *ctx);
 clover_value clover_none(clover_context *ctx);
-clover_value clover_int64(clover_context *ctx, int64_t value);
+clover_value clover_int_from_int64(clover_context *ctx, int64_t value);
 clover_value clover_float_from_double(clover_context *ctx, double value);
 clover_value clover_string_from_utf8(clover_context *ctx,
                                      const char *utf8_value);
+clover_value clover_tuple_from_array(clover_context *ctx,
+                                     const clover_value *items,
+                                     size_t count);
+clover_value clover_tuple_from_pair(clover_context *ctx,
+                                    clover_value item0,
+                                    clover_value item1);
 clover_status clover_float_as_double(clover_context *ctx,
                                      clover_value value,
                                      double *out);
+clover_status clover_int_as_int64(clover_context *ctx,
+                                  clover_value value,
+                                  int64_t *out);
+clover_value clover_raise_overflow_error(clover_context *ctx,
+                                         const char *utf8_message);
 clover_value clover_raise_value_error(clover_context *ctx,
                                       const char *utf8_message);
 ```

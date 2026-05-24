@@ -9,6 +9,7 @@
 #define CL_NATIVE_MODULE_EXPORT __attribute__((visibility("default")))
 #endif
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -89,14 +90,26 @@ extern "C"
         clover_extension_fn_7 function, const char *docstring);
 
     CL_EXPORT clover_value clover_none(clover_context *ctx);
-    CL_EXPORT clover_value clover_int64(clover_context *ctx, int64_t value);
+    CL_EXPORT clover_value clover_int_from_int64(clover_context *ctx,
+                                                 int64_t value);
     CL_EXPORT clover_value clover_float_from_double(clover_context *ctx,
                                                     double value);
     CL_EXPORT clover_value clover_string_from_utf8(clover_context *ctx,
                                                    const char *utf8_value);
+    CL_EXPORT clover_value clover_tuple_from_array(clover_context *ctx,
+                                                   const clover_value *items,
+                                                   size_t count);
+    CL_EXPORT clover_value clover_tuple_from_pair(clover_context *ctx,
+                                                  clover_value item0,
+                                                  clover_value item1);
     CL_EXPORT clover_status clover_float_as_double(clover_context *ctx,
                                                    clover_value value,
                                                    double *out);
+    CL_EXPORT clover_status clover_int_as_int64(clover_context *ctx,
+                                                clover_value value,
+                                                int64_t *out);
+    CL_EXPORT clover_value
+    clover_raise_overflow_error(clover_context *ctx, const char *utf8_message);
     CL_EXPORT clover_value clover_raise_value_error(clover_context *ctx,
                                                     const char *utf8_message);
     CL_EXPORT clover_value clover_propagate_error(clover_context *ctx);

@@ -2,7 +2,7 @@
 
 static clover_value answer_func(clover_context *ctx)
 {
-    return clover_int64(ctx, 42);
+    return clover_int_from_int64(ctx, 42);
 }
 
 static clover_value identity_func(clover_context *ctx, clover_value value)
@@ -24,6 +24,29 @@ static clover_value float_plus_one_func(clover_context *ctx, clover_value value)
         return clover_propagate_error(ctx);
     }
     return clover_float_from_double(ctx, number + 1.0);
+}
+
+static clover_value tuple2_func(clover_context *ctx, clover_value arg0,
+                                clover_value arg1)
+{
+    return clover_tuple_from_pair(ctx, arg0, arg1);
+}
+
+static clover_value tuple3_func(clover_context *ctx, clover_value arg0,
+                                clover_value arg1, clover_value arg2)
+{
+    clover_value items[] = {arg0, arg1, arg2};
+    return clover_tuple_from_array(ctx, items, 3);
+}
+
+static clover_value empty_tuple_func(clover_context *ctx)
+{
+    return clover_tuple_from_array(ctx, 0, 0);
+}
+
+static clover_value bad_tuple_func(clover_context *ctx)
+{
+    return clover_tuple_from_array(ctx, 0, 1);
 }
 
 static clover_status read_double(clover_context *ctx, clover_value value,
@@ -149,7 +172,8 @@ static clover_value sum7_func(clover_context *ctx, clover_value arg0,
 CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__test_native(
     clover_context *ctx, clover_native_module_builder *builder)
 {
-    if(clover_module_add_value(builder, "answer", clover_int64(ctx, 42)) !=
+    if(clover_module_add_value(builder, "answer",
+                               clover_int_from_int64(ctx, 42)) !=
        CLOVER_STATUS_OK)
     {
         return CLOVER_STATUS_ERROR;
@@ -184,6 +208,30 @@ CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__test_native(
     if(clover_module_add_function_1(
            builder, "float_plus_one", float_plus_one_func,
            "Return float(value) + 1.0.") != CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_function_2(builder, "tuple2", tuple2_func,
+                                    "Return a two-item tuple.") !=
+       CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_function_3(builder, "tuple3", tuple3_func,
+                                    "Return a three-item tuple.") !=
+       CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_function_0(builder, "empty_tuple", empty_tuple_func,
+                                    "Return an empty tuple.") !=
+       CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_function_0(builder, "bad_tuple", bad_tuple_func,
+                                    "Try to construct an invalid tuple.") !=
+       CLOVER_STATUS_OK)
     {
         return CLOVER_STATUS_ERROR;
     }

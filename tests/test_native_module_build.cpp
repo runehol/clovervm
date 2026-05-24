@@ -10,6 +10,7 @@
 #include "str.h"
 #include "test_helpers.h"
 #include "thread_state.h"
+#include "tuple.h"
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <optional>
@@ -127,6 +128,60 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     EXPECT_EQ(
         L"value cannot be converted to float",
         std::wstring(string_as_wchar_t(exception.extract()->message.value())));
+    context.thread()->clear_pending_exception();
+
+    TValue<String> tuple2_name =
+        context.vm().get_or_create_interned_string_value(L"tuple2");
+    Value tuple2 = module->get_own_property(tuple2_name);
+    ASSERT_TRUE(can_convert_to<Function>(tuple2));
+    Value tuple2_result = context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_assumed(tuple2), Value::from_smi(5),
+        Value::from_smi(8));
+    ASSERT_TRUE(can_convert_to<Tuple>(tuple2_result));
+    Tuple *tuple2_object = tuple2_result.get_ptr<Tuple>();
+    ASSERT_EQ(2u, tuple2_object->size());
+    EXPECT_EQ(Value::from_smi(5), tuple2_object->item_unchecked(0));
+    EXPECT_EQ(Value::from_smi(8), tuple2_object->item_unchecked(1));
+
+    TValue<String> tuple3_name =
+        context.vm().get_or_create_interned_string_value(L"tuple3");
+    Value tuple3 = module->get_own_property(tuple3_name);
+    ASSERT_TRUE(can_convert_to<Function>(tuple3));
+    Value tuple3_result = context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_assumed(tuple3), Value::from_smi(1),
+        Value::from_smi(2), Value::from_smi(3));
+    ASSERT_TRUE(can_convert_to<Tuple>(tuple3_result));
+    Tuple *tuple3_object = tuple3_result.get_ptr<Tuple>();
+    ASSERT_EQ(3u, tuple3_object->size());
+    EXPECT_EQ(Value::from_smi(1), tuple3_object->item_unchecked(0));
+    EXPECT_EQ(Value::from_smi(2), tuple3_object->item_unchecked(1));
+    EXPECT_EQ(Value::from_smi(3), tuple3_object->item_unchecked(2));
+
+    TValue<String> empty_tuple_name =
+        context.vm().get_or_create_interned_string_value(L"empty_tuple");
+    Value empty_tuple = module->get_own_property(empty_tuple_name);
+    ASSERT_TRUE(can_convert_to<Function>(empty_tuple));
+    Value empty_tuple_result = context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_assumed(empty_tuple));
+    ASSERT_TRUE(can_convert_to<Tuple>(empty_tuple_result));
+    EXPECT_TRUE(empty_tuple_result.get_ptr<Tuple>()->empty());
+
+    TValue<String> bad_tuple_name =
+        context.vm().get_or_create_interned_string_value(L"bad_tuple");
+    Value bad_tuple = module->get_own_property(bad_tuple_name);
+    ASSERT_TRUE(can_convert_to<Function>(bad_tuple));
+    Value bad_tuple_result = context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_assumed(bad_tuple));
+    EXPECT_TRUE(bad_tuple_result.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> bad_tuple_exception =
+        context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ValueError"),
+              bad_tuple_exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(L"native extension tuple items must not be null",
+              std::wstring(string_as_wchar_t(
+                  bad_tuple_exception.extract()->message.value())));
     context.thread()->clear_pending_exception();
 
     auto expect_sum_result = [&](const wchar_t *function_name, double expected,
@@ -280,7 +335,7 @@ TEST(NativeModuleBuild, StdlibMathSqrtReportsTrustedErrors)
         context.thread()->pending_exception_object();
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
               type_exception.extract()->get_shape()->get_class());
-    EXPECT_EQ(L"sqrt() argument must be int or float",
+    EXPECT_EQ(L"value cannot be converted to float",
               std::wstring(string_as_wchar_t(
                   type_exception.extract()->message.value())));
 }

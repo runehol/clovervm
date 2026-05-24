@@ -176,6 +176,30 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE INTERP_CC Value unsupported_int_division_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"unsupported operand type(s) for //");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value unsupported_modulo_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"unsupported operand type(s) for %");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE INTERP_CC Value local_name_error(PARAMS)
     {
         int8_t reg = pc[1];
@@ -855,6 +879,201 @@ namespace cl
             return true;
         }
         return try_get_exact_float(value, out);
+    }
+
+    static ALWAYSINLINE bool try_get_smi_or_bool(Value value, int64_t *out)
+    {
+        if(unlikely((value.as.integer & value_not_smi_or_boolean_mask) == 0))
+        {
+            Value integer_value;
+            integer_value.as.integer =
+                value.as.integer & value_boolean_to_integer_mask;
+            *out = integer_value.get_smi();
+            return true;
+        }
+        return false;
+    }
+
+    static ALWAYSINLINE int64_t floor_div_smi_values(int64_t left,
+                                                     int64_t right)
+    {
+        int64_t quotient = left / right;
+        int64_t remainder = left % right;
+        if(remainder != 0 && ((remainder < 0) != (right < 0)))
+        {
+            quotient -= 1;
+        }
+        return quotient;
+    }
+
+    static ALWAYSINLINE int64_t modulo_smi_values(int64_t left, int64_t right)
+    {
+        int64_t remainder = left % right;
+        if(remainder != 0 && ((remainder < 0) != (right < 0)))
+        {
+            remainder += right;
+        }
+        return remainder;
+    }
+
+    NOINLINE static INTERP_CC Value op_int_div_numeric(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+
+        int64_t left_int;
+        int64_t right_int;
+        if(try_get_smi_or_bool(a, &left_int) &&
+           try_get_smi_or_bool(b, &right_int))
+        {
+            if(unlikely(right_int == 0))
+            {
+                MUSTTAIL return zero_division_error(ARGS);
+            }
+            if(unlikely(left_int == value_smi_min && right_int == -1))
+            {
+                MUSTTAIL return overflow_path(ARGS);
+            }
+            accumulator =
+                Value::from_smi(floor_div_smi_values(left_int, right_int));
+            COMPLETE();
+        }
+
+        double left;
+        double right;
+        if(!try_get_float_or_smi_or_bool(a, &left) ||
+           !try_get_float_or_smi_or_bool(b, &right))
+        {
+            MUSTTAIL return unsupported_int_division_error(ARGS);
+        }
+        if(unlikely(right == 0.0))
+        {
+            MUSTTAIL return zero_division_error(ARGS);
+        }
+
+        accumulator = thread->make_object_value<Float>(std::floor(left / right))
+                          .raw_value();
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_int_div_smi_numeric(PARAMS)
+    {
+        START_BINARY_ACC_SMI();
+
+        int64_t left_int;
+        int64_t right_int = b.get_smi();
+        if(try_get_smi_or_bool(a, &left_int))
+        {
+            if(unlikely(right_int == 0))
+            {
+                MUSTTAIL return zero_division_error(ARGS);
+            }
+            if(unlikely(left_int == value_smi_min && right_int == -1))
+            {
+                MUSTTAIL return overflow_path(ARGS);
+            }
+            accumulator =
+                Value::from_smi(floor_div_smi_values(left_int, right_int));
+            COMPLETE();
+        }
+
+        double left;
+        if(!try_get_exact_float(a, &left))
+        {
+            MUSTTAIL return unsupported_int_division_error(ARGS);
+        }
+        if(unlikely(right_int == 0))
+        {
+            MUSTTAIL return zero_division_error(ARGS);
+        }
+
+        accumulator =
+            thread->make_object_value<Float>(std::floor(left / right_int))
+                .raw_value();
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_mod_numeric(PARAMS)
+    {
+        START_BINARY_REG_ACC();
+
+        int64_t left_int;
+        int64_t right_int;
+        if(try_get_smi_or_bool(a, &left_int) &&
+           try_get_smi_or_bool(b, &right_int))
+        {
+            if(unlikely(right_int == 0))
+            {
+                MUSTTAIL return zero_division_error(ARGS);
+            }
+            accumulator =
+                Value::from_smi(modulo_smi_values(left_int, right_int));
+            COMPLETE();
+        }
+
+        double left;
+        double right;
+        if(!try_get_float_or_smi_or_bool(a, &left) ||
+           !try_get_float_or_smi_or_bool(b, &right))
+        {
+            MUSTTAIL return unsupported_modulo_error(ARGS);
+        }
+        if(unlikely(right == 0.0))
+        {
+            MUSTTAIL return zero_division_error(ARGS);
+        }
+
+        double result = std::fmod(left, right);
+        if(result != 0.0 && (std::signbit(result) != std::signbit(right)))
+        {
+            result += right;
+        }
+        else if(result == 0.0)
+        {
+            result = std::copysign(0.0, right);
+        }
+        accumulator = thread->make_object_value<Float>(result).raw_value();
+        COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_mod_smi_numeric(PARAMS)
+    {
+        START_BINARY_ACC_SMI();
+
+        int64_t left_int;
+        int64_t right_int = b.get_smi();
+        if(try_get_smi_or_bool(a, &left_int))
+        {
+            if(unlikely(right_int == 0))
+            {
+                MUSTTAIL return zero_division_error(ARGS);
+            }
+            accumulator =
+                Value::from_smi(modulo_smi_values(left_int, right_int));
+            COMPLETE();
+        }
+
+        double left;
+        if(!try_get_exact_float(a, &left))
+        {
+            MUSTTAIL return unsupported_modulo_error(ARGS);
+        }
+        if(unlikely(right_int == 0))
+        {
+            MUSTTAIL return zero_division_error(ARGS);
+        }
+
+        double result = std::fmod(left, right_int);
+        if(result != 0.0 &&
+           (std::signbit(result) != std::signbit(double(right_int))))
+        {
+            result += right_int;
+        }
+        else if(result == 0.0)
+        {
+            result = std::copysign(0.0, double(right_int));
+        }
+        accumulator = thread->make_object_value<Float>(result).raw_value();
+        COMPLETE();
     }
 
     NOINLINE static INTERP_CC Value op_add_float_arithmetic(PARAMS)
@@ -3831,7 +4050,10 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::Mul, op_mul);
         SET_TABLE_ENTRY(Bytecode::MulSmi, op_mul_smi);
         SET_TABLE_ENTRY(Bytecode::Div, op_div);
-
+        SET_TABLE_ENTRY(Bytecode::IntDiv, op_int_div_numeric);
+        SET_TABLE_ENTRY(Bytecode::IntDivSmi, op_int_div_smi_numeric);
+        SET_TABLE_ENTRY(Bytecode::Mod, op_mod_numeric);
+        SET_TABLE_ENTRY(Bytecode::ModSmi, op_mod_smi_numeric);
         SET_TABLE_ENTRY(Bytecode::LeftShift, op_left_shift);
         SET_TABLE_ENTRY(Bytecode::LeftShiftSmi, op_left_shift_smi);
         SET_TABLE_ENTRY(Bytecode::RightShift, op_right_shift);

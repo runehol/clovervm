@@ -26,11 +26,15 @@ set(CLOVERVM_EXTENSION_MODULE_BUILDER_API_SYMBOLS
 set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
     clover_float_as_double
     clover_float_from_double
-    clover_int64
+    clover_int_from_int64
+    clover_int_as_int64
     clover_none
     clover_propagate_error
+    clover_raise_overflow_error
     clover_raise_value_error
-    clover_string_from_utf8)
+    clover_string_from_utf8
+    clover_tuple_from_pair
+    clover_tuple_from_array)
 
 set(CLOVERVM_EXTENSION_API_SYMBOLS
     ${CLOVERVM_EXTENSION_MODULE_BUILDER_API_SYMBOLS}

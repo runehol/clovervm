@@ -129,6 +129,28 @@ TEST(Codegen, bytecode_constant_index_overflow_throws)
     EXPECT_THROW(bytecode_str_from_file(source.c_str()), std::runtime_error);
 }
 
+TEST(Codegen, unresolved_jump_target_does_not_mask_codegen_error)
+{
+    std::wstring source;
+    for(uint32_t idx = 0; idx < 256; ++idx)
+    {
+        source += L"a";
+        source += std::to_wstring(idx);
+        source += L" = 0\n";
+    }
+    source += L"assert 1.5\n";
+
+    try
+    {
+        (void)bytecode_str_from_file(source.c_str());
+        FAIL() << "Expected constant table overflow";
+    }
+    catch(const std::runtime_error &err)
+    {
+        EXPECT_STREQ("constant table index out of range", err.what());
+    }
+}
+
 TEST(Codegen, bytecode_cache_index_overflow_throws)
 {
     test::VmTestContext test_context;
