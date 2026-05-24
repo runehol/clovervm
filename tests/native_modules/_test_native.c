@@ -2,7 +2,7 @@
 
 static clover_value answer_func(clover_context *ctx)
 {
-    return clover_int64(ctx, 42);
+    return clover_int_from_int64(ctx, 42);
 }
 
 static clover_value identity_func(clover_context *ctx, clover_value value)
@@ -29,7 +29,7 @@ static clover_value float_plus_one_func(clover_context *ctx, clover_value value)
 static clover_value tuple2_func(clover_context *ctx, clover_value arg0,
                                 clover_value arg1)
 {
-    return clover_tuple2(ctx, arg0, arg1);
+    return clover_tuple_from_pair(ctx, arg0, arg1);
 }
 
 static clover_value tuple3_func(clover_context *ctx, clover_value arg0,
@@ -172,7 +172,8 @@ static clover_value sum7_func(clover_context *ctx, clover_value arg0,
 CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__test_native(
     clover_context *ctx, clover_native_module_builder *builder)
 {
-    if(clover_module_add_value(builder, "answer", clover_int64(ctx, 42)) !=
+    if(clover_module_add_value(builder, "answer",
+                               clover_int_from_int64(ctx, 42)) !=
        CLOVER_STATUS_OK)
     {
         return CLOVER_STATUS_ERROR;

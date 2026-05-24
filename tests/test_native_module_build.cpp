@@ -335,7 +335,7 @@ TEST(NativeModuleBuild, StdlibMathSqrtReportsTrustedErrors)
         context.thread()->pending_exception_object();
     EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
               type_exception.extract()->get_shape()->get_class());
-    EXPECT_EQ(L"sqrt() argument must be int or float",
+    EXPECT_EQ(L"value cannot be converted to float",
               std::wstring(string_as_wchar_t(
                   type_exception.extract()->message.value())));
 }
