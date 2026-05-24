@@ -30,6 +30,7 @@
 #include "typed_value.h"
 #include "value_string.h"
 #include "virtual_machine.h"
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cwchar>
@@ -842,6 +843,26 @@ TEST(Interpreter, float_literal_values)
     expect_float_literal(L"1E3\n", 1000.0);
     expect_float_literal(L"1.2e-3\n", 0.0012);
     expect_float_literal(L"1_2.3_4\n", 12.34);
+
+    Value huge_actual = test_context.run_file(L"1e1000\n");
+    ASSERT_TRUE(can_convert_to<Float>(huge_actual));
+    EXPECT_TRUE(std::isinf(huge_actual.get_ptr<Float>()->value));
+    EXPECT_FALSE(std::signbit(huge_actual.get_ptr<Float>()->value));
+
+    Value negative_huge_actual = test_context.run_file(L"-1e1000\n");
+    ASSERT_TRUE(can_convert_to<Float>(negative_huge_actual));
+    EXPECT_TRUE(std::isinf(negative_huge_actual.get_ptr<Float>()->value));
+    EXPECT_TRUE(std::signbit(negative_huge_actual.get_ptr<Float>()->value));
+
+    Value tiny_actual = test_context.run_file(L"1e-1000\n");
+    ASSERT_TRUE(can_convert_to<Float>(tiny_actual));
+    EXPECT_EQ(0.0, tiny_actual.get_ptr<Float>()->value);
+    EXPECT_FALSE(std::signbit(tiny_actual.get_ptr<Float>()->value));
+
+    Value negative_tiny_actual = test_context.run_file(L"-1e-1000\n");
+    ASSERT_TRUE(can_convert_to<Float>(negative_tiny_actual));
+    EXPECT_EQ(0.0, negative_tiny_actual.get_ptr<Float>()->value);
+    EXPECT_TRUE(std::signbit(negative_tiny_actual.get_ptr<Float>()->value));
 }
 
 TEST(Interpreter, float_arithmetic_values)

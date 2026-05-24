@@ -10,8 +10,10 @@
 #include "virtual_machine.h"
 #include <cstdint>
 #include <iomanip>
+#include <limits>
 #include <locale>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 namespace cl
@@ -28,6 +30,31 @@ namespace cl
             }
         }
         return result;
+    }
+
+    static bool float_literal_has_negative_exponent(const std::wstring &literal)
+    {
+        size_t exponent_idx = literal.find_first_of(L"eE");
+        return exponent_idx != std::wstring::npos &&
+               exponent_idx + 1 < literal.size() &&
+               literal[exponent_idx + 1] == L'-';
+    }
+
+    static double parse_float_literal(std::wstring_view token)
+    {
+        std::wstring literal = remove_number_separators(token);
+        try
+        {
+            return std::stod(literal);
+        }
+        catch(const std::out_of_range &)
+        {
+            if(float_literal_has_negative_exponent(literal))
+            {
+                return 0.0;
+            }
+            return std::numeric_limits<double>::infinity();
+        }
     }
 
     static bool is_hex_digit(wchar_t c)
@@ -978,8 +1005,7 @@ namespace cl
                     {
                         std::wstring_view token = string_for_float_number_token(
                             *ast.compilation_unit, source_pos_for_token());
-                        double value =
-                            std::stod(remove_number_separators(token));
+                        double value = parse_float_literal(token);
                         TValue<Float> v = make_object_value<Float>(value);
                         return ast.emplace_back(
                             AstKind(AstNodeKind::EXPRESSION_LITERAL,
