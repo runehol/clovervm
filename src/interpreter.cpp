@@ -3438,7 +3438,8 @@ namespace cl
         START(2);
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
-        accumulator = code_object->native_function_targets[target_idx].fixed0();
+        accumulator =
+            code_object->native_function_targets[target_idx].fixed0(thread);
         COMPLETE();
     }
 
@@ -3448,7 +3449,7 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         accumulator = code_object->native_function_targets[target_idx].fixed1(
-            get_native_arg(fp, code_object, 0));
+            thread, get_native_arg(fp, code_object, 0));
         COMPLETE();
     }
 
@@ -3458,7 +3459,7 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         accumulator = code_object->native_function_targets[target_idx].fixed2(
-            get_native_arg(fp, code_object, 0),
+            thread, get_native_arg(fp, code_object, 0),
             get_native_arg(fp, code_object, 1));
         COMPLETE();
     }
@@ -3469,7 +3470,7 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         accumulator = code_object->native_function_targets[target_idx].fixed3(
-            get_native_arg(fp, code_object, 0),
+            thread, get_native_arg(fp, code_object, 0),
             get_native_arg(fp, code_object, 1),
             get_native_arg(fp, code_object, 2));
         COMPLETE();
@@ -3481,7 +3482,7 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         accumulator = code_object->native_function_targets[target_idx].fixed4(
-            get_native_arg(fp, code_object, 0),
+            thread, get_native_arg(fp, code_object, 0),
             get_native_arg(fp, code_object, 1),
             get_native_arg(fp, code_object, 2),
             get_native_arg(fp, code_object, 3));
@@ -3494,7 +3495,7 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         accumulator = code_object->native_function_targets[target_idx].fixed5(
-            get_native_arg(fp, code_object, 0),
+            thread, get_native_arg(fp, code_object, 0),
             get_native_arg(fp, code_object, 1),
             get_native_arg(fp, code_object, 2),
             get_native_arg(fp, code_object, 3),
@@ -3508,7 +3509,7 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         accumulator = code_object->native_function_targets[target_idx].fixed6(
-            get_native_arg(fp, code_object, 0),
+            thread, get_native_arg(fp, code_object, 0),
             get_native_arg(fp, code_object, 1),
             get_native_arg(fp, code_object, 2),
             get_native_arg(fp, code_object, 3),
@@ -3523,7 +3524,7 @@ namespace cl
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
         accumulator = code_object->native_function_targets[target_idx].fixed7(
-            get_native_arg(fp, code_object, 0),
+            thread, get_native_arg(fp, code_object, 0),
             get_native_arg(fp, code_object, 1),
             get_native_arg(fp, code_object, 2),
             get_native_arg(fp, code_object, 3),

@@ -13,7 +13,7 @@
 
 namespace cl
 {
-    static Value native_tuple_repr(Value self)
+    static Value native_tuple_repr(ThreadState *thread, Value self)
     {
         if(!can_convert_to<Tuple>(self))
         {
@@ -41,14 +41,14 @@ namespace cl
         return builder.finish();
     }
 
-    static Value native_tuple_iter(Value self)
+    static Value native_tuple_iter(ThreadState *thread, Value self)
     {
         TValue<Tuple> tuple = CL_TRY(TValue<Tuple>::from_value_or_raise(
             self, L"TypeError", L"tuple.__iter__ expects a tuple receiver"));
         return make_object_value<TupleIterator>(tuple).raw_value();
     }
 
-    static Value native_tuple_len(Value self)
+    static Value native_tuple_len(ThreadState *thread, Value self)
     {
         if(!can_convert_to<Tuple>(self))
         {
@@ -60,7 +60,7 @@ namespace cl
             static_cast<int64_t>(self.get_ptr<Tuple>()->size()));
     }
 
-    static Value native_tuple_add(Value left, Value right)
+    static Value native_tuple_add(ThreadState *thread, Value left, Value right)
     {
         if(!can_convert_to<Tuple>(left) || !can_convert_to<Tuple>(right))
         {
@@ -98,7 +98,8 @@ namespace cl
         return static_cast<size_t>(normalized);
     }
 
-    static Value native_tuple_count(Value self, Value needle)
+    static Value native_tuple_count(ThreadState *thread, Value self,
+                                    Value needle)
     {
         if(!can_convert_to<Tuple>(self))
         {
@@ -109,7 +110,8 @@ namespace cl
         return Value::from_smi(self.get_ptr<Tuple>()->count(needle));
     }
 
-    static Value native_tuple_index(Value self, Value needle, Value start_value,
+    static Value native_tuple_index(ThreadState *thread, Value self,
+                                    Value needle, Value start_value,
                                     Value stop_value)
     {
         if(!can_convert_to<Tuple>(self))

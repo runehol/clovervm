@@ -148,7 +148,7 @@ namespace cl
         return builtin_class_definition(cls, native_layout_ids);
     }
 
-    static Value native_object_repr(Value self)
+    static Value native_object_repr(ThreadState *thread, Value self)
     {
         if(self.is_vm_sentinel())
         {
@@ -165,7 +165,7 @@ namespace cl
         return builder.finish();
     }
 
-    static Value native_object_str(Value self)
+    static Value native_object_str(ThreadState *thread, Value self)
     {
         if(self.is_vm_sentinel())
         {

@@ -9,7 +9,7 @@
 
 namespace cl
 {
-    static Value native_dict_keys_view_len(Value self)
+    static Value native_dict_keys_view_len(ThreadState *thread, Value self)
     {
         TValue<DictKeysView> view =
             CL_TRY(TValue<DictKeysView>::from_value_or_raise(
@@ -19,7 +19,7 @@ namespace cl
             static_cast<int64_t>(view.extract()->dict.extract()->size()));
     }
 
-    static Value native_dict_values_view_len(Value self)
+    static Value native_dict_values_view_len(ThreadState *thread, Value self)
     {
         TValue<DictValuesView> view =
             CL_TRY(TValue<DictValuesView>::from_value_or_raise(
@@ -29,7 +29,7 @@ namespace cl
             static_cast<int64_t>(view.extract()->dict.extract()->size()));
     }
 
-    static Value native_dict_items_view_len(Value self)
+    static Value native_dict_items_view_len(ThreadState *thread, Value self)
     {
         TValue<DictItemsView> view =
             CL_TRY(TValue<DictItemsView>::from_value_or_raise(
@@ -39,7 +39,7 @@ namespace cl
             static_cast<int64_t>(view.extract()->dict.extract()->size()));
     }
 
-    static Value native_dict_keys_view_iter(Value self)
+    static Value native_dict_keys_view_iter(ThreadState *thread, Value self)
     {
         TValue<DictKeysView> view =
             CL_TRY(TValue<DictKeysView>::from_value_or_raise(
@@ -49,7 +49,7 @@ namespace cl
             .raw_value();
     }
 
-    static Value native_dict_values_view_iter(Value self)
+    static Value native_dict_values_view_iter(ThreadState *thread, Value self)
     {
         TValue<DictValuesView> view =
             CL_TRY(TValue<DictValuesView>::from_value_or_raise(
@@ -59,7 +59,7 @@ namespace cl
             .raw_value();
     }
 
-    static Value native_dict_items_view_iter(Value self)
+    static Value native_dict_items_view_iter(ThreadState *thread, Value self)
     {
         TValue<DictItemsView> view =
             CL_TRY(TValue<DictItemsView>::from_value_or_raise(
@@ -69,7 +69,7 @@ namespace cl
             .raw_value();
     }
 
-    static Value native_dict_key_iterator_iter(Value self)
+    static Value native_dict_key_iterator_iter(ThreadState *thread, Value self)
     {
         (void)CL_TRY(TValue<DictKeyIterator>::from_value_or_raise(
             self, L"TypeError",
@@ -77,7 +77,8 @@ namespace cl
         return self;
     }
 
-    static Value native_dict_value_iterator_iter(Value self)
+    static Value native_dict_value_iterator_iter(ThreadState *thread,
+                                                 Value self)
     {
         (void)CL_TRY(TValue<DictValueIterator>::from_value_or_raise(
             self, L"TypeError",
@@ -86,7 +87,7 @@ namespace cl
         return self;
     }
 
-    static Value native_dict_item_iterator_iter(Value self)
+    static Value native_dict_item_iterator_iter(ThreadState *thread, Value self)
     {
         (void)CL_TRY(TValue<DictItemIterator>::from_value_or_raise(
             self, L"TypeError",
@@ -125,7 +126,7 @@ namespace cl
         return false;
     }
 
-    static Value native_dict_key_iterator_next(Value self)
+    static Value native_dict_key_iterator_next(ThreadState *thread, Value self)
     {
         TValue<DictKeyIterator> iterator =
             CL_TRY(TValue<DictKeyIterator>::from_value_or_raise(
@@ -143,7 +144,8 @@ namespace cl
         return entry.key;
     }
 
-    static Value native_dict_value_iterator_next(Value self)
+    static Value native_dict_value_iterator_next(ThreadState *thread,
+                                                 Value self)
     {
         TValue<DictValueIterator> iterator =
             CL_TRY(TValue<DictValueIterator>::from_value_or_raise(
@@ -161,7 +163,7 @@ namespace cl
         return entry.value;
     }
 
-    static Value native_dict_item_iterator_next(Value self)
+    static Value native_dict_item_iterator_next(ThreadState *thread, Value self)
     {
         TValue<DictItemIterator> iterator =
             CL_TRY(TValue<DictItemIterator>::from_value_or_raise(

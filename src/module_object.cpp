@@ -74,7 +74,7 @@ namespace cl
         (void)stored;
     }
 
-    static Value native_module_repr(Value self)
+    static Value native_module_repr(ThreadState *thread, Value self)
     {
         if(!can_convert_to<ModuleObject>(self))
         {

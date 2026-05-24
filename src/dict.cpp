@@ -62,7 +62,7 @@ namespace cl
         return builtin_class_definition(cls, native_layout_ids);
     }
 
-    static Value native_dict_repr(Value self)
+    static Value native_dict_repr(ThreadState *thread, Value self)
     {
         if(!can_convert_to<Dict>(self))
         {
@@ -89,7 +89,7 @@ namespace cl
         return builder.finish();
     }
 
-    static Value native_dict_len(Value self)
+    static Value native_dict_len(ThreadState *thread, Value self)
     {
         if(!can_convert_to<Dict>(self))
         {
@@ -144,20 +144,21 @@ namespace cl
         return Value::None();
     }
 
-    static Value native_dict_clear(Value self)
+    static Value native_dict_clear(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"clear"));
         self.get_ptr<Dict>()->clear();
         return Value::None();
     }
 
-    static Value native_dict_copy(Value self)
+    static Value native_dict_copy(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"copy"));
         return self.get_ptr<Dict>()->copy().raw_value();
     }
 
-    static Value native_dict_get(Value self, Value key, Value default_value)
+    static Value native_dict_get(ThreadState *thread, Value self, Value key,
+                                 Value default_value)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"get"));
         CL_PROPAGATE_EXCEPTION(require_string_key(key));
@@ -169,46 +170,47 @@ namespace cl
         return dict->get_item(key);
     }
 
-    static Value native_dict_keys(Value self)
+    static Value native_dict_keys(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"keys"));
         return self.get_ptr<Dict>()->keys();
     }
 
-    static Value native_dict_values(Value self)
+    static Value native_dict_values(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"values"));
         return self.get_ptr<Dict>()->values();
     }
 
-    static Value native_dict_items(Value self)
+    static Value native_dict_items(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"items"));
         return self.get_ptr<Dict>()->items();
     }
 
-    static Value native_dict_pop(Value self, Value key)
+    static Value native_dict_pop(ThreadState *thread, Value self, Value key)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"pop"));
         CL_PROPAGATE_EXCEPTION(require_string_key(key));
         return self.get_ptr<Dict>()->pop(key);
     }
 
-    static Value native_dict_popitem(Value self)
+    static Value native_dict_popitem(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"popitem"));
         return self.get_ptr<Dict>()->popitem();
     }
 
-    static Value native_dict_setdefault(Value self, Value key,
-                                        Value default_value)
+    static Value native_dict_setdefault(ThreadState *thread, Value self,
+                                        Value key, Value default_value)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"setdefault"));
         CL_PROPAGATE_EXCEPTION(require_string_key(key));
         return self.get_ptr<Dict>()->setdefault(key, default_value);
     }
 
-    static Value native_dict_update(Value self, Value other)
+    static Value native_dict_update(ThreadState *thread, Value self,
+                                    Value other)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"update"));
         if(other == Value::None())
@@ -225,7 +227,8 @@ namespace cl
         return Value::None();
     }
 
-    static Value native_dict_fromkeys(Value keys, Value value)
+    static Value native_dict_fromkeys(ThreadState *thread, Value keys,
+                                      Value value)
     {
         if(can_convert_to<Tuple>(keys))
         {

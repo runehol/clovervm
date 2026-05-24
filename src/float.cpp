@@ -31,7 +31,7 @@ namespace cl
         return std::wstring(text.begin(), text.end());
     }
 
-    static Value native_float_str(Value self)
+    static Value native_float_str(ThreadState *thread, Value self)
     {
         if(!can_convert_to<Float>(self))
         {
@@ -44,7 +44,7 @@ namespace cl
             .raw_value();
     }
 
-    static Value native_float_repr(Value self)
+    static Value native_float_repr(ThreadState *thread, Value self)
     {
         if(!can_convert_to<Float>(self))
         {

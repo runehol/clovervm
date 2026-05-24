@@ -9,7 +9,7 @@
 
 namespace cl
 {
-    static Value native_bool_str(Value self)
+    static Value native_bool_str(ThreadState *thread, Value self)
     {
         if(!self.is_bool())
         {

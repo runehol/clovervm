@@ -6,7 +6,7 @@
 
 namespace cl
 {
-    static Value native_range_iterator_iter(Value self)
+    static Value native_range_iterator_iter(ThreadState *thread, Value self)
     {
         (void)CL_TRY(TValue<RangeIterator>::from_value_or_raise(
             self, L"TypeError",
@@ -14,7 +14,7 @@ namespace cl
         return self;
     }
 
-    static Value native_range_iterator_next(Value self)
+    static Value native_range_iterator_next(ThreadState *thread, Value self)
     {
         TValue<RangeIterator> iterator_value =
             CL_TRY(TValue<RangeIterator>::from_value_or_raise(

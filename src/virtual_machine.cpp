@@ -174,7 +174,8 @@ namespace cl
         return Value::None();
     }
 
-    static Value builtin_range(Value start_arg, Value end_arg, Value step_arg)
+    static Value builtin_range(ThreadState *thread, Value start_arg,
+                               Value end_arg, Value step_arg)
     {
         Value start;
         Value stop;
@@ -214,8 +215,8 @@ namespace cl
             .raw_value();
     }
 
-    static Value builtin_import(Value name, Value globals, Value locals,
-                                Value fromlist, Value level)
+    static Value builtin_import(ThreadState *thread, Value name, Value globals,
+                                Value locals, Value fromlist, Value level)
     {
         (void)locals;
         (void)fromlist;

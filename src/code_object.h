@@ -17,6 +17,8 @@
 
 namespace cl
 {
+    class ThreadState;
+
     enum class FunctionParameterFlags : uint32_t
     {
         None = 0,
@@ -42,16 +44,18 @@ namespace cl
         return (uint32_t(flags) & uint32_t(flag)) != 0;
     }
 
-    using IntrinsicFunction0 = Value (*)();
-    using IntrinsicFunction1 = Value (*)(Value);
-    using IntrinsicFunction2 = Value (*)(Value, Value);
-    using IntrinsicFunction3 = Value (*)(Value, Value, Value);
-    using IntrinsicFunction4 = Value (*)(Value, Value, Value, Value);
-    using IntrinsicFunction5 = Value (*)(Value, Value, Value, Value, Value);
-    using IntrinsicFunction6 = Value (*)(Value, Value, Value, Value, Value,
+    using IntrinsicFunction0 = Value (*)(ThreadState *);
+    using IntrinsicFunction1 = Value (*)(ThreadState *, Value);
+    using IntrinsicFunction2 = Value (*)(ThreadState *, Value, Value);
+    using IntrinsicFunction3 = Value (*)(ThreadState *, Value, Value, Value);
+    using IntrinsicFunction4 = Value (*)(ThreadState *, Value, Value, Value,
                                          Value);
-    using IntrinsicFunction7 = Value (*)(Value, Value, Value, Value, Value,
+    using IntrinsicFunction5 = Value (*)(ThreadState *, Value, Value, Value,
                                          Value, Value);
+    using IntrinsicFunction6 = Value (*)(ThreadState *, Value, Value, Value,
+                                         Value, Value, Value);
+    using IntrinsicFunction7 = Value (*)(ThreadState *, Value, Value, Value,
+                                         Value, Value, Value, Value);
 
     union NativeFunctionTarget
     {

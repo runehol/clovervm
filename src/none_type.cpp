@@ -9,7 +9,7 @@
 
 namespace cl
 {
-    static Value native_none_type_str(Value self)
+    static Value native_none_type_str(ThreadState *thread, Value self)
     {
         if(!self.is_none())
         {

@@ -31,7 +31,7 @@ namespace cl
         return builtin_class_definition(cls, native_layout_ids);
     }
 
-    static Value native_slotdict_repr(Value self)
+    static Value native_slotdict_repr(ThreadState *thread, Value self)
     {
         if(!can_convert_to<SlotDict>(self))
         {
@@ -65,7 +65,7 @@ namespace cl
         return builder.finish();
     }
 
-    static Value native_slotdict_len(Value self)
+    static Value native_slotdict_len(ThreadState *thread, Value self)
     {
         if(!can_convert_to<SlotDict>(self))
         {

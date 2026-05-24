@@ -30,7 +30,7 @@ namespace cl
         }
     }
 
-    static Value native_str_str(Value self)
+    static Value native_str_str(ThreadState *thread, Value self)
     {
         if(!can_convert_to<String>(self))
         {
@@ -40,7 +40,7 @@ namespace cl
         return self;
     }
 
-    static Value native_str_repr(Value self)
+    static Value native_str_repr(ThreadState *thread, Value self)
     {
         if(!can_convert_to<String>(self))
         {
@@ -80,7 +80,7 @@ namespace cl
         return builder.finish();
     }
 
-    static Value native_str_len(Value self)
+    static Value native_str_len(ThreadState *thread, Value self)
     {
         if(!can_convert_to<String>(self))
         {
@@ -90,7 +90,8 @@ namespace cl
         return self.get_ptr<String>()->count.raw_value();
     }
 
-    static Value native_str_add(Value left_value, Value right_value)
+    static Value native_str_add(ThreadState *thread, Value left_value,
+                                Value right_value)
     {
         if(!can_convert_to<String>(left_value) ||
            !can_convert_to<String>(right_value))
@@ -144,7 +145,8 @@ namespace cl
         return string.extract()->char_at(py_idx);
     }
 
-    static Value native_str_getitem(Value self, Value index_value)
+    static Value native_str_getitem(ThreadState *thread, Value self,
+                                    Value index_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"__getitem__"));
         int64_t py_idx;
@@ -153,19 +155,20 @@ namespace cl
         return self.get_ptr<String>()->char_at(py_idx);
     }
 
-    static Value native_str_lower(Value self)
+    static Value native_str_lower(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"lower"));
         return self.get_ptr<String>()->lower().raw_value();
     }
 
-    static Value native_str_upper(Value self)
+    static Value native_str_upper(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"upper"));
         return self.get_ptr<String>()->upper().raw_value();
     }
 
-    static Value native_str_startswith(Value self, Value prefix_value)
+    static Value native_str_startswith(ThreadState *thread, Value self,
+                                       Value prefix_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"startswith"));
         CL_PROPAGATE_EXCEPTION(require_string_argument(
@@ -176,7 +179,8 @@ namespace cl
                    : Value::False();
     }
 
-    static Value native_str_endswith(Value self, Value suffix_value)
+    static Value native_str_endswith(ThreadState *thread, Value self,
+                                     Value suffix_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"endswith"));
         CL_PROPAGATE_EXCEPTION(require_string_argument(
@@ -186,7 +190,8 @@ namespace cl
                    : Value::False();
     }
 
-    static Value native_str_find(Value self, Value needle_value)
+    static Value native_str_find(ThreadState *thread, Value self,
+                                 Value needle_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"find"));
         CL_PROPAGATE_EXCEPTION(
@@ -195,7 +200,8 @@ namespace cl
             self.get_ptr<String>()->find(needle_value.get_ptr<String>()));
     }
 
-    static Value native_str_index(Value self, Value needle_value)
+    static Value native_str_index(ThreadState *thread, Value self,
+                                  Value needle_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"index"));
         CL_PROPAGATE_EXCEPTION(
@@ -203,7 +209,8 @@ namespace cl
         return self.get_ptr<String>()->index(needle_value.get_ptr<String>());
     }
 
-    static Value native_str_count(Value self, Value needle_value)
+    static Value native_str_count(ThreadState *thread, Value self,
+                                  Value needle_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"count"));
         CL_PROPAGATE_EXCEPTION(
@@ -212,8 +219,8 @@ namespace cl
             needle_value.get_ptr<String>()));
     }
 
-    static Value native_str_replace(Value self, Value old_value,
-                                    Value new_value)
+    static Value native_str_replace(ThreadState *thread, Value self,
+                                    Value old_value, Value new_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"replace"));
         CL_PROPAGATE_EXCEPTION(
@@ -227,19 +234,19 @@ namespace cl
 
     static bool is_strip_space(wchar_t ch) { return std::iswspace(ch) != 0; }
 
-    static Value native_str_strip(Value self)
+    static Value native_str_strip(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"strip"));
         return self.get_ptr<String>()->strip().raw_value();
     }
 
-    static Value native_str_lstrip(Value self)
+    static Value native_str_lstrip(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"lstrip"));
         return self.get_ptr<String>()->lstrip().raw_value();
     }
 
-    static Value native_str_rstrip(Value self)
+    static Value native_str_rstrip(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"rstrip"));
         return self.get_ptr<String>()->rstrip().raw_value();
@@ -250,7 +257,8 @@ namespace cl
         return can_convert_to<List>(value) || can_convert_to<Tuple>(value);
     }
 
-    static Value native_str_join(Value self, Value sequence)
+    static Value native_str_join(ThreadState *thread, Value self,
+                                 Value sequence)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"join"));
         if(!is_string_sequence(sequence))
@@ -279,28 +287,28 @@ namespace cl
         return self.get_ptr<String>()->join_tuple(tuple).raw_value();
     }
 
-    static Value native_str_isalpha(Value self)
+    static Value native_str_isalpha(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"isalpha"));
         return self.get_ptr<String>()->isalpha() ? Value::True()
                                                  : Value::False();
     }
 
-    static Value native_str_isdigit(Value self)
+    static Value native_str_isdigit(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"isdigit"));
         return self.get_ptr<String>()->isdigit() ? Value::True()
                                                  : Value::False();
     }
 
-    static Value native_str_isalnum(Value self)
+    static Value native_str_isalnum(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"isalnum"));
         return self.get_ptr<String>()->isalnum() ? Value::True()
                                                  : Value::False();
     }
 
-    static Value native_str_isspace(Value self)
+    static Value native_str_isspace(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"isspace"));
         return self.get_ptr<String>()->isspace() ? Value::True()

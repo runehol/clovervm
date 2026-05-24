@@ -198,48 +198,55 @@ static Value *g_native_frame_frontier_seen = nullptr;
 static Value *g_expected_clover_frame_sentinel = nullptr;
 static uint32_t g_weave_frontier_checks = 0;
 
-static Value native_next_counter() { return Value::from_smi(g_next_counter++); }
+static Value native_next_counter(ThreadState *thread)
+{
+    return Value::from_smi(g_next_counter++);
+}
 
-static Value native_zero() { return Value::from_smi(17); }
+static Value native_zero(ThreadState *thread) { return Value::from_smi(17); }
 
-static Value native_sum7(Value arg0, Value arg1, Value arg2, Value arg3,
-                         Value arg4, Value arg5, Value arg6)
+static Value native_sum7(ThreadState *thread, Value arg0, Value arg1,
+                         Value arg2, Value arg3, Value arg4, Value arg5,
+                         Value arg6)
 {
     return Value::from_smi(arg0.get_smi() + arg1.get_smi() + arg2.get_smi() +
                            arg3.get_smi() + arg4.get_smi() + arg5.get_smi() +
                            arg6.get_smi());
 }
 
-static Value native_frame_frontier_result(int64_t result)
+static Value native_frame_frontier_result(ThreadState *thread, int64_t result)
 {
-    g_native_frame_frontier_seen = active_thread()->clover_frame_frontier();
+    g_native_frame_frontier_seen = thread->clover_frame_frontier();
     return Value::from_smi(g_native_frame_frontier_seen != nullptr ? result
                                                                    : 0);
 }
 
-static Value native_frame_frontier0()
+static Value native_frame_frontier0(ThreadState *thread)
 {
-    return native_frame_frontier_result(1);
+    return native_frame_frontier_result(thread, 1);
 }
 
-static Value native_frame_frontier1(Value arg0)
+static Value native_frame_frontier1(ThreadState *thread, Value arg0)
 {
-    return native_frame_frontier_result(arg0 == Value::from_smi(10) ? 2 : 0);
+    return native_frame_frontier_result(thread,
+                                        arg0 == Value::from_smi(10) ? 2 : 0);
 }
 
-static Value native_frame_frontier2(Value arg0, Value arg1)
+static Value native_frame_frontier2(ThreadState *thread, Value arg0, Value arg1)
 {
     return native_frame_frontier_result(
+        thread,
         arg0 == Value::from_smi(10) && arg1 == Value::from_smi(20) ? 4 : 0);
 }
 
-static Value native_frame_frontier3(Value arg0, Value arg1, Value arg2)
+static Value native_frame_frontier3(ThreadState *thread, Value arg0, Value arg1,
+                                    Value arg2)
 {
-    return native_frame_frontier_result(arg0 == Value::from_smi(10) &&
-                                                arg1 == Value::from_smi(20) &&
-                                                arg2 == Value::from_smi(30)
-                                            ? 8
-                                            : 0);
+    return native_frame_frontier_result(
+        thread, arg0 == Value::from_smi(10) && arg1 == Value::from_smi(20) &&
+                        arg2 == Value::from_smi(30)
+                    ? 8
+                    : 0);
 }
 
 static void expect_current_frontier_reaches_initial(uint32_t expected_count)
@@ -252,13 +259,13 @@ static void expect_current_frontier_reaches_initial(uint32_t expected_count)
     ++g_weave_frontier_checks;
 }
 
-static Value native_weave_inner()
+static Value native_weave_inner(ThreadState *thread)
 {
     expect_current_frontier_reaches_initial(8);
     return Value::from_smi(23);
 }
 
-static Value native_weave_outer(Value inner_function)
+static Value native_weave_outer(ThreadState *thread, Value inner_function)
 {
     expect_current_frontier_reaches_initial(5);
     Value result = active_thread()->call_clovervm_function(
@@ -271,7 +278,7 @@ static Value native_weave_outer(Value inner_function)
     return Value::from_smi(result.get_smi() + 19);
 }
 
-static Value native_increment(Value value)
+static Value native_increment(ThreadState *thread, Value value)
 {
     if(!value.is_smi())
     {
@@ -280,7 +287,7 @@ static Value native_increment(Value value)
     return Value::from_smi(value.get_smi() + 1);
 }
 
-static Value native_add(Value left, Value right)
+static Value native_add(ThreadState *thread, Value left, Value right)
 {
     if(!left.is_smi() || !right.is_smi())
     {
@@ -289,18 +296,18 @@ static Value native_add(Value left, Value right)
     return Value::from_smi(left.get_smi() + right.get_smi());
 }
 
-static Value native_stop_iteration_with_value()
+static Value native_stop_iteration_with_value(ThreadState *thread)
 {
     return active_thread()->set_pending_stop_iteration_value(
         Value::from_smi(123));
 }
 
-static Value native_marker_without_pending_exception()
+static Value native_marker_without_pending_exception(ThreadState *thread)
 {
     return Value::exception_marker();
 }
 
-static Value native_base_exception_with_message()
+static Value native_base_exception_with_message(ThreadState *thread)
 {
     ClassObject *cls =
         active_thread()->class_for_native_layout(NativeLayoutId::Exception);
@@ -311,18 +318,20 @@ static Value native_base_exception_with_message()
 static void *g_every_safepoint_reclamation_target_address = nullptr;
 static uint64_t g_every_safepoint_reclamation_valid_objects = 0;
 
-static Value native_large_tuple_for_every_safepoint_reclamation()
+static Value
+native_large_tuple_for_every_safepoint_reclamation(ThreadState *thread)
 {
     size_t tuple_size = LargeAllocationSize / sizeof(Value);
     return active_thread()->make_object_value<Tuple>(tuple_size).raw_value();
 }
 
-static Value native_capture_every_safepoint_reclamation_target(Value value)
+static Value
+native_capture_every_safepoint_reclamation_target(ThreadState *thread,
+                                                  Value value)
 {
     assert(value.is_ptr());
     assert(value.get_ptr<Object>()->native_layout_id() ==
            NativeLayoutId::Tuple);
-    ThreadState *thread = active_thread();
     GlobalHeap &heap = thread->get_machine()->get_refcounted_global_heap();
     g_every_safepoint_reclamation_target_address = value.as.ptr;
     g_every_safepoint_reclamation_valid_objects =
@@ -331,7 +340,7 @@ static Value native_capture_every_safepoint_reclamation_target(Value value)
     return Value::from_smi(0);
 }
 
-static Value native_every_safepoint_reclamation_ping()
+static Value native_every_safepoint_reclamation_ping(ThreadState *thread)
 {
     return Value::from_smi(1);
 }

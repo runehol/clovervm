@@ -63,7 +63,8 @@ namespace cl
         return true;
     }
 
-    static Value builtin_isinstance(Value obj, Value classinfo)
+    static Value builtin_isinstance(ThreadState *thread, Value obj,
+                                    Value classinfo)
     {
         if(!classinfo_is_valid(classinfo))
         {
@@ -77,7 +78,8 @@ namespace cl
                    : Value::False();
     }
 
-    static Value builtin_issubclass(Value cls_value, Value classinfo)
+    static Value builtin_issubclass(ThreadState *thread, Value cls_value,
+                                    Value classinfo)
     {
         if(!can_convert_to<ClassObject>(cls_value))
         {
@@ -106,7 +108,7 @@ namespace cl
         return Value::None();
     }
 
-    static Value builtin_getattr(Value obj, Value name)
+    static Value builtin_getattr(ThreadState *thread, Value obj, Value name)
     {
         CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
         Value result = load_attr(obj, TValue<String>::from_value_assumed(name));
@@ -118,8 +120,8 @@ namespace cl
         return result;
     }
 
-    static Value builtin_getattr_default(Value obj, Value name,
-                                         Value default_tuple)
+    static Value builtin_getattr_default(ThreadState *thread, Value obj,
+                                         Value name, Value default_tuple)
     {
         CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
         assert(can_convert_to<Tuple>(default_tuple));
@@ -143,7 +145,7 @@ namespace cl
         return result;
     }
 
-    static Value builtin_hasattr(Value obj, Value name)
+    static Value builtin_hasattr(ThreadState *thread, Value obj, Value name)
     {
         CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
         Value result = load_attr(obj, TValue<String>::from_value_assumed(name));
@@ -154,7 +156,8 @@ namespace cl
         return result.is_not_present() ? Value::False() : Value::True();
     }
 
-    static Value builtin_setattr(Value obj, Value name, Value value)
+    static Value builtin_setattr(ThreadState *thread, Value obj, Value name,
+                                 Value value)
     {
         CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
         if(store_attr(obj, TValue<String>::from_value_assumed(name), value))
@@ -169,7 +172,7 @@ namespace cl
             L"AttributeError", L"cannot set attribute");
     }
 
-    static Value builtin_delattr(Value obj, Value name)
+    static Value builtin_delattr(ThreadState *thread, Value obj, Value name)
     {
         CL_PROPAGATE_EXCEPTION(require_attribute_name(name));
         if(delete_attr(obj, TValue<String>::from_value_assumed(name)))
@@ -184,7 +187,7 @@ namespace cl
             L"AttributeError", L"object has no such attribute");
     }
 
-    static Value builtin_callable(Value obj)
+    static Value builtin_callable(ThreadState *thread, Value obj)
     {
         if(can_convert_to<Function>(obj) || can_convert_to<ClassObject>(obj))
         {
@@ -196,7 +199,7 @@ namespace cl
                    : Value::False();
     }
 
-    static Value builtin_ord(Value obj)
+    static Value builtin_ord(ThreadState *thread, Value obj)
     {
         if(!can_convert_to<String>(obj))
         {
@@ -212,7 +215,7 @@ namespace cl
         return Value::from_smi(static_cast<int64_t>(str->data[0]));
     }
 
-    static Value builtin_chr(Value code_value)
+    static Value builtin_chr(ThreadState *thread, Value code_value)
     {
         if(!code_value.is_smi())
         {
@@ -280,7 +283,7 @@ namespace cl
         }
     }
 
-    static Value builtin_dir(Value obj)
+    static Value builtin_dir(ThreadState *thread, Value obj)
     {
         std::vector<std::wstring> names;
         if(obj.is_ptr())

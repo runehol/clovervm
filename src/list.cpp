@@ -13,7 +13,7 @@
 
 namespace cl
 {
-    static Value native_list_repr(Value self)
+    static Value native_list_repr(ThreadState *thread, Value self)
     {
         if(!can_convert_to<List>(self))
         {
@@ -37,7 +37,7 @@ namespace cl
         return builder.finish();
     }
 
-    static Value native_list_len(Value self)
+    static Value native_list_len(ThreadState *thread, Value self)
     {
         if(!can_convert_to<List>(self))
         {
@@ -49,7 +49,7 @@ namespace cl
             static_cast<int64_t>(self.get_ptr<List>()->size()));
     }
 
-    static Value native_list_iter(Value self)
+    static Value native_list_iter(ThreadState *thread, Value self)
     {
         TValue<List> list = CL_TRY(TValue<List>::from_value_or_raise(
             self, L"TypeError", L"list.__iter__ expects a list receiver"));
@@ -94,27 +94,29 @@ namespace cl
         return static_cast<size_t>(normalized);
     }
 
-    static Value native_list_append(Value self, Value value)
+    static Value native_list_append(ThreadState *thread, Value self,
+                                    Value value)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"append"));
         self.get_ptr<List>()->append(value);
         return Value::None();
     }
 
-    static Value native_list_clear(Value self)
+    static Value native_list_clear(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"clear"));
         self.get_ptr<List>()->clear();
         return Value::None();
     }
 
-    static Value native_list_copy(Value self)
+    static Value native_list_copy(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"copy"));
         return self.get_ptr<List>()->copy().raw_value();
     }
 
-    static Value native_list_extend(Value self, Value other)
+    static Value native_list_extend(ThreadState *thread, Value self,
+                                    Value other)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"extend"));
         List *list = self.get_ptr<List>();
@@ -132,13 +134,15 @@ namespace cl
             L"TypeError", L"list.extend expects a list or tuple");
     }
 
-    static Value native_list_count(Value self, Value needle)
+    static Value native_list_count(ThreadState *thread, Value self,
+                                   Value needle)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"count"));
         return Value::from_smi(self.get_ptr<List>()->count(needle));
     }
 
-    static Value native_list_index(Value self, Value needle, Value start_value,
+    static Value native_list_index(ThreadState *thread, Value self,
+                                   Value needle, Value start_value,
                                    Value stop_value)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"index"));
@@ -152,7 +156,8 @@ namespace cl
         return self.get_ptr<List>()->index(needle, start_py_idx, stop_py_idx);
     }
 
-    static Value native_list_insert(Value self, Value index_value, Value value)
+    static Value native_list_insert(ThreadState *thread, Value self,
+                                    Value index_value, Value value)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"insert"));
         int64_t py_idx;
@@ -162,7 +167,8 @@ namespace cl
         return Value::None();
     }
 
-    static Value native_list_pop(Value self, Value index_value)
+    static Value native_list_pop(ThreadState *thread, Value self,
+                                 Value index_value)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"pop"));
         int64_t py_idx;
@@ -171,20 +177,21 @@ namespace cl
         return self.get_ptr<List>()->pop_item(py_idx);
     }
 
-    static Value native_list_remove(Value self, Value needle)
+    static Value native_list_remove(ThreadState *thread, Value self,
+                                    Value needle)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"remove"));
         return self.get_ptr<List>()->remove(needle);
     }
 
-    static Value native_list_reverse(Value self)
+    static Value native_list_reverse(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"reverse"));
         self.get_ptr<List>()->reverse();
         return Value::None();
     }
 
-    static Value native_list_add(Value left, Value right)
+    static Value native_list_add(ThreadState *thread, Value left, Value right)
     {
         if(!can_convert_to<List>(left) || !can_convert_to<List>(right))
         {

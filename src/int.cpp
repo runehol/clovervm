@@ -10,7 +10,7 @@
 
 namespace cl
 {
-    static Value native_int_str(Value self)
+    static Value native_int_str(ThreadState *thread, Value self)
     {
         if(!self.is_smi())
         {
