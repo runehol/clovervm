@@ -53,16 +53,19 @@ target_compile_definitions(bench_clovervm
     PRIVATE CLOVERVM_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
 )
 
+set(CLOVERVM_INTERPRETER_OBJECT
+    "$<FILTER:$<TARGET_OBJECTS:libclovervm_objects>,INCLUDE,.*/interpreter\\.cpp\\.(o|obj)>")
+
 add_custom_target(check_opcode_frames
     COMMAND ${Python3_EXECUTABLE}
             ${PROJECT_SOURCE_DIR}/tools/check_opcode_frames.py
-            --binary $<TARGET_FILE:clovervm>
+            --binary ${CLOVERVM_INTERPRETER_OBJECT}
             --required-list
             ${PROJECT_SOURCE_DIR}/benchmark/hot_path_opcode_handlers.txt
             --nm ${CMAKE_NM}
             --objdump ${CMAKE_OBJDUMP}
             --warn-only
-    DEPENDS clovervm
+    DEPENDS libclovervm_objects
     USES_TERMINAL
 )
 

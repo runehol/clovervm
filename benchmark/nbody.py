@@ -1,5 +1,7 @@
 # Adapted from the Computer Language Benchmarks Game n-body benchmark.
 
+from math import sqrt
+
 PI = 3.141592653589793
 SOLAR_MASS = 4.0 * PI * PI
 DAYS_PER_YEAR = 365.24

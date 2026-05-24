@@ -30,7 +30,6 @@
 #include "tuple_iterator.h"
 #include "typed_value.h"
 #include <cassert>
-#include <cmath>
 #include <cwchar>
 #include <initializer_list>
 #include <stdexcept>
@@ -100,34 +99,6 @@ namespace cl
                    TValue<SMI>::from_value_assumed(start),
                    TValue<SMI>::from_value_assumed(stop),
                    TValue<SMI>::from_value_assumed(step))
-            .raw_value();
-    }
-
-    static Value builtin_sqrt(Value arg)
-    {
-        double value;
-        if(arg.is_smi())
-        {
-            value = static_cast<double>(arg.get_smi());
-        }
-        else if(can_convert_to<Float>(arg))
-        {
-            value = arg.get_ptr<Float>()->value;
-        }
-        else
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"TypeError", L"sqrt() argument must be int or float");
-        }
-
-        if(value < 0.0)
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"ValueError", L"math domain error");
-        }
-
-        return active_thread()
-            ->make_object_value<Float>(std::sqrt(value))
             .raw_value();
     }
 
@@ -700,10 +671,6 @@ namespace cl
                             Optional<TValue<Tuple>>::some(range_defaults))
                             .raw_value();
         install_builtin_binding(range_name, range_builtin);
-
-        TValue<String> sqrt_name = get_or_create_interned_string_value(L"sqrt");
-        install_builtin_binding(
-            sqrt_name, make_intrinsic_function(this, builtin_sqrt).raw_value());
 
         TValue<String> import_name =
             get_or_create_interned_string_value(L"__import__");

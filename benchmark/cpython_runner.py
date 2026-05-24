@@ -11,8 +11,6 @@ def main() -> int:
 
     namespace = {}
     source = benchmark_path.read_text(encoding="utf-8")
-    if benchmark_path.name == "nbody.py":
-        source = "from math import sqrt\n" + source
     code = compile(source, str(benchmark_path), "exec")
     exec(code, namespace, namespace)
 
