@@ -1,6 +1,7 @@
 #include "virtual_machine.h"
 #include "bool.h"
 #include "build_config.h"
+#include "builtins.h"
 #include "clover_entry.h"
 #include "code_object.h"
 #include "codegen.h"
@@ -783,6 +784,7 @@ namespace cl
                             Optional<TValue<Tuple>>::some(range_defaults))
                             .raw_value();
         install_builtin_binding(range_name, range_builtin);
+        install_builtin_function_bindings(this);
 
         TValue<String> import_name =
             get_or_create_interned_string_value(L"__import__");

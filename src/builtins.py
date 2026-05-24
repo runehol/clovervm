@@ -43,6 +43,36 @@ def len(obj):
     )
 
 
+def getattr(obj, name, *default):
+    """Return the named attribute from an object.
+
+If a default is given, it is returned when the attribute is missing."""
+    return _clover_builtin_getattr_default(obj, name, default)
+
+
+def hasattr(obj, name):
+    """Return whether the object has the named attribute."""
+    return _clover_builtin_hasattr(obj, name)
+
+
+def vars(*obj):
+    """Return __dict__ for an object, or locals() with no argument."""
+    if len(obj) == 0:
+        return locals()
+    if len(obj) > 1:
+        raise TypeError
+    return _clover_builtin_getattr(obj[0], "__dict__")
+
+
+def dir(*obj):
+    """Return an alphabetized list of names in the local scope or on an object."""
+    if len(obj) == 0:
+        return _clover_builtin_dir(locals())
+    if len(obj) > 1:
+        raise TypeError
+    return _clover_builtin_dir(obj[0])
+
+
 def globals():
     """Return the dictionary containing the current scope's global variables."""
     return __clover_globals__()

@@ -65,6 +65,8 @@ add_library(libclovervm_objects OBJECT
     interpreter.cpp
     bool.cpp
     bool.h
+    builtins.cpp
+    builtins.h
     builtins.py
     builtins.inc.in
     sys.py
