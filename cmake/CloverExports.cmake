@@ -32,9 +32,12 @@ set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
     clover_propagate_error
     clover_raise_overflow_error
     clover_raise_value_error
+    clover_string_as_utf8
     clover_string_from_utf8
     clover_tuple_from_pair
-    clover_tuple_from_array)
+    clover_tuple_from_array
+    clover_tuple_get_item
+    clover_tuple_size)
 
 set(CLOVERVM_EXTENSION_API_SYMBOLS
     ${CLOVERVM_EXTENSION_MODULE_BUILDER_API_SYMBOLS}

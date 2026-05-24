@@ -102,6 +102,18 @@ extern "C"
     CL_EXPORT clover_value clover_tuple_from_pair(clover_context *ctx,
                                                   clover_value item0,
                                                   clover_value item1);
+    CL_EXPORT clover_status clover_tuple_size(clover_context *ctx,
+                                              clover_value value,
+                                              size_t *out);
+    CL_EXPORT clover_status clover_tuple_get_item(clover_context *ctx,
+                                                  clover_value value,
+                                                  size_t index,
+                                                  clover_value *out);
+    CL_EXPORT clover_status clover_string_as_utf8(clover_context *ctx,
+                                                  clover_value value,
+                                                  char *out,
+                                                  size_t out_capacity,
+                                                  size_t *out_size);
     CL_EXPORT clover_status clover_float_as_double(clover_context *ctx,
                                                    clover_value value,
                                                    double *out);
