@@ -1,3 +1,7 @@
 static constexpr const wchar_t *trusted_builtin_source = LR"CL_BUILTINS(
 @CL_TRUSTED_BUILTIN_SOURCE@
 )CL_BUILTINS";
+
+static constexpr const wchar_t *trusted_sys_source = LR"CL_SYS(
+@CL_TRUSTED_SYS_SOURCE@
+)CL_SYS";

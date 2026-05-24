@@ -19,7 +19,7 @@ edge cases, platform behavior, or APIs are still missing.
 
 | Status | Module | Why it matters | Not handled / notes |
 | --- | --- | --- | --- |
-| [~] | `sys` | Runtime identity, import state, paths, module registry, process details. | Bootstrap module exists with `sys.modules` and `sys.path`; broad CPython surface is still missing or unverified. |
+| [~] | `sys` | Runtime identity, import state, paths, module registry, process details. | Built into VM bootstrap. Covers `sys.modules`, `sys.path`, import metadata, core static metadata (`argv`, `builtin_module_names`, `byteorder`, `maxsize`, `maxunicode`, `platform`, `version`, `version_info`), `implementation`, encoding queries, recursion/switch interval metadata, `getsizeof` default handling, `gettrace`, `getprofile`, and `is_finalizing`. Still missing broad CPython surface, standard streams/hooks, active exception APIs, tracing/profiling behavior, `SystemExit`/`sys.exit`, real installation prefixes, and named tuple compatibility for several metadata values. |
 | [~] | `builtins` | Names every module assumes exist; exceptions, core types, builtin functions. | Trusted bootstrap exists; many builtin functions and exact CPython semantics remain incomplete. |
 | [ ] | `types` | Shared type names used by frameworks, decorators, inspection, import machinery. | Not started / not assessed. |
 | [ ] | `operator` | Functional forms of operators used by collections, sorting helpers, libraries. | Not started / not assessed. |

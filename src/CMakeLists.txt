@@ -1,9 +1,12 @@
 find_package(Threads)
 
 set(CL_TRUSTED_BUILTINS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/builtins.py")
+set(CL_TRUSTED_SYS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/sys.py")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${CL_TRUSTED_BUILTINS_FILE}")
+    "${CL_TRUSTED_BUILTINS_FILE}"
+    "${CL_TRUSTED_SYS_FILE}")
 file(READ "${CL_TRUSTED_BUILTINS_FILE}" CL_TRUSTED_BUILTIN_SOURCE)
+file(READ "${CL_TRUSTED_SYS_FILE}" CL_TRUSTED_SYS_SOURCE)
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/builtins.inc.in"
     "${CMAKE_CURRENT_BINARY_DIR}/builtins.inc"
@@ -64,6 +67,7 @@ add_library(libclovervm_objects OBJECT
     bool.h
     builtins.py
     builtins.inc.in
+    sys.py
     parser.cpp
     parser.h
     range_iterator.cpp

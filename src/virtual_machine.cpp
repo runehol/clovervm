@@ -30,6 +30,7 @@
 #include "tuple_iterator.h"
 #include "typed_value.h"
 #include <cassert>
+#include <cstdint>
 #include <cwchar>
 #include <initializer_list>
 #include <stdexcept>
@@ -48,6 +49,115 @@ namespace cl
             tuple->initialize_item_unchecked(idx++, Value::from_oop(cls));
         }
         return Value::from_oop(tuple);
+    }
+
+    static void install_module_value(VirtualMachine *vm, ModuleObject *module,
+                                     const wchar_t *name, Value value)
+    {
+        bool installed = module->set_own_property(
+            vm->get_or_create_interned_string_value(name), value);
+        assert(installed);
+        (void)installed;
+    }
+
+    static Value make_string_value(VirtualMachine *vm, const wchar_t *value)
+    {
+        return vm->get_or_create_interned_string_value(value).raw_value();
+    }
+
+    static Value
+    make_string_tuple(VirtualMachine *vm,
+                      std::initializer_list<const wchar_t *> values)
+    {
+        Tuple *tuple = vm->make_immortal_object_raw<Tuple>(values.size());
+        size_t idx = 0;
+        for(const wchar_t *value: values)
+        {
+            tuple->initialize_item_unchecked(idx++,
+                                             make_string_value(vm, value));
+        }
+        return Value::from_oop(tuple);
+    }
+
+    static Value make_string_list(VirtualMachine *vm,
+                                  std::initializer_list<const wchar_t *> values)
+    {
+        List *list = vm->make_immortal_object_raw<List>();
+        for(const wchar_t *value: values)
+        {
+            list->append(make_string_value(vm, value));
+        }
+        return Value::from_oop(list);
+    }
+
+    static Value make_version_info(VirtualMachine *vm)
+    {
+        Tuple *version_info = vm->make_immortal_object_raw<Tuple>(5);
+        version_info->initialize_item_unchecked(0, Value::from_smi(0));
+        version_info->initialize_item_unchecked(1, Value::from_smi(0));
+        version_info->initialize_item_unchecked(2, Value::from_smi(0));
+        version_info->initialize_item_unchecked(
+            3, make_string_value(vm, L"alpha"));
+        version_info->initialize_item_unchecked(4, Value::from_smi(0));
+        return Value::from_oop(version_info);
+    }
+
+    static const wchar_t *sys_platform_name()
+    {
+#if defined(__APPLE__)
+        return L"darwin";
+#elif defined(__linux__)
+        return L"linux";
+#elif defined(_WIN32)
+        return L"win32";
+#else
+        return L"unknown";
+#endif
+    }
+
+    static const wchar_t *sys_byteorder_name()
+    {
+        uint16_t value = 1;
+        return *reinterpret_cast<unsigned char *>(&value) == 1 ? L"little"
+                                                               : L"big";
+    }
+
+    static void install_sys_static_attributes(VirtualMachine *vm,
+                                              ModuleObject *sys_module)
+    {
+        install_module_value(vm, sys_module, L"argv",
+                             make_string_list(vm, {L""}));
+        install_module_value(vm, sys_module, L"orig_argv",
+                             make_string_list(vm, {L""}));
+        install_module_value(vm, sys_module, L"warnoptions",
+                             make_string_list(vm, {}));
+        install_module_value(vm, sys_module, L"builtin_module_names",
+                             make_string_tuple(vm, {L"builtins", L"sys"}));
+        install_module_value(vm, sys_module, L"byteorder",
+                             make_string_value(vm, sys_byteorder_name()));
+        install_module_value(vm, sys_module, L"copyright",
+                             make_string_value(vm, L"Copyright CloverVM"));
+        install_module_value(vm, sys_module, L"dont_write_bytecode",
+                             Value::True());
+        install_module_value(vm, sys_module, L"hexversion", Value::from_smi(0));
+        install_module_value(vm, sys_module, L"maxsize",
+                             Value::from_smi(value_smi_max));
+        install_module_value(vm, sys_module, L"maxunicode",
+                             Value::from_smi(0x10ffff));
+        install_module_value(vm, sys_module, L"platform",
+                             make_string_value(vm, sys_platform_name()));
+        install_module_value(vm, sys_module, L"prefix",
+                             make_string_value(vm, L""));
+        install_module_value(vm, sys_module, L"exec_prefix",
+                             make_string_value(vm, L""));
+        install_module_value(vm, sys_module, L"base_prefix",
+                             make_string_value(vm, L""));
+        install_module_value(vm, sys_module, L"base_exec_prefix",
+                             make_string_value(vm, L""));
+        install_module_value(vm, sys_module, L"version",
+                             make_string_value(vm, L"0.0.0 (clovervm)"));
+        install_module_value(vm, sys_module, L"version_info",
+                             make_version_info(vm));
     }
 
     [[nodiscard]] static Value require_range_integer_arg(Value arg,
@@ -624,6 +734,8 @@ namespace cl
         (void)installed_modules;
         (void)installed_path;
 
+        install_sys_static_attributes(this, sys_module_);
+
         imported_modules_->set_item(sys_name.raw_value(),
                                     Value::from_oop(sys_module_));
         imported_modules_->set_item(builtins_name.raw_value(),
@@ -696,6 +808,15 @@ namespace cl
         {
             throw std::runtime_error(
                 "failed to initialize trusted builtins.py");
+        }
+
+        CodeObject *sys_code = thread->compile_in_module(
+            trusted_sys_source, StartRule::File, sys_module().extract(),
+            LanguageMode::TrustedCloverExtensions);
+        result = thread->run_clovervm_code_object(sys_code);
+        if(result.is_exception_marker())
+        {
+            throw std::runtime_error("failed to initialize trusted sys.py");
         }
     }
 
