@@ -157,6 +157,13 @@ user code deletes `sys.modules["_time"]` and imports `_time` again, clovervm
 creates a fresh module object and calls the init function again for that
 instance.
 
+## String Encoding
+
+All `const char *` strings accepted by the native extension API are UTF-8
+encoded unless a function explicitly documents a narrower temporary
+restriction. Invalid UTF-8 is an API error. Name arguments such as module
+constant names and native function names must be non-null and non-empty.
+
 ## Native Function Registration
 
 Function registration should be arity-typed. The API uses one registration
@@ -291,6 +298,8 @@ clover_status clover_module_set_doc(
     clover_native_module_builder *builder,
     const char *doc);
 ```
+
+`name`, `utf8_value`, and `doc` are UTF-8 strings.
 
 Additional helpers can be added as native modules need them. The bar should be
 real use, not anticipatory completeness.
