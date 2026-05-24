@@ -91,7 +91,16 @@ Cover representative cases for:
 
 If a test exposes a general VM bug unrelated to the module, either fix it in the proper layer or reshape the test/module code conservatively without hiding the limitation.
 
-8. Verify and commit-ready clean up.
+8. Update the stdlib bringup checklist.
+
+For clovervm, update `doc/stdlib-module-bringup-checklist.md` before
+finalizing module work. Mark the module's status as `[ ]`, `[~]`, or `[x]`,
+and record progress, missing APIs, unsupported Python-visible semantics,
+runtime blockers, skipped tests, and other snags in the notes column. If the
+work uncovers a dependency on another stdlib module or VM feature, record that
+dependency rather than silently treating the module as complete.
+
+9. Verify and commit-ready clean up.
 
 Run the repository-required formatter on touched native/C++ files. For clovervm specifically, run:
 
