@@ -9,6 +9,8 @@
 namespace cl
 {
     class ClassObject;
+    class List;
+    class Tuple;
 
     class Dict : public Object
     {
@@ -77,6 +79,18 @@ namespace cl
         Iterator end() const;
 
         void clear();
+        [[nodiscard]] TValue<Dict> copy() const;
+        [[nodiscard]] TValue<List> keys() const;
+        [[nodiscard]] TValue<List> values() const;
+        [[nodiscard]] TValue<List> items() const;
+        [[nodiscard]] Value pop(Value key);
+        [[nodiscard]] Value popitem();
+        [[nodiscard]] Value setdefault(Value key, Value default_value);
+        void update_from_dict(const Dict *other);
+        [[nodiscard]] static Value from_tuple_keys(const Tuple *keys,
+                                                   Value value);
+        [[nodiscard]] static Value from_list_keys(const List *keys,
+                                                  Value value);
 
     private:
         constexpr static uint32_t max_load_nom = 3;

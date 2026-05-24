@@ -68,22 +68,9 @@ namespace cl
                 L"TypeError", L"can only concatenate tuple to tuple");
         }
 
-        Tuple *left_tuple = left.get_ptr<Tuple>();
-        Tuple *right_tuple = right.get_ptr<Tuple>();
-        TValue<Tuple> result =
-            make_object_value<Tuple>(left_tuple->size() + right_tuple->size());
-        size_t write_idx = 0;
-        for(size_t idx = 0; idx < left_tuple->size(); ++idx)
-        {
-            result.extract()->initialize_item_unchecked(
-                write_idx++, left_tuple->item_unchecked(idx));
-        }
-        for(size_t idx = 0; idx < right_tuple->size(); ++idx)
-        {
-            result.extract()->initialize_item_unchecked(
-                write_idx++, right_tuple->item_unchecked(idx));
-        }
-        return result.raw_value();
+        return left.get_ptr<Tuple>()
+            ->concat(right.get_ptr<Tuple>())
+            .raw_value();
     }
 
     static Value require_smi_index(Value value, const wchar_t *message,
@@ -119,16 +106,7 @@ namespace cl
                 L"TypeError", L"tuple.count expects a tuple receiver");
         }
 
-        Tuple *tuple = self.get_ptr<Tuple>();
-        int64_t count = 0;
-        for(size_t idx = 0; idx < tuple->size(); ++idx)
-        {
-            if(tuple->item_unchecked(idx) == needle)
-            {
-                ++count;
-            }
-        }
-        return Value::from_smi(count);
+        return Value::from_smi(self.get_ptr<Tuple>()->count(needle));
     }
 
     static Value native_tuple_index(Value self, Value needle, Value start_value,
@@ -147,19 +125,7 @@ namespace cl
         CL_PROPAGATE_EXCEPTION(require_smi_index(
             stop_value, L"tuple indices must be integers", stop_py_idx));
 
-        Tuple *tuple = self.get_ptr<Tuple>();
-        size_t start =
-            normalize_tuple_search_bound(start_py_idx, tuple->size());
-        size_t stop = normalize_tuple_search_bound(stop_py_idx, tuple->size());
-        for(size_t idx = start; idx < stop; ++idx)
-        {
-            if(tuple->item_unchecked(idx) == needle)
-            {
-                return Value::from_smi(static_cast<int64_t>(idx));
-            }
-        }
-        return active_thread()->set_pending_builtin_exception_string(
-            L"ValueError", L"tuple.index(x): x not in tuple");
+        return self.get_ptr<Tuple>()->index(needle, start_py_idx, stop_py_idx);
     }
 
     static TValue<Tuple> tuple_default_pair(VirtualMachine *vm,
@@ -240,6 +206,52 @@ namespace cl
         size_t idx = wrap_index(py_idx);
         CL_PROPAGATE_EXCEPTION(check_index(idx));
         return item_unchecked(idx);
+    }
+
+    TValue<Tuple> Tuple::concat(const Tuple *other) const
+    {
+        TValue<Tuple> result = make_object_value<Tuple>(size() + other->size());
+        size_t write_idx = 0;
+        for(size_t idx = 0; idx < size(); ++idx)
+        {
+            result.extract()->initialize_item_unchecked(write_idx++,
+                                                        item_unchecked(idx));
+        }
+        for(size_t idx = 0; idx < other->size(); ++idx)
+        {
+            result.extract()->initialize_item_unchecked(
+                write_idx++, other->item_unchecked(idx));
+        }
+        return result;
+    }
+
+    int64_t Tuple::count(Value needle) const
+    {
+        int64_t result = 0;
+        for(size_t idx = 0; idx < size(); ++idx)
+        {
+            if(item_unchecked(idx) == needle)
+            {
+                ++result;
+            }
+        }
+        return result;
+    }
+
+    Value Tuple::index(Value needle, int64_t start_py_idx,
+                       int64_t stop_py_idx) const
+    {
+        size_t start = normalize_tuple_search_bound(start_py_idx, size());
+        size_t stop = normalize_tuple_search_bound(stop_py_idx, size());
+        for(size_t idx = start; idx < stop; ++idx)
+        {
+            if(item_unchecked(idx) == needle)
+            {
+                return Value::from_smi(static_cast<int64_t>(idx));
+            }
+        }
+        return active_thread()->set_pending_builtin_exception_string(
+            L"ValueError", L"tuple.index(x): x not in tuple");
     }
 
     size_t Tuple::wrap_index(int64_t py_idx) const

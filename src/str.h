@@ -19,8 +19,10 @@ namespace cl
     typedef wchar_t cl_wchar;
 
     class ClassObject;
+    class List;
     class Shape;
     class ThreadState;
+    class Tuple;
     class VirtualMachine;
 
     class String : public Object
@@ -87,6 +89,26 @@ namespace cl
         }
 
         void install_bootstrap_class(ClassObject *new_cls);
+        [[nodiscard]] Value char_at(int64_t py_idx) const;
+        [[nodiscard]] TValue<String> concat(const String *other) const;
+        [[nodiscard]] TValue<String> lower() const;
+        [[nodiscard]] TValue<String> upper() const;
+        bool startswith(const String *prefix) const;
+        bool endswith(const String *suffix) const;
+        int64_t find(const String *needle) const;
+        [[nodiscard]] Value index(const String *needle) const;
+        int64_t count_substring(const String *needle) const;
+        [[nodiscard]] TValue<String> replace(const String *old,
+                                             const String *replacement) const;
+        [[nodiscard]] TValue<String> strip() const;
+        [[nodiscard]] TValue<String> lstrip() const;
+        [[nodiscard]] TValue<String> rstrip() const;
+        [[nodiscard]] TValue<String> join_list(const List *sequence) const;
+        [[nodiscard]] TValue<String> join_tuple(const Tuple *sequence) const;
+        bool isalpha() const;
+        bool isdigit() const;
+        bool isalnum() const;
+        bool isspace() const;
 
         Member<TValue<SMI>> count;
         cl_wchar data[1];

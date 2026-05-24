@@ -59,6 +59,10 @@ namespace cl
             elements[idx] = incref(value);
         }
         [[nodiscard]] Value get_item(int64_t py_idx) const;
+        [[nodiscard]] TValue<Tuple> concat(const Tuple *other) const;
+        int64_t count(Value needle) const;
+        [[nodiscard]] Value index(Value needle, int64_t start_py_idx,
+                                  int64_t stop_py_idx) const;
 
         static ALWAYSINLINE TValue<Tuple>
         from_frame_arguments(ThreadState *thread, Value *fp,

@@ -123,6 +123,26 @@ namespace cl
         return Value::None();
     }
 
+    static Value require_tuple_string_keys(const Tuple *keys)
+    {
+        for(size_t idx = 0; idx < keys->size(); ++idx)
+        {
+            CL_PROPAGATE_EXCEPTION(
+                require_string_key(keys->item_unchecked(idx)));
+        }
+        return Value::None();
+    }
+
+    static Value require_list_string_keys(const List *keys)
+    {
+        for(size_t idx = 0; idx < keys->size(); ++idx)
+        {
+            CL_PROPAGATE_EXCEPTION(
+                require_string_key(keys->item_unchecked(idx)));
+        }
+        return Value::None();
+    }
+
     static Value native_dict_clear(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"clear"));
@@ -133,7 +153,7 @@ namespace cl
     static Value native_dict_copy(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"copy"));
-        return make_object_value<Dict>(*self.get_ptr<Dict>()).raw_value();
+        return self.get_ptr<Dict>()->copy().raw_value();
     }
 
     static Value native_dict_get(Value self, Value key, Value default_value)
@@ -151,75 +171,32 @@ namespace cl
     static Value native_dict_keys(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"keys"));
-        Owned<TValue<List>> result(make_object_value<List>());
-        for(Dict::EntryView entry: *self.get_ptr<Dict>())
-        {
-            result.extract()->append(entry.key);
-        }
-        return result.raw_value();
+        return self.get_ptr<Dict>()->keys().raw_value();
     }
 
     static Value native_dict_values(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"values"));
-        Owned<TValue<List>> result(make_object_value<List>());
-        for(Dict::EntryView entry: *self.get_ptr<Dict>())
-        {
-            result.extract()->append(entry.value);
-        }
-        return result.raw_value();
+        return self.get_ptr<Dict>()->values().raw_value();
     }
 
     static Value native_dict_items(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"items"));
-        Owned<TValue<List>> result(make_object_value<List>());
-        for(Dict::EntryView entry: *self.get_ptr<Dict>())
-        {
-            Owned<TValue<Tuple>> item(make_object_value<Tuple>(2));
-            item.extract()->initialize_item_unchecked(0, entry.key);
-            item.extract()->initialize_item_unchecked(1, entry.value);
-            result.extract()->append(item.raw_value());
-        }
-        return result.raw_value();
+        return self.get_ptr<Dict>()->items().raw_value();
     }
 
     static Value native_dict_pop(Value self, Value key)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"pop"));
         CL_PROPAGATE_EXCEPTION(require_string_key(key));
-        Dict *dict = self.get_ptr<Dict>();
-        if(!dict->contains(key))
-        {
-            return active_thread()->set_pending_builtin_exception_none(
-                L"KeyError");
-        }
-        Value result = dict->get_item(key);
-        CL_PROPAGATE_EXCEPTION(dict->del_item(key));
-        return result;
+        return self.get_ptr<Dict>()->pop(key);
     }
 
     static Value native_dict_popitem(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"popitem"));
-        Dict *dict = self.get_ptr<Dict>();
-        if(dict->empty())
-        {
-            return active_thread()->set_pending_builtin_exception_none(
-                L"KeyError");
-        }
-
-        Dict::EntryView last = {Value::not_present(), Value::not_present()};
-        for(Dict::EntryView entry: *dict)
-        {
-            last = entry;
-        }
-        assert(!last.key.is_not_present());
-        CL_PROPAGATE_EXCEPTION(dict->del_item(last.key));
-        Owned<TValue<Tuple>> result(make_object_value<Tuple>(2));
-        result.extract()->initialize_item_unchecked(0, last.key);
-        result.extract()->initialize_item_unchecked(1, last.value);
-        return result.raw_value();
+        return self.get_ptr<Dict>()->popitem();
     }
 
     static Value native_dict_setdefault(Value self, Value key,
@@ -227,13 +204,7 @@ namespace cl
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"setdefault"));
         CL_PROPAGATE_EXCEPTION(require_string_key(key));
-        Dict *dict = self.get_ptr<Dict>();
-        if(dict->contains(key))
-        {
-            return dict->get_item(key);
-        }
-        dict->set_item(key, default_value);
-        return default_value;
+        return self.get_ptr<Dict>()->setdefault(key, default_value);
     }
 
     static Value native_dict_update(Value self, Value other)
@@ -249,40 +220,23 @@ namespace cl
                 L"TypeError", L"dict.update expects a dict argument");
         }
 
-        Dict *dict = self.get_ptr<Dict>();
-        for(Dict::EntryView entry: *other.get_ptr<Dict>())
-        {
-            dict->set_item(entry.key, entry.value);
-        }
+        self.get_ptr<Dict>()->update_from_dict(other.get_ptr<Dict>());
         return Value::None();
     }
 
     static Value native_dict_fromkeys(Value keys, Value value)
     {
-        Owned<TValue<Dict>> result(make_object_value<Dict>());
-        auto add_key = [&](Value key) -> Value {
-            CL_PROPAGATE_EXCEPTION(require_string_key(key));
-            result.extract()->set_item(key, value);
-            return Value::None();
-        };
-
         if(can_convert_to<Tuple>(keys))
         {
             Tuple *tuple = keys.get_ptr<Tuple>();
-            for(size_t idx = 0; idx < tuple->size(); ++idx)
-            {
-                CL_PROPAGATE_EXCEPTION(add_key(tuple->item_unchecked(idx)));
-            }
-            return result.raw_value();
+            CL_PROPAGATE_EXCEPTION(require_tuple_string_keys(tuple));
+            return Dict::from_tuple_keys(tuple, value);
         }
         if(can_convert_to<List>(keys))
         {
             List *list = keys.get_ptr<List>();
-            for(size_t idx = 0; idx < list->size(); ++idx)
-            {
-                CL_PROPAGATE_EXCEPTION(add_key(list->item_unchecked(idx)));
-            }
-            return result.raw_value();
+            CL_PROPAGATE_EXCEPTION(require_list_string_keys(list));
+            return Dict::from_list_keys(list, value);
         }
 
         return active_thread()->set_pending_builtin_exception_string(
@@ -351,6 +305,112 @@ namespace cl
                     make_single_default(vm, Value::None())));
 
         cls->set_shape(cls->get_shape()->clone_with_flags(class_shape_flags));
+    }
+
+    TValue<Dict> Dict::copy() const { return make_object_value<Dict>(*this); }
+
+    TValue<List> Dict::keys() const
+    {
+        TValue<List> result = make_object_value<List>();
+        for(EntryView entry: *this)
+        {
+            result.extract()->append(entry.key);
+        }
+        return result;
+    }
+
+    TValue<List> Dict::values() const
+    {
+        TValue<List> result = make_object_value<List>();
+        for(EntryView entry: *this)
+        {
+            result.extract()->append(entry.value);
+        }
+        return result;
+    }
+
+    TValue<List> Dict::items() const
+    {
+        TValue<List> result = make_object_value<List>();
+        for(EntryView entry: *this)
+        {
+            Owned<TValue<Tuple>> item(make_object_value<Tuple>(2));
+            item.extract()->initialize_item_unchecked(0, entry.key);
+            item.extract()->initialize_item_unchecked(1, entry.value);
+            result.extract()->append(item.raw_value());
+        }
+        return result;
+    }
+
+    Value Dict::pop(Value key)
+    {
+        if(!contains(key))
+        {
+            return active_thread()->set_pending_builtin_exception_none(
+                L"KeyError");
+        }
+        Value result = get_item(key);
+        CL_PROPAGATE_EXCEPTION(del_item(key));
+        return result;
+    }
+
+    Value Dict::popitem()
+    {
+        if(empty())
+        {
+            return active_thread()->set_pending_builtin_exception_none(
+                L"KeyError");
+        }
+
+        EntryView last = {Value::not_present(), Value::not_present()};
+        for(EntryView entry: *this)
+        {
+            last = entry;
+        }
+        assert(!last.key.is_not_present());
+        CL_PROPAGATE_EXCEPTION(del_item(last.key));
+        Owned<TValue<Tuple>> result(make_object_value<Tuple>(2));
+        result.extract()->initialize_item_unchecked(0, last.key);
+        result.extract()->initialize_item_unchecked(1, last.value);
+        return result.raw_value();
+    }
+
+    Value Dict::setdefault(Value key, Value default_value)
+    {
+        if(contains(key))
+        {
+            return get_item(key);
+        }
+        set_item(key, default_value);
+        return default_value;
+    }
+
+    void Dict::update_from_dict(const Dict *other)
+    {
+        for(EntryView entry: *other)
+        {
+            set_item(entry.key, entry.value);
+        }
+    }
+
+    Value Dict::from_tuple_keys(const Tuple *keys, Value value)
+    {
+        Owned<TValue<Dict>> result(make_object_value<Dict>());
+        for(size_t idx = 0; idx < keys->size(); ++idx)
+        {
+            result.extract()->set_item(keys->item_unchecked(idx), value);
+        }
+        return result.raw_value();
+    }
+
+    Value Dict::from_list_keys(const List *keys, Value value)
+    {
+        Owned<TValue<Dict>> result(make_object_value<Dict>());
+        for(size_t idx = 0; idx < keys->size(); ++idx)
+        {
+            result.extract()->set_item(keys->item_unchecked(idx), value);
+        }
+        return result.raw_value();
     }
 
     Dict::Iterator::Iterator(const Dict *dict, size_t idx)

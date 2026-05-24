@@ -99,11 +99,9 @@ namespace cl
                 L"UnimplementedError");
         }
 
-        String *left = left_value.get_ptr<String>();
-        String *right = right_value.get_ptr<String>();
-        std::wstring result(left->data, size_t(left->count.extract()));
-        result.append(right->data, size_t(right->count.extract()));
-        return active_thread()->make_object_value<String>(result).raw_value();
+        return left_value.get_ptr<String>()
+            ->concat(right_value.get_ptr<String>())
+            .raw_value();
     }
 
     static Value require_str_receiver(Value self, const wchar_t *method_name)
@@ -141,27 +139,9 @@ namespace cl
         return Value::None();
     }
 
-    static Value str_char_at(TValue<String> string, int64_t py_idx)
-    {
-        String *str = string.extract();
-        int64_t length = str->count.extract();
-        int64_t normalized = py_idx;
-        if(normalized < 0)
-        {
-            normalized += length;
-        }
-        if(normalized < 0 || normalized >= length)
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"IndexError", L"string index out of range");
-        }
-        std::wstring result(1, str->data[static_cast<size_t>(normalized)]);
-        return active_thread()->make_object_value<String>(result).raw_value();
-    }
-
     Value string_get_item(TValue<String> string, int64_t py_idx)
     {
-        return str_char_at(string, py_idx);
+        return string.extract()->char_at(py_idx);
     }
 
     static Value native_str_getitem(Value self, Value index_value)
@@ -170,31 +150,19 @@ namespace cl
         int64_t py_idx;
         CL_PROPAGATE_EXCEPTION(require_smi_index(
             index_value, L"string indices must be integers", py_idx));
-        return str_char_at(TValue<String>::from_value_assumed(self), py_idx);
+        return self.get_ptr<String>()->char_at(py_idx);
     }
 
     static Value native_str_lower(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"lower"));
-        std::wstring result(
-            string_view(TValue<String>::from_value_assumed(self)));
-        for(wchar_t &ch: result)
-        {
-            ch = static_cast<wchar_t>(std::towlower(ch));
-        }
-        return active_thread()->make_object_value<String>(result).raw_value();
+        return self.get_ptr<String>()->lower().raw_value();
     }
 
     static Value native_str_upper(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"upper"));
-        std::wstring result(
-            string_view(TValue<String>::from_value_assumed(self)));
-        for(wchar_t &ch: result)
-        {
-            ch = static_cast<wchar_t>(std::towupper(ch));
-        }
-        return active_thread()->make_object_value<String>(result).raw_value();
+        return self.get_ptr<String>()->upper().raw_value();
     }
 
     static Value native_str_startswith(Value self, Value prefix_value)
@@ -202,12 +170,8 @@ namespace cl
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"startswith"));
         CL_PROPAGATE_EXCEPTION(require_string_argument(
             prefix_value, L"startswith first arg must be str"));
-        std::wstring_view str =
-            string_view(TValue<String>::from_value_assumed(self));
-        std::wstring_view prefix =
-            string_view(TValue<String>::from_value_assumed(prefix_value));
-        return str.size() >= prefix.size() &&
-                       str.substr(0, prefix.size()) == prefix
+        return self.get_ptr<String>()->startswith(
+                   prefix_value.get_ptr<String>())
                    ? Value::True()
                    : Value::False();
     }
@@ -217,12 +181,7 @@ namespace cl
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"endswith"));
         CL_PROPAGATE_EXCEPTION(require_string_argument(
             suffix_value, L"endswith first arg must be str"));
-        std::wstring_view str =
-            string_view(TValue<String>::from_value_assumed(self));
-        std::wstring_view suffix =
-            string_view(TValue<String>::from_value_assumed(suffix_value));
-        return str.size() >= suffix.size() &&
-                       str.substr(str.size() - suffix.size()) == suffix
+        return self.get_ptr<String>()->endswith(suffix_value.get_ptr<String>())
                    ? Value::True()
                    : Value::False();
     }
@@ -232,28 +191,16 @@ namespace cl
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"find"));
         CL_PROPAGATE_EXCEPTION(
             require_string_argument(needle_value, L"must be str, not other"));
-        std::wstring_view str =
-            string_view(TValue<String>::from_value_assumed(self));
-        std::wstring_view needle =
-            string_view(TValue<String>::from_value_assumed(needle_value));
-        size_t found = str.find(needle);
-        if(found == std::wstring_view::npos)
-        {
-            return Value::from_smi(-1);
-        }
-        return Value::from_smi(static_cast<int64_t>(found));
+        return Value::from_smi(
+            self.get_ptr<String>()->find(needle_value.get_ptr<String>()));
     }
 
     static Value native_str_index(Value self, Value needle_value)
     {
-        Value found = native_str_find(self, needle_value);
-        CL_PROPAGATE_EXCEPTION(found);
-        if(found.get_smi() == -1)
-        {
-            return active_thread()->set_pending_builtin_exception_string(
-                L"ValueError", L"substring not found");
-        }
-        return found;
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"index"));
+        CL_PROPAGATE_EXCEPTION(
+            require_string_argument(needle_value, L"must be str, not other"));
+        return self.get_ptr<String>()->index(needle_value.get_ptr<String>());
     }
 
     static Value native_str_count(Value self, Value needle_value)
@@ -261,27 +208,8 @@ namespace cl
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"count"));
         CL_PROPAGATE_EXCEPTION(
             require_string_argument(needle_value, L"must be str, not other"));
-        std::wstring_view str =
-            string_view(TValue<String>::from_value_assumed(self));
-        std::wstring_view needle =
-            string_view(TValue<String>::from_value_assumed(needle_value));
-        if(needle.empty())
-        {
-            return Value::from_smi(static_cast<int64_t>(str.size() + 1));
-        }
-        int64_t count = 0;
-        size_t pos = 0;
-        while(pos <= str.size())
-        {
-            size_t found = str.find(needle, pos);
-            if(found == std::wstring_view::npos)
-            {
-                break;
-            }
-            ++count;
-            pos = found + needle.size();
-        }
-        return Value::from_smi(count);
+        return Value::from_smi(self.get_ptr<String>()->count_substring(
+            needle_value.get_ptr<String>()));
     }
 
     static Value native_str_replace(Value self, Value old_value,
@@ -292,114 +220,34 @@ namespace cl
             require_string_argument(old_value, L"replace old must be str"));
         CL_PROPAGATE_EXCEPTION(
             require_string_argument(new_value, L"replace new must be str"));
-        std::wstring_view str =
-            string_view(TValue<String>::from_value_assumed(self));
-        std::wstring_view old =
-            string_view(TValue<String>::from_value_assumed(old_value));
-        std::wstring_view replacement =
-            string_view(TValue<String>::from_value_assumed(new_value));
-
-        std::wstring result;
-        if(old.empty())
-        {
-            result.append(replacement);
-            for(wchar_t ch: str)
-            {
-                result.push_back(ch);
-                result.append(replacement);
-            }
-            return active_thread()
-                ->make_object_value<String>(result)
-                .raw_value();
-        }
-
-        size_t pos = 0;
-        while(pos < str.size())
-        {
-            size_t found = str.find(old, pos);
-            if(found == std::wstring_view::npos)
-            {
-                result.append(str.substr(pos));
-                break;
-            }
-            result.append(str.substr(pos, found - pos));
-            result.append(replacement);
-            pos = found + old.size();
-        }
-        if(str.empty())
-        {
-            result.append(str);
-        }
-        return active_thread()->make_object_value<String>(result).raw_value();
+        return self.get_ptr<String>()
+            ->replace(old_value.get_ptr<String>(), new_value.get_ptr<String>())
+            .raw_value();
     }
 
     static bool is_strip_space(wchar_t ch) { return std::iswspace(ch) != 0; }
 
-    static Value strip_string(Value self, bool strip_left, bool strip_right)
-    {
-        std::wstring_view str =
-            string_view(TValue<String>::from_value_assumed(self));
-        size_t start = 0;
-        size_t end = str.size();
-        if(strip_left)
-        {
-            while(start < end && is_strip_space(str[start]))
-            {
-                ++start;
-            }
-        }
-        if(strip_right)
-        {
-            while(end > start && is_strip_space(str[end - 1]))
-            {
-                --end;
-            }
-        }
-        return active_thread()
-            ->make_object_value<String>(
-                std::wstring(str.substr(start, end - start)))
-            .raw_value();
-    }
-
     static Value native_str_strip(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"strip"));
-        return strip_string(self, true, true);
+        return self.get_ptr<String>()->strip().raw_value();
     }
 
     static Value native_str_lstrip(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"lstrip"));
-        return strip_string(self, true, false);
+        return self.get_ptr<String>()->lstrip().raw_value();
     }
 
     static Value native_str_rstrip(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"rstrip"));
-        return strip_string(self, false, true);
+        return self.get_ptr<String>()->rstrip().raw_value();
     }
 
     static bool is_string_sequence(Value value)
     {
         return can_convert_to<List>(value) || can_convert_to<Tuple>(value);
-    }
-
-    static size_t sequence_size(Value value)
-    {
-        if(can_convert_to<List>(value))
-        {
-            return value.get_ptr<List>()->size();
-        }
-        return value.get_ptr<Tuple>()->size();
-    }
-
-    static Value sequence_item(Value value, size_t idx)
-    {
-        if(can_convert_to<List>(value))
-        {
-            return value.get_ptr<List>()->item_unchecked(idx);
-        }
-        return value.get_ptr<Tuple>()->item_unchecked(idx);
     }
 
     static Value native_str_join(Value self, Value sequence)
@@ -411,63 +259,313 @@ namespace cl
                 L"TypeError", L"str.join expects a list or tuple");
         }
 
-        std::wstring_view separator =
-            string_view(TValue<String>::from_value_assumed(self));
-        std::wstring result;
-        size_t n_items = sequence_size(sequence);
-        for(size_t idx = 0; idx < n_items; ++idx)
+        if(can_convert_to<List>(sequence))
         {
-            Value item = sequence_item(sequence, idx);
-            CL_PROPAGATE_EXCEPTION(
-                require_string_argument(item, L"sequence item must be str"));
-            if(idx != 0)
+            List *list = sequence.get_ptr<List>();
+            for(size_t idx = 0; idx < list->size(); ++idx)
             {
-                result.append(separator);
+                CL_PROPAGATE_EXCEPTION(require_string_argument(
+                    list->item_unchecked(idx), L"sequence item must be str"));
             }
-            result.append(
-                string_view(TValue<String>::from_value_assumed(item)));
+            return self.get_ptr<String>()->join_list(list).raw_value();
         }
-        return active_thread()->make_object_value<String>(result).raw_value();
-    }
 
-    static Value classify_string(Value self, const wchar_t *method_name,
-                                 int (*predicate)(std::wint_t))
-    {
-        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, method_name));
-        std::wstring_view str =
-            string_view(TValue<String>::from_value_assumed(self));
-        if(str.empty())
+        Tuple *tuple = sequence.get_ptr<Tuple>();
+        for(size_t idx = 0; idx < tuple->size(); ++idx)
         {
-            return Value::False();
+            CL_PROPAGATE_EXCEPTION(require_string_argument(
+                tuple->item_unchecked(idx), L"sequence item must be str"));
         }
-        for(wchar_t ch: str)
-        {
-            if(predicate(ch) == 0)
-            {
-                return Value::False();
-            }
-        }
-        return Value::True();
+        return self.get_ptr<String>()->join_tuple(tuple).raw_value();
     }
 
     static Value native_str_isalpha(Value self)
     {
-        return classify_string(self, L"isalpha", std::iswalpha);
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"isalpha"));
+        return self.get_ptr<String>()->isalpha() ? Value::True()
+                                                 : Value::False();
     }
 
     static Value native_str_isdigit(Value self)
     {
-        return classify_string(self, L"isdigit", std::iswdigit);
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"isdigit"));
+        return self.get_ptr<String>()->isdigit() ? Value::True()
+                                                 : Value::False();
     }
 
     static Value native_str_isalnum(Value self)
     {
-        return classify_string(self, L"isalnum", std::iswalnum);
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"isalnum"));
+        return self.get_ptr<String>()->isalnum() ? Value::True()
+                                                 : Value::False();
     }
 
     static Value native_str_isspace(Value self)
     {
-        return classify_string(self, L"isspace", std::iswspace);
+        CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"isspace"));
+        return self.get_ptr<String>()->isspace() ? Value::True()
+                                                 : Value::False();
+    }
+
+    Value String::char_at(int64_t py_idx) const
+    {
+        int64_t length = count.extract();
+        int64_t normalized = py_idx;
+        if(normalized < 0)
+        {
+            normalized += length;
+        }
+        if(normalized < 0 || normalized >= length)
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"IndexError", L"string index out of range");
+        }
+        std::wstring result(1, data[static_cast<size_t>(normalized)]);
+        return active_thread()->make_object_value<String>(result).raw_value();
+    }
+
+    TValue<String> String::concat(const String *other) const
+    {
+        std::wstring result(data, size_t(count.extract()));
+        result.append(other->data, size_t(other->count.extract()));
+        return active_thread()->make_object_value<String>(result);
+    }
+
+    TValue<String> String::lower() const
+    {
+        std::wstring result(data, size_t(count.extract()));
+        for(wchar_t &ch: result)
+        {
+            ch = static_cast<wchar_t>(std::towlower(ch));
+        }
+        return active_thread()->make_object_value<String>(result);
+    }
+
+    TValue<String> String::upper() const
+    {
+        std::wstring result(data, size_t(count.extract()));
+        for(wchar_t &ch: result)
+        {
+            ch = static_cast<wchar_t>(std::towupper(ch));
+        }
+        return active_thread()->make_object_value<String>(result);
+    }
+
+    bool String::startswith(const String *prefix) const
+    {
+        std::wstring_view str(data, size_t(count.extract()));
+        std::wstring_view prefix_view(prefix->data,
+                                      size_t(prefix->count.extract()));
+        return str.size() >= prefix_view.size() &&
+               str.substr(0, prefix_view.size()) == prefix_view;
+    }
+
+    bool String::endswith(const String *suffix) const
+    {
+        std::wstring_view str(data, size_t(count.extract()));
+        std::wstring_view suffix_view(suffix->data,
+                                      size_t(suffix->count.extract()));
+        return str.size() >= suffix_view.size() &&
+               str.substr(str.size() - suffix_view.size()) == suffix_view;
+    }
+
+    int64_t String::find(const String *needle) const
+    {
+        std::wstring_view str(data, size_t(count.extract()));
+        std::wstring_view needle_view(needle->data,
+                                      size_t(needle->count.extract()));
+        size_t found = str.find(needle_view);
+        if(found == std::wstring_view::npos)
+        {
+            return -1;
+        }
+        return static_cast<int64_t>(found);
+    }
+
+    Value String::index(const String *needle) const
+    {
+        int64_t found = find(needle);
+        if(found == -1)
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"ValueError", L"substring not found");
+        }
+        return Value::from_smi(found);
+    }
+
+    int64_t String::count_substring(const String *needle) const
+    {
+        std::wstring_view str(data, size_t(count.extract()));
+        std::wstring_view needle_view(needle->data,
+                                      size_t(needle->count.extract()));
+        if(needle_view.empty())
+        {
+            return static_cast<int64_t>(str.size() + 1);
+        }
+        int64_t result = 0;
+        size_t pos = 0;
+        while(pos <= str.size())
+        {
+            size_t found = str.find(needle_view, pos);
+            if(found == std::wstring_view::npos)
+            {
+                break;
+            }
+            ++result;
+            pos = found + needle_view.size();
+        }
+        return result;
+    }
+
+    TValue<String> String::replace(const String *old,
+                                   const String *replacement) const
+    {
+        std::wstring_view str(data, size_t(count.extract()));
+        std::wstring_view old_view(old->data, size_t(old->count.extract()));
+        std::wstring_view replacement_view(
+            replacement->data, size_t(replacement->count.extract()));
+
+        std::wstring result;
+        if(old_view.empty())
+        {
+            result.append(replacement_view);
+            for(wchar_t ch: str)
+            {
+                result.push_back(ch);
+                result.append(replacement_view);
+            }
+            return active_thread()->make_object_value<String>(result);
+        }
+
+        size_t pos = 0;
+        while(pos < str.size())
+        {
+            size_t found = str.find(old_view, pos);
+            if(found == std::wstring_view::npos)
+            {
+                result.append(str.substr(pos));
+                break;
+            }
+            result.append(str.substr(pos, found - pos));
+            result.append(replacement_view);
+            pos = found + old_view.size();
+        }
+        if(str.empty())
+        {
+            result.append(str);
+        }
+        return active_thread()->make_object_value<String>(result);
+    }
+
+    static TValue<String> strip_string(const String *str, bool strip_left,
+                                       bool strip_right)
+    {
+        std::wstring_view view(str->data, size_t(str->count.extract()));
+        size_t start = 0;
+        size_t end = view.size();
+        if(strip_left)
+        {
+            while(start < end && is_strip_space(view[start]))
+            {
+                ++start;
+            }
+        }
+        if(strip_right)
+        {
+            while(end > start && is_strip_space(view[end - 1]))
+            {
+                --end;
+            }
+        }
+        return active_thread()->make_object_value<String>(
+            std::wstring(view.substr(start, end - start)));
+    }
+
+    TValue<String> String::strip() const
+    {
+        return strip_string(this, true, true);
+    }
+
+    TValue<String> String::lstrip() const
+    {
+        return strip_string(this, true, false);
+    }
+
+    TValue<String> String::rstrip() const
+    {
+        return strip_string(this, false, true);
+    }
+
+    static void append_join_item(std::wstring &result,
+                                 std::wstring_view separator, bool need_sep,
+                                 Value item)
+    {
+        if(need_sep)
+        {
+            result.append(separator);
+        }
+        result.append(string_view(TValue<String>::from_value_assumed(item)));
+    }
+
+    TValue<String> String::join_list(const List *sequence) const
+    {
+        std::wstring_view separator(data, size_t(count.extract()));
+        std::wstring result;
+        for(size_t idx = 0; idx < sequence->size(); ++idx)
+        {
+            append_join_item(result, separator, idx != 0,
+                             sequence->item_unchecked(idx));
+        }
+        return active_thread()->make_object_value<String>(result);
+    }
+
+    TValue<String> String::join_tuple(const Tuple *sequence) const
+    {
+        std::wstring_view separator(data, size_t(count.extract()));
+        std::wstring result;
+        for(size_t idx = 0; idx < sequence->size(); ++idx)
+        {
+            append_join_item(result, separator, idx != 0,
+                             sequence->item_unchecked(idx));
+        }
+        return active_thread()->make_object_value<String>(result);
+    }
+
+    static bool classify_string(const String *str,
+                                int (*predicate)(std::wint_t))
+    {
+        if(str->count.extract() == 0)
+        {
+            return false;
+        }
+        for(size_t idx = 0; idx < size_t(str->count.extract()); ++idx)
+        {
+            if(predicate(str->data[idx]) == 0)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool String::isalpha() const
+    {
+        return classify_string(this, std::iswalpha);
+    }
+
+    bool String::isdigit() const
+    {
+        return classify_string(this, std::iswdigit);
+    }
+
+    bool String::isalnum() const
+    {
+        return classify_string(this, std::iswalnum);
+    }
+
+    bool String::isspace() const
+    {
+        return classify_string(this, std::iswspace);
     }
 
     BuiltinClassDefinition make_str_class(VirtualMachine *vm)

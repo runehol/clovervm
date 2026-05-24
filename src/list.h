@@ -4,6 +4,7 @@
 #include "builtin_class_registry.h"
 #include "object.h"
 #include "owned.h"
+#include "typed_value.h"
 #include "value.h"
 #include "vm_array.h"
 #include <cstddef>
@@ -11,6 +12,8 @@
 
 namespace cl
 {
+    class Tuple;
+
     class List : public Object
     {
     public:
@@ -40,6 +43,15 @@ namespace cl
             value.assert_not_vm_sentinel();
             items.push_back(value);
         }
+        [[nodiscard]] TValue<List> copy() const;
+        void extend_from_list(const List *other);
+        void extend_from_tuple(const Tuple *other);
+        int64_t count(Value needle) const;
+        [[nodiscard]] Value index(Value needle, int64_t start_py_idx,
+                                  int64_t stop_py_idx) const;
+        [[nodiscard]] Value remove(Value needle);
+        void reverse();
+        [[nodiscard]] TValue<List> concat(const List *other) const;
 
         [[nodiscard]] Value get_item(int64_t py_idx) const;
         [[nodiscard]] Value set_item(int64_t py_idx, Value value);

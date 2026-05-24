@@ -111,14 +111,7 @@ namespace cl
     static Value native_list_copy(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"copy"));
-        List *list = self.get_ptr<List>();
-        TValue<List> result = make_object_value<List>(list->size());
-        for(size_t idx = 0; idx < list->size(); ++idx)
-        {
-            result.extract()->set_item_unchecked(idx,
-                                                 list->item_unchecked(idx));
-        }
-        return result.raw_value();
+        return self.get_ptr<List>()->copy().raw_value();
     }
 
     static Value native_list_extend(Value self, Value other)
@@ -127,20 +120,12 @@ namespace cl
         List *list = self.get_ptr<List>();
         if(can_convert_to<List>(other))
         {
-            List *other_list = other.get_ptr<List>();
-            for(size_t idx = 0; idx < other_list->size(); ++idx)
-            {
-                list->append(other_list->item_unchecked(idx));
-            }
+            list->extend_from_list(other.get_ptr<List>());
             return Value::None();
         }
         if(can_convert_to<Tuple>(other))
         {
-            Tuple *tuple = other.get_ptr<Tuple>();
-            for(size_t idx = 0; idx < tuple->size(); ++idx)
-            {
-                list->append(tuple->item_unchecked(idx));
-            }
+            list->extend_from_tuple(other.get_ptr<Tuple>());
             return Value::None();
         }
         return active_thread()->set_pending_builtin_exception_string(
@@ -150,16 +135,7 @@ namespace cl
     static Value native_list_count(Value self, Value needle)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"count"));
-        List *list = self.get_ptr<List>();
-        int64_t count = 0;
-        for(size_t idx = 0; idx < list->size(); ++idx)
-        {
-            if(list->item_unchecked(idx) == needle)
-            {
-                ++count;
-            }
-        }
-        return Value::from_smi(count);
+        return Value::from_smi(self.get_ptr<List>()->count(needle));
     }
 
     static Value native_list_index(Value self, Value needle, Value start_value,
@@ -173,18 +149,7 @@ namespace cl
         CL_PROPAGATE_EXCEPTION(require_smi_index(
             stop_value, L"list indices must be integers", stop_py_idx));
 
-        List *list = self.get_ptr<List>();
-        size_t start = normalize_list_search_bound(start_py_idx, list->size());
-        size_t stop = normalize_list_search_bound(stop_py_idx, list->size());
-        for(size_t idx = start; idx < stop; ++idx)
-        {
-            if(list->item_unchecked(idx) == needle)
-            {
-                return Value::from_smi(static_cast<int64_t>(idx));
-            }
-        }
-        return active_thread()->set_pending_builtin_exception_string(
-            L"ValueError", L"list.index(x): x not in list");
+        return self.get_ptr<List>()->index(needle, start_py_idx, stop_py_idx);
     }
 
     static Value native_list_insert(Value self, Value index_value, Value value)
@@ -209,34 +174,13 @@ namespace cl
     static Value native_list_remove(Value self, Value needle)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"remove"));
-        List *list = self.get_ptr<List>();
-        for(size_t idx = 0; idx < list->size(); ++idx)
-        {
-            if(list->item_unchecked(idx) == needle)
-            {
-                (void)list->pop_item_unchecked(idx);
-                return Value::None();
-            }
-        }
-        return active_thread()->set_pending_builtin_exception_string(
-            L"ValueError", L"list.remove(x): x not in list");
+        return self.get_ptr<List>()->remove(needle);
     }
 
     static Value native_list_reverse(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"reverse"));
-        List *list = self.get_ptr<List>();
-        size_t left = 0;
-        size_t right = list->size();
-        while(left < right)
-        {
-            --right;
-            Value left_value = list->item_unchecked(left);
-            Value right_value = list->item_unchecked(right);
-            list->set_item_unchecked(left, right_value);
-            list->set_item_unchecked(right, left_value);
-            ++left;
-        }
+        self.get_ptr<List>()->reverse();
         return Value::None();
     }
 
@@ -247,22 +191,7 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"TypeError", L"can only concatenate list to list");
         }
-        List *left_list = left.get_ptr<List>();
-        List *right_list = right.get_ptr<List>();
-        TValue<List> result =
-            make_object_value<List>(left_list->size() + right_list->size());
-        size_t write_idx = 0;
-        for(size_t idx = 0; idx < left_list->size(); ++idx)
-        {
-            result.extract()->set_item_unchecked(
-                write_idx++, left_list->item_unchecked(idx));
-        }
-        for(size_t idx = 0; idx < right_list->size(); ++idx)
-        {
-            result.extract()->set_item_unchecked(
-                write_idx++, right_list->item_unchecked(idx));
-        }
-        return result.raw_value();
+        return left.get_ptr<List>()->concat(right.get_ptr<List>()).raw_value();
     }
 
     static TValue<Tuple> list_default_single(VirtualMachine *vm, Value value)
@@ -355,6 +284,107 @@ namespace cl
                 Optional<TValue<Tuple>>::some(
                     list_default_single(vm, Value::from_smi(-1))));
         cls->set_shape(cls->get_shape()->clone_with_flags(class_shape_flags));
+    }
+
+    TValue<List> List::copy() const
+    {
+        TValue<List> result = make_object_value<List>(size());
+        for(size_t idx = 0; idx < size(); ++idx)
+        {
+            result.extract()->set_item_unchecked(idx, item_unchecked(idx));
+        }
+        return result;
+    }
+
+    void List::extend_from_list(const List *other)
+    {
+        for(size_t idx = 0; idx < other->size(); ++idx)
+        {
+            append(other->item_unchecked(idx));
+        }
+    }
+
+    void List::extend_from_tuple(const Tuple *other)
+    {
+        for(size_t idx = 0; idx < other->size(); ++idx)
+        {
+            append(other->item_unchecked(idx));
+        }
+    }
+
+    int64_t List::count(Value needle) const
+    {
+        int64_t result = 0;
+        for(size_t idx = 0; idx < size(); ++idx)
+        {
+            if(item_unchecked(idx) == needle)
+            {
+                ++result;
+            }
+        }
+        return result;
+    }
+
+    Value List::index(Value needle, int64_t start_py_idx,
+                      int64_t stop_py_idx) const
+    {
+        size_t start = normalize_list_search_bound(start_py_idx, size());
+        size_t stop = normalize_list_search_bound(stop_py_idx, size());
+        for(size_t idx = start; idx < stop; ++idx)
+        {
+            if(item_unchecked(idx) == needle)
+            {
+                return Value::from_smi(static_cast<int64_t>(idx));
+            }
+        }
+        return active_thread()->set_pending_builtin_exception_string(
+            L"ValueError", L"list.index(x): x not in list");
+    }
+
+    Value List::remove(Value needle)
+    {
+        for(size_t idx = 0; idx < size(); ++idx)
+        {
+            if(item_unchecked(idx) == needle)
+            {
+                (void)pop_item_unchecked(idx);
+                return Value::None();
+            }
+        }
+        return active_thread()->set_pending_builtin_exception_string(
+            L"ValueError", L"list.remove(x): x not in list");
+    }
+
+    void List::reverse()
+    {
+        size_t left = 0;
+        size_t right = size();
+        while(left < right)
+        {
+            --right;
+            Value left_value = item_unchecked(left);
+            Value right_value = item_unchecked(right);
+            set_item_unchecked(left, right_value);
+            set_item_unchecked(right, left_value);
+            ++left;
+        }
+    }
+
+    TValue<List> List::concat(const List *other) const
+    {
+        TValue<List> result = make_object_value<List>(size() + other->size());
+        size_t write_idx = 0;
+        for(size_t idx = 0; idx < size(); ++idx)
+        {
+            result.extract()->set_item_unchecked(write_idx++,
+                                                 item_unchecked(idx));
+        }
+        for(size_t idx = 0; idx < other->size(); ++idx)
+        {
+            result.extract()->set_item_unchecked(write_idx++,
+                                                 other->item_unchecked(idx));
+        }
+        return result;
     }
 
     void List::insert_item_unchecked(size_t idx, Value value)
