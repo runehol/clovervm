@@ -149,7 +149,7 @@ namespace cl
                                     Value index_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"__getitem__"));
-        int64_t py_idx;
+        int64_t py_idx = 0;
         CL_PROPAGATE_EXCEPTION(require_smi_index(
             index_value, L"string indices must be integers", py_idx));
         return self.get_ptr<String>()->char_at(py_idx);

@@ -565,7 +565,7 @@ namespace cl
                 return TrustedCloverCall::None;
             }
 
-            AstChildren children = av.children[node_idx];
+            const AstChildren &children = av.children[node_idx];
             if(av.kinds[children[0]].node_kind !=
                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
             {
@@ -1384,7 +1384,7 @@ namespace cl
 
         void codegen_try_finally_statement(int32_t node_idx)
         {
-            AstChildren children = av.children[node_idx];
+            const AstChildren &children = av.children[node_idx];
             assert(children.size() >= 2);
             assert(try_has_finally(children));
             uint32_t source_offset = av.source_offsets[node_idx];
@@ -1643,7 +1643,7 @@ namespace cl
         void codegen_direct_range_for_loop(int32_t node_idx, int32_t target_idx,
                                            uint8_t n_args)
         {
-            AstChildren children = av.children[node_idx];
+            const AstChildren &children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             int32_t iterable_idx = children[1];
             int32_t body_idx = children[2];

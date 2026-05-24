@@ -20,6 +20,15 @@ namespace cl
 {
     namespace detail
     {
+        template <typename T> ALWAYSINLINE T *assume_not_null(T *ptr)
+        {
+            if(unlikely(ptr == nullptr))
+            {
+                __builtin_unreachable();
+            }
+            return ptr;
+        }
+
         inline size_t checked_array_size(size_t size)
         {
             assert(size <= static_cast<size_t>(INT64_MAX >> value_tag_bits));
@@ -116,14 +125,14 @@ namespace cl
         T &operator[](size_t idx)
         {
             assert(idx < size());
-            return data()[idx];
+            return non_empty_data()[idx];
         }
 
         const T &get(size_t idx) const { return (*this)[idx]; }
         const T &operator[](size_t idx) const
         {
             assert(idx < size());
-            return data()[idx];
+            return non_empty_data()[idx];
         }
 
         T &front()
@@ -189,7 +198,7 @@ namespace cl
             reserve(requested_size);
             while(current_size < requested_size)
             {
-                new(data() + current_size) T(value);
+                new(non_empty_data() + current_size) T(value);
                 ++current_size;
             }
             set_size(current_size);
@@ -201,7 +210,7 @@ namespace cl
             reserve(requested_size);
             for(size_t idx = 0; idx < requested_size; ++idx)
             {
-                new(data() + idx) T(value);
+                new(non_empty_data() + idx) T(value);
             }
             set_size(requested_size);
         }
@@ -241,6 +250,13 @@ namespace cl
 
         Backing *backing_ptr() { return backing.extract(); }
         const Backing *backing_ptr() const { return backing.extract(); }
+
+        T *non_empty_data() { return detail::assume_not_null(data()); }
+
+        const T *non_empty_data() const
+        {
+            return detail::assume_not_null(data());
+        }
 
         Member<TValue<SMI>> size_value;
         Member<TValue<SMI>> capacity_value;
@@ -316,7 +332,7 @@ namespace cl
         const T operator[](size_t idx) const
         {
             assert(idx < size());
-            return data()[idx];
+            return non_empty_data()[idx];
         }
 
         const T front() const
@@ -388,7 +404,7 @@ namespace cl
             reserve(requested_size);
             while(current_size < requested_size)
             {
-                T *slot = mutable_data() + current_size;
+                T *slot = mutable_non_empty_data() + current_size;
                 new(slot) T(value);
                 incref_element(slot);
                 ++current_size;
@@ -399,7 +415,7 @@ namespace cl
         void set(size_t idx, T value)
         {
             assert(idx < size());
-            T *slot = mutable_data() + idx;
+            T *slot = mutable_non_empty_data() + idx;
             clear_element(slot);
             new(slot) T(value);
             incref_element(slot);
@@ -409,7 +425,7 @@ namespace cl
         {
             static_assert(std::is_same_v<T, Value>);
             assert(idx < size());
-            Value *slot = mutable_data() + idx;
+            Value *slot = mutable_non_empty_data() + idx;
             Value old = *slot;
             if(old == value)
             {
@@ -439,7 +455,7 @@ namespace cl
                 reserve(detail::grown_capacity(capacity(), current_size + 1));
             }
 
-            T *slot = mutable_data() + current_size;
+            T *slot = mutable_non_empty_data() + current_size;
             new(slot) T(std::forward<Args>(args)...);
             incref_element(slot);
             set_size(current_size + 1);
@@ -494,7 +510,7 @@ namespace cl
 
             for(size_t idx = start_idx; idx < end_idx; ++idx)
             {
-                clear_element(mutable_data() + idx);
+                clear_element(mutable_non_empty_data() + idx);
             }
         }
 
@@ -511,6 +527,16 @@ namespace cl
 
         Backing *backing_ptr() { return backing.extract(); }
         const Backing *backing_ptr() const { return backing.extract(); }
+
+        const T *non_empty_data() const
+        {
+            return detail::assume_not_null(data());
+        }
+
+        T *mutable_non_empty_data()
+        {
+            return detail::assume_not_null(mutable_data());
+        }
 
         Member<TValue<SMI>> size_value;
         Member<TValue<SMI>> capacity_value;
@@ -571,7 +597,7 @@ namespace cl
         T *operator[](size_t idx) const
         {
             assert(idx < size());
-            return data()[idx];
+            return non_empty_data()[idx];
         }
 
         T *front() const
@@ -635,7 +661,7 @@ namespace cl
             reserve(requested_size);
             while(current_size < requested_size)
             {
-                mutable_data()[current_size] = nullptr;
+                mutable_non_empty_data()[current_size] = nullptr;
                 ++current_size;
             }
             set_size(current_size);
@@ -644,7 +670,7 @@ namespace cl
         void set(size_t idx, T *value)
         {
             assert(idx < size());
-            T **slot = mutable_data() + idx;
+            T **slot = mutable_non_empty_data() + idx;
             decref_heap_ptr(*slot);
             *slot = static_cast<T *>(incref_heap_ptr(value));
         }
@@ -657,7 +683,7 @@ namespace cl
                 reserve(detail::grown_capacity(capacity(), current_size + 1));
             }
 
-            mutable_data()[current_size] =
+            mutable_non_empty_data()[current_size] =
                 static_cast<T *>(incref_heap_ptr(value));
             set_size(current_size + 1);
         }
@@ -677,7 +703,7 @@ namespace cl
                 return;
             }
 
-            T **items = mutable_data();
+            T **items = mutable_non_empty_data();
             for(size_t idx = start_idx; idx < end_idx; ++idx)
             {
                 decref_heap_ptr(items[idx]);
@@ -698,6 +724,16 @@ namespace cl
 
         Backing *backing_ptr() { return backing.extract(); }
         const Backing *backing_ptr() const { return backing.extract(); }
+
+        T *const *non_empty_data() const
+        {
+            return detail::assume_not_null(data());
+        }
+
+        T **mutable_non_empty_data()
+        {
+            return detail::assume_not_null(mutable_data());
+        }
 
         Member<TValue<SMI>> size_value;
         Member<TValue<SMI>> capacity_value;

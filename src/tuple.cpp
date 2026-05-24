@@ -120,8 +120,8 @@ namespace cl
                 L"TypeError", L"tuple.index expects a tuple receiver");
         }
 
-        int64_t start_py_idx;
-        int64_t stop_py_idx;
+        int64_t start_py_idx = 0;
+        int64_t stop_py_idx = 0;
         CL_PROPAGATE_EXCEPTION(require_smi_index(
             start_value, L"tuple indices must be integers", start_py_idx));
         CL_PROPAGATE_EXCEPTION(require_smi_index(

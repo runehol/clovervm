@@ -146,8 +146,8 @@ namespace cl
                                    Value stop_value)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"index"));
-        int64_t start_py_idx;
-        int64_t stop_py_idx;
+        int64_t start_py_idx = 0;
+        int64_t stop_py_idx = 0;
         CL_PROPAGATE_EXCEPTION(require_smi_index(
             start_value, L"list indices must be integers", start_py_idx));
         CL_PROPAGATE_EXCEPTION(require_smi_index(
@@ -160,7 +160,7 @@ namespace cl
                                     Value index_value, Value value)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"insert"));
-        int64_t py_idx;
+        int64_t py_idx = 0;
         CL_PROPAGATE_EXCEPTION(require_smi_index(
             index_value, L"list indices must be integers", py_idx));
         self.get_ptr<List>()->insert_item(py_idx, value);
@@ -171,7 +171,7 @@ namespace cl
                                  Value index_value)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"pop"));
-        int64_t py_idx;
+        int64_t py_idx = 0;
         CL_PROPAGATE_EXCEPTION(require_smi_index(
             index_value, L"list indices must be integers", py_idx));
         return self.get_ptr<List>()->pop_item(py_idx);
