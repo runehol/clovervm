@@ -5,6 +5,8 @@
 #include <locale>
 #include <string>
 
+#include "build_config.h"
+
 namespace
 {
     struct CommandLine
@@ -12,6 +14,7 @@ namespace
         bool print_bytecode = false;
         bool trace_instructions = false;
         bool show_help = false;
+        bool show_version = false;
         bool has_command = false;
         std::string command;
         std::string source_file;
@@ -21,6 +24,7 @@ namespace
                                    cxxopts::Options &options)
     {
         options.add_options()("h,help", "Print help and exit")(
+            "V,version", "Print version and exit")(
             "print-bytecode", "Print bytecode before execution")(
             "trace-instructions", "Trace interpreter instructions")(
             "c", "Program passed in as a string", cxxopts::value<std::string>(),
@@ -35,6 +39,7 @@ namespace
         command_line.trace_instructions =
             result.count("trace-instructions") != 0;
         command_line.show_help = result.count("help") != 0;
+        command_line.show_version = result.count("version") != 0;
 
         if(result.count("c") != 0)
         {
@@ -87,6 +92,12 @@ int main(int argc, const char *argv[])
     if(command_line.show_help)
     {
         std::cout << options.help() << "\n";
+        return 0;
+    }
+
+    if(command_line.show_version)
+    {
+        std::cout << "clovervm " << CL_VERSION << "\n";
         return 0;
     }
 

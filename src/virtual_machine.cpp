@@ -159,7 +159,7 @@ namespace cl
         install_module_value(vm, sys_module, L"base_exec_prefix",
                              make_string_value(vm, L""));
         install_module_value(vm, sys_module, L"version",
-                             make_string_value(vm, L"0.0.0 (clovervm)"));
+                             make_string_value(vm, CL_SYS_VERSION_W));
         install_module_value(vm, sys_module, L"version_info",
                              make_version_info(vm));
     }

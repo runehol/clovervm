@@ -3,6 +3,8 @@
 cmake_minimum_required (VERSION 3.13)
 project (clovervm LANGUAGES CXX C)
 
+set(CLOVERVM_VERSION "0.0.0")
+set(CLOVERVM_SYS_VERSION "${CLOVERVM_VERSION} (clovervm)")
 
 # Project wide setup
 
