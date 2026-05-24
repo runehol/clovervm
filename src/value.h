@@ -70,6 +70,10 @@ namespace cl
         value_tag_mask & ~value_boolean_tag;
     static constexpr uint64_t value_boolean_to_integer_mask =
         ~value_boolean_tag;
+    static constexpr int64_t value_smi_min =
+        -(int64_t{1} << (64 - value_tag_bits - 1));
+    static constexpr int64_t value_smi_max =
+        (int64_t{1} << (64 - value_tag_bits - 1)) - 1;
 
     enum class ValueStorageClass
     {

@@ -16,7 +16,7 @@ extern "C" CL_EXPORT clover_value clover_none(clover_call_context *ctx)
 extern "C" CL_EXPORT clover_value clover_int64(clover_call_context *ctx,
                                                int64_t value)
 {
-    if(value < cl::kMinNativeApiSmi || value > cl::kMaxNativeApiSmi)
+    if(value < cl::value_smi_min || value > cl::value_smi_max)
     {
         if(ctx != nullptr && ctx->thread != nullptr)
         {

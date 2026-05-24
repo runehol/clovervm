@@ -157,7 +157,7 @@ extern "C" CL_EXPORT clover_status clover_module_add_int_constant(
         return CLOVER_STATUS_ERROR;
     }
 
-    if(value < cl::kMinNativeApiSmi || value > cl::kMaxNativeApiSmi)
+    if(value < cl::value_smi_min || value > cl::value_smi_max)
     {
         return cl::set_builder_import_error(
             builder,
