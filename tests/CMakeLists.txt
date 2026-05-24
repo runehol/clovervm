@@ -34,6 +34,7 @@ target_sources(test_clovervm PRIVATE
 	test_thread_state.cpp
 	test_owned.cpp
 	test_typed_value.cpp
+	test_unicode.cpp
 	test_tuple.cpp
 	)
 

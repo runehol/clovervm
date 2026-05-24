@@ -86,6 +86,8 @@ add_library(libclovervm_objects OBJECT
     tuple.h
     tuple_iterator.cpp
     tuple_iterator.h
+    unicode.cpp
+    unicode.h
     virtual_machine.cpp
     virtual_machine.h
     list.cpp

@@ -3,6 +3,7 @@
 #include "native_function.h"
 #include "string_builder.h"
 #include "thread_state.h"
+#include "unicode.h"
 #include "virtual_machine.h"
 #include <iterator>
 
@@ -145,6 +146,33 @@ namespace cl
         String *str = s.extract();
         cl_wchar *c = &str->data[0];
         return c;
+    }
+
+    std::wstring_view string_view(TValue<String> s)
+    {
+        String *str = s.extract();
+        return std::wstring_view(str->data, size_t(str->count.extract()));
+    }
+
+    std::optional<TValue<String>>
+    try_make_string_from_utf8(ThreadState *thread, std::string_view bytes)
+    {
+        std::optional<unicode::Utf8WcharLayout> layout =
+            unicode::validate_utf8_for_wchar(bytes);
+        if(!layout.has_value())
+        {
+            return std::nullopt;
+        }
+
+        String *string = thread->make_object_raw<String>(TValue<SMI>::from_smi(
+            static_cast<int64_t>(layout->code_unit_count)));
+        if(!unicode::decode_utf8_into_wchar(bytes, string->data,
+                                            layout->code_unit_count))
+        {
+            return std::nullopt;
+        }
+        string->data[layout->code_unit_count] = 0;
+        return TValue<String>::from_oop(string);
     }
 
     bool string_eq_slow_path(TValue<String> a, TValue<String> b)

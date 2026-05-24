@@ -8,8 +8,10 @@
 #include "value.h"
 #include <assert.h>
 #include <cstring>
+#include <optional>
 #include <stdint.h>
 #include <string>
+#include <string_view>
 #include <wchar.h>
 
 namespace cl
@@ -18,6 +20,7 @@ namespace cl
 
     class ClassObject;
     class Shape;
+    class ThreadState;
     class VirtualMachine;
 
     class String : public Object
@@ -77,6 +80,12 @@ namespace cl
             this->data[n_chars] = 0;  // zero terminate for good measure
         }
 
+        String(ClassObject *cls, TValue<SMI> _count)
+            : Object(cls, native_layout), count(_count)
+        {
+            this->data[size_t(count.extract())] = 0;
+        }
+
         void install_bootstrap_class(ClassObject *new_cls);
 
         Member<TValue<SMI>> count;
@@ -133,6 +142,9 @@ namespace cl
     bool string_eq_slow_path(TValue<String> a, TValue<String> b);
 
     const cl_wchar *string_as_wchar_t(TValue<String> s);
+    std::wstring_view string_view(TValue<String> s);
+    std::optional<TValue<String>>
+    try_make_string_from_utf8(ThreadState *thread, std::string_view bytes);
     BuiltinClassDefinition make_str_class(VirtualMachine *vm);
     void install_str_class_methods(VirtualMachine *vm);
 
