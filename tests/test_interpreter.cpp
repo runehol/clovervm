@@ -610,6 +610,18 @@ TEST(Interpreter, del_local_variable_removes_binding)
                         L"NameError: name 'value' is not defined");
 }
 
+TEST(Interpreter, loop_local_read_after_delete_can_still_raise)
+{
+    expect_python_error(L"def f(n):\n"
+                        L"    x = 1\n"
+                        L"    for i in range(n):\n"
+                        L"        x\n"
+                        L"        del x\n"
+                        L"    return 0\n"
+                        L"f(2)\n",
+                        L"NameError: name 'x' is not defined");
+}
+
 TEST(Interpreter, del_missing_local_raises_name_error)
 {
     expect_python_error(L"def clear():\n"

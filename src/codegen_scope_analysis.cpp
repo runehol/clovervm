@@ -138,15 +138,6 @@ namespace cl
                 return Presence::Maybe;
             }
 
-            static Presence conservative_loop_entry_presence(Presence presence)
-            {
-                if(presence == Presence::Present)
-                {
-                    return Presence::Maybe;
-                }
-                return presence;
-            }
-
             int32_t find_binding_idx(const AnalysisState &analysis,
                                      Value name) const
             {
@@ -778,134 +769,6 @@ namespace cl
                 }
             }
 
-            void collect_modified_locals(const AnalysisState &analysis,
-                                         int32_t node_idx,
-                                         std::vector<bool> &modified) const
-            {
-                AstKind kind = av.kinds[node_idx];
-                AstChildren children = av.children[node_idx];
-
-                auto mark_name = [&](Value name) {
-                    int32_t binding_idx = find_binding_idx(analysis, name);
-                    if(binding_idx >= 0 &&
-                       analysis.result.bindings[size_t(binding_idx)].scope ==
-                           BindingScope::Local)
-                    {
-                        modified[size_t(binding_idx)] = true;
-                    }
-                };
-
-                switch(kind.node_kind)
-                {
-                    case AstNodeKind::STATEMENT_FUNCTION_DEF:
-                    case AstNodeKind::STATEMENT_CLASS_DEF:
-                        mark_name(av.constants[node_idx]);
-                        return;
-
-                    case AstNodeKind::STATEMENT_IMPORT:
-                        for(int32_t alias_idx: children)
-                        {
-                            mark_name(av.constants[av.children[alias_idx][0]]);
-                        }
-                        return;
-
-                    case AstNodeKind::STATEMENT_IMPORT_FROM:
-                        for(size_t child_offset = 1;
-                            child_offset < children.size(); ++child_offset)
-                        {
-                            int32_t alias_idx = children[child_offset];
-                            if(av.kinds[alias_idx].node_kind ==
-                               AstNodeKind::IMPORT_STAR)
-                            {
-                                continue;
-                            }
-                            mark_name(av.constants[av.children[alias_idx][0]]);
-                        }
-                        return;
-
-                    case AstNodeKind::STATEMENT_ASSIGN:
-                    case AstNodeKind::EXPRESSION_ASSIGN:
-                        {
-                            int32_t lhs_idx = children[0];
-                            if(av.kinds[lhs_idx].node_kind ==
-                               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
-                            {
-                                mark_name(av.constants[lhs_idx]);
-                            }
-                            break;
-                        }
-
-                    case AstNodeKind::STATEMENT_ANN_ASSIGN:
-                        if(children.size() == 3 &&
-                           av.kinds[children[0]].node_kind ==
-                               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
-                        {
-                            mark_name(av.constants[children[0]]);
-                        }
-                        if(children.size() == 3)
-                        {
-                            collect_modified_locals(analysis, children[2],
-                                                    modified);
-                        }
-                        if(!ann_assign_is_simple(node_idx))
-                        {
-                            collect_modified_locals(analysis, children[0],
-                                                    modified);
-                        }
-                        return;
-
-                    case AstNodeKind::STATEMENT_DEL:
-                        for(int32_t target_idx: children)
-                        {
-                            if(av.kinds[target_idx].node_kind ==
-                               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
-                            {
-                                mark_name(av.constants[target_idx]);
-                            }
-                        }
-                        break;
-
-                    case AstNodeKind::STATEMENT_FOR:
-                        if(av.kinds[children[0]].node_kind ==
-                           AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
-                        {
-                            mark_name(av.constants[children[0]]);
-                        }
-                        break;
-
-                    case AstNodeKind::WITH_ITEM:
-                        if(children.size() == 2 &&
-                           av.kinds[children[1]].node_kind ==
-                               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
-                        {
-                            mark_name(av.constants[children[1]]);
-                        }
-                        break;
-
-                    case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
-                        if(handler_has_name(children))
-                        {
-                            mark_name(av.constants[handler_name_idx(children)]);
-                        }
-                        if(handler_has_type(children))
-                        {
-                            collect_modified_locals(
-                                analysis, handler_type_idx(children), modified);
-                        }
-                        collect_modified_locals(
-                            analysis, handler_body_idx(children), modified);
-                        return;
-
-                    default:
-                        break;
-                }
-
-                for(int32_t child_idx: children)
-                {
-                    collect_modified_locals(analysis, child_idx, modified);
-                }
-            }
-
             FlowState initial_flow_state(const ScopeAnalysis &analysis) const
             {
                 FlowState state;
@@ -947,6 +810,86 @@ namespace cl
                         right.may_be_entry_value[idx]);
                 }
                 return merged;
+            }
+
+            bool flow_states_equal(const FlowState &left,
+                                   const FlowState &right) const
+            {
+                assert(left.local_presence.size() ==
+                       right.local_presence.size());
+                assert(left.may_be_entry_value.size() ==
+                       right.may_be_entry_value.size());
+                return left.local_presence == right.local_presence &&
+                       left.may_be_entry_value == right.may_be_entry_value;
+            }
+
+            void annotate_for_target_store(AnalysisState &analysis,
+                                           int32_t target_idx, FlowState &state)
+            {
+                if(av.kinds[target_idx].node_kind ==
+                   AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
+                {
+                    analysis.result.stores[target_idx] = make_access(
+                        analysis, av.constants[target_idx], state, false);
+                    mark_local_presence(analysis, state,
+                                        av.constants[target_idx],
+                                        Presence::Present);
+                }
+                else
+                {
+                    analyze_flow_node(analysis, target_idx, state);
+                }
+            }
+
+            FlowState analyze_loop_body_entry_fixed_point(
+                AnalysisState &analysis, const FlowState &first_iteration_entry,
+                int32_t body_idx)
+            {
+                FlowState body_entry = first_iteration_entry;
+                size_t max_iterations = analysis.result.bindings.size() * 2 + 3;
+                for(size_t iteration = 0; iteration < max_iterations;
+                    ++iteration)
+                {
+                    FlowState body_exit = body_entry;
+                    analyze_flow_node(analysis, body_idx, body_exit);
+                    FlowState merged_entry =
+                        merge_flow_states(first_iteration_entry, body_exit);
+                    if(flow_states_equal(merged_entry, body_entry))
+                    {
+                        return body_entry;
+                    }
+                    body_entry = merged_entry;
+                }
+                assert(false && "loop flow analysis did not converge");
+                return body_entry;
+            }
+
+            FlowState analyze_for_body_entry_fixed_point(
+                AnalysisState &analysis, const FlowState &before_loop_entry,
+                int32_t target_idx, int32_t body_idx)
+            {
+                FlowState first_iteration_entry = before_loop_entry;
+                annotate_for_target_store(analysis, target_idx,
+                                          first_iteration_entry);
+                FlowState body_entry = first_iteration_entry;
+                size_t max_iterations = analysis.result.bindings.size() * 2 + 3;
+                for(size_t iteration = 0; iteration < max_iterations;
+                    ++iteration)
+                {
+                    FlowState next_iteration_entry = body_entry;
+                    analyze_flow_node(analysis, body_idx, next_iteration_entry);
+                    annotate_for_target_store(analysis, target_idx,
+                                              next_iteration_entry);
+                    FlowState merged_entry = merge_flow_states(
+                        first_iteration_entry, next_iteration_entry);
+                    if(flow_states_equal(merged_entry, body_entry))
+                    {
+                        return body_entry;
+                    }
+                    body_entry = merged_entry;
+                }
+                assert(false && "for loop flow analysis did not converge");
+                return body_entry;
             }
 
             void analyze_flow_node(AnalysisState &analysis, int32_t node_idx,
@@ -1111,33 +1054,12 @@ namespace cl
                         {
                             analyze_flow_node(analysis, children[0], state);
 
-                            std::vector<bool> modified(
-                                analysis.result.bindings.size(), false);
-                            collect_modified_locals(analysis, children[1],
-                                                    modified);
-                            FlowState body_state = state;
-                            for(size_t idx = 0; idx < modified.size(); ++idx)
-                            {
-                                if(modified[idx])
-                                {
-                                    body_state.local_presence[idx] =
-                                        conservative_loop_entry_presence(
-                                            body_state.local_presence[idx]);
-                                }
-                            }
+                            FlowState body_state =
+                                analyze_loop_body_entry_fixed_point(
+                                    analysis, state, children[1]);
                             analyze_flow_node(analysis, children[1],
                                               body_state);
-
-                            for(size_t idx = 0; idx < modified.size(); ++idx)
-                            {
-                                if(modified[idx])
-                                {
-                                    state.local_presence[idx] = Presence::Maybe;
-                                    state.may_be_entry_value[idx] =
-                                        state.may_be_entry_value[idx] ||
-                                        body_state.may_be_entry_value[idx];
-                                }
-                            }
+                            state = merge_flow_states(state, body_state);
                             if(children.size() == 3)
                             {
                                 analyze_flow_node(analysis, children[2], state);
@@ -1152,54 +1074,11 @@ namespace cl
                             int32_t body_idx = children[2];
                             analyze_flow_node(analysis, iterable_idx, state);
 
-                            std::vector<bool> modified(
-                                analysis.result.bindings.size(), false);
-                            collect_modified_locals(analysis, body_idx,
-                                                    modified);
-                            if(av.kinds[target_idx].node_kind ==
-                               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
-                            {
-                                int32_t target_binding_idx = find_binding_idx(
-                                    analysis, av.constants[target_idx]);
-                                if(target_binding_idx >= 0)
-                                {
-                                    modified[size_t(target_binding_idx)] = true;
-                                }
-                            }
-
-                            FlowState body_state = state;
-                            for(size_t idx = 0; idx < modified.size(); ++idx)
-                            {
-                                if(modified[idx])
-                                {
-                                    body_state.local_presence[idx] =
-                                        conservative_loop_entry_presence(
-                                            body_state.local_presence[idx]);
-                                }
-                            }
-                            if(av.kinds[target_idx].node_kind ==
-                               AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
-                            {
-                                analysis.result.stores[target_idx] =
-                                    make_access(analysis,
-                                                av.constants[target_idx],
-                                                body_state, false);
-                                mark_local_presence(analysis, body_state,
-                                                    av.constants[target_idx],
-                                                    Presence::Present);
-                            }
+                            FlowState body_state =
+                                analyze_for_body_entry_fixed_point(
+                                    analysis, state, target_idx, body_idx);
                             analyze_flow_node(analysis, body_idx, body_state);
-
-                            for(size_t idx = 0; idx < modified.size(); ++idx)
-                            {
-                                if(modified[idx])
-                                {
-                                    state.local_presence[idx] = Presence::Maybe;
-                                    state.may_be_entry_value[idx] =
-                                        state.may_be_entry_value[idx] ||
-                                        body_state.may_be_entry_value[idx];
-                                }
-                            }
+                            state = merge_flow_states(state, body_state);
 
                             if(children.size() == 4)
                             {

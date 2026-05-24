@@ -1216,6 +1216,32 @@ TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, local_augmented_assignment_in_loop_uses_dominating_binding)
+{
+    std::string actual = bytecode_str_from_file(L"def sum_range(n):\n"
+                                                L"    acc = 0\n"
+                                                L"    for i in range(n):\n"
+                                                L"        acc += i\n"
+                                                L"    return acc\n");
+
+    EXPECT_NE(std::string::npos, actual.find("   19 Ldar1\n"
+                                             "   20 Add r0\n"
+                                             "   22 Star0\n"));
+    EXPECT_EQ(std::string::npos, actual.find("LoadLocalChecked r0"));
+}
+
+TEST(Codegen, local_deleted_in_loop_still_uses_checked_load)
+{
+    std::string actual = bytecode_str_from_file(L"def read_after_delete(n):\n"
+                                                L"    x = 1\n"
+                                                L"    for i in range(n):\n"
+                                                L"        x\n"
+                                                L"        del x\n"
+                                                L"    return 0\n");
+
+    EXPECT_NE(std::string::npos, actual.find("LoadLocalChecked r0"));
+}
+
 TEST(Codegen, non_direct_for_loop_uses_generic_iterator_protocol_calls)
 {
     std::string expected =
