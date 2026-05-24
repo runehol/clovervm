@@ -27,7 +27,10 @@
 #include "virtual_machine.h"
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <fmt/core.h>
+#include <fmt/format.h>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 
@@ -4203,16 +4206,116 @@ namespace cl
 
     DispatchTable dispatch_table = make_dispatch_table();
 
+    enum class TraceFrameTransition
+    {
+        Enter,
+        Resume,
+        Switch,
+    };
+
+    Value *trace_previous_frame(Value *fp)
+    {
+        return reinterpret_cast<Value *>(
+            fp[FrameHeaderPreviousFpOffset].as.ptr);
+    }
+
+    TraceFrameTransition classify_trace_frame_transition(Value *previous_fp,
+                                                         Value *current_fp)
+    {
+        if(previous_fp == nullptr ||
+           trace_previous_frame(current_fp) == previous_fp)
+        {
+            return TraceFrameTransition::Enter;
+        }
+        if(trace_previous_frame(previous_fp) == current_fp)
+        {
+            return TraceFrameTransition::Resume;
+        }
+        return TraceFrameTransition::Switch;
+    }
+
+    template <typename Out>
+    Out format_code_object_trace_name(Out out, CodeObject *code_object)
+    {
+        return format_string_contents(out, code_object->name.extract());
+    }
+
+    NOINLINE void trace_frame_transition(ThreadState *thread, Value *fp,
+                                         CodeObject *code_object)
+    {
+        Value *previous_fp = thread->trace_interpreter_frame();
+        if(previous_fp == fp)
+        {
+            return;
+        }
+
+        TraceFrameTransition transition =
+            classify_trace_frame_transition(previous_fp, fp);
+        thread->set_trace_interpreter_frame(fp);
+
+        fmt::memory_buffer buffer;
+        auto out = std::back_inserter(buffer);
+        switch(transition)
+        {
+            case TraceFrameTransition::Enter:
+                out = fmt::format_to(out, ">>> enter ");
+                break;
+            case TraceFrameTransition::Resume:
+                out = fmt::format_to(out, "<<< resume ");
+                break;
+            case TraceFrameTransition::Switch:
+                out = fmt::format_to(out, ">>> frame ");
+                break;
+        }
+        out = format_code_object_trace_name(out, code_object);
+        fmt::format_to(out, "\n");
+        fmt::print(stderr, "{}", fmt::to_string(buffer));
+    }
+
+    NOINLINE void trace_current_instruction(CodeObject *code_object,
+                                            const uint8_t *pc)
+    {
+        fmt::memory_buffer buffer;
+        auto out = std::back_inserter(buffer);
+        fmt::formatter<CodeObject> formatter;
+        formatter.disassemble_instruction(
+            *code_object, out, code_object->offset_for_interpreted_pc(pc));
+        fmt::print(stderr, "{}", fmt::to_string(buffer));
+    }
+
+    static INTERP_CC Value trace_instruction(PARAMS)
+    {
+        trace_frame_transition(thread, fp, code_object);
+        trace_current_instruction(code_object, pc);
+        auto *dispatch_fun = dispatch_table.table[*pc];
+        MUSTTAIL return dispatch_fun(ARGS);
+    }
+
+    DispatchTable make_trace_dispatch_table()
+    {
+        DispatchTable tbl;
+        for(size_t i = 0; i < BytecodeTableSize; ++i)
+        {
+            tbl.table[i] = trace_instruction;
+        }
+        return tbl;
+    }
+
+    DispatchTable trace_dispatch_table = make_trace_dispatch_table();
+
     Value run_interpreter(Value *fp, CodeObject *code_object, uint32_t start_pc,
                           ThreadState *thread)
     {
         assert(is_stack_frame_aligned(fp));
         const uint8_t *pc = &code_object->code[start_pc];
-        void *dispatch = reinterpret_cast<void *>(&dispatch_table);
+        DispatchTable *active_dispatch_table =
+            thread->trace_interpreter_instructions() ? &trace_dispatch_table
+                                                     : &dispatch_table;
+        void *dispatch = reinterpret_cast<void *>(active_dispatch_table);
         Value accumulator = Value::from_smi(0);  // init accumulator to 0
 
         // do the initial dispatch
-        auto *dispatch_fun = dispatch_table.table[*pc];
+        auto *dispatch_fun = active_dispatch_table->table[*pc];
         return dispatch_fun(ARGS);
     }
 

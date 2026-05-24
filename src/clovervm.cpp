@@ -13,6 +13,7 @@ int main(int argc, const char *argv[])
 
     using namespace std::literals;
     bool print_bytecode = false;
+    bool trace_instructions = false;
     const char *source_file = nullptr;
     int i = 1;
     for(; i < argc; ++i)
@@ -20,6 +21,10 @@ int main(int argc, const char *argv[])
         if(argv[i] == "--print-bytecode"sv)
         {
             print_bytecode = true;
+        }
+        else if(argv[i] == "--trace-instructions"sv)
+        {
+            trace_instructions = true;
         }
         else
         {
@@ -40,6 +45,7 @@ int main(int argc, const char *argv[])
             std::cerr << "failed to create clover VM\n";
             return 1;
         }
+        clover_vm_set_trace_instructions(vm, trace_instructions);
         clover_status status = clover_vm_run_interactive(vm, print_bytecode);
         clover_vm_destroy(vm);
         return status == CLOVER_STATUS_OK ? 0 : 1;
@@ -51,6 +57,7 @@ int main(int argc, const char *argv[])
         std::cerr << "failed to create clover VM\n";
         return 1;
     }
+    clover_vm_set_trace_instructions(vm, trace_instructions);
     clover_status status = clover_vm_run_file(vm, source_file, print_bytecode);
     clover_vm_destroy(vm);
     return status == CLOVER_STATUS_OK ? 0 : 1;

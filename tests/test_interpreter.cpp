@@ -550,6 +550,24 @@ TEST(Interpreter, run_clovervm_code_object_returns_pending_exception)
     expect_python_error(L"raise ValueError\n", L"ValueError");
 }
 
+TEST(Interpreter, trace_interpreter_instructions_prints_executed_bytecode)
+{
+    test::VmTestContext test_context;
+    test_context.thread()->set_trace_interpreter_instructions(true);
+
+    testing::internal::CaptureStderr();
+    Value actual = test_context.run_file(L"def f():\n"
+                                         L"    return 7\n"
+                                         L"f()\n");
+    std::string trace = testing::internal::GetCapturedStderr();
+
+    EXPECT_EQ(Value::from_smi(7), actual);
+    EXPECT_NE(std::string::npos, trace.find(">>> enter f\n"));
+    EXPECT_NE(std::string::npos, trace.find("CallSimple"));
+    EXPECT_NE(std::string::npos, trace.find("LdaSmi 7"));
+    EXPECT_NE(std::string::npos, trace.find("Return"));
+}
+
 TEST(Interpreter, try_bare_except_handler_can_raise)
 {
     expect_python_error(L"try:\n"

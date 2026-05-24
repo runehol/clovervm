@@ -26,6 +26,7 @@ extern "C"
 
     CL_EXPORT clover_vm *clover_vm_new(void);
     CL_EXPORT void clover_vm_destroy(clover_vm *vm);
+    CL_EXPORT void clover_vm_set_trace_instructions(clover_vm *vm, int enabled);
     CL_EXPORT clover_status clover_vm_run_file(clover_vm *vm, const char *path,
                                                int print_bytecode);
     CL_EXPORT clover_status clover_vm_run_interactive(clover_vm *vm,

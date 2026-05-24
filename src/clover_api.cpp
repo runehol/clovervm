@@ -129,6 +129,16 @@ extern "C"
 
     CL_EXPORT void clover_vm_destroy(clover_vm *vm) { delete vm; }
 
+    CL_EXPORT void clover_vm_set_trace_instructions(clover_vm *vm, int enabled)
+    {
+        if(vm == nullptr)
+        {
+            return;
+        }
+        vm->vm.get_default_thread()->set_trace_interpreter_instructions(
+            enabled != 0);
+    }
+
     CL_EXPORT clover_status clover_vm_run_file(clover_vm *vm, const char *path,
                                                int print_bytecode)
     {

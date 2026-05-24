@@ -10,7 +10,8 @@ set(CLOVERVM_EMBEDDER_API_SYMBOLS
     clover_vm_destroy
     clover_vm_new
     clover_vm_run_file
-    clover_vm_run_interactive)
+    clover_vm_run_interactive
+    clover_vm_set_trace_instructions)
 
 set(CLOVERVM_EXTENSION_MODULE_BUILDER_API_SYMBOLS
     clover_module_add_function_0

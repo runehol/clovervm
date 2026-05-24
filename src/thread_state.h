@@ -115,6 +115,23 @@ namespace cl
         }
 
         [[nodiscard]] Value run_clovervm_code_object(CodeObject *obj);
+        bool trace_interpreter_instructions() const
+        {
+            return trace_interpreter_instructions_;
+        }
+        void set_trace_interpreter_instructions(bool enabled)
+        {
+            trace_interpreter_instructions_ = enabled;
+            trace_interpreter_frame_ptr_ = nullptr;
+        }
+        Value *trace_interpreter_frame() const
+        {
+            return trace_interpreter_frame_ptr_;
+        }
+        void set_trace_interpreter_frame(Value *fp)
+        {
+            trace_interpreter_frame_ptr_ = fp;
+        }
         [[nodiscard]] Value call_clovervm_function(TValue<Function> function);
         [[nodiscard]] Value call_clovervm_function(TValue<Function> function,
                                                    Value arg0);
@@ -345,6 +362,8 @@ namespace cl
         std::vector<HeapObject *> zero_count_table;
         PendingException pending_exception;
         SafepointScanRecord safepoint_scan_record_;
+        bool trace_interpreter_instructions_ = false;
+        Value *trace_interpreter_frame_ptr_ = nullptr;
         // This thread's Clover frame frontier during native execution: the
         // newest live Clover frame available to native C++ code while the
         // interpreter is not actively carrying fp in its dispatch state. This
