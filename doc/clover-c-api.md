@@ -163,6 +163,9 @@ clover_module_add_value(builder, "answer", clover_int64(ctx, 42));
 clover_module_add_value(builder, "greeting",
                         clover_string_from_utf8(ctx, "hello"));
 clover_module_add_value(builder, "nothing", clover_none(ctx));
+clover_module_add_value(builder, "pair",
+                        clover_tuple2(ctx, clover_int64(ctx, 1),
+                                      clover_int64(ctx, 2)));
 ```
 
 ## Function Registration
@@ -220,6 +223,12 @@ clover_value clover_int64(clover_context *ctx, int64_t value);
 clover_value clover_float_from_double(clover_context *ctx, double value);
 clover_value clover_string_from_utf8(clover_context *ctx,
                                      const char *utf8_value);
+clover_value clover_tuple_from_array(clover_context *ctx,
+                                     const clover_value *items,
+                                     size_t count);
+clover_value clover_tuple2(clover_context *ctx,
+                           clover_value item0,
+                           clover_value item1);
 clover_status clover_float_as_double(clover_context *ctx,
                                      clover_value value,
                                      double *out);

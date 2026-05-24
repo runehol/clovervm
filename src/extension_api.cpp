@@ -4,6 +4,7 @@
 #include "float.h"
 #include "str.h"
 #include "thread_state.h"
+#include "tuple.h"
 #include "typed_value.h"
 #include "unicode.h"
 #include <optional>
@@ -60,6 +61,49 @@ clover_string_from_utf8(clover_context *ctx, const char *utf8_value)
         return clover_propagate_error(ctx);
     }
     return cl::wrap_clover_value(string->raw_value());
+}
+
+extern "C" CL_EXPORT clover_value clover_tuple_from_array(
+    clover_context *ctx, const clover_value *items, size_t count)
+{
+    if(ctx == nullptr || ctx->thread == nullptr)
+    {
+        return clover_propagate_error(ctx);
+    }
+    if(items == nullptr && count != 0)
+    {
+        (void)ctx->thread->set_pending_builtin_exception_string(
+            L"ValueError", L"native extension tuple items must not be null");
+        return clover_propagate_error(ctx);
+    }
+    if(count > static_cast<size_t>(cl::value_smi_max))
+    {
+        (void)ctx->thread->set_pending_builtin_exception_string(
+            L"OverflowError",
+            L"tuple size is outside the supported native API range");
+        return clover_propagate_error(ctx);
+    }
+
+    cl::TValue<cl::Tuple> tuple =
+        ctx->thread->make_object_value<cl::Tuple>(count);
+    for(size_t idx = 0; idx < count; ++idx)
+    {
+        cl::Value item = cl::unwrap_clover_value(items[idx]);
+        if(item.is_exception_marker())
+        {
+            return clover_propagate_error(ctx);
+        }
+        tuple.extract()->initialize_item_unchecked(idx, item);
+    }
+    return cl::wrap_clover_value(tuple.raw_value());
+}
+
+extern "C" CL_EXPORT clover_value clover_tuple2(clover_context *ctx,
+                                                clover_value item0,
+                                                clover_value item1)
+{
+    clover_value items[] = {item0, item1};
+    return clover_tuple_from_array(ctx, items, 2);
 }
 
 extern "C" CL_EXPORT clover_status clover_float_as_double(clover_context *ctx,
