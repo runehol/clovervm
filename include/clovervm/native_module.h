@@ -26,6 +26,9 @@ extern "C"
      */
     CL_EXPORT clover_status clover_module_add_int_constant(
         clover_native_module_builder *builder, const char *name, int64_t value);
+    CL_EXPORT clover_status
+    clover_module_add_string_constant(clover_native_module_builder *builder,
+                                      const char *name, const char *utf8_value);
 
 #ifdef __cplusplus
 }
