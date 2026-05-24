@@ -59,20 +59,6 @@ def _check_nonnegative_int(name, value):
     return value
 
 
-def _floor_div_nonnegative(n, d):
-    result = 0
-    while n >= d:
-        n = n - d
-        result = result + 1
-    return result
-
-
-def _mod_nonnegative(n, d):
-    while n >= d:
-        n = n - d
-    return n
-
-
 def degrees(x):
     return x * 180.0 / pi
 
@@ -161,7 +147,7 @@ def comb(n, k):
         k = other
     result = 1
     for i in range(1, k + 1):
-        result = _floor_div_nonnegative(result * (n - k + i), i)
+        result = result * (n - k + i) // i
     return result
 
 
@@ -185,7 +171,7 @@ def gcd(*integers):
     for value in integers:
         value = _abs(value)
         while value:
-            tmp = _mod_nonnegative(result, value)
+            tmp = result % value
             result = value
             value = tmp
     return result
@@ -201,7 +187,7 @@ def lcm(*integers):
             result = 0
         else:
             common = gcd(result, value)
-            quotient = _floor_div_nonnegative(result, common)
+            quotient = result // common
             result = quotient * value
     return result
 
@@ -213,7 +199,7 @@ def isqrt(n):
     low = 1
     high = n
     while low <= high:
-        mid = _floor_div_nonnegative(low + high, 2)
+        mid = (low + high) // 2
         square = mid * mid
         if square == n:
             return mid

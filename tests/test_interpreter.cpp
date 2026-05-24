@@ -902,6 +902,67 @@ TEST(Interpreter, true_division_reports_unsupported_operands)
                         L"TypeError: unsupported operand type(s) for /");
 }
 
+TEST(Interpreter, floor_division_values)
+{
+    test::VmTestContext test_context;
+
+    auto expect_float_result = [&](const wchar_t *source, double expected) {
+        Value actual = test_context.run_file(source);
+        ASSERT_TRUE(can_convert_to<Float>(actual));
+        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
+    };
+
+    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"5 // 2\n"));
+    EXPECT_EQ(Value::from_smi(-3), test_context.run_file(L"-5 // 2\n"));
+    EXPECT_EQ(Value::from_smi(-3), test_context.run_file(L"5 // -2\n"));
+    EXPECT_EQ(Value::from_smi(2), test_context.run_file(L"-5 // -2\n"));
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"True // 1\n"));
+    expect_float_result(L"5.0 // 2\n", 2.0);
+    expect_float_result(L"5 // 2.0\n", 2.0);
+    expect_float_result(L"-5.0 // 2\n", -3.0);
+}
+
+TEST(Interpreter, floor_division_reports_errors)
+{
+    expect_python_error(L"1 // 0\n", L"ZeroDivisionError: division by zero");
+    expect_python_error(L"1 // 0.0\n", L"ZeroDivisionError: division by zero");
+    expect_python_error(L"\"a\" // 1\n",
+                        L"TypeError: unsupported operand type(s) for //");
+    expect_python_error(L"1 // \"a\"\n",
+                        L"TypeError: unsupported operand type(s) for //");
+}
+
+TEST(Interpreter, modulo_values)
+{
+    test::VmTestContext test_context;
+
+    auto expect_float_result = [&](const wchar_t *source, double expected) {
+        Value actual = test_context.run_file(source);
+        ASSERT_TRUE(can_convert_to<Float>(actual));
+        EXPECT_DOUBLE_EQ(expected, actual.get_ptr<Float>()->value);
+    };
+
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"5 % 2\n"));
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"-5 % 2\n"));
+    EXPECT_EQ(Value::from_smi(-1), test_context.run_file(L"5 % -2\n"));
+    EXPECT_EQ(Value::from_smi(-1), test_context.run_file(L"-5 % -2\n"));
+    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"False % 1\n"));
+    expect_float_result(L"5.0 % 2\n", 1.0);
+    expect_float_result(L"5 % 2.0\n", 1.0);
+    expect_float_result(L"-5.0 % 2\n", 1.0);
+    expect_float_result(L"5.0 % -2\n", -1.0);
+}
+
+TEST(Interpreter, modulo_reports_errors)
+{
+    expect_python_error(L"1 % 0\n", L"ZeroDivisionError: division by zero");
+    expect_python_error(L"1 % 0.0\n", L"ZeroDivisionError: division by zero");
+    expect_python_error(L"\"a\" % 1\n",
+                        L"TypeError: unsupported operand type(s) for %");
+    expect_python_error(L"1 % \"a\"\n",
+                        L"TypeError: unsupported operand type(s) for %");
+}
+
 TEST(Interpreter, sqrt_builtin_values)
 {
     test::VmTestContext test_context;
