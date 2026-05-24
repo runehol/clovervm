@@ -69,6 +69,23 @@ namespace
         return result;
     }
 
+    clover_status run_code_object(cl::ThreadState *thread, cl::CodeObject *code,
+                                  bool print_bytecode)
+    {
+        if(print_bytecode)
+        {
+            fmt::print("{}\n", *code);
+        }
+
+        cl::Value result = thread->run_clovervm_code_object(code);
+        if(result.is_exception_marker())
+        {
+            std::wcerr << format_pending_python_exception(thread) << L"\n";
+            return CLOVER_STATUS_ERROR;
+        }
+        return CLOVER_STATUS_OK;
+    }
+
     clover_status run_file_impl(clover_vm *api_vm, const char *path,
                                 bool print_bytecode)
     {
@@ -92,18 +109,24 @@ namespace
         cl::ThreadState *thread = api_vm->vm.get_default_thread();
         cl::CodeObject *code = thread->compile(
             file_contents->c_str(), cl::StartRule::File, filename.c_str());
-        if(print_bytecode)
-        {
-            fmt::print("{}\n", *code);
-        }
+        return run_code_object(thread, code, print_bytecode);
+    }
 
-        cl::Value result = thread->run_clovervm_code_object(code);
-        if(result.is_exception_marker())
+    clover_status run_string_impl(clover_vm *api_vm, const char *source,
+                                  bool print_bytecode)
+    {
+        if(api_vm == nullptr)
         {
-            std::wcerr << format_pending_python_exception(thread) << L"\n";
+            std::cerr << "clover_vm_run_string called with null vm\n";
             return CLOVER_STATUS_ERROR;
         }
-        return CLOVER_STATUS_OK;
+
+        std::wstring source_text =
+            decode_api_string(source, "failed to decode source string");
+        cl::ThreadState *thread = api_vm->vm.get_default_thread();
+        cl::CodeObject *code =
+            thread->compile(source_text.c_str(), cl::StartRule::File);
+        return run_code_object(thread, code, print_bytecode);
     }
 }  // namespace
 
@@ -145,6 +168,21 @@ extern "C"
         try
         {
             return run_file_impl(vm, path, print_bytecode != 0);
+        }
+        catch(const std::exception &err)
+        {
+            std::cerr << err.what() << "\n";
+            return CLOVER_STATUS_ERROR;
+        }
+    }
+
+    CL_EXPORT clover_status clover_vm_run_string(clover_vm *vm,
+                                                 const char *source,
+                                                 int print_bytecode)
+    {
+        try
+        {
+            return run_string_impl(vm, source, print_bytecode != 0);
         }
         catch(const std::exception &err)
         {

@@ -14,6 +14,7 @@ int main(int argc, const char *argv[])
     using namespace std::literals;
     bool print_bytecode = false;
     bool trace_instructions = false;
+    const char *command = nullptr;
     const char *source_file = nullptr;
     int i = 1;
     for(; i < argc; ++i)
@@ -26,18 +27,29 @@ int main(int argc, const char *argv[])
         {
             trace_instructions = true;
         }
+        else if(argv[i] == "-c"sv)
+        {
+            if(i + 1 >= argc)
+            {
+                std::cerr << "clovervm: option -c requires an argument\n";
+                return 1;
+            }
+            command = argv[++i];
+            ++i;
+            break;
+        }
         else
         {
             break;
         }
     }
 
-    if(i < argc)
+    if(command == nullptr && i < argc)
     {
         source_file = argv[i++];
     }
 
-    if(source_file == nullptr)
+    if(command == nullptr && source_file == nullptr)
     {
         clover_vm *vm = clover_vm_new();
         if(vm == nullptr)
@@ -58,7 +70,10 @@ int main(int argc, const char *argv[])
         return 1;
     }
     clover_vm_set_trace_instructions(vm, trace_instructions);
-    clover_status status = clover_vm_run_file(vm, source_file, print_bytecode);
+    clover_status status =
+        command != nullptr
+            ? clover_vm_run_string(vm, command, print_bytecode)
+            : clover_vm_run_file(vm, source_file, print_bytecode);
     clover_vm_destroy(vm);
     return status == CLOVER_STATUS_OK ? 0 : 1;
 }

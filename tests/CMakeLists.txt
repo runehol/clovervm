@@ -89,7 +89,8 @@ gtest_discover_tests(test_clovervm
 
 add_custom_target(check
 COMMAND test_clovervm --gtest_brief=1
-DEPENDS test_clovervm check_native_module_linkage
+COMMAND clovervm -c "assert 1 + 2 == 3"
+DEPENDS test_clovervm clovervm check_native_module_linkage
 WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 USES_TERMINAL
 )
