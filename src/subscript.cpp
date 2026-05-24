@@ -4,6 +4,7 @@
 #include "exception_propagation.h"
 #include "list.h"
 #include "slot_dict.h"
+#include "str.h"
 #include "thread_state.h"
 #include "tuple.h"
 #include <stdexcept>
@@ -34,6 +35,18 @@ namespace cl
         return Value::None();
     }
 
+    [[nodiscard]] static Value string_index_from_value(Value key,
+                                                       int64_t &idx_out)
+    {
+        if(!key.is_integer())
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"string indices must be integers");
+        }
+        idx_out = key.get_smi();
+        return Value::None();
+    }
+
     Value load_subscript_slow(Value obj, Value key)
     {
         if(!obj.is_ptr())
@@ -53,6 +66,13 @@ namespace cl
             int64_t idx = 0;
             CL_PROPAGATE_EXCEPTION(tuple_index_from_value(key, idx));
             return static_cast<Tuple *>(object)->get_item(idx);
+        }
+        if(object->native_layout_id() == NativeLayoutId::String)
+        {
+            int64_t idx = 0;
+            CL_PROPAGATE_EXCEPTION(string_index_from_value(key, idx));
+            return string_get_item(TValue<String>::from_value_assumed(obj),
+                                   idx);
         }
         if(object->native_layout_id() == NativeLayoutId::Dict)
         {

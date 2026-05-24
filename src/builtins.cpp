@@ -196,6 +196,39 @@ namespace cl
                    : Value::False();
     }
 
+    static Value builtin_ord(Value obj)
+    {
+        if(!can_convert_to<String>(obj))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"ord() expected string of length 1");
+        }
+        String *str = obj.get_ptr<String>();
+        if(str->count.extract() != 1)
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"ord() expected string of length 1");
+        }
+        return Value::from_smi(static_cast<int64_t>(str->data[0]));
+    }
+
+    static Value builtin_chr(Value code_value)
+    {
+        if(!code_value.is_smi())
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"chr() arg must be an integer");
+        }
+        int64_t code = code_value.get_smi();
+        if(code < 0 || code > 0x10ffff)
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"ValueError", L"chr() arg not in range(0x110000)");
+        }
+        std::wstring result(1, static_cast<wchar_t>(code));
+        return active_thread()->make_object_value<String>(result).raw_value();
+    }
+
     static void append_unique_dir_name(std::vector<std::wstring> &names,
                                        Value name_value)
     {
@@ -304,6 +337,10 @@ namespace cl
         install_builtin_function_binding(
             vm, L"callable",
             make_intrinsic_function(vm, builtin_callable).raw_value());
+        install_builtin_function_binding(
+            vm, L"ord", make_intrinsic_function(vm, builtin_ord).raw_value());
+        install_builtin_function_binding(
+            vm, L"chr", make_intrinsic_function(vm, builtin_chr).raw_value());
         install_builtin_function_binding(
             vm, L"_clover_builtin_getattr",
             make_intrinsic_function(vm, builtin_getattr).raw_value());

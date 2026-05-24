@@ -140,6 +140,7 @@ namespace cl
 
     uint64_t string_hash(TValue<String> s);
     bool string_eq_slow_path(TValue<String> a, TValue<String> b);
+    Value string_get_item(TValue<String> string, int64_t py_idx);
 
     const cl_wchar *string_as_wchar_t(TValue<String> s);
     std::wstring_view string_view(TValue<String> s);

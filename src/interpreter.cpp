@@ -18,6 +18,7 @@
 #include "refcount.h"
 #include "runtime_helpers.h"
 #include "slot_dict.h"
+#include "str.h"
 #include "subscript.h"
 #include "thread_state.h"
 #include "tuple.h"
@@ -1249,6 +1250,15 @@ namespace cl
         if(!try_get_float_or_smi_or_bool(a, &left) ||
            !try_get_float_or_smi_or_bool(b, &right))
         {
+            if(can_convert_to<String>(a) || can_convert_to<String>(b))
+            {
+                bool equal = can_convert_to<String>(a) &&
+                             can_convert_to<String>(b) &&
+                             string_eq(TValue<String>::from_value_assumed(a),
+                                       TValue<String>::from_value_assumed(b));
+                accumulator = equal ? Value::True() : Value::False();
+                COMPLETE();
+            }
             MUSTTAIL return slow_path(ARGS);
         }
 
@@ -1265,6 +1275,15 @@ namespace cl
         if(!try_get_float_or_smi_or_bool(a, &left) ||
            !try_get_float_or_smi_or_bool(b, &right))
         {
+            if(can_convert_to<String>(a) || can_convert_to<String>(b))
+            {
+                bool equal = can_convert_to<String>(a) &&
+                             can_convert_to<String>(b) &&
+                             string_eq(TValue<String>::from_value_assumed(a),
+                                       TValue<String>::from_value_assumed(b));
+                accumulator = equal ? Value::False() : Value::True();
+                COMPLETE();
+            }
             MUSTTAIL return slow_path(ARGS);
         }
 
