@@ -178,7 +178,7 @@ clover_module_add_function_1
 clover_module_add_function_N
 ```
 
-and so on for additional fixed arities. Arity 0 and 1 are implemented first.
+for fixed arities from 0 through 7.
 
 Sketch:
 
@@ -200,6 +200,15 @@ clover_status clover_module_add_function_1(
     clover_native_module_builder *builder,
     const char *name,
     clover_extension_fn_1 fn,
+    const char *docstring);
+
+/* Schematically, with concrete clover_extension_fn_2 through
+ * clover_extension_fn_7 typedefs that take exactly N clover_value arguments:
+ */
+clover_status clover_module_add_function_N(
+    clover_native_module_builder *builder,
+    const char *name,
+    clover_extension_fn_N fn,
     const char *docstring);
 ```
 

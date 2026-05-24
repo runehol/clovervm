@@ -13,6 +13,12 @@ list(APPEND CLOVERVM_EXTENSION_API_SYMBOLS
     clover_module_add_int_constant
     clover_module_add_function_0
     clover_module_add_function_1
+    clover_module_add_function_2
+    clover_module_add_function_3
+    clover_module_add_function_4
+    clover_module_add_function_5
+    clover_module_add_function_6
+    clover_module_add_function_7
     clover_module_add_string_constant
     clover_none
     clover_raise_value_error)

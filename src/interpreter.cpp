@@ -3266,6 +3266,99 @@ namespace cl
         COMPLETE();
     }
 
+    static INTERP_CC Value op_call_extension2(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
+        clover_call_context ctx{thread};
+        accumulator = unwrap_clover_value(
+            code_object->native_function_targets[target_idx].extension2(
+                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
+                wrap_clover_value(get_native_arg(fp, code_object, 1))));
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_call_extension3(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
+        clover_call_context ctx{thread};
+        accumulator = unwrap_clover_value(
+            code_object->native_function_targets[target_idx].extension3(
+                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
+                wrap_clover_value(get_native_arg(fp, code_object, 1)),
+                wrap_clover_value(get_native_arg(fp, code_object, 2))));
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_call_extension4(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
+        clover_call_context ctx{thread};
+        accumulator = unwrap_clover_value(
+            code_object->native_function_targets[target_idx].extension4(
+                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
+                wrap_clover_value(get_native_arg(fp, code_object, 1)),
+                wrap_clover_value(get_native_arg(fp, code_object, 2)),
+                wrap_clover_value(get_native_arg(fp, code_object, 3))));
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_call_extension5(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
+        clover_call_context ctx{thread};
+        accumulator = unwrap_clover_value(
+            code_object->native_function_targets[target_idx].extension5(
+                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
+                wrap_clover_value(get_native_arg(fp, code_object, 1)),
+                wrap_clover_value(get_native_arg(fp, code_object, 2)),
+                wrap_clover_value(get_native_arg(fp, code_object, 3)),
+                wrap_clover_value(get_native_arg(fp, code_object, 4))));
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_call_extension6(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
+        clover_call_context ctx{thread};
+        accumulator = unwrap_clover_value(
+            code_object->native_function_targets[target_idx].extension6(
+                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
+                wrap_clover_value(get_native_arg(fp, code_object, 1)),
+                wrap_clover_value(get_native_arg(fp, code_object, 2)),
+                wrap_clover_value(get_native_arg(fp, code_object, 3)),
+                wrap_clover_value(get_native_arg(fp, code_object, 4)),
+                wrap_clover_value(get_native_arg(fp, code_object, 5))));
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_call_extension7(PARAMS)
+    {
+        START(2);
+        uint8_t target_idx = pc[1];
+        thread->set_clover_frame_frontier(fp);
+        clover_call_context ctx{thread};
+        accumulator = unwrap_clover_value(
+            code_object->native_function_targets[target_idx].extension7(
+                &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
+                wrap_clover_value(get_native_arg(fp, code_object, 1)),
+                wrap_clover_value(get_native_arg(fp, code_object, 2)),
+                wrap_clover_value(get_native_arg(fp, code_object, 3)),
+                wrap_clover_value(get_native_arg(fp, code_object, 4)),
+                wrap_clover_value(get_native_arg(fp, code_object, 5)),
+                wrap_clover_value(get_native_arg(fp, code_object, 6))));
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_call_runtime_intrinsic0(PARAMS)
     {
         START(2);
@@ -3751,6 +3844,12 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic7, op_call_intrinsic7);
         SET_TABLE_ENTRY(Bytecode::CallExtension0, op_call_extension0);
         SET_TABLE_ENTRY(Bytecode::CallExtension1, op_call_extension1);
+        SET_TABLE_ENTRY(Bytecode::CallExtension2, op_call_extension2);
+        SET_TABLE_ENTRY(Bytecode::CallExtension3, op_call_extension3);
+        SET_TABLE_ENTRY(Bytecode::CallExtension4, op_call_extension4);
+        SET_TABLE_ENTRY(Bytecode::CallExtension5, op_call_extension5);
+        SET_TABLE_ENTRY(Bytecode::CallExtension6, op_call_extension6);
+        SET_TABLE_ENTRY(Bytecode::CallExtension7, op_call_extension7);
         SET_TABLE_ENTRY(Bytecode::CallRuntimeIntrinsic0,
                         op_call_runtime_intrinsic0);
         SET_TABLE_ENTRY(Bytecode::CallCodeObject, op_call_code_object);

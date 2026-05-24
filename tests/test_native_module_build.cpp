@@ -125,6 +125,34 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
         L"value cannot be converted to float",
         std::wstring(string_as_wchar_t(exception.extract()->message.value())));
     context.thread()->clear_pending_exception();
+
+    auto expect_sum_result = [&](const wchar_t *function_name, double expected,
+                                 auto... args) {
+        TValue<String> sum_name =
+            context.vm().get_or_create_interned_string_value(function_name);
+        Value sum = module->get_own_property(sum_name);
+        ASSERT_TRUE(can_convert_to<Function>(sum));
+        Value sum_result = context.thread()->call_clovervm_function(
+            TValue<Function>::from_value_assumed(sum), args...);
+        ASSERT_TRUE(can_convert_to<Float>(sum_result));
+        EXPECT_DOUBLE_EQ(expected, sum_result.get_ptr<Float>()->value);
+    };
+    expect_sum_result(L"sum2", 3.0, Value::from_smi(1), Value::from_smi(2));
+    expect_sum_result(L"sum3", 6.0, Value::from_smi(1), Value::from_smi(2),
+                      Value::from_smi(3));
+    expect_sum_result(L"sum4", 10.0, Value::from_smi(1), Value::from_smi(2),
+                      Value::from_smi(3), Value::from_smi(4));
+    expect_sum_result(L"sum5", 15.0, Value::from_smi(1), Value::from_smi(2),
+                      Value::from_smi(3), Value::from_smi(4),
+                      Value::from_smi(5));
+    expect_sum_result(L"sum6", 21.0, Value::from_smi(1), Value::from_smi(2),
+                      Value::from_smi(3), Value::from_smi(4),
+                      Value::from_smi(5), Value::from_smi(6));
+    expect_sum_result(L"sum7", 28.0, Value::from_smi(1), Value::from_smi(2),
+                      Value::from_smi(3), Value::from_smi(4),
+                      Value::from_smi(5), Value::from_smi(6),
+                      Value::from_smi(7));
+
     EXPECT_EQ(imported, context.vm().imported_modules().extract()->get_item(
                             name.raw_value()));
 }

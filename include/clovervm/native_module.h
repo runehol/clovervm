@@ -32,6 +32,29 @@ extern "C"
     typedef clover_value (*clover_extension_fn_0)(clover_call_context *ctx);
     typedef clover_value (*clover_extension_fn_1)(clover_call_context *ctx,
                                                   clover_value arg0);
+    typedef clover_value (*clover_extension_fn_2)(clover_call_context *ctx,
+                                                  clover_value arg0,
+                                                  clover_value arg1);
+    typedef clover_value (*clover_extension_fn_3)(clover_call_context *ctx,
+                                                  clover_value arg0,
+                                                  clover_value arg1,
+                                                  clover_value arg2);
+    typedef clover_value (*clover_extension_fn_4)(clover_call_context *ctx,
+                                                  clover_value arg0,
+                                                  clover_value arg1,
+                                                  clover_value arg2,
+                                                  clover_value arg3);
+    typedef clover_value (*clover_extension_fn_5)(
+        clover_call_context *ctx, clover_value arg0, clover_value arg1,
+        clover_value arg2, clover_value arg3, clover_value arg4);
+    typedef clover_value (*clover_extension_fn_6)(
+        clover_call_context *ctx, clover_value arg0, clover_value arg1,
+        clover_value arg2, clover_value arg3, clover_value arg4,
+        clover_value arg5);
+    typedef clover_value (*clover_extension_fn_7)(
+        clover_call_context *ctx, clover_value arg0, clover_value arg1,
+        clover_value arg2, clover_value arg3, clover_value arg4,
+        clover_value arg5, clover_value arg6);
 
     /*
      * All const char * strings in the native module API are UTF-8 encoded
@@ -48,6 +71,24 @@ extern "C"
     CL_EXPORT clover_status clover_module_add_function_1(
         clover_native_module_builder *builder, const char *name,
         clover_extension_fn_1 function, const char *docstring);
+    CL_EXPORT clover_status clover_module_add_function_2(
+        clover_native_module_builder *builder, const char *name,
+        clover_extension_fn_2 function, const char *docstring);
+    CL_EXPORT clover_status clover_module_add_function_3(
+        clover_native_module_builder *builder, const char *name,
+        clover_extension_fn_3 function, const char *docstring);
+    CL_EXPORT clover_status clover_module_add_function_4(
+        clover_native_module_builder *builder, const char *name,
+        clover_extension_fn_4 function, const char *docstring);
+    CL_EXPORT clover_status clover_module_add_function_5(
+        clover_native_module_builder *builder, const char *name,
+        clover_extension_fn_5 function, const char *docstring);
+    CL_EXPORT clover_status clover_module_add_function_6(
+        clover_native_module_builder *builder, const char *name,
+        clover_extension_fn_6 function, const char *docstring);
+    CL_EXPORT clover_status clover_module_add_function_7(
+        clover_native_module_builder *builder, const char *name,
+        clover_extension_fn_7 function, const char *docstring);
 
     CL_EXPORT clover_value clover_none(clover_call_context *ctx);
     CL_EXPORT clover_value clover_int64(clover_call_context *ctx,

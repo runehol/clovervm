@@ -65,6 +65,12 @@ namespace cl
         IntrinsicFunction7 fixed7;
         clover_extension_fn_0 extension0;
         clover_extension_fn_1 extension1;
+        clover_extension_fn_2 extension2;
+        clover_extension_fn_3 extension3;
+        clover_extension_fn_4 extension4;
+        clover_extension_fn_5 extension5;
+        clover_extension_fn_6 extension6;
+        clover_extension_fn_7 extension7;
     };
 
     struct CompilationUnit;

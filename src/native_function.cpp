@@ -269,6 +269,72 @@ namespace cl
             vm, name, target, Bytecode::CallExtension1, 1, docstring, true);
     }
 
+    TValue<Function> make_extension_function(VirtualMachine *vm,
+                                             TValue<String> name,
+                                             clover_extension_fn_2 function,
+                                             Optional<TValue<String>> docstring)
+    {
+        NativeFunctionTarget target;
+        target.extension2 = function;
+        return make_native_function_with_target(
+            vm, name, target, Bytecode::CallExtension2, 2, docstring, true);
+    }
+
+    TValue<Function> make_extension_function(VirtualMachine *vm,
+                                             TValue<String> name,
+                                             clover_extension_fn_3 function,
+                                             Optional<TValue<String>> docstring)
+    {
+        NativeFunctionTarget target;
+        target.extension3 = function;
+        return make_native_function_with_target(
+            vm, name, target, Bytecode::CallExtension3, 3, docstring, true);
+    }
+
+    TValue<Function> make_extension_function(VirtualMachine *vm,
+                                             TValue<String> name,
+                                             clover_extension_fn_4 function,
+                                             Optional<TValue<String>> docstring)
+    {
+        NativeFunctionTarget target;
+        target.extension4 = function;
+        return make_native_function_with_target(
+            vm, name, target, Bytecode::CallExtension4, 4, docstring, true);
+    }
+
+    TValue<Function> make_extension_function(VirtualMachine *vm,
+                                             TValue<String> name,
+                                             clover_extension_fn_5 function,
+                                             Optional<TValue<String>> docstring)
+    {
+        NativeFunctionTarget target;
+        target.extension5 = function;
+        return make_native_function_with_target(
+            vm, name, target, Bytecode::CallExtension5, 5, docstring, true);
+    }
+
+    TValue<Function> make_extension_function(VirtualMachine *vm,
+                                             TValue<String> name,
+                                             clover_extension_fn_6 function,
+                                             Optional<TValue<String>> docstring)
+    {
+        NativeFunctionTarget target;
+        target.extension6 = function;
+        return make_native_function_with_target(
+            vm, name, target, Bytecode::CallExtension6, 6, docstring, true);
+    }
+
+    TValue<Function> make_extension_function(VirtualMachine *vm,
+                                             TValue<String> name,
+                                             clover_extension_fn_7 function,
+                                             Optional<TValue<String>> docstring)
+    {
+        NativeFunctionTarget target;
+        target.extension7 = function;
+        return make_native_function_with_target(
+            vm, name, target, Bytecode::CallExtension7, 7, docstring, true);
+    }
+
     void
     install_builtin_intrinsic_methods(VirtualMachine *vm, ClassObject *cls,
                                       const BuiltinIntrinsicMethod *methods,

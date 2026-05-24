@@ -110,6 +110,40 @@ namespace cl
             return CLOVER_STATUS_OK;
         }
 
+        template <typename FunctionPointer>
+        clover_status
+        add_extension_function(clover_native_module_builder *builder,
+                               const char *name, FunctionPointer function,
+                               const char *docstring)
+        {
+            if(!valid_builder(builder))
+            {
+                return CLOVER_STATUS_ERROR;
+            }
+            if(function == nullptr)
+            {
+                return set_builder_import_error(
+                    builder, L"native module function target must be non-null");
+            }
+            std::optional<TValue<String>> decoded_name =
+                decode_function_name(builder, name);
+            if(!decoded_name.has_value())
+            {
+                return CLOVER_STATUS_ERROR;
+            }
+            std::optional<Optional<TValue<String>>> decoded_docstring =
+                decode_function_docstring(builder, docstring);
+            if(!decoded_docstring.has_value())
+            {
+                return CLOVER_STATUS_ERROR;
+            }
+            return add_function(
+                builder, *decoded_name,
+                make_extension_function(builder->thread->get_machine(),
+                                        *decoded_name, function,
+                                        *decoded_docstring));
+        }
+
     }  // namespace
 }  // namespace cl
 
@@ -149,62 +183,56 @@ extern "C" CL_EXPORT clover_status clover_module_add_function_0(
     clover_native_module_builder *builder, const char *name,
     clover_extension_fn_0 function, const char *docstring)
 {
-    if(!cl::valid_builder(builder))
-    {
-        return CLOVER_STATUS_ERROR;
-    }
-    if(function == nullptr)
-    {
-        return cl::set_builder_import_error(
-            builder, L"native module function target must be non-null");
-    }
-    std::optional<cl::TValue<cl::String>> decoded_name =
-        cl::decode_function_name(builder, name);
-    if(!decoded_name.has_value())
-    {
-        return CLOVER_STATUS_ERROR;
-    }
-    std::optional<cl::Optional<cl::TValue<cl::String>>> decoded_docstring =
-        cl::decode_function_docstring(builder, docstring);
-    if(!decoded_docstring.has_value())
-    {
-        return CLOVER_STATUS_ERROR;
-    }
-    return cl::add_function(builder, *decoded_name,
-                            cl::make_extension_function(
-                                builder->thread->get_machine(), *decoded_name,
-                                function, *decoded_docstring));
+    return cl::add_extension_function(builder, name, function, docstring);
 }
 
 extern "C" CL_EXPORT clover_status clover_module_add_function_1(
     clover_native_module_builder *builder, const char *name,
     clover_extension_fn_1 function, const char *docstring)
 {
-    if(!cl::valid_builder(builder))
-    {
-        return CLOVER_STATUS_ERROR;
-    }
-    if(function == nullptr)
-    {
-        return cl::set_builder_import_error(
-            builder, L"native module function target must be non-null");
-    }
-    std::optional<cl::TValue<cl::String>> decoded_name =
-        cl::decode_function_name(builder, name);
-    if(!decoded_name.has_value())
-    {
-        return CLOVER_STATUS_ERROR;
-    }
-    std::optional<cl::Optional<cl::TValue<cl::String>>> decoded_docstring =
-        cl::decode_function_docstring(builder, docstring);
-    if(!decoded_docstring.has_value())
-    {
-        return CLOVER_STATUS_ERROR;
-    }
-    return cl::add_function(builder, *decoded_name,
-                            cl::make_extension_function(
-                                builder->thread->get_machine(), *decoded_name,
-                                function, *decoded_docstring));
+    return cl::add_extension_function(builder, name, function, docstring);
+}
+
+extern "C" CL_EXPORT clover_status clover_module_add_function_2(
+    clover_native_module_builder *builder, const char *name,
+    clover_extension_fn_2 function, const char *docstring)
+{
+    return cl::add_extension_function(builder, name, function, docstring);
+}
+
+extern "C" CL_EXPORT clover_status clover_module_add_function_3(
+    clover_native_module_builder *builder, const char *name,
+    clover_extension_fn_3 function, const char *docstring)
+{
+    return cl::add_extension_function(builder, name, function, docstring);
+}
+
+extern "C" CL_EXPORT clover_status clover_module_add_function_4(
+    clover_native_module_builder *builder, const char *name,
+    clover_extension_fn_4 function, const char *docstring)
+{
+    return cl::add_extension_function(builder, name, function, docstring);
+}
+
+extern "C" CL_EXPORT clover_status clover_module_add_function_5(
+    clover_native_module_builder *builder, const char *name,
+    clover_extension_fn_5 function, const char *docstring)
+{
+    return cl::add_extension_function(builder, name, function, docstring);
+}
+
+extern "C" CL_EXPORT clover_status clover_module_add_function_6(
+    clover_native_module_builder *builder, const char *name,
+    clover_extension_fn_6 function, const char *docstring)
+{
+    return cl::add_extension_function(builder, name, function, docstring);
+}
+
+extern "C" CL_EXPORT clover_status clover_module_add_function_7(
+    clover_native_module_builder *builder, const char *name,
+    clover_extension_fn_7 function, const char *docstring)
+{
+    return cl::add_extension_function(builder, name, function, docstring);
 }
 
 extern "C" CL_EXPORT clover_status

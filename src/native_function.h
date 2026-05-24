@@ -86,6 +86,30 @@ namespace cl
     make_extension_function(VirtualMachine *vm, TValue<String> name,
                             clover_extension_fn_1 function,
                             Optional<TValue<String>> docstring);
+    TValue<Function>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_2 function,
+                            Optional<TValue<String>> docstring);
+    TValue<Function>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_3 function,
+                            Optional<TValue<String>> docstring);
+    TValue<Function>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_4 function,
+                            Optional<TValue<String>> docstring);
+    TValue<Function>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_5 function,
+                            Optional<TValue<String>> docstring);
+    TValue<Function>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_6 function,
+                            Optional<TValue<String>> docstring);
+    TValue<Function>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_7 function,
+                            Optional<TValue<String>> docstring);
 
     void
     install_builtin_intrinsic_methods(VirtualMachine *vm, ClassObject *cls,

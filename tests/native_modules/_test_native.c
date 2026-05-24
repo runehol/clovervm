@@ -27,6 +27,126 @@ static clover_value float_plus_one_func(clover_call_context *ctx,
     return clover_float_from_double(ctx, number + 1.0);
 }
 
+static clover_status read_double(clover_call_context *ctx, clover_value value,
+                                 double *out)
+{
+    return clover_float_as_double(ctx, value, out);
+}
+
+static clover_value sum2_func(clover_call_context *ctx, clover_value arg0,
+                              clover_value arg1)
+{
+    double v0;
+    double v1;
+    if(read_double(ctx, arg0, &v0) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg1, &v1) != CLOVER_STATUS_OK)
+    {
+        return clover_error(ctx);
+    }
+    return clover_float_from_double(ctx, v0 + v1);
+}
+
+static clover_value sum3_func(clover_call_context *ctx, clover_value arg0,
+                              clover_value arg1, clover_value arg2)
+{
+    double v0;
+    double v1;
+    double v2;
+    if(read_double(ctx, arg0, &v0) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg1, &v1) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg2, &v2) != CLOVER_STATUS_OK)
+    {
+        return clover_error(ctx);
+    }
+    return clover_float_from_double(ctx, v0 + v1 + v2);
+}
+
+static clover_value sum4_func(clover_call_context *ctx, clover_value arg0,
+                              clover_value arg1, clover_value arg2,
+                              clover_value arg3)
+{
+    double v0;
+    double v1;
+    double v2;
+    double v3;
+    if(read_double(ctx, arg0, &v0) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg1, &v1) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg2, &v2) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg3, &v3) != CLOVER_STATUS_OK)
+    {
+        return clover_error(ctx);
+    }
+    return clover_float_from_double(ctx, v0 + v1 + v2 + v3);
+}
+
+static clover_value sum5_func(clover_call_context *ctx, clover_value arg0,
+                              clover_value arg1, clover_value arg2,
+                              clover_value arg3, clover_value arg4)
+{
+    double v0;
+    double v1;
+    double v2;
+    double v3;
+    double v4;
+    if(read_double(ctx, arg0, &v0) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg1, &v1) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg2, &v2) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg3, &v3) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg4, &v4) != CLOVER_STATUS_OK)
+    {
+        return clover_error(ctx);
+    }
+    return clover_float_from_double(ctx, v0 + v1 + v2 + v3 + v4);
+}
+
+static clover_value sum6_func(clover_call_context *ctx, clover_value arg0,
+                              clover_value arg1, clover_value arg2,
+                              clover_value arg3, clover_value arg4,
+                              clover_value arg5)
+{
+    double v0;
+    double v1;
+    double v2;
+    double v3;
+    double v4;
+    double v5;
+    if(read_double(ctx, arg0, &v0) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg1, &v1) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg2, &v2) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg3, &v3) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg4, &v4) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg5, &v5) != CLOVER_STATUS_OK)
+    {
+        return clover_error(ctx);
+    }
+    return clover_float_from_double(ctx, v0 + v1 + v2 + v3 + v4 + v5);
+}
+
+static clover_value sum7_func(clover_call_context *ctx, clover_value arg0,
+                              clover_value arg1, clover_value arg2,
+                              clover_value arg3, clover_value arg4,
+                              clover_value arg5, clover_value arg6)
+{
+    double v0;
+    double v1;
+    double v2;
+    double v3;
+    double v4;
+    double v5;
+    double v6;
+    if(read_double(ctx, arg0, &v0) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg1, &v1) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg2, &v2) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg3, &v3) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg4, &v4) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg5, &v5) != CLOVER_STATUS_OK ||
+       read_double(ctx, arg6, &v6) != CLOVER_STATUS_OK)
+    {
+        return clover_error(ctx);
+    }
+    return clover_float_from_double(ctx, v0 + v1 + v2 + v3 + v4 + v5 + v6);
+}
+
 CL_NATIVE_MODULE_EXPORT clover_status
 clover_module_init__test_native(clover_native_module_builder *builder)
 {
@@ -56,7 +176,42 @@ clover_module_init__test_native(clover_native_module_builder *builder)
     {
         return CLOVER_STATUS_ERROR;
     }
-    return clover_module_add_function_1(builder, "float_plus_one",
-                                        float_plus_one_func,
-                                        "Return float(value) + 1.0.");
+    if(clover_module_add_function_1(
+           builder, "float_plus_one", float_plus_one_func,
+           "Return float(value) + 1.0.") != CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_function_2(builder, "sum2", sum2_func,
+                                    "Return the argument sum.") !=
+       CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_function_3(builder, "sum3", sum3_func,
+                                    "Return the argument sum.") !=
+       CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_function_4(builder, "sum4", sum4_func,
+                                    "Return the argument sum.") !=
+       CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_function_5(builder, "sum5", sum5_func,
+                                    "Return the argument sum.") !=
+       CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_function_6(builder, "sum6", sum6_func,
+                                    "Return the argument sum.") !=
+       CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    return clover_module_add_function_7(builder, "sum7", sum7_func,
+                                        "Return the argument sum.");
 }
