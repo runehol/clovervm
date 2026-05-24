@@ -64,7 +64,7 @@ assert from_list["right"] == 3
 items.clear()
 assert len(items) == 0
 
-joined = ("a", "b") + ("c",)
+joined = ("a", "b").__add__(("c",))
 assert joined[0] == "a"
 assert joined[1] == "b"
 assert joined[2] == "c"

@@ -22,6 +22,7 @@ namespace cl
         size_t size() const { return items.size(); }
         bool empty() const { return items.empty(); }
         void reserve(size_t capacity) { items.reserve(capacity); }
+        void clear() { items.clear(); }
 
         Value item_unchecked(size_t idx) const { return items[idx]; }
         void set_item_unchecked(size_t idx, Value value)
