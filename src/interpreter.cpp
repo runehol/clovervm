@@ -3248,7 +3248,7 @@ namespace cl
         START(2);
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
-        clover_call_context ctx{thread};
+        clover_context ctx{thread};
         accumulator = unwrap_clover_value(
             code_object->native_function_targets[target_idx].extension0(&ctx));
         COMPLETE();
@@ -3259,7 +3259,7 @@ namespace cl
         START(2);
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
-        clover_call_context ctx{thread};
+        clover_context ctx{thread};
         accumulator = unwrap_clover_value(
             code_object->native_function_targets[target_idx].extension1(
                 &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0))));
@@ -3271,7 +3271,7 @@ namespace cl
         START(2);
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
-        clover_call_context ctx{thread};
+        clover_context ctx{thread};
         accumulator = unwrap_clover_value(
             code_object->native_function_targets[target_idx].extension2(
                 &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
@@ -3284,7 +3284,7 @@ namespace cl
         START(2);
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
-        clover_call_context ctx{thread};
+        clover_context ctx{thread};
         accumulator = unwrap_clover_value(
             code_object->native_function_targets[target_idx].extension3(
                 &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
@@ -3298,7 +3298,7 @@ namespace cl
         START(2);
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
-        clover_call_context ctx{thread};
+        clover_context ctx{thread};
         accumulator = unwrap_clover_value(
             code_object->native_function_targets[target_idx].extension4(
                 &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
@@ -3313,7 +3313,7 @@ namespace cl
         START(2);
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
-        clover_call_context ctx{thread};
+        clover_context ctx{thread};
         accumulator = unwrap_clover_value(
             code_object->native_function_targets[target_idx].extension5(
                 &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
@@ -3329,7 +3329,7 @@ namespace cl
         START(2);
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
-        clover_call_context ctx{thread};
+        clover_context ctx{thread};
         accumulator = unwrap_clover_value(
             code_object->native_function_targets[target_idx].extension6(
                 &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),
@@ -3346,7 +3346,7 @@ namespace cl
         START(2);
         uint8_t target_idx = pc[1];
         thread->set_clover_frame_frontier(fp);
-        clover_call_context ctx{thread};
+        clover_context ctx{thread};
         accumulator = unwrap_clover_value(
             code_object->native_function_targets[target_idx].extension7(
                 &ctx, wrap_clover_value(get_native_arg(fp, code_object, 0)),

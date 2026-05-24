@@ -7,13 +7,13 @@
 #include "unicode.h"
 #include <optional>
 
-extern "C" CL_EXPORT clover_value clover_none(clover_call_context *ctx)
+extern "C" CL_EXPORT clover_value clover_none(clover_context *ctx)
 {
     (void)ctx;
     return cl::wrap_clover_value(cl::Value::None());
 }
 
-extern "C" CL_EXPORT clover_value clover_int64(clover_call_context *ctx,
+extern "C" CL_EXPORT clover_value clover_int64(clover_context *ctx,
                                                int64_t value)
 {
     if(value < cl::value_smi_min || value > cl::value_smi_max)
@@ -29,8 +29,8 @@ extern "C" CL_EXPORT clover_value clover_int64(clover_call_context *ctx,
     return cl::wrap_clover_value(cl::Value::from_smi(value));
 }
 
-extern "C" CL_EXPORT clover_value
-clover_float_from_double(clover_call_context *ctx, double value)
+extern "C" CL_EXPORT clover_value clover_float_from_double(clover_context *ctx,
+                                                           double value)
 {
     if(ctx == nullptr || ctx->thread == nullptr)
     {
@@ -40,8 +40,9 @@ clover_float_from_double(clover_call_context *ctx, double value)
         ctx->thread->make_object_value<cl::Float>(value).raw_value());
 }
 
-extern "C" CL_EXPORT clover_status clover_float_as_double(
-    clover_call_context *ctx, clover_value value, double *out)
+extern "C" CL_EXPORT clover_status clover_float_as_double(clover_context *ctx,
+                                                          clover_value value,
+                                                          double *out)
 {
     if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
     {
@@ -67,7 +68,7 @@ extern "C" CL_EXPORT clover_status clover_float_as_double(
 }
 
 extern "C" CL_EXPORT clover_value
-clover_raise_value_error(clover_call_context *ctx, const char *utf8_message)
+clover_raise_value_error(clover_context *ctx, const char *utf8_message)
 {
     if(ctx != nullptr && ctx->thread != nullptr)
     {
@@ -88,8 +89,7 @@ clover_raise_value_error(clover_call_context *ctx, const char *utf8_message)
     return clover_propagate_error(ctx);
 }
 
-extern "C" CL_EXPORT clover_value
-clover_propagate_error(clover_call_context *ctx)
+extern "C" CL_EXPORT clover_value clover_propagate_error(clover_context *ctx)
 {
     (void)ctx;
     return cl::wrap_clover_value(cl::Value::exception_marker());

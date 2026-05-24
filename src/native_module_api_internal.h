@@ -27,7 +27,7 @@ namespace cl
     }
 }  // namespace cl
 
-struct clover_call_context
+struct clover_context
 {
     cl::ThreadState *thread;
 };

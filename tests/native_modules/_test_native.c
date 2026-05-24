@@ -1,23 +1,22 @@
 #include <clovervm/native_module.h>
 
-static clover_value answer_func(clover_call_context *ctx)
+static clover_value answer_func(clover_context *ctx)
 {
     return clover_int64(ctx, 42);
 }
 
-static clover_value identity_func(clover_call_context *ctx, clover_value value)
+static clover_value identity_func(clover_context *ctx, clover_value value)
 {
     (void)ctx;
     return value;
 }
 
-static clover_value double_constant_func(clover_call_context *ctx)
+static clover_value double_constant_func(clover_context *ctx)
 {
     return clover_float_from_double(ctx, 1.5);
 }
 
-static clover_value float_plus_one_func(clover_call_context *ctx,
-                                        clover_value value)
+static clover_value float_plus_one_func(clover_context *ctx, clover_value value)
 {
     double number;
     if(clover_float_as_double(ctx, value, &number) != CLOVER_STATUS_OK)
@@ -27,13 +26,13 @@ static clover_value float_plus_one_func(clover_call_context *ctx,
     return clover_float_from_double(ctx, number + 1.0);
 }
 
-static clover_status read_double(clover_call_context *ctx, clover_value value,
+static clover_status read_double(clover_context *ctx, clover_value value,
                                  double *out)
 {
     return clover_float_as_double(ctx, value, out);
 }
 
-static clover_value sum2_func(clover_call_context *ctx, clover_value arg0,
+static clover_value sum2_func(clover_context *ctx, clover_value arg0,
                               clover_value arg1)
 {
     double v0;
@@ -46,7 +45,7 @@ static clover_value sum2_func(clover_call_context *ctx, clover_value arg0,
     return clover_float_from_double(ctx, v0 + v1);
 }
 
-static clover_value sum3_func(clover_call_context *ctx, clover_value arg0,
+static clover_value sum3_func(clover_context *ctx, clover_value arg0,
                               clover_value arg1, clover_value arg2)
 {
     double v0;
@@ -61,7 +60,7 @@ static clover_value sum3_func(clover_call_context *ctx, clover_value arg0,
     return clover_float_from_double(ctx, v0 + v1 + v2);
 }
 
-static clover_value sum4_func(clover_call_context *ctx, clover_value arg0,
+static clover_value sum4_func(clover_context *ctx, clover_value arg0,
                               clover_value arg1, clover_value arg2,
                               clover_value arg3)
 {
@@ -79,7 +78,7 @@ static clover_value sum4_func(clover_call_context *ctx, clover_value arg0,
     return clover_float_from_double(ctx, v0 + v1 + v2 + v3);
 }
 
-static clover_value sum5_func(clover_call_context *ctx, clover_value arg0,
+static clover_value sum5_func(clover_context *ctx, clover_value arg0,
                               clover_value arg1, clover_value arg2,
                               clover_value arg3, clover_value arg4)
 {
@@ -99,7 +98,7 @@ static clover_value sum5_func(clover_call_context *ctx, clover_value arg0,
     return clover_float_from_double(ctx, v0 + v1 + v2 + v3 + v4);
 }
 
-static clover_value sum6_func(clover_call_context *ctx, clover_value arg0,
+static clover_value sum6_func(clover_context *ctx, clover_value arg0,
                               clover_value arg1, clover_value arg2,
                               clover_value arg3, clover_value arg4,
                               clover_value arg5)
@@ -122,7 +121,7 @@ static clover_value sum6_func(clover_call_context *ctx, clover_value arg0,
     return clover_float_from_double(ctx, v0 + v1 + v2 + v3 + v4 + v5);
 }
 
-static clover_value sum7_func(clover_call_context *ctx, clover_value arg0,
+static clover_value sum7_func(clover_context *ctx, clover_value arg0,
                               clover_value arg1, clover_value arg2,
                               clover_value arg3, clover_value arg4,
                               clover_value arg5, clover_value arg6)

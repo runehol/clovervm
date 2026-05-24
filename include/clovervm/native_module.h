@@ -17,7 +17,7 @@ extern "C"
 #endif
 
     typedef struct clover_native_module_builder clover_native_module_builder;
-    typedef struct clover_call_context clover_call_context;
+    typedef struct clover_context clover_context;
 
     /*
      * clover_value is an opaque value handle. Extension modules must not
@@ -26,33 +26,33 @@ extern "C"
     typedef uintptr_t clover_value;
 
     /*
-     * The call context is valid only for the duration of the extension function
-     * call that received it.
+     * The context is valid only for the duration of the API entry point that
+     * received it.
      */
-    typedef clover_value (*clover_extension_fn_0)(clover_call_context *ctx);
-    typedef clover_value (*clover_extension_fn_1)(clover_call_context *ctx,
+    typedef clover_value (*clover_extension_fn_0)(clover_context *ctx);
+    typedef clover_value (*clover_extension_fn_1)(clover_context *ctx,
                                                   clover_value arg0);
-    typedef clover_value (*clover_extension_fn_2)(clover_call_context *ctx,
+    typedef clover_value (*clover_extension_fn_2)(clover_context *ctx,
                                                   clover_value arg0,
                                                   clover_value arg1);
-    typedef clover_value (*clover_extension_fn_3)(clover_call_context *ctx,
+    typedef clover_value (*clover_extension_fn_3)(clover_context *ctx,
                                                   clover_value arg0,
                                                   clover_value arg1,
                                                   clover_value arg2);
-    typedef clover_value (*clover_extension_fn_4)(clover_call_context *ctx,
+    typedef clover_value (*clover_extension_fn_4)(clover_context *ctx,
                                                   clover_value arg0,
                                                   clover_value arg1,
                                                   clover_value arg2,
                                                   clover_value arg3);
     typedef clover_value (*clover_extension_fn_5)(
-        clover_call_context *ctx, clover_value arg0, clover_value arg1,
+        clover_context *ctx, clover_value arg0, clover_value arg1,
         clover_value arg2, clover_value arg3, clover_value arg4);
     typedef clover_value (*clover_extension_fn_6)(
-        clover_call_context *ctx, clover_value arg0, clover_value arg1,
+        clover_context *ctx, clover_value arg0, clover_value arg1,
         clover_value arg2, clover_value arg3, clover_value arg4,
         clover_value arg5);
     typedef clover_value (*clover_extension_fn_7)(
-        clover_call_context *ctx, clover_value arg0, clover_value arg1,
+        clover_context *ctx, clover_value arg0, clover_value arg1,
         clover_value arg2, clover_value arg3, clover_value arg4,
         clover_value arg5, clover_value arg6);
 
@@ -90,17 +90,16 @@ extern "C"
         clover_native_module_builder *builder, const char *name,
         clover_extension_fn_7 function, const char *docstring);
 
-    CL_EXPORT clover_value clover_none(clover_call_context *ctx);
-    CL_EXPORT clover_value clover_int64(clover_call_context *ctx,
-                                        int64_t value);
-    CL_EXPORT clover_value clover_float_from_double(clover_call_context *ctx,
+    CL_EXPORT clover_value clover_none(clover_context *ctx);
+    CL_EXPORT clover_value clover_int64(clover_context *ctx, int64_t value);
+    CL_EXPORT clover_value clover_float_from_double(clover_context *ctx,
                                                     double value);
-    CL_EXPORT clover_status clover_float_as_double(clover_call_context *ctx,
+    CL_EXPORT clover_status clover_float_as_double(clover_context *ctx,
                                                    clover_value value,
                                                    double *out);
-    CL_EXPORT clover_value clover_raise_value_error(clover_call_context *ctx,
+    CL_EXPORT clover_value clover_raise_value_error(clover_context *ctx,
                                                     const char *utf8_message);
-    CL_EXPORT clover_value clover_propagate_error(clover_call_context *ctx);
+    CL_EXPORT clover_value clover_propagate_error(clover_context *ctx);
 
 #ifdef __cplusplus
 }

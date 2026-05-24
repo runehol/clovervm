@@ -6,14 +6,14 @@
 #include <math.h>
 #include <time.h>
 
-static clover_value seconds_from_timespec(clover_call_context *ctx,
+static clover_value seconds_from_timespec(clover_context *ctx,
                                           struct timespec ts)
 {
     return clover_float_from_double(ctx, (double)ts.tv_sec +
                                              (double)ts.tv_nsec / 1000000000.0);
 }
 
-static clover_value time_time(clover_call_context *ctx)
+static clover_value time_time(clover_context *ctx)
 {
     struct timespec ts;
     if(clock_gettime(CLOCK_REALTIME, &ts) != 0)
@@ -23,7 +23,7 @@ static clover_value time_time(clover_call_context *ctx)
     return seconds_from_timespec(ctx, ts);
 }
 
-static clover_value time_monotonic(clover_call_context *ctx)
+static clover_value time_monotonic(clover_context *ctx)
 {
     struct timespec ts;
     if(clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
@@ -33,7 +33,7 @@ static clover_value time_monotonic(clover_call_context *ctx)
     return seconds_from_timespec(ctx, ts);
 }
 
-static clover_value time_sleep(clover_call_context *ctx, clover_value seconds)
+static clover_value time_sleep(clover_context *ctx, clover_value seconds)
 {
     double seconds_double;
     if(clover_float_as_double(ctx, seconds, &seconds_double) !=

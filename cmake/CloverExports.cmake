@@ -1,15 +1,18 @@
+# Export policy:
+#
+# - Embedder API symbols are the narrow public VM interface used by programs
+#   that embed clovervm.
+# - Extension API symbols are the reverse-lookup surface available to native
+#   extension modules. Keep this list explicit; adding a public clover_* symbol
+#   should force a decision about whether it belongs to embedders, extensions,
+#   both, or neither.
 set(CLOVERVM_EMBEDDER_API_SYMBOLS
     clover_vm_destroy
     clover_vm_new
     clover_vm_run_file
     clover_vm_run_interactive)
 
-set(CLOVERVM_EXTENSION_API_SYMBOLS)
-list(APPEND CLOVERVM_EXTENSION_API_SYMBOLS
-    clover_float_from_double
-    clover_propagate_error
-    clover_float_as_double
-    clover_int64
+set(CLOVERVM_EXTENSION_MODULE_BUILDER_API_SYMBOLS
     clover_module_add_int_constant
     clover_module_add_function_0
     clover_module_add_function_1
@@ -19,9 +22,57 @@ list(APPEND CLOVERVM_EXTENSION_API_SYMBOLS
     clover_module_add_function_5
     clover_module_add_function_6
     clover_module_add_function_7
-    clover_module_add_string_constant
+    clover_module_add_string_constant)
+
+set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
+    clover_float_as_double
+    clover_float_from_double
+    clover_int64
     clover_none
+    clover_propagate_error
     clover_raise_value_error)
+
+set(CLOVERVM_EXTENSION_API_SYMBOLS
+    ${CLOVERVM_EXTENSION_MODULE_BUILDER_API_SYMBOLS}
+    ${CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS})
+
+function(clovervm_assert_unique_symbols list_name)
+    set(symbols ${${list_name}})
+    set(unique_symbols ${symbols})
+    list(REMOVE_DUPLICATES unique_symbols)
+    list(LENGTH symbols symbol_count)
+    list(LENGTH unique_symbols unique_symbol_count)
+    if(NOT symbol_count EQUAL unique_symbol_count)
+        message(FATAL_ERROR "${list_name} contains duplicate symbols")
+    endif()
+endfunction()
+
+clovervm_assert_unique_symbols(CLOVERVM_EMBEDDER_API_SYMBOLS)
+clovervm_assert_unique_symbols(CLOVERVM_EXTENSION_API_SYMBOLS)
+
+function(clovervm_write_symbol_list output_path)
+    cmake_parse_arguments(ARG "EMBEDDER_API;EXTENSION_API" "" "" ${ARGN})
+    if(ARG_UNPARSED_ARGUMENTS)
+        message(FATAL_ERROR
+                "Unexpected arguments to clovervm_write_symbol_list: "
+                "${ARG_UNPARSED_ARGUMENTS}")
+    endif()
+
+    set(symbols)
+    if(ARG_EMBEDDER_API)
+        list(APPEND symbols ${CLOVERVM_EMBEDDER_API_SYMBOLS})
+    endif()
+    if(ARG_EXTENSION_API)
+        list(APPEND symbols ${CLOVERVM_EXTENSION_API_SYMBOLS})
+    endif()
+    list(REMOVE_DUPLICATES symbols)
+    list(SORT symbols)
+
+    file(WRITE "${output_path}" "")
+    foreach(symbol IN LISTS symbols)
+        file(APPEND "${output_path}" "${symbol}\n")
+    endforeach()
+endfunction()
 
 function(clovervm_export_symbols target_name)
     cmake_parse_arguments(ARG "EMBEDDER_API;EXTENSION_API" "" "" ${ARGN})

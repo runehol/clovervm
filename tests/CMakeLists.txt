@@ -44,6 +44,11 @@ target_link_libraries(test_clovervm PRIVATE project_options project_warnings)
 clovervm_export_symbols(test_clovervm EXTENSION_API)
 add_dependencies(test_clovervm clovervm_native_module__time)
 
+set(CLOVERVM_TEST_EXTENSION_API_SYMBOLS
+	"${CMAKE_CURRENT_BINARY_DIR}/clovervm_extension_api_symbols.txt")
+clovervm_write_symbol_list("${CLOVERVM_TEST_EXTENSION_API_SYMBOLS}"
+	EXTENSION_API)
+
 clovervm_add_native_module(_test_native
 	SOURCES
 		native_modules/_test_native.c)
@@ -68,6 +73,8 @@ add_custom_target(check_native_module_linkage
 	COMMAND ${CMAKE_COMMAND}
 		-DMODULE_PATH=$<TARGET_FILE:clovervm_native_module__test_native>
 		-DFORBIDDEN_LIBRARY=$<TARGET_FILE_NAME:libclovervm>
+		-DALLOWED_UNDEFINED_SYMBOLS_FILE=${CLOVERVM_TEST_EXTENSION_API_SYMBOLS}
+		-DNM=${CMAKE_NM}
 		-DOBJDUMP=${CMAKE_OBJDUMP}
 		-DPLATFORM_NAME=${CMAKE_SYSTEM_NAME}
 		-P ${PROJECT_SOURCE_DIR}/cmake/CheckNativeModuleLinkage.cmake

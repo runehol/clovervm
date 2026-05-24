@@ -170,13 +170,13 @@ function pointer.
 Fixed arities from 0 through 7 are currently supported:
 
 ```c
-typedef struct clover_call_context clover_call_context;
+typedef struct clover_context clover_context;
 typedef uintptr_t clover_value;
 
-typedef clover_value (*clover_extension_fn_0)(clover_call_context *ctx);
-typedef clover_value (*clover_extension_fn_1)(clover_call_context *ctx,
+typedef clover_value (*clover_extension_fn_0)(clover_context *ctx);
+typedef clover_value (*clover_extension_fn_1)(clover_context *ctx,
                                               clover_value arg0);
-typedef clover_value (*clover_extension_fn_2)(clover_call_context *ctx,
+typedef clover_value (*clover_extension_fn_2)(clover_context *ctx,
                                               clover_value arg0,
                                               clover_value arg1);
 /* ... through clover_extension_fn_7 */
@@ -201,23 +201,23 @@ type. C and C++ compilers will reject wrong callback shapes.
 
 Function docstrings are UTF-8 strings; pass `NULL` for no docstring.
 
-## Call Context
+## Runtime API
 
-Native function callbacks receive a call context and opaque argument handles.
+Native function callbacks receive a context and opaque argument handles.
 They return a `clover_value`: a normal value on success, or the context's error
 marker after setting a pending exception.
 
-Implemented call-context helpers:
+Implemented runtime APIs:
 
 ```c
-clover_value clover_propagate_error(clover_call_context *ctx);
-clover_value clover_none(clover_call_context *ctx);
-clover_value clover_int64(clover_call_context *ctx, int64_t value);
-clover_value clover_float_from_double(clover_call_context *ctx, double value);
-clover_status clover_float_as_double(clover_call_context *ctx,
+clover_value clover_propagate_error(clover_context *ctx);
+clover_value clover_none(clover_context *ctx);
+clover_value clover_int64(clover_context *ctx, int64_t value);
+clover_value clover_float_from_double(clover_context *ctx, double value);
+clover_status clover_float_as_double(clover_context *ctx,
                                      clover_value value,
                                      double *out);
-clover_value clover_raise_value_error(clover_call_context *ctx,
+clover_value clover_raise_value_error(clover_context *ctx,
                                       const char *utf8_message);
 ```
 
@@ -231,7 +231,7 @@ pending exception and return the same error marker.
 Example:
 
 ```c
-static clover_value sleep_fn(clover_call_context *ctx, clover_value secs)
+static clover_value sleep_fn(clover_context *ctx, clover_value secs)
 {
     double seconds;
     if(clover_float_as_double(ctx, secs, &seconds) != CLOVER_STATUS_OK)
@@ -254,7 +254,7 @@ static clover_value sleep_fn(clover_call_context *ctx, clover_value secs)
 
 Failure from a native callback or init function must correspond to pending
 exception state in the VM. Native code should set pending exception state
-through builder or call-context APIs, not by touching VM internals.
+through builder or runtime APIs, not by touching VM internals.
 
 For callbacks:
 
