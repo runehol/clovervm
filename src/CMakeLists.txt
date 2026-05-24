@@ -192,31 +192,7 @@ target_link_libraries(libclovervm_objects PUBLIC ${CMAKE_DL_LIBS})
 
 target_include_directories(libclovervm PUBLIC "${CMAKE_SOURCE_DIR}/include")
 
-set(CLOVERVM_PUBLIC_SYMBOLS
-    clover_vm_destroy
-    clover_vm_new
-    clover_vm_run_file
-    clover_vm_run_interactive)
-
-if(APPLE)
-    set(CLOVERVM_EXPORTED_SYMBOL_OPTIONS)
-    foreach(symbol IN LISTS CLOVERVM_PUBLIC_SYMBOLS)
-        list(APPEND CLOVERVM_EXPORTED_SYMBOL_OPTIONS
-            "LINKER:-exported_symbol,_${symbol}")
-    endforeach()
-    target_link_options(libclovervm PRIVATE
-        ${CLOVERVM_EXPORTED_SYMBOL_OPTIONS})
-elseif(UNIX)
-    set(CLOVERVM_VERSION_SCRIPT
-        "${CMAKE_CURRENT_BINARY_DIR}/clovervm.exports")
-    file(WRITE "${CLOVERVM_VERSION_SCRIPT}" "{\n    global:\n")
-    foreach(symbol IN LISTS CLOVERVM_PUBLIC_SYMBOLS)
-        file(APPEND "${CLOVERVM_VERSION_SCRIPT}" "        ${symbol};\n")
-    endforeach()
-    file(APPEND "${CLOVERVM_VERSION_SCRIPT}" "    local:\n        *;\n};\n")
-    target_link_options(libclovervm PRIVATE
-        LINKER:--version-script,${CLOVERVM_VERSION_SCRIPT})
-endif()
+clovervm_export_symbols(libclovervm EMBEDDER_API EXTENSION_API)
 
 add_executable(clovervm
     clovervm.cpp

@@ -40,6 +40,7 @@ target_sources(test_clovervm PRIVATE
 target_link_libraries(test_clovervm PRIVATE gtest_main)
 target_link_libraries(test_clovervm PRIVATE libclovervm_objects)
 target_link_libraries(test_clovervm PRIVATE project_options project_warnings)
+clovervm_export_symbols(test_clovervm EXTENSION_API)
 
 clovervm_add_native_module(_test_native
 	SOURCES
@@ -51,13 +52,24 @@ clovervm_add_native_module(_test_native_missing_symbol
 add_dependencies(test_clovervm
 	clovervm_native_module__test_native_missing_symbol)
 
+add_custom_target(check_native_module_linkage
+	COMMAND ${CMAKE_COMMAND}
+		-DMODULE_PATH=$<TARGET_FILE:clovervm_native_module__test_native>
+		-DFORBIDDEN_LIBRARY=$<TARGET_FILE_NAME:libclovervm>
+		-DOBJDUMP=${CMAKE_OBJDUMP}
+		-DPLATFORM_NAME=${CMAKE_SYSTEM_NAME}
+		-P ${PROJECT_SOURCE_DIR}/cmake/CheckNativeModuleLinkage.cmake
+	DEPENDS clovervm_native_module__test_native
+	USES_TERMINAL
+)
+
 gtest_discover_tests(test_clovervm
 	WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 	DISCOVERY_MODE PRE_TEST)
 
 add_custom_target(check
 COMMAND test_clovervm --gtest_brief=1
-DEPENDS test_clovervm
+DEPENDS test_clovervm check_native_module_linkage
 WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 USES_TERMINAL
 )

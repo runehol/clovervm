@@ -36,6 +36,7 @@ include(cmake/StaticAnalyzers.cmake)
 
 set(CL_STDLIB_DIR "${CMAKE_SOURCE_DIR}/stdlib")
 set(CL_BUILD_STDLIB_DIR "${CMAKE_BINARY_DIR}/stdlib")
+include(cmake/CloverExports.cmake)
 include(cmake/CloverNativeModules.cmake)
 
 

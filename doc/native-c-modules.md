@@ -141,14 +141,15 @@ compile against Clover C API headers
 name the output with the platform clover extension suffix
 write the output under ${CMAKE_BINARY_DIR}/stdlib
 avoid linking a second copy of the VM into the module
+avoid linking any Clover runtime provider into the module
 apply project warning and sanitizer settings
 make the module build as part of the normal stdlib/native-module target
 ```
 
 The initial helper is named `clovervm_add_native_module`. It creates a target
 named `clovervm_native_module_<cmake-safe import name>` and adds that target to
-the aggregate `clovervm_native_modules` target. Module targets link against
-`libclovervm`, include only the public `include/` headers, and hide symbols by
+the aggregate `clovervm_native_modules` target. Module targets include only the
+public `include/` headers, do not link `libclovervm`, and hide symbols by
 default; init functions should use `CL_NATIVE_MODULE_EXPORT`.
 
 For package-private modules, the helper should support an import-name/output
@@ -213,24 +214,42 @@ behavior.
 
 ## Linkage Model
 
-Native modules should link against the narrow C API surface, not against a
-second static copy of the VM.
+Native modules should not link against a Clover runtime library. They include
+the public C API headers, export their module init symbol, and resolve Clover
+and CPython-compatible extension API symbols from the active runtime provider
+when they are loaded.
 
-There are two viable implementation strategies:
+The active runtime provider is the single symbol and object-identity universe
+for the process:
 
 ```text
-export C API symbols from the clovervm executable/test executable
-or
-build a shared VM support library that both the executable and modules link
+normal provider mode:
+  libclovervm owns the runtime and exports the embedder API plus extension API
+  clovervm and embedding hosts link libclovervm
+
+internal provider mode:
+  an executable such as test_clovervm or bench_clovervm links VM objects
+  directly for internal access and exports the extension API itself
 ```
 
-The first implementation should choose one explicitly in CMake. Relying on
-platform-specific accidental symbol visibility will make tests and installed
-tools fragile.
+In both modes, native modules are built the same way: they do not link
+`libclovervm`, and they resolve extension API symbols from whichever provider
+is active in the process. A process must not contain two independent Clover
+extension API providers for the same VM.
 
-For test binaries, the same rule applies: native modules loaded during tests
-must resolve their Clover C API symbols from the test process or from the same
-shared support library used by the VM executable.
+`libclovervm` exports two symbol buckets:
+
+```text
+embedder API:
+  clover_vm_new, clover_vm_destroy, clover_vm_run_file, ...
+
+extension API:
+  native module builder functions, future CPython C API shim functions, and
+  identity-bearing globals such as Py_None or exception/type globals
+```
+
+Internal-provider executables export only the extension API bucket. They do not
+need to expose the embedder API unless native extensions are allowed to call it.
 
 ## Portable Loading
 

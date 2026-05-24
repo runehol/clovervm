@@ -32,7 +32,12 @@ function(clovervm_add_native_module module_name)
     target_include_directories(${target_name}
         PRIVATE "${CMAKE_SOURCE_DIR}/include")
     target_link_libraries(${target_name}
-        PRIVATE libclovervm project_options project_warnings)
+        PRIVATE project_options project_warnings)
+
+    if(APPLE)
+        target_link_options(${target_name}
+            PRIVATE "LINKER:-undefined,dynamic_lookup")
+    endif()
 
     set(module_output_dir "${CL_BUILD_STDLIB_DIR}")
     if(module_output_subdir)
