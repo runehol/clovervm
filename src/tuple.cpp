@@ -59,6 +59,32 @@ namespace cl
             static_cast<int64_t>(self.get_ptr<Tuple>()->size()));
     }
 
+    static Value native_tuple_add(Value left, Value right)
+    {
+        if(!can_convert_to<Tuple>(left) || !can_convert_to<Tuple>(right))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"can only concatenate tuple to tuple");
+        }
+
+        Tuple *left_tuple = left.get_ptr<Tuple>();
+        Tuple *right_tuple = right.get_ptr<Tuple>();
+        TValue<Tuple> result =
+            make_object_value<Tuple>(left_tuple->size() + right_tuple->size());
+        size_t write_idx = 0;
+        for(size_t idx = 0; idx < left_tuple->size(); ++idx)
+        {
+            result.extract()->initialize_item_unchecked(
+                write_idx++, left_tuple->item_unchecked(idx));
+        }
+        for(size_t idx = 0; idx < right_tuple->size(); ++idx)
+        {
+            result.extract()->initialize_item_unchecked(
+                write_idx++, right_tuple->item_unchecked(idx));
+        }
+        return result.raw_value();
+    }
+
     Tuple::Tuple(BootstrapObjectTag, size_t size)
         : Object(BootstrapObjectTag{}, native_layout),
           size_value(TValue<SMI>::from_smi(static_cast<int64_t>(size)))
@@ -93,6 +119,8 @@ namespace cl
                                      L"Return len(self)."),
             builtin_intrinsic_method(L"__iter__", native_tuple_iter,
                                      L"Implement iter(self)."),
+            builtin_intrinsic_method(L"__add__", native_tuple_add,
+                                     L"Return self+value."),
         };
         install_builtin_intrinsic_methods(vm, vm->tuple_class(), methods,
                                           std::size(methods));

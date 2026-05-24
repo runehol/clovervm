@@ -1,11 +1,14 @@
 #include "dict.h"
 #include "class_object.h"
 #include "exception_propagation.h"
+#include "list.h"
 #include "native_function.h"
+#include "owned.h"
 #include "refcount.h"
 #include "str.h"
 #include "string_builder.h"
 #include "thread_state.h"
+#include "tuple.h"
 #include "virtual_machine.h"
 #include <iterator>
 
@@ -97,6 +100,203 @@ namespace cl
             static_cast<int64_t>(self.get_ptr<Dict>()->size()));
     }
 
+    static Value require_dict_receiver(Value self, const wchar_t *method_name)
+    {
+        if(!can_convert_to<Dict>(self))
+        {
+            std::wstring message = L"dict.";
+            message += method_name;
+            message += L" expects a dict receiver";
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", message.c_str());
+        }
+        return Value::None();
+    }
+
+    static Value require_string_key(Value key)
+    {
+        if(!can_convert_to<String>(key))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"dict keys must be str");
+        }
+        return Value::None();
+    }
+
+    static Value native_dict_clear(Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"clear"));
+        self.get_ptr<Dict>()->clear();
+        return Value::None();
+    }
+
+    static Value native_dict_copy(Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"copy"));
+        return make_object_value<Dict>(*self.get_ptr<Dict>()).raw_value();
+    }
+
+    static Value native_dict_get(Value self, Value key, Value default_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"get"));
+        CL_PROPAGATE_EXCEPTION(require_string_key(key));
+        Dict *dict = self.get_ptr<Dict>();
+        if(!dict->contains(key))
+        {
+            return default_value;
+        }
+        return dict->get_item(key);
+    }
+
+    static Value native_dict_keys(Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"keys"));
+        Owned<TValue<List>> result(make_object_value<List>());
+        for(Dict::EntryView entry: *self.get_ptr<Dict>())
+        {
+            result.extract()->append(entry.key);
+        }
+        return result.raw_value();
+    }
+
+    static Value native_dict_values(Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"values"));
+        Owned<TValue<List>> result(make_object_value<List>());
+        for(Dict::EntryView entry: *self.get_ptr<Dict>())
+        {
+            result.extract()->append(entry.value);
+        }
+        return result.raw_value();
+    }
+
+    static Value native_dict_items(Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"items"));
+        Owned<TValue<List>> result(make_object_value<List>());
+        for(Dict::EntryView entry: *self.get_ptr<Dict>())
+        {
+            Owned<TValue<Tuple>> item(make_object_value<Tuple>(2));
+            item.extract()->initialize_item_unchecked(0, entry.key);
+            item.extract()->initialize_item_unchecked(1, entry.value);
+            result.extract()->append(item.raw_value());
+        }
+        return result.raw_value();
+    }
+
+    static Value native_dict_pop(Value self, Value key)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"pop"));
+        CL_PROPAGATE_EXCEPTION(require_string_key(key));
+        Dict *dict = self.get_ptr<Dict>();
+        if(!dict->contains(key))
+        {
+            return active_thread()->set_pending_builtin_exception_none(
+                L"KeyError");
+        }
+        Value result = dict->get_item(key);
+        CL_PROPAGATE_EXCEPTION(dict->del_item(key));
+        return result;
+    }
+
+    static Value native_dict_popitem(Value self)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"popitem"));
+        Dict *dict = self.get_ptr<Dict>();
+        if(dict->empty())
+        {
+            return active_thread()->set_pending_builtin_exception_none(
+                L"KeyError");
+        }
+
+        Dict::EntryView last = {Value::not_present(), Value::not_present()};
+        for(Dict::EntryView entry: *dict)
+        {
+            last = entry;
+        }
+        assert(!last.key.is_not_present());
+        CL_PROPAGATE_EXCEPTION(dict->del_item(last.key));
+        Owned<TValue<Tuple>> result(make_object_value<Tuple>(2));
+        result.extract()->initialize_item_unchecked(0, last.key);
+        result.extract()->initialize_item_unchecked(1, last.value);
+        return result.raw_value();
+    }
+
+    static Value native_dict_setdefault(Value self, Value key,
+                                        Value default_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"setdefault"));
+        CL_PROPAGATE_EXCEPTION(require_string_key(key));
+        Dict *dict = self.get_ptr<Dict>();
+        if(dict->contains(key))
+        {
+            return dict->get_item(key);
+        }
+        dict->set_item(key, default_value);
+        return default_value;
+    }
+
+    static Value native_dict_update(Value self, Value other)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"update"));
+        if(other == Value::None())
+        {
+            return Value::None();
+        }
+        if(!can_convert_to<Dict>(other))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"dict.update expects a dict argument");
+        }
+
+        Dict *dict = self.get_ptr<Dict>();
+        for(Dict::EntryView entry: *other.get_ptr<Dict>())
+        {
+            dict->set_item(entry.key, entry.value);
+        }
+        return Value::None();
+    }
+
+    static Value native_dict_fromkeys(Value keys, Value value)
+    {
+        Owned<TValue<Dict>> result(make_object_value<Dict>());
+        auto add_key = [&](Value key) -> Value {
+            CL_PROPAGATE_EXCEPTION(require_string_key(key));
+            result.extract()->set_item(key, value);
+            return Value::None();
+        };
+
+        if(can_convert_to<Tuple>(keys))
+        {
+            Tuple *tuple = keys.get_ptr<Tuple>();
+            for(size_t idx = 0; idx < tuple->size(); ++idx)
+            {
+                CL_PROPAGATE_EXCEPTION(add_key(tuple->item_unchecked(idx)));
+            }
+            return result.raw_value();
+        }
+        if(can_convert_to<List>(keys))
+        {
+            List *list = keys.get_ptr<List>();
+            for(size_t idx = 0; idx < list->size(); ++idx)
+            {
+                CL_PROPAGATE_EXCEPTION(add_key(list->item_unchecked(idx)));
+            }
+            return result.raw_value();
+        }
+
+        return active_thread()->set_pending_builtin_exception_string(
+            L"TypeError", L"dict.fromkeys expects a tuple or list");
+    }
+
+    static TValue<Tuple> make_single_default(VirtualMachine *vm, Value value)
+    {
+        TValue<Tuple> defaults =
+            vm->get_default_thread()->make_object_value<Tuple>(1);
+        defaults.extract()->initialize_item_unchecked(0, value);
+        return defaults;
+    }
+
     void install_dict_class_methods(VirtualMachine *vm)
     {
         BuiltinIntrinsicMethod methods[] = {
@@ -109,6 +309,48 @@ namespace cl
         };
         install_builtin_intrinsic_methods(vm, vm->dict_class(), methods,
                                           std::size(methods));
+
+        // TODO: Move this back to install_builtin_intrinsic_methods when it
+        // supports default parameters directly.
+        ClassObject *cls = vm->dict_class();
+        DescriptorFlags method_flags =
+            descriptor_flag(DescriptorFlag::ReadOnly) |
+            descriptor_flag(DescriptorFlag::StableSlot);
+        ShapeFlags class_shape_flags = cls->get_shape()->flags();
+        cls->set_shape(cls->get_shape()->clone_with_flags(
+            class_shape_flags & ~fixed_attribute_shape_flags()));
+
+        auto install = [&](const wchar_t *name, auto function,
+                           Optional<TValue<Tuple>> defaults =
+                               Optional<TValue<Tuple>>::none()) {
+            bool stored = cls->define_own_property(
+                vm->get_or_create_interned_string_value(name),
+                make_intrinsic_function(vm, function, defaults).raw_value(),
+                method_flags);
+            assert(stored);
+            (void)stored;
+        };
+        install(L"clear", native_dict_clear);
+        install(L"copy", native_dict_copy);
+        install(L"get", native_dict_get,
+                Optional<TValue<Tuple>>::some(
+                    make_single_default(vm, Value::None())));
+        install(L"keys", native_dict_keys);
+        install(L"values", native_dict_values);
+        install(L"items", native_dict_items);
+        install(L"pop", native_dict_pop);
+        install(L"popitem", native_dict_popitem);
+        install(L"setdefault", native_dict_setdefault,
+                Optional<TValue<Tuple>>::some(
+                    make_single_default(vm, Value::None())));
+        install(L"update", native_dict_update,
+                Optional<TValue<Tuple>>::some(
+                    make_single_default(vm, Value::None())));
+        install(L"fromkeys", native_dict_fromkeys,
+                Optional<TValue<Tuple>>::some(
+                    make_single_default(vm, Value::None())));
+
+        cls->set_shape(cls->get_shape()->clone_with_flags(class_shape_flags));
     }
 
     Dict::Iterator::Iterator(const Dict *dict, size_t idx)
