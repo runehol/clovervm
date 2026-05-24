@@ -142,38 +142,6 @@ namespace cl
     }  // namespace
 }  // namespace cl
 
-extern "C" CL_EXPORT clover_status clover_module_add_int_constant(
-    clover_native_module_builder *builder, const char *name, int64_t value)
-{
-    if(!cl::valid_builder(builder))
-    {
-        return CLOVER_STATUS_ERROR;
-    }
-
-    std::optional<cl::TValue<cl::String>> decoded_name =
-        cl::decode_module_value_name(builder, name, L"int");
-    if(!decoded_name.has_value())
-    {
-        return CLOVER_STATUS_ERROR;
-    }
-
-    if(value < cl::value_smi_min || value > cl::value_smi_max)
-    {
-        return cl::set_builder_import_error(
-            builder,
-            L"native module int constant is outside the supported range");
-    }
-
-    bool stored = builder->module->set_own_property(*decoded_name,
-                                                    cl::Value::from_smi(value));
-    if(!stored)
-    {
-        return cl::set_builder_import_error(
-            builder, L"native module could not set int constant");
-    }
-    return CLOVER_STATUS_OK;
-}
-
 extern "C" CL_EXPORT clover_status clover_module_add_function_0(
     clover_native_module_builder *builder, const char *name,
     clover_extension_fn_0 function, const char *docstring)
@@ -228,49 +196,6 @@ extern "C" CL_EXPORT clover_status clover_module_add_function_7(
     clover_extension_fn_7 function, const char *docstring)
 {
     return cl::add_extension_function(builder, name, function, docstring);
-}
-
-extern "C" CL_EXPORT clover_status
-clover_module_add_string_constant(clover_native_module_builder *builder,
-                                  const char *name, const char *utf8_value)
-{
-    if(!cl::valid_builder(builder))
-    {
-        return CLOVER_STATUS_ERROR;
-    }
-
-    std::optional<cl::TValue<cl::String>> decoded_name =
-        cl::decode_module_value_name(builder, name, L"string");
-    if(!decoded_name.has_value())
-    {
-        return CLOVER_STATUS_ERROR;
-    }
-
-    if(utf8_value == nullptr)
-    {
-        return cl::set_builder_import_error(
-            builder,
-            L"native module string constant value must be valid UTF-8");
-    }
-
-    std::optional<cl::TValue<cl::String>> decoded_value =
-        cl::try_make_string_from_utf8(builder->thread,
-                                      std::string_view(utf8_value));
-    if(!decoded_value.has_value())
-    {
-        return cl::set_builder_import_error(
-            builder,
-            L"native module string constant value must be valid UTF-8");
-    }
-
-    bool stored = builder->module->set_own_property(*decoded_name,
-                                                    decoded_value->raw_value());
-    if(!stored)
-    {
-        return cl::set_builder_import_error(
-            builder, L"native module could not set string constant");
-    }
-    return CLOVER_STATUS_OK;
 }
 
 extern "C" CL_EXPORT clover_status clover_module_add_value(

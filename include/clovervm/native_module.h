@@ -60,11 +60,6 @@ extern "C"
      * All const char * strings in the native module API are UTF-8 encoded
      * unless a function documents a narrower temporary restriction.
      */
-    CL_EXPORT clover_status clover_module_add_int_constant(
-        clover_native_module_builder *builder, const char *name, int64_t value);
-    CL_EXPORT clover_status
-    clover_module_add_string_constant(clover_native_module_builder *builder,
-                                      const char *name, const char *utf8_value);
     CL_EXPORT clover_status
     clover_module_add_value(clover_native_module_builder *builder,
                             const char *name, clover_value value);

@@ -145,30 +145,25 @@ user code deletes `sys.modules["_time"]` and imports `_time` again, clovervm
 creates a fresh module object and calls the init function again for that
 instance.
 
-## Constants
+## Module Values
 
-The builder can add simple constants to the module:
+The builder can add values to the module:
 
 ```c
 clover_status clover_module_add_value(
     clover_native_module_builder *builder,
     const char *name,
     clover_value value);
-
-clover_status clover_module_add_int_constant(
-    clover_native_module_builder *builder,
-    const char *name,
-    int64_t value);
-
-clover_status clover_module_add_string_constant(
-    clover_native_module_builder *builder,
-    const char *name,
-    const char *utf8_value);
 ```
 
-`name` and `utf8_value` are UTF-8 strings. New native modules should prefer
-`clover_module_add_value` with runtime value constructors when they need values
-other than the convenience constant helpers.
+`name` is a UTF-8 string. Values are manufactured through the runtime API:
+
+```c
+clover_module_add_value(builder, "answer", clover_int64(ctx, 42));
+clover_module_add_value(builder, "greeting",
+                        clover_string_from_utf8(ctx, "hello"));
+clover_module_add_value(builder, "nothing", clover_none(ctx));
+```
 
 ## Function Registration
 

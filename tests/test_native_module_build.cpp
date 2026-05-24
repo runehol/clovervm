@@ -235,16 +235,6 @@ TEST(NativeModuleBuild, ImportingNativeExtensionWithoutInitSymbolRaises)
         context.vm().imported_modules().extract()->contains(name.raw_value()));
 }
 
-TEST(NativeModuleBuild, BuilderFailureRemovesModuleFromSysModules)
-{
-    test::VmTestContext context;
-    ThreadState::ActivationScope activation_scope(context.thread());
-
-    expect_native_import_error_and_uncached(
-        context, L"_test_native_bad_constant",
-        L"native module int constant name must be non-empty");
-}
-
 TEST(NativeModuleBuild, AddValuePropagatesExceptionMarker)
 {
     test::VmTestContext context;

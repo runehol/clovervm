@@ -13,7 +13,6 @@ set(CLOVERVM_EMBEDDER_API_SYMBOLS
     clover_vm_run_interactive)
 
 set(CLOVERVM_EXTENSION_MODULE_BUILDER_API_SYMBOLS
-    clover_module_add_int_constant
     clover_module_add_function_0
     clover_module_add_function_1
     clover_module_add_function_2
@@ -22,7 +21,6 @@ set(CLOVERVM_EXTENSION_MODULE_BUILDER_API_SYMBOLS
     clover_module_add_function_5
     clover_module_add_function_6
     clover_module_add_function_7
-    clover_module_add_string_constant
     clover_module_add_value)
 
 set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
