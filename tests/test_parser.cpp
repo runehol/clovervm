@@ -483,6 +483,25 @@ TEST(Parser, float_literal_stores_constant_value)
     EXPECT_DOUBLE_EQ(1.5, constant.get_ptr<Float>()->value);
 }
 
+TEST(Parser, ellipsis_literal_stores_constant_value)
+{
+    test::ParsedFile parsed(L"...\n");
+
+    ASSERT_TRUE(parsed.ast.kinds[parsed.ast.root_node].node_kind ==
+                AstNodeKind::STATEMENT_SEQUENCE);
+
+    int32_t stmt_idx = parsed.ast.children[parsed.ast.root_node][0];
+    ASSERT_TRUE(parsed.ast.kinds[stmt_idx].node_kind ==
+                AstNodeKind::STATEMENT_EXPRESSION);
+
+    int32_t literal_idx = parsed.ast.children[stmt_idx][0];
+    EXPECT_TRUE(parsed.ast.kinds[literal_idx].node_kind ==
+                AstNodeKind::EXPRESSION_LITERAL);
+    EXPECT_TRUE(parsed.ast.kinds[literal_idx].operator_kind ==
+                AstOperatorKind::ELLIPSIS);
+    EXPECT_EQ(Value::Ellipsis(), parsed.ast.constants[literal_idx]);
+}
+
 TEST(Parser, string_literal_decodes_escapes_and_prefixes)
 {
     test::ParsedFile escaped(L"\"line\\n\\x41\\101\"\n");

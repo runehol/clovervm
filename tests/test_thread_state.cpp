@@ -378,6 +378,10 @@ namespace cl
                   thread->class_of_value(Value::False()));
         EXPECT_EQ(context.vm().none_type_class(),
                   thread->class_of_value(Value::None()));
+        EXPECT_EQ(context.vm().not_implemented_type_class(),
+                  thread->class_of_value(Value::NotImplemented()));
+        EXPECT_EQ(context.vm().ellipsis_type_class(),
+                  thread->class_of_value(Value::Ellipsis()));
     }
 
     TEST(ThreadState, ShapeOfValueMapsPointerAndInlineValues)
@@ -403,11 +407,20 @@ namespace cl
                   thread->shape_of_value(Value::None()));
         EXPECT_EQ(context.vm().none_type_class(),
                   thread->shape_of_value(Value::None())->get_class());
+        EXPECT_EQ(context.vm().not_implemented_shape(),
+                  thread->shape_of_value(Value::NotImplemented()));
+        EXPECT_EQ(context.vm().not_implemented_type_class(),
+                  thread->shape_of_value(Value::NotImplemented())->get_class());
+        EXPECT_EQ(context.vm().ellipsis_shape(),
+                  thread->shape_of_value(Value::Ellipsis()));
+        EXPECT_EQ(context.vm().ellipsis_type_class(),
+                  thread->shape_of_value(Value::Ellipsis())->get_class());
 
         TValue<String> dunder_class_name = context.vm().dunder_class_name();
-        Shape *inline_shapes[] = {context.vm().smi_shape(),
-                                  context.vm().bool_shape(),
-                                  context.vm().none_shape()};
+        Shape *inline_shapes[] = {
+            context.vm().smi_shape(), context.vm().bool_shape(),
+            context.vm().none_shape(), context.vm().not_implemented_shape(),
+            context.vm().ellipsis_shape()};
         for(Shape *shape: inline_shapes)
         {
             ASSERT_EQ(1u, shape->property_count());

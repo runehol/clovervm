@@ -108,6 +108,8 @@ template <> struct fmt::formatter<cl::AstOperatorKind>
                 return format_to(out, "True");
             case cl::AstOperatorKind::FALSE:
                 return format_to(out, "False");
+            case cl::AstOperatorKind::ELLIPSIS:
+                return format_to(out, "...");
 
             case cl::AstOperatorKind::NUMBER:
             case cl::AstOperatorKind::STRING:
@@ -204,6 +206,10 @@ template <> struct fmt::formatter<cl::AstVector>
                               narrow_wstring_view_ast(string_for_string_token(
                                   *av.compilation_unit,
                                   av.source_offsets[node_idx])));
+                }
+                else if(kind.operator_kind == cl::AstOperatorKind::ELLIPSIS)
+                {
+                    format_to(out, "...");
                 }
                 break;
             case cl::AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:

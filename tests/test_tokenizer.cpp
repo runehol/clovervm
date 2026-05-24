@@ -347,6 +347,16 @@ TEST(Tokenizer, newlines_inside_brackets_do_not_emit_newline_or_indent_tokens)
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
+TEST(Tokenizer, ellipsis_token)
+{
+    CompilationUnit input(L"...\n");
+    std::vector<Token> expected_tokens = {Token::ELLIPSIS, Token::NEWLINE,
+                                          Token::ENDMARKER};
+
+    TokenVector tv = tokenize(input);
+    EXPECT_EQ(tv.tokens, expected_tokens);
+}
+
 TEST(Tokenizer, comments_inside_brackets_do_not_end_statement)
 {
     CompilationUnit input(L"value = (\n"

@@ -289,12 +289,14 @@ TEST(TValue, CheckedExceptionConstructionNamesTargetTypeOnFailure)
         L"invalid typed value construction for BaseException");
 }
 
-TEST(Value, InlineTypePredicatesDistinguishSmiBoolAndNone)
+TEST(Value, InlineTypePredicatesDistinguishSmiBoolNoneAndSingletons)
 {
     EXPECT_TRUE(Value::from_smi(0).is_smi());
     EXPECT_TRUE(Value::from_smi(0).is_integer());
     EXPECT_FALSE(Value::from_smi(0).is_bool());
     EXPECT_FALSE(Value::from_smi(0).is_none());
+    EXPECT_FALSE(Value::from_smi(0).is_not_implemented_singleton());
+    EXPECT_FALSE(Value::from_smi(0).is_ellipsis_singleton());
 
     EXPECT_TRUE(Value::True().is_bool());
     EXPECT_TRUE(Value::False().is_bool());
@@ -302,10 +304,30 @@ TEST(Value, InlineTypePredicatesDistinguishSmiBoolAndNone)
     EXPECT_FALSE(Value::False().is_smi());
     EXPECT_FALSE(Value::True().is_none());
     EXPECT_FALSE(Value::False().is_none());
+    EXPECT_FALSE(Value::True().is_not_implemented_singleton());
+    EXPECT_FALSE(Value::False().is_not_implemented_singleton());
+    EXPECT_FALSE(Value::True().is_ellipsis_singleton());
+    EXPECT_FALSE(Value::False().is_ellipsis_singleton());
 
     EXPECT_TRUE(Value::None().is_none());
     EXPECT_FALSE(Value::None().is_smi());
     EXPECT_FALSE(Value::None().is_bool());
+    EXPECT_FALSE(Value::None().is_not_implemented_singleton());
+    EXPECT_FALSE(Value::None().is_ellipsis_singleton());
+
+    EXPECT_TRUE(Value::NotImplemented().is_not_implemented_singleton());
+    EXPECT_FALSE(Value::NotImplemented().is_smi());
+    EXPECT_FALSE(Value::NotImplemented().is_bool());
+    EXPECT_FALSE(Value::NotImplemented().is_none());
+    EXPECT_FALSE(Value::NotImplemented().is_ellipsis_singleton());
+    EXPECT_TRUE(Value::NotImplemented().is_truthy());
+
+    EXPECT_TRUE(Value::Ellipsis().is_ellipsis_singleton());
+    EXPECT_FALSE(Value::Ellipsis().is_smi());
+    EXPECT_FALSE(Value::Ellipsis().is_bool());
+    EXPECT_FALSE(Value::Ellipsis().is_none());
+    EXPECT_FALSE(Value::Ellipsis().is_not_implemented_singleton());
+    EXPECT_TRUE(Value::Ellipsis().is_truthy());
 }
 
 TEST(TValue, CustomCheckedConstructionReturnsExpectedSuccess)

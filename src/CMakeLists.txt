@@ -46,6 +46,8 @@ add_library(libclovervm_objects OBJECT
     dict.h
     dict_view.cpp
     dict_view.h
+    ellipsis_type.cpp
+    ellipsis_type.h
     extension_api.cpp
     exception_handling.h
     exception_object.cpp
@@ -130,6 +132,8 @@ add_library(libclovervm_objects OBJECT
     native_layout_registry.h
     none_type.cpp
     none_type.h
+    not_implemented_type.cpp
+    not_implemented_type.h
     object.cpp
     object.h
     overflow_slots.cpp

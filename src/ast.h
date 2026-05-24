@@ -167,10 +167,11 @@ namespace cl
         NONE,
         TRUE,
         FALSE,
+        ELLIPSIS,
 
     };
     constexpr static size_t AstOperatorKindSize =
-        size_t(AstOperatorKind::FALSE) + 1;
+        size_t(AstOperatorKind::ELLIPSIS) + 1;
 
     const char *to_string(AstNodeKind t);
     std::ostream &operator<<(std::ostream &o, AstNodeKind t);
@@ -310,6 +311,7 @@ namespace cl
             case AstOperatorKind::NONE:
             case AstOperatorKind::TRUE:
             case AstOperatorKind::FALSE:
+            case AstOperatorKind::ELLIPSIS:
                 return ExpressionPrecedence::Atom;
         }
         return ExpressionPrecedence::Atom;

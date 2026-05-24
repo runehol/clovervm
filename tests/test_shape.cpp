@@ -119,6 +119,11 @@ TEST(ClassObject, BuiltinClassesCarryInstanceNativeLayoutIds)
               context.vm().bool_class()->instance_native_layout_id());
     EXPECT_EQ(NativeLayoutId::Invalid,
               context.vm().none_type_class()->instance_native_layout_id());
+    EXPECT_EQ(
+        NativeLayoutId::Invalid,
+        context.vm().not_implemented_type_class()->instance_native_layout_id());
+    EXPECT_EQ(NativeLayoutId::Invalid,
+              context.vm().ellipsis_type_class()->instance_native_layout_id());
 }
 
 TEST(Shape, ShapeFlagsAreStoredOnShape)

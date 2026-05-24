@@ -7,6 +7,7 @@
 #include "codegen.h"
 #include "dict.h"
 #include "dict_view.h"
+#include "ellipsis_type.h"
 #include "exception_object.h"
 #include "exception_propagation.h"
 #include "float.h"
@@ -23,6 +24,7 @@
 #include "native_function.h"
 #include "native_module_loader_internal.h"
 #include "none_type.h"
+#include "not_implemented_type.h"
 #include "parser.h"
 #include "range_iterator.h"
 #include "shape.h"
@@ -596,6 +598,30 @@ namespace cl
                                  inline_class_flags,
                                  DescriptorSpecialKind::ShapeClass),
             0, 0, fixed_attribute_shape_flags());
+        BuiltinClassDefinition not_implemented_type_definition =
+            make_not_implemented_type_class(this);
+        not_implemented_type_class_ = not_implemented_type_definition.cls;
+        register_builtin_class(not_implemented_type_definition);
+        not_implemented_shape_ =
+            Shape::make_immortal_root_with_single_descriptor(
+                this,
+                TValue<ClassObject>::from_oop(not_implemented_type_class_),
+                dunder_class_name(),
+                DescriptorInfo::make(StorageLocation::not_found(),
+                                     inline_class_flags,
+                                     DescriptorSpecialKind::ShapeClass),
+                0, 0, fixed_attribute_shape_flags());
+        BuiltinClassDefinition ellipsis_type_definition =
+            make_ellipsis_type_class(this);
+        ellipsis_type_class_ = ellipsis_type_definition.cls;
+        register_builtin_class(ellipsis_type_definition);
+        ellipsis_shape_ = Shape::make_immortal_root_with_single_descriptor(
+            this, TValue<ClassObject>::from_oop(ellipsis_type_class_),
+            dunder_class_name(),
+            DescriptorInfo::make(StorageLocation::not_found(),
+                                 inline_class_flags,
+                                 DescriptorSpecialKind::ShapeClass),
+            0, 0, fixed_attribute_shape_flags());
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_slotdict_class(this));
@@ -665,6 +691,8 @@ namespace cl
         install_int_class_methods(this);
         install_bool_class_methods(this);
         install_none_type_class_methods(this);
+        install_not_implemented_type_class_methods(this);
+        install_ellipsis_type_class_methods(this);
         install_list_class_methods(this);
         install_tuple_class_methods(this);
         install_dict_class_methods(this);
@@ -782,6 +810,12 @@ namespace cl
                                 Value::False());
         install_builtin_binding(get_or_create_interned_string_value(L"None"),
                                 Value::None());
+        install_builtin_binding(
+            get_or_create_interned_string_value(L"NotImplemented"),
+            Value::NotImplemented());
+        install_builtin_binding(
+            get_or_create_interned_string_value(L"Ellipsis"),
+            Value::Ellipsis());
 
         TValue<String> range_name =
             get_or_create_interned_string_value(L"range");

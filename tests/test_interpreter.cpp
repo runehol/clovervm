@@ -2649,6 +2649,41 @@ TEST(Interpreter, call_clovervm_method_calls_inline_value_native_methods)
     expect_method_string(Value::False(), dunder_repr_name, L"False");
     expect_method_string(Value::None(), dunder_str_name, L"None");
     expect_method_string(Value::None(), dunder_repr_name, L"None");
+    expect_method_string(Value::NotImplemented(), dunder_str_name,
+                         L"NotImplemented");
+    expect_method_string(Value::NotImplemented(), dunder_repr_name,
+                         L"NotImplemented");
+    expect_method_string(Value::Ellipsis(), dunder_str_name, L"Ellipsis");
+    expect_method_string(Value::Ellipsis(), dunder_repr_name, L"Ellipsis");
+}
+
+TEST(Interpreter, builtin_singletons_have_names_types_and_truthiness)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::NotImplemented(),
+              test_context.run_file(L"NotImplemented\n"));
+    EXPECT_EQ(Value::Ellipsis(), test_context.run_file(L"Ellipsis\n"));
+    EXPECT_EQ(Value::Ellipsis(), test_context.run_file(L"...\n"));
+
+    EXPECT_STREQ(
+        L"NotImplementedType",
+        string_as_wchar_t(
+            test_context.vm().not_implemented_type_class()->get_name()));
+    EXPECT_STREQ(
+        L"ellipsis",
+        string_as_wchar_t(test_context.vm().ellipsis_type_class()->get_name()));
+
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"if NotImplemented:\n"
+                                                        L"    x = 1\n"
+                                                        L"else:\n"
+                                                        L"    x = 0\n"
+                                                        L"x\n"));
+    EXPECT_EQ(Value::from_smi(1), test_context.run_file(L"if Ellipsis:\n"
+                                                        L"    x = 1\n"
+                                                        L"else:\n"
+                                                        L"    x = 0\n"
+                                                        L"x\n"));
 }
 
 TEST(Interpreter, call_clovervm_method_calls_builtin_repr_methods)

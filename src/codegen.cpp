@@ -2052,6 +2052,15 @@ namespace cl
                             case AstOperatorKind::FALSE:
                                 code_obj->emit_lda_false(source_offset);
                                 break;
+                            case AstOperatorKind::ELLIPSIS:
+                                {
+                                    uint32_t constant_idx =
+                                        code_obj->allocate_constant(
+                                            Value::Ellipsis());
+                                    code_obj->emit_lda_constant(source_offset,
+                                                                constant_idx);
+                                    break;
+                                }
 
                             case AstOperatorKind::NUMBER:
                                 {

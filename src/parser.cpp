@@ -1040,6 +1040,11 @@ namespace cl
                         AstKind(AstNodeKind::EXPRESSION_LITERAL,
                                 AstOperatorKind::FALSE),
                         source_pos_and_advance(), Value::False());
+                case Token::ELLIPSIS:
+                    return ast.emplace_back(
+                        AstKind(AstNodeKind::EXPRESSION_LITERAL,
+                                AstOperatorKind::ELLIPSIS),
+                        source_pos_and_advance(), Value::Ellipsis());
                 case Token::LPAR:
                     {
                         uint32_t tuple_start_pos = source_pos_and_advance();

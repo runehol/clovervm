@@ -62,6 +62,8 @@ namespace cl
     static constexpr uint64_t value_none = 0x01;
     static constexpr uint64_t value_not_present = 0x02;
     static constexpr uint64_t value_exception = 0x03;
+    static constexpr uint64_t value_not_implemented = 0x21;
+    static constexpr uint64_t value_ellipsis = 0x41;
     static constexpr uint64_t value_truthy_mask = 0xffffffffffffffe0ull;
     static constexpr uint64_t value_ptr_mask =
         value_refcounted_ptr_tag | value_interned_ptr_tag;
@@ -74,6 +76,13 @@ namespace cl
         -(int64_t{1} << (64 - value_tag_bits - 1));
     static constexpr int64_t value_smi_max =
         (int64_t{1} << (64 - value_tag_bits - 1)) - 1;
+
+    static_assert((value_not_implemented & value_ptr_mask) == 0);
+    static_assert((value_ellipsis & value_ptr_mask) == 0);
+    static_assert((value_not_implemented & value_truthy_mask) != 0);
+    static_assert((value_ellipsis & value_truthy_mask) != 0);
+    static_assert((value_not_implemented >> value_tag_bits) != 0);
+    static_assert((value_ellipsis >> value_tag_bits) != 0);
 
     enum class ValueStorageClass
     {
@@ -114,6 +123,20 @@ namespace cl
         {
             Value val;
             val.as.integer = value_none;
+            return val;
+        }
+
+        static inline Value NotImplemented()
+        {
+            Value val;
+            val.as.integer = value_not_implemented;
+            return val;
+        }
+
+        static inline Value Ellipsis()
+        {
+            Value val;
+            val.as.integer = value_ellipsis;
             return val;
         }
 
@@ -190,6 +213,16 @@ namespace cl
         }
 
         bool is_none() const { return as.integer == value_none; }
+
+        bool is_not_implemented_singleton() const
+        {
+            return as.integer == value_not_implemented;
+        }
+
+        bool is_ellipsis_singleton() const
+        {
+            return as.integer == value_ellipsis;
+        }
 
         ValueStorageClass storage_class() const
         {
