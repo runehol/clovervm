@@ -53,26 +53,37 @@ JIT, language, and runtime work.
    or VM-controlled dispatch so Python-visible execution, allocation, and
    exceptions are not hidden inside lookup/classification helpers.
 
-4. **Guarded binary-operation plans and type profiling**
+4. **Guarded operator/protocol dispatch plans and type profiling**
 
-   Preserve direct SMI-plus-SMI arithmetic as the primary hot path. The common
-   integer case should remain a direct tag check and checked arithmetic path,
-   without paying for uniform shape lookup or generic cache probing.
+   The design direction for this work is captured in
+   [Fast Operator Dispatch](fast-operator-dispatch.md).
 
-   For cases that fall out of that hot path, move binary operators such as `+`
-   from ad hoc special cases plus generic failure into explicit guarded plans.
-   The resolver should own Python operator semantics, including type special
-   cases, special-method lookup on the type, reflected methods,
+   The first implementation slice should be subscription dispatch: `obj[key]`,
+   `obj[key] = value`, and `del obj[key]`. It exercises the same
+   special-method lookup and validity-cell machinery as overloaded operators,
+   but avoids reflected and in-place candidate ordering while the cache shape is
+   still being proved.
+
+   After subscription, move other operator and implicit protocol dispatch from
+   ad hoc special cases plus generic failure into explicit guarded plans. Binary
+   and in-place operators such as `+` should preserve direct SMI-plus-SMI
+   arithmetic as the primary hot path: the common integer case should remain a
+   direct tag check and checked arithmetic path, without paying for uniform
+   shape lookup or generic cache probing. The same cache shape should extend to
+   other bytecode-driven dunder protocols such as numeric conversion and
+   truthiness. The resolver should own Python operator semantics, including type
+   special cases, special-method lookup on the type, reflected methods,
    `NotImplemented`, and eventual `TypeError` formation. Executing a Python
    `__add__` or `__radd__` should reuse the call-plan machinery as a
    special-method call, not perform ordinary instance attribute lookup.
 
-   The fallback inline cache should be polymorphic and keyed by operand shape
-   pairs, using heap-object shapes and the VM's inline-value shapes as the same
-   profiling vocabulary. Each cache entry gives both the interpreter and the
-   future JIT a type profile: guarded shape-pair fast paths, exact
-   special-method call targets, validity cells, and a megamorphic fallback when
-   the site stops being predictable.
+   The fallback inline cache should use the VM's shape model as its profiling
+   vocabulary, including heap-object shapes and inline-value shapes. Binary
+   operator entries are keyed by operand shape pairs; other protocol caches
+   should use the analogous receiver/operand shape guards and validity cells.
+   Each cache entry gives both the interpreter and the future JIT a type
+   profile: guarded fast paths, exact special-method call targets, validity
+   cells, and a megamorphic fallback when the site stops being predictable.
 
 5. **Keyword calls and richer call adaptation**
 
@@ -163,8 +174,9 @@ Near-term order:
    behavior.
 3. Continue replacing generic runtime failures with specific VM exceptions and
    typed `Expected<T>` results where useful.
-4. Add guarded binary-operation plans and polymorphic inline caches so operator
-   sites collect useful type profiles for the future JIT.
+4. Add the first guarded operator/protocol dispatch cache for subscription,
+   following [Fast Operator Dispatch](fast-operator-dispatch.md), so protocol
+   sites start collecting useful type profiles for the future JIT.
 5. Continue moving descriptor execution into explicit interpreter/VM-controlled
    paths rather than hidden lookup helpers.
 6. Add keyword calls for ordinary functions and constructors.
@@ -177,8 +189,9 @@ Revisit this ordering when:
   semantically complete enough for normal loops;
 - descriptor `__get__`, `__set__`, and `__delete__` execution no longer hides
   Python-visible behavior inside lookup helpers;
-- binary operators use guarded plans/PICs for type-specialized fast paths,
-  special-method calls, reflected methods, and `NotImplemented` fallback;
+- subscription dispatch has a guarded IC, and the same cache model has a clear
+  path to binary/in-place operators, reflected methods, `NotImplemented`
+  fallback, and analogous dunder-protocol cases;
 - keyword calls land for ordinary functions and constructors;
 - module namespace compatibility, especially `module.__dict__`, becomes
   necessary for broader Python source;

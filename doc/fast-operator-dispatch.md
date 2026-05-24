@@ -1,16 +1,18 @@
 # Fast Operator Dispatch
 
 This note sketches inline caching for Python operator and implicit protocol
-dispatch. The first implementation target is binary and in-place operators, but
-the same dunder-method lookup problem appears in other bytecode-driven
-protocols such as subscription, attribute access, numeric conversion, and
-truthiness. The goal is to speed up overloaded protocol dispatch without caching
-arbitrary Python method behavior.
+dispatch. The first implementation slice is subscription dispatch:
+`obj[key]`, `obj[key] = value`, and `del obj[key]`. Subscription exercises the
+same dunder-method lookup and validity-cell machinery as overloaded operators,
+but it has one protocol owner and no reflected or in-place candidate ordering.
+The same cache model should later extend to binary and in-place operators,
+attribute access, numeric conversion, and truthiness. The goal is to speed up
+overloaded protocol dispatch without caching arbitrary Python method behavior.
 
-Python presents binary operators as method calls, but the VM should separate two
-questions:
+Python presents these protocols as special-method calls, but the VM should
+separate two questions:
 
-- Which dispatch action would Python's operator protocol select?
+- Which dispatch action would Python's operator or protocol semantics select?
 - What operation does the selected action perform?
 
 Inline caches may specialize the first question. They may only specialize the
@@ -19,11 +21,12 @@ trusted for that shortcut.
 
 ## Goals
 
-- Avoid repeated dunder-method lookup at hot operator bytecodes.
-- Let builtin operator combinations jump directly to native handlers after the
+- Avoid repeated dunder-method lookup at hot operator and protocol bytecodes.
+- Let builtin protocol combinations jump directly to native handlers after the
   generic dispatcher proves the combination.
-- Preserve Python semantics for arbitrary `__add__`, `__radd__`, `__iadd__`,
-  and related methods.
+- Preserve Python semantics for arbitrary `__getitem__`, `__setitem__`,
+  `__delitem__`, and later `__add__`, `__radd__`, `__iadd__`, and related
+  methods.
 - Make cache validity depend on dunder-method lookup dependencies, not merely
   on the class where a method happened to be found.
 - Keep the cache model simple enough that the interpreter hot path can validate
@@ -54,18 +57,25 @@ trusted for that shortcut.
 
 ## Hot-Path Boundary
 
-Fast operator dispatch starts after the opcode's direct inline-value path has
-failed. For `+`, `-`, and `*`, the interpreter should continue to check and
-handle SMI-plus-SMI inline before probing an operator cache. Operations whose
-current fast path treats booleans as integers should keep that direct
-SMI-or-bool behavior ahead of the cache as well.
+Fast operator dispatch starts after an opcode's direct builtin path has failed
+or decided that a Python protocol dispatch is required. The first subscription
+slice should preserve any exact builtin fast paths that are already worth
+keeping ahead of the cache, such as list/tuple/string indexing by SMI or exact
+slice keys. The cacheable continuation is for shape pairs that need dunder
+method dispatch or that become profitable only after the generic dispatcher has
+published a trusted handler.
 
-The first failed tag/shape test is cheap enough to pay on every execution. The
-operator cache should therefore live on the non-SMI or otherwise non-direct
-continuation, not in front of the primary arithmetic path. This keeps the common
-integer path as a tag check plus checked arithmetic while still giving heap
-objects, floats, heap ints, strings, lists, and overloaded user objects a
-cacheable dispatch route.
+When binary arithmetic moves onto this cache model, `+`, `-`, and `*` should
+continue to check and handle SMI-plus-SMI inline before probing an operator
+cache. Operations whose current fast path treats booleans as integers should
+keep that direct SMI-or-bool behavior ahead of the cache as well.
+
+The first failed tag/shape test is cheap enough to pay on every execution. For
+arithmetic, the operator cache should therefore live on the non-SMI or otherwise
+non-direct continuation, not in front of the primary arithmetic path. This keeps
+the common integer path as a tag check plus checked arithmetic while still
+giving heap objects, floats, heap ints, strings, lists, and overloaded user
+objects a cacheable dispatch route.
 
 `Div` and other operators that do not have a pure SMI-result fast path may enter
 the operator-cache continuation earlier, but only after preserving any existing
@@ -100,8 +110,8 @@ doing so, the dispatcher records the dispatch facts it discovered:
 
 - the operation being performed
 - the operand shapes used by the dispatch decision
-- the forward dunder-method lookup result
-- the reflected dunder-method lookup result
+- the primary dunder-method lookup result
+- any secondary, reflected, or in-place dunder-method lookup results
 - the actual candidate order chosen by the protocol
 - which candidate was first called
 - whether skipped candidates are trusted for a direct handler shortcut
@@ -116,7 +126,16 @@ to preserve the descriptor behavior of the class/MRO entry it finds; it should
 not be treated as a raw dictionary lookup unless clovervm intentionally chooses
 and documents a Python deviation.
 
-For ordinary binary operators there are normally two lookup dependencies:
+For subscription there is normally one lookup dependency:
+
+```text
+lookup(type(container), "__getitem__")
+```
+
+Store and delete subscription use the same shape with `__setitem__` and
+`__delitem__`.
+
+For ordinary binary operators, a later extension has two lookup dependencies:
 
 ```text
 lookup(type(lhs), "__add__")
@@ -148,12 +167,11 @@ hot operator path can pay the cache-miss cost.
 
 ## Cache Kinds
 
-The first binary design should use two cache actions with a shared validation
-shape, but multi-method dispatch is deliberately later than the subscription
-trial case.
+The first subscription design should use two cache actions with a shared
+validation shape:
 
 ```cpp
-enum class BinaryOperatorCacheKind : uint8_t
+enum class SubscriptionCacheKind : uint8_t
 {
     Empty,
     TrustedHandler,
@@ -161,27 +179,26 @@ enum class BinaryOperatorCacheKind : uint8_t
 };
 ```
 
-Both non-empty binary cache kinds should guard:
+Both non-empty subscription cache kinds should guard:
 
-- lhs operand shape
-- rhs operand shape
-- lhs forward-op lookup validity
-- rhs reflected-op lookup validity
+- container operand shape
+- key operand shape
+- container protocol lookup validity
 
 This intentionally over-guards some cases. The useful property is that a cache
 hit proves the generic dispatcher would select the same first dispatch action
-under the current operand relationship and lookup results.
+under the current operand relationship and lookup result.
 
-The two-operand guard is required even for a dunder-method-call cache.
-Reflected-method ordering can depend on both operands, especially when the right
-operand type is a proper subclass of the left operand type and defines a
-distinct reflected method.
+The key-shape guard is required even for a dunder-method-call cache in the first
+slice. The dunder lookup itself depends only on the container type, but the
+observed key shape is part of the site's profile and keeps trusted handlers from
+quietly skipping key-side behavior they have not proved.
 
 Operator inline caches live on the code object, like the existing attribute,
-module-global, and function-call caches. Every binary opcode form that can
-leave the direct inline-value fast path and invoke Python dunder-method
-dispatch should carry a cache index operand. Pure direct opcodes or specialized
-opcodes that cannot call dunder methods do not need an operator-cache index.
+module-global, and function-call caches. Every subscription opcode form that can
+leave the direct builtin fast path and invoke Python dunder-method dispatch
+should carry a cache index operand. Pure direct opcodes or specialized opcodes
+that cannot call dunder methods do not need an operator-cache index.
 
 On a miss, the generic dispatcher runs and the opcode miss path installs a new
 entry for that cache index. The entry may represent a successful trusted handler,
@@ -189,6 +206,10 @@ a successful dunder-method-call plan, or a miss/unhandled plan when that is
 useful for profiling and replacement. The first implementation may replace the
 single entry on every miss. A bounded polymorphic cache and megamorphic state
 are later extensions, not part of this design slice.
+
+Binary, in-place, and comparison caches should use the same two action kinds
+once subscription has proven the structure, but they need wider guards and
+resume state for reflected candidates, `NotImplemented`, and in-place fallback.
 
 ## Dunder Method Lookup Descriptor And Plan
 
@@ -275,9 +296,10 @@ without falling back to ordinary attribute lookup.
 
 ## Trusted Handler Cache
 
-A trusted handler cache is a direct operator shortcut. It may replace the rest
-of the operator protocol with a handler only when every dispatch-affecting
-method execution skipped by the cache is trusted for that handler.
+A trusted handler cache is a direct protocol shortcut. It may replace the rest
+of the selected protocol dispatch with a handler only when every
+dispatch-affecting method execution skipped by the cache is trusted for that
+handler.
 
 Trust is a cache permission, not an implementation-language property. A C++
 method is not automatically trusted, and a Python-implemented method is not
@@ -285,28 +307,38 @@ automatically untrusted. The relevant question is whether the VM may rely on
 that method's dispatch-visible behavior being stable under the installed guards.
 
 ```cpp
-using BinaryHandler = Value (*)(ThreadState *, Value lhs, Value rhs);
+using GetItemHandler = Value (*)(ThreadState *, Value container, Value key);
 ```
 
 The cached handler is not the Python method object. It is a VM-selected native
-implementation for a fully proven operator case:
+implementation for a fully proven protocol case:
 
 ```text
-(op, lhs operand shape, rhs operand shape, winner) -> BinaryHandler
+(op, container shape, key shape, selected method) -> GetItemHandler
 ```
 
 Examples:
 
 ```text
-str + str       -> string_concat_fast
-float + float   -> float_add_float_fast
-float + smi     -> float_add_smi_fast
-smi + float     -> smi_add_float_fast
+list[smi]       -> list_getitem_smi_fast
+tuple[smi]      -> tuple_getitem_smi_fast
+str[slice]      -> str_getitem_slice_fast
+dict[str]       -> dict_getitem_str_fast
 ```
 
-A recognized cache candidate can have a shape such as:
+A later binary-operator candidate can use the same trusted-handler idea with
+extra candidate-role state:
 
 ```cpp
+using BinaryHandler = Value (*)(ThreadState *, Value lhs, Value rhs);
+
+enum class BinaryOperatorCacheKind : uint8_t
+{
+    Empty,
+    TrustedHandler,
+    DunderMethodCall,
+};
+
 enum class OperatorCandidateRole : uint8_t
 {
     None,
@@ -897,7 +929,7 @@ hit:
         no, replay the selected dunder method through call_cache
 ```
 
-This avoids treating a shape pair such as `list + smi` as enough authority to
+This avoids treating a shape pair such as `list[smi]` as enough authority to
 run `list_getitem_smi`. The cache may run that handler only because the guarded
 dunder lookup still selects the same method and a previous execution of that
 method published the handler as an equivalent shortcut for the observed shape
@@ -932,8 +964,8 @@ selected handler or Python method but is not part of the first dispatch guard.
 Multi-method protocols such as binary arithmetic, in-place arithmetic, and rich
 comparison are more complicated because they may have multiple candidate methods,
 `NotImplemented` continuation, reflected-method ordering, and resume state after
-a cached first call. They should be handled after the subscription trial has
-proven the `TrustedHandler` / `DunderMethodCall` cache structure.
+a cached first call. They should be handled after the subscription cache has
+proven the `TrustedHandler` / `DunderMethodCall` structure.
 
 ### Numeric Conversion Protocols
 
@@ -981,8 +1013,8 @@ result-type-sensitive: `__bool__` must produce a boolean-compatible result, and
 
 ### Call, Iteration, And Representation Protocols
 
-These protocols are not the first binary-operator target, but they should be
-called out so they are not accidentally treated as ordinary attribute calls:
+These protocols are not part of the first subscription target, but they should
+be called out so they are not accidentally treated as ordinary attribute calls:
 
 | Operation | Protocol call |
 | --- | --- |
