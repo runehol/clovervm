@@ -42,6 +42,13 @@ FetchContent_Declare(
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
+FetchContent_Declare(
+  cxxopts
+  URL               https://github.com/jarro2783/cxxopts/archive/refs/tags/v3.3.1.tar.gz
+  URL_MD5           47dcaab8ea57feed39d79abad56a3ae9
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+
 
 FetchContent_Declare(
   fmt
@@ -56,5 +63,5 @@ block()
   if(CLOVERVM_BUILD_BENCHMARK_DEPS)
     FetchContent_MakeAvailable(googlebenchmark)
   endif()
-  FetchContent_MakeAvailable(absl ctre fmt)
+  FetchContent_MakeAvailable(absl ctre cxxopts fmt)
 endblock()
