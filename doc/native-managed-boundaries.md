@@ -59,7 +59,7 @@ BuiltinFunction?" branch for every native implementation detail.
 
 The implemented representation is:
 
-- native functions are represented as ordinary `Function` objects with tiny
+- intrinsic functions are represented as ordinary `Function` objects with tiny
   managed thunk `CodeObject`s
 - call sites perform arity/default/varargs adaptation at the `Function`
   boundary before entering the thunk frame
@@ -69,18 +69,18 @@ The implemented representation is:
 
 ### Implementation
 
-Fixed-arity native functions are built with overloads of
-`make_native_function()` from [src/native_function.h](../src/native_function.h):
+Fixed-arity intrinsic functions are built with overloads of
+`make_intrinsic_function()` from [src/native_function.h](../src/native_function.h):
 
 ```cpp
-TValue<Function> make_native_function(VirtualMachine *vm,
-                                      NativeFunction0 function);
-TValue<Function> make_native_function(VirtualMachine *vm,
-                                      NativeFunction1 function);
-TValue<Function> make_native_function(VirtualMachine *vm,
-                                      NativeFunction2 function);
-TValue<Function> make_native_function(VirtualMachine *vm,
-                                      NativeFunction3 function);
+TValue<Function> make_intrinsic_function(VirtualMachine *vm,
+                                      IntrinsicFunction0 function);
+TValue<Function> make_intrinsic_function(VirtualMachine *vm,
+                                      IntrinsicFunction1 function);
+TValue<Function> make_intrinsic_function(VirtualMachine *vm,
+                                      IntrinsicFunction2 function);
+TValue<Function> make_intrinsic_function(VirtualMachine *vm,
+                                      IntrinsicFunction3 function);
 ```
 
 The C++ function type determines the arity. Call sites do not pass a separate
@@ -89,7 +89,7 @@ arity argument:
 ```cpp
 Value native_str_add(Value left, Value right);
 
-make_native_function(vm, native_str_add);
+make_intrinsic_function(vm, native_str_add);
 ```
 
 Each generated function owns an immortal managed thunk `CodeObject` with this
@@ -101,30 +101,30 @@ ReturnOrRaiseException
 ```
 
 where `N` is currently `0`, `1`, `2`, or `3`. The operand indexes into the code
-object's native target table.
+object's native function target table.
 
-Native targets are stored in [src/code_object.h](../src/code_object.h) as an
+Intrinsic targets are stored in [src/code_object.h](../src/code_object.h) as an
 untagged union:
 
 ```cpp
-using NativeFunction0 = Value (*)();
-using NativeFunction1 = Value (*)(Value);
-using NativeFunction2 = Value (*)(Value, Value);
-using NativeFunction3 = Value (*)(Value, Value, Value);
+using IntrinsicFunction0 = Value (*)();
+using IntrinsicFunction1 = Value (*)(Value);
+using IntrinsicFunction2 = Value (*)(Value, Value);
+using IntrinsicFunction3 = Value (*)(Value, Value, Value);
 
 union NativeFunctionTarget
 {
-    NativeFunction0 fixed0;
-    NativeFunction1 fixed1;
-    NativeFunction2 fixed2;
-    NativeFunction3 fixed3;
+    IntrinsicFunction0 fixed0;
+    IntrinsicFunction1 fixed1;
+    IntrinsicFunction2 fixed2;
+    IntrinsicFunction3 fixed3;
 };
 ```
 
 The opcode selects the union arm. This keeps the target encoding lightweight
 without putting raw function addresses into the constant pool.
 
-For fixed-arity native functions, the generic call path sees a normal
+For fixed-arity intrinsic functions, the generic call path sees a normal
 `Function`:
 
 ```text

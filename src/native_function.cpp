@@ -11,7 +11,7 @@
 
 namespace cl
 {
-    static TValue<Function> make_native_function_with_target(
+    static TValue<Function> make_intrinsic_function_with_target(
         VirtualMachine *vm, TValue<String> name, NativeFunctionTarget target,
         Bytecode call_opcode, uint32_t n_parameters,
         Optional<TValue<String>> docstring,
@@ -35,13 +35,13 @@ namespace cl
         return vm->make_immortal_object_value<Function>(code, docstring);
     }
 
-    static TValue<Function> make_native_function_with_target(
+    static TValue<Function> make_intrinsic_function_with_target(
         VirtualMachine *vm, NativeFunctionTarget target, Bytecode call_opcode,
         uint32_t n_parameters,
         Optional<TValue<Tuple>> default_parameters =
             Optional<TValue<Tuple>>::none())
     {
-        return make_native_function_with_target(
+        return make_intrinsic_function_with_target(
             vm, vm->get_or_create_interned_string_value(L"<native>"), target,
             call_opcode, n_parameters, Optional<TValue<String>>::none(),
             default_parameters);
@@ -73,175 +73,177 @@ namespace cl
         }
     }
 
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction0 function,
-                                              const wchar_t *doc)
+    BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
+                                                    IntrinsicFunction0 function,
+                                                    const wchar_t *doc)
     {
         NativeFunctionTarget target;
         target.fixed0 = function;
-        return BuiltinNativeMethod{name, target, 0, doc};
+        return BuiltinIntrinsicMethod{name, target, 0, doc};
     }
 
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction1 function,
-                                              const wchar_t *doc)
+    BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
+                                                    IntrinsicFunction1 function,
+                                                    const wchar_t *doc)
     {
         NativeFunctionTarget target;
         target.fixed1 = function;
-        return BuiltinNativeMethod{name, target, 1, doc};
+        return BuiltinIntrinsicMethod{name, target, 1, doc};
     }
 
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction2 function,
-                                              const wchar_t *doc)
+    BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
+                                                    IntrinsicFunction2 function,
+                                                    const wchar_t *doc)
     {
         NativeFunctionTarget target;
         target.fixed2 = function;
-        return BuiltinNativeMethod{name, target, 2, doc};
+        return BuiltinIntrinsicMethod{name, target, 2, doc};
     }
 
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction3 function,
-                                              const wchar_t *doc)
+    BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
+                                                    IntrinsicFunction3 function,
+                                                    const wchar_t *doc)
     {
         NativeFunctionTarget target;
         target.fixed3 = function;
-        return BuiltinNativeMethod{name, target, 3, doc};
+        return BuiltinIntrinsicMethod{name, target, 3, doc};
     }
 
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction4 function,
-                                              const wchar_t *doc)
+    BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
+                                                    IntrinsicFunction4 function,
+                                                    const wchar_t *doc)
     {
         NativeFunctionTarget target;
         target.fixed4 = function;
-        return BuiltinNativeMethod{name, target, 4, doc};
+        return BuiltinIntrinsicMethod{name, target, 4, doc};
     }
 
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction5 function,
-                                              const wchar_t *doc)
+    BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
+                                                    IntrinsicFunction5 function,
+                                                    const wchar_t *doc)
     {
         NativeFunctionTarget target;
         target.fixed5 = function;
-        return BuiltinNativeMethod{name, target, 5, doc};
+        return BuiltinIntrinsicMethod{name, target, 5, doc};
     }
 
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction6 function,
-                                              const wchar_t *doc)
+    BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
+                                                    IntrinsicFunction6 function,
+                                                    const wchar_t *doc)
     {
         NativeFunctionTarget target;
         target.fixed6 = function;
-        return BuiltinNativeMethod{name, target, 6, doc};
+        return BuiltinIntrinsicMethod{name, target, 6, doc};
     }
 
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction7 function,
-                                              const wchar_t *doc)
+    BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
+                                                    IntrinsicFunction7 function,
+                                                    const wchar_t *doc)
     {
         NativeFunctionTarget target;
         target.fixed7 = function;
-        return BuiltinNativeMethod{name, target, 7, doc};
+        return BuiltinIntrinsicMethod{name, target, 7, doc};
     }
 
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction0 function,
-                         Optional<TValue<Tuple>> default_parameters)
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction0 function,
+                            Optional<TValue<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed0 = function;
-        return make_native_function_with_target(
+        return make_intrinsic_function_with_target(
             vm, target, Bytecode::CallNative0, 0, default_parameters);
     }
 
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction1 function,
-                         Optional<TValue<Tuple>> default_parameters)
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction1 function,
+                            Optional<TValue<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed1 = function;
-        return make_native_function_with_target(
+        return make_intrinsic_function_with_target(
             vm, target, Bytecode::CallNative1, 1, default_parameters);
     }
 
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction2 function,
-                         Optional<TValue<Tuple>> default_parameters)
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction2 function,
+                            Optional<TValue<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed2 = function;
-        return make_native_function_with_target(
+        return make_intrinsic_function_with_target(
             vm, target, Bytecode::CallNative2, 2, default_parameters);
     }
 
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction3 function,
-                         Optional<TValue<Tuple>> default_parameters)
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction3 function,
+                            Optional<TValue<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed3 = function;
-        return make_native_function_with_target(
+        return make_intrinsic_function_with_target(
             vm, target, Bytecode::CallNative3, 3, default_parameters);
     }
 
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction4 function,
-                         Optional<TValue<Tuple>> default_parameters)
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction4 function,
+                            Optional<TValue<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed4 = function;
-        return make_native_function_with_target(
+        return make_intrinsic_function_with_target(
             vm, target, Bytecode::CallNative4, 4, default_parameters);
     }
 
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction5 function,
-                         Optional<TValue<Tuple>> default_parameters)
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction5 function,
+                            Optional<TValue<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed5 = function;
-        return make_native_function_with_target(
+        return make_intrinsic_function_with_target(
             vm, target, Bytecode::CallNative5, 5, default_parameters);
     }
 
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction6 function,
-                         Optional<TValue<Tuple>> default_parameters)
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction6 function,
+                            Optional<TValue<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed6 = function;
-        return make_native_function_with_target(
+        return make_intrinsic_function_with_target(
             vm, target, Bytecode::CallNative6, 6, default_parameters);
     }
 
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction7 function,
-                         Optional<TValue<Tuple>> default_parameters)
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction7 function,
+                            Optional<TValue<Tuple>> default_parameters)
     {
         NativeFunctionTarget target;
         target.fixed7 = function;
-        return make_native_function_with_target(
+        return make_intrinsic_function_with_target(
             vm, target, Bytecode::CallNative7, 7, default_parameters);
     }
 
-    TValue<Function> make_native_function(VirtualMachine *vm,
-                                          const BuiltinNativeMethod &method)
+    TValue<Function>
+    make_intrinsic_function(VirtualMachine *vm,
+                            const BuiltinIntrinsicMethod &method)
     {
         Optional<TValue<String>> docstring =
             method.doc == nullptr
                 ? Optional<TValue<String>>::none()
                 : Optional<TValue<String>>::some(
                       vm->get_or_create_interned_string_value(method.doc));
-        return make_native_function_with_target(
+        return make_intrinsic_function_with_target(
             vm, vm->get_or_create_interned_string_value(method.name),
             method.target, call_native_opcode_for_arity(method.n_parameters),
             method.n_parameters, docstring);
     }
 
-    void install_builtin_native_methods(VirtualMachine *vm, ClassObject *cls,
-                                        const BuiltinNativeMethod *methods,
-                                        uint32_t method_count)
+    void
+    install_builtin_intrinsic_methods(VirtualMachine *vm, ClassObject *cls,
+                                      const BuiltinIntrinsicMethod *methods,
+                                      uint32_t method_count)
     {
         DescriptorFlags method_flags =
             descriptor_flag(DescriptorFlag::ReadOnly) |
@@ -251,10 +253,10 @@ namespace cl
             class_shape_flags & ~fixed_attribute_shape_flags()));
         for(uint32_t method_idx = 0; method_idx < method_count; ++method_idx)
         {
-            const BuiltinNativeMethod &method = methods[method_idx];
+            const BuiltinIntrinsicMethod &method = methods[method_idx];
             bool stored = cls->define_own_property(
                 vm->get_or_create_interned_string_value(method.name),
-                make_native_function(vm, method).raw_value(), method_flags);
+                make_intrinsic_function(vm, method).raw_value(), method_flags);
             assert(stored);
             (void)stored;
         }

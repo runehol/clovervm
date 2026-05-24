@@ -693,15 +693,15 @@ namespace cl
         TValue<Tuple> range_defaults = make_object_value<Tuple>(2);
         range_defaults.extract()->initialize_item_unchecked(0, Value::None());
         range_defaults.extract()->initialize_item_unchecked(1, Value::None());
-        range_builtin =
-            make_native_function(this, builtin_range,
-                                 Optional<TValue<Tuple>>::some(range_defaults))
-                .raw_value();
+        range_builtin = make_intrinsic_function(
+                            this, builtin_range,
+                            Optional<TValue<Tuple>>::some(range_defaults))
+                            .raw_value();
         install_builtin_binding(range_name, range_builtin);
 
         TValue<String> sqrt_name = get_or_create_interned_string_value(L"sqrt");
         install_builtin_binding(
-            sqrt_name, make_native_function(this, builtin_sqrt).raw_value());
+            sqrt_name, make_intrinsic_function(this, builtin_sqrt).raw_value());
 
         TValue<String> import_name =
             get_or_create_interned_string_value(L"__import__");
@@ -713,10 +713,10 @@ namespace cl
         import_defaults.extract()->initialize_item_unchecked(
             3, Value::from_smi(0));
         install_builtin_binding(
-            import_name,
-            make_native_function(this, builtin_import,
-                                 Optional<TValue<Tuple>>::some(import_defaults))
-                .raw_value());
+            import_name, make_intrinsic_function(
+                             this, builtin_import,
+                             Optional<TValue<Tuple>>::some(import_defaults))
+                             .raw_value());
 
         ThreadState *thread = get_default_thread();
         CodeObject *builtins_code = thread->compile_in_module(

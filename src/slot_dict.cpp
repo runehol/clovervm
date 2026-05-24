@@ -79,16 +79,16 @@ namespace cl
 
     void install_slotdict_class_methods(VirtualMachine *vm)
     {
-        BuiltinNativeMethod methods[] = {
-            builtin_native_method(L"__str__", native_slotdict_repr,
-                                  L"Return str(self)."),
-            builtin_native_method(L"__repr__", native_slotdict_repr,
-                                  L"Return repr(self)."),
-            builtin_native_method(L"__len__", native_slotdict_len,
-                                  L"Return len(self)."),
+        BuiltinIntrinsicMethod methods[] = {
+            builtin_intrinsic_method(L"__str__", native_slotdict_repr,
+                                     L"Return str(self)."),
+            builtin_intrinsic_method(L"__repr__", native_slotdict_repr,
+                                     L"Return repr(self)."),
+            builtin_intrinsic_method(L"__len__", native_slotdict_len,
+                                     L"Return len(self)."),
         };
-        install_builtin_native_methods(vm, vm->slotdict_class(), methods,
-                                       std::size(methods));
+        install_builtin_intrinsic_methods(vm, vm->slotdict_class(), methods,
+                                          std::size(methods));
     }
 
     bool SlotDict::key_is_string(Value key)

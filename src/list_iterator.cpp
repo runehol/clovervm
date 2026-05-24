@@ -41,9 +41,11 @@ namespace cl
             NativeLayoutId::ListIterator};
         BuiltinClassMethod methods[] = {
             {vm->get_or_create_interned_string_value(L"__iter__"),
-             make_native_function(vm, native_list_iterator_iter).raw_value()},
+             make_intrinsic_function(vm, native_list_iterator_iter)
+                 .raw_value()},
             {vm->get_or_create_interned_string_value(L"__next__"),
-             make_native_function(vm, native_list_iterator_next).raw_value()},
+             make_intrinsic_function(vm, native_list_iterator_next)
+                 .raw_value()},
         };
         ClassObject *cls = ClassObject::make_builtin_class<ListIterator>(
             vm->get_or_create_interned_string_value(L"list_iterator"),

@@ -10,7 +10,7 @@ namespace cl
     class Tuple;
     class VirtualMachine;
 
-    struct BuiltinNativeMethod
+    struct BuiltinIntrinsicMethod
     {
         const wchar_t *name;
         NativeFunctionTarget target;
@@ -18,69 +18,71 @@ namespace cl
         const wchar_t *doc;
     };
 
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction0 function,
-                                              const wchar_t *doc = nullptr);
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction1 function,
-                                              const wchar_t *doc = nullptr);
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction2 function,
-                                              const wchar_t *doc = nullptr);
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction3 function,
-                                              const wchar_t *doc = nullptr);
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction4 function,
-                                              const wchar_t *doc = nullptr);
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction5 function,
-                                              const wchar_t *doc = nullptr);
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction6 function,
-                                              const wchar_t *doc = nullptr);
-    BuiltinNativeMethod builtin_native_method(const wchar_t *name,
-                                              NativeFunction7 function,
-                                              const wchar_t *doc = nullptr);
+    BuiltinIntrinsicMethod
+    builtin_intrinsic_method(const wchar_t *name, IntrinsicFunction0 function,
+                             const wchar_t *doc = nullptr);
+    BuiltinIntrinsicMethod
+    builtin_intrinsic_method(const wchar_t *name, IntrinsicFunction1 function,
+                             const wchar_t *doc = nullptr);
+    BuiltinIntrinsicMethod
+    builtin_intrinsic_method(const wchar_t *name, IntrinsicFunction2 function,
+                             const wchar_t *doc = nullptr);
+    BuiltinIntrinsicMethod
+    builtin_intrinsic_method(const wchar_t *name, IntrinsicFunction3 function,
+                             const wchar_t *doc = nullptr);
+    BuiltinIntrinsicMethod
+    builtin_intrinsic_method(const wchar_t *name, IntrinsicFunction4 function,
+                             const wchar_t *doc = nullptr);
+    BuiltinIntrinsicMethod
+    builtin_intrinsic_method(const wchar_t *name, IntrinsicFunction5 function,
+                             const wchar_t *doc = nullptr);
+    BuiltinIntrinsicMethod
+    builtin_intrinsic_method(const wchar_t *name, IntrinsicFunction6 function,
+                             const wchar_t *doc = nullptr);
+    BuiltinIntrinsicMethod
+    builtin_intrinsic_method(const wchar_t *name, IntrinsicFunction7 function,
+                             const wchar_t *doc = nullptr);
 
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction0 function,
-                         Optional<TValue<Tuple>> default_parameters =
-                             Optional<TValue<Tuple>>::none());
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction0 function,
+                            Optional<TValue<Tuple>> default_parameters =
+                                Optional<TValue<Tuple>>::none());
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction1 function,
-                         Optional<TValue<Tuple>> default_parameters =
-                             Optional<TValue<Tuple>>::none());
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction1 function,
+                            Optional<TValue<Tuple>> default_parameters =
+                                Optional<TValue<Tuple>>::none());
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction2 function,
-                         Optional<TValue<Tuple>> default_parameters =
-                             Optional<TValue<Tuple>>::none());
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction2 function,
+                            Optional<TValue<Tuple>> default_parameters =
+                                Optional<TValue<Tuple>>::none());
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction3 function,
-                         Optional<TValue<Tuple>> default_parameters =
-                             Optional<TValue<Tuple>>::none());
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction3 function,
+                            Optional<TValue<Tuple>> default_parameters =
+                                Optional<TValue<Tuple>>::none());
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction4 function,
-                         Optional<TValue<Tuple>> default_parameters =
-                             Optional<TValue<Tuple>>::none());
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction4 function,
+                            Optional<TValue<Tuple>> default_parameters =
+                                Optional<TValue<Tuple>>::none());
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction5 function,
-                         Optional<TValue<Tuple>> default_parameters =
-                             Optional<TValue<Tuple>>::none());
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction5 function,
+                            Optional<TValue<Tuple>> default_parameters =
+                                Optional<TValue<Tuple>>::none());
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction6 function,
-                         Optional<TValue<Tuple>> default_parameters =
-                             Optional<TValue<Tuple>>::none());
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction6 function,
+                            Optional<TValue<Tuple>> default_parameters =
+                                Optional<TValue<Tuple>>::none());
     TValue<Function>
-    make_native_function(VirtualMachine *vm, NativeFunction7 function,
-                         Optional<TValue<Tuple>> default_parameters =
-                             Optional<TValue<Tuple>>::none());
-    TValue<Function> make_native_function(VirtualMachine *vm,
-                                          const BuiltinNativeMethod &method);
+    make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction7 function,
+                            Optional<TValue<Tuple>> default_parameters =
+                                Optional<TValue<Tuple>>::none());
+    TValue<Function>
+    make_intrinsic_function(VirtualMachine *vm,
+                            const BuiltinIntrinsicMethod &method);
 
-    void install_builtin_native_methods(VirtualMachine *vm, ClassObject *cls,
-                                        const BuiltinNativeMethod *methods,
-                                        uint32_t method_count);
+    void
+    install_builtin_intrinsic_methods(VirtualMachine *vm, ClassObject *cls,
+                                      const BuiltinIntrinsicMethod *methods,
+                                      uint32_t method_count);
 
 }  // namespace cl
 

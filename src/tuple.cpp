@@ -84,18 +84,18 @@ namespace cl
 
     void install_tuple_class_methods(VirtualMachine *vm)
     {
-        BuiltinNativeMethod methods[] = {
-            builtin_native_method(L"__str__", native_tuple_repr,
-                                  L"Return str(self)."),
-            builtin_native_method(L"__repr__", native_tuple_repr,
-                                  L"Return repr(self)."),
-            builtin_native_method(L"__len__", native_tuple_len,
-                                  L"Return len(self)."),
-            builtin_native_method(L"__iter__", native_tuple_iter,
-                                  L"Implement iter(self)."),
+        BuiltinIntrinsicMethod methods[] = {
+            builtin_intrinsic_method(L"__str__", native_tuple_repr,
+                                     L"Return str(self)."),
+            builtin_intrinsic_method(L"__repr__", native_tuple_repr,
+                                     L"Return repr(self)."),
+            builtin_intrinsic_method(L"__len__", native_tuple_len,
+                                     L"Return len(self)."),
+            builtin_intrinsic_method(L"__iter__", native_tuple_iter,
+                                     L"Implement iter(self)."),
         };
-        install_builtin_native_methods(vm, vm->tuple_class(), methods,
-                                       std::size(methods));
+        install_builtin_intrinsic_methods(vm, vm->tuple_class(), methods,
+                                          std::size(methods));
     }
 
     Value Tuple::get_item(int64_t py_idx) const

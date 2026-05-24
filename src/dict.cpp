@@ -99,16 +99,16 @@ namespace cl
 
     void install_dict_class_methods(VirtualMachine *vm)
     {
-        BuiltinNativeMethod methods[] = {
-            builtin_native_method(L"__str__", native_dict_repr,
-                                  L"Return str(self)."),
-            builtin_native_method(L"__repr__", native_dict_repr,
-                                  L"Return repr(self)."),
-            builtin_native_method(L"__len__", native_dict_len,
-                                  L"Return len(self)."),
+        BuiltinIntrinsicMethod methods[] = {
+            builtin_intrinsic_method(L"__str__", native_dict_repr,
+                                     L"Return str(self)."),
+            builtin_intrinsic_method(L"__repr__", native_dict_repr,
+                                     L"Return repr(self)."),
+            builtin_intrinsic_method(L"__len__", native_dict_len,
+                                     L"Return len(self)."),
         };
-        install_builtin_native_methods(vm, vm->dict_class(), methods,
-                                       std::size(methods));
+        install_builtin_intrinsic_methods(vm, vm->dict_class(), methods,
+                                          std::size(methods));
     }
 
     Dict::Iterator::Iterator(const Dict *dict, size_t idx)

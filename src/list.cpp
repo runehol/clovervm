@@ -73,18 +73,18 @@ namespace cl
 
     void install_list_class_methods(VirtualMachine *vm)
     {
-        BuiltinNativeMethod methods[] = {
-            builtin_native_method(L"__str__", native_list_repr,
-                                  L"Return str(self)."),
-            builtin_native_method(L"__repr__", native_list_repr,
-                                  L"Return repr(self)."),
-            builtin_native_method(L"__len__", native_list_len,
-                                  L"Return len(self)."),
-            builtin_native_method(L"__iter__", native_list_iter,
-                                  L"Implement iter(self)."),
+        BuiltinIntrinsicMethod methods[] = {
+            builtin_intrinsic_method(L"__str__", native_list_repr,
+                                     L"Return str(self)."),
+            builtin_intrinsic_method(L"__repr__", native_list_repr,
+                                     L"Return repr(self)."),
+            builtin_intrinsic_method(L"__len__", native_list_len,
+                                     L"Return len(self)."),
+            builtin_intrinsic_method(L"__iter__", native_list_iter,
+                                     L"Implement iter(self)."),
         };
-        install_builtin_native_methods(vm, vm->list_class(), methods,
-                                       std::size(methods));
+        install_builtin_intrinsic_methods(vm, vm->list_class(), methods,
+                                          std::size(methods));
     }
 
     void List::insert_item_unchecked(size_t idx, Value value)

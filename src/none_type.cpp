@@ -29,14 +29,14 @@ namespace cl
 
     void install_none_type_class_methods(VirtualMachine *vm)
     {
-        BuiltinNativeMethod methods[] = {
-            builtin_native_method(L"__str__", native_none_type_str,
-                                  L"Return str(self)."),
-            builtin_native_method(L"__repr__", native_none_type_str,
-                                  L"Return repr(self)."),
+        BuiltinIntrinsicMethod methods[] = {
+            builtin_intrinsic_method(L"__str__", native_none_type_str,
+                                     L"Return str(self)."),
+            builtin_intrinsic_method(L"__repr__", native_none_type_str,
+                                     L"Return repr(self)."),
         };
-        install_builtin_native_methods(vm, vm->none_type_class(), methods,
-                                       std::size(methods));
+        install_builtin_intrinsic_methods(vm, vm->none_type_class(), methods,
+                                          std::size(methods));
     }
 
 }  // namespace cl

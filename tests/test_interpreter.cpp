@@ -1008,7 +1008,7 @@ TEST(Interpreter, float_comparison_values)
                        Value::True());
 }
 
-TEST(Interpreter, string_dunder_add_calls_native_function)
+TEST(Interpreter, string_dunder_add_calls_intrinsic_function)
 {
     test::VmTestContext test_context;
     Value actual = test_context.run_file(L"\"ab\".__add__(\"cd\")\n");
@@ -1071,7 +1071,7 @@ TEST(Interpreter, list_literal_evaluates_elements_left_to_right)
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
-        make_native_function(&test_context.vm(), native_next_counter)
+        make_intrinsic_function(&test_context.vm(), native_next_counter)
             .raw_value();
     ASSERT_TRUE(store_module_global(code_obj->get_defining_module().extract(),
                                     name, next_counter));
@@ -1141,7 +1141,7 @@ TEST(Interpreter, tuple_literal_evaluates_elements_left_to_right)
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
-        make_native_function(&test_context.vm(), native_next_counter)
+        make_intrinsic_function(&test_context.vm(), native_next_counter)
             .raw_value();
     ASSERT_TRUE(store_module_global(code_obj->get_defining_module().extract(),
                                     name, next_counter));
@@ -1229,7 +1229,7 @@ TEST(Interpreter,
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
-        make_native_function(&test_context.vm(), native_next_counter)
+        make_intrinsic_function(&test_context.vm(), native_next_counter)
             .raw_value();
     ASSERT_TRUE(store_module_global(code_obj->get_defining_module().extract(),
                                     name, next_counter));
@@ -1296,7 +1296,7 @@ TEST(Interpreter,
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
-        make_native_function(&test_context.vm(), native_next_counter)
+        make_intrinsic_function(&test_context.vm(), native_next_counter)
             .raw_value();
     ASSERT_TRUE(store_module_global(code_obj->get_defining_module().extract(),
                                     name, next_counter));
@@ -2016,7 +2016,7 @@ TEST(Interpreter, call_native_zero_arg_function)
 
     store_global_to_module_for_test(
         test_context, code_obj, L"native_zero",
-        make_native_function(&test_context.vm(), native_zero));
+        make_intrinsic_function(&test_context.vm(), native_zero));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(17), actual);
@@ -2031,7 +2031,7 @@ TEST(Interpreter, call_native_seven_arg_function)
 
     store_global_to_module_for_test(
         test_context, code_obj, L"native_sum7",
-        make_native_function(&test_context.vm(), native_sum7));
+        make_intrinsic_function(&test_context.vm(), native_sum7));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(28), actual);
@@ -2054,18 +2054,18 @@ TEST(Interpreter, every_safepoint_reclamation_reclaims_unrooted_object)
                                   L"exercise()\n");
     store_global_to_module_for_test(
         test_context, code_obj, L"make_large_tuple",
-        make_native_function(
+        make_intrinsic_function(
             &test_context.vm(),
             native_large_tuple_for_every_safepoint_reclamation));
     store_global_to_module_for_test(
         test_context, code_obj, L"capture_target",
-        make_native_function(
+        make_intrinsic_function(
             &test_context.vm(),
             native_capture_every_safepoint_reclamation_target));
     store_global_to_module_for_test(
         test_context, code_obj, L"reclamation_ping",
-        make_native_function(&test_context.vm(),
-                             native_every_safepoint_reclamation_ping));
+        make_intrinsic_function(&test_context.vm(),
+                                native_every_safepoint_reclamation_ping));
     GlobalHeap &heap = test_context.vm().get_refcounted_global_heap();
     test_context.vm().set_fire_every_safepoint_for_testing(true);
     test_context.vm().request_safepoint();
@@ -2083,13 +2083,13 @@ TEST(Interpreter, every_safepoint_reclamation_reclaims_unrooted_object)
             g_every_safepoint_reclamation_target_address)));
 }
 
-TEST(Interpreter, native_function_thunk_uses_return_or_raise_adapter)
+TEST(Interpreter, intrinsic_function_thunk_uses_return_or_raise_adapter)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
     TValue<Function> native =
-        make_native_function(&test_context.vm(), native_zero);
+        make_intrinsic_function(&test_context.vm(), native_zero);
 
     std::string actual =
         fmt::to_string(*native.extract()->code_object.extract());
@@ -2109,16 +2109,16 @@ TEST(Interpreter, call_native_sets_clover_frame_frontier)
         L"native_frame2(10, 20) + native_frame3(10, 20, 30)\n");
     store_global_to_module_for_test(
         test_context, code_obj, L"native_frame0",
-        make_native_function(&test_context.vm(), native_frame_frontier0));
+        make_intrinsic_function(&test_context.vm(), native_frame_frontier0));
     store_global_to_module_for_test(
         test_context, code_obj, L"native_frame1",
-        make_native_function(&test_context.vm(), native_frame_frontier1));
+        make_intrinsic_function(&test_context.vm(), native_frame_frontier1));
     store_global_to_module_for_test(
         test_context, code_obj, L"native_frame2",
-        make_native_function(&test_context.vm(), native_frame_frontier2));
+        make_intrinsic_function(&test_context.vm(), native_frame_frontier2));
     store_global_to_module_for_test(
         test_context, code_obj, L"native_frame3",
-        make_native_function(&test_context.vm(), native_frame_frontier3));
+        make_intrinsic_function(&test_context.vm(), native_frame_frontier3));
 
     Value *sentinel_fp = test_context.thread()->clover_frame_sentinel();
     EXPECT_NE(nullptr, sentinel_fp);
@@ -2165,10 +2165,10 @@ TEST(Interpreter, clover_frame_frontier_chain_survives_nested_native_reentry)
                                   L"outer()\n");
     store_global_to_module_for_test(
         test_context, code_obj, L"native_inner",
-        make_native_function(&test_context.vm(), native_weave_inner));
+        make_intrinsic_function(&test_context.vm(), native_weave_inner));
     store_global_to_module_for_test(
         test_context, code_obj, L"native_outer",
-        make_native_function(&test_context.vm(), native_weave_outer));
+        make_intrinsic_function(&test_context.vm(), native_weave_outer));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
 
@@ -2678,7 +2678,7 @@ TEST(Interpreter, call_native_one_arg_function)
 
     store_global_to_module_for_test(
         test_context, code_obj, L"native_increment",
-        make_native_function(&test_context.vm(), native_increment));
+        make_intrinsic_function(&test_context.vm(), native_increment));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(42), actual);
@@ -2692,7 +2692,7 @@ TEST(Interpreter, call_native_two_arg_function)
 
     store_global_to_module_for_test(
         test_context, code_obj, L"native_add",
-        make_native_function(&test_context.vm(), native_add));
+        make_intrinsic_function(&test_context.vm(), native_add));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(42), actual);
@@ -2706,8 +2706,8 @@ TEST(Interpreter, native_exception_marker_materializes_stop_iteration)
 
     store_global_to_module_for_test(
         test_context, code_obj, L"native_stop",
-        make_native_function(&test_context.vm(),
-                             native_stop_iteration_with_value));
+        make_intrinsic_function(&test_context.vm(),
+                                native_stop_iteration_with_value));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
@@ -2734,8 +2734,8 @@ TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
 
     store_global_to_module_for_test(
         test_context, code_obj, L"native_stop",
-        make_native_function(&test_context.vm(),
-                             native_stop_iteration_with_value));
+        make_intrinsic_function(&test_context.vm(),
+                                native_stop_iteration_with_value));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
@@ -2765,8 +2765,8 @@ TEST(Interpreter, catch_stop_iteration_as_exposes_value)
 
     store_global_to_module_for_test(
         test_context, code_obj, L"native_stop",
-        make_native_function(&test_context.vm(),
-                             native_stop_iteration_with_value));
+        make_intrinsic_function(&test_context.vm(),
+                                native_stop_iteration_with_value));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(123), actual);
@@ -3255,8 +3255,8 @@ TEST(Interpreter, unhandled_pending_exception_reports_class_and_message)
 
     store_global_to_module_for_test(
         test_context, code_obj, L"native_boom",
-        make_native_function(&test_context.vm(),
-                             native_base_exception_with_message));
+        make_intrinsic_function(&test_context.vm(),
+                                native_base_exception_with_message));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
@@ -3271,8 +3271,8 @@ TEST(Interpreter, native_exception_marker_requires_pending_exception)
 
     store_global_to_module_for_test(
         test_context, code_obj, L"native_broken",
-        make_native_function(&test_context.vm(),
-                             native_marker_without_pending_exception));
+        make_intrinsic_function(&test_context.vm(),
+                                native_marker_without_pending_exception));
 
     try
     {
@@ -4544,8 +4544,8 @@ TEST(Interpreter, generic_for_loop_discards_stop_iteration_value)
 
     store_global_to_module_for_test(
         test_context, code_obj, L"native_stop",
-        make_native_function(&test_context.vm(),
-                             native_stop_iteration_with_value));
+        make_intrinsic_function(&test_context.vm(),
+                                native_stop_iteration_with_value));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(7), actual);

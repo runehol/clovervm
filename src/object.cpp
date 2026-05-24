@@ -177,14 +177,14 @@ namespace cl
 
     void install_object_class_methods(VirtualMachine *vm)
     {
-        BuiltinNativeMethod methods[] = {
-            builtin_native_method(L"__str__", native_object_str,
-                                  L"Return str(self)."),
-            builtin_native_method(L"__repr__", native_object_repr,
-                                  L"Return repr(self)."),
+        BuiltinIntrinsicMethod methods[] = {
+            builtin_intrinsic_method(L"__str__", native_object_str,
+                                     L"Return str(self)."),
+            builtin_intrinsic_method(L"__repr__", native_object_repr,
+                                     L"Return repr(self)."),
         };
-        install_builtin_native_methods(vm, vm->object_class(), methods,
-                                       std::size(methods));
+        install_builtin_intrinsic_methods(vm, vm->object_class(), methods,
+                                          std::size(methods));
     }
 
     void Object::install_bootstrap_class(ClassObject *new_cls)

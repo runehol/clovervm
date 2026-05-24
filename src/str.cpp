@@ -113,18 +113,18 @@ namespace cl
 
     void install_str_class_methods(VirtualMachine *vm)
     {
-        BuiltinNativeMethod methods[] = {
-            builtin_native_method(L"__str__", native_str_str,
-                                  L"Return str(self)."),
-            builtin_native_method(L"__repr__", native_str_repr,
-                                  L"Return repr(self)."),
-            builtin_native_method(L"__len__", native_str_len,
-                                  L"Return len(self)."),
-            builtin_native_method(L"__add__", native_str_add,
-                                  L"Return self + value."),
+        BuiltinIntrinsicMethod methods[] = {
+            builtin_intrinsic_method(L"__str__", native_str_str,
+                                     L"Return str(self)."),
+            builtin_intrinsic_method(L"__repr__", native_str_repr,
+                                     L"Return repr(self)."),
+            builtin_intrinsic_method(L"__len__", native_str_len,
+                                     L"Return len(self)."),
+            builtin_intrinsic_method(L"__add__", native_str_add,
+                                     L"Return self + value."),
         };
-        install_builtin_native_methods(vm, vm->str_class(), methods,
-                                       std::size(methods));
+        install_builtin_intrinsic_methods(vm, vm->str_class(), methods,
+                                          std::size(methods));
     }
 
     uint64_t string_hash(TValue<String> s)

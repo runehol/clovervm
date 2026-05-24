@@ -294,12 +294,12 @@ namespace cl
 
     void install_module_class_methods(VirtualMachine *vm)
     {
-        BuiltinNativeMethod methods[] = {
-            builtin_native_method(L"__repr__", native_module_repr,
-                                  L"Return repr(self)."),
+        BuiltinIntrinsicMethod methods[] = {
+            builtin_intrinsic_method(L"__repr__", native_module_repr,
+                                     L"Return repr(self)."),
         };
-        install_builtin_native_methods(vm, vm->module_class(), methods,
-                                       std::size(methods));
+        install_builtin_intrinsic_methods(vm, vm->module_class(), methods,
+                                          std::size(methods));
     }
 
 }  // namespace cl

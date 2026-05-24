@@ -41,26 +41,27 @@ namespace cl
         return (uint32_t(flags) & uint32_t(flag)) != 0;
     }
 
-    using NativeFunction0 = Value (*)();
-    using NativeFunction1 = Value (*)(Value);
-    using NativeFunction2 = Value (*)(Value, Value);
-    using NativeFunction3 = Value (*)(Value, Value, Value);
-    using NativeFunction4 = Value (*)(Value, Value, Value, Value);
-    using NativeFunction5 = Value (*)(Value, Value, Value, Value, Value);
-    using NativeFunction6 = Value (*)(Value, Value, Value, Value, Value, Value);
-    using NativeFunction7 = Value (*)(Value, Value, Value, Value, Value, Value,
-                                      Value);
+    using IntrinsicFunction0 = Value (*)();
+    using IntrinsicFunction1 = Value (*)(Value);
+    using IntrinsicFunction2 = Value (*)(Value, Value);
+    using IntrinsicFunction3 = Value (*)(Value, Value, Value);
+    using IntrinsicFunction4 = Value (*)(Value, Value, Value, Value);
+    using IntrinsicFunction5 = Value (*)(Value, Value, Value, Value, Value);
+    using IntrinsicFunction6 = Value (*)(Value, Value, Value, Value, Value,
+                                         Value);
+    using IntrinsicFunction7 = Value (*)(Value, Value, Value, Value, Value,
+                                         Value, Value);
 
     union NativeFunctionTarget
     {
-        NativeFunction0 fixed0;
-        NativeFunction1 fixed1;
-        NativeFunction2 fixed2;
-        NativeFunction3 fixed3;
-        NativeFunction4 fixed4;
-        NativeFunction5 fixed5;
-        NativeFunction6 fixed6;
-        NativeFunction7 fixed7;
+        IntrinsicFunction0 fixed0;
+        IntrinsicFunction1 fixed1;
+        IntrinsicFunction2 fixed2;
+        IntrinsicFunction3 fixed3;
+        IntrinsicFunction4 fixed4;
+        IntrinsicFunction5 fixed5;
+        IntrinsicFunction6 fixed6;
+        IntrinsicFunction7 fixed7;
     };
 
     struct CompilationUnit;
