@@ -10,12 +10,11 @@
 #include "str.h"
 #include "thread_state.h"
 #include "typed_value.h"
+#include "unicode.h"
 #include "value.h"
 #include "value_string.h"
 #include "virtual_machine.h"
 #include <algorithm>
-#include <cerrno>
-#include <cwchar>
 #include <fmt/core.h>
 #include <iostream>
 #include <stdexcept>
@@ -27,25 +26,12 @@ namespace cl
 
     static std::wstring decode_stdin_line(const std::string &bytes)
     {
-        const char *src = bytes.c_str();
-        std::mbstate_t state = std::mbstate_t();
-        errno = 0;
-        size_t size = std::mbsrtowcs(nullptr, &src, 0, &state);
-        if(size == static_cast<size_t>(-1))
+        std::optional<std::wstring> result = unicode::decode_utf8(bytes);
+        if(!result.has_value())
         {
             throw std::runtime_error("failed to decode stdin");
         }
-
-        std::wstring result(size, L'\0');
-        src = bytes.c_str();
-        state = std::mbstate_t();
-        errno = 0;
-        if(std::mbsrtowcs(result.data(), &src, result.size(), &state) ==
-           static_cast<size_t>(-1))
-        {
-            throw std::runtime_error("failed to decode stdin");
-        }
-        return result;
+        return *result;
     }
 
     static std::wstring cl_string_to_wstring(TValue<String> string)

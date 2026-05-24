@@ -1,6 +1,7 @@
 #include "native_module_loader_internal.h"
 
 #include <dlfcn.h>
+#include <filesystem>
 
 namespace cl
 {
@@ -8,11 +9,7 @@ namespace cl
 
     void *native_library_open(const std::wstring &path)
     {
-        std::string narrow_path;
-        for(wchar_t ch: path)
-        {
-            narrow_path += static_cast<char>(ch);
-        }
+        std::string narrow_path = std::filesystem::path(path).string();
         return dlopen(narrow_path.c_str(), RTLD_NOW | RTLD_LOCAL);
     }
 

@@ -9,10 +9,9 @@
 #include "str.h"
 #include "thread_state.h"
 #include "typed_value.h"
+#include "unicode.h"
 #include "value.h"
 #include "virtual_machine.h"
-#include <cerrno>
-#include <cwchar>
 #include <fmt/core.h>
 #include <iostream>
 #include <new>
@@ -28,30 +27,13 @@ namespace
 {
     std::wstring decode_api_string(const char *str, const char *error_message)
     {
-        if(str == nullptr)
+        std::optional<std::wstring> result =
+            cl::unicode::decode_utf8_c_string(str);
+        if(!result.has_value())
         {
             throw std::runtime_error(error_message);
         }
-
-        const char *src = str;
-        std::mbstate_t state = std::mbstate_t();
-        errno = 0;
-        size_t size = std::mbsrtowcs(nullptr, &src, 0, &state);
-        if(size == static_cast<size_t>(-1))
-        {
-            throw std::runtime_error(error_message);
-        }
-
-        std::wstring result(size, L'\0');
-        src = str;
-        state = std::mbstate_t();
-        errno = 0;
-        if(std::mbsrtowcs(result.data(), &src, result.size(), &state) ==
-           static_cast<size_t>(-1))
-        {
-            throw std::runtime_error(error_message);
-        }
-        return result;
+        return *result;
     }
 
     std::wstring cl_string_to_wstring(cl::TValue<cl::String> string)

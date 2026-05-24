@@ -3,13 +3,14 @@
 
 #include "token.h"
 #include "tokenizer.h"
+#include "unicode.h"
 #include <fmt/format.h>
 #include <fmt/xchar.h>
 #include <string>
 
 static inline std::string narrow_wstring_view(std::wstring_view s)
 {
-    return std::string(s.begin(), s.end());
+    return cl::unicode::encode_utf8(s);
 }
 
 template <> struct fmt::formatter<cl::Token>

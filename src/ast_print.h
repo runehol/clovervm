@@ -5,13 +5,14 @@
 #include "str.h"
 #include "tokenizer.h"
 #include "typed_value.h"
+#include "unicode.h"
 #include <cassert>
 #include <fmt/format.h>
 #include <string>
 
 static inline std::string narrow_wstring_view_ast(std::wstring_view s)
 {
-    return std::string(s.begin(), s.end());
+    return cl::unicode::encode_utf8(s);
 }
 
 static inline cl::TValue<cl::String>

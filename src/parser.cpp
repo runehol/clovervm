@@ -6,6 +6,7 @@
 #include "thread_state.h"
 #include "token.h"
 #include "tokenizer.h"
+#include "unicode.h"
 #include "virtual_machine.h"
 #include <cstdint>
 #include <iomanip>
@@ -374,49 +375,19 @@ namespace cl
             }
         }
 
-        static std::string utf8_for_code_point(uint32_t code_point)
-        {
-            std::string result;
-            if(code_point <= 0x7f)
-            {
-                result.push_back(static_cast<char>(code_point));
-            }
-            else if(code_point <= 0x7ff)
-            {
-                result.push_back(static_cast<char>(0xc0 | (code_point >> 6)));
-                result.push_back(static_cast<char>(0x80 | (code_point & 0x3f)));
-            }
-            else if(code_point <= 0xffff)
-            {
-                result.push_back(static_cast<char>(0xe0 | (code_point >> 12)));
-                result.push_back(
-                    static_cast<char>(0x80 | ((code_point >> 6) & 0x3f)));
-                result.push_back(static_cast<char>(0x80 | (code_point & 0x3f)));
-            }
-            else
-            {
-                result.push_back(static_cast<char>(0xf0 | (code_point >> 18)));
-                result.push_back(
-                    static_cast<char>(0x80 | ((code_point >> 12) & 0x3f)));
-                result.push_back(
-                    static_cast<char>(0x80 | ((code_point >> 6) & 0x3f)));
-                result.push_back(static_cast<char>(0x80 | (code_point & 0x3f)));
-            }
-            return result;
-        }
-
         std::string invalid_character_message(uint32_t source_pos)
         {
             const std::wstring &source = ast.compilation_unit->source_code;
             uint32_t code_point =
                 source_pos < source.size() ? source[source_pos] : 0;
+            cl_wchar invalid_char = static_cast<cl_wchar>(code_point);
 
             std::ostringstream out;
             out.imbue(std::locale::classic());
             out << "SyntaxError: invalid character '"
-                << utf8_for_code_point(code_point) << "' (U+" << std::uppercase
-                << std::hex << std::setw(4) << std::setfill('0') << code_point
-                << ")";
+                << unicode::encode_utf8(std::wstring_view(&invalid_char, 1))
+                << "' (U+" << std::uppercase << std::hex << std::setw(4)
+                << std::setfill('0') << code_point << ")";
             return out.str();
         }
 
@@ -435,12 +406,7 @@ namespace cl
 
         static std::string narrow(std::wstring_view s)
         {
-            std::string result;
-            for(wchar_t c: s)
-            {
-                result += utf8_for_code_point(c);
-            }
-            return result;
+            return unicode::encode_utf8(s);
         }
 
         std::string format_error_context(uint32_t source_pos)
