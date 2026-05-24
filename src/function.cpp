@@ -13,7 +13,7 @@ namespace cl
         BuiltinInstanceShapeBuilder(
             cls, BuiltinInstanceShapeDefaults::DunderClassAndDict,
             Function::kInlineSlotCount)
-            .reserve_slot(Function::kCodeObjectSlot)
+            .add_slot(L"__code__", Function::kCodeObjectSlot)
             .reserve_slot(Function::kDefaultParametersSlot)
             .add_slot(L"__doc__", Function::kDocstringSlot)
             .install(shape_flag(ShapeFlag::DisallowAttributeAddDelete));

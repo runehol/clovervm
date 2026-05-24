@@ -21,7 +21,7 @@ edge cases, platform behavior, or APIs are still missing.
 | --- | --- | --- | --- |
 | [~] | `sys` | Runtime identity, import state, paths, module registry, process details. | Built into VM bootstrap. Covers `sys.modules`, `sys.path`, import metadata, core static metadata (`argv`, `builtin_module_names`, `byteorder`, `maxsize`, `maxunicode`, `platform`, `version`, `version_info`), `implementation`, encoding queries, recursion/switch interval metadata, `getsizeof` default handling, `gettrace`, `getprofile`, and `is_finalizing`. Still missing broad CPython surface, standard streams/hooks, active exception APIs, tracing/profiling behavior, `SystemExit`/`sys.exit`, real installation prefixes, and named tuple compatibility for several metadata values. |
 | [~] | `builtins` | Names every module assumes exist; exceptions, core types, builtin functions. | Trusted bootstrap exists and now covers core object-introspection helpers: `isinstance`, `issubclass`, `getattr`, `hasattr`, `setattr`, `delattr`, `vars`, `callable`, and a limited `dir`. `type` remains the VM's builtin class object rather than a fully compatible callable `type(obj)`/`type(name, bases, dict)`. `dir` enumerates stored own namespaces plus class MRO entries; full CPython behavior around custom `__dir__`, metaclass details, descriptors, signatures, and many other builtin functions remains incomplete. |
-| [ ] | `types` | Shared type names used by frameworks, decorators, inspection, import machinery. | Not started / not assessed. |
+| [~] | `types` | Shared type names used by frameworks, decorators, inspection, import machinery. | Pure-Python `types.py` now exposes reachable runtime aliases (`FunctionType`, `LambdaType`, builtin function/method aliases, `MethodType`, `ModuleType`, `CodeType`, `NoneType`), a minimal `SimpleNamespace`, and `get_original_bases`. `Function.__code__` is exposed so `CodeType` comes from a live code object rather than a private builtin hook. Missing descriptor/frame/traceback/generator/coroutine/union/generic-alias types, `new_class`, `prepare_class`, `resolve_bases`, `coroutine`, exact `SimpleNamespace` constructor/representation/equality, and other APIs blocked by callable `type`, richer code object metadata, keyword args, descriptors, and broader runtime object exposure. |
 | [ ] | `operator` | Functional forms of operators used by collections, sorting helpers, libraries. | Not started / not assessed. |
 | [ ] | `collections` | `deque`, `defaultdict`, `Counter`, named tuples, ordered helpers. | Not started / not assessed. |
 | [ ] | `collections.abc` | Abstract container protocols used by typing, pathlib, importlib, libraries. | Not started / not assessed. |
@@ -128,7 +128,7 @@ source:
 | --- | --- | --- |
 | [~] | `sys` | Fill out high-value attributes used by importlib, traceback, warnings, and tooling. |
 | [~] | `builtins` | Continue adding common functions and exact exception/type behavior. |
-| [ ] | `types` | Add runtime type names needed by importlib, inspect, and decorators. |
+| [~] | `types` | Pure-Python first slice exists with `CodeType`; many descriptor/frame/generator aliases and dynamic class helpers remain. |
 | [ ] | `operator` | Good candidate for a mostly pure-Python early module. |
 | [ ] | `collections` | Start with pure-Python-compatible pieces, but core containers may need native support later. |
 | [ ] | `abc` | Needed before `collections.abc` and many framework patterns. |

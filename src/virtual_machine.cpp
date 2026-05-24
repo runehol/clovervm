@@ -760,7 +760,8 @@ namespace cl
 
         for(ClassObject *cls: builtin_classes)
         {
-            if(cls == code_class() || cls == slotdict_class())
+            if(cls == code_class() || cls == function_class() ||
+               cls == slotdict_class())
             {
                 continue;
             }
