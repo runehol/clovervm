@@ -42,7 +42,8 @@ target_link_libraries(test_clovervm PRIVATE gtest_main)
 target_link_libraries(test_clovervm PRIVATE libclovervm_objects)
 target_link_libraries(test_clovervm PRIVATE project_options project_warnings)
 clovervm_export_symbols(test_clovervm EXTENSION_API)
-add_dependencies(test_clovervm clovervm_native_module__time)
+add_dependencies(test_clovervm clovervm_native_module__math
+                             clovervm_native_module__time)
 
 set(CLOVERVM_TEST_EXTENSION_API_SYMBOLS
 	"${CMAKE_CURRENT_BINARY_DIR}/clovervm_extension_api_symbols.txt")
