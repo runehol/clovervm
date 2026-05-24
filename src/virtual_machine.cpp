@@ -458,11 +458,10 @@ namespace cl
         return adapter;
     }
 
-    void VirtualMachine::register_builtin_class(
+    void VirtualMachine::install_native_layout_mappings(
         const BuiltinClassDefinition &definition)
     {
         assert(definition.cls != nullptr);
-        builtin_classes.push_back(definition.cls);
         for(size_t idx = 0; idx < definition.native_layout_id_count; ++idx)
         {
             NativeLayoutId native_layout_id = definition.native_layout_ids[idx];
@@ -511,13 +510,15 @@ namespace cl
         }
     }
 
-    void VirtualMachine::install_bootstrap_tuple_class()
+    void VirtualMachine::install_bootstrap_tuple_class(
+        const std::vector<BuiltinClassDefinition> &builtin_classes)
     {
         ClassObject *tuple = tuple_class();
         assert(tuple != nullptr);
 
-        for(ClassObject *cls: builtin_classes)
+        for(const BuiltinClassDefinition &definition: builtin_classes)
         {
+            ClassObject *cls = definition.cls;
             install_bootstrap_tuple_class_on_value(
                 cls->read_storage_location(
                     StorageLocation{ClassObject::class_metadata_slot_bases,
@@ -530,8 +531,15 @@ namespace cl
         }
     }
 
-    void VirtualMachine::initialize_builtin_types()
+    std::vector<BuiltinClassDefinition>
+    VirtualMachine::initialize_builtin_types()
     {
+        std::vector<BuiltinClassDefinition> builtin_classes;
+        auto register_builtin_class = [&](BuiltinClassDefinition definition) {
+            install_native_layout_mappings(definition);
+            builtin_classes.push_back(definition);
+        };
+
         dunder_class_name_ = get_or_create_interned_string_raw(L"__class__");
         BuiltinClassDefinition type_definition = make_type_class(this);
         type_class_ = type_definition.cls;
@@ -560,7 +568,7 @@ namespace cl
         tuple->install_bootstrap_inheritance(make_class_tuple({object}),
                                              make_class_tuple({tuple, object}));
 
-        install_bootstrap_tuple_class();
+        install_bootstrap_tuple_class(builtin_classes);
         BuiltinClassDefinition int_definition = make_int_class(this);
         int_class_ = int_definition.cls;
         register_builtin_class(int_definition);
@@ -699,6 +707,8 @@ namespace cl
         install_slotdict_class_methods(this);
         install_float_class_methods(this);
         install_module_class_methods(this);
+
+        return builtin_classes;
     }
 
     void VirtualMachine::initialize_module_bootstrap()
@@ -781,7 +791,8 @@ namespace cl
 
     void VirtualMachine::initialize_builtins()
     {
-        initialize_builtin_types();
+        std::vector<BuiltinClassDefinition> builtin_classes =
+            initialize_builtin_types();
         get_default_thread()->refresh_class_for_native_layout_cache();
 
         initialize_module_bootstrap();
@@ -794,14 +805,14 @@ namespace cl
             (void)installed;
         };
 
-        for(ClassObject *cls: builtin_classes)
+        for(const BuiltinClassDefinition &definition: builtin_classes)
         {
-            if(cls == code_class() || cls == function_class() ||
-               cls == slotdict_class())
+            if(definition.builtins_visibility != BuiltinsVisibility::Public)
             {
                 continue;
             }
-            install_builtin_binding(cls->get_name(), Value::from_oop(cls));
+            install_builtin_binding(definition.cls->get_name(),
+                                    Value::from_oop(definition.cls));
         }
 
         install_builtin_binding(get_or_create_interned_string_value(L"True"),

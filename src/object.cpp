@@ -145,7 +145,8 @@ namespace cl
             NativeLayoutId::Instance};
         ClassObject *cls = ClassObject::make_bootstrap_builtin_class<Instance>(
             vm->get_or_create_interned_string_value(L"object"), 0, nullptr, 0);
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Public);
     }
 
     static Value native_object_repr(ThreadState *thread, Value self)

@@ -200,7 +200,8 @@ namespace cl
             vm->get_or_create_interned_string_value(L"dict_keys"),
             DictKeysView::native_static_release_count(), methods,
             std::size(methods), vm->object_class());
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Internal);
     }
 
     BuiltinClassDefinition make_dict_values_view_class(VirtualMachine *vm)
@@ -219,7 +220,8 @@ namespace cl
             vm->get_or_create_interned_string_value(L"dict_values"),
             DictValuesView::native_static_release_count(), methods,
             std::size(methods), vm->object_class());
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Internal);
     }
 
     BuiltinClassDefinition make_dict_items_view_class(VirtualMachine *vm)
@@ -238,7 +240,8 @@ namespace cl
             vm->get_or_create_interned_string_value(L"dict_items"),
             DictItemsView::native_static_release_count(), methods,
             std::size(methods), vm->object_class());
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Internal);
     }
 
     BuiltinClassDefinition make_dict_key_iterator_class(VirtualMachine *vm)
@@ -257,7 +260,8 @@ namespace cl
             vm->get_or_create_interned_string_value(L"dict_keyiterator"),
             DictKeyIterator::native_static_release_count(), methods,
             std::size(methods), vm->object_class());
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Internal);
     }
 
     BuiltinClassDefinition make_dict_value_iterator_class(VirtualMachine *vm)
@@ -276,7 +280,8 @@ namespace cl
             vm->get_or_create_interned_string_value(L"dict_valueiterator"),
             DictValueIterator::native_static_release_count(), methods,
             std::size(methods), vm->object_class());
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Internal);
     }
 
     BuiltinClassDefinition make_dict_item_iterator_class(VirtualMachine *vm)
@@ -295,7 +300,8 @@ namespace cl
             vm->get_or_create_interned_string_value(L"dict_itemiterator"),
             DictItemIterator::native_static_release_count(), methods,
             std::size(methods), vm->object_class());
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Internal);
     }
 
 }  // namespace cl

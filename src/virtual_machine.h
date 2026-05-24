@@ -289,10 +289,12 @@ namespace cl
         }
         void complete_safepoint();
 
-        void register_builtin_class(const BuiltinClassDefinition &definition);
+        void install_native_layout_mappings(
+            const BuiltinClassDefinition &definition);
         void install_bootstrap_string_class();
-        void install_bootstrap_tuple_class();
-        void initialize_builtin_types();
+        void install_bootstrap_tuple_class(
+            const std::vector<BuiltinClassDefinition> &builtin_classes);
+        std::vector<BuiltinClassDefinition> initialize_builtin_types();
         void initialize_module_bootstrap();
         void initialize_builtins();
 
@@ -318,7 +320,6 @@ namespace cl
             {};
         std::array<CodeObject *, MaxCloverFunctionEntryAdapterArgs + 1>
             clover_function_entry_adapters = {};
-        std::vector<ClassObject *> builtin_classes;
         Owned<Value> range_builtin;
         ModuleObject *global_builtins_module_ = nullptr;
         ModuleObject *sys_module_ = nullptr;

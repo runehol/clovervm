@@ -44,7 +44,8 @@ namespace cl
             vm->get_or_create_interned_string_value(L"module_spec"),
             ModuleSpecObject::kInlineSlotCount, nullptr, 0, vm->object_class());
         install_module_spec_instance_root_shape(cls);
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Internal);
     }
 
 }  // namespace cl

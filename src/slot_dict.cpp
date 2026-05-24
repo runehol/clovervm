@@ -28,7 +28,8 @@ namespace cl
             vm->get_or_create_interned_string_value(L"slotdict"),
             SlotDict::native_static_release_count(), nullptr, 0,
             vm->object_class());
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Internal);
     }
 
     static Value native_slotdict_repr(ThreadState *thread, Value self)

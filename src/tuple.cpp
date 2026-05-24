@@ -161,7 +161,8 @@ namespace cl
             NativeLayoutId::Tuple};
         ClassObject *cls = ClassObject::make_bootstrap_builtin_class<Tuple>(
             vm->get_or_create_interned_string_value(L"tuple"), 1, nullptr, 0);
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Public);
     }
 
     void install_tuple_class_methods(VirtualMachine *vm)

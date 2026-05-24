@@ -445,7 +445,8 @@ namespace cl
             NativeLayoutId::ClassObject, class_shape_flags,
             fixed_attribute_shape_flags());
         cls->install_bootstrap_class(cls);
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Public);
     }
 
     void ClassObject::install_instance_root_shape_from_builder(

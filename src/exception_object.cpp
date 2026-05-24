@@ -59,14 +59,16 @@ namespace cl
             NativeLayoutId::Exception};
         ClassObject *cls =
             make_exception_class_raw(vm, L"BaseException", vm->object_class());
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Public);
     }
 
     BuiltinClassDefinition make_exception_class(VirtualMachine *vm,
                                                 ClassObject *base)
     {
         return builtin_class_definition(
-            make_exception_class_raw(vm, L"Exception", base));
+            make_exception_class_raw(vm, L"Exception", base),
+            BuiltinsVisibility::Public);
     }
 
     BuiltinClassDefinition make_exception_subclass(VirtualMachine *vm,
@@ -74,7 +76,8 @@ namespace cl
                                                    ClassObject *base)
     {
         return builtin_class_definition(
-            make_exception_class_raw(vm, name, base));
+            make_exception_class_raw(vm, name, base),
+            BuiltinsVisibility::Public);
     }
 
     BuiltinClassDefinition make_stop_iteration_class(VirtualMachine *vm,
@@ -86,7 +89,8 @@ namespace cl
             vm->get_or_create_interned_string_value(L"StopIteration"),
             StopIterationObject::kInlineSlotCount, nullptr, 0, base);
         install_stop_iteration_instance_root_shape(cls);
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Public);
     }
 
     TValue<Exception> make_exception_object(TValue<ClassObject> type,

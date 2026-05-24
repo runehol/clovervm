@@ -582,7 +582,8 @@ namespace cl
             NativeLayoutId::String};
         ClassObject *cls = ClassObject::make_bootstrap_builtin_class<String>(
             vm->get_or_create_interned_string_value(L"str"), 1, nullptr, 0);
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Public);
     }
 
     void install_str_class_methods(VirtualMachine *vm)

@@ -4127,7 +4127,10 @@ TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
 
         if(expected.native_layout_id == NativeLayoutId::CodeObject ||
            expected.native_layout_id == NativeLayoutId::Function ||
-           expected.native_layout_id == NativeLayoutId::SlotDict)
+           expected.native_layout_id == NativeLayoutId::SlotDict ||
+           expected.native_layout_id == NativeLayoutId::RangeIterator ||
+           expected.native_layout_id == NativeLayoutId::TupleIterator ||
+           expected.native_layout_id == NativeLayoutId::ListIterator)
         {
             EXPECT_EQ(Value::not_present(), builtins->get_own_property(name));
         }

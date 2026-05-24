@@ -289,7 +289,8 @@ namespace cl
             ModuleObject::module_inline_storage_slot_count, nullptr, 0,
             vm->object_class());
         install_module_instance_root_shape(cls);
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Internal);
     }
 
     void install_module_class_methods(VirtualMachine *vm)

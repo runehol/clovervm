@@ -56,6 +56,7 @@ namespace cl
             vm->get_or_create_interned_string_value(L"code"),
             CodeObject::native_static_release_count(), nullptr, 0,
             vm->object_class());
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Internal);
     }
 }  // namespace cl

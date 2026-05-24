@@ -53,7 +53,8 @@ namespace cl
             vm->get_or_create_interned_string_value(L"tuple_iterator"),
             TupleIterator::native_static_release_count(), methods,
             std::size(methods), vm->object_class());
-        return builtin_class_definition(cls, native_layout_ids);
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Internal);
     }
 
 }  // namespace cl
