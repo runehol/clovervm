@@ -448,7 +448,14 @@ static clover_value time_strftime(clover_context *ctx, clover_value format,
     }
 
     char buffer[256];
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#endif
     size_t size = strftime(buffer, sizeof(buffer), format_buffer, &tm);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
     if(size == 0)
     {
         return clover_raise_value_error(ctx, "strftime result is too large");

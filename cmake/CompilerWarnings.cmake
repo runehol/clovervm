@@ -48,19 +48,19 @@ function(set_project_warnings project_name)
   set(CLANG_WARNINGS
       -Wall
       -Wextra # reasonable and standard
-      -Wnon-virtual-dtor # warn the user if a class with virtual functions has a
-                         # non-virtual destructor. This helps catch hard to
-                         # track down memory errors
+      $<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor> # warn the user if a class with virtual functions has a
+                                                    # non-virtual destructor. This helps catch hard to
+                                                    # track down memory errors
       #-Wold-style-cast # warn for c-style casts
       #-Wcast-align # warn for potential performance problem casts
       -Wunused # warn on anything being unused
-      -Woverloaded-virtual # warn if you overload (not override) a virtual
-                           # function
+      $<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual> # warn if you overload (not override) a virtual
+                                                      # function
       -Wnull-dereference # warn if a null dereference is detected
       -Wformat=2 # warn on security issues around functions that format output
                  # (ie printf)
 	  -Wno-unused-parameter
-	  -Wno-invalid-offsetof
+	  $<$<COMPILE_LANGUAGE:CXX>:-Wno-invalid-offsetof>
 	  # -Wno-unused-local-typedef
 	  # -Wno-float-conversion
       # -Wno-sign-conversion
