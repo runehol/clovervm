@@ -49,6 +49,7 @@ option(CLOVERVM_BUILD_BENCHMARK
        "Build the benchmark binary as part of the default target" ON)
 
 add_subdirectory(src)
+add_subdirectory(stdlib)
 
 # Things typically only needed if we are the top level project
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)

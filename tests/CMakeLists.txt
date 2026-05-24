@@ -42,6 +42,7 @@ target_link_libraries(test_clovervm PRIVATE gtest_main)
 target_link_libraries(test_clovervm PRIVATE libclovervm_objects)
 target_link_libraries(test_clovervm PRIVATE project_options project_warnings)
 clovervm_export_symbols(test_clovervm EXTENSION_API)
+add_dependencies(test_clovervm clovervm_native_module__time)
 
 clovervm_add_native_module(_test_native
 	SOURCES

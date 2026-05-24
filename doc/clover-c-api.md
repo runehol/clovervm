@@ -193,12 +193,14 @@ typedef clover_value (*clover_extension_fn_1)(clover_call_context *ctx,
 clover_status clover_module_add_function_0(
     clover_native_module_builder *builder,
     const char *name,
-    clover_extension_fn_0 fn);
+    clover_extension_fn_0 fn,
+    const char *docstring);
 
 clover_status clover_module_add_function_1(
     clover_native_module_builder *builder,
     const char *name,
-    clover_extension_fn_1 fn);
+    clover_extension_fn_1 fn,
+    const char *docstring);
 ```
 
 This avoids passing an arity integer that can disagree with the function
@@ -206,6 +208,7 @@ pointer type. C and C++ compilers will reject wrong callback shapes.
 `clover_value` is sized so callbacks can pass and return it by value, but it is
 still opaque: extension modules must create and inspect values through API
 helpers.
+Function docstrings are UTF-8 strings; pass `NULL` for no docstring.
 
 ## Native Call Context
 
@@ -219,6 +222,12 @@ Initial implemented surface:
 clover_value clover_error(clover_call_context *ctx);
 clover_value clover_none(clover_call_context *ctx);
 clover_value clover_int64(clover_call_context *ctx, int64_t value);
+clover_value clover_float_from_double(clover_call_context *ctx, double value);
+clover_status clover_float_as_double(clover_call_context *ctx,
+                                     clover_value value,
+                                     double *out);
+clover_value clover_raise_value_error(clover_call_context *ctx,
+                                      const char *message);
 ```
 
 Planned conversion and allocation helpers:
@@ -230,17 +239,10 @@ clover_status clover_value_as_int64(clover_call_context *ctx,
                                     clover_value value,
                                     int64_t *out);
 
-clover_status clover_value_as_double(clover_call_context *ctx,
-                                     clover_value value,
-                                     double *out);
-
-clover_value clover_float_from_double(clover_call_context *ctx, double value);
 clover_value clover_string_utf8(clover_call_context *ctx, const char *value);
 
 clover_value clover_raise_type_error(clover_call_context *ctx,
                                      const char *message);
-clover_value clover_raise_value_error(clover_call_context *ctx,
-                                      const char *message);
 clover_value clover_raise_import_error(clover_call_context *ctx,
                                        const char *message);
 ```
@@ -258,7 +260,7 @@ Example:
 static clover_value sleep_fn(clover_call_context *ctx, clover_value secs)
 {
     double seconds;
-    if(clover_value_as_double(ctx, secs, &seconds) != CLOVER_STATUS_OK)
+    if(clover_float_as_double(ctx, secs, &seconds) != CLOVER_STATUS_OK)
     {
         return clover_error(ctx);
     }

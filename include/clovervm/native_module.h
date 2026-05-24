@@ -44,10 +44,10 @@ extern "C"
                                       const char *name, const char *utf8_value);
     CL_EXPORT clover_status clover_module_add_function_0(
         clover_native_module_builder *builder, const char *name,
-        clover_extension_fn_0 function);
+        clover_extension_fn_0 function, const char *docstring);
     CL_EXPORT clover_status clover_module_add_function_1(
         clover_native_module_builder *builder, const char *name,
-        clover_extension_fn_1 function);
+        clover_extension_fn_1 function, const char *docstring);
 
     CL_EXPORT clover_value clover_none(clover_call_context *ctx);
     CL_EXPORT clover_value clover_int64(clover_call_context *ctx,
@@ -57,6 +57,8 @@ extern "C"
     CL_EXPORT clover_status clover_float_as_double(clover_call_context *ctx,
                                                    clover_value value,
                                                    double *out);
+    CL_EXPORT clover_value clover_raise_value_error(clover_call_context *ctx,
+                                                    const char *utf8_message);
     CL_EXPORT clover_value clover_error(clover_call_context *ctx);
 
 #ifdef __cplusplus

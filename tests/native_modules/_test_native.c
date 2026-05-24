@@ -40,21 +40,23 @@ clover_module_init__test_native(clover_native_module_builder *builder)
     {
         return CLOVER_STATUS_ERROR;
     }
-    if(clover_module_add_function_0(builder, "answer_func", answer_func) !=
-       CLOVER_STATUS_OK)
+    if(clover_module_add_function_0(builder, "answer_func", answer_func,
+                                    "Return 42.") != CLOVER_STATUS_OK)
     {
         return CLOVER_STATUS_ERROR;
     }
-    if(clover_module_add_function_1(builder, "identity_func", identity_func) !=
-       CLOVER_STATUS_OK)
+    if(clover_module_add_function_1(builder, "identity_func", identity_func,
+                                    "Return the argument.") != CLOVER_STATUS_OK)
     {
         return CLOVER_STATUS_ERROR;
     }
     if(clover_module_add_function_0(builder, "double_constant",
-                                    double_constant_func) != CLOVER_STATUS_OK)
+                                    double_constant_func,
+                                    "Return 1.5.") != CLOVER_STATUS_OK)
     {
         return CLOVER_STATUS_ERROR;
     }
     return clover_module_add_function_1(builder, "float_plus_one",
-                                        float_plus_one_func);
+                                        float_plus_one_func,
+                                        "Return float(value) + 1.0.");
 }

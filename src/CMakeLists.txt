@@ -212,6 +212,7 @@ target_link_libraries(clovervm PRIVATE ${CMAKE_THREAD_LIBS_INIT})
 target_link_libraries(clovervm PRIVATE project_options project_warnings)
 target_link_libraries(clovervm PRIVATE libclovervm)
 target_include_directories(clovervm PRIVATE "${CMAKE_SOURCE_DIR}/include")
+add_dependencies(clovervm clovervm_native_module__time)
 
 install(TARGETS clovervm DESTINATION bin)
 

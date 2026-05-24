@@ -72,6 +72,11 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
         context.vm().get_or_create_interned_string_value(L"answer_func");
     Value answer_func = module->get_own_property(answer_func_name);
     ASSERT_TRUE(can_convert_to<Function>(answer_func));
+    Optional<TValue<String>> answer_func_docstring =
+        assume_convert_to<Function>(answer_func)->docstring.value();
+    ASSERT_TRUE(answer_func_docstring.has_value());
+    EXPECT_EQ(context.vm().get_or_create_interned_string_value(L"Return 42."),
+              answer_func_docstring.value());
     EXPECT_EQ(Value::from_smi(42),
               context.thread()->call_clovervm_function(
                   TValue<Function>::from_value_assumed(answer_func)));
@@ -122,6 +127,39 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     context.thread()->clear_pending_exception();
     EXPECT_EQ(imported, context.vm().imported_modules().extract()->get_item(
                             name.raw_value()));
+}
+
+TEST(NativeModuleBuild, TimeWrapperImportsNativeExtensionFunctions)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value result = context.run_file(L"import time\n"
+                                    L"before = time.monotonic()\n"
+                                    L"wall = time.time()\n"
+                                    L"time.sleep(0)\n"
+                                    L"after = time.monotonic()\n"
+                                    L"result = after >= before and wall > 0.0\n"
+                                    L"result\n");
+    EXPECT_EQ(Value::True(), result);
+}
+
+TEST(NativeModuleBuild, TimeSleepRejectsNegativeValues)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value result = context.run_file(L"import time\n"
+                                    L"time.sleep(-14)\n");
+    EXPECT_TRUE(result.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"ValueError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(
+        L"sleep length must be non-negative",
+        std::wstring(string_as_wchar_t(exception.extract()->message.value())));
 }
 
 static void

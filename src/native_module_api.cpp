@@ -69,6 +69,27 @@ namespace cl
             return interned_string(builder->thread, *decoded_name);
         }
 
+        std::optional<Optional<TValue<String>>>
+        decode_function_docstring(clover_native_module_builder *builder,
+                                  const char *docstring)
+        {
+            if(docstring == nullptr)
+            {
+                return Optional<TValue<String>>::none();
+            }
+            std::optional<std::wstring> decoded_docstring =
+                unicode::decode_utf8_c_string(docstring);
+            if(!decoded_docstring.has_value())
+            {
+                set_builder_import_error(
+                    builder,
+                    L"native module function docstring must be valid UTF-8");
+                return std::nullopt;
+            }
+            return Optional<TValue<String>>::some(
+                interned_string(builder->thread, *decoded_docstring));
+        }
+
         bool valid_builder(clover_native_module_builder *builder)
         {
             return builder != nullptr && builder->thread != nullptr &&
@@ -124,9 +145,9 @@ extern "C" CL_EXPORT clover_status clover_module_add_int_constant(
     return CLOVER_STATUS_OK;
 }
 
-extern "C" CL_EXPORT clover_status
-clover_module_add_function_0(clover_native_module_builder *builder,
-                             const char *name, clover_extension_fn_0 function)
+extern "C" CL_EXPORT clover_status clover_module_add_function_0(
+    clover_native_module_builder *builder, const char *name,
+    clover_extension_fn_0 function, const char *docstring)
 {
     if(!cl::valid_builder(builder))
     {
@@ -143,15 +164,21 @@ clover_module_add_function_0(clover_native_module_builder *builder,
     {
         return CLOVER_STATUS_ERROR;
     }
-    return cl::add_function(
-        builder, *decoded_name,
-        cl::make_extension_function(builder->thread->get_machine(),
-                                    *decoded_name, function));
+    std::optional<cl::Optional<cl::TValue<cl::String>>> decoded_docstring =
+        cl::decode_function_docstring(builder, docstring);
+    if(!decoded_docstring.has_value())
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    return cl::add_function(builder, *decoded_name,
+                            cl::make_extension_function(
+                                builder->thread->get_machine(), *decoded_name,
+                                function, *decoded_docstring));
 }
 
-extern "C" CL_EXPORT clover_status
-clover_module_add_function_1(clover_native_module_builder *builder,
-                             const char *name, clover_extension_fn_1 function)
+extern "C" CL_EXPORT clover_status clover_module_add_function_1(
+    clover_native_module_builder *builder, const char *name,
+    clover_extension_fn_1 function, const char *docstring)
 {
     if(!cl::valid_builder(builder))
     {
@@ -168,10 +195,16 @@ clover_module_add_function_1(clover_native_module_builder *builder,
     {
         return CLOVER_STATUS_ERROR;
     }
-    return cl::add_function(
-        builder, *decoded_name,
-        cl::make_extension_function(builder->thread->get_machine(),
-                                    *decoded_name, function));
+    std::optional<cl::Optional<cl::TValue<cl::String>>> decoded_docstring =
+        cl::decode_function_docstring(builder, docstring);
+    if(!decoded_docstring.has_value())
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    return cl::add_function(builder, *decoded_name,
+                            cl::make_extension_function(
+                                builder->thread->get_machine(), *decoded_name,
+                                function, *decoded_docstring));
 }
 
 extern "C" CL_EXPORT clover_status
@@ -274,6 +307,28 @@ extern "C" CL_EXPORT clover_status clover_float_as_double(
     (void)ctx->thread->set_pending_builtin_exception_string(
         L"TypeError", L"value cannot be converted to float");
     return CLOVER_STATUS_ERROR;
+}
+
+extern "C" CL_EXPORT clover_value
+clover_raise_value_error(clover_call_context *ctx, const char *utf8_message)
+{
+    if(ctx != nullptr && ctx->thread != nullptr)
+    {
+        std::optional<std::wstring> decoded_message =
+            cl::unicode::decode_utf8_c_string(utf8_message);
+        if(decoded_message.has_value())
+        {
+            (void)ctx->thread->set_pending_builtin_exception_string(
+                L"ValueError", decoded_message->c_str());
+        }
+        else
+        {
+            (void)ctx->thread->set_pending_builtin_exception_string(
+                L"ValueError",
+                L"native extension error message must be valid UTF-8");
+        }
+    }
+    return clover_error(ctx);
 }
 
 extern "C" CL_EXPORT clover_value clover_error(clover_call_context *ctx)

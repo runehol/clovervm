@@ -249,24 +249,24 @@ namespace cl
 
     TValue<Function> make_extension_function(VirtualMachine *vm,
                                              TValue<String> name,
-                                             clover_extension_fn_0 function)
+                                             clover_extension_fn_0 function,
+                                             Optional<TValue<String>> docstring)
     {
         NativeFunctionTarget target;
         target.extension0 = function;
         return make_native_function_with_target(
-            vm, name, target, Bytecode::CallExtension0, 0,
-            Optional<TValue<String>>::none(), true);
+            vm, name, target, Bytecode::CallExtension0, 0, docstring, true);
     }
 
     TValue<Function> make_extension_function(VirtualMachine *vm,
                                              TValue<String> name,
-                                             clover_extension_fn_1 function)
+                                             clover_extension_fn_1 function,
+                                             Optional<TValue<String>> docstring)
     {
         NativeFunctionTarget target;
         target.extension1 = function;
         return make_native_function_with_target(
-            vm, name, target, Bytecode::CallExtension1, 1,
-            Optional<TValue<String>>::none(), true);
+            vm, name, target, Bytecode::CallExtension1, 1, docstring, true);
     }
 
     void
