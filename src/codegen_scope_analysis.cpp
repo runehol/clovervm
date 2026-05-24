@@ -412,7 +412,7 @@ namespace cl
                                                  int32_t node_idx)
             {
                 AstKind kind = av.kinds[node_idx];
-                AstChildren children = av.children[node_idx];
+                const AstChildren &children = av.children[node_idx];
 
                 switch(kind.node_kind)
                 {
