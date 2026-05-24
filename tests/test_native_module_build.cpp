@@ -248,6 +248,26 @@ TEST(NativeModuleBuild, TimeSleepRejectsNegativeValues)
         std::wstring(string_as_wchar_t(exception.extract()->message.value())));
 }
 
+TEST(NativeModuleBuild, TimeFormatsEpochTuples)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    Value asctime_result =
+        context.run_file(L"import time\n"
+                         L"epoch = time.gmtime(0)\n"
+                         L"result = len(time.asctime(epoch))\n"
+                         L"result\n");
+    EXPECT_EQ(Value::from_smi(24), asctime_result);
+
+    Value strftime_result = context.run_file(
+        L"import time\n"
+        L"epoch = time.gmtime(0)\n"
+        L"result = len(time.strftime(\"%Y-%m-%d %H:%M:%S\", epoch))\n"
+        L"result\n");
+    EXPECT_EQ(Value::from_smi(19), strftime_result);
+}
+
 TEST(NativeModuleBuild, NativeMathModuleExportsSqrt)
 {
     test::VmTestContext context;

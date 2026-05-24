@@ -106,6 +106,94 @@ extern "C" CL_EXPORT clover_value clover_tuple_from_pair(clover_context *ctx,
     return clover_tuple_from_array(ctx, items, 2);
 }
 
+extern "C" CL_EXPORT clover_status clover_tuple_size(clover_context *ctx,
+                                                     clover_value value,
+                                                     size_t *out)
+{
+    if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+
+    cl::Value unwrapped = cl::unwrap_clover_value(value);
+    if(!cl::can_convert_to<cl::Tuple>(unwrapped))
+    {
+        (void)ctx->thread->set_pending_builtin_exception_string(
+            L"TypeError", L"value cannot be converted to tuple");
+        return CLOVER_STATUS_ERROR;
+    }
+
+    *out = unwrapped.get_ptr<cl::Tuple>()->size();
+    return CLOVER_STATUS_OK;
+}
+
+extern "C" CL_EXPORT clover_status clover_tuple_get_item(clover_context *ctx,
+                                                         clover_value value,
+                                                         size_t index,
+                                                         clover_value *out)
+{
+    if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+
+    cl::Value unwrapped = cl::unwrap_clover_value(value);
+    if(!cl::can_convert_to<cl::Tuple>(unwrapped))
+    {
+        (void)ctx->thread->set_pending_builtin_exception_string(
+            L"TypeError", L"value cannot be converted to tuple");
+        return CLOVER_STATUS_ERROR;
+    }
+
+    cl::Tuple *tuple = unwrapped.get_ptr<cl::Tuple>();
+    if(index >= tuple->size())
+    {
+        (void)ctx->thread->set_pending_builtin_exception_string(
+            L"IndexError", L"tuple index out of range");
+        return CLOVER_STATUS_ERROR;
+    }
+
+    *out = cl::wrap_clover_value(tuple->item_unchecked(index));
+    return CLOVER_STATUS_OK;
+}
+
+extern "C" CL_EXPORT clover_status clover_string_as_utf8(clover_context *ctx,
+                                                         clover_value value,
+                                                         char *out,
+                                                         size_t out_capacity,
+                                                         size_t *out_size)
+{
+    if(ctx == nullptr || ctx->thread == nullptr || out_size == nullptr)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+
+    cl::Value unwrapped = cl::unwrap_clover_value(value);
+    if(!cl::can_convert_to<cl::String>(unwrapped))
+    {
+        (void)ctx->thread->set_pending_builtin_exception_string(
+            L"TypeError", L"value cannot be converted to str");
+        return CLOVER_STATUS_ERROR;
+    }
+
+    std::string encoded = cl::unicode::encode_utf8(
+        cl::string_view(cl::TValue<cl::String>::from_value_assumed(unwrapped)));
+    *out_size = encoded.size();
+    if(out == nullptr)
+    {
+        return CLOVER_STATUS_OK;
+    }
+    if(out_capacity <= encoded.size())
+    {
+        (void)ctx->thread->set_pending_builtin_exception_string(
+            L"OverflowError", L"native extension string buffer is too small");
+        return CLOVER_STATUS_ERROR;
+    }
+    std::memcpy(out, encoded.data(), encoded.size());
+    out[encoded.size()] = '\0';
+    return CLOVER_STATUS_OK;
+}
+
 extern "C" CL_EXPORT clover_status clover_float_as_double(clover_context *ctx,
                                                           clover_value value,
                                                           double *out)
