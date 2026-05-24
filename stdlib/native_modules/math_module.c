@@ -327,18 +327,6 @@ static clover_value math_ulp(clover_context *ctx, clover_value value)
 CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__math(
     clover_context *ctx, clover_native_module_builder *builder)
 {
-    if(clover_module_add_value(builder, "inf",
-                               clover_float_from_double(ctx, INFINITY)) !=
-       CLOVER_STATUS_OK)
-    {
-        return CLOVER_STATUS_ERROR;
-    }
-    if(clover_module_add_value(builder, "nan",
-                               clover_float_from_double(ctx, NAN)) !=
-       CLOVER_STATUS_OK)
-    {
-        return CLOVER_STATUS_ERROR;
-    }
     ADD_FUNCTION_1("acos", math_acos,
                    "Return the arc cosine of x, in radians.");
     ADD_FUNCTION_1("acosh", math_acosh,

@@ -4,8 +4,8 @@ import _math
 e = 2.718281828459045
 pi = 3.141592653589793
 tau = 6.283185307179586
-inf = _math.inf
-nan = _math.nan
+inf = 1e1000
+nan = inf - inf
 
 acos = _math.acos
 acosh = _math.acosh
