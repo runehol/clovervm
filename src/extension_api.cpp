@@ -2,10 +2,12 @@
 
 #include "class_object.h"
 #include "float.h"
+#include "str.h"
 #include "thread_state.h"
 #include "typed_value.h"
 #include "unicode.h"
 #include <optional>
+#include <string_view>
 
 extern "C" CL_EXPORT clover_value clover_none(clover_context *ctx)
 {
@@ -38,6 +40,26 @@ extern "C" CL_EXPORT clover_value clover_float_from_double(clover_context *ctx,
     }
     return cl::wrap_clover_value(
         ctx->thread->make_object_value<cl::Float>(value).raw_value());
+}
+
+extern "C" CL_EXPORT clover_value
+clover_string_from_utf8(clover_context *ctx, const char *utf8_value)
+{
+    if(ctx == nullptr || ctx->thread == nullptr || utf8_value == nullptr)
+    {
+        return clover_propagate_error(ctx);
+    }
+
+    std::optional<cl::TValue<cl::String>> string =
+        cl::try_make_string_from_utf8(ctx->thread,
+                                      std::string_view(utf8_value));
+    if(!string.has_value())
+    {
+        (void)ctx->thread->set_pending_builtin_exception_string(
+            L"ValueError", L"native extension string must be valid UTF-8");
+        return clover_propagate_error(ctx);
+    }
+    return cl::wrap_clover_value(string->raw_value());
 }
 
 extern "C" CL_EXPORT clover_status clover_float_as_double(clover_context *ctx,

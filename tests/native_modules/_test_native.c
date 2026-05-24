@@ -146,16 +146,22 @@ static clover_value sum7_func(clover_context *ctx, clover_value arg0,
     return clover_float_from_double(ctx, v0 + v1 + v2 + v3 + v4 + v5 + v6);
 }
 
-CL_NATIVE_MODULE_EXPORT clover_status
-clover_module_init__test_native(clover_native_module_builder *builder)
+CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__test_native(
+    clover_context *ctx, clover_native_module_builder *builder)
 {
-    if(clover_module_add_int_constant(builder, "answer", 42) !=
+    if(clover_module_add_value(builder, "answer", clover_int64(ctx, 42)) !=
        CLOVER_STATUS_OK)
     {
         return CLOVER_STATUS_ERROR;
     }
-    if(clover_module_add_string_constant(builder, "greeting",
-                                         "hello \xce\xbb") != CLOVER_STATUS_OK)
+    if(clover_module_add_value(
+           builder, "greeting",
+           clover_string_from_utf8(ctx, "hello \xce\xbb")) != CLOVER_STATUS_OK)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+    if(clover_module_add_value(builder, "nothing", clover_none(ctx)) !=
+       CLOVER_STATUS_OK)
     {
         return CLOVER_STATUS_ERROR;
     }

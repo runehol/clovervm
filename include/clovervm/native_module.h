@@ -65,6 +65,9 @@ extern "C"
     CL_EXPORT clover_status
     clover_module_add_string_constant(clover_native_module_builder *builder,
                                       const char *name, const char *utf8_value);
+    CL_EXPORT clover_status
+    clover_module_add_value(clover_native_module_builder *builder,
+                            const char *name, clover_value value);
     CL_EXPORT clover_status clover_module_add_function_0(
         clover_native_module_builder *builder, const char *name,
         clover_extension_fn_0 function, const char *docstring);
@@ -94,6 +97,8 @@ extern "C"
     CL_EXPORT clover_value clover_int64(clover_context *ctx, int64_t value);
     CL_EXPORT clover_value clover_float_from_double(clover_context *ctx,
                                                     double value);
+    CL_EXPORT clover_value clover_string_from_utf8(clover_context *ctx,
+                                                   const char *utf8_value);
     CL_EXPORT clover_status clover_float_as_double(clover_context *ctx,
                                                    clover_value value,
                                                    double *out);

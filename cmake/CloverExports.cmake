@@ -22,7 +22,8 @@ set(CLOVERVM_EXTENSION_MODULE_BUILDER_API_SYMBOLS
     clover_module_add_function_5
     clover_module_add_function_6
     clover_module_add_function_7
-    clover_module_add_string_constant)
+    clover_module_add_string_constant
+    clover_module_add_value)
 
 set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
     clover_float_as_double
@@ -30,7 +31,8 @@ set(CLOVERVM_EXTENSION_RUNTIME_API_SYMBOLS
     clover_int64
     clover_none
     clover_propagate_error
-    clover_raise_value_error)
+    clover_raise_value_error
+    clover_string_from_utf8)
 
 set(CLOVERVM_EXTENSION_API_SYMBOLS
     ${CLOVERVM_EXTENSION_MODULE_BUILDER_API_SYMBOLS}

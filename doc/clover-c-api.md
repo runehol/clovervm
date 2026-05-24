@@ -119,8 +119,10 @@ The native init function receives an opaque module builder:
 
 ```c
 typedef struct clover_native_module_builder clover_native_module_builder;
+typedef struct clover_context clover_context;
 
 CL_EXPORT clover_status clover_module_init__time(
+    clover_context *ctx,
     clover_native_module_builder *builder);
 ```
 
@@ -148,6 +150,11 @@ instance.
 The builder can add simple constants to the module:
 
 ```c
+clover_status clover_module_add_value(
+    clover_native_module_builder *builder,
+    const char *name,
+    clover_value value);
+
 clover_status clover_module_add_int_constant(
     clover_native_module_builder *builder,
     const char *name,
@@ -159,7 +166,9 @@ clover_status clover_module_add_string_constant(
     const char *utf8_value);
 ```
 
-`name` and `utf8_value` are UTF-8 strings.
+`name` and `utf8_value` are UTF-8 strings. New native modules should prefer
+`clover_module_add_value` with runtime value constructors when they need values
+other than the convenience constant helpers.
 
 ## Function Registration
 
@@ -214,6 +223,8 @@ clover_value clover_propagate_error(clover_context *ctx);
 clover_value clover_none(clover_context *ctx);
 clover_value clover_int64(clover_context *ctx, int64_t value);
 clover_value clover_float_from_double(clover_context *ctx, double value);
+clover_value clover_string_from_utf8(clover_context *ctx,
+                                     const char *utf8_value);
 clover_status clover_float_as_double(clover_context *ctx,
                                      clover_value value,
                                      double *out);

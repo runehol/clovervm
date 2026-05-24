@@ -63,6 +63,11 @@ clovervm_add_native_module(_test_native_bad_constant
 		native_modules/_test_native_bad_constant.c)
 add_dependencies(test_clovervm
 	clovervm_native_module__test_native_bad_constant)
+clovervm_add_native_module(_test_native_bad_value
+	SOURCES
+		native_modules/_test_native_bad_value.c)
+add_dependencies(test_clovervm
+	clovervm_native_module__test_native_bad_value)
 clovervm_add_native_module(_test_native_fail_no_exception
 	SOURCES
 		native_modules/_test_native_fail_no_exception.c)

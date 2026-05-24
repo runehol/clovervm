@@ -68,6 +68,9 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
     EXPECT_EQ(std::wstring(L"hello \u03bb"),
               std::wstring(
                   string_view(TValue<String>::from_value_assumed(greeting))));
+    TValue<String> nothing_name =
+        context.vm().get_or_create_interned_string_value(L"nothing");
+    EXPECT_EQ(Value::None(), module->get_own_property(nothing_name));
     TValue<String> answer_func_name =
         context.vm().get_or_create_interned_string_value(L"answer_func");
     Value answer_func = module->get_own_property(answer_func_name);
@@ -240,6 +243,27 @@ TEST(NativeModuleBuild, BuilderFailureRemovesModuleFromSysModules)
     expect_native_import_error_and_uncached(
         context, L"_test_native_bad_constant",
         L"native module int constant name must be non-empty");
+}
+
+TEST(NativeModuleBuild, AddValuePropagatesExceptionMarker)
+{
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+
+    TValue<String> name = context.vm().get_or_create_interned_string_value(
+        L"_test_native_bad_value");
+    Value imported = import_module_absolute(context.thread(), name);
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"OverflowError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(
+        L"integer is outside the supported native API range",
+        std::wstring(string_as_wchar_t(exception.extract()->message.value())));
+    EXPECT_FALSE(
+        context.vm().imported_modules().extract()->contains(name.raw_value()));
 }
 
 TEST(NativeModuleBuild, InitFailureWithoutExceptionRaisesImportError)

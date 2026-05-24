@@ -70,9 +70,10 @@ static clover_value time_sleep(clover_context *ctx, clover_value seconds)
     return clover_none(ctx);
 }
 
-CL_NATIVE_MODULE_EXPORT clover_status
-clover_module_init__time(clover_native_module_builder *builder)
+CL_NATIVE_MODULE_EXPORT clover_status clover_module_init__time(
+    clover_context *ctx, clover_native_module_builder *builder)
 {
+    (void)ctx;
     if(clover_module_add_function_0(builder, "time", time_time,
                                     "Return the current time in seconds.") !=
        CLOVER_STATUS_OK)

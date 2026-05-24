@@ -33,8 +33,8 @@ namespace cl
         }
 
         std::optional<TValue<String>>
-        decode_constant_name(clover_native_module_builder *builder,
-                             const char *name, const wchar_t *kind)
+        decode_module_value_name(clover_native_module_builder *builder,
+                                 const char *name, const wchar_t *kind)
         {
             std::optional<std::wstring> decoded_name =
                 unicode::decode_utf8_c_string(name);
@@ -151,7 +151,7 @@ extern "C" CL_EXPORT clover_status clover_module_add_int_constant(
     }
 
     std::optional<cl::TValue<cl::String>> decoded_name =
-        cl::decode_constant_name(builder, name, L"int");
+        cl::decode_module_value_name(builder, name, L"int");
     if(!decoded_name.has_value())
     {
         return CLOVER_STATUS_ERROR;
@@ -240,7 +240,7 @@ clover_module_add_string_constant(clover_native_module_builder *builder,
     }
 
     std::optional<cl::TValue<cl::String>> decoded_name =
-        cl::decode_constant_name(builder, name, L"string");
+        cl::decode_module_value_name(builder, name, L"string");
     if(!decoded_name.has_value())
     {
         return CLOVER_STATUS_ERROR;
@@ -269,6 +269,42 @@ clover_module_add_string_constant(clover_native_module_builder *builder,
     {
         return cl::set_builder_import_error(
             builder, L"native module could not set string constant");
+    }
+    return CLOVER_STATUS_OK;
+}
+
+extern "C" CL_EXPORT clover_status clover_module_add_value(
+    clover_native_module_builder *builder, const char *name, clover_value value)
+{
+    if(!cl::valid_builder(builder))
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+
+    std::optional<cl::TValue<cl::String>> decoded_name =
+        cl::decode_module_value_name(builder, name, L"value");
+    if(!decoded_name.has_value())
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+
+    cl::Value unwrapped = cl::unwrap_clover_value(value);
+    if(unwrapped.is_exception_marker())
+    {
+        if(builder->thread->pending_exception_kind() ==
+           cl::PendingExceptionKind::None)
+        {
+            return cl::set_builder_import_error(
+                builder, L"native module value cannot be an exception marker");
+        }
+        return CLOVER_STATUS_ERROR;
+    }
+
+    bool stored = builder->module->set_own_property(*decoded_name, unwrapped);
+    if(!stored)
+    {
+        return cl::set_builder_import_error(
+            builder, L"native module could not set value");
     }
     return CLOVER_STATUS_OK;
 }

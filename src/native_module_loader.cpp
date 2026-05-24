@@ -155,11 +155,11 @@ namespace cl
             return set_native_import_error(thread, message);
         }
 
-        auto init_function =
-            reinterpret_cast<clover_status (*)(clover_native_module_builder *)>(
-                init_symbol);
+        auto init_function = reinterpret_cast<clover_status (*)(
+            clover_context *, clover_native_module_builder *)>(init_symbol);
+        clover_context ctx{thread};
         clover_native_module_builder builder{thread, module};
-        clover_status status = init_function(&builder);
+        clover_status status = init_function(&ctx, &builder);
         if(status == CLOVER_STATUS_OK)
         {
             return Value::None();
