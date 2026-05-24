@@ -78,7 +78,7 @@ edge cases, platform behavior, or APIs are still missing.
 
 | Status | Module | Why it matters | Not handled / notes |
 | --- | --- | --- | --- |
-| [~] | `time` | Clocks and sleeps used by tests, retry loops, logging, benchmarks. | Native `_time` plus Python wrapper exists; broad API and platform edge cases remain incomplete. |
+| [~] | `time` | Clocks and sleeps used by tests, retry loops, logging, benchmarks. | Expanded native `_time` and public `time.py` cover clocks, sleep, `gmtime`, `localtime`, `asctime`, `ctime`, `strftime`, `mktime`, CPU clocks, timezone constants, and clock constants. `ninja -C build-debug all check` passed with 813 tests. Full nanosecond clock coverage depends on arbitrary-size integer support. |
 | [ ] | `datetime` | Dates, times, timedeltas, parsing/formatting basics. | Not started / not assessed. |
 | [ ] | `calendar` | Date helpers used by `datetime`-adjacent code. | Not started / not assessed. |
 | [~] | `math` | Numeric functions and constants. | Native `_math` plus Python wrapper exists with tests; confirm remaining CPython APIs, signatures, errors, and edge cases before marking complete. |
@@ -111,6 +111,13 @@ edge cases, platform behavior, or APIs are still missing.
 | [ ] | `hashlib` | Hashes for packaging, caches, protocols. | Native crypto/hash backend likely needed. |
 | [ ] | `hmac` | Protocol authentication helper. | Depends on `hashlib`. |
 | [ ] | `urllib.parse` | URL parsing used without requiring networking. | Not started / not assessed. |
+
+## Cross-Cutting Stdlib Notes
+
+- Native extension support now includes helpers for reading tuples and UTF-8
+  strings from extension modules, with export-list wiring. This should make
+  future native-backed modules less ad hoc, especially modules that need to
+  accept structured Python values or text from public wrappers.
 
 ## Suggested First Slice
 
