@@ -7,7 +7,7 @@ set(CLOVERVM_EMBEDDER_API_SYMBOLS
 set(CLOVERVM_EXTENSION_API_SYMBOLS)
 list(APPEND CLOVERVM_EXTENSION_API_SYMBOLS
     clover_float_from_double
-    clover_error
+    clover_propagate_error
     clover_float_as_double
     clover_int64
     clover_module_add_int_constant

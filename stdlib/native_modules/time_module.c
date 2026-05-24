@@ -39,7 +39,7 @@ static clover_value time_sleep(clover_call_context *ctx, clover_value seconds)
     if(clover_float_as_double(ctx, seconds, &seconds_double) !=
        CLOVER_STATUS_OK)
     {
-        return clover_error(ctx);
+        return clover_propagate_error(ctx);
     }
     if(seconds_double < 0.0)
     {

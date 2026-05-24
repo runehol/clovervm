@@ -295,7 +295,7 @@ extern "C" CL_EXPORT clover_value clover_int64(clover_call_context *ctx,
                 L"OverflowError",
                 L"integer is outside the supported native API range");
         }
-        return clover_error(ctx);
+        return clover_propagate_error(ctx);
     }
     return cl::wrap_clover_value(cl::Value::from_smi(value));
 }
@@ -305,7 +305,7 @@ clover_float_from_double(clover_call_context *ctx, double value)
 {
     if(ctx == nullptr || ctx->thread == nullptr)
     {
-        return clover_error(ctx);
+        return clover_propagate_error(ctx);
     }
     return cl::wrap_clover_value(
         ctx->thread->make_object_value<cl::Float>(value).raw_value());
@@ -356,10 +356,11 @@ clover_raise_value_error(clover_call_context *ctx, const char *utf8_message)
                 L"native extension error message must be valid UTF-8");
         }
     }
-    return clover_error(ctx);
+    return clover_propagate_error(ctx);
 }
 
-extern "C" CL_EXPORT clover_value clover_error(clover_call_context *ctx)
+extern "C" CL_EXPORT clover_value
+clover_propagate_error(clover_call_context *ctx)
 {
     (void)ctx;
     return cl::wrap_clover_value(cl::Value::exception_marker());

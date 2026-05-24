@@ -100,7 +100,7 @@ extern "C"
                                                    double *out);
     CL_EXPORT clover_value clover_raise_value_error(clover_call_context *ctx,
                                                     const char *utf8_message);
-    CL_EXPORT clover_value clover_error(clover_call_context *ctx);
+    CL_EXPORT clover_value clover_propagate_error(clover_call_context *ctx);
 
 #ifdef __cplusplus
 }

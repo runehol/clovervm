@@ -22,7 +22,7 @@ static clover_value float_plus_one_func(clover_call_context *ctx,
     double number;
     if(clover_float_as_double(ctx, value, &number) != CLOVER_STATUS_OK)
     {
-        return clover_error(ctx);
+        return clover_propagate_error(ctx);
     }
     return clover_float_from_double(ctx, number + 1.0);
 }
@@ -41,7 +41,7 @@ static clover_value sum2_func(clover_call_context *ctx, clover_value arg0,
     if(read_double(ctx, arg0, &v0) != CLOVER_STATUS_OK ||
        read_double(ctx, arg1, &v1) != CLOVER_STATUS_OK)
     {
-        return clover_error(ctx);
+        return clover_propagate_error(ctx);
     }
     return clover_float_from_double(ctx, v0 + v1);
 }
@@ -56,7 +56,7 @@ static clover_value sum3_func(clover_call_context *ctx, clover_value arg0,
        read_double(ctx, arg1, &v1) != CLOVER_STATUS_OK ||
        read_double(ctx, arg2, &v2) != CLOVER_STATUS_OK)
     {
-        return clover_error(ctx);
+        return clover_propagate_error(ctx);
     }
     return clover_float_from_double(ctx, v0 + v1 + v2);
 }
@@ -74,7 +74,7 @@ static clover_value sum4_func(clover_call_context *ctx, clover_value arg0,
        read_double(ctx, arg2, &v2) != CLOVER_STATUS_OK ||
        read_double(ctx, arg3, &v3) != CLOVER_STATUS_OK)
     {
-        return clover_error(ctx);
+        return clover_propagate_error(ctx);
     }
     return clover_float_from_double(ctx, v0 + v1 + v2 + v3);
 }
@@ -94,7 +94,7 @@ static clover_value sum5_func(clover_call_context *ctx, clover_value arg0,
        read_double(ctx, arg3, &v3) != CLOVER_STATUS_OK ||
        read_double(ctx, arg4, &v4) != CLOVER_STATUS_OK)
     {
-        return clover_error(ctx);
+        return clover_propagate_error(ctx);
     }
     return clover_float_from_double(ctx, v0 + v1 + v2 + v3 + v4);
 }
@@ -117,7 +117,7 @@ static clover_value sum6_func(clover_call_context *ctx, clover_value arg0,
        read_double(ctx, arg4, &v4) != CLOVER_STATUS_OK ||
        read_double(ctx, arg5, &v5) != CLOVER_STATUS_OK)
     {
-        return clover_error(ctx);
+        return clover_propagate_error(ctx);
     }
     return clover_float_from_double(ctx, v0 + v1 + v2 + v3 + v4 + v5);
 }
@@ -142,7 +142,7 @@ static clover_value sum7_func(clover_call_context *ctx, clover_value arg0,
        read_double(ctx, arg5, &v5) != CLOVER_STATUS_OK ||
        read_double(ctx, arg6, &v6) != CLOVER_STATUS_OK)
     {
-        return clover_error(ctx);
+        return clover_propagate_error(ctx);
     }
     return clover_float_from_double(ctx, v0 + v1 + v2 + v3 + v4 + v5 + v6);
 }
