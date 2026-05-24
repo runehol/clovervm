@@ -1,8 +1,9 @@
 # Python test set -- math module
 #
-# Adapted from CPython's Lib/test/test_math.py.
+# Portions adapted from CPython's Lib/test/test_math.py
+# at commit 0851700a9d99ca4bebd8d5f9d73c8c9ab1084405.
 # Copyright (c) Python Software Foundation.
-# Licensed under the PSF License Agreement.
+# The derived portions are licensed under the PSF License Agreement.
 
 import math
 
