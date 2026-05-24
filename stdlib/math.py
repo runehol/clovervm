@@ -68,11 +68,7 @@ def radians(x):
 
 
 def isfinite(x):
-    if isinf(x):
-        return False
-    if isnan(x):
-        return False
-    return True
+    return not isinf(x) and not isnan(x)
 
 
 def isinf(x):
@@ -181,9 +177,7 @@ def lcm(*integers):
     result = 1
     for value in integers:
         value = _abs(value)
-        if result == 0:
-            result = 0
-        elif value == 0:
+        if result == 0 or value == 0:
             result = 0
         else:
             common = gcd(result, value)

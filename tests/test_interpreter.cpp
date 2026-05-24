@@ -963,6 +963,58 @@ TEST(Interpreter, modulo_reports_errors)
                         L"TypeError: unsupported operand type(s) for %");
 }
 
+TEST(Interpreter, shortcutting_boolean_operators_return_operand_values)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(0), test_context.run_file(L"0 and missing\n"));
+    EXPECT_EQ(Value::from_smi(7), test_context.run_file(L"1 and 7\n"));
+    EXPECT_EQ(Value::from_smi(5), test_context.run_file(L"5 or missing\n"));
+    EXPECT_EQ(Value::from_smi(8), test_context.run_file(L"0 or 8\n"));
+}
+
+TEST(Interpreter, shortcutting_boolean_operators_skip_unneeded_operand)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(4),
+              test_context.run_file(L"def fail():\n"
+                                    L"    raise ValueError\n"
+                                    L"if True or fail():\n"
+                                    L"    x = 4\n"
+                                    L"else:\n"
+                                    L"    x = 1\n"
+                                    L"x\n"));
+    EXPECT_EQ(Value::from_smi(4),
+              test_context.run_file(L"def fail():\n"
+                                    L"    raise ValueError\n"
+                                    L"if False and fail():\n"
+                                    L"    x = 1\n"
+                                    L"else:\n"
+                                    L"    x = 4\n"
+                                    L"x\n"));
+}
+
+TEST(Interpreter, shortcutting_boolean_operators_compile_math_shaped_cases)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::True(), test_context.run_file(
+                                 L"def isinf(x):\n"
+                                 L"    return False\n"
+                                 L"def isnan(x):\n"
+                                 L"    return False\n"
+                                 L"def finite(x):\n"
+                                 L"    return not isinf(x) and not isnan(x)\n"
+                                 L"finite(1)\n"));
+    EXPECT_EQ(Value::from_smi(3),
+              test_context.run_file(L"result = 0\n"
+                                    L"value = 1\n"
+                                    L"if result == 0 or value == 0:\n"
+                                    L"    result = 3\n"
+                                    L"result\n"));
+}
+
 TEST(Interpreter, sqrt_builtin_values)
 {
     test::VmTestContext test_context;
