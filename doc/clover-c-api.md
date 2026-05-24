@@ -234,7 +234,7 @@ clover_status clover_value_as_double(clover_call_context *ctx,
                                      clover_value value,
                                      double *out);
 
-clover_value clover_double(clover_call_context *ctx, double value);
+clover_value clover_float_from_double(clover_call_context *ctx, double value);
 clover_value clover_string_utf8(clover_call_context *ctx, const char *value);
 
 clover_value clover_raise_type_error(clover_call_context *ctx,

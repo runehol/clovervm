@@ -1,9 +1,11 @@
 #include "native_module_api_internal.h"
 
+#include "float.h"
 #include "module_object.h"
 #include "native_function.h"
 #include "str.h"
 #include "thread_state.h"
+#include "typed_value.h"
 #include "unicode.h"
 #include "virtual_machine.h"
 #include <cstdint>
@@ -235,6 +237,43 @@ extern "C" CL_EXPORT clover_value clover_int64(clover_call_context *ctx,
         return clover_error(ctx);
     }
     return cl::wrap_clover_value(cl::Value::from_smi(value));
+}
+
+extern "C" CL_EXPORT clover_value
+clover_float_from_double(clover_call_context *ctx, double value)
+{
+    if(ctx == nullptr || ctx->thread == nullptr)
+    {
+        return clover_error(ctx);
+    }
+    return cl::wrap_clover_value(
+        ctx->thread->make_object_value<cl::Float>(value).raw_value());
+}
+
+extern "C" CL_EXPORT clover_status clover_float_as_double(
+    clover_call_context *ctx, clover_value value, double *out)
+{
+    if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
+    {
+        return CLOVER_STATUS_ERROR;
+    }
+
+    cl::Value unwrapped = cl::unwrap_clover_value(value);
+    if(unwrapped.is_smi())
+    {
+        *out = static_cast<double>(unwrapped.get_smi());
+        return CLOVER_STATUS_OK;
+    }
+
+    if(cl::can_convert_to<cl::Float>(unwrapped))
+    {
+        *out = unwrapped.get_ptr<cl::Float>()->value;
+        return CLOVER_STATUS_OK;
+    }
+
+    (void)ctx->thread->set_pending_builtin_exception_string(
+        L"TypeError", L"value cannot be converted to float");
+    return CLOVER_STATUS_ERROR;
 }
 
 extern "C" CL_EXPORT clover_value clover_error(clover_call_context *ctx)

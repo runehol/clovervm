@@ -52,6 +52,11 @@ extern "C"
     CL_EXPORT clover_value clover_none(clover_call_context *ctx);
     CL_EXPORT clover_value clover_int64(clover_call_context *ctx,
                                         int64_t value);
+    CL_EXPORT clover_value clover_float_from_double(clover_call_context *ctx,
+                                                    double value);
+    CL_EXPORT clover_status clover_float_as_double(clover_call_context *ctx,
+                                                   clover_value value,
+                                                   double *out);
     CL_EXPORT clover_value clover_error(clover_call_context *ctx);
 
 #ifdef __cplusplus

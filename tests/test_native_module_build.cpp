@@ -1,6 +1,7 @@
 #include "build_config.h"
 #include "dict.h"
 #include "exception_object.h"
+#include "float.h"
 #include "function.h"
 #include "import_system.h"
 #include "list.h"
@@ -83,6 +84,42 @@ TEST(NativeModuleBuild, ImportingNativeExtensionPopulatesModuleGlobals)
               context.thread()->call_clovervm_function(
                   TValue<Function>::from_value_assumed(identity_func),
                   Value::from_smi(123)));
+
+    TValue<String> double_constant_name =
+        context.vm().get_or_create_interned_string_value(L"double_constant");
+    Value double_constant = module->get_own_property(double_constant_name);
+    ASSERT_TRUE(can_convert_to<Function>(double_constant));
+    Value double_constant_result = context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_assumed(double_constant));
+    ASSERT_TRUE(can_convert_to<Float>(double_constant_result));
+    EXPECT_DOUBLE_EQ(1.5, double_constant_result.get_ptr<Float>()->value);
+
+    TValue<String> float_plus_one_name =
+        context.vm().get_or_create_interned_string_value(L"float_plus_one");
+    Value float_plus_one = module->get_own_property(float_plus_one_name);
+    ASSERT_TRUE(can_convert_to<Function>(float_plus_one));
+    Value smi_float_result = context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_assumed(float_plus_one),
+        Value::from_smi(2));
+    ASSERT_TRUE(can_convert_to<Float>(smi_float_result));
+    EXPECT_DOUBLE_EQ(3.0, smi_float_result.get_ptr<Float>()->value);
+    Value float_float_result = context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_assumed(float_plus_one),
+        context.thread()->make_object_value<Float>(2.5).raw_value());
+    ASSERT_TRUE(can_convert_to<Float>(float_float_result));
+    EXPECT_DOUBLE_EQ(3.5, float_float_result.get_ptr<Float>()->value);
+    Value non_float_result = context.thread()->call_clovervm_function(
+        TValue<Function>::from_value_assumed(float_plus_one), Value::None());
+    EXPECT_TRUE(non_float_result.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(context.thread()->class_for_builtin_name(L"TypeError"),
+              exception.extract()->get_shape()->get_class());
+    EXPECT_EQ(
+        L"value cannot be converted to float",
+        std::wstring(string_as_wchar_t(exception.extract()->message.value())));
+    context.thread()->clear_pending_exception();
     EXPECT_EQ(imported, context.vm().imported_modules().extract()->get_item(
                             name.raw_value()));
 }
