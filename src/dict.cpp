@@ -1,5 +1,6 @@
 #include "dict.h"
 #include "class_object.h"
+#include "dict_view.h"
 #include "exception_propagation.h"
 #include "list.h"
 #include "native_function.h"
@@ -171,19 +172,19 @@ namespace cl
     static Value native_dict_keys(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"keys"));
-        return self.get_ptr<Dict>()->keys().raw_value();
+        return self.get_ptr<Dict>()->keys();
     }
 
     static Value native_dict_values(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"values"));
-        return self.get_ptr<Dict>()->values().raw_value();
+        return self.get_ptr<Dict>()->values();
     }
 
     static Value native_dict_items(Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"items"));
-        return self.get_ptr<Dict>()->items().raw_value();
+        return self.get_ptr<Dict>()->items();
     }
 
     static Value native_dict_pop(Value self, Value key)
@@ -309,37 +310,22 @@ namespace cl
 
     TValue<Dict> Dict::copy() const { return make_object_value<Dict>(*this); }
 
-    TValue<List> Dict::keys() const
+    Value Dict::keys()
     {
-        TValue<List> result = make_object_value<List>();
-        for(EntryView entry: *this)
-        {
-            result.extract()->append(entry.key);
-        }
-        return result;
+        return make_object_value<DictKeysView>(TValue<Dict>::from_oop(this))
+            .raw_value();
     }
 
-    TValue<List> Dict::values() const
+    Value Dict::values()
     {
-        TValue<List> result = make_object_value<List>();
-        for(EntryView entry: *this)
-        {
-            result.extract()->append(entry.value);
-        }
-        return result;
+        return make_object_value<DictValuesView>(TValue<Dict>::from_oop(this))
+            .raw_value();
     }
 
-    TValue<List> Dict::items() const
+    Value Dict::items()
     {
-        TValue<List> result = make_object_value<List>();
-        for(EntryView entry: *this)
-        {
-            Owned<TValue<Tuple>> item(make_object_value<Tuple>(2));
-            item.extract()->initialize_item_unchecked(0, entry.key);
-            item.extract()->initialize_item_unchecked(1, entry.value);
-            result.extract()->append(item.raw_value());
-        }
-        return result;
+        return make_object_value<DictItemsView>(TValue<Dict>::from_oop(this))
+            .raw_value();
     }
 
     Value Dict::pop(Value key)
@@ -459,6 +445,21 @@ namespace cl
     Dict::Iterator Dict::begin() const { return Iterator(this, 0); }
 
     Dict::Iterator Dict::end() const { return Iterator(this, entries.size()); }
+
+    bool Dict::entry_at(size_t idx, EntryView &out) const
+    {
+        if(idx >= entries.size())
+        {
+            return false;
+        }
+        const Entry &entry = entries[idx];
+        if(!entry.valid())
+        {
+            return false;
+        }
+        out = EntryView{entry.key, entry.value};
+        return true;
+    }
 
     const int32_t *Dict::find_entry(Value key) const
     {

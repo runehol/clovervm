@@ -6,6 +6,7 @@
 #include "code_object.h"
 #include "codegen.h"
 #include "dict.h"
+#include "dict_view.h"
 #include "exception_object.h"
 #include "exception_propagation.h"
 #include "float.h"
@@ -614,6 +615,12 @@ namespace cl
         register_builtin_class(make_range_iterator_class(this));
         register_builtin_class(make_tuple_iterator_class(this));
         register_builtin_class(make_list_iterator_class(this));
+        register_builtin_class(make_dict_keys_view_class(this));
+        register_builtin_class(make_dict_values_view_class(this));
+        register_builtin_class(make_dict_items_view_class(this));
+        register_builtin_class(make_dict_key_iterator_class(this));
+        register_builtin_class(make_dict_value_iterator_class(this));
+        register_builtin_class(make_dict_item_iterator_class(this));
         BuiltinClassDefinition base_exception_definition =
             make_base_exception_class(this);
         ClassObject *base_exception = base_exception_definition.cls;

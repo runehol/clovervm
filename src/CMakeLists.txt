@@ -44,6 +44,8 @@ add_library(libclovervm_objects OBJECT
     compilation_unit.h
     dict.cpp
     dict.h
+    dict_view.cpp
+    dict_view.h
     extension_api.cpp
     exception_handling.h
     exception_object.cpp

@@ -4,6 +4,7 @@
 #include "class_object.h"
 #include "code_object.h"
 #include "dict.h"
+#include "dict_view.h"
 #include "exception_object.h"
 #include "float.h"
 #include "function.h"
@@ -30,6 +31,12 @@
     V(RangeIterator);                                                          \
     V(TupleIterator);                                                          \
     V(ListIterator);                                                           \
+    V(DictKeysView);                                                           \
+    V(DictValuesView);                                                         \
+    V(DictItemsView);                                                          \
+    V(DictKeyIterator);                                                        \
+    V(DictValueIterator);                                                      \
+    V(DictItemIterator);                                                       \
     V(ModuleObject);                                                           \
     V(ModuleLoaderObject);                                                     \
     V(ModuleSpecObject);                                                       \

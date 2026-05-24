@@ -77,12 +77,14 @@ namespace cl
 
         Iterator begin() const;
         Iterator end() const;
+        size_t entry_storage_size() const { return entries.size(); }
+        bool entry_at(size_t idx, EntryView &out) const;
 
         void clear();
         [[nodiscard]] TValue<Dict> copy() const;
-        [[nodiscard]] TValue<List> keys() const;
-        [[nodiscard]] TValue<List> values() const;
-        [[nodiscard]] TValue<List> items() const;
+        [[nodiscard]] Value keys();
+        [[nodiscard]] Value values();
+        [[nodiscard]] Value items();
         [[nodiscard]] Value pop(Value key);
         [[nodiscard]] Value popitem();
         [[nodiscard]] Value setdefault(Value key, Value default_value);

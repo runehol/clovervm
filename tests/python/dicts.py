@@ -18,18 +18,30 @@ assert items.get("missing") is None
 assert items.get("missing", 99) == 99
 
 keys = items.keys()
-assert keys[0] == "alpha"
-assert keys[1] == "beta"
+assert len(keys) == 2
+key_iter = iter(keys)
+assert next(key_iter) == "alpha"
+assert next(key_iter) == "beta"
 
 values = items.values()
-assert values[0] == 4
-assert values[1] == 7
+assert len(values) == 2
+value_iter = iter(values)
+assert next(value_iter) == 4
+assert next(value_iter) == 7
 
 pairs = items.items()
-assert pairs[0][0] == "alpha"
-assert pairs[0][1] == 4
-assert pairs[1][0] == "beta"
-assert pairs[1][1] == 7
+assert len(pairs) == 2
+pair_iter = iter(pairs)
+first_pair = next(pair_iter)
+assert first_pair[0] == "alpha"
+assert first_pair[1] == 4
+second_pair = next(pair_iter)
+assert second_pair[0] == "beta"
+assert second_pair[1] == 7
+
+items["gamma"] = 9
+assert len(keys) == 3
+del items["gamma"]
 
 copy = items.copy()
 copy["alpha"] = 40
