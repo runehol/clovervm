@@ -6,18 +6,13 @@
 #include <math.h>
 #include <stdint.h>
 
-static clover_value math_float_result(clover_context *ctx, double result,
-                                      int can_overflow)
+static clover_value math_float_result(clover_context *ctx, double result)
 {
     if(errno == EDOM || (isnan(result) && errno != ERANGE))
     {
         return clover_raise_value_error(ctx, "math domain error");
     }
     if(errno == ERANGE && isinf(result))
-    {
-        return clover_raise_overflow_error(ctx, "math range error");
-    }
-    if(can_overflow && isinf(result))
     {
         return clover_raise_overflow_error(ctx, "math range error");
     }
@@ -42,7 +37,7 @@ static clover_value math_unary(clover_context *ctx, clover_value value,
     {
         errno = ERANGE;
     }
-    return math_float_result(ctx, result, can_overflow);
+    return math_float_result(ctx, result);
 }
 
 static clover_value math_binary(clover_context *ctx, clover_value left,
@@ -68,7 +63,7 @@ static clover_value math_binary(clover_context *ctx, clover_value left,
     {
         errno = ERANGE;
     }
-    return math_float_result(ctx, result, can_overflow);
+    return math_float_result(ctx, result);
 }
 
 #define MATH_UNARY_WRAPPER(wrapper_name, c_func, can_overflow)                 \
@@ -196,7 +191,7 @@ static clover_value math_fma(clover_context *ctx, clover_value x,
     {
         errno = ERANGE;
     }
-    return math_float_result(ctx, result, 1);
+    return math_float_result(ctx, result);
 }
 
 static clover_value math_frexp(clover_context *ctx, clover_value value)
@@ -237,7 +232,7 @@ static clover_value math_ldexp(clover_context *ctx, clover_value x,
     {
         errno = ERANGE;
     }
-    return math_float_result(ctx, result, 1);
+    return math_float_result(ctx, result);
 }
 
 static clover_value math_modf(clover_context *ctx, clover_value value)

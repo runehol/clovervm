@@ -65,3 +65,10 @@ try:
 except ValueError:
     seen = True
 assert seen
+
+seen = False
+try:
+    math.isqrt(-1)
+except ValueError:
+    seen = True
+assert seen

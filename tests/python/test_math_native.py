@@ -47,6 +47,7 @@ assert close(math.copysign(2.0, -1.0), -2.0)
 assert close(math.degrees(math.pi), 180.0)
 assert close(math.radians(180.0), math.pi)
 assert close(math.exp(0.0), 1.0)
+assert math.exp(math.inf) == math.inf
 assert close(math.exp2(3.0), 8.0)
 assert close(math.expm1(0.0), 0.0)
 assert close(math.fabs(-3.5), 3.5)
@@ -54,3 +55,4 @@ assert close(math.fma(2.0, 3.0, 4.0), 10.0)
 assert close(math.fmod(7.0, 4.0), 3.0)
 assert close(math.remainder(7.0, 4.0), -1.0)
 assert close(math.pow(2.0, 3.0), 8.0)
+assert math.pow(math.inf, 2.0) == math.inf
