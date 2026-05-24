@@ -5,9 +5,24 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <string>
 
 namespace cl
 {
+    namespace
+    {
+        static constexpr uint32_t kMaxU8Operand = 255;
+
+        void check_u8_operand_index(uint32_t idx, const char *table_name)
+        {
+            if(idx > kMaxU8Operand)
+            {
+                throw std::runtime_error(std::string(table_name) +
+                                         " index out of range");
+            }
+        }
+    }  // namespace
+
     JumpTarget::~JumpTarget()
     {
         assert(target != -1);
@@ -705,8 +720,8 @@ namespace cl
     uint32_t CodeObjectBuilder::allocate_constant(Value val)
     {
         uint32_t idx = code_obj->constant_table.size();
+        check_u8_operand_index(idx, "constant table");
         code_obj->constant_table.emplace_back(val);
-        assert(idx < 256);
         return idx;
     }
 
@@ -714,8 +729,8 @@ namespace cl
     CodeObjectBuilder::add_native_function_target(NativeFunctionTarget target)
     {
         uint32_t idx = code_obj->native_function_targets.size();
+        check_u8_operand_index(idx, "native function target table");
         code_obj->native_function_targets.push_back(target);
-        assert(idx < 256);
         return idx;
     }
 
@@ -767,40 +782,40 @@ namespace cl
     uint32_t CodeObjectBuilder::allocate_attribute_read_cache()
     {
         uint32_t idx = code_obj->attribute_read_caches.size();
+        check_u8_operand_index(idx, "attribute read cache table");
         code_obj->attribute_read_caches.emplace_back();
-        assert(idx < 256);
         return idx;
     }
 
     uint32_t CodeObjectBuilder::allocate_attribute_mutation_cache()
     {
         uint32_t idx = code_obj->attribute_mutation_caches.size();
+        check_u8_operand_index(idx, "attribute mutation cache table");
         code_obj->attribute_mutation_caches.emplace_back();
-        assert(idx < 256);
         return idx;
     }
 
     uint32_t CodeObjectBuilder::allocate_module_global_read_cache()
     {
         uint32_t idx = code_obj->module_global_read_caches.size();
+        check_u8_operand_index(idx, "module global read cache table");
         code_obj->module_global_read_caches.emplace_back();
-        assert(idx < 256);
         return idx;
     }
 
     uint32_t CodeObjectBuilder::allocate_module_global_mutation_cache()
     {
         uint32_t idx = code_obj->module_global_mutation_caches.size();
+        check_u8_operand_index(idx, "module global mutation cache table");
         code_obj->module_global_mutation_caches.emplace_back();
-        assert(idx < 256);
         return idx;
     }
 
     uint32_t CodeObjectBuilder::allocate_function_call_cache()
     {
         uint32_t idx = code_obj->function_call_caches.size();
+        check_u8_operand_index(idx, "function call cache table");
         code_obj->function_call_caches.emplace_back();
-        assert(idx < 256);
         return idx;
     }
 

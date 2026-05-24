@@ -1,4 +1,5 @@
 #include "code_object.h"
+#include "code_object_builder.h"
 #include "code_object_print.h"
 #include "codegen.h"
 #include "float.h"
@@ -10,6 +11,8 @@
 #include "virtual_machine.h"
 #include <fmt/xchar.h>
 #include <gtest/gtest.h>
+#include <stdexcept>
+#include <string>
 
 using namespace cl;
 
@@ -111,6 +114,53 @@ TEST(Codegen, empty_file_returns_none)
     std::string actual = bytecode_str_from_file(L"");
 
     EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, bytecode_constant_index_overflow_throws)
+{
+    std::wstring source;
+    for(uint32_t idx = 0; idx < 257; ++idx)
+    {
+        source += L"a";
+        source += std::to_wstring(idx);
+        source += L" = 0\n";
+    }
+
+    EXPECT_THROW(bytecode_str_from_file(source.c_str()), std::runtime_error);
+}
+
+TEST(Codegen, bytecode_cache_index_overflow_throws)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<String> module_name =
+        test_context.vm().get_or_create_interned_string_value(L"module");
+    ModuleObject *module = test_context.make_test_module_object(
+        module_name, test_context.vm().global_builtins_module().raw_value());
+    TValue<String> code_name =
+        test_context.vm().get_or_create_interned_string_value(L"code");
+    CodeObjectBuilder builder(&test_context.vm(), nullptr,
+                              TValue<ModuleObject>::from_oop(module), nullptr,
+                              code_name);
+    uint32_t name_idx = builder.allocate_constant(
+        test_context.vm().get_or_create_interned_string_value(L"name"));
+    ASSERT_EQ(0u, name_idx);
+
+    for(uint32_t idx = 0; idx < 256; ++idx)
+    {
+        builder.emit_lda_global(0, uint8_t(name_idx));
+    }
+    EXPECT_THROW(builder.emit_lda_global(0, uint8_t(name_idx)),
+                 std::runtime_error);
+}
+
+TEST(Codegen, relative_import_level_overflow_throws)
+{
+    std::wstring source = L"from ";
+    source.append(256, L'.');
+    source += L"pkg import value\n";
+
+    EXPECT_THROW(bytecode_str_from_file(source.c_str()), std::runtime_error);
 }
 
 TEST(Codegen, import_statement_uses_import_name_and_normal_store)

@@ -11,6 +11,7 @@
 #include "typed_value.h"
 #include <fmt/core.h>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 
 namespace cl
@@ -1821,7 +1822,11 @@ namespace cl
                             code_obj->allocate_constant(av.constants[node_idx]);
                         int64_t level =
                             av.constants[children[0]].value().get_smi();
-                        assert(level >= 0 && level <= 255);
+                        if(level < 0 || level > 255)
+                        {
+                            throw std::runtime_error(
+                                "relative import level out of range");
+                        }
                         code_obj->emit_lda_constant(source_offset,
                                                     fromlist_idx);
                         code_obj->emit_import_name(source_offset,
