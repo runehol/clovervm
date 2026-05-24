@@ -23,7 +23,7 @@ namespace cl
         builder.n_parameters() = n_parameters;
         builder.n_positional_parameters() = n_parameters;
         uint32_t target_idx = builder.add_native_function_target(target);
-        builder.emit_call_native(0, call_opcode, uint8_t(target_idx));
+        builder.emit_call_intrinsic(0, call_opcode, uint8_t(target_idx));
         builder.emit_return_or_raise_exception(0);
         TValue<CodeObject> code =
             TValue<CodeObject>::from_oop(builder.finalize());
@@ -47,29 +47,29 @@ namespace cl
             default_parameters);
     }
 
-    static Bytecode call_native_opcode_for_arity(uint32_t n_parameters)
+    static Bytecode call_intrinsic_opcode_for_arity(uint32_t n_parameters)
     {
         switch(n_parameters)
         {
             case 0:
-                return Bytecode::CallNative0;
+                return Bytecode::CallIntrinsic0;
             case 1:
-                return Bytecode::CallNative1;
+                return Bytecode::CallIntrinsic1;
             case 2:
-                return Bytecode::CallNative2;
+                return Bytecode::CallIntrinsic2;
             case 3:
-                return Bytecode::CallNative3;
+                return Bytecode::CallIntrinsic3;
             case 4:
-                return Bytecode::CallNative4;
+                return Bytecode::CallIntrinsic4;
             case 5:
-                return Bytecode::CallNative5;
+                return Bytecode::CallIntrinsic5;
             case 6:
-                return Bytecode::CallNative6;
+                return Bytecode::CallIntrinsic6;
             case 7:
-                return Bytecode::CallNative7;
+                return Bytecode::CallIntrinsic7;
             default:
                 assert(false && "unsupported native function arity");
-                return Bytecode::CallNative0;
+                return Bytecode::CallIntrinsic0;
         }
     }
 
@@ -152,7 +152,7 @@ namespace cl
         NativeFunctionTarget target;
         target.fixed0 = function;
         return make_intrinsic_function_with_target(
-            vm, target, Bytecode::CallNative0, 0, default_parameters);
+            vm, target, Bytecode::CallIntrinsic0, 0, default_parameters);
     }
 
     TValue<Function>
@@ -162,7 +162,7 @@ namespace cl
         NativeFunctionTarget target;
         target.fixed1 = function;
         return make_intrinsic_function_with_target(
-            vm, target, Bytecode::CallNative1, 1, default_parameters);
+            vm, target, Bytecode::CallIntrinsic1, 1, default_parameters);
     }
 
     TValue<Function>
@@ -172,7 +172,7 @@ namespace cl
         NativeFunctionTarget target;
         target.fixed2 = function;
         return make_intrinsic_function_with_target(
-            vm, target, Bytecode::CallNative2, 2, default_parameters);
+            vm, target, Bytecode::CallIntrinsic2, 2, default_parameters);
     }
 
     TValue<Function>
@@ -182,7 +182,7 @@ namespace cl
         NativeFunctionTarget target;
         target.fixed3 = function;
         return make_intrinsic_function_with_target(
-            vm, target, Bytecode::CallNative3, 3, default_parameters);
+            vm, target, Bytecode::CallIntrinsic3, 3, default_parameters);
     }
 
     TValue<Function>
@@ -192,7 +192,7 @@ namespace cl
         NativeFunctionTarget target;
         target.fixed4 = function;
         return make_intrinsic_function_with_target(
-            vm, target, Bytecode::CallNative4, 4, default_parameters);
+            vm, target, Bytecode::CallIntrinsic4, 4, default_parameters);
     }
 
     TValue<Function>
@@ -202,7 +202,7 @@ namespace cl
         NativeFunctionTarget target;
         target.fixed5 = function;
         return make_intrinsic_function_with_target(
-            vm, target, Bytecode::CallNative5, 5, default_parameters);
+            vm, target, Bytecode::CallIntrinsic5, 5, default_parameters);
     }
 
     TValue<Function>
@@ -212,7 +212,7 @@ namespace cl
         NativeFunctionTarget target;
         target.fixed6 = function;
         return make_intrinsic_function_with_target(
-            vm, target, Bytecode::CallNative6, 6, default_parameters);
+            vm, target, Bytecode::CallIntrinsic6, 6, default_parameters);
     }
 
     TValue<Function>
@@ -222,7 +222,7 @@ namespace cl
         NativeFunctionTarget target;
         target.fixed7 = function;
         return make_intrinsic_function_with_target(
-            vm, target, Bytecode::CallNative7, 7, default_parameters);
+            vm, target, Bytecode::CallIntrinsic7, 7, default_parameters);
     }
 
     TValue<Function>
@@ -236,7 +236,7 @@ namespace cl
                       vm->get_or_create_interned_string_value(method.doc));
         return make_intrinsic_function_with_target(
             vm, vm->get_or_create_interned_string_value(method.name),
-            method.target, call_native_opcode_for_arity(method.n_parameters),
+            method.target, call_intrinsic_opcode_for_arity(method.n_parameters),
             method.n_parameters, docstring);
     }
 

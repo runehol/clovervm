@@ -10,7 +10,7 @@ namespace cl
 
     inline constexpr int32_t n_fastpath_ldar_star = 16;
 
-    enum class Intrinsic0 : uint8_t
+    enum class RuntimeIntrinsic0 : uint8_t
     {
         Globals,
         Locals,
@@ -132,15 +132,15 @@ namespace cl
 
         // function calls
         CallSimple,
-        CallNative0,
-        CallNative1,
-        CallNative2,
-        CallNative3,
-        CallNative4,
-        CallNative5,
-        CallNative6,
-        CallNative7,
         CallIntrinsic0,
+        CallIntrinsic1,
+        CallIntrinsic2,
+        CallIntrinsic3,
+        CallIntrinsic4,
+        CallIntrinsic5,
+        CallIntrinsic6,
+        CallIntrinsic7,
+        CallRuntimeIntrinsic0,
         CallCodeObject,
         ImportName,
         ImportFrom,

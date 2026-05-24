@@ -679,22 +679,24 @@ namespace cl
                                         name_idx);
     }
 
-    uint32_t CodeObjectBuilder::emit_call_native(uint32_t source_offset,
-                                                 Bytecode op,
-                                                 uint8_t target_idx)
+    uint32_t CodeObjectBuilder::emit_call_intrinsic(uint32_t source_offset,
+                                                    Bytecode op,
+                                                    uint8_t target_idx)
     {
-        assert(op == Bytecode::CallNative0 || op == Bytecode::CallNative1 ||
-               op == Bytecode::CallNative2 || op == Bytecode::CallNative3 ||
-               op == Bytecode::CallNative4 || op == Bytecode::CallNative5 ||
-               op == Bytecode::CallNative6 || op == Bytecode::CallNative7);
+        assert(
+            op == Bytecode::CallIntrinsic0 || op == Bytecode::CallIntrinsic1 ||
+            op == Bytecode::CallIntrinsic2 || op == Bytecode::CallIntrinsic3 ||
+            op == Bytecode::CallIntrinsic4 || op == Bytecode::CallIntrinsic5 ||
+            op == Bytecode::CallIntrinsic6 || op == Bytecode::CallIntrinsic7);
         return emit_opcode_native_target_idx(source_offset, op, target_idx);
     }
 
-    uint32_t CodeObjectBuilder::emit_call_intrinsic0(uint32_t source_offset,
-                                                     Intrinsic0 intrinsic)
+    uint32_t
+    CodeObjectBuilder::emit_call_runtime_intrinsic0(uint32_t source_offset,
+                                                    RuntimeIntrinsic0 intrinsic)
     {
-        uint32_t result =
-            emplace_back(source_offset, uint8_t(Bytecode::CallIntrinsic0));
+        uint32_t result = emplace_back(
+            source_offset, uint8_t(Bytecode::CallRuntimeIntrinsic0));
         emplace_back(source_offset, uint8_t(intrinsic));
         return result;
     }

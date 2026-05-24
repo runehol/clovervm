@@ -96,7 +96,7 @@ Each generated function owns an immortal managed thunk `CodeObject` with this
 shape:
 
 ```text
-CallNativeN 0
+CallIntrinsicN 0
 ReturnOrRaiseException
 ```
 
@@ -132,7 +132,7 @@ caller
   CallSimple sets up a managed callee frame on the Clover stack
 
 native thunk frame
-  CallNative0/1/2/3 reads p0, p1, ...
+  CallIntrinsic0/1/2/3 reads p0, p1, ...
   sets ThreadState's Clover frame frontier to the current fp
   calls the C++ target on the native stack
   stores the returned Value in the accumulator
@@ -154,8 +154,8 @@ the `Function` object supplies two `None` defaults so the public arity is
 `range(stop)`, `range(start, stop)`, or `range(start, stop, step)`.
 
 There is no true variadic native convention yet. Fixed native thunks are
-intentionally concrete: `CallNative0`, `CallNative1`, `CallNative2`, and
-`CallNative3`.
+intentionally concrete: `CallIntrinsic0`, `CallIntrinsic1`, `CallIntrinsic2`, and
+`CallIntrinsic3`.
 
 ### Managed-To-Native Exception Normalization
 
@@ -194,11 +194,11 @@ native implementation directly rather than having one thunk call the other's
 
 ```text
 ordinary native thunk:
-  CallNativeN
+  CallIntrinsicN
   ReturnOrRaiseException
 
 stop-returning native thunk:
-  CallNativeN
+  CallIntrinsicN
   ReturnStopIterationOrRaiseException
 ```
 
@@ -461,7 +461,7 @@ execution into native C++ must set the frontier before control leaves
 interpreted execution:
 
 ```text
-CallNative0/1/2/3:
+CallIntrinsic0/1/2/3:
   thread->clover_frame_frontier = fp
   call native target on the native stack
 
@@ -561,7 +561,7 @@ Clover function entry adapter wrappers are generated and cached by positional
 arity. `ReturnToNative` and `ReturnPendingExceptionToNative` are implemented for
 boundary wrappers. The Clover frame frontier is initialized to a terminated
 sentinel frame and set by native boundary returns and by the
-fixed-arity `CallNative0`/`CallNative1`/`CallNative2`/`CallNative3` interpreter
+fixed-arity `CallIntrinsic0`/`CallIntrinsic1`/`CallIntrinsic2`/`CallIntrinsic3` interpreter
 opcodes.
 
 ## Invariants

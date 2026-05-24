@@ -260,7 +260,7 @@ TEST(Codegen, star_from_import_statement_uses_import_star_intrinsic)
     std::string expected = "Code object:\n"
                            "    0 LdaConstant c[0]\n"
                            "    2 ImportName c[1], 0\n"
-                           "    5 CallIntrinsic0 ImportStar\n"
+                           "    5 CallRuntimeIntrinsic0 ImportStar\n"
                            "    7 Return\n"
                            "Constant 0: (\"*\",)\n"
                            "Constant 1: \"assignment\"\n";
@@ -1294,7 +1294,7 @@ TEST(Codegen, trusted_clover_globals_lowers_to_intrinsic)
         L"def read_globals():\n"
         L"    return __clover_globals__()\n");
 
-    EXPECT_NE(std::string::npos, actual.find("CallIntrinsic0 Globals"));
+    EXPECT_NE(std::string::npos, actual.find("CallRuntimeIntrinsic0 Globals"));
     EXPECT_EQ(std::string::npos, actual.find("CallSimple"));
 }
 
@@ -1304,7 +1304,7 @@ TEST(Codegen, user_clover_globals_name_is_ordinary_call)
         bytecode_str_from_file(L"def read_globals():\n"
                                L"    return __clover_globals__()\n");
 
-    EXPECT_EQ(std::string::npos, actual.find("CallIntrinsic0 Globals"));
+    EXPECT_EQ(std::string::npos, actual.find("CallRuntimeIntrinsic0 Globals"));
     EXPECT_NE(std::string::npos, actual.find("CallSimple"));
 }
 
@@ -1314,7 +1314,7 @@ TEST(Codegen, trusted_clover_locals_lowers_to_intrinsic)
         L"def read_locals():\n"
         L"    return __clover_locals__()\n");
 
-    EXPECT_NE(std::string::npos, actual.find("CallIntrinsic0 Locals"));
+    EXPECT_NE(std::string::npos, actual.find("CallRuntimeIntrinsic0 Locals"));
     EXPECT_EQ(std::string::npos, actual.find("CallSimple"));
 }
 
@@ -1324,6 +1324,6 @@ TEST(Codegen, user_clover_locals_name_is_ordinary_call)
         bytecode_str_from_file(L"def read_locals():\n"
                                L"    return __clover_locals__()\n");
 
-    EXPECT_EQ(std::string::npos, actual.find("CallIntrinsic0 Locals"));
+    EXPECT_EQ(std::string::npos, actual.find("CallRuntimeIntrinsic0 Locals"));
     EXPECT_NE(std::string::npos, actual.find("CallSimple"));
 }

@@ -27,8 +27,8 @@ still having enough metadata to jump back to the interpreter when needed. It is
 not a native C++ frame layout: arbitrary native frames must not be placed on the
 Clover stack.
 
-Native function thunks build on the same layout. A `CallNative0`,
-`CallNative1`, `CallNative2`, or `CallNative3` opcode runs inside an ordinary
+Native function thunks build on the same layout. A `CallIntrinsic0`,
+`CallIntrinsic1`, `CallIntrinsic2`, or `CallIntrinsic3` opcode runs inside an ordinary
 managed function frame, reads fixed positional parameters from the `p`
 registers, calls the native C++ target on the native stack, and returns through
 `ReturnOrRaiseException`. See

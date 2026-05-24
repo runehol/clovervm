@@ -126,7 +126,7 @@ its code object may later be marked hidden from tracebacks.
 The common adapter shape is:
 
 ```text
-CallNativeN / CallFastProtocol / other implementation-specific call
+CallIntrinsicN / CallFastProtocol / other implementation-specific call
 ReturnOrRaiseException
 ```
 
@@ -306,11 +306,11 @@ the stop-returning thunk leaves its own protocol completion as pending
 
 ```text
 ordinary native thunk:
-  CallNativeN
+  CallIntrinsicN
   ReturnOrRaiseException
 
 stop-returning native thunk:
-  CallNativeN
+  CallIntrinsicN
   ReturnStopIterationOrRaiseException
 ```
 

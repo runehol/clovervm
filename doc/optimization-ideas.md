@@ -52,7 +52,7 @@ struct FunctionCallInlineCache
 For ordinary functions, the hot path checks callable identity and enters the
 cached function frame directly. Fixed-arity native thunks share that plan
 because they are ordinary `Function` objects. A later `NativeThunkExactFrame`
-plan could recognize tiny `CallNativeN; Return` code objects and jump to a
+plan could recognize tiny `CallIntrinsicN; Return` code objects and jump to a
 slimmer adapter when benchmarks show that the extra inline code pays for itself.
 
 Python call features should extend the plan model instead of turning

@@ -688,7 +688,7 @@ namespace cl
 
         void codegen_trusted_clover_intrinsic0(uint32_t source_offset,
                                                AstChildren args,
-                                               Intrinsic0 intrinsic,
+                                               RuntimeIntrinsic0 intrinsic,
                                                const char *helper_name)
         {
             if(args.size() != 0)
@@ -697,7 +697,7 @@ namespace cl
                     fmt::format("{} expects exactly 0 arguments", helper_name));
             }
 
-            code_obj->emit_call_intrinsic0(source_offset, intrinsic);
+            code_obj->emit_call_runtime_intrinsic0(source_offset, intrinsic);
         }
 
         bool try_codegen_trusted_clover_call(int32_t node_idx)
@@ -717,13 +717,13 @@ namespace cl
                     codegen_trusted_clover_write_stdout(source_offset, args);
                     return true;
                 case TrustedCloverCall::Globals:
-                    codegen_trusted_clover_intrinsic0(source_offset, args,
-                                                      Intrinsic0::Globals,
-                                                      "__clover_globals__");
+                    codegen_trusted_clover_intrinsic0(
+                        source_offset, args, RuntimeIntrinsic0::Globals,
+                        "__clover_globals__");
                     return true;
                 case TrustedCloverCall::Locals:
                     codegen_trusted_clover_intrinsic0(source_offset, args,
-                                                      Intrinsic0::Locals,
+                                                      RuntimeIntrinsic0::Locals,
                                                       "__clover_locals__");
                     return true;
             }
@@ -1834,8 +1834,8 @@ namespace cl
                                                    static_cast<uint8_t>(level));
                         if(is_star_import)
                         {
-                            code_obj->emit_call_intrinsic0(
-                                source_offset, Intrinsic0::ImportStar);
+                            code_obj->emit_call_runtime_intrinsic0(
+                                source_offset, RuntimeIntrinsic0::ImportStar);
                             break;
                         }
                         if(aliases.size() == 1)

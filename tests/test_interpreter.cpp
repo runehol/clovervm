@@ -2008,7 +2008,7 @@ TEST(Interpreter, call_non_callable_unwinds_nested_frames)
                         L"TypeError: object is not callable");
 }
 
-TEST(Interpreter, call_native_zero_arg_function)
+TEST(Interpreter, call_intrinsic_zero_arg_function)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
@@ -2022,7 +2022,7 @@ TEST(Interpreter, call_native_zero_arg_function)
     EXPECT_EQ(Value::from_smi(17), actual);
 }
 
-TEST(Interpreter, call_native_seven_arg_function)
+TEST(Interpreter, call_intrinsic_seven_arg_function)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
@@ -2094,12 +2094,12 @@ TEST(Interpreter, intrinsic_function_thunk_uses_return_or_raise_adapter)
     std::string actual =
         fmt::to_string(*native.extract()->code_object.extract());
     std::string expected = "Code object:\n"
-                           "    0 CallNative0 0\n"
+                           "    0 CallIntrinsic0 0\n"
                            "    2 ReturnOrRaiseException\n";
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Interpreter, call_native_sets_clover_frame_frontier)
+TEST(Interpreter, call_intrinsic_sets_clover_frame_frontier)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
@@ -2670,7 +2670,7 @@ TEST(Interpreter, call_clovervm_method_reports_non_callable_method)
     test_context.thread()->clear_pending_exception();
 }
 
-TEST(Interpreter, call_native_one_arg_function)
+TEST(Interpreter, call_intrinsic_one_arg_function)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
@@ -2684,7 +2684,7 @@ TEST(Interpreter, call_native_one_arg_function)
     EXPECT_EQ(Value::from_smi(42), actual);
 }
 
-TEST(Interpreter, call_native_two_arg_function)
+TEST(Interpreter, call_intrinsic_two_arg_function)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());

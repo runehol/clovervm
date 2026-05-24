@@ -3142,7 +3142,7 @@ namespace cl
         return fp[reg];
     }
 
-    static INTERP_CC Value op_call_native0(PARAMS)
+    static INTERP_CC Value op_call_intrinsic0(PARAMS)
     {
         START(2);
         uint8_t target_idx = pc[1];
@@ -3151,7 +3151,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_call_native1(PARAMS)
+    static INTERP_CC Value op_call_intrinsic1(PARAMS)
     {
         START(2);
         uint8_t target_idx = pc[1];
@@ -3161,7 +3161,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_call_native2(PARAMS)
+    static INTERP_CC Value op_call_intrinsic2(PARAMS)
     {
         START(2);
         uint8_t target_idx = pc[1];
@@ -3172,7 +3172,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_call_native3(PARAMS)
+    static INTERP_CC Value op_call_intrinsic3(PARAMS)
     {
         START(2);
         uint8_t target_idx = pc[1];
@@ -3184,7 +3184,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_call_native4(PARAMS)
+    static INTERP_CC Value op_call_intrinsic4(PARAMS)
     {
         START(2);
         uint8_t target_idx = pc[1];
@@ -3197,7 +3197,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_call_native5(PARAMS)
+    static INTERP_CC Value op_call_intrinsic5(PARAMS)
     {
         START(2);
         uint8_t target_idx = pc[1];
@@ -3211,7 +3211,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_call_native6(PARAMS)
+    static INTERP_CC Value op_call_intrinsic6(PARAMS)
     {
         START(2);
         uint8_t target_idx = pc[1];
@@ -3226,7 +3226,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_call_native7(PARAMS)
+    static INTERP_CC Value op_call_intrinsic7(PARAMS)
     {
         START(2);
         uint8_t target_idx = pc[1];
@@ -3242,13 +3242,13 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_call_intrinsic0(PARAMS)
+    static INTERP_CC Value op_call_runtime_intrinsic0(PARAMS)
     {
         START(2);
-        Intrinsic0 intrinsic = Intrinsic0(pc[1]);
+        RuntimeIntrinsic0 intrinsic = RuntimeIntrinsic0(pc[1]);
         switch(intrinsic)
         {
-            case Intrinsic0::Globals:
+            case RuntimeIntrinsic0::Globals:
                 {
                     CodeObject *caller_code_object =
                         fp[FrameHeaderReturnCodeObjectOffset]
@@ -3260,7 +3260,7 @@ namespace cl
                             .raw_value();
                     COMPLETE();
                 }
-            case Intrinsic0::Locals:
+            case RuntimeIntrinsic0::Locals:
                 {
                     CodeObject *caller_code_object =
                         fp[FrameHeaderReturnCodeObjectOffset]
@@ -3281,7 +3281,7 @@ namespace cl
                             .raw_value();
                     COMPLETE();
                 }
-            case Intrinsic0::ImportStar:
+            case RuntimeIntrinsic0::ImportStar:
                 {
                     thread->set_clover_frame_frontier(fp);
                     accumulator = import_star(thread, code_object, accumulator);
@@ -3717,15 +3717,16 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::RaiseBare, op_raise_bare);
 
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
-        SET_TABLE_ENTRY(Bytecode::CallNative0, op_call_native0);
-        SET_TABLE_ENTRY(Bytecode::CallNative1, op_call_native1);
-        SET_TABLE_ENTRY(Bytecode::CallNative2, op_call_native2);
-        SET_TABLE_ENTRY(Bytecode::CallNative3, op_call_native3);
-        SET_TABLE_ENTRY(Bytecode::CallNative4, op_call_native4);
-        SET_TABLE_ENTRY(Bytecode::CallNative5, op_call_native5);
-        SET_TABLE_ENTRY(Bytecode::CallNative6, op_call_native6);
-        SET_TABLE_ENTRY(Bytecode::CallNative7, op_call_native7);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic0, op_call_intrinsic0);
+        SET_TABLE_ENTRY(Bytecode::CallIntrinsic1, op_call_intrinsic1);
+        SET_TABLE_ENTRY(Bytecode::CallIntrinsic2, op_call_intrinsic2);
+        SET_TABLE_ENTRY(Bytecode::CallIntrinsic3, op_call_intrinsic3);
+        SET_TABLE_ENTRY(Bytecode::CallIntrinsic4, op_call_intrinsic4);
+        SET_TABLE_ENTRY(Bytecode::CallIntrinsic5, op_call_intrinsic5);
+        SET_TABLE_ENTRY(Bytecode::CallIntrinsic6, op_call_intrinsic6);
+        SET_TABLE_ENTRY(Bytecode::CallIntrinsic7, op_call_intrinsic7);
+        SET_TABLE_ENTRY(Bytecode::CallRuntimeIntrinsic0,
+                        op_call_runtime_intrinsic0);
         SET_TABLE_ENTRY(Bytecode::CallCodeObject, op_call_code_object);
         SET_TABLE_ENTRY(Bytecode::ImportName, op_import_name);
         SET_TABLE_ENTRY(Bytecode::ImportFrom, op_import_from);

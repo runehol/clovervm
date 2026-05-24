@@ -93,22 +93,22 @@ namespace cl
     }
 }  // namespace cl
 
-template <> struct fmt::formatter<cl::Intrinsic0>
+template <> struct fmt::formatter<cl::RuntimeIntrinsic0>
 {
     constexpr auto parse(format_parse_context &ctx) { return ctx.end(); }
 
     template <typename FormatContext>
-    auto format(const cl::Intrinsic0 intrinsic, FormatContext &ctx) const
+    auto format(const cl::RuntimeIntrinsic0 intrinsic, FormatContext &ctx) const
         -> decltype(ctx.out())
     {
         auto &&out = ctx.out();
         switch(intrinsic)
         {
-            case cl::Intrinsic0::Globals:
+            case cl::RuntimeIntrinsic0::Globals:
                 return format_to(out, "Globals");
-            case cl::Intrinsic0::Locals:
+            case cl::RuntimeIntrinsic0::Locals:
                 return format_to(out, "Locals");
-            case cl::Intrinsic0::ImportStar:
+            case cl::RuntimeIntrinsic0::ImportStar:
                 return format_to(out, "ImportStar");
         }
         return format_to(out, "<unknown>");
@@ -319,24 +319,24 @@ template <> struct fmt::formatter<cl::Bytecode>
 
             case cl::Bytecode::CallSimple:
                 return format_to(out, "CallSimple");
-            case cl::Bytecode::CallNative0:
-                return format_to(out, "CallNative0");
-            case cl::Bytecode::CallNative1:
-                return format_to(out, "CallNative1");
-            case cl::Bytecode::CallNative2:
-                return format_to(out, "CallNative2");
-            case cl::Bytecode::CallNative3:
-                return format_to(out, "CallNative3");
-            case cl::Bytecode::CallNative4:
-                return format_to(out, "CallNative4");
-            case cl::Bytecode::CallNative5:
-                return format_to(out, "CallNative5");
-            case cl::Bytecode::CallNative6:
-                return format_to(out, "CallNative6");
-            case cl::Bytecode::CallNative7:
-                return format_to(out, "CallNative7");
             case cl::Bytecode::CallIntrinsic0:
                 return format_to(out, "CallIntrinsic0");
+            case cl::Bytecode::CallIntrinsic1:
+                return format_to(out, "CallIntrinsic1");
+            case cl::Bytecode::CallIntrinsic2:
+                return format_to(out, "CallIntrinsic2");
+            case cl::Bytecode::CallIntrinsic3:
+                return format_to(out, "CallIntrinsic3");
+            case cl::Bytecode::CallIntrinsic4:
+                return format_to(out, "CallIntrinsic4");
+            case cl::Bytecode::CallIntrinsic5:
+                return format_to(out, "CallIntrinsic5");
+            case cl::Bytecode::CallIntrinsic6:
+                return format_to(out, "CallIntrinsic6");
+            case cl::Bytecode::CallIntrinsic7:
+                return format_to(out, "CallIntrinsic7");
+            case cl::Bytecode::CallRuntimeIntrinsic0:
+                return format_to(out, "CallRuntimeIntrinsic0");
             case cl::Bytecode::CallCodeObject:
                 return format_to(out, "CallCodeObject");
             case cl::Bytecode::ImportName:
@@ -764,19 +764,20 @@ template <> struct fmt::formatter<cl::CodeObject>
                 }
                 break;
 
-            case cl::Bytecode::CallNative0:
-            case cl::Bytecode::CallNative1:
-            case cl::Bytecode::CallNative2:
-            case cl::Bytecode::CallNative3:
-            case cl::Bytecode::CallNative4:
-            case cl::Bytecode::CallNative5:
-            case cl::Bytecode::CallNative6:
-            case cl::Bytecode::CallNative7:
+            case cl::Bytecode::CallIntrinsic0:
+            case cl::Bytecode::CallIntrinsic1:
+            case cl::Bytecode::CallIntrinsic2:
+            case cl::Bytecode::CallIntrinsic3:
+            case cl::Bytecode::CallIntrinsic4:
+            case cl::Bytecode::CallIntrinsic5:
+            case cl::Bytecode::CallIntrinsic6:
+            case cl::Bytecode::CallIntrinsic7:
                 format_to(out, " {}", code_obj.code[pc++]);
                 break;
 
-            case cl::Bytecode::CallIntrinsic0:
-                format_to(out, " {}", cl::Intrinsic0(code_obj.code[pc++]));
+            case cl::Bytecode::CallRuntimeIntrinsic0:
+                format_to(out, " {}",
+                          cl::RuntimeIntrinsic0(code_obj.code[pc++]));
                 break;
 
             case cl::Bytecode::CallCodeObject:
