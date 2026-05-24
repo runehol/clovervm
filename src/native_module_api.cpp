@@ -1,6 +1,5 @@
 #include "native_module_api_internal.h"
 
-#include "float.h"
 #include "module_object.h"
 #include "native_function.h"
 #include "str.h"
@@ -8,16 +7,12 @@
 #include "typed_value.h"
 #include "unicode.h"
 #include "virtual_machine.h"
-#include <cstdint>
 #include <string_view>
 
 namespace cl
 {
     namespace
     {
-        constexpr int64_t kMinSmi = -(int64_t{1} << 58);
-        constexpr int64_t kMaxSmi = (int64_t{1} << 58) - 1;
-
         TValue<String> interned_string(ThreadState *thread,
                                        const std::wstring &text)
         {
@@ -162,7 +157,7 @@ extern "C" CL_EXPORT clover_status clover_module_add_int_constant(
         return CLOVER_STATUS_ERROR;
     }
 
-    if(value < cl::kMinSmi || value > cl::kMaxSmi)
+    if(value < cl::kMinNativeApiSmi || value > cl::kMaxNativeApiSmi)
     {
         return cl::set_builder_import_error(
             builder,
@@ -276,92 +271,4 @@ clover_module_add_string_constant(clover_native_module_builder *builder,
             builder, L"native module could not set string constant");
     }
     return CLOVER_STATUS_OK;
-}
-
-extern "C" CL_EXPORT clover_value clover_none(clover_call_context *ctx)
-{
-    (void)ctx;
-    return cl::wrap_clover_value(cl::Value::None());
-}
-
-extern "C" CL_EXPORT clover_value clover_int64(clover_call_context *ctx,
-                                               int64_t value)
-{
-    if(value < cl::kMinSmi || value > cl::kMaxSmi)
-    {
-        if(ctx != nullptr && ctx->thread != nullptr)
-        {
-            (void)ctx->thread->set_pending_builtin_exception_string(
-                L"OverflowError",
-                L"integer is outside the supported native API range");
-        }
-        return clover_propagate_error(ctx);
-    }
-    return cl::wrap_clover_value(cl::Value::from_smi(value));
-}
-
-extern "C" CL_EXPORT clover_value
-clover_float_from_double(clover_call_context *ctx, double value)
-{
-    if(ctx == nullptr || ctx->thread == nullptr)
-    {
-        return clover_propagate_error(ctx);
-    }
-    return cl::wrap_clover_value(
-        ctx->thread->make_object_value<cl::Float>(value).raw_value());
-}
-
-extern "C" CL_EXPORT clover_status clover_float_as_double(
-    clover_call_context *ctx, clover_value value, double *out)
-{
-    if(ctx == nullptr || ctx->thread == nullptr || out == nullptr)
-    {
-        return CLOVER_STATUS_ERROR;
-    }
-
-    cl::Value unwrapped = cl::unwrap_clover_value(value);
-    if(unwrapped.is_smi())
-    {
-        *out = static_cast<double>(unwrapped.get_smi());
-        return CLOVER_STATUS_OK;
-    }
-
-    if(cl::can_convert_to<cl::Float>(unwrapped))
-    {
-        *out = unwrapped.get_ptr<cl::Float>()->value;
-        return CLOVER_STATUS_OK;
-    }
-
-    (void)ctx->thread->set_pending_builtin_exception_string(
-        L"TypeError", L"value cannot be converted to float");
-    return CLOVER_STATUS_ERROR;
-}
-
-extern "C" CL_EXPORT clover_value
-clover_raise_value_error(clover_call_context *ctx, const char *utf8_message)
-{
-    if(ctx != nullptr && ctx->thread != nullptr)
-    {
-        std::optional<std::wstring> decoded_message =
-            cl::unicode::decode_utf8_c_string(utf8_message);
-        if(decoded_message.has_value())
-        {
-            (void)ctx->thread->set_pending_builtin_exception_string(
-                L"ValueError", decoded_message->c_str());
-        }
-        else
-        {
-            (void)ctx->thread->set_pending_builtin_exception_string(
-                L"ValueError",
-                L"native extension error message must be valid UTF-8");
-        }
-    }
-    return clover_propagate_error(ctx);
-}
-
-extern "C" CL_EXPORT clover_value
-clover_propagate_error(clover_call_context *ctx)
-{
-    (void)ctx;
-    return cl::wrap_clover_value(cl::Value::exception_marker());
 }

@@ -3,10 +3,14 @@
 
 #include "value.h"
 #include <clovervm/native_module.h>
+#include <cstdint>
 #include <cstring>
 
 namespace cl
 {
+    constexpr int64_t kMinNativeApiSmi = -(int64_t{1} << 58);
+    constexpr int64_t kMaxNativeApiSmi = (int64_t{1} << 58) - 1;
+
     class ModuleObject;
     class ThreadState;
 
