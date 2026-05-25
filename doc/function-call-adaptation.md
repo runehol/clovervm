@@ -21,11 +21,14 @@ paths:
 - `Function` metadata tracks minimum and maximum positional arity, grouped
   signature counts, keyword-bindable parameter remaps, and
   `first_default_slot`;
-- entry adaptation supports fixed arity, positional defaults, and callee
-  `*args`;
+- entry adaptation supports fixed arity, positional defaults, defaulted
+  keyword-only parameters in the compact-default layouts described below, and
+  callee `*args`;
 - parser/codegen represent explicit caller positional and keyword arguments;
 - parser accepts richer callee signature syntax, but codegen still rejects
-  positional-only, keyword-only, and `**kwargs` parameters for runtime use;
+  positional-only parameters, required keyword-only parameters, mixed
+  positional-default plus keyword-only-default layouts, and `**kwargs`
+  parameters for runtime use;
 - caller `*args` and `**kwargs` expansion remain unsupported.
 
 The keyword-call path deliberately does not introduce the full Python callable
@@ -178,10 +181,11 @@ contract.
 
 ## Default Slot Layout
 
-The current runtime supports a compact positional-default suffix tuple plus
+The current runtime supports a compact default suffix tuple plus
 `FunctionSignature::first_default_slot`. For the supported runtime signature
-subset, defaults are contiguous over positional parameters and this is enough to
-derive the tuple index from the formal slot.
+subset, defaults are contiguous over either positional parameters or
+keyword-only parameters, and this is enough to derive the tuple index from the
+formal slot.
 
 The planned richer signature runtime extends this into a slot-indexed suffix
 that begins at the first callee parameter slot with a default, instead of
@@ -197,11 +201,11 @@ default_presence mask
 ```
 
 `default_presence` is not implemented yet. Today, the runtime effectively
-assumes that every formal slot at or after `first_default_slot` has a default,
-which is correct only for the currently supported compact positional-default
-suffix. The presence mask should be added before enabling runtime signatures
-with holes in the default table, such as defaulted keyword-only parameters after
-`*args`.
+assumes that every formal slot in the active default block has a default. This
+is correct only for the currently supported compact positional-default suffix
+and compact keyword-only-default suffix. The presence mask should be added
+before enabling runtime signatures with holes or multiple default blocks, such
+as a function that has both positional defaults and keyword-only defaults.
 
 `first_default_slot` is the lowest callee parameter slot that has any default.
 `default_values[0]` corresponds to that slot, and `default_values[i]`
@@ -352,7 +356,9 @@ starred-call or generic callable protocol work.
 
   It parses `/`, bare `*`, `*args`, keyword-only parameters, and `**kwargs`
   into distinct AST structure. Codegen still rejects the runtime-unsupported
-  callee forms. Defaults remain attached to parameter nodes for now.
+  callee forms: positional-only parameters, required keyword-only parameters,
+  mixed positional-default plus keyword-only-default layouts, and `**kwargs`.
+  Defaults remain attached to parameter nodes for now.
 
 - [x] **Codegen and function signature metadata**
 
@@ -429,9 +435,11 @@ starred-call or generic callable protocol work.
   path and keyword calls carry a names tuple. Keyword call microbenchmarks cover
   all-keyword, mixed positional/keyword, and default-using keyword calls.
 
-  Method keyword calls, keyword-only parameters, positional-only parameters,
-  callee `**kwargs`, caller `*args`, caller `**kwargs`, generic `__call__`, and
-  descriptor-heavy callable behavior remain unsupported.
+  Method keyword calls, positional-only parameters, required keyword-only
+  parameters, mixed positional-default plus keyword-only-default layouts, callee
+  `**kwargs`, caller `*args`, caller `**kwargs`, generic `__call__`, and
+  descriptor-heavy callable behavior remain unsupported. Defaulted
+  keyword-only parameters are supported only for compact-default layouts.
 
 ## Deferred Work
 
@@ -439,10 +447,11 @@ The following require separate design/implementation slices:
 
 - keyword method calls, including whether to add a fused method-keyword opcode
   or split method lookup/binding from keyword call entry;
-- default presence metadata for slot-indexed defaults, including constructor
-  thunk default-table shifting after removing `self`;
+- default presence metadata for slot-indexed defaults and mixed default blocks,
+  including constructor thunk default-table shifting after removing `self`;
 - runtime support for positional-only parameters;
-- runtime support for keyword-only parameters and their defaults;
+- runtime support for required keyword-only parameters and keyword-only defaults
+  outside the current compact-default layouts;
 - callee `**kwargs`, including allocation, insertion order, and interaction
   with unexpected explicit keywords;
 - caller `*args` expansion, including iterable protocol details and error
