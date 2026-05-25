@@ -196,6 +196,13 @@ default_values tuple
 default_presence mask
 ```
 
+`default_presence` is not implemented yet. Today, the runtime effectively
+assumes that every formal slot at or after `first_default_slot` has a default,
+which is correct only for the currently supported compact positional-default
+suffix. The presence mask should be added before enabling runtime signatures
+with holes in the default table, such as defaulted keyword-only parameters after
+`*args`.
+
 `first_default_slot` is the lowest callee parameter slot that has any default.
 `default_values[0]` corresponds to that slot, and `default_values[i]`
 corresponds to callee slot `first_default_slot + i`. `default_presence[i]` says
@@ -240,6 +247,13 @@ default_presence   = 1011
 The `None` at tuple offset 1 is just a valid placeholder for the `*args` slot.
 It is skipped because the mask bit is clear. If a user writes `b=None`, that
 entry is also `None`, but its mask bit is set and the default is copied.
+
+Constructor thunks need explicit handling when `default_presence` is added.
+Thunk signatures remove initializer slot 0 (`self`), so default metadata must be
+rebuilt by shifting each present initializer default from `init_slot` to
+`init_slot - 1`, skipping any default that would belong to `self`, and then
+constructing the thunk's own `first_default_slot`, defaults tuple, and presence
+mask from the surviving defaults.
 
 This keeps default initialization uniform:
 
@@ -425,6 +439,8 @@ The following require separate design/implementation slices:
 
 - keyword method calls, including whether to add a fused method-keyword opcode
   or split method lookup/binding from keyword call entry;
+- default presence metadata for slot-indexed defaults, including constructor
+  thunk default-table shifting after removing `self`;
 - runtime support for positional-only parameters;
 - runtime support for keyword-only parameters and their defaults;
 - callee `**kwargs`, including allocation, insertion order, and interaction
