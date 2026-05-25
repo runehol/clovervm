@@ -1413,33 +1413,33 @@ namespace cl
         return FunctionCallAdaptation::Defaults;
     }
 
-    static ALWAYSINLINE void
-    populate_function_call_cache(FunctionCallInlineCache &cache,
-                                 TValue<Function> fun, uint32_t n_args,
-                                 FunctionCallAdaptation adaptation)
+    static ALWAYSINLINE void populate_function_call_cache_with_guard(
+        FunctionCallInlineCache &cache, Value guard_value, TValue<Function> fun,
+        ValidityCell *validity_cell, uint32_t n_args)
     {
-        cache.kind = FunctionCallInlineCacheKind::Function;
-        cache.guard_value = fun.raw_value();
+        cache.guard_value = guard_value;
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
-        cache.validity_cell = nullptr;
+        cache.validity_cell = validity_cell;
         cache.n_args = n_args;
-        cache.adaptation = adaptation;
+        cache.adaptation = classify_function_call_adaptation(fun);
+    }
+
+    static ALWAYSINLINE void
+    populate_function_call_cache(FunctionCallInlineCache &cache,
+                                 TValue<Function> fun, uint32_t n_args)
+    {
+        populate_function_call_cache_with_guard(cache, fun.raw_value(), fun,
+                                                nullptr, n_args);
     }
 
     static ALWAYSINLINE void
     populate_constructor_call_cache(FunctionCallInlineCache &cache,
                                     ClassObject *cls, TValue<Function> thunk,
-                                    ValidityCell *lookup_cell, uint32_t n_args,
-                                    FunctionCallAdaptation adaptation)
+                                    ValidityCell *lookup_cell, uint32_t n_args)
     {
-        cache.kind = FunctionCallInlineCacheKind::Constructor;
-        cache.guard_value = Value::from_oop(cls);
-        cache.function = thunk.extract();
-        cache.code_object = thunk.extract()->code_object.extract();
-        cache.validity_cell = lookup_cell;
-        cache.n_args = n_args;
-        cache.adaptation = adaptation;
+        populate_function_call_cache_with_guard(cache, Value::from_oop(cls),
+                                                thunk, lookup_cell, n_args);
     }
 
     static ALWAYSINLINE bool
@@ -1450,16 +1450,8 @@ namespace cl
         {
             return false;
         }
-        if(cache.kind == FunctionCallInlineCacheKind::Function)
-        {
-            return true;
-        }
-        if(cache.kind == FunctionCallInlineCacheKind::Constructor)
-        {
-            return cache.validity_cell != nullptr &&
-                   cache.validity_cell->is_valid();
-        }
-        return false;
+        return cache.validity_cell == nullptr ||
+               cache.validity_cell->is_valid();
     }
 
     static ALWAYSINLINE void
@@ -2985,14 +2977,13 @@ namespace cl
             {
                 MUSTTAIL return wrong_arity_error(ARGS);
             }
-            FunctionCallAdaptation adaptation =
-                classify_function_call_adaptation(thunk);
-            populate_constructor_call_cache(
-                code_object->function_call_caches[cache_idx], cls, thunk,
-                constructor.lookup_cell, n_args, adaptation);
+            FunctionCallInlineCache &call_cache =
+                code_object->function_call_caches[cache_idx];
+            populate_constructor_call_cache(call_cache, cls, thunk,
+                                            constructor.lookup_cell, n_args);
             enter_function_frame_from_positional_args(
                 thread, fp, pc, code_object, thunk, first_arg_reg, n_args,
-                call_instr_len, adaptation);
+                call_instr_len, call_cache.adaptation);
             if(unlikely(thread->safepoint_requested()))
             {
                 MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -3012,14 +3003,12 @@ namespace cl
         {
             MUSTTAIL return wrong_arity_error(ARGS);
         }
-        FunctionCallAdaptation adaptation =
-            classify_function_call_adaptation(function);
-        populate_function_call_cache(
-            code_object->function_call_caches[cache_idx], function, n_args,
-            adaptation);
+        FunctionCallInlineCache &call_cache =
+            code_object->function_call_caches[cache_idx];
+        populate_function_call_cache(call_cache, function, n_args);
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, adaptation);
+            call_instr_len, call_cache.adaptation);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -3202,12 +3191,10 @@ namespace cl
         }
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
-        FunctionCallAdaptation adaptation =
-            classify_function_call_adaptation(function);
-        populate_function_call_cache(call_cache, function, n_args, adaptation);
+        populate_function_call_cache(call_cache, function, n_args);
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, adaptation);
+            call_instr_len, call_cache.adaptation);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -3377,12 +3364,10 @@ namespace cl
         }
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
-        FunctionCallAdaptation adaptation =
-            classify_function_call_adaptation(function);
-        populate_function_call_cache(call_cache, function, n_args, adaptation);
+        populate_function_call_cache(call_cache, function, n_args);
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, adaptation);
+            call_instr_len, call_cache.adaptation);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);

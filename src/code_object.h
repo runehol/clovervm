@@ -160,21 +160,13 @@ namespace cl
         Varargs,
     };
 
-    enum class FunctionCallInlineCacheKind : uint8_t
-    {
-        Empty,
-        Function,
-        Constructor,
-    };
-
     struct FunctionCallInlineCache
     {
-        FunctionCallInlineCacheKind kind = FunctionCallInlineCacheKind::Empty;
         Value guard_value = Value::not_present();
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
         ValidityCell *validity_cell = nullptr;
-        uint32_t n_args = 0;
+        uint32_t n_args = UINT32_MAX;
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
     };
 
