@@ -56,11 +56,8 @@ rules. Codegen should not have to rediscover where `/` or `*` appeared by
 scanning a flat parameter list.
 
 Defaults may remain attached to parameter nodes if that best fits the local AST
-style, but codegen should be able to derive two runtime default groups:
-
-- trailing defaults for positional-or-keyword parameters;
-- per-parameter defaults for keyword-only parameters, with a clear required
-  marker for missing defaults.
+style, but codegen should lower positional-or-keyword defaults and keyword-only
+defaults into one runtime default table aligned to callee parameter slots.
 
 ## Call Argument Shape
 
@@ -176,6 +173,71 @@ added later, such as sorted arrays or a small custom open-addressed table.
 Those should be implementation details behind the same signature metadata
 contract.
 
+## Default Slot Layout
+
+The existing positional default tuple should be extended into an aligned suffix
+over callee parameter slots instead of introducing a separate keyword-only
+default container. The common no-default case should still be represented by an
+empty defaults tuple.
+
+The representation needs:
+
+```text
+first_default_slot
+default_values tuple
+default_presence mask
+```
+
+`first_default_slot` is the lowest callee parameter slot that has any default.
+`default_values[i]` corresponds to callee slot `first_default_slot + i`.
+`default_presence[i]` says whether that tuple entry is a real default.
+
+The tuple must contain ordinary Python-visible values only. Placeholder entries
+should use `None`, not VM sentinels such as `not_present`, because tuples are
+normal heap objects and sentinel values would violate tuple storage invariants.
+The mask, not the placeholder value, determines whether an entry is copied.
+This matters because `None` is also a valid user default.
+
+For example:
+
+```python
+def f(a, b=5, *args, c=6, d=7):
+    ...
+```
+
+with callee slots:
+
+```text
+slot 0: a
+slot 1: b
+slot 2: *args
+slot 3: c
+slot 4: d
+```
+
+can lower to:
+
+```text
+first_default_slot = 1
+default_values     = (5, None, 6, 7)
+default_presence   = 1011
+```
+
+The `None` at tuple offset 1 is just a valid placeholder for the `*args` slot.
+It is skipped because the mask bit is clear. If a user writes `b=None`, that
+entry is also `None`, but its mask bit is set and the default is copied.
+
+This keeps default initialization uniform:
+
+```text
+for each present default:
+  frame_slot[first_default_slot + i] = default_values[i]
+```
+
+Then `*args` initialization can write the varargs slot, and keyword remapping
+can overwrite any named parameter defaults supplied explicitly by the caller.
+No keyword ever maps to `*args`, and `*args` never has a default.
+
 ## Binding Algorithm
 
 For an uncached keyword call:
@@ -185,7 +247,10 @@ For an uncached keyword call:
 2. Mark all formal parameters as unfilled in a local binder state.
 3. Copy positional values into formal parameter slots in order.
 4. Reject too many positional values unless the callee has `*args`.
-5. For each supplied keyword name/value pair:
+5. Initialize defaults from the aligned default slot table.
+6. Initialize `*args` to a tuple of extra positional values, or an empty tuple
+   if the varargs slot exists and no extra values were supplied.
+7. For each supplied keyword name/value pair:
    - reject duplicate supplied keyword names at the call site;
    - reject a keyword that names a positional-only parameter;
    - find a matching positional-or-keyword or keyword-only parameter;
@@ -193,14 +258,10 @@ For an uncached keyword call:
    - write the value into the resolved frame slot and mark it filled;
    - if no formal matches and `**kwargs` exists, add the entry there;
    - otherwise raise unexpected-keyword `TypeError`.
-6. Fill missing positional defaults.
-7. Fill missing keyword-only defaults.
 8. Reject any remaining required parameters.
-9. Initialize `*args` to a tuple of extra positional values, or an empty tuple
-   if the varargs slot exists and no extra values were supplied.
-10. Initialize `**kwargs` to a dict of unconsumed keyword values, or an empty
+9. Initialize `**kwargs` to a dict of unconsumed keyword values, or an empty
     dict if the kwargs slot exists and no extra keywords were supplied.
-11. Enter the target function frame using the ordinary frame header and return
+10. Enter the target function frame using the ordinary frame header and return
     machinery.
 
 For the first implementation slice, steps involving caller `*args` and
@@ -265,8 +326,8 @@ generic callable protocol work.
   `**kwargs` into distinct AST structure. It should keep existing simple
   function definitions rendering and compiling while making unsupported runtime
   cases explicit. Defaults can stay attached to parameter nodes, but the grouped
-  AST must make it straightforward for codegen to derive positional defaults and
-  keyword-only defaults separately.
+  AST must make it straightforward for codegen to lower positional and
+  keyword-only defaults into the aligned default slot table.
 
   Parser tests should cover ordinary parameters, trailing commas, `/`, bare
   `*`, `*args`, keyword-only required/default parameters, `**kwargs`, and syntax
@@ -277,8 +338,8 @@ generic callable protocol work.
   Extend `CodeObject` and `Function` metadata beyond
   `n_positional_parameters` plus `HasVarArgs`. The metadata should describe:
   positional-only count, positional-or-keyword count, keyword-only count,
-  varargs/kwargs presence, parameter names, positional defaults, keyword-only
-  defaults, and the compact keyword-bindable layout.
+  varargs/kwargs presence, parameter names, the aligned default slot table, and
+  the compact keyword-bindable layout.
 
   Existing positional-only-at-runtime behavior should keep using the current
   fast path when a function has no richer signature features. The new metadata
@@ -333,9 +394,9 @@ generic callable protocol work.
   The binder should prepare the callee frame, copy positional arguments, resolve
   each keyword by scanning the signature keyword layout, reject duplicate
   fills, reject positional-only names used as keywords, reject unexpected
-  keywords without `**kwargs`, fill positional and keyword-only defaults, build
-  `*args`/`**kwargs` slots when those formal parameters exist, and report
-  missing required parameters.
+  keywords without `**kwargs`, initialize defaults from the aligned default slot
+  table, build `*args`/`**kwargs` slots when those formal parameters exist, and
+  report missing required parameters.
 
   Fallibility should follow the interpreter's pending-exception conventions.
   The semantic slow path may be cold, but it should still make allocation,
