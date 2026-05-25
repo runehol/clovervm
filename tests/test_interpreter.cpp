@@ -633,6 +633,108 @@ TEST(Interpreter, while_condition_after_delete_can_still_raise)
                         L"NameError: name 'x' is not defined");
 }
 
+TEST(Interpreter, loop_break_after_delete_ignores_unreachable_assignment)
+{
+    expect_python_error(L"def f():\n"
+                        L"    x = 1\n"
+                        L"    while x:\n"
+                        L"        del x\n"
+                        L"        break\n"
+                        L"        x = 1\n"
+                        L"    return x\n"
+                        L"f()\n",
+                        L"NameError: name 'x' is not defined");
+}
+
+TEST(Interpreter, loop_continue_after_delete_ignores_unreachable_assignment)
+{
+    expect_python_error(L"def f():\n"
+                        L"    x = 1\n"
+                        L"    for i in range(2):\n"
+                        L"        if i:\n"
+                        L"            return x\n"
+                        L"        del x\n"
+                        L"        continue\n"
+                        L"        x = 1\n"
+                        L"    return 0\n"
+                        L"f()\n",
+                        L"NameError: name 'x' is not defined");
+}
+
+TEST(Interpreter, try_handler_entry_accounts_for_protected_prefix_delete)
+{
+    expect_python_error(L"def boom():\n"
+                        L"    1 / 0\n"
+                        L"def f():\n"
+                        L"    x = 1\n"
+                        L"    try:\n"
+                        L"        del x\n"
+                        L"        boom()\n"
+                        L"        x = 1\n"
+                        L"    except ZeroDivisionError:\n"
+                        L"        pass\n"
+                        L"    return x\n"
+                        L"f()\n",
+                        L"NameError: name 'x' is not defined");
+}
+
+TEST(Interpreter, finally_entry_accounts_for_protected_prefix_delete)
+{
+    expect_python_error(L"def boom():\n"
+                        L"    1 / 0\n"
+                        L"def f():\n"
+                        L"    x = 1\n"
+                        L"    try:\n"
+                        L"        del x\n"
+                        L"        boom()\n"
+                        L"        x = 1\n"
+                        L"    finally:\n"
+                        L"        x\n"
+                        L"f()\n",
+                        L"NameError: name 'x' is not defined");
+}
+
+TEST(Interpreter, finally_entry_accounts_for_handler_prefix_delete)
+{
+    expect_python_error(L"def f():\n"
+                        L"    x = 1\n"
+                        L"    try:\n"
+                        L"        raise ValueError\n"
+                        L"    except ValueError:\n"
+                        L"        del x\n"
+                        L"    finally:\n"
+                        L"        return x\n"
+                        L"f()\n",
+                        L"NameError: name 'x' is not defined");
+}
+
+TEST(Interpreter, with_suppressed_exception_accounts_for_body_prefix_delete)
+{
+    expect_python_error(L"class Manager:\n"
+                        L"    def __enter__(self):\n"
+                        L"        return self\n"
+                        L"    def __exit__(self, typ, exc, tb):\n"
+                        L"        return True\n"
+                        L"def f():\n"
+                        L"    x = 1\n"
+                        L"    with Manager():\n"
+                        L"        del x\n"
+                        L"        raise ValueError\n"
+                        L"        x = 1\n"
+                        L"    return x\n"
+                        L"f()\n",
+                        L"NameError: name 'x' is not defined");
+}
+
+TEST(Interpreter, assert_message_expression_gets_scope_analysis)
+{
+    expect_python_error(L"def f():\n"
+                        L"    assert False, missing\n"
+                        L"    missing = 1\n"
+                        L"f()\n",
+                        L"NameError: name 'missing' is not defined");
+}
+
 TEST(Interpreter, del_missing_local_raises_name_error)
 {
     expect_python_error(L"def clear():\n"
