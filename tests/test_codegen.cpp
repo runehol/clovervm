@@ -1242,6 +1242,17 @@ TEST(Codegen, local_deleted_in_loop_still_uses_checked_load)
     EXPECT_NE(std::string::npos, actual.find("LoadLocalChecked r0"));
 }
 
+TEST(Codegen, local_deleted_in_while_body_checks_next_condition_load)
+{
+    std::string actual = bytecode_str_from_file(L"def read_after_delete():\n"
+                                                L"    x = 1\n"
+                                                L"    while x:\n"
+                                                L"        del x\n"
+                                                L"    return 0\n");
+
+    EXPECT_NE(std::string::npos, actual.find("LoadLocalChecked r0"));
+}
+
 TEST(Codegen, non_direct_for_loop_uses_generic_iterator_protocol_calls)
 {
     std::string expected =

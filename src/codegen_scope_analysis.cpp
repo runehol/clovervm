@@ -841,27 +841,28 @@ namespace cl
                 }
             }
 
-            FlowState analyze_loop_body_entry_fixed_point(
-                AnalysisState &analysis, const FlowState &first_iteration_entry,
-                int32_t body_idx)
+            FlowState analyze_while_condition_entry_fixed_point(
+                AnalysisState &analysis, const FlowState &initial_entry,
+                int32_t condition_idx, int32_t body_idx)
             {
-                FlowState body_entry = first_iteration_entry;
+                FlowState condition_entry = initial_entry;
                 size_t max_iterations = analysis.result.bindings.size() * 2 + 3;
                 for(size_t iteration = 0; iteration < max_iterations;
                     ++iteration)
                 {
-                    FlowState body_exit = body_entry;
+                    FlowState body_exit = condition_entry;
+                    analyze_flow_node(analysis, condition_idx, body_exit);
                     analyze_flow_node(analysis, body_idx, body_exit);
                     FlowState merged_entry =
-                        merge_flow_states(first_iteration_entry, body_exit);
-                    if(flow_states_equal(merged_entry, body_entry))
+                        merge_flow_states(initial_entry, body_exit);
+                    if(flow_states_equal(merged_entry, condition_entry))
                     {
-                        return body_entry;
+                        return condition_entry;
                     }
-                    body_entry = merged_entry;
+                    condition_entry = merged_entry;
                 }
                 assert(false && "loop flow analysis did not converge");
-                return body_entry;
+                return condition_entry;
             }
 
             FlowState analyze_for_body_entry_fixed_point(
@@ -1052,14 +1053,11 @@ namespace cl
 
                     case AstNodeKind::STATEMENT_WHILE:
                         {
+                            FlowState condition_entry =
+                                analyze_while_condition_entry_fixed_point(
+                                    analysis, state, children[0], children[1]);
+                            state = condition_entry;
                             analyze_flow_node(analysis, children[0], state);
-
-                            FlowState body_state =
-                                analyze_loop_body_entry_fixed_point(
-                                    analysis, state, children[1]);
-                            analyze_flow_node(analysis, children[1],
-                                              body_state);
-                            state = merge_flow_states(state, body_state);
                             if(children.size() == 3)
                             {
                                 analyze_flow_node(analysis, children[2], state);

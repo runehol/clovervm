@@ -622,6 +622,17 @@ TEST(Interpreter, loop_local_read_after_delete_can_still_raise)
                         L"NameError: name 'x' is not defined");
 }
 
+TEST(Interpreter, while_condition_after_delete_can_still_raise)
+{
+    expect_python_error(L"def f():\n"
+                        L"    x = 1\n"
+                        L"    while x:\n"
+                        L"        del x\n"
+                        L"    return 0\n"
+                        L"f()\n",
+                        L"NameError: name 'x' is not defined");
+}
+
 TEST(Interpreter, del_missing_local_raises_name_error)
 {
     expect_python_error(L"def clear():\n"

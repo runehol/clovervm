@@ -306,7 +306,8 @@ namespace cl
 
     void List::extend_from_list(const List *other)
     {
-        for(size_t idx = 0; idx < other->size(); ++idx)
+        size_t original_size = other->size();
+        for(size_t idx = 0; idx < original_size; ++idx)
         {
             append(other->item_unchecked(idx));
         }

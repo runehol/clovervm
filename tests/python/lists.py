@@ -32,6 +32,14 @@ xs.extend((6, 7))
 assert xs[5] == 6
 assert xs[6] == 7
 
+self_extend = [1, 2]
+self_extend.extend(self_extend)
+assert len(self_extend) == 4
+assert self_extend[0] == 1
+assert self_extend[1] == 2
+assert self_extend[2] == 1
+assert self_extend[3] == 2
+
 assert xs.count(2) == 1
 assert xs.count(99) == 0
 assert xs.index(4) == 3
