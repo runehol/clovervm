@@ -636,12 +636,49 @@ TEST(Parser, parameters_accept_varargs)
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Parser, keyword_only_parameters_are_not_implemented)
+TEST(Parser, parameters_accept_keyword_only)
 {
-    expect_parse_error(
-        L"def f(*args, keyword_only):\n"
-        L"    return args\n",
-        "SyntaxError: keyword-only parameters are not implemented yet");
+    std::string expected = (""
+                            "def f(*args, keyword_only, other=2):\n"
+                            "    return keyword_only\n"
+                            "def g(a, *, keyword_only):\n"
+                            "    return keyword_only\n");
+    std::string actual = parse(L"def f(*args, keyword_only, other=2):\n"
+                               L"    return keyword_only\n"
+                               L"def g(a, *, keyword_only):\n"
+                               L"    return keyword_only\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, parameters_accept_positional_only)
+{
+    std::string expected = (""
+                            "def f(a, b, /, c=3):\n"
+                            "    return a + c\n"
+                            "def g(a, /):\n"
+                            "    return a\n");
+    std::string actual = parse(L"def f(a, b, /, c=3):\n"
+                               L"    return a + c\n"
+                               L"def g(a, /):\n"
+                               L"    return a\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, parameters_accept_kwargs)
+{
+    std::string expected = (""
+                            "def f(a, *args, keyword_only=1, **kwargs):\n"
+                            "    return kwargs\n"
+                            "def g(**kwargs):\n"
+                            "    return kwargs\n");
+    std::string actual = parse(L"def f(a, *args, keyword_only=1, **kwargs):\n"
+                               L"    return kwargs\n"
+                               L"def g(**kwargs):\n"
+                               L"    return kwargs\n");
+
+    EXPECT_EQ(expected, actual);
 }
 
 TEST(Parser, multiple_varargs_parameters_are_not_implemented)
@@ -649,6 +686,23 @@ TEST(Parser, multiple_varargs_parameters_are_not_implemented)
     expect_parse_error(L"def f(*args, *rest):\n"
                        L"    return args\n",
                        "SyntaxError: * argument may appear only once");
+}
+
+TEST(Parser, parameters_reject_invalid_separators)
+{
+    expect_parse_error(
+        L"def f(/):\n"
+        L"    pass\n",
+        "SyntaxError: invalid positional-only parameter separator");
+    expect_parse_error(L"def f(*):\n"
+                       L"    pass\n",
+                       "SyntaxError: named arguments must follow bare *");
+    expect_parse_error(L"def f(*, **kwargs):\n"
+                       L"    pass\n",
+                       "SyntaxError: named arguments must follow bare *");
+    expect_parse_error(L"def f(**kwargs, after):\n"
+                       L"    pass\n",
+                       "SyntaxError: arguments cannot follow **kwargs");
 }
 
 TEST(Parser, function_and_method_parameter_annotations_parse)

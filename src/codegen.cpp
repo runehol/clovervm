@@ -110,6 +110,45 @@ namespace cl
             FrameHeaderSize);
     }
 
+    AstChildren parameter_signature_group(const AstVector &av,
+                                          int32_t signature_idx,
+                                          uint32_t group_idx)
+    {
+        assert(av.kinds[signature_idx].node_kind ==
+               AstNodeKind::PARAMETER_SIGNATURE);
+        assert(group_idx < av.children[signature_idx].size());
+        return av.children[av.children[signature_idx][group_idx]];
+    }
+
+    bool
+    parameter_signature_has_unsupported_runtime_shape(const AstVector &av,
+                                                      int32_t signature_idx)
+    {
+        return !parameter_signature_group(av, signature_idx, 0).empty() ||
+               !parameter_signature_group(av, signature_idx, 3).empty() ||
+               !parameter_signature_group(av, signature_idx, 4).empty();
+    }
+
+    AstChildren supported_runtime_parameter_order(const AstVector &av,
+                                                  int32_t signature_idx)
+    {
+        if(parameter_signature_has_unsupported_runtime_shape(av, signature_idx))
+        {
+            throw std::runtime_error(
+                "SyntaxError: positional-only, keyword-only, and **kwargs "
+                "parameters are not implemented yet");
+        }
+
+        AstChildren result = parameter_signature_group(av, signature_idx, 1);
+        AstChildren vararg = parameter_signature_group(av, signature_idx, 2);
+        assert(vararg.size() <= 1);
+        for(int32_t param_idx: vararg)
+        {
+            result.push_back(param_idx);
+        }
+        return result;
+    }
+
     TValue<String> ast_string_constant(const AstVector &av, int32_t node_idx)
     {
         return TValue<String>::from_value_assumed(av.constants[node_idx]);
@@ -428,7 +467,8 @@ namespace cl
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
-            AstChildren param_children = av.children[children[0]];
+            AstChildren param_children =
+                supported_runtime_parameter_order(av, children[0]);
             CodeObject *fun_obj =
                 codegen_function(av, code_obj->defining_module().extract(),
                                  code_obj, node_idx, language_mode);
@@ -2399,9 +2439,11 @@ namespace cl
                         "should not end here - this is handled by "
                         "the owning statement");
 
-                case AstNodeKind::PARAMETER_SEQUENCE:
                 case AstNodeKind::PARAMETER:
                 case AstNodeKind::PARAMETER_VARARGS:
+                case AstNodeKind::PARAMETER_KWARGS:
+                case AstNodeKind::PARAMETER_SEQUENCE:
+                case AstNodeKind::PARAMETER_SIGNATURE:
                     throw std::runtime_error("should not end here - this is "
                                              "handled by function definitions");
             }
@@ -2523,7 +2565,8 @@ namespace cl
     {
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
-        AstChildren param_children = av.children[children[0]];
+        AstChildren param_children =
+            supported_runtime_parameter_order(av, children[0]);
         Scope *local_scope =
             make_internal_raw<Scope>(parent_code_obj->local_scope());
         TValue<String> function_name =

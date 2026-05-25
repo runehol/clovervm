@@ -18,6 +18,26 @@ namespace cl
             return TValue<String>::from_value_assumed(value);
         }
 
+        AstChildren signature_parameter_nodes(const AstVector &av,
+                                              int32_t signature_idx)
+        {
+            if(av.kinds[signature_idx].node_kind !=
+               AstNodeKind::PARAMETER_SIGNATURE)
+            {
+                return av.children[signature_idx];
+            }
+
+            AstChildren result;
+            for(int32_t group_idx: av.children[signature_idx])
+            {
+                for(int32_t param_idx: av.children[group_idx])
+                {
+                    result.push_back(param_idx);
+                }
+            }
+            return result;
+        }
+
         struct StringNameHash
         {
             size_t operator()(TValue<String> name) const
@@ -472,7 +492,7 @@ namespace cl
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
                         {
                             AstChildren param_children =
-                                av.children[children[0]];
+                                signature_parameter_nodes(av, children[0]);
                             for(int32_t param_idx: param_children)
                             {
                                 for(int32_t default_idx: av.children[param_idx])
@@ -1691,7 +1711,7 @@ namespace cl
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
                         {
                             AstChildren param_children =
-                                av.children[children[0]];
+                                signature_parameter_nodes(av, children[0]);
                             for(int32_t param_idx: param_children)
                             {
                                 for(int32_t default_idx: av.children[param_idx])

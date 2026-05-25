@@ -48,9 +48,11 @@ namespace cl
         STATEMENT_EXPRESSION,
         IMPORT_ALIAS,
         IMPORT_STAR,
+        PARAMETER_SIGNATURE,
         PARAMETER_SEQUENCE,
         PARAMETER,
         PARAMETER_VARARGS,
+        PARAMETER_KWARGS,
         EXPRESSION_TUPLE,
         EXPRESSION_LIST,
         EXPRESSION_DICT,
@@ -100,9 +102,11 @@ namespace cl
             case AstNodeKind::STATEMENT_EXPRESSION:
             case AstNodeKind::IMPORT_ALIAS:
             case AstNodeKind::IMPORT_STAR:
+            case AstNodeKind::PARAMETER_SIGNATURE:
             case AstNodeKind::PARAMETER_SEQUENCE:
             case AstNodeKind::PARAMETER:
             case AstNodeKind::PARAMETER_VARARGS:
+            case AstNodeKind::PARAMETER_KWARGS:
                 return false;
             case AstNodeKind::EXPRESSION_TUPLE:
             case AstNodeKind::EXPRESSION_LIST:

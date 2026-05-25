@@ -1682,69 +1682,186 @@ namespace cl
 
         int32_t params() { return parameters(); }
 
-        int32_t parameters()
+        int32_t parameter_sequence(uint32_t source_pos, AstChildren children)
         {
-            int32_t source_pos = source_pos_for_token();
-            AstChildren ch;
-            bool seen_default = false;
-            while(peek() != Token::RPAR)
+            return ast.emplace_back(AstNodeKind::PARAMETER_SEQUENCE, source_pos,
+                                    children);
+        }
+
+        int32_t parse_named_parameter(AstNodeKind kind, bool allow_default)
+        {
+            consume(Token::NAME);
+            uint32_t name_source_pos = source_pos_for_previous_token();
+            std::wstring name = std::wstring(
+                string_for_name_token(*ast.compilation_unit, name_source_pos));
+            TValue<String> v = vm.get_or_create_interned_string_value(name);
+            AstChildren parameter_children;
+            if(match(Token::COLON))
             {
-                bool is_varargs = match(Token::STAR);
-                consume(Token::NAME);
-                uint32_t name_source_pos = source_pos_for_previous_token();
-                std::wstring name = std::wstring(string_for_name_token(
-                    *ast.compilation_unit, name_source_pos));
-                TValue<String> v = vm.get_or_create_interned_string_value(name);
-                AstChildren parameter_children;
-                if(match(Token::COLON))
+                expression();
+            }
+            if(match(Token::EQUAL))
+            {
+                if(!allow_default)
                 {
-                    expression();
-                }
-                if(is_varargs)
-                {
-                    if(match(Token::EQUAL))
+                    if(kind == AstNodeKind::PARAMETER_VARARGS)
                     {
                         throw std::runtime_error(
                             "SyntaxError: varargs parameter cannot have a "
                             "default");
                     }
-                    ch.push_back(ast.emplace_back(
-                        AstNodeKind::PARAMETER_VARARGS, name_source_pos,
-                        parameter_children, v));
-                    if(match(Token::COMMA) && peek() != Token::RPAR)
+                    throw std::runtime_error(
+                        "SyntaxError: kwargs parameter cannot have a default");
+                }
+                parameter_children.push_back(expression());
+            }
+            return ast.emplace_back(kind, name_source_pos, parameter_children,
+                                    v);
+        }
+
+        int32_t parameters()
+        {
+            int32_t source_pos = source_pos_for_token();
+            AstChildren posonly;
+            AstChildren pos_or_kw;
+            AstChildren vararg;
+            AstChildren kwonly;
+            AstChildren kwarg;
+            bool seen_default = false;
+            bool seen_slash = false;
+            bool parsing_kwonly = false;
+            bool seen_star = false;
+            bool bare_star_needs_kwonly = false;
+            while(peek() != Token::RPAR)
+            {
+                if(match(Token::SLASH))
+                {
+                    if(seen_slash || parsing_kwonly || pos_or_kw.empty())
                     {
-                        if(peek() == Token::STAR)
+                        throw std::runtime_error(
+                            "SyntaxError: invalid positional-only parameter "
+                            "separator");
+                    }
+                    seen_slash = true;
+                    posonly = pos_or_kw;
+                    pos_or_kw.clear();
+                    if(!match(Token::COMMA))
+                    {
+                        if(peek() != Token::RPAR)
                         {
                             throw std::runtime_error(
-                                "SyntaxError: * argument may appear only once");
+                                "SyntaxError: positional-only separator must "
+                                "be followed by ',' or ')'");
                         }
+                        break;
+                    }
+                    if(peek() == Token::RPAR)
+                    {
+                        break;
+                    }
+                    continue;
+                }
+                if(match(Token::STAR))
+                {
+                    if(seen_star)
+                    {
                         throw std::runtime_error(
-                            "SyntaxError: keyword-only parameters are not "
-                            "implemented yet");
+                            "SyntaxError: * argument may appear only once");
+                    }
+                    seen_star = true;
+                    parsing_kwonly = true;
+                    if(peek() == Token::NAME)
+                    {
+                        vararg.push_back(parse_named_parameter(
+                            AstNodeKind::PARAMETER_VARARGS, false));
+                    }
+                    else if(peek() == Token::RPAR)
+                    {
+                        throw std::runtime_error(
+                            "SyntaxError: named arguments must follow bare *");
+                    }
+                    else
+                    {
+                        bare_star_needs_kwonly = true;
+                    }
+                    if(!match(Token::COMMA))
+                    {
+                        break;
+                    }
+                    if(peek() == Token::RPAR)
+                    {
+                        if(vararg.empty())
+                        {
+                            throw std::runtime_error(
+                                "SyntaxError: named arguments must follow "
+                                "bare *");
+                        }
+                        break;
+                    }
+                    continue;
+                }
+
+                if(match(Token::DOUBLESTAR))
+                {
+                    if(bare_star_needs_kwonly)
+                    {
+                        throw std::runtime_error(
+                            "SyntaxError: named arguments must follow bare *");
+                    }
+                    kwarg.push_back(parse_named_parameter(
+                        AstNodeKind::PARAMETER_KWARGS, false));
+                    if(match(Token::COMMA) && peek() != Token::RPAR)
+                    {
+                        throw std::runtime_error(
+                            "SyntaxError: arguments cannot follow **kwargs");
                     }
                     break;
                 }
-                if(match(Token::EQUAL))
+
+                int32_t parameter =
+                    parse_named_parameter(AstNodeKind::PARAMETER, true);
+                if(parsing_kwonly)
                 {
-                    seen_default = true;
-                    parameter_children.push_back(expression());
+                    bare_star_needs_kwonly = false;
+                    kwonly.push_back(parameter);
                 }
-                else if(seen_default)
+                else
                 {
-                    throw std::runtime_error(
-                        "SyntaxError: non-default argument follows default "
-                        "argument");
+                    if(!ast.children[parameter].empty())
+                    {
+                        seen_default = true;
+                    }
+                    else if(seen_default)
+                    {
+                        throw std::runtime_error(
+                            "SyntaxError: non-default argument follows default "
+                            "argument");
+                    }
+                    pos_or_kw.push_back(parameter);
                 }
-                ch.push_back(ast.emplace_back(AstNodeKind::PARAMETER,
-                                              name_source_pos,
-                                              parameter_children, v));
+
                 if(!match(Token::COMMA))
+                {
                     break;
+                }
                 if(peek() == Token::RPAR)
+                {
                     break;
+                }
             }
-            return ast.emplace_back(AstNodeKind::PARAMETER_SEQUENCE, source_pos,
-                                    ch);
+
+            AstChildren signature_children;
+            signature_children.push_back(
+                parameter_sequence(source_pos, posonly));
+            signature_children.push_back(
+                parameter_sequence(source_pos, pos_or_kw));
+            signature_children.push_back(
+                parameter_sequence(source_pos, vararg));
+            signature_children.push_back(
+                parameter_sequence(source_pos, kwonly));
+            signature_children.push_back(parameter_sequence(source_pos, kwarg));
+            return ast.emplace_back(AstNodeKind::PARAMETER_SIGNATURE,
+                                    source_pos, signature_children);
         }
 
         int32_t if_stmt()

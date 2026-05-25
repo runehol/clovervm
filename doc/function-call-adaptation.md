@@ -239,6 +239,130 @@ This matches the current constructor-thunk design: the ordinary class hot path
 gets signature-aware specialization, while unusual construction remains a
 future generic protocol path.
 
+## Implementation Checklist
+
+This is the intended first implementation path. Each stage should leave the VM
+in a coherent state and avoid silently implementing the deferred starred-call or
+generic callable protocol work.
+
+- [ ] **Parser and AST signature grouping**
+
+  Replace the current flat function-parameter sequence with an explicit
+  signature shape that preserves the CPython-style groups:
+  positional-only, positional-or-keyword, optional `*args`, keyword-only, and
+  optional `**kwargs`.
+
+  This stage should parse `/`, bare `*`, `*args`, keyword-only parameters, and
+  `**kwargs` into distinct AST structure. It should keep existing simple
+  function definitions rendering and compiling while making unsupported runtime
+  cases explicit. Defaults can stay attached to parameter nodes, but the grouped
+  AST must make it straightforward for codegen to derive positional defaults and
+  keyword-only defaults separately.
+
+  Parser tests should cover ordinary parameters, trailing commas, `/`, bare
+  `*`, `*args`, keyword-only required/default parameters, `**kwargs`, and syntax
+  errors for invalid ordering or repeated separators.
+
+- [ ] **Codegen and function signature metadata**
+
+  Extend `CodeObject` and `Function` metadata beyond
+  `n_positional_parameters` plus `HasVarArgs`. The metadata should describe:
+  positional-only count, positional-or-keyword count, keyword-only count,
+  varargs/kwargs presence, parameter names, positional defaults, keyword-only
+  defaults, and the compact keyword-bindable layout.
+
+  Existing positional-only-at-runtime behavior should keep using the current
+  fast path when a function has no richer signature features. The new metadata
+  should be cheap to inspect from the interpreter and precise enough for the
+  binder to answer whether a name is positional-only, keyword-bindable,
+  required, or defaulted.
+
+  This stage should update constructor-thunk generation to preserve the richer
+  public signature shape with `self` removed, but the thunk body should still
+  assume it receives a normalized frame.
+
+- [ ] **Call argument AST and keyword-call bytecode**
+
+  Add call-argument AST nodes for explicit positional and explicit keyword
+  arguments. Caller `*args` and `**kwargs` may get placeholder AST forms if that
+  simplifies the grammar, but codegen should reject them until their separate
+  runtime slice is designed.
+
+  Add a keyword-call bytecode shape along these lines:
+
+  ```text
+  CallKeyword callable, first_arg, n_pos_args, n_kw_args, kw_names_const, call_ic
+  ```
+
+  Codegen should continue to emit `CallSimple` for calls with no keywords. For
+  calls with explicit keywords, it should evaluate argument values left to right
+  into one contiguous outgoing value window and store keyword names as a
+  constant tuple of interned strings. The keyword tuple should be the call-site
+  shape key used by the eventual inline cache.
+
+  Method-call lowering needs a parallel keyword-aware form or a clearly shared
+  helper so direct method calls can bind `self` and then run the same keyword
+  adaptation policy.
+
+  Open design point: the current `CallMethodAttr` opcode deliberately fuses
+  attribute lookup, method binding, and `CallSimple`-style frame entry for the
+  common `obj.method(...)` shape. Keyword calls could either add a matching
+  fused method-keyword opcode, or split method lookup/binding from call entry so
+  the same `CallKeyword` machinery can be reused. Splitting reduces opcode
+  combinations, but the fused method call is a common hot shape. This should be
+  decided with the interpreter hot path and call-cache shape in view.
+
+- [ ] **Uncached runtime binder**
+
+  Implement the cold keyword-call path for ordinary `Function` objects,
+  eligible constructor thunks, and direct method calls that resolve to a
+  `Function`. It should not attempt arbitrary object `__call__` or descriptor
+  execution beyond what the current method-call path already supports.
+
+  The binder should prepare the callee frame, copy positional arguments, resolve
+  each keyword by scanning the signature keyword layout, reject duplicate
+  fills, reject positional-only names used as keywords, reject unexpected
+  keywords without `**kwargs`, fill positional and keyword-only defaults, build
+  `*args`/`**kwargs` slots when those formal parameters exist, and report
+  missing required parameters.
+
+  Fallibility should follow the interpreter's pending-exception conventions.
+  The semantic slow path may be cold, but it should still make allocation,
+  exception, and frame-entry behavior explicit.
+
+- [ ] **Keyword call inline-cache plan**
+
+  Extend function-call cache state, or add a sibling keyword-call cache state,
+  that specializes on callee identity, constructor validity where relevant,
+  keyword-name tuple identity, and positional argument count.
+
+  The cached plan should store the resolved mapping from keyword value index to
+  parameter slot, plus enough default-fill and varargs/kwargs initialization
+  information for the warm path to avoid name lookup and semantic
+  rediscovery. It is acceptable for the first plan to store logical parameter
+  indexes; a later optimization can store encoded frame offsets directly.
+
+  Cache misses should fall back to the uncached binder and only populate a plan
+  after the full Python binding checks have succeeded.
+
+- [ ] **Semantics and regression tests**
+
+  Add interpreter tests for keyword calls to functions, methods, and eligible
+  constructors. Cover positional plus keyword mixing, keyword reordering,
+  defaults, keyword-only required/default parameters, positional-only rejection,
+  duplicate arguments, missing required arguments, unexpected keywords, varargs
+  interaction, and kwargs formal initialization once `**kwargs` on the callee is
+  implemented.
+
+  Add codegen/disassembly tests only where they pin down high-value structure:
+  `CallSimple` remains the no-keyword path, keyword calls carry a names tuple,
+  and method keyword calls preserve receiver binding. Keep broad behavior in
+  interpreter tests.
+
+  Update documentation for any intentionally unsupported edge that remains
+  after the first slice, especially caller `*args`, caller `**kwargs`, generic
+  `__call__`, and descriptor-heavy callable behavior.
+
 ## Deferred Work
 
 The following require separate design/implementation slices:

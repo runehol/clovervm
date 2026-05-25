@@ -294,6 +294,72 @@ template <> struct fmt::formatter<cl::AstVector>
                 render_node(av, out, children[1], indent, self_precedence);
                 break;
 
+            case cl::AstNodeKind::PARAMETER_SIGNATURE:
+                {
+                    format_to(out, "(");
+                    bool needs_separator = false;
+                    auto render_parameter_list = [&](int32_t sequence_idx) {
+                        cl::AstChildren sequence_children =
+                            av.children[sequence_idx];
+                        for(size_t i = 0; i < sequence_children.size(); ++i)
+                        {
+                            if(needs_separator)
+                            {
+                                format_to(out, ", ");
+                            }
+                            render_node(av, out, sequence_children[i], indent,
+                                        cl::ExpressionPrecedence::Lowest);
+                            needs_separator = true;
+                        }
+                    };
+
+                    render_parameter_list(children[0]);
+                    if(!av.children[children[0]].empty())
+                    {
+                        if(needs_separator)
+                        {
+                            format_to(out, ", ");
+                        }
+                        format_to(out, "/");
+                        needs_separator = true;
+                    }
+                    render_parameter_list(children[1]);
+                    cl::AstChildren vararg_children = av.children[children[2]];
+                    cl::AstChildren kwonly_children = av.children[children[3]];
+                    if(!vararg_children.empty())
+                    {
+                        if(needs_separator)
+                        {
+                            format_to(out, ", ");
+                        }
+                        render_node(av, out, vararg_children[0], indent,
+                                    cl::ExpressionPrecedence::Lowest);
+                        needs_separator = true;
+                    }
+                    else if(!kwonly_children.empty())
+                    {
+                        if(needs_separator)
+                        {
+                            format_to(out, ", ");
+                        }
+                        format_to(out, "*");
+                        needs_separator = true;
+                    }
+                    render_parameter_list(children[3]);
+                    cl::AstChildren kwarg_children = av.children[children[4]];
+                    if(!kwarg_children.empty())
+                    {
+                        if(needs_separator)
+                        {
+                            format_to(out, ", ");
+                        }
+                        render_node(av, out, kwarg_children[0], indent,
+                                    cl::ExpressionPrecedence::Lowest);
+                    }
+                    format_to(out, ")");
+                    break;
+                }
+
             case cl::AstNodeKind::PARAMETER_SEQUENCE:
                 format_to(out, "(");
                 for(size_t i = 0; i < children.size(); ++i)
@@ -322,6 +388,12 @@ template <> struct fmt::formatter<cl::AstVector>
 
             case cl::AstNodeKind::PARAMETER_VARARGS:
                 format_to(out, "*{}",
+                          narrow_wstring_view_ast(string_as_wchar_t(
+                              ast_print_string_constant(av, node_idx))));
+                break;
+
+            case cl::AstNodeKind::PARAMETER_KWARGS:
+                format_to(out, "**{}",
                           narrow_wstring_view_ast(string_as_wchar_t(
                               ast_print_string_constant(av, node_idx))));
                 break;
