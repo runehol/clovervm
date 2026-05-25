@@ -479,6 +479,13 @@ TEST(Codegen, function_varargs_parameter_layout)
     EXPECT_EQ(3, function_code->function_signature.n_parameters);
     EXPECT_EQ(2, function_code->function_signature.n_positional_parameters);
     EXPECT_EQ(2, function_code->function_signature.n_pos_or_kw_parameters);
+    ASSERT_EQ(2u, function_code->function_keyword_remap.size());
+    EXPECT_STREQ(L"a", string_as_wchar_t(TValue<String>::from_value_assumed(
+                           function_code->function_keyword_remap.name_at(0))));
+    EXPECT_EQ(0u, function_code->function_keyword_remap.parameter_index_at(0));
+    EXPECT_STREQ(L"b", string_as_wchar_t(TValue<String>::from_value_assumed(
+                           function_code->function_keyword_remap.name_at(1))));
+    EXPECT_EQ(1u, function_code->function_keyword_remap.parameter_index_at(1));
     EXPECT_TRUE(function_code->has_varargs());
     EXPECT_EQ(7, function_code->get_highest_occupied_frame_offset());
 }
@@ -506,6 +513,16 @@ TEST(Codegen, function_copies_call_signature_from_code_object)
               function->call_signature.function.n_pos_or_kw_parameters);
     EXPECT_EQ(function_code->function_signature.parameter_flags,
               function->call_signature.function.parameter_flags);
+    ASSERT_EQ(function_code->function_keyword_remap.size(),
+              function->keyword_remap.size());
+    EXPECT_EQ(function_code->function_keyword_remap.name_at(0),
+              function->keyword_remap.name_at(0));
+    EXPECT_EQ(function_code->function_keyword_remap.parameter_index_at(0),
+              function->keyword_remap.parameter_index_at(0));
+    EXPECT_EQ(function_code->function_keyword_remap.name_at(1),
+              function->keyword_remap.name_at(1));
+    EXPECT_EQ(function_code->function_keyword_remap.parameter_index_at(1),
+              function->keyword_remap.parameter_index_at(1));
     EXPECT_EQ(1u, function->call_signature.min_positional_arity);
     EXPECT_EQ(Function::VarArgs, function->call_signature.max_positional_arity);
 }

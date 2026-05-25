@@ -10,6 +10,7 @@
 #include "scope.h"
 #include "typed_value.h"
 #include "value.h"
+#include "vm_array.h"
 #include <algorithm>
 #include <clovervm/native_module.h>
 #include <cstdint>
@@ -72,6 +73,43 @@ namespace cl
         FunctionSignature function;
         uint32_t min_positional_arity = 0;
         uint32_t max_positional_arity = 0;
+    };
+
+    struct FunctionKeywordRemap
+    {
+        static constexpr uint64_t embedded_value_count =
+            ValueArray<Value>::embedded_value_count +
+            RawArray<uint16_t>::embedded_value_count;
+
+        ValueArray<Value> keyword_bindable_names;
+        RawArray<uint16_t> keyword_bindable_parameter_indexes;
+
+        size_t size() const { return keyword_bindable_names.size(); }
+        bool empty() const { return keyword_bindable_names.empty(); }
+        Value name_at(size_t idx) const { return keyword_bindable_names[idx]; }
+        uint16_t parameter_index_at(size_t idx) const
+        {
+            return keyword_bindable_parameter_indexes[idx];
+        }
+
+        void add(TValue<String> name, uint16_t parameter_idx)
+        {
+            keyword_bindable_names.push_back(name.raw_value());
+            keyword_bindable_parameter_indexes.push_back(parameter_idx);
+        }
+
+        void copy_from(const FunctionKeywordRemap &other)
+        {
+            keyword_bindable_names.copy_from(other.keyword_bindable_names);
+            keyword_bindable_parameter_indexes.copy_from(
+                other.keyword_bindable_parameter_indexes);
+        }
+
+        void release_refs()
+        {
+            keyword_bindable_names.release_refs();
+            keyword_bindable_parameter_indexes.release_refs();
+        }
     };
 
     using IntrinsicFunction0 = Value (*)(ThreadState *);
@@ -202,6 +240,7 @@ namespace cl
         const CompilationUnit *compilation_unit;
 
         FunctionSignature function_signature;
+        FunctionKeywordRemap function_keyword_remap;
         uint32_t n_locals = 0;
         uint32_t n_temporaries = 0;
         uint32_t n_outgoing_call_slots = 0;

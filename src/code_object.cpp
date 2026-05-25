@@ -20,6 +20,7 @@ namespace cl
         code_object->local_scope.release_ref();
         code_object->name.release_ref();
         code_object->docstring.release_ref();
+        code_object->function_keyword_remap.release_refs();
 
         for(AttributeReadInlineCache &cache: code_object->attribute_read_caches)
         {

@@ -232,6 +232,12 @@ namespace cl
             return code_obj->function_signature;
         }
 
+        FunctionKeywordRemap &function_keyword_remap()
+        {
+            assert_not_finalized();
+            return code_obj->function_keyword_remap;
+        }
+
         uint32_t get_padded_n_parameters() const
         {
             assert(code_obj != nullptr);

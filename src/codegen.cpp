@@ -2582,6 +2582,15 @@ namespace cl
             count_positional_parameters(av, param_children);
         fun_obj.function_signature().n_pos_or_kw_parameters =
             fun_obj.n_positional_parameters();
+        assert(fun_obj.n_positional_parameters() <= UINT16_MAX);
+        for(uint32_t param_idx = 0;
+            param_idx < fun_obj.n_positional_parameters(); ++param_idx)
+        {
+            int32_t parameter_node_idx = param_children[param_idx];
+            fun_obj.function_keyword_remap().add(
+                ast_string_constant(av, parameter_node_idx),
+                static_cast<uint16_t>(param_idx));
+        }
         if(has_varargs_parameter(av, param_children))
         {
             fun_obj.parameter_flags() |= FunctionParameterFlags::HasVarArgs;

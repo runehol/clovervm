@@ -57,6 +57,22 @@ namespace cl
                 code.n_positional_parameters();
             code.parameter_flags() =
                 init_code->function_signature.parameter_flags;
+            for(size_t remap_idx = 0;
+                remap_idx < init_code->function_keyword_remap.size();
+                ++remap_idx)
+            {
+                uint16_t init_parameter_idx =
+                    init_code->function_keyword_remap.parameter_index_at(
+                        remap_idx);
+                if(init_parameter_idx == 0)
+                {
+                    continue;
+                }
+                code.function_keyword_remap().add(
+                    TValue<String>::from_value_assumed(
+                        init_code->function_keyword_remap.name_at(remap_idx)),
+                    uint16_t(init_parameter_idx - 1));
+            }
         }
         else
         {

@@ -102,6 +102,15 @@ namespace cl
 
         bool empty() const { return size() == 0; }
 
+        // For custom heap-object dealloc paths. Static-span owners do not need
+        // this; their embedded handles are released by the layout descriptor.
+        void release_refs()
+        {
+            size_value.release_ref();
+            capacity_value.release_ref();
+            backing.release_ref();
+        }
+
         T *data()
         {
             return backing == nullptr
@@ -215,6 +224,15 @@ namespace cl
             set_size(requested_size);
         }
 
+        void copy_from(const RawArray<T> &other)
+        {
+            resize(other.size());
+            for(size_t idx = 0; idx < other.size(); ++idx)
+            {
+                set(idx, other[idx]);
+            }
+        }
+
         void set(size_t idx, const T &value)
         {
             assert(idx < size());
@@ -316,6 +334,15 @@ namespace cl
         }
 
         bool empty() const { return size() == 0; }
+
+        // For custom heap-object dealloc paths. Static-span owners do not need
+        // this; their embedded handles are released by the layout descriptor.
+        void release_refs()
+        {
+            size_value.release_ref();
+            capacity_value.release_ref();
+            backing.release_ref();
+        }
 
         const T *data() const
         {
@@ -419,6 +446,15 @@ namespace cl
             clear_element(slot);
             new(slot) T(value);
             incref_element(slot);
+        }
+
+        void copy_from(const ValueArray<T> &other)
+        {
+            resize(other.size());
+            for(size_t idx = 0; idx < other.size(); ++idx)
+            {
+                set(idx, other[idx]);
+            }
         }
 
         HeapObject *write_slot_returning_zero_ref(size_t idx, Value value)
