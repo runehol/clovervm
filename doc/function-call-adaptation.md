@@ -57,7 +57,8 @@ scanning a flat parameter list.
 
 Defaults may remain attached to parameter nodes if that best fits the local AST
 style, but codegen should lower positional-or-keyword defaults and keyword-only
-defaults into one runtime default table aligned to callee parameter slots.
+defaults into one runtime default table whose zero index corresponds to the
+first callee parameter slot that has a default.
 
 ## Call Argument Shape
 
@@ -175,10 +176,10 @@ contract.
 
 ## Default Slot Layout
 
-The existing positional default tuple should be extended into an aligned suffix
-over callee parameter slots instead of introducing a separate keyword-only
-default container. The common no-default case should still be represented by an
-empty defaults tuple.
+The existing positional default tuple should be extended into a slot-indexed
+suffix that begins at the first callee parameter slot with a default, instead of
+introducing a separate keyword-only default container. The common no-default case
+should still be represented by an empty defaults tuple.
 
 The representation needs:
 
@@ -189,8 +190,14 @@ default_presence mask
 ```
 
 `first_default_slot` is the lowest callee parameter slot that has any default.
-`default_values[i]` corresponds to callee slot `first_default_slot + i`.
-`default_presence[i]` says whether that tuple entry is a real default.
+`default_values[0]` corresponds to that slot, and `default_values[i]`
+corresponds to callee slot `first_default_slot + i`. `default_presence[i]` says
+whether that tuple entry is a real default.
+
+`first_default_slot` belongs in the function signature metadata because it is a
+property of the callee's formal parameter layout. The default values tuple
+belongs on the `Function`, because default expressions are evaluated when the
+function object is created.
 
 The tuple must contain ordinary Python-visible values only. Placeholder entries
 should use `None`, not VM sentinels such as `not_present`, because tuples are
@@ -247,7 +254,7 @@ For an uncached keyword call:
 2. Mark all formal parameters as unfilled in a local binder state.
 3. Copy positional values into formal parameter slots in order.
 4. Reject too many positional values unless the callee has `*args`.
-5. Initialize defaults from the aligned default slot table.
+5. Initialize defaults from the slot-indexed default table.
 6. Initialize `*args` to a tuple of extra positional values, or an empty tuple
    if the varargs slot exists and no extra values were supplied.
 7. For each supplied keyword name/value pair:
@@ -327,7 +334,7 @@ generic callable protocol work.
   function definitions rendering and compiling while making unsupported runtime
   cases explicit. Defaults can stay attached to parameter nodes, but the grouped
   AST must make it straightforward for codegen to lower positional and
-  keyword-only defaults into the aligned default slot table.
+  keyword-only defaults into the slot-indexed default table.
 
   Parser tests should cover ordinary parameters, trailing commas, `/`, bare
   `*`, `*args`, keyword-only required/default parameters, `**kwargs`, and syntax
@@ -338,7 +345,7 @@ generic callable protocol work.
   Extend `CodeObject` and `Function` metadata beyond
   `n_positional_parameters` plus `HasVarArgs`. The metadata should describe:
   positional-only count, positional-or-keyword count, keyword-only count,
-  varargs/kwargs presence, parameter names, the aligned default slot table, and
+  varargs/kwargs presence, parameter names, the slot-indexed default table, and
   the compact keyword-bindable layout.
 
   Existing positional-only-at-runtime behavior should keep using the current
@@ -394,7 +401,7 @@ generic callable protocol work.
   The binder should prepare the callee frame, copy positional arguments, resolve
   each keyword by scanning the signature keyword layout, reject duplicate
   fills, reject positional-only names used as keywords, reject unexpected
-  keywords without `**kwargs`, initialize defaults from the aligned default slot
+  keywords without `**kwargs`, initialize defaults from the slot-indexed default
   table, build `*args`/`**kwargs` slots when those formal parameters exist, and
   report missing required parameters.
 
