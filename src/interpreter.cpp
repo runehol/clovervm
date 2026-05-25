@@ -1484,14 +1484,17 @@ namespace cl
             fun.extract()->default_parameters.value();
         assert(maybe_defaults.has_value());
         TValue<Tuple> defaults = maybe_defaults.value();
-        uint32_t first_default_idx =
-            uint32_t(defaults.extract()->size()) - n_missing_args;
         CodeObject *target_code_object = fun.extract()->code_object.extract();
+        uint32_t first_default_slot =
+            fun.extract()->call_signature.function.first_default_slot;
+        assert(first_default_slot <= n_supplied_positional_args);
         for(uint32_t idx = 0; idx < n_missing_args; ++idx)
         {
-            uint32_t param_idx = n_args + idx;
+            uint32_t param_idx = n_supplied_positional_args + idx;
+            uint32_t default_idx = param_idx - first_default_slot;
+            assert(default_idx < defaults.extract()->size());
             new_fp[target_code_object->encode_reg(param_idx)] =
-                defaults.extract()->item_unchecked(first_default_idx + idx);
+                defaults.extract()->item_unchecked(default_idx);
         }
     }
 

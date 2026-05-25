@@ -488,6 +488,8 @@ namespace cl
                 size_t first_default_idx =
                     fun_obj->function_signature.n_positional_parameters -
                     n_defaults;
+                fun_obj->function_signature.first_default_slot =
+                    uint32_t(first_default_idx);
                 for(size_t i = 0; i < n_defaults; ++i)
                 {
                     int32_t param_idx = param_children[first_default_idx + i];

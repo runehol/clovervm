@@ -184,6 +184,9 @@ namespace cl
             throw std::runtime_error(
                 "TypeError: unsupported __init__ default parameter layout");
         }
+        code->function_signature.first_default_slot =
+            code->function_signature.n_positional_parameters -
+            uint32_t(thunk_defaults.extract()->size());
         return make_object_value<Function>(
             TValue<CodeObject>::from_oop(code),
             Optional<TValue<String>>::none(),

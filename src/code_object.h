@@ -53,6 +53,7 @@ namespace cl
         uint32_t n_posonly_parameters = 0;
         uint32_t n_pos_or_kw_parameters = 0;
         uint32_t n_kwonly_parameters = 0;
+        uint32_t first_default_slot = 0;
         FunctionParameterFlags parameter_flags = FunctionParameterFlags::None;
 
         bool has_varargs() const

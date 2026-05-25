@@ -41,9 +41,11 @@ namespace cl
             {
                 assert(call_signature.min_positional_arity <=
                        call_signature.function.n_positional_parameters);
+                assert(call_signature.function.first_default_slot <=
+                       call_signature.function.n_positional_parameters);
                 assert(_default_parameters.value().extract()->size() ==
                        call_signature.function.n_positional_parameters -
-                           call_signature.min_positional_arity);
+                           call_signature.function.first_default_slot);
             }
         }
 
@@ -85,12 +87,14 @@ namespace cl
                 return code_object.extract()
                     ->function_signature.n_positional_parameters;
             }
-            assert(default_parameters.value().extract()->size() <=
-                   code_object.extract()
-                       ->function_signature.n_positional_parameters);
-            return code_object.extract()
-                       ->function_signature.n_positional_parameters -
-                   uint32_t(default_parameters.value().extract()->size());
+            FunctionSignature signature =
+                code_object.extract()->function_signature;
+            assert(signature.first_default_slot <=
+                   signature.n_positional_parameters);
+            assert(default_parameters.value().extract()->size() ==
+                   signature.n_positional_parameters -
+                       signature.first_default_slot);
+            return signature.first_default_slot;
         }
 
         static uint32_t max_arity_for_code(TValue<CodeObject> code_object)

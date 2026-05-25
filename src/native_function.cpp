@@ -23,6 +23,12 @@ namespace cl
         builder.n_parameters() = n_parameters;
         builder.n_positional_parameters() = n_parameters;
         builder.function_signature().n_pos_or_kw_parameters = n_parameters;
+        if(default_parameters.has_value())
+        {
+            builder.function_signature().first_default_slot =
+                n_parameters -
+                uint32_t(default_parameters.value().extract()->size());
+        }
         uint32_t target_idx = builder.add_native_function_target(target);
         if(is_extension)
         {

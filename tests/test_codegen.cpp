@@ -549,8 +549,11 @@ TEST(Codegen, function_copies_hot_call_signature_from_code_object)
               function->call_signature.function.n_positional_parameters);
     EXPECT_EQ(function_code->function_signature.n_pos_or_kw_parameters,
               function->call_signature.function.n_pos_or_kw_parameters);
+    EXPECT_EQ(function_code->function_signature.first_default_slot,
+              function->call_signature.function.first_default_slot);
     EXPECT_EQ(function_code->function_signature.parameter_flags,
               function->call_signature.function.parameter_flags);
+    EXPECT_EQ(1u, function_code->function_signature.first_default_slot);
     EXPECT_EQ(1u, function->call_signature.min_positional_arity);
     EXPECT_EQ(Function::VarArgs, function->call_signature.max_positional_arity);
 }
