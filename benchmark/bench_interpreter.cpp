@@ -89,6 +89,15 @@ namespace
             {"benchmark/function_default_parameter.py",
              {benchmark_cpp::function_default_parameter_run,
               benchmark_cpp::function_default_parameter_items}},
+            {"benchmark/function_keyword.py",
+             {benchmark_cpp::function_keyword_run,
+              benchmark_cpp::function_keyword_items}},
+            {"benchmark/function_keyword_mixed.py",
+             {benchmark_cpp::function_keyword_mixed_run,
+              benchmark_cpp::function_keyword_mixed_items}},
+            {"benchmark/function_keyword_default.py",
+             {benchmark_cpp::function_keyword_default_run,
+              benchmark_cpp::function_keyword_default_items}},
             {"benchmark/function_varargs.py",
              {benchmark_cpp::function_varargs_run,
               benchmark_cpp::function_varargs_items}},
@@ -690,6 +699,36 @@ static void BM_FunctionDefaultParameter(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_FunctionDefaultParameter, CloverProgram)
     ->Name("BM_FunctionDefaultParameter")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_FunctionKeyword(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/function_keyword.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_FunctionKeyword, CloverProgram)
+    ->Name("BM_FunctionKeyword")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_FunctionKeywordMixed(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/function_keyword_mixed.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_FunctionKeywordMixed, CloverProgram)
+    ->Name("BM_FunctionKeywordMixed")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_FunctionKeywordDefault(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/function_keyword_default.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_FunctionKeywordDefault, CloverProgram)
+    ->Name("BM_FunctionKeywordDefault")
     ->Arg(100000);
 
 template <typename Program>

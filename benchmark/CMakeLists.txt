@@ -15,6 +15,9 @@ add_executable(bench_clovervm
     for_loop_slow_path.cpp
     function_default_varargs.cpp
     function_default_parameter.cpp
+    function_keyword.cpp
+    function_keyword_default.cpp
+    function_keyword_mixed.cpp
     function_varargs.cpp
     function_varargs_with_positional.cpp
     global_add_delete.cpp
