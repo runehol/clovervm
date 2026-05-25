@@ -1,30 +1,36 @@
 # Function Call Adaptation
 
-This note sketches the planned function-call adaptation model for Python
-keyword calls and richer signatures. It builds on the low-level frame mechanics
-documented in [CloverVM Function Calling Convention](function-calling-convention.md).
+This note records the implemented function-call adaptation model for Python
+keyword calls and the remaining design work for richer signatures. It builds on
+the low-level frame mechanics documented in
+[CloverVM Function Calling Convention](function-calling-convention.md).
 
 The goal is to add Python's richer call binding semantics without turning the
 existing positional `CallSimple` hot path into a broad generic slow path.
 
 ## Current State
 
-The implemented call path is positional:
+The implemented call path now has separate positional and keyword-aware entry
+paths:
 
 - callers lay out positional values in a contiguous outgoing register window;
 - `CallSimple`, `CallMethodAttr`, and constructor thunks enter ordinary
   `Function` objects through the same frame convention;
-- `Function` metadata tracks minimum and maximum positional arity;
+- `CallKeyword` supports explicit caller keywords for ordinary functions and
+  eligible constructor thunks;
+- `Function` metadata tracks minimum and maximum positional arity, grouped
+  signature counts, keyword-bindable parameter remaps, and
+  `first_default_slot`;
 - entry adaptation supports fixed arity, positional defaults, and callee
   `*args`;
-- parser/codegen do not represent caller keywords, caller `*args`, caller
-  `**kwargs`, callee keyword-only parameters, bare `*`, callee `**kwargs`, or
-  positional-only `/`.
+- parser/codegen represent explicit caller positional and keyword arguments;
+- parser accepts richer callee signature syntax, but codegen still rejects
+  positional-only, keyword-only, and `**kwargs` parameters for runtime use;
+- caller `*args` and `**kwargs` expansion remain unsupported.
 
-The first richer-call slice should extend this model for ordinary functions and
-eligible constructor thunks. It should not introduce the full Python callable
-protocol. In particular, descriptor dispatch and arbitrary object `__call__`
-remain separate object-model work.
+The keyword-call path deliberately does not introduce the full Python callable
+protocol. Descriptor dispatch, arbitrary object `__call__`, keyword method-call
+lowering, and caller expansion forms remain separate work.
 
 ## Python Signature Shape
 
@@ -62,8 +68,8 @@ first callee parameter slot that has a default.
 
 ## Call Argument Shape
 
-Call arguments should get explicit AST nodes distinct from signature
-parameters. The initial runtime slice needs:
+Call arguments use explicit AST nodes distinct from signature parameters. The
+implemented runtime slice supports:
 
 - positional argument: `f(value)`;
 - keyword argument: `f(name=value)`.
@@ -74,13 +80,14 @@ Caller-side expansion is deliberately deferred:
 - keyword mapping expansion: `f(**mapping)`;
 - mixed repeated expansions.
 
-The deferred forms should have AST space reserved when convenient, but they do
-not need runtime support in the first keyword-call slice.
+The parser rejects repeated explicit keyword names at the call site with a
+`SyntaxError`. The deferred expansion forms should get AST space when their
+runtime semantics are designed.
 
 ## Keyword Call Bytecode
 
-The first bytecode shape should keep value ranges as values only. Keyword names
-should be carried out-of-band as a constant tuple of interned strings:
+The implemented bytecode shape keeps value ranges as values only. Keyword names
+are carried out-of-band as a constant tuple of interned strings:
 
 ```text
 CallKeyword callable, first_pos_arg, n_pos_args, first_kw_value, n_kw_args,
@@ -120,22 +127,20 @@ kw_names          = ("c", "b")
 ```
 
 The names tuple is a stable call-site shape. It avoids interleaving metadata
-with values and gives inline caches a compact guard key.
+with values and gives `KeywordCallInlineCache` a compact guard key.
 
 ## Runtime Scope
 
-The initial keyword-call runtime should support:
+The implemented keyword-call runtime supports:
 
 - ordinary `Function` objects;
-- eligible `ClassObject` calls that resolve to constructor thunks;
-- direct method calls whose existing method-call resolution produces a
-  `Function`.
+- eligible `ClassObject` calls that resolve to constructor thunks.
 
-It should not attempt to support:
+It does not attempt to support:
 
+- keyword method-call lowering for `obj.method(name=value)`;
 - arbitrary object `__call__`;
-- descriptor execution that is not already handled by the current method-call
-  path;
+- descriptor execution beyond current non-keyword method-call support;
 - caller `*args` or `**kwargs` expansion.
 
 Unsupported callable shapes should remain explicit instead of being partially
@@ -143,11 +148,8 @@ simulated inside the keyword binder.
 
 ## Signature Keyword Layout
 
-The function object or its code object needs compact signature metadata for
-keyword binding. This should be closer to a shape descriptor than to a Python
-`dict`.
-
-A simple first representation is:
+`CodeObject` owns compact signature metadata for keyword binding. It is closer
+to a shape descriptor than to a Python `dict`:
 
 ```text
 SignatureKeywordLayout:
@@ -164,10 +166,10 @@ Positional-only names should remain visible to diagnostics and duplicate checks,
 but they are not valid keyword targets. A keyword that names a positional-only
 parameter must raise `TypeError`.
 
-The uncached binder can linearly scan `names`. Parameter counts and keyword
-counts are normally small, and interned names make comparison pointer/raw-value
-equality. This avoids carrying a hash table for every function signature before
-evidence says it is needed.
+The cold binder linearly scans `names`. Parameter counts and keyword counts are
+normally small, and interned names make comparison pointer/raw-value equality.
+This avoids carrying a hash table for every function signature before evidence
+says it is needed.
 
 If large signatures become important, better function-global accelerators can be
 added later, such as sorted arrays or a small custom open-addressed table.
@@ -176,8 +178,13 @@ contract.
 
 ## Default Slot Layout
 
-The existing positional default tuple should be extended into a slot-indexed
-suffix that begins at the first callee parameter slot with a default, instead of
+The current runtime supports a compact positional-default suffix tuple plus
+`FunctionSignature::first_default_slot`. For the supported runtime signature
+subset, defaults are contiguous over positional parameters and this is enough to
+derive the tuple index from the formal slot.
+
+The planned richer signature runtime extends this into a slot-indexed suffix
+that begins at the first callee parameter slot with a default, instead of
 introducing a separate keyword-only default container. The common no-default case
 should still be represented by an empty defaults tuple.
 
@@ -247,38 +254,37 @@ No keyword ever maps to `*args`, and `*args` never has a default.
 
 ## Binding Algorithm
 
-For an uncached keyword call:
+For a keyword-call cache miss in the implemented runtime subset:
 
 1. Compute the callee frame pointer from the target code object's physical
    parameter slot count, as positional calls already do.
-2. Mark all formal parameters as unfilled in a local binder state.
-3. Copy positional values into formal parameter slots in order.
+2. Build a local candidate `KeywordCallInlineCache` plan; do not mutate the
+   live inline cache before validation succeeds.
+3. Mark positional-or-keyword formal parameters supplied by position as filled.
 4. Reject too many positional values unless the callee has `*args`.
-5. Initialize defaults from the slot-indexed default table.
-6. Initialize `*args` to a tuple of extra positional values, or an empty tuple
-   if the varargs slot exists and no extra values were supplied.
-7. For each supplied keyword name/value pair:
-   - reject duplicate supplied keyword names at the call site;
-   - reject a keyword that names a positional-only parameter;
-   - find a matching positional-or-keyword or keyword-only parameter;
+5. For each supplied keyword name/value pair:
+   - find a matching positional-or-keyword parameter by scanning the code
+     object's keyword remap;
+   - reject unexpected keywords;
    - reject if that formal slot was already filled by position or keyword;
-   - write the value into the resolved frame slot and mark it filled;
-   - if no formal matches and `**kwargs` exists, add the entry there;
-   - otherwise raise unexpected-keyword `TypeError`.
-8. Reject any remaining required parameters.
-9. Initialize `**kwargs` to a dict of unconsumed keyword values, or an empty
-    dict if the kwargs slot exists and no extra keywords were supplied.
-10. Enter the target function frame using the ordinary frame header and return
-    machinery.
+   - mark the formal slot filled;
+   - store the encoded destination frame register in the candidate plan.
+6. Reject any remaining required positional-or-keyword parameters.
+7. Compute `default_fill_start_slot = max(n_pos_args, first_default_slot)`.
+8. Commit the candidate plan to the live cache.
+9. Apply the plan: copy needed defaults, initialize `*args` if present, copy
+   keyword values to their encoded destination registers, and enter the target
+   function frame using the ordinary frame header and return machinery.
 
-For the first implementation slice, steps involving caller `*args` and
-`**kwargs` expansion can remain absent because the call site provides only
-explicit positional and keyword values.
+The parser already rejects duplicate explicit keyword names. Caller `*args`,
+caller `**kwargs`, keyword-only parameters, and callee `**kwargs` are deferred,
+so the current binder does not build keyword dictionaries or consume unknown
+keywords.
 
 ## Keyword Call Inline Cache
 
-The keyword call inline cache should specialize a call site on both the callee
-and the keyword-name tuple:
+`KeywordCallInlineCache` specializes a call site on both the callee and the
+keyword-name tuple:
 
 ```text
 guard:
@@ -287,97 +293,82 @@ guard:
   n_pos_args
 
 plan:
-  keyword value index -> parameter slot
-  default-fill obligations
-  varargs/kwargs initialization shape
+  keyword value index -> encoded destination frame register
+  default_fill_start_slot
+  FunctionCallAdaptation
   target code object
 ```
 
-The cold path performs full Python binding checks and populates the plan. The
-warm path should avoid name lookup and semantic rediscovery. It should mostly
-copy positional values, move keyword values to precomputed slots, fill known
-defaults, initialize varargs/kwargs slots when needed, and enter the frame.
+The cold path performs binding checks into a local candidate plan and only
+commits it to the live cache after validation succeeds. Bad calls therefore do
+not evict a previously valid cache entry.
 
-The plan may initially store logical parameter indexes because they are easier
-to inspect while the metadata is still evolving. A later fast-path-oriented
-version can store encoded frame offsets directly.
+The warm path avoids name lookup and semantic rediscovery. Positional values are
+already in the outgoing argument window. The plan fills defaults from
+`default_fill_start_slot` when the adaptation requires defaults, initializes
+`*args` when the adaptation is `Varargs`, copies keyword values to precomputed
+encoded frame registers, and enters the frame.
 
 ## Constructor Thunks
 
-Constructor thunks should continue to mirror the selected `__init__` signature
-with `self` removed. Keyword adaptation happens at the public call boundary
-before entering the thunk.
+Constructor thunks continue to mirror the selected `__init__` signature with
+`self` removed. Keyword adaptation happens at the public call boundary before
+entering the thunk.
 
-The thunk body should not become a second keyword binder. It should receive a
-prepared, normalized frame and then enter the known initializer code object
-through the existing internal `CallCodeObject` mechanism.
+The thunk body does not become a second keyword binder. It receives a prepared,
+normalized frame and then enters the known initializer code object through the
+existing internal `CallCodeObject` mechanism.
 
 This matches the current constructor-thunk design: the ordinary class hot path
 gets signature-aware specialization, while unusual construction remains a
 future generic protocol path.
 
-## Implementation Checklist
+## Implementation Status
 
-This is the intended first implementation path. Each stage should leave the VM
-in a coherent state and avoid silently implementing the deferred starred-call or
-generic callable protocol work.
+This is the implementation status for the keyword-call work. Completed stages
+keep the VM in a coherent state and avoid silently implementing the deferred
+starred-call or generic callable protocol work.
 
-- [ ] **Parser and AST signature grouping**
+- [x] **Parser and AST signature grouping**
 
-  Replace the current flat function-parameter sequence with an explicit
-  signature shape that preserves the CPython-style groups:
+  The parser uses an explicit signature shape that preserves the CPython-style
+  groups:
   positional-only, positional-or-keyword, optional `*args`, keyword-only, and
   optional `**kwargs`.
 
-  This stage should parse `/`, bare `*`, `*args`, keyword-only parameters, and
-  `**kwargs` into distinct AST structure. It should keep existing simple
-  function definitions rendering and compiling while making unsupported runtime
-  cases explicit. Defaults can stay attached to parameter nodes, but the grouped
-  AST must make it straightforward for codegen to lower positional and
-  keyword-only defaults into the slot-indexed default table.
+  It parses `/`, bare `*`, `*args`, keyword-only parameters, and `**kwargs`
+  into distinct AST structure. Codegen still rejects the runtime-unsupported
+  callee forms. Defaults remain attached to parameter nodes for now.
 
-  Parser tests should cover ordinary parameters, trailing commas, `/`, bare
-  `*`, `*args`, keyword-only required/default parameters, `**kwargs`, and syntax
-  errors for invalid ordering or repeated separators.
+- [x] **Codegen and function signature metadata**
 
-- [ ] **Codegen and function signature metadata**
+  `CodeObject` and `Function` metadata now go beyond
+  `n_positional_parameters` plus `HasVarArgs`. The metadata describes grouped
+  parameter counts, varargs/kwargs flags, `first_default_slot`, and the compact
+  keyword-bindable layout. `Function` keeps the hot call signature copy, while
+  keyword remap metadata stays on `CodeObject`.
 
-  Extend `CodeObject` and `Function` metadata beyond
-  `n_positional_parameters` plus `HasVarArgs`. The metadata should describe:
-  positional-only count, positional-or-keyword count, keyword-only count,
-  varargs/kwargs presence, parameter names, the slot-indexed default table, and
-  the compact keyword-bindable layout.
+  Constructor-thunk generation mirrors the public constructor signature with
+  `self` removed for the currently supported runtime subset.
 
-  Existing positional-only-at-runtime behavior should keep using the current
-  fast path when a function has no richer signature features. The new metadata
-  should be cheap to inspect from the interpreter and precise enough for the
-  binder to answer whether a name is positional-only, keyword-bindable,
-  required, or defaulted.
+- [x] **Call argument AST and keyword-call bytecode**
 
-  This stage should update constructor-thunk generation to preserve the richer
-  public signature shape with `self` removed, but the thunk body should still
-  assume it receives a normalized frame.
-
-- [ ] **Call argument AST and keyword-call bytecode**
-
-  Add call-argument AST nodes for explicit positional and explicit keyword
-  arguments. Caller `*args` and `**kwargs` may get placeholder AST forms if that
-  simplifies the grammar, but codegen should reject them until their separate
+  Calls use explicit call-argument AST nodes for positional and keyword
+  arguments. Caller `*args` and `**kwargs` are rejected until their separate
   runtime slice is designed.
 
-  Add a keyword-call bytecode shape along these lines:
+  Keyword calls lower to:
 
   ```text
   CallKeyword callable, first_pos_arg, n_pos_args, first_kw_value, n_kw_args,
               kw_names_const, call_ic
   ```
 
-  Codegen should continue to emit `CallSimple` for calls with no keywords. For
-  calls with explicit keywords, it should evaluate argument values left to right
-  while staging positional values into outgoing argument slots and keyword
-  values into a separate contiguous temporary-register span. It should store
-  keyword names as a constant tuple of interned strings. The keyword tuple
-  should be the call-site shape key used by the eventual inline cache.
+  Codegen continues to emit `CallSimple` for calls with no keywords. For calls
+  with explicit keywords, it evaluates argument values left to right while
+  staging positional values into outgoing argument slots and keyword values into
+  a separate contiguous temporary-register span. Keyword names are stored as a
+  constant tuple of interned strings and used as the call-site shape key.
 
   Method-call lowering needs a parallel keyword-aware form or a clearly shared
   helper so direct method calls can bind `self` and then run the same keyword
@@ -391,61 +382,53 @@ generic callable protocol work.
   combinations, but the fused method call is a common hot shape. This should be
   decided with the interpreter hot path and call-cache shape in view.
 
-- [ ] **Uncached runtime binder**
+- [x] **Runtime binder for ordinary functions and constructor thunks**
 
-  Implement the cold keyword-call path for ordinary `Function` objects,
-  eligible constructor thunks, and direct method calls that resolve to a
-  `Function`. It should not attempt arbitrary object `__call__` or descriptor
-  execution beyond what the current method-call path already supports.
+  The cold keyword-call path is implemented for ordinary `Function` objects and
+  eligible constructor thunks. Direct method keyword calls are still rejected in
+  codegen pending a method-call opcode/cache design.
 
-  The binder should prepare the callee frame, copy positional arguments, resolve
-  each keyword by scanning the signature keyword layout, reject duplicate
-  fills, reject positional-only names used as keywords, reject unexpected
-  keywords without `**kwargs`, initialize defaults from the slot-indexed default
-  table, build `*args`/`**kwargs` slots when those formal parameters exist, and
-  report missing required parameters.
+  The binder builds a local candidate IC plan while validating, resolves each
+  keyword by scanning the signature keyword layout, rejects duplicate formal
+  fills and unexpected keywords, reports missing required parameters, and only
+  commits the live cache entry after validation succeeds. Error messages are
+  intentionally generic for now.
 
-  Fallibility should follow the interpreter's pending-exception conventions.
-  The semantic slow path may be cold, but it should still make allocation,
-  exception, and frame-entry behavior explicit.
+- [x] **Keyword call inline-cache plan**
 
-- [ ] **Keyword call inline-cache plan**
+  `KeywordCallInlineCache` is a sibling cache state that specializes on callee
+  identity, constructor validity where relevant, keyword-name tuple identity,
+  and positional argument count.
 
-  Extend function-call cache state, or add a sibling keyword-call cache state,
-  that specializes on callee identity, constructor validity where relevant,
-  keyword-name tuple identity, and positional argument count.
+  The cached plan stores encoded destination frame registers for each keyword
+  value, `default_fill_start_slot`, and `FunctionCallAdaptation`. Cache misses
+  build a local candidate plan and only commit it after validation succeeds.
 
-  The cached plan should store the resolved mapping from keyword value index to
-  parameter slot, plus enough default-fill and varargs/kwargs initialization
-  information for the warm path to avoid name lookup and semantic
-  rediscovery. It is acceptable for the first plan to store logical parameter
-  indexes; a later optimization can store encoded frame offsets directly.
+- [x] **Semantics, regression tests, and benchmarks**
 
-  Cache misses should fall back to the uncached binder and only populate a plan
-  after the full Python binding checks have succeeded.
+  Interpreter tests cover keyword calls to ordinary functions and eligible
+  constructors, positional plus keyword mixing, keyword reordering, defaults,
+  missing required arguments, unexpected keywords, duplicate formal fills, and
+  varargs initialization. Parser tests cover repeated explicit keyword names.
 
-- [ ] **Semantics and regression tests**
+  Codegen/disassembly tests pin down that `CallSimple` remains the no-keyword
+  path and keyword calls carry a names tuple. Keyword call microbenchmarks cover
+  all-keyword, mixed positional/keyword, and default-using keyword calls.
 
-  Add interpreter tests for keyword calls to functions, methods, and eligible
-  constructors. Cover positional plus keyword mixing, keyword reordering,
-  defaults, keyword-only required/default parameters, positional-only rejection,
-  duplicate arguments, missing required arguments, unexpected keywords, varargs
-  interaction, and kwargs formal initialization once `**kwargs` on the callee is
-  implemented.
-
-  Add codegen/disassembly tests only where they pin down high-value structure:
-  `CallSimple` remains the no-keyword path, keyword calls carry a names tuple,
-  and method keyword calls preserve receiver binding. Keep broad behavior in
-  interpreter tests.
-
-  Update documentation for any intentionally unsupported edge that remains
-  after the first slice, especially caller `*args`, caller `**kwargs`, generic
-  `__call__`, and descriptor-heavy callable behavior.
+  Method keyword calls, keyword-only parameters, positional-only parameters,
+  callee `**kwargs`, caller `*args`, caller `**kwargs`, generic `__call__`, and
+  descriptor-heavy callable behavior remain unsupported.
 
 ## Deferred Work
 
 The following require separate design/implementation slices:
 
+- keyword method calls, including whether to add a fused method-keyword opcode
+  or split method lookup/binding from keyword call entry;
+- runtime support for positional-only parameters;
+- runtime support for keyword-only parameters and their defaults;
+- callee `**kwargs`, including allocation, insertion order, and interaction
+  with unexpected explicit keywords;
 - caller `*args` expansion, including iterable protocol details and error
   ordering;
 - caller `**kwargs` expansion, including mapping protocol details, duplicate
@@ -456,5 +439,5 @@ The following require separate design/implementation slices:
 - native-to-managed keyword-call APIs;
 - native variadic and keyword-aware intrinsic conventions.
 
-The first slice should leave clear unsupported edges rather than adding partial
-fallback machinery that obscures later semantics.
+Unsupported edges should remain explicit rather than adding partial fallback
+machinery that obscures later semantics.
