@@ -33,6 +33,8 @@
 #include <iterator>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace cl
 {
@@ -321,11 +323,11 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE INTERP_CC Value unsupported_keyword_call_error(PARAMS)
+    NOINLINE INTERP_CC Value keyword_call_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             thread, fp, pc, code_object, L"TypeError",
-            L"keyword calls are not implemented yet");
+            L"invalid keyword argument");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -1454,6 +1456,160 @@ namespace cl
                cache.validity_cell->is_valid();
     }
 
+    static ALWAYSINLINE bool
+    keyword_call_cache_matches(const KeywordCallInlineCache &cache, Value fun,
+                               Value keyword_names, uint32_t n_pos_args)
+    {
+        if(cache.n_pos_args != n_pos_args || cache.guard_value != fun ||
+           cache.keyword_names != keyword_names)
+        {
+            return false;
+        }
+        return cache.validity_cell == nullptr ||
+               cache.validity_cell->is_valid();
+    }
+
+    enum class KeywordCallPlanStatus
+    {
+        Success,
+        WrongArity,
+        KeywordError,
+    };
+
+    static ALWAYSINLINE void populate_keyword_call_cache_with_guard(
+        KeywordCallInlineCache &cache, Value guard_value, TValue<Function> fun,
+        ValidityCell *validity_cell, Value keyword_names, uint32_t n_pos_args,
+        uint32_t default_fill_start_slot, std::vector<int8_t> keyword_dest_regs)
+    {
+        cache.guard_value = guard_value;
+        cache.function = fun.extract();
+        cache.code_object = fun.extract()->code_object.extract();
+        cache.validity_cell = validity_cell;
+        cache.keyword_names = keyword_names;
+        cache.n_pos_args = n_pos_args;
+        cache.default_fill_start_slot = default_fill_start_slot;
+        cache.adaptation = classify_function_call_adaptation(fun);
+        cache.keyword_dest_regs = std::move(keyword_dest_regs);
+    }
+
+    static uint32_t
+    default_fill_start_slot_for_keyword_call(TValue<Function> fun,
+                                             uint32_t n_pos_args)
+    {
+        uint32_t first_default_slot =
+            fun.extract()->call_signature.function.first_default_slot;
+        return n_pos_args > first_default_slot ? n_pos_args
+                                               : first_default_slot;
+    }
+
+    static KeywordCallPlanStatus build_keyword_call_plan(
+        KeywordCallInlineCache &candidate, Value guard_value,
+        TValue<Function> fun, ValidityCell *validity_cell,
+        Value keyword_names_value, uint32_t n_pos_args, uint32_t n_kw_args)
+    {
+        Function *function = fun.extract();
+        FunctionSignature signature = function->call_signature.function;
+        if(n_pos_args > signature.n_positional_parameters &&
+           !signature.has_varargs())
+        {
+            return KeywordCallPlanStatus::WrongArity;
+        }
+
+        TValue<Tuple> keyword_names =
+            TValue<Tuple>::from_value_assumed(keyword_names_value);
+        assert(keyword_names.extract()->size() == n_kw_args);
+
+        std::vector<bool> filled(signature.n_positional_parameters, false);
+        uint32_t n_filled_by_position =
+            n_pos_args < signature.n_positional_parameters
+                ? n_pos_args
+                : signature.n_positional_parameters;
+        for(uint32_t idx = 0; idx < n_filled_by_position; ++idx)
+        {
+            filled[idx] = true;
+        }
+
+        std::vector<int8_t> keyword_dest_regs;
+        keyword_dest_regs.reserve(n_kw_args);
+        CodeObject *target_code_object = function->code_object.extract();
+        FunctionKeywordRemap &remap =
+            target_code_object->function_keyword_remap;
+        for(uint32_t kw_idx = 0; kw_idx < n_kw_args; ++kw_idx)
+        {
+            Value keyword_name =
+                keyword_names.extract()->item_unchecked(kw_idx);
+            for(uint32_t prev_idx = 0; prev_idx < kw_idx; ++prev_idx)
+            {
+                if(keyword_names.extract()->item_unchecked(prev_idx) ==
+                   keyword_name)
+                {
+                    return KeywordCallPlanStatus::KeywordError;
+                }
+            }
+
+            bool found = false;
+            uint16_t parameter_idx = 0;
+            for(size_t remap_idx = 0; remap_idx < remap.size(); ++remap_idx)
+            {
+                if(remap.name_at(remap_idx) == keyword_name)
+                {
+                    found = true;
+                    parameter_idx = remap.parameter_index_at(remap_idx);
+                    break;
+                }
+            }
+            if(!found || parameter_idx >= signature.n_positional_parameters)
+            {
+                return KeywordCallPlanStatus::KeywordError;
+            }
+            if(filled[parameter_idx])
+            {
+                return KeywordCallPlanStatus::KeywordError;
+            }
+
+            filled[parameter_idx] = true;
+            keyword_dest_regs.push_back(
+                target_code_object->encode_reg(parameter_idx));
+        }
+
+        for(uint32_t parameter_idx = 0;
+            parameter_idx < signature.n_positional_parameters; ++parameter_idx)
+        {
+            if(filled[parameter_idx])
+            {
+                continue;
+            }
+            if(!function->default_parameters.value().has_value() ||
+               parameter_idx < signature.first_default_slot)
+            {
+                return KeywordCallPlanStatus::WrongArity;
+            }
+        }
+
+        uint32_t default_fill_start_slot =
+            default_fill_start_slot_for_keyword_call(fun, n_pos_args);
+        populate_keyword_call_cache_with_guard(
+            candidate, guard_value, fun, validity_cell, keyword_names_value,
+            n_pos_args, default_fill_start_slot, std::move(keyword_dest_regs));
+        return KeywordCallPlanStatus::Success;
+    }
+
+    static KeywordCallPlanStatus build_and_populate_keyword_call_cache(
+        KeywordCallInlineCache &cache, Value guard_value, TValue<Function> fun,
+        ValidityCell *validity_cell, Value keyword_names_value,
+        uint32_t n_pos_args, uint32_t n_kw_args)
+    {
+        KeywordCallInlineCache candidate;
+        KeywordCallPlanStatus status =
+            build_keyword_call_plan(candidate, guard_value, fun, validity_cell,
+                                    keyword_names_value, n_pos_args, n_kw_args);
+        if(status == KeywordCallPlanStatus::Success)
+        {
+            cache = std::move(candidate);
+        }
+        return status;
+    }
+
     static ALWAYSINLINE void
     initialize_missing_default_arguments(Value *new_fp, TValue<Function> fun,
                                          uint32_t n_args)
@@ -1573,6 +1729,38 @@ namespace cl
         assert(adaptation == FunctionCallAdaptation::Varargs);
         initialize_missing_default_arguments(new_fp, fun, n_args);
         initialize_varargs_argument(thread, new_fp, fun, n_args);
+        enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
+                                       instr_len);
+    }
+
+    static ALWAYSINLINE void enter_function_frame_from_keyword_args(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        CodeObject *&code_object, KeywordCallInlineCache &cache,
+        int32_t first_arg_reg, uint32_t n_pos_args, int32_t first_kw_value_reg,
+        uint32_t n_kw_args, uint32_t instr_len)
+    {
+        TValue<Function> fun = TValue<Function>::from_oop(cache.function);
+        Value *new_fp = new_frame_pointer_from_first_arg(fp, cache.code_object,
+                                                         first_arg_reg);
+
+        if(cache.adaptation != FunctionCallAdaptation::FixedArity &&
+           fun.extract()->default_parameters.value().has_value())
+        {
+            initialize_missing_default_arguments(new_fp, fun,
+                                                 cache.default_fill_start_slot);
+        }
+        if(cache.adaptation == FunctionCallAdaptation::Varargs)
+        {
+            initialize_varargs_argument(thread, new_fp, fun, n_pos_args);
+        }
+
+        assert(cache.keyword_dest_regs.size() == n_kw_args);
+        for(uint32_t kw_idx = 0; kw_idx < n_kw_args; ++kw_idx)
+        {
+            new_fp[cache.keyword_dest_regs[kw_idx]] =
+                fp[first_kw_value_reg - int32_t(kw_idx)];
+        }
+
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                        instr_len);
     }
@@ -3101,9 +3289,129 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_call_keyword_slow(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 8;
+        int8_t callable_reg = pc[1];
+        int8_t first_arg_reg = pc[2];
+        uint8_t n_pos_args = pc[3];
+        int8_t first_kw_value_reg = pc[4];
+        uint8_t n_kw_args = pc[5];
+        uint8_t keyword_names_idx = pc[6];
+        uint8_t cache_idx = pc[7];
+        Value fun = fp[callable_reg];
+        Value keyword_names =
+            code_object->constant_table[keyword_names_idx].value();
+
+        if(unlikely(!fun.is_ptr()))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        Object *fun_object = fun.get_ptr();
+        if(fun_object->native_layout_id() == NativeLayoutId::ClassObject)
+        {
+            ClassObject *cls = static_cast<ClassObject *>(fun_object);
+            ConstructorThunkLookup constructor =
+                cls->get_or_create_constructor_thunk();
+            if(unlikely(!constructor.is_found()))
+            {
+                MUSTTAIL return not_callable_error(ARGS);
+            }
+
+            TValue<Function> thunk =
+                TValue<Function>::from_oop(constructor.thunk);
+            KeywordCallInlineCache &cache =
+                code_object->keyword_call_caches[cache_idx];
+            KeywordCallPlanStatus status =
+                build_and_populate_keyword_call_cache(
+                    cache, Value::from_oop(cls), thunk, constructor.lookup_cell,
+                    keyword_names, n_pos_args, n_kw_args);
+            if(unlikely(status == KeywordCallPlanStatus::WrongArity))
+            {
+                MUSTTAIL return wrong_arity_error(ARGS);
+            }
+            if(unlikely(status == KeywordCallPlanStatus::KeywordError))
+            {
+                MUSTTAIL return keyword_call_error(ARGS);
+            }
+
+            enter_function_frame_from_keyword_args(
+                thread, fp, pc, code_object, cache, first_arg_reg, n_pos_args,
+                first_kw_value_reg, n_kw_args, call_instr_len);
+            if(unlikely(thread->safepoint_requested()))
+            {
+                MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            }
+
+            START(0);
+            COMPLETE();
+        }
+
+        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        TValue<Function> function = TValue<Function>::from_value_assumed(fun);
+        KeywordCallInlineCache &cache =
+            code_object->keyword_call_caches[cache_idx];
+        KeywordCallPlanStatus status = build_and_populate_keyword_call_cache(
+            cache, fun, function, nullptr, keyword_names, n_pos_args,
+            n_kw_args);
+        if(unlikely(status == KeywordCallPlanStatus::WrongArity))
+        {
+            MUSTTAIL return wrong_arity_error(ARGS);
+        }
+        if(unlikely(status == KeywordCallPlanStatus::KeywordError))
+        {
+            MUSTTAIL return keyword_call_error(ARGS);
+        }
+
+        enter_function_frame_from_keyword_args(
+            thread, fp, pc, code_object, cache, first_arg_reg, n_pos_args,
+            first_kw_value_reg, n_kw_args, call_instr_len);
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
+
+        START(0);
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_call_keyword(PARAMS)
     {
-        MUSTTAIL return unsupported_keyword_call_error(ARGS);
+        static constexpr uint32_t call_instr_len = 8;
+        int8_t callable_reg = pc[1];
+        int8_t first_arg_reg = pc[2];
+        uint8_t n_pos_args = pc[3];
+        int8_t first_kw_value_reg = pc[4];
+        uint8_t n_kw_args = pc[5];
+        uint8_t keyword_names_idx = pc[6];
+        uint8_t cache_idx = pc[7];
+        Value fun = fp[callable_reg];
+        Value keyword_names =
+            code_object->constant_table[keyword_names_idx].value();
+        KeywordCallInlineCache &cache =
+            code_object->keyword_call_caches[cache_idx];
+
+        if(unlikely(!keyword_call_cache_matches(cache, fun, keyword_names,
+                                                n_pos_args)))
+        {
+            MUSTTAIL return op_call_keyword_slow(ARGS);
+        }
+
+        enter_function_frame_from_keyword_args(
+            thread, fp, pc, code_object, cache, first_arg_reg, n_pos_args,
+            first_kw_value_reg, n_kw_args, call_instr_len);
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
+
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE static INTERP_CC Value op_call_method_attr_slow(PARAMS)

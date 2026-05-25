@@ -614,6 +614,12 @@ TEST(Parser, calls_reject_positional_after_keyword)
         "SyntaxError: positional argument follows keyword argument");
 }
 
+TEST(Parser, calls_reject_repeated_keyword_arguments)
+{
+    expect_parse_error(L"f(a=1, a=2)\n",
+                       "SyntaxError: keyword argument repeated");
+}
+
 TEST(Parser, parameters_accept_trailing_comma)
 {
     std::string expected = (""

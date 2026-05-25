@@ -746,7 +746,7 @@ namespace cl
     {
         uint32_t result =
             emplace_back(source_offset, uint8_t(Bytecode::CallKeyword));
-        uint8_t cache_idx = allocate_function_call_cache();
+        uint8_t cache_idx = allocate_keyword_call_cache();
         emplace_back(source_offset, encode_reg(callable_reg));
         uint32_t first_arg_operand_offset = code_obj->code.size();
         emplace_back(source_offset, first_arg_reg.slot_offset);
@@ -867,6 +867,14 @@ namespace cl
         uint32_t idx = code_obj->function_call_caches.size();
         check_u8_operand_index(idx, "function call cache table");
         code_obj->function_call_caches.emplace_back();
+        return idx;
+    }
+
+    uint32_t CodeObjectBuilder::allocate_keyword_call_cache()
+    {
+        uint32_t idx = code_obj->keyword_call_caches.size();
+        check_u8_operand_index(idx, "keyword call cache table");
+        code_obj->keyword_call_caches.emplace_back();
         return idx;
     }
 

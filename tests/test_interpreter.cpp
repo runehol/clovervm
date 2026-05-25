@@ -785,6 +785,80 @@ TEST(Interpreter, function_wrong_arity_unwinds_nested_frames)
                         L"TypeError: wrong number of arguments");
 }
 
+TEST(Interpreter, function_keyword_call_reorders_arguments)
+{
+    test::FileRunner file_runner(L"def f(a, b, c):\n"
+                                 L"    return a * 100 + b * 10 + c\n"
+                                 L"f(1, c=3, b=2)\n");
+    EXPECT_EQ(Value::from_smi(123), file_runner.return_value);
+}
+
+TEST(Interpreter, function_keyword_call_cache_hit)
+{
+    test::FileRunner file_runner(L"def f(a, b):\n"
+                                 L"    return a * 10 + b\n"
+                                 L"f(a=1, b=2)\n"
+                                 L"f(a=3, b=4)\n");
+    EXPECT_EQ(Value::from_smi(34), file_runner.return_value);
+}
+
+TEST(Interpreter, function_keyword_call_uses_defaults)
+{
+    test::FileRunner file_runner(L"def f(a, b=1, c=2, d=4):\n"
+                                 L"    return a * 1000 + b * 100 + c * 10 + d\n"
+                                 L"f(7, 8, d=9)\n");
+    EXPECT_EQ(Value::from_smi(7829), file_runner.return_value);
+}
+
+TEST(Interpreter, function_keyword_call_fills_required_before_default)
+{
+    test::FileRunner file_runner(L"def f(a, b=2):\n"
+                                 L"    return a * 10 + b\n"
+                                 L"f(a=3)\n");
+    EXPECT_EQ(Value::from_smi(32), file_runner.return_value);
+}
+
+TEST(Interpreter, function_keyword_call_initializes_varargs)
+{
+    test::FileRunner file_runner(L"def f(a, b=2, *args):\n"
+                                 L"    return a * 10 + b + len(args)\n"
+                                 L"f(a=3)\n");
+    EXPECT_EQ(Value::from_smi(32), file_runner.return_value);
+}
+
+TEST(Interpreter, class_constructor_accepts_keyword_calls)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __init__(self, a, b=2):\n"
+                                 L"        self.value = a + b\n"
+                                 L"C(a=3).value\n");
+    EXPECT_EQ(Value::from_smi(5), file_runner.return_value);
+}
+
+TEST(Interpreter, function_keyword_call_rejects_duplicate_formal_fill)
+{
+    expect_python_error(L"def f(a):\n"
+                        L"    return a\n"
+                        L"f(1, a=2)\n",
+                        L"TypeError: invalid keyword argument");
+}
+
+TEST(Interpreter, function_keyword_call_rejects_unexpected_keyword)
+{
+    expect_python_error(L"def f(a):\n"
+                        L"    return a\n"
+                        L"f(b=1)\n",
+                        L"TypeError: invalid keyword argument");
+}
+
+TEST(Interpreter, function_keyword_call_rejects_missing_required)
+{
+    expect_python_error(L"def f(a, b=2):\n"
+                        L"    return a + b\n"
+                        L"f(b=1)\n",
+                        L"TypeError: wrong number of arguments");
+}
+
 TEST(Interpreter, function_varargs_collect_empty_tuple)
 {
     test::FileRunner file_runner(L"def f(*args):\n"

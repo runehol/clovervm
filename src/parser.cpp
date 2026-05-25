@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 
 namespace cl
 {
@@ -959,6 +960,7 @@ namespace cl
         {
             int32_t source_pos = source_pos_for_token();
             AstChildren ch;
+            std::unordered_set<std::wstring> keyword_names;
             bool seen_keyword = false;
             while(peek() != Token::RPAR)
             {
@@ -979,6 +981,11 @@ namespace cl
                     uint32_t name_source_pos = source_pos_and_advance();
                     std::wstring name = std::wstring(string_for_name_token(
                         *ast.compilation_unit, name_source_pos));
+                    if(!keyword_names.insert(name).second)
+                    {
+                        throw std::runtime_error(
+                            "SyntaxError: keyword argument repeated");
+                    }
                     TValue<String> name_value =
                         vm.get_or_create_interned_string_value(name);
                     consume(Token::EQUAL);

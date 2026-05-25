@@ -392,6 +392,7 @@ namespace cl
         uint32_t allocate_module_global_read_cache();
         uint32_t allocate_module_global_mutation_cache();
         uint32_t allocate_function_call_cache();
+        uint32_t allocate_keyword_call_cache();
         uint32_t emplace_back(uint32_t source_offset, uint8_t c);
         uint32_t emit_opcode(uint32_t source_offset, Bytecode c);
         uint32_t emit_opcode_smi(uint32_t source_offset, Bytecode c,

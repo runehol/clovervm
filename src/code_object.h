@@ -170,6 +170,19 @@ namespace cl
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
     };
 
+    struct KeywordCallInlineCache
+    {
+        Value guard_value = Value::not_present();
+        Function *function = nullptr;
+        CodeObject *code_object = nullptr;
+        ValidityCell *validity_cell = nullptr;
+        Value keyword_names = Value::not_present();
+        uint32_t n_pos_args = UINT32_MAX;
+        uint32_t default_fill_start_slot = 0;
+        FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
+        std::vector<int8_t> keyword_dest_regs;
+    };
+
     struct OutgoingArgReg
     {
         explicit OutgoingArgReg(uint32_t _slot_offset)
@@ -258,6 +271,7 @@ namespace cl
         std::vector<ModuleGlobalMutationInlineCache>
             module_global_mutation_caches;
         std::vector<FunctionCallInlineCache> function_call_caches;
+        std::vector<KeywordCallInlineCache> keyword_call_caches;
         std::vector<NativeFunctionTarget> native_function_targets;
         std::vector<ExceptionTableEntry> exception_table;
 
