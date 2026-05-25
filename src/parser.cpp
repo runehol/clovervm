@@ -958,12 +958,49 @@ namespace cl
         int32_t args()
         {
             int32_t source_pos = source_pos_for_token();
-            /* TODO this is very incomplete. but just enough to get unnamed
-             * arguments going */
             AstChildren ch;
+            bool seen_keyword = false;
             while(peek() != Token::RPAR)
             {
-                ch.push_back(expression());
+                if(peek() == Token::STAR)
+                {
+                    throw std::runtime_error(
+                        "SyntaxError: starred call arguments are not "
+                        "implemented yet");
+                }
+                if(peek() == Token::DOUBLESTAR)
+                {
+                    throw std::runtime_error(
+                        "SyntaxError: keyword argument unpacking is not "
+                        "implemented yet");
+                }
+                if(peek() == Token::NAME && peek2() == Token::EQUAL)
+                {
+                    uint32_t name_source_pos = source_pos_and_advance();
+                    std::wstring name = std::wstring(string_for_name_token(
+                        *ast.compilation_unit, name_source_pos));
+                    TValue<String> name_value =
+                        vm.get_or_create_interned_string_value(name);
+                    consume(Token::EQUAL);
+                    int32_t value = expression();
+                    ch.push_back(ast.emplace_back(
+                        AstNodeKind::CALL_ARGUMENT_KEYWORD, name_source_pos,
+                        AstChildren{value}, name_value));
+                    seen_keyword = true;
+                }
+                else
+                {
+                    if(seen_keyword)
+                    {
+                        throw std::runtime_error(
+                            "SyntaxError: positional argument follows keyword "
+                            "argument");
+                    }
+                    int32_t value = expression();
+                    ch.push_back(ast.emplace_back(
+                        AstNodeKind::CALL_ARGUMENT_POSITIONAL,
+                        ast.source_offsets[value], AstChildren{value}));
+                }
                 if(!match(Token::COMMA))
                     break;
                 if(peek() == Token::RPAR)

@@ -365,6 +365,11 @@ namespace cl
                                               RuntimeIntrinsic0 intrinsic);
         uint32_t emit_call_simple(uint32_t source_offset, uint32_t callable_reg,
                                   OutgoingArgReg first_arg_reg, uint8_t argc);
+        uint32_t
+        emit_call_keyword(uint32_t source_offset, uint32_t callable_reg,
+                          OutgoingArgReg first_arg_reg, uint8_t n_pos_args,
+                          uint32_t first_kw_value_reg, uint8_t n_kw_args,
+                          uint8_t keyword_names_idx);
         uint32_t add_exception_table_entry(JumpTarget &start, JumpTarget &end,
                                            JumpTarget &handler);
         uint32_t add_exception_table_entry(uint32_t start_pc, uint32_t end_pc,

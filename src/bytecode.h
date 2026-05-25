@@ -133,6 +133,7 @@ namespace cl
 
         // function calls
         CallSimple,
+        CallKeyword,
         CallIntrinsic0,
         CallIntrinsic1,
         CallIntrinsic2,

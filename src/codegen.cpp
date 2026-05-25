@@ -555,7 +555,14 @@ namespace cl
             {
                 for(size_t i = 0; i < bases.size(); ++i)
                 {
-                    codegen_node(bases[i]);
+                    if(av.kinds[bases[i]].node_kind !=
+                       AstNodeKind::CALL_ARGUMENT_POSITIONAL)
+                    {
+                        throw std::runtime_error(
+                            "SyntaxError: class keyword arguments are not "
+                            "implemented yet");
+                    }
+                    codegen_node(call_argument_value(bases[i]));
                     code_obj->emit_star(source_offset, base_regs + i);
                 }
             }
@@ -680,9 +687,58 @@ namespace cl
             return value;
         }
 
+        bool is_positional_call_argument(int32_t node_idx) const
+        {
+            return av.kinds[node_idx].node_kind ==
+                   AstNodeKind::CALL_ARGUMENT_POSITIONAL;
+        }
+
+        bool is_keyword_call_argument(int32_t node_idx) const
+        {
+            return av.kinds[node_idx].node_kind ==
+                   AstNodeKind::CALL_ARGUMENT_KEYWORD;
+        }
+
+        int32_t call_argument_value(int32_t node_idx) const
+        {
+            AstNodeKind node_kind = av.kinds[node_idx].node_kind;
+            if(node_kind == AstNodeKind::CALL_ARGUMENT_POSITIONAL ||
+               node_kind == AstNodeKind::CALL_ARGUMENT_KEYWORD)
+            {
+                return av.children[node_idx][0];
+            }
+            return node_idx;
+        }
+
+        bool has_keyword_call_arguments(AstChildren args) const
+        {
+            for(int32_t arg: args)
+            {
+                if(is_keyword_call_argument(arg))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void require_positional_call_arguments(AstChildren args,
+                                               const char *helper_name) const
+        {
+            for(int32_t arg: args)
+            {
+                if(!is_positional_call_argument(arg))
+                {
+                    throw std::runtime_error(fmt::format(
+                        "{} does not accept keyword arguments", helper_name));
+                }
+            }
+        }
+
         void codegen_trusted_clover_call_special(uint32_t source_offset,
                                                  AstChildren args)
         {
+            require_positional_call_arguments(args, "__clover_call_special__");
             if(args.size() < 4)
             {
                 throw std::runtime_error(
@@ -690,26 +746,28 @@ namespace cl
             }
 
             Value method_name = literal_string_constant(
-                args[1], "__clover_call_special__ method name must be a "
-                         "string literal");
+                call_argument_value(args[1]),
+                "__clover_call_special__ method name must be a string literal");
             Value missing_exception_type =
                 builtin_class_constant_from_name_reference(
-                    args[2], "__clover_call_special__ exception type must be a "
-                             "builtin class name");
+                    call_argument_value(args[2]),
+                    "__clover_call_special__ exception type must be a builtin "
+                    "class name");
             Value missing_exception_message = literal_string_constant(
-                args[3], "__clover_call_special__ missing-method message must "
-                         "be a string literal");
+                call_argument_value(args[3]),
+                "__clover_call_special__ missing-method message must be a "
+                "string literal");
             uint8_t method_name_idx = code_obj->allocate_constant(method_name);
             uint8_t missing_exception_type_idx =
                 code_obj->allocate_constant(missing_exception_type);
             uint8_t missing_exception_message_idx =
                 code_obj->allocate_constant(missing_exception_message);
 
-            codegen_node(args[0]);
+            codegen_node(call_argument_value(args[0]));
             code_obj->emit_star(source_offset, OutgoingArgReg(0));
             for(size_t i = 4; i < args.size(); ++i)
             {
-                codegen_node(args[i]);
+                codegen_node(call_argument_value(args[i]));
                 code_obj->emit_star(source_offset, OutgoingArgReg(i - 3));
             }
 
@@ -722,13 +780,14 @@ namespace cl
         void codegen_trusted_clover_write_stdout(uint32_t source_offset,
                                                  AstChildren args)
         {
+            require_positional_call_arguments(args, "__clover_write_stdout__");
             if(args.size() != 1)
             {
                 throw std::runtime_error(
                     "__clover_write_stdout__ expects exactly 1 argument");
             }
 
-            codegen_node(args[0]);
+            codegen_node(call_argument_value(args[0]));
             code_obj->emit_write_stdout(source_offset);
         }
 
@@ -737,6 +796,7 @@ namespace cl
                                                RuntimeIntrinsic0 intrinsic,
                                                const char *helper_name)
         {
+            require_positional_call_arguments(args, helper_name);
             if(args.size() != 0)
             {
                 throw std::runtime_error(
@@ -749,13 +809,14 @@ namespace cl
         void codegen_trusted_clover_sqrt(uint32_t source_offset,
                                          AstChildren args)
         {
+            require_positional_call_arguments(args, "__clover_sqrt__");
             if(args.size() != 1)
             {
                 throw std::runtime_error(
                     "__clover_sqrt__ expects exactly 1 argument");
             }
 
-            codegen_node(args[0]);
+            codegen_node(call_argument_value(args[0]));
             code_obj->emit_unary_op(source_offset, Bytecode::Sqrt);
         }
 
@@ -806,6 +867,12 @@ namespace cl
             if(av.kinds[children[0]].node_kind ==
                AstNodeKind::EXPRESSION_ATTRIBUTE)
             {
+                if(has_keyword_call_arguments(args))
+                {
+                    throw std::runtime_error(
+                        "SyntaxError: keyword method calls are not "
+                        "implemented yet");
+                }
                 AstChildren method_children = av.children[children[0]];
                 uint8_t constant_idx =
                     code_obj->allocate_constant(av.constants[children[0]]);
@@ -814,7 +881,7 @@ namespace cl
 
                 for(size_t i = 0; i < args.size(); ++i)
                 {
-                    codegen_node(args[i]);
+                    codegen_node(call_argument_value(args[i]));
                     code_obj->emit_star(source_offset, OutgoingArgReg(1 + i));
                 }
                 code_obj->emit_call_method_attr(source_offset,
@@ -828,9 +895,63 @@ namespace cl
             codegen_node(children[0]);
             code_obj->emit_star(source_offset, callable_reg);
 
+            if(has_keyword_call_arguments(args))
+            {
+                uint32_t n_pos_args = 0;
+                uint32_t n_kw_args = 0;
+                for(int32_t arg: args)
+                {
+                    if(is_keyword_call_argument(arg))
+                    {
+                        ++n_kw_args;
+                    }
+                }
+
+                TemporaryReg keyword_value_regs(
+                    *code_obj, std::max<uint32_t>(n_kw_args, 1));
+                n_kw_args = 0;
+                for(int32_t arg: args)
+                {
+                    if(is_positional_call_argument(arg))
+                    {
+                        codegen_node(call_argument_value(arg));
+                        code_obj->emit_star(source_offset,
+                                            OutgoingArgReg(n_pos_args));
+                        ++n_pos_args;
+                    }
+                    else
+                    {
+                        assert(is_keyword_call_argument(arg));
+                        codegen_node(call_argument_value(arg));
+                        code_obj->emit_star(source_offset,
+                                            keyword_value_regs + n_kw_args);
+                        ++n_kw_args;
+                    }
+                }
+
+                TValue<Tuple> keyword_names =
+                    active_thread()->make_object_value<Tuple>(n_kw_args);
+                uint32_t keyword_idx = 0;
+                for(int32_t arg: args)
+                {
+                    if(is_keyword_call_argument(arg))
+                    {
+                        keyword_names.extract()->initialize_item_unchecked(
+                            keyword_idx++, av.constants[arg].value());
+                    }
+                }
+                uint8_t keyword_names_idx =
+                    code_obj->allocate_constant(keyword_names.raw_value());
+                code_obj->emit_call_keyword(
+                    source_offset, callable_reg, OutgoingArgReg(0),
+                    uint8_t(n_pos_args), keyword_value_regs, uint8_t(n_kw_args),
+                    keyword_names_idx);
+                return;
+            }
+
             for(size_t i = 0; i < args.size(); ++i)
             {
-                codegen_node(args[i]);
+                codegen_node(call_argument_value(args[i]));
                 code_obj->emit_star(source_offset, OutgoingArgReg(i));
             }
             code_obj->emit_call_simple(source_offset, callable_reg,
@@ -1015,6 +1136,13 @@ namespace cl
             }
 
             size_t n_args = av.children[children[1]].size();
+            for(int32_t arg: av.children[children[1]])
+            {
+                if(!is_positional_call_argument(arg))
+                {
+                    return std::nullopt;
+                }
+            }
             if(n_args < 1 || n_args > 3)
             {
                 return std::nullopt;
@@ -1704,7 +1832,7 @@ namespace cl
             code_obj->emit_star(source_offset, range_regs + 0);
             for(size_t i = 0; i < args.size(); ++i)
             {
-                codegen_node(args[i]);
+                codegen_node(call_argument_value(args[i]));
                 code_obj->emit_star(source_offset, range_regs + 1 + i);
             }
 
@@ -1784,6 +1912,11 @@ namespace cl
                 case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
                     emit_variable_load(source_offset, node_idx);
                     break;
+
+                case AstNodeKind::CALL_ARGUMENT_POSITIONAL:
+                case AstNodeKind::CALL_ARGUMENT_KEYWORD:
+                    throw std::runtime_error(
+                        "call argument nodes must be lowered by call codegen");
 
                 case AstNodeKind::STATEMENT_ASSIGN:
                 case AstNodeKind::EXPRESSION_ASSIGN:

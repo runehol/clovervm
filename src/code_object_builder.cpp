@@ -736,6 +736,30 @@ namespace cl
         return result;
     }
 
+    uint32_t CodeObjectBuilder::emit_call_keyword(uint32_t source_offset,
+                                                  uint32_t callable_reg,
+                                                  OutgoingArgReg first_arg_reg,
+                                                  uint8_t n_pos_args,
+                                                  uint32_t first_kw_value_reg,
+                                                  uint8_t n_kw_args,
+                                                  uint8_t keyword_names_idx)
+    {
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::CallKeyword));
+        uint8_t cache_idx = allocate_function_call_cache();
+        emplace_back(source_offset, encode_reg(callable_reg));
+        uint32_t first_arg_operand_offset = code_obj->code.size();
+        emplace_back(source_offset, first_arg_reg.slot_offset);
+        add_outgoing_arg_relocation(first_arg_operand_offset,
+                                    first_arg_reg.slot_offset);
+        emplace_back(source_offset, n_pos_args);
+        emplace_back(source_offset, encode_reg(first_kw_value_reg));
+        emplace_back(source_offset, n_kw_args);
+        emplace_back(source_offset, keyword_names_idx);
+        emplace_back(source_offset, cache_idx);
+        return result;
+    }
+
     uint32_t CodeObjectBuilder::allocate_constant(Value val)
     {
         uint64_t raw_value = uint64_t(val.as.integer);

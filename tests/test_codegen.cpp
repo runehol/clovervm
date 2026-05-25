@@ -434,6 +434,44 @@ TEST(Codegen, function_multiple_parameters)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, function_keyword_call)
+{
+    const wchar_t *test_case = L"def add3(a, b, c):\n"
+                               "    return a + b + c\n"
+                               "add3(1, c=3, b=2)\n";
+
+    std::string expected =
+        "Code object:\n"
+        "    0 CreateFunction c[0]\n"
+        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    5 LdaGlobal c[1], module_global_read_ic[0]\n"
+        "    8 Star0\n"
+        "    9 LdaSmi 1\n"
+        "   11 Star a0\n"
+        "   13 LdaSmi 3\n"
+        "   15 Star1\n"
+        "   16 LdaSmi 2\n"
+        "   18 Star2\n"
+        "   19 CallKeyword r0, {a0:1}, kw_values={r1..r2}, kw=(\"c\", \"b\"), "
+        "call_ic[0]\n"
+        "   27 Return\n"
+        "Constant 0: Code object:\n"
+        "    0 Ldar p1\n"
+        "    2 Add p0\n"
+        "    4 Star0\n"
+        "    5 Ldar p2\n"
+        "    7 Add r0\n"
+        "    9 Return\n"
+        "   10 LdaNone\n"
+        "   11 Return\n"
+        "\n"
+        "Constant 1: \"add3\"\n"
+        "Constant 2: (\"c\", \"b\")\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, function_defaults_use_create_function_with_defaults)
 {
     const wchar_t *test_case = L"def f(a, b=2):\n"

@@ -321,6 +321,8 @@ template <> struct fmt::formatter<cl::Bytecode>
 
             case cl::Bytecode::CallSimple:
                 return format_to(out, "CallSimple");
+            case cl::Bytecode::CallKeyword:
+                return format_to(out, "CallKeyword");
             case cl::Bytecode::CallIntrinsic0:
                 return format_to(out, "CallIntrinsic0");
             case cl::Bytecode::CallIntrinsic1:
@@ -777,6 +779,41 @@ template <> struct fmt::formatter<cl::CodeObject>
                     print_reg(out, code_obj, callable_reg);
                     format_to(out, ", ");
                     print_reg_span(out, code_obj, first_arg_reg, n_args);
+                    format_to(out, ", ");
+                    disassemble_function_call_cache(code_obj, out,
+                                                    cache_idx_offset);
+                }
+                break;
+
+            case cl::Bytecode::CallKeyword:
+                {
+                    format_to(out, " ");
+                    int8_t callable_reg = code_obj.code[pc++];
+                    int8_t first_arg_reg = code_obj.code[pc++];
+                    uint8_t n_pos_args = code_obj.code[pc++];
+                    int8_t first_kw_value_reg = code_obj.code[pc++];
+                    uint8_t n_kw_args = code_obj.code[pc++];
+                    uint32_t keyword_names_idx = pc++;
+                    uint32_t cache_idx_offset = pc++;
+                    print_reg(out, code_obj, callable_reg);
+                    format_to(out, ", ");
+                    print_reg_span(out, code_obj, first_arg_reg, n_pos_args);
+                    format_to(out, ", kw_values=");
+                    print_reg_span(out, code_obj, first_kw_value_reg,
+                                   n_kw_args);
+                    format_to(out, ", kw=");
+                    uint8_t constant_idx = code_obj.code[keyword_names_idx];
+                    cl::Value constant =
+                        code_obj.constant_table[constant_idx].value();
+                    if(cl::can_convert_to<cl::Tuple>(constant))
+                    {
+                        cl::format_tuple_constant(
+                            out, constant.get_ptr<cl::Tuple>());
+                    }
+                    else
+                    {
+                        disassemble_constant(code_obj, out, keyword_names_idx);
+                    }
                     format_to(out, ", ");
                     disassemble_function_call_cache(code_obj, out,
                                                     cache_idx_offset);

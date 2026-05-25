@@ -321,6 +321,18 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE INTERP_CC Value unsupported_keyword_call_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"keyword calls are not implemented yet");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
     static constexpr size_t kObjectCacheLineBytes = 128;
     static constexpr size_t kObjectCacheLineStartOffset = 16;
     static constexpr uint32_t kMaxFactoryInlineSlotCount =
@@ -3097,6 +3109,11 @@ namespace cl
         COMPLETE();
     }
 
+    static INTERP_CC Value op_call_keyword(PARAMS)
+    {
+        MUSTTAIL return unsupported_keyword_call_error(ARGS);
+    }
+
     NOINLINE static INTERP_CC Value op_call_method_attr_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 6;
@@ -4135,6 +4152,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::RaiseBare, op_raise_bare);
 
         SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
+        SET_TABLE_ENTRY(Bytecode::CallKeyword, op_call_keyword);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic0, op_call_intrinsic0);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic1, op_call_intrinsic1);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic2, op_call_intrinsic2);

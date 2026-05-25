@@ -599,6 +599,21 @@ TEST(Parser, calls_accept_newlines_inside_parentheses)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Parser, calls_accept_keyword_arguments)
+{
+    std::string expected = "f(1, c=3, b=2)\n";
+    std::string actual = parse(L"f(1, c=3, b=2)\n");
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Parser, calls_reject_positional_after_keyword)
+{
+    expect_parse_error(
+        L"f(a=1, 2)\n",
+        "SyntaxError: positional argument follows keyword argument");
+}
+
 TEST(Parser, parameters_accept_trailing_comma)
 {
     std::string expected = (""

@@ -53,6 +53,8 @@ namespace cl
         PARAMETER,
         PARAMETER_VARARGS,
         PARAMETER_KWARGS,
+        CALL_ARGUMENT_POSITIONAL,
+        CALL_ARGUMENT_KEYWORD,
         EXPRESSION_TUPLE,
         EXPRESSION_LIST,
         EXPRESSION_DICT,
@@ -107,6 +109,8 @@ namespace cl
             case AstNodeKind::PARAMETER:
             case AstNodeKind::PARAMETER_VARARGS:
             case AstNodeKind::PARAMETER_KWARGS:
+            case AstNodeKind::CALL_ARGUMENT_POSITIONAL:
+            case AstNodeKind::CALL_ARGUMENT_KEYWORD:
                 return false;
             case AstNodeKind::EXPRESSION_TUPLE:
             case AstNodeKind::EXPRESSION_LIST:

@@ -81,25 +81,33 @@ not need runtime support in the first keyword-call slice.
 
 ## Keyword Call Bytecode
 
-The first bytecode shape should keep the outgoing value window as values only.
-Keyword names should be carried out-of-band as a constant tuple of interned
-strings:
+The first bytecode shape should keep value ranges as values only. Keyword names
+should be carried out-of-band as a constant tuple of interned strings:
 
 ```text
-CallKeyword callable, first_arg, n_pos_args, n_kw_args, kw_names_const, call_ic
+CallKeyword callable, first_pos_arg, n_pos_args, first_kw_value, n_kw_args,
+            kw_names_const, call_ic
 ```
 
-The outgoing register window is still contiguous:
+The positional range is staged in outgoing argument slots because those values
+are already in the right place for the eventual frame entry:
 
 ```text
 a0 = positional value 0
 a1 = positional value 1
-a2 = keyword value 0
-a3 = keyword value 1
 ```
 
-`kw_names_const` names the keyword values starting at
-`a[n_pos_args]`. For example:
+The keyword range is staged separately in ordinary temporary registers:
+
+```text
+r1 = keyword value 0
+r2 = keyword value 1
+```
+
+`kw_names_const` names the keyword values starting at `first_kw_value`. The
+keyword binder copies those values into the mapped parameter slots. Keeping
+keyword sources outside the outgoing argument window avoids source/destination
+overlap when keyword order differs from parameter order. For example:
 
 ```python
 f(10, c=30, b=20)
@@ -108,8 +116,9 @@ f(10, c=30, b=20)
 can be represented as:
 
 ```text
-values   = [10, 30, 20]
-kw_names = ("c", "b")
+positional values = [10]
+keyword values    = [30, 20]
+kw_names          = ("c", "b")
 ```
 
 The names tuple is a stable call-site shape. It avoids interleaving metadata
@@ -291,14 +300,16 @@ generic callable protocol work.
   Add a keyword-call bytecode shape along these lines:
 
   ```text
-  CallKeyword callable, first_arg, n_pos_args, n_kw_args, kw_names_const, call_ic
+  CallKeyword callable, first_pos_arg, n_pos_args, first_kw_value, n_kw_args,
+              kw_names_const, call_ic
   ```
 
   Codegen should continue to emit `CallSimple` for calls with no keywords. For
   calls with explicit keywords, it should evaluate argument values left to right
-  into one contiguous outgoing value window and store keyword names as a
-  constant tuple of interned strings. The keyword tuple should be the call-site
-  shape key used by the eventual inline cache.
+  while staging positional values into outgoing argument slots and keyword
+  values into a separate contiguous temporary-register span. It should store
+  keyword names as a constant tuple of interned strings. The keyword tuple
+  should be the call-site shape key used by the eventual inline cache.
 
   Method-call lowering needs a parallel keyword-aware form or a clearly shared
   helper so direct method calls can bind `self` and then run the same keyword

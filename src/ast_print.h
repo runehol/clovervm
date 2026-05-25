@@ -294,6 +294,19 @@ template <> struct fmt::formatter<cl::AstVector>
                 render_node(av, out, children[1], indent, self_precedence);
                 break;
 
+            case cl::AstNodeKind::CALL_ARGUMENT_POSITIONAL:
+                render_node(av, out, children[0], indent,
+                            cl::ExpressionPrecedence::Lowest);
+                break;
+
+            case cl::AstNodeKind::CALL_ARGUMENT_KEYWORD:
+                format_to(out, "{}=",
+                          narrow_wstring_view_ast(string_as_wchar_t(
+                              ast_print_string_constant(av, node_idx))));
+                render_node(av, out, children[0], indent,
+                            cl::ExpressionPrecedence::Lowest);
+                break;
+
             case cl::AstNodeKind::PARAMETER_SIGNATURE:
                 {
                     format_to(out, "(");
