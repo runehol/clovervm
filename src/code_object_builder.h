@@ -3,6 +3,8 @@
 
 #include "code_object.h"
 #include <cassert>
+#include <cstdint>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -147,6 +149,8 @@ namespace cl
             : code_obj(other.code_obj), finalized(other.finalized),
               temporary_reg(other.temporary_reg),
               max_temporary_reg(other.max_temporary_reg),
+              constant_indices_by_raw_value(
+                  std::move(other.constant_indices_by_raw_value)),
               outgoing_arg_relocations(
                   std::move(other.outgoing_arg_relocations))
         {
@@ -438,6 +442,7 @@ namespace cl
         bool finalized = false;
         uint32_t temporary_reg = FrameHeaderSize;
         uint32_t max_temporary_reg = FrameHeaderSize;
+        std::unordered_map<uint64_t, uint32_t> constant_indices_by_raw_value;
         struct OutgoingArgRelocation
         {
             uint32_t operand_offset;

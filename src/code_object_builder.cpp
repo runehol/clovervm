@@ -738,9 +738,17 @@ namespace cl
 
     uint32_t CodeObjectBuilder::allocate_constant(Value val)
     {
+        uint64_t raw_value = uint64_t(val.as.integer);
+        auto existing = constant_indices_by_raw_value.find(raw_value);
+        if(existing != constant_indices_by_raw_value.end())
+        {
+            return existing->second;
+        }
+
         uint32_t idx = code_obj->constant_table.size();
         check_u8_operand_index(idx, "constant table");
         code_obj->constant_table.emplace_back(val);
+        constant_indices_by_raw_value.emplace(raw_value, idx);
         return idx;
     }
 
