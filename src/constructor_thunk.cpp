@@ -38,9 +38,9 @@ namespace cl
         {
             TValue<Function> init_function = init.value();
             init_code = init_function.extract()->code_object.extract();
-            init_n_parameters = init_code->n_parameters;
+            init_n_parameters = init_code->function_signature.n_parameters;
             if(init_n_parameters == 0 ||
-               init_code->n_positional_parameters == 0)
+               init_code->function_signature.n_positional_parameters == 0)
             {
                 throw std::runtime_error(
                     "TypeError: __init__ requires a self parameter");
@@ -52,8 +52,11 @@ namespace cl
             CodeObjectBuilder &code = *code_storage;
             code.n_parameters() = init_n_parameters - 1;
             code.n_positional_parameters() =
-                init_code->n_positional_parameters - 1;
-            code.parameter_flags() = init_code->parameter_flags;
+                init_code->function_signature.n_positional_parameters - 1;
+            code.function_signature().n_pos_or_kw_parameters =
+                code.n_positional_parameters();
+            code.parameter_flags() =
+                init_code->function_signature.parameter_flags;
         }
         else
         {
@@ -64,6 +67,7 @@ namespace cl
             CodeObjectBuilder &code = *code_storage;
             code.n_parameters() = 0;
             code.n_positional_parameters() = 0;
+            code.function_signature().n_pos_or_kw_parameters = 0;
         }
 
         CodeObjectBuilder &code = *code_storage;
@@ -151,14 +155,15 @@ namespace cl
         TValue<Tuple> thunk_defaults = make_constructor_thunk_defaults(
             defaults.value(), init_function.extract()
                                   ->code_object.extract()
-                                  ->n_positional_parameters);
+                                  ->function_signature.n_positional_parameters);
         if(thunk_defaults.extract()->empty())
         {
             return make_object_value<Function>(
                 TValue<CodeObject>::from_oop(code),
                 Optional<TValue<String>>::none());
         }
-        if(thunk_defaults.extract()->size() > code->n_positional_parameters)
+        if(thunk_defaults.extract()->size() >
+           code->function_signature.n_positional_parameters)
         {
             throw std::runtime_error(
                 "TypeError: unsupported __init__ default parameter layout");

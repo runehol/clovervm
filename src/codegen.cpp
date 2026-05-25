@@ -486,7 +486,8 @@ namespace cl
             {
                 TemporaryReg default_values(*code_obj, n_defaults);
                 size_t first_default_idx =
-                    fun_obj->n_positional_parameters - n_defaults;
+                    fun_obj->function_signature.n_positional_parameters -
+                    n_defaults;
                 for(size_t i = 0; i < n_defaults; ++i)
                 {
                     int32_t param_idx = param_children[first_default_idx + i];
@@ -2579,6 +2580,8 @@ namespace cl
         fun_obj.n_parameters() = param_children.size();
         fun_obj.n_positional_parameters() =
             count_positional_parameters(av, param_children);
+        fun_obj.function_signature().n_pos_or_kw_parameters =
+            fun_obj.n_positional_parameters();
         if(has_varargs_parameter(av, param_children))
         {
             fun_obj.parameter_flags() |= FunctionParameterFlags::HasVarArgs;

@@ -1383,8 +1383,8 @@ namespace cl
     static ALWAYSINLINE bool is_fixed_arity_function(TValue<Function> fun)
     {
         return !fun.extract()->has_varargs() &&
-               fun.extract()->min_positional_arity ==
-                   fun.extract()->max_positional_arity;
+               fun.extract()->call_signature.min_positional_arity ==
+                   fun.extract()->call_signature.max_positional_arity;
     }
 
     static ALWAYSINLINE FunctionCallAdaptation
@@ -1455,11 +1455,14 @@ namespace cl
                                          uint32_t n_args)
     {
         uint32_t n_supplied_positional_args =
-            n_args < fun.extract()->n_positional_parameters
+            n_args < fun.extract()
+                         ->call_signature.function.n_positional_parameters
                 ? n_args
-                : fun.extract()->n_positional_parameters;
+                : fun.extract()
+                      ->call_signature.function.n_positional_parameters;
         uint32_t n_missing_args =
-            fun.extract()->n_positional_parameters - n_supplied_positional_args;
+            fun.extract()->call_signature.function.n_positional_parameters -
+            n_supplied_positional_args;
         if(likely(n_missing_args == 0))
         {
             return;
@@ -1486,7 +1489,7 @@ namespace cl
                                                          uint32_t n_args)
     {
         uint32_t n_positional_parameters =
-            fun.extract()->n_positional_parameters;
+            fun.extract()->call_signature.function.n_positional_parameters;
         uint32_t n_extra_args = n_args > n_positional_parameters
                                     ? n_args - n_positional_parameters
                                     : 0;
@@ -3040,7 +3043,7 @@ namespace cl
         uint8_t n_args = pc[3];
         CodeObject *target_code_object = assume_convert_to<CodeObject>(
             code_object->constant_table[const_offset].value());
-        assert(n_args == target_code_object->n_parameters);
+        assert(n_args == target_code_object->function_signature.n_parameters);
         (void)n_args;
         enter_code_object_frame_from_prepared_args(
             fp, pc, code_object, target_code_object, first_arg_reg,

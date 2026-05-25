@@ -199,31 +199,37 @@ namespace cl
         uint32_t &n_parameters()
         {
             assert_not_finalized();
-            return code_obj->n_parameters;
+            return code_obj->function_signature.n_parameters;
         }
 
         uint32_t n_parameters() const
         {
             assert(code_obj != nullptr);
-            return code_obj->n_parameters;
+            return code_obj->function_signature.n_parameters;
         }
 
         uint32_t &n_positional_parameters()
         {
             assert_not_finalized();
-            return code_obj->n_positional_parameters;
+            return code_obj->function_signature.n_positional_parameters;
         }
 
         uint32_t n_positional_parameters() const
         {
             assert(code_obj != nullptr);
-            return code_obj->n_positional_parameters;
+            return code_obj->function_signature.n_positional_parameters;
         }
 
         FunctionParameterFlags &parameter_flags()
         {
             assert_not_finalized();
-            return code_obj->parameter_flags;
+            return code_obj->function_signature.parameter_flags;
+        }
+
+        FunctionSignature &function_signature()
+        {
+            assert_not_finalized();
+            return code_obj->function_signature;
         }
 
         uint32_t get_padded_n_parameters() const

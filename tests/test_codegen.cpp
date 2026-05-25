@@ -3,6 +3,7 @@
 #include "code_object_print.h"
 #include "codegen.h"
 #include "float.h"
+#include "function.h"
 #include "module_object.h"
 #include "parser.h"
 #include "str.h"
@@ -475,10 +476,38 @@ TEST(Codegen, function_varargs_parameter_layout)
     CodeObject *function_code =
         module_code->constant_table[0].value().get_ptr<CodeObject>();
 
-    EXPECT_EQ(3, function_code->n_parameters);
-    EXPECT_EQ(2, function_code->n_positional_parameters);
+    EXPECT_EQ(3, function_code->function_signature.n_parameters);
+    EXPECT_EQ(2, function_code->function_signature.n_positional_parameters);
+    EXPECT_EQ(2, function_code->function_signature.n_pos_or_kw_parameters);
     EXPECT_TRUE(function_code->has_varargs());
     EXPECT_EQ(7, function_code->get_highest_occupied_frame_offset());
+}
+
+TEST(Codegen, function_copies_call_signature_from_code_object)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    CodeObject *module_code =
+        test_context.compile_file(L"def f(a, b=1, *args):\n"
+                                  L"    return args\n"
+                                  L"f\n");
+
+    Value function_value =
+        test_context.thread()->run_clovervm_code_object(module_code);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    Function *function = assume_convert_to<Function>(function_value);
+    CodeObject *function_code = function->code_object.extract();
+
+    EXPECT_EQ(function_code->function_signature.n_parameters,
+              function->call_signature.function.n_parameters);
+    EXPECT_EQ(function_code->function_signature.n_positional_parameters,
+              function->call_signature.function.n_positional_parameters);
+    EXPECT_EQ(function_code->function_signature.n_pos_or_kw_parameters,
+              function->call_signature.function.n_pos_or_kw_parameters);
+    EXPECT_EQ(function_code->function_signature.parameter_flags,
+              function->call_signature.function.parameter_flags);
+    EXPECT_EQ(1u, function->call_signature.min_positional_arity);
+    EXPECT_EQ(Function::VarArgs, function->call_signature.max_positional_arity);
 }
 
 TEST(Codegen, parameter_frame_offsets_are_padded_to_abi_alignment)

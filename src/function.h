@@ -33,42 +33,44 @@ namespace cl
                  Optional<TValue<Tuple>> _default_parameters =
                      Optional<TValue<Tuple>>::none())
             : SlotObject(cls, native_layout), code_object(_code_object),
-              default_parameters(_default_parameters), docstring(_docstring),
-              min_positional_arity(
-                  min_arity_for_code(_code_object, _default_parameters)),
-              max_positional_arity(max_arity_for_code(_code_object)),
-              n_positional_parameters(
-                  _code_object.extract()->n_positional_parameters),
-              parameter_flags(_code_object.extract()->parameter_flags)
+              default_parameters(_default_parameters), docstring(_docstring)
         {
+            refresh_signature_from_code_object();
             assert_parameter_layout(_code_object);
             if(_default_parameters.has_value())
             {
-                assert(min_positional_arity <= n_positional_parameters);
+                assert(call_signature.min_positional_arity <=
+                       call_signature.function.n_positional_parameters);
                 assert(_default_parameters.value().extract()->size() ==
-                       n_positional_parameters - min_positional_arity);
+                       call_signature.function.n_positional_parameters -
+                           call_signature.min_positional_arity);
             }
         }
 
         bool accepts_arity(uint32_t n_args) const
         {
-            return n_args >= min_positional_arity &&
-                   n_args <= max_positional_arity;
+            return n_args >= call_signature.min_positional_arity &&
+                   n_args <= call_signature.max_positional_arity;
         }
 
         bool has_varargs() const
         {
-            return has_function_parameter_flag(
-                parameter_flags, FunctionParameterFlags::HasVarArgs);
+            return call_signature.function.has_varargs();
+        }
+
+        void refresh_signature_from_code_object()
+        {
+            call_signature.function = code_object.extract()->function_signature;
+            call_signature.min_positional_arity =
+                min_arity_for_code(code_object.value(), default_parameters);
+            call_signature.max_positional_arity =
+                max_arity_for_code(code_object.value());
         }
 
         Member<TValue<CodeObject>> code_object;
         Member<Optional<TValue<Tuple>>> default_parameters;
         Member<Optional<TValue<String>>> docstring;
-        uint32_t min_positional_arity;
-        uint32_t max_positional_arity;
-        uint32_t n_positional_parameters;
-        FunctionParameterFlags parameter_flags;
+        FunctionCallSignature call_signature;
 
         CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(Function, SlotObject, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(Function);
@@ -80,11 +82,14 @@ namespace cl
         {
             if(!default_parameters.has_value())
             {
-                return code_object.extract()->n_positional_parameters;
+                return code_object.extract()
+                    ->function_signature.n_positional_parameters;
             }
             assert(default_parameters.value().extract()->size() <=
-                   code_object.extract()->n_positional_parameters);
-            return code_object.extract()->n_positional_parameters -
+                   code_object.extract()
+                       ->function_signature.n_positional_parameters);
+            return code_object.extract()
+                       ->function_signature.n_positional_parameters -
                    uint32_t(default_parameters.value().extract()->size());
         }
 
@@ -92,13 +97,17 @@ namespace cl
         {
             return code_object.extract()->has_varargs()
                        ? VarArgs
-                       : code_object.extract()->n_positional_parameters;
+                       : code_object.extract()
+                             ->function_signature.n_positional_parameters;
         }
 
         static void assert_parameter_layout(TValue<CodeObject> code_object)
         {
-            assert(code_object.extract()->n_parameters ==
-                   code_object.extract()->n_positional_parameters +
+            assert(code_object.extract()->function_signature.n_parameters ==
+                   code_object.extract()
+                           ->function_signature.n_positional_parameters +
+                       code_object.extract()
+                           ->function_signature.n_kwonly_parameters +
                        (code_object.extract()->has_varargs() ? 1 : 0));
         }
     };

@@ -23,6 +23,7 @@ namespace cl
     {
         None = 0,
         HasVarArgs = 1U << 0,
+        HasKwArgs = 1U << 1,
     };
 
     inline FunctionParameterFlags operator|(FunctionParameterFlags lhs,
@@ -43,6 +44,35 @@ namespace cl
     {
         return (uint32_t(flags) & uint32_t(flag)) != 0;
     }
+
+    struct FunctionSignature
+    {
+        uint32_t n_parameters = 0;
+        uint32_t n_positional_parameters = 0;
+        uint32_t n_posonly_parameters = 0;
+        uint32_t n_pos_or_kw_parameters = 0;
+        uint32_t n_kwonly_parameters = 0;
+        FunctionParameterFlags parameter_flags = FunctionParameterFlags::None;
+
+        bool has_varargs() const
+        {
+            return has_function_parameter_flag(
+                parameter_flags, FunctionParameterFlags::HasVarArgs);
+        }
+
+        bool has_kwargs() const
+        {
+            return has_function_parameter_flag(
+                parameter_flags, FunctionParameterFlags::HasKwArgs);
+        }
+    };
+
+    struct FunctionCallSignature
+    {
+        FunctionSignature function;
+        uint32_t min_positional_arity = 0;
+        uint32_t max_positional_arity = 0;
+    };
 
     using IntrinsicFunction0 = Value (*)(ThreadState *);
     using IntrinsicFunction1 = Value (*)(ThreadState *, Value);
@@ -171,9 +201,7 @@ namespace cl
         Member<Optional<TValue<String>>> docstring;
         const CompilationUnit *compilation_unit;
 
-        uint32_t n_parameters = 0;
-        uint32_t n_positional_parameters = 0;
-        FunctionParameterFlags parameter_flags = FunctionParameterFlags::None;
+        FunctionSignature function_signature;
         uint32_t n_locals = 0;
         uint32_t n_temporaries = 0;
         uint32_t n_outgoing_call_slots = 0;
@@ -184,11 +212,9 @@ namespace cl
             return defining_module.value();
         }
 
-        bool has_varargs() const
-        {
-            return has_function_parameter_flag(
-                parameter_flags, FunctionParameterFlags::HasVarArgs);
-        }
+        bool has_varargs() const { return function_signature.has_varargs(); }
+
+        bool has_kwargs() const { return function_signature.has_kwargs(); }
 
         std::vector<uint8_t> code;
 
@@ -205,13 +231,13 @@ namespace cl
 
         uint32_t get_n_registers() const
         {
-            return n_parameters + n_temporaries + n_locals +
+            return function_signature.n_parameters + n_temporaries + n_locals +
                    n_outgoing_call_slots;
         }
 
         uint32_t get_padded_n_parameters() const
         {
-            return round_up_to_abi_alignment(n_parameters);
+            return round_up_to_abi_alignment(function_signature.n_parameters);
         }
 
         uint32_t get_padded_n_ordinary_below_frame_slots() const
@@ -245,7 +271,7 @@ namespace cl
 
         int32_t get_highest_occupied_frame_offset() const
         {
-            if(n_parameters == 0)
+            if(function_signature.n_parameters == 0)
             {
                 return 0;
             }

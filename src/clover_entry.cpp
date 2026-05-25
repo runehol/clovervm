@@ -38,6 +38,7 @@ namespace cl
                                local_scope, adapter_name);
         code.n_parameters() = n_args + 1;
         code.n_positional_parameters() = n_args + 1;
+        code.function_signature().n_pos_or_kw_parameters = n_args + 1;
         reserve_parameter_slots_and_frame_header(&code);
 
         {
