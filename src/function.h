@@ -61,8 +61,6 @@ namespace cl
         void refresh_signature_from_code_object()
         {
             call_signature.function = code_object.extract()->function_signature;
-            keyword_remap.copy_from(
-                code_object.extract()->function_keyword_remap);
             call_signature.min_positional_arity =
                 min_arity_for_code(code_object.value(), default_parameters);
             call_signature.max_positional_arity =
@@ -72,12 +70,9 @@ namespace cl
         Member<TValue<CodeObject>> code_object;
         Member<Optional<TValue<Tuple>>> default_parameters;
         Member<Optional<TValue<String>>> docstring;
-        FunctionKeywordRemap keyword_remap;
         FunctionCallSignature call_signature;
 
-        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(
-            Function, SlotObject,
-            3 + FunctionKeywordRemap::embedded_value_count);
+        CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(Function, SlotObject, 3);
         CL_DECLARE_STATIC_OBJECT_SIZE(Function);
 
     private:

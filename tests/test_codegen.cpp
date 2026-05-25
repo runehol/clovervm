@@ -528,7 +528,7 @@ TEST(Codegen, function_varargs_parameter_layout)
     EXPECT_EQ(7, function_code->get_highest_occupied_frame_offset());
 }
 
-TEST(Codegen, function_copies_call_signature_from_code_object)
+TEST(Codegen, function_copies_hot_call_signature_from_code_object)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
@@ -551,16 +551,6 @@ TEST(Codegen, function_copies_call_signature_from_code_object)
               function->call_signature.function.n_pos_or_kw_parameters);
     EXPECT_EQ(function_code->function_signature.parameter_flags,
               function->call_signature.function.parameter_flags);
-    ASSERT_EQ(function_code->function_keyword_remap.size(),
-              function->keyword_remap.size());
-    EXPECT_EQ(function_code->function_keyword_remap.name_at(0),
-              function->keyword_remap.name_at(0));
-    EXPECT_EQ(function_code->function_keyword_remap.parameter_index_at(0),
-              function->keyword_remap.parameter_index_at(0));
-    EXPECT_EQ(function_code->function_keyword_remap.name_at(1),
-              function->keyword_remap.name_at(1));
-    EXPECT_EQ(function_code->function_keyword_remap.parameter_index_at(1),
-              function->keyword_remap.parameter_index_at(1));
     EXPECT_EQ(1u, function->call_signature.min_positional_arity);
     EXPECT_EQ(Function::VarArgs, function->call_signature.max_positional_arity);
 }
