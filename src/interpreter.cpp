@@ -1408,6 +1408,10 @@ namespace cl
         {
             return FunctionCallAdaptation::Varargs;
         }
+        if(fun.extract()->default_parameters.value().has_value())
+        {
+            return FunctionCallAdaptation::Defaults;
+        }
         if(is_fixed_arity_function(fun))
         {
             return FunctionCallAdaptation::FixedArity;
@@ -1519,7 +1523,7 @@ namespace cl
             TValue<Tuple>::from_value_assumed(keyword_names_value);
         assert(keyword_names.extract()->size() == n_kw_args);
 
-        std::vector<bool> filled(signature.n_positional_parameters, false);
+        std::vector<bool> filled(signature.n_parameters, false);
         uint32_t n_filled_by_position =
             n_pos_args < signature.n_positional_parameters
                 ? n_pos_args
@@ -1558,7 +1562,7 @@ namespace cl
                     break;
                 }
             }
-            if(!found || parameter_idx >= signature.n_positional_parameters)
+            if(!found || parameter_idx >= signature.n_parameters)
             {
                 return KeywordCallPlanStatus::KeywordError;
             }
@@ -1572,9 +1576,14 @@ namespace cl
                 target_code_object->encode_reg(parameter_idx));
         }
 
-        for(uint32_t parameter_idx = 0;
-            parameter_idx < signature.n_positional_parameters; ++parameter_idx)
+        for(uint32_t parameter_idx = 0; parameter_idx < signature.n_parameters;
+            ++parameter_idx)
         {
+            if(signature.has_varargs() &&
+               parameter_idx == signature.n_positional_parameters)
+            {
+                continue;
+            }
             if(filled[parameter_idx])
             {
                 continue;
@@ -1611,6 +1620,40 @@ namespace cl
     }
 
     static ALWAYSINLINE void
+    initialize_default_parameters_from_slot(Value *new_fp, TValue<Function> fun,
+                                            uint32_t default_fill_start_slot)
+    {
+        Optional<TValue<Tuple>> maybe_defaults =
+            fun.extract()->default_parameters.value();
+        assert(maybe_defaults.has_value());
+        TValue<Tuple> defaults = maybe_defaults.value();
+        CodeObject *target_code_object = fun.extract()->code_object.extract();
+        uint32_t first_default_slot =
+            fun.extract()->call_signature.function.first_default_slot;
+        FunctionSignature signature = fun.extract()->call_signature.function;
+        uint32_t default_end_slot =
+            first_default_slot < signature.n_positional_parameters
+                ? signature.n_positional_parameters
+                : signature.n_parameters;
+        if(default_fill_start_slot < first_default_slot)
+        {
+            default_fill_start_slot = first_default_slot;
+        }
+        if(likely(default_fill_start_slot >= default_end_slot))
+        {
+            return;
+        }
+        for(uint32_t param_idx = default_fill_start_slot;
+            param_idx < default_end_slot; ++param_idx)
+        {
+            uint32_t default_idx = param_idx - first_default_slot;
+            assert(default_idx < defaults.extract()->size());
+            new_fp[target_code_object->encode_reg(param_idx)] =
+                defaults.extract()->item_unchecked(default_idx);
+        }
+    }
+
+    static ALWAYSINLINE void
     initialize_missing_default_arguments(Value *new_fp, TValue<Function> fun,
                                          uint32_t n_args)
     {
@@ -1620,30 +1663,8 @@ namespace cl
                 ? n_args
                 : fun.extract()
                       ->call_signature.function.n_positional_parameters;
-        uint32_t n_missing_args =
-            fun.extract()->call_signature.function.n_positional_parameters -
-            n_supplied_positional_args;
-        if(likely(n_missing_args == 0))
-        {
-            return;
-        }
-
-        Optional<TValue<Tuple>> maybe_defaults =
-            fun.extract()->default_parameters.value();
-        assert(maybe_defaults.has_value());
-        TValue<Tuple> defaults = maybe_defaults.value();
-        CodeObject *target_code_object = fun.extract()->code_object.extract();
-        uint32_t first_default_slot =
-            fun.extract()->call_signature.function.first_default_slot;
-        assert(first_default_slot <= n_supplied_positional_args);
-        for(uint32_t idx = 0; idx < n_missing_args; ++idx)
-        {
-            uint32_t param_idx = n_supplied_positional_args + idx;
-            uint32_t default_idx = param_idx - first_default_slot;
-            assert(default_idx < defaults.extract()->size());
-            new_fp[target_code_object->encode_reg(param_idx)] =
-                defaults.extract()->item_unchecked(default_idx);
-        }
+        initialize_default_parameters_from_slot(new_fp, fun,
+                                                n_supplied_positional_args);
     }
 
     static ALWAYSINLINE void initialize_varargs_argument(ThreadState *thread,
@@ -1727,8 +1748,11 @@ namespace cl
         }
 
         assert(adaptation == FunctionCallAdaptation::Varargs);
-        initialize_missing_default_arguments(new_fp, fun, n_args);
         initialize_varargs_argument(thread, new_fp, fun, n_args);
+        if(fun.extract()->default_parameters.value().has_value())
+        {
+            initialize_missing_default_arguments(new_fp, fun, n_args);
+        }
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                        instr_len);
     }
@@ -1743,15 +1767,15 @@ namespace cl
         Value *new_fp = new_frame_pointer_from_first_arg(fp, cache.code_object,
                                                          first_arg_reg);
 
-        if(cache.adaptation != FunctionCallAdaptation::FixedArity &&
-           fun.extract()->default_parameters.value().has_value())
-        {
-            initialize_missing_default_arguments(new_fp, fun,
-                                                 cache.default_fill_start_slot);
-        }
         if(cache.adaptation == FunctionCallAdaptation::Varargs)
         {
             initialize_varargs_argument(thread, new_fp, fun, n_pos_args);
+        }
+        if(cache.adaptation != FunctionCallAdaptation::FixedArity &&
+           fun.extract()->default_parameters.value().has_value())
+        {
+            initialize_default_parameters_from_slot(
+                new_fp, fun, cache.default_fill_start_slot);
         }
 
         assert(cache.keyword_dest_regs.size() == n_kw_args);

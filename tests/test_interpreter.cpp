@@ -826,6 +826,30 @@ TEST(Interpreter, function_keyword_call_initializes_varargs)
     EXPECT_EQ(Value::from_smi(32), file_runner.return_value);
 }
 
+TEST(Interpreter, function_keyword_call_initializes_keyword_only_defaults)
+{
+    test::FileRunner file_runner(L"def f(a, *, b=2, c=3):\n"
+                                 L"    return a * 100 + b * 10 + c\n"
+                                 L"f(4, c=5)\n");
+    EXPECT_EQ(Value::from_smi(425), file_runner.return_value);
+}
+
+TEST(Interpreter, function_keyword_call_rejects_keyword_only_as_positional)
+{
+    expect_python_error(L"def f(a, *, b=2):\n"
+                        L"    return a + b\n"
+                        L"f(1, 2)\n",
+                        L"TypeError: wrong number of arguments");
+}
+
+TEST(Interpreter, function_keyword_call_supports_varargs_before_keyword_only)
+{
+    test::FileRunner file_runner(L"def f(*args, sep=9):\n"
+                                 L"    return len(args) * 10 + sep\n"
+                                 L"f(1, 2, sep=3)\n");
+    EXPECT_EQ(Value::from_smi(23), file_runner.return_value);
+}
+
 TEST(Interpreter, class_constructor_accepts_keyword_calls)
 {
     test::FileRunner file_runner(L"class C:\n"
@@ -3824,12 +3848,9 @@ TEST(Interpreter, trusted_python_builtins_are_installed)
         {L"globals",
          L"Return the dictionary containing the current scope's global "
          L"variables."},
-        {L"print",
-         L"print(*args)\n"
-         L"\n"
-         L"Print the values to standard output, separated by spaces and "
-         L"followed by a\n"
-         L"newline."},
+        {L"print", L"print(*args, sep=' ', end='\\n', file=None, flush=False)\n"
+                   L"\n"
+                   L"Print the values to standard output."},
     };
 
     for(const ExpectedBuiltin &expected: expected_builtins)
@@ -4753,6 +4774,30 @@ TEST(Interpreter, python_defined_print_builtin_writes_blank_line_for_no_args)
 
     EXPECT_EQ(Value::None(), run.return_value);
     EXPECT_EQ(L"\n", run.stdout_text);
+}
+
+TEST(Interpreter, python_defined_print_builtin_accepts_keyword_formatting)
+{
+    CapturedStdoutRun run =
+        run_file_with_captured_stdout(L"print(1, 2, 3, sep=', ', end='!')\n");
+
+    EXPECT_EQ(Value::None(), run.return_value);
+    EXPECT_EQ(L"1, 2, 3!", run.stdout_text);
+}
+
+TEST(Interpreter, python_defined_print_builtin_treats_none_sep_end_as_defaults)
+{
+    CapturedStdoutRun run =
+        run_file_with_captured_stdout(L"print(1, 2, sep=None, end=None)\n");
+
+    EXPECT_EQ(Value::None(), run.return_value);
+    EXPECT_EQ(L"1 2\n", run.stdout_text);
+}
+
+TEST(Interpreter, python_defined_print_builtin_rejects_non_string_sep_end)
+{
+    expect_python_error(L"print(1, sep=2)\n", L"TypeError");
+    expect_python_error(L"print(1, end=2)\n", L"TypeError");
 }
 
 TEST(Interpreter, interactive_expression_returns_value)

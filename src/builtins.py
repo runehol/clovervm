@@ -83,23 +83,32 @@ def locals():
     return __clover_locals__()
 
 
-def print(*args):
-    """print(*args)
+def print(*args, sep=" ", end="\n", file=None, flush=False):
+    """print(*args, sep=' ', end='\\n', file=None, flush=False)
 
-Print the values to standard output, separated by spaces and followed by a
-newline."""
+Print the values to standard output."""
+    if sep is None:
+        sep = " "
+    elif not isinstance(sep, str):
+        raise TypeError
+    if end is None:
+        end = "\n"
+    elif not isinstance(end, str):
+        raise TypeError
+    if file is not None:
+        raise TypeError
     first = True
     for obj in args:
         if first:
             first = False
         else:
-            __clover_write_stdout__(" ")
+            __clover_write_stdout__(sep)
         __clover_write_stdout__(
             __clover_call_special__(
                 obj, "__str__", TypeError, "object has no __str__"
             )
         )
-    __clover_write_stdout__("\n")
+    __clover_write_stdout__(end)
 
 
 def sum(iterable, start=0):

@@ -8,6 +8,7 @@
 #include "tuple.h"
 #include "typed_value.h"
 #include "value.h"
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -42,10 +43,9 @@ namespace cl
                 assert(call_signature.min_positional_arity <=
                        call_signature.function.n_positional_parameters);
                 assert(call_signature.function.first_default_slot <=
-                       call_signature.function.n_positional_parameters);
+                       call_signature.function.n_parameters);
                 assert(_default_parameters.value().extract()->size() ==
-                       call_signature.function.n_positional_parameters -
-                           call_signature.function.first_default_slot);
+                       default_parameter_count(call_signature.function));
             }
         }
 
@@ -89,12 +89,20 @@ namespace cl
             }
             FunctionSignature signature =
                 code_object.extract()->function_signature;
-            assert(signature.first_default_slot <=
-                   signature.n_positional_parameters);
+            assert(signature.first_default_slot <= signature.n_parameters);
             assert(default_parameters.value().extract()->size() ==
-                   signature.n_positional_parameters -
-                       signature.first_default_slot);
-            return signature.first_default_slot;
+                   default_parameter_count(signature));
+            return std::min(signature.first_default_slot,
+                            signature.n_positional_parameters);
+        }
+
+        static uint32_t default_parameter_count(FunctionSignature signature)
+        {
+            uint32_t default_end_slot =
+                signature.first_default_slot < signature.n_positional_parameters
+                    ? signature.n_positional_parameters
+                    : signature.n_parameters;
+            return default_end_slot - signature.first_default_slot;
         }
 
         static uint32_t max_arity_for_code(TValue<CodeObject> code_object)

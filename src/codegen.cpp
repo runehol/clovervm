@@ -125,7 +125,6 @@ namespace cl
                                                       int32_t signature_idx)
     {
         return !parameter_signature_group(av, signature_idx, 0).empty() ||
-               !parameter_signature_group(av, signature_idx, 3).empty() ||
                !parameter_signature_group(av, signature_idx, 4).empty();
     }
 
@@ -135,14 +134,19 @@ namespace cl
         if(parameter_signature_has_unsupported_runtime_shape(av, signature_idx))
         {
             throw std::runtime_error(
-                "SyntaxError: positional-only, keyword-only, and **kwargs "
-                "parameters are not implemented yet");
+                "SyntaxError: positional-only and **kwargs parameters are not "
+                "implemented yet");
         }
 
         AstChildren result = parameter_signature_group(av, signature_idx, 1);
         AstChildren vararg = parameter_signature_group(av, signature_idx, 2);
         assert(vararg.size() <= 1);
         for(int32_t param_idx: vararg)
+        {
+            result.push_back(param_idx);
+        }
+        AstChildren kwonly = parameter_signature_group(av, signature_idx, 3);
+        for(int32_t param_idx: kwonly)
         {
             result.push_back(param_idx);
         }
@@ -486,8 +490,23 @@ namespace cl
             {
                 TemporaryReg default_values(*code_obj, n_defaults);
                 size_t first_default_idx =
-                    fun_obj->function_signature.n_positional_parameters -
-                    n_defaults;
+                    first_default_parameter_index(param_children);
+                if(first_default_idx <
+                   fun_obj->function_signature.n_positional_parameters)
+                {
+                    if(first_default_idx + n_defaults !=
+                       fun_obj->function_signature.n_positional_parameters)
+                    {
+                        throw std::runtime_error(
+                            "SyntaxError: unsupported default parameter "
+                            "layout");
+                    }
+                }
+                else if(first_default_idx + n_defaults != param_children.size())
+                {
+                    throw std::runtime_error(
+                        "SyntaxError: unsupported default parameter layout");
+                }
                 fun_obj->function_signature.first_default_slot =
                     uint32_t(first_default_idx);
                 for(size_t i = 0; i < n_defaults; ++i)
@@ -513,11 +532,24 @@ namespace cl
         uint32_t count_default_parameters(AstChildren param_children) const
         {
             uint32_t n_defaults = 0;
+            bool after_varargs = false;
             for(int32_t param_idx: param_children)
             {
+                if(av.kinds[param_idx].node_kind ==
+                   AstNodeKind::PARAMETER_VARARGS)
+                {
+                    after_varargs = true;
+                    continue;
+                }
                 if(av.kinds[param_idx].node_kind != AstNodeKind::PARAMETER)
                 {
                     continue;
+                }
+                if(after_varargs && av.children[param_idx].empty())
+                {
+                    throw std::runtime_error(
+                        "SyntaxError: required keyword-only parameters are "
+                        "not implemented yet");
                 }
                 if(!av.children[param_idx].empty())
                 {
@@ -525,6 +557,21 @@ namespace cl
                 }
             }
             return n_defaults;
+        }
+
+        size_t first_default_parameter_index(AstChildren param_children) const
+        {
+            for(size_t param_idx = 0; param_idx < param_children.size();
+                ++param_idx)
+            {
+                int32_t node_idx = param_children[param_idx];
+                if(av.kinds[node_idx].node_kind == AstNodeKind::PARAMETER &&
+                   !av.children[node_idx].empty())
+                {
+                    return param_idx;
+                }
+            }
+            return param_children.size();
         }
 
         void codegen_class_definition(int32_t node_idx)
@@ -2634,21 +2681,6 @@ namespace cl
         return incref(result);
     }
 
-    uint32_t count_positional_parameters(const AstVector &av,
-                                         AstChildren param_children)
-    {
-        uint32_t n_positional_parameters = 0;
-        for(int32_t param_idx: param_children)
-        {
-            if(av.kinds[param_idx].node_kind == AstNodeKind::PARAMETER_VARARGS)
-            {
-                break;
-            }
-            ++n_positional_parameters;
-        }
-        return n_positional_parameters;
-    }
-
     bool has_varargs_parameter(const AstVector &av, AstChildren param_children)
     {
         for(int32_t param_idx: param_children)
@@ -2714,17 +2746,22 @@ namespace cl
         fun_obj.set_docstring(docstring_for_body(av, children[1]));
         fun_obj.n_parameters() = param_children.size();
         fun_obj.n_positional_parameters() =
-            count_positional_parameters(av, param_children);
+            parameter_signature_group(av, children[0], 1).size();
         fun_obj.function_signature().n_pos_or_kw_parameters =
             fun_obj.n_positional_parameters();
+        fun_obj.function_signature().n_kwonly_parameters =
+            parameter_signature_group(av, children[0], 3).size();
         assert(fun_obj.n_positional_parameters() <= UINT16_MAX);
-        for(uint32_t param_idx = 0;
-            param_idx < fun_obj.n_positional_parameters(); ++param_idx)
+        for(uint32_t param_idx = 0; param_idx < param_children.size();
+            ++param_idx)
         {
             int32_t parameter_node_idx = param_children[param_idx];
-            fun_obj.function_keyword_remap().add(
-                ast_string_constant(av, parameter_node_idx),
-                static_cast<uint16_t>(param_idx));
+            if(av.kinds[parameter_node_idx].node_kind == AstNodeKind::PARAMETER)
+            {
+                fun_obj.function_keyword_remap().add(
+                    ast_string_constant(av, parameter_node_idx),
+                    static_cast<uint16_t>(param_idx));
+            }
         }
         if(has_varargs_parameter(av, param_children))
         {
