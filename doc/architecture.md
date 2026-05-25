@@ -90,6 +90,7 @@ calling C++ runtime helpers or native functions.
 Detailed docs:
 
 - [CloverVM Function Calling Convention](function-calling-convention.md)
+- [Function Call Adaptation](function-call-adaptation.md)
 - [Native/Managed Boundaries](native-managed-boundaries.md)
 - [Constructor Thunks](constructor-thunks.md)
 
