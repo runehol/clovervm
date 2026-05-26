@@ -1529,13 +1529,6 @@ namespace cl
                cache.validity_cell->is_valid();
     }
 
-    enum class KeywordCallPlanStatus
-    {
-        Success,
-        WrongArity,
-        KeywordError,
-    };
-
     static ALWAYSINLINE void populate_keyword_call_cache_with_guard(
         KeywordCallInlineCache &cache, Value guard_value, TValue<Function> fun,
         ValidityCell *validity_cell, Value keyword_names, uint32_t n_pos_args,
@@ -1562,17 +1555,19 @@ namespace cl
                                                : first_default_slot;
     }
 
-    static KeywordCallPlanStatus build_keyword_call_plan(
-        KeywordCallInlineCache &candidate, Value guard_value,
-        TValue<Function> fun, ValidityCell *validity_cell,
-        Value keyword_names_value, uint32_t n_pos_args, uint32_t n_kw_args)
+    [[nodiscard]] static Expected<void> build_and_populate_keyword_call_cache(
+        KeywordCallInlineCache &cache, Value guard_value, TValue<Function> fun,
+        ValidityCell *validity_cell, Value keyword_names_value,
+        uint32_t n_pos_args, uint32_t n_kw_args)
     {
+        KeywordCallInlineCache candidate;
         Function *function = fun.extract();
         FunctionSignature signature = function->call_signature.function;
         if(n_pos_args > signature.n_positional_parameters &&
            !signature.has_varargs())
         {
-            return KeywordCallPlanStatus::WrongArity;
+            return Expected<void>::raise_exception(
+                L"TypeError", L"wrong number of arguments");
         }
 
         TValue<Tuple> keyword_names =
@@ -1603,7 +1598,8 @@ namespace cl
                 if(keyword_names.extract()->item_unchecked(prev_idx) ==
                    keyword_name)
                 {
-                    return KeywordCallPlanStatus::KeywordError;
+                    return Expected<void>::raise_exception(
+                        L"TypeError", L"invalid keyword argument");
                 }
             }
 
@@ -1620,11 +1616,13 @@ namespace cl
             }
             if(!found || parameter_idx >= signature.n_parameters)
             {
-                return KeywordCallPlanStatus::KeywordError;
+                return Expected<void>::raise_exception(
+                    L"TypeError", L"invalid keyword argument");
             }
             if(filled[parameter_idx])
             {
-                return KeywordCallPlanStatus::KeywordError;
+                return Expected<void>::raise_exception(
+                    L"TypeError", L"invalid keyword argument");
             }
 
             filled[parameter_idx] = true;
@@ -1646,7 +1644,8 @@ namespace cl
             }
             if(!function->has_default_for_parameter(parameter_idx))
             {
-                return KeywordCallPlanStatus::WrongArity;
+                return Expected<void>::raise_exception(
+                    L"TypeError", L"wrong number of arguments");
             }
         }
 
@@ -1655,23 +1654,54 @@ namespace cl
         populate_keyword_call_cache_with_guard(
             candidate, guard_value, fun, validity_cell, keyword_names_value,
             n_pos_args, default_fill_start_slot, std::move(keyword_dest_regs));
-        return KeywordCallPlanStatus::Success;
+        cache = std::move(candidate);
+        return Expected<void>::ok();
     }
 
-    static KeywordCallPlanStatus build_and_populate_keyword_call_cache(
-        KeywordCallInlineCache &cache, Value guard_value, TValue<Function> fun,
-        ValidityCell *validity_cell, Value keyword_names_value,
-        uint32_t n_pos_args, uint32_t n_kw_args)
+    [[nodiscard]] NOINLINE static Expected<void>
+    populate_keyword_call_cache_from_callable(Value callable,
+                                              Value keyword_names,
+                                              uint32_t n_pos_args,
+                                              uint32_t n_kw_args,
+                                              KeywordCallInlineCache &cache)
     {
-        KeywordCallInlineCache candidate;
-        KeywordCallPlanStatus status =
-            build_keyword_call_plan(candidate, guard_value, fun, validity_cell,
-                                    keyword_names_value, n_pos_args, n_kw_args);
-        if(status == KeywordCallPlanStatus::Success)
+        if(unlikely(!callable.is_ptr()))
         {
-            cache = std::move(candidate);
+            return Expected<void>::raise_exception(L"TypeError",
+                                                   L"object is not callable");
         }
-        return status;
+
+        Object *callable_object = callable.get_ptr();
+        if(callable_object->native_layout_id() == NativeLayoutId::ClassObject)
+        {
+            ClassObject *cls = static_cast<ClassObject *>(callable_object);
+            ConstructorThunkLookup constructor =
+                cls->get_or_create_constructor_thunk();
+            if(unlikely(!constructor.is_found()))
+            {
+                return Expected<void>::raise_exception(
+                    L"TypeError", L"object is not callable");
+            }
+
+            TValue<Function> thunk =
+                TValue<Function>::from_oop(constructor.thunk);
+            return build_and_populate_keyword_call_cache(
+                cache, Value::from_oop(cls), thunk, constructor.lookup_cell,
+                keyword_names, n_pos_args, n_kw_args);
+        }
+
+        if(unlikely(callable_object->native_layout_id() !=
+                    NativeLayoutId::Function))
+        {
+            return Expected<void>::raise_exception(L"TypeError",
+                                                   L"object is not callable");
+        }
+
+        TValue<Function> function =
+            TValue<Function>::from_value_assumed(callable);
+        return build_and_populate_keyword_call_cache(cache, callable, function,
+                                                     nullptr, keyword_names,
+                                                     n_pos_args, n_kw_args);
     }
 
     static ALWAYSINLINE void
@@ -3383,70 +3413,13 @@ namespace cl
         Value fun = fp[callable_reg];
         Value keyword_names =
             code_object->constant_table[keyword_names_idx].value();
-
-        if(unlikely(!fun.is_ptr()))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        Object *fun_object = fun.get_ptr();
-        if(fun_object->native_layout_id() == NativeLayoutId::ClassObject)
-        {
-            ClassObject *cls = static_cast<ClassObject *>(fun_object);
-            ConstructorThunkLookup constructor =
-                cls->get_or_create_constructor_thunk();
-            if(unlikely(!constructor.is_found()))
-            {
-                MUSTTAIL return not_callable_error(ARGS);
-            }
-
-            TValue<Function> thunk =
-                TValue<Function>::from_oop(constructor.thunk);
-            KeywordCallInlineCache &cache =
-                code_object->keyword_call_caches[cache_idx];
-            KeywordCallPlanStatus status =
-                build_and_populate_keyword_call_cache(
-                    cache, Value::from_oop(cls), thunk, constructor.lookup_cell,
-                    keyword_names, n_pos_args, n_kw_args);
-            if(unlikely(status == KeywordCallPlanStatus::WrongArity))
-            {
-                MUSTTAIL return wrong_arity_error(ARGS);
-            }
-            if(unlikely(status == KeywordCallPlanStatus::KeywordError))
-            {
-                MUSTTAIL return keyword_call_error(ARGS);
-            }
-
-            enter_function_frame_from_keyword_args(
-                thread, fp, pc, code_object, cache, first_arg_reg, n_pos_args,
-                first_kw_value_reg, n_kw_args, call_instr_len);
-            if(unlikely(thread->safepoint_requested()))
-            {
-                MUSTTAIL return op_committed_safepoint_slow(ARGS);
-            }
-
-            START(0);
-            COMPLETE();
-        }
-
-        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        TValue<Function> function = TValue<Function>::from_value_assumed(fun);
         KeywordCallInlineCache &cache =
             code_object->keyword_call_caches[cache_idx];
-        KeywordCallPlanStatus status = build_and_populate_keyword_call_cache(
-            cache, fun, function, nullptr, keyword_names, n_pos_args,
-            n_kw_args);
-        if(unlikely(status == KeywordCallPlanStatus::WrongArity))
+        if(unlikely(!keyword_call_cache_matches(cache, fun, keyword_names,
+                                                n_pos_args)))
         {
-            MUSTTAIL return wrong_arity_error(ARGS);
-        }
-        if(unlikely(status == KeywordCallPlanStatus::KeywordError))
-        {
-            MUSTTAIL return keyword_call_error(ARGS);
+            INTERP_TRY(populate_keyword_call_cache_from_callable(
+                fun, keyword_names, n_pos_args, n_kw_args, cache));
         }
 
         enter_function_frame_from_keyword_args(
