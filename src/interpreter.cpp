@@ -2154,36 +2154,23 @@ namespace cl
                                               Value &callable_out,
                                               Value &self_out)
     {
-        self_out = Value::not_present();
-        switch(plan.kind)
+        if(likely(plan.kind == AttributeReadPlanKind::BindFunctionReceiver))
         {
-            case AttributeReadPlanKind::ConstantValue:
-                callable_out = Value::not_present();
-                return MethodCallFastTargetStatus::Slow;
-
-            case AttributeReadPlanKind::BindFunctionReceiver:
-                callable_out =
-                    read_plan_storage_owner(receiver, plan)
-                        ->read_storage_location(plan.storage_location);
-                // The plan survives ordinary class contents writes, so the
-                // current slot value decides whether this is still a bound
-                // method call target.
-                if(callable_out.is_ptr() &&
-                   callable_out.get_ptr()->native_layout_id() ==
-                       NativeLayoutId::Function)
-                {
-                    self_out = receiver;
-                }
+            callable_out = read_plan_storage_owner(receiver, plan)
+                               ->read_storage_location(plan.storage_location);
+            // The plan survives ordinary class contents writes, so the current
+            // slot value decides whether this is still a bound method call
+            // target.
+            if(likely(callable_out.is_ptr() &&
+                      callable_out.get_ptr()->native_layout_id() ==
+                          NativeLayoutId::Function))
+            {
+                self_out = receiver;
                 return MethodCallFastTargetStatus::Ready;
-
-            case AttributeReadPlanKind::ReceiverSlot:
-            case AttributeReadPlanKind::DataDescriptorGet:
-            case AttributeReadPlanKind::NonDataDescriptorGet:
-                callable_out = Value::not_present();
-                return MethodCallFastTargetStatus::Slow;
+            }
         }
 
-        __builtin_unreachable();
+        return MethodCallFastTargetStatus::Slow;
     }
 
     static ALWAYSINLINE MethodCallTargetStatus
