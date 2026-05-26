@@ -83,6 +83,7 @@ namespace cl
         StoreSubscript,
         DelSubscript,
         CallMethodAttrPositional,
+        CallMethodAttrKeyword,
         CallSpecialMethod,
 
         // binary on accumulator. reg op acc

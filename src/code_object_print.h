@@ -233,6 +233,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "DelSubscript");
             case cl::Bytecode::CallMethodAttrPositional:
                 return format_to(out, "CallMethodAttrPositional");
+            case cl::Bytecode::CallMethodAttrKeyword:
+                return format_to(out, "CallMethodAttrKeyword");
             case cl::Bytecode::CallSpecialMethod:
                 return format_to(out, "CallSpecialMethod");
 
@@ -701,6 +703,46 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_function_call_cache(code_obj, out, pc++);
                 format_to(out, ", ");
                 format_to(out, "{}", code_obj.code[pc++]);
+                break;
+
+            case cl::Bytecode::CallMethodAttrKeyword:
+                {
+                    format_to(out, " ");
+                    int8_t first_arg_reg = code_obj.code[pc++];
+                    uint32_t name_idx = pc++;
+                    uint32_t read_cache_idx = pc++;
+                    uint32_t call_cache_idx = pc++;
+                    uint8_t n_pos_args = code_obj.code[pc++];
+                    int8_t first_kw_value_reg = code_obj.code[pc++];
+                    uint8_t n_kw_args = code_obj.code[pc++];
+                    uint32_t keyword_names_idx = pc++;
+                    print_reg(out, code_obj, first_arg_reg);
+                    format_to(out, ", ");
+                    disassemble_constant(code_obj, out, name_idx);
+                    format_to(out, ", ");
+                    disassemble_read_cache(code_obj, out, read_cache_idx);
+                    format_to(out, ", ");
+                    disassemble_function_call_cache(code_obj, out,
+                                                    call_cache_idx);
+                    format_to(out, ", ");
+                    print_reg_span(out, code_obj, first_arg_reg, n_pos_args);
+                    format_to(out, ", kw_values=");
+                    print_reg_span(out, code_obj, first_kw_value_reg,
+                                   n_kw_args);
+                    format_to(out, ", kw=");
+                    uint8_t constant_idx = code_obj.code[keyword_names_idx];
+                    cl::Value constant =
+                        code_obj.constant_table[constant_idx].value();
+                    if(cl::can_convert_to<cl::Tuple>(constant))
+                    {
+                        cl::format_tuple_constant(
+                            out, constant.get_ptr<cl::Tuple>());
+                    }
+                    else
+                    {
+                        disassemble_constant(code_obj, out, keyword_names_idx);
+                    }
+                }
                 break;
 
             case cl::Bytecode::CallSpecialMethod:

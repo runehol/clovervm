@@ -549,6 +549,29 @@ namespace cl
             name_idx, read_cache_idx, call_cache_idx, argc);
     }
 
+    uint32_t CodeObjectBuilder::emit_call_method_attr_keyword(
+        uint32_t source_offset, OutgoingArgReg first_arg_reg, uint8_t name_idx,
+        uint8_t n_pos_args, uint32_t first_kw_value_reg, uint8_t n_kw_args,
+        uint8_t keyword_names_idx)
+    {
+        uint8_t read_cache_idx = allocate_attribute_read_cache();
+        uint8_t call_cache_idx = allocate_keyword_call_cache();
+        uint32_t result = emplace_back(
+            source_offset, uint8_t(Bytecode::CallMethodAttrKeyword));
+        uint32_t first_arg_operand_offset = code_obj->code.size();
+        emplace_back(source_offset, first_arg_reg.slot_offset);
+        add_outgoing_arg_relocation(first_arg_operand_offset,
+                                    first_arg_reg.slot_offset);
+        emplace_back(source_offset, name_idx);
+        emplace_back(source_offset, read_cache_idx);
+        emplace_back(source_offset, call_cache_idx);
+        emplace_back(source_offset, n_pos_args);
+        emplace_back(source_offset, encode_reg(first_kw_value_reg));
+        emplace_back(source_offset, n_kw_args);
+        emplace_back(source_offset, keyword_names_idx);
+        return result;
+    }
+
     uint32_t CodeObjectBuilder::emit_call_special_method(
         uint32_t source_offset, OutgoingArgReg first_arg_reg, uint8_t name_idx,
         uint8_t argc, uint8_t missing_exception_type_idx,

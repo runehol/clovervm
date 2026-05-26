@@ -1067,6 +1067,37 @@ TEST(Codegen, direct_method_call_uses_callmethodattr)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, direct_keyword_method_call_uses_callmethodattrkeyword)
+{
+    const wchar_t *test_case = L"def invoke(obj, value):\n"
+                               "    return obj.method(value, scale=3)\n";
+
+    std::string expected =
+        "Code object:\n"
+        "    0 CreateFunction c[0]\n"
+        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    5 Return\n"
+        "Constant 0: Code object:\n"
+        "    0 Ldar p0\n"
+        "    2 Star a0\n"
+        "    4 Ldar p1\n"
+        "    6 Star a1\n"
+        "    8 LdaSmi 3\n"
+        "   10 Star0\n"
+        "   11 CallMethodAttrKeyword a0, c[0], read_ic[0], call_ic[0], "
+        "{a0:1}, kw_values={r0:1}, kw=(\"scale\",)\n"
+        "   20 Return\n"
+        "   21 LdaNone\n"
+        "   22 Return\n"
+        "Constant 0: \"method\"\n"
+        "Constant 1: (\"scale\",)\n"
+        "\n"
+        "Constant 1: \"invoke\"\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, list_literal_uses_createlist_with_contiguous_register_range)
 {
     const wchar_t *test_case = L"[1, 2, 4]\n";

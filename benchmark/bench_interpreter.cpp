@@ -86,6 +86,9 @@ namespace
             {"benchmark/method_call.py",
              {benchmark_cpp::method_call_run,
               benchmark_cpp::method_call_items}},
+            {"benchmark/method_keyword_call.py",
+             {benchmark_cpp::method_keyword_call_run,
+              benchmark_cpp::method_keyword_call_items}},
             {"benchmark/function_default_parameter.py",
              {benchmark_cpp::function_default_parameter_run,
               benchmark_cpp::function_default_parameter_items}},
@@ -689,6 +692,16 @@ template <typename Program> static void BM_MethodCall(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_MethodCall, CloverProgram)
     ->Name("BM_MethodCall")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_MethodKeywordCall(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/method_keyword_call.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_MethodKeywordCall, CloverProgram)
+    ->Name("BM_MethodKeywordCall")
     ->Arg(100000);
 
 template <typename Program>

@@ -31,6 +31,7 @@ add_executable(bench_clovervm
     instance_attribute_write.cpp
     method_call.cpp
     method_call_class_attribute_write.cpp
+    method_keyword_call.cpp
     memory_reclamation.cpp
     nbody.cpp
     nested_for_loop.cpp

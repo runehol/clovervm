@@ -53,3 +53,29 @@ class DirectEvenArgClassFunction:
         return x + y
 
 assert DirectEvenArgClassFunction.method(4, 5) == 9
+
+class KeywordMethod:
+    def method(self, a, b=2, *, c=3):
+        return self.value + a * 100 + b * 10 + c
+
+keyword_obj = KeywordMethod()
+keyword_obj.value = 1000
+assert keyword_obj.method(4, c=5) == 1425
+assert keyword_obj.method(a=6, b=7, c=8) == 1678
+
+class KeywordMethodVarargs:
+    def method(self, a=1, *args, b, c=3):
+        return self.value + a * 1000 + len(args) * 100 + b * 10 + c
+
+keyword_varargs_obj = KeywordMethodVarargs()
+keyword_varargs_obj.value = 2000
+assert keyword_varargs_obj.method(4, 5, 6, b=7) == 6273
+
+class Product:
+    def __init__(self, value=0, *, scale=1):
+        self.value = value * scale
+
+class ProductHolder:
+    Product = Product
+
+assert ProductHolder().Product(7, scale=3).value == 21

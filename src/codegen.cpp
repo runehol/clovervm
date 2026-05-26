@@ -748,16 +748,17 @@ namespace cl
             return node_idx;
         }
 
-        bool has_keyword_call_arguments(AstChildren args) const
+        uint32_t n_keyword_call_arguments(AstChildren args) const
         {
+            uint32_t n_keywords = 0;
             for(int32_t arg: args)
             {
                 if(is_keyword_call_argument(arg))
                 {
-                    return true;
+                    ++n_keywords;
                 }
             }
-            return false;
+            return n_keywords;
         }
 
         void require_positional_call_arguments(AstChildren args,
@@ -905,17 +906,60 @@ namespace cl
             if(av.kinds[children[0]].node_kind ==
                AstNodeKind::EXPRESSION_ATTRIBUTE)
             {
-                if(has_keyword_call_arguments(args))
-                {
-                    throw std::runtime_error(
-                        "SyntaxError: keyword method calls are not "
-                        "implemented yet");
-                }
                 AstChildren method_children = av.children[children[0]];
                 uint8_t constant_idx =
                     code_obj->allocate_constant(av.constants[children[0]]);
                 codegen_node(method_children[0]);
                 code_obj->emit_star(source_offset, OutgoingArgReg(0));
+
+                uint32_t n_kw_args = n_keyword_call_arguments(args);
+                if(n_kw_args > 0)
+                {
+                    uint32_t n_pos_args = 0;
+                    uint32_t kw_arg_idx = 0;
+
+                    TemporaryReg keyword_value_regs(
+                        *code_obj, std::max<uint32_t>(n_kw_args, 1));
+                    for(int32_t arg: args)
+                    {
+                        if(is_positional_call_argument(arg))
+                        {
+                            codegen_node(call_argument_value(arg));
+                            code_obj->emit_star(source_offset,
+                                                OutgoingArgReg(1 + n_pos_args));
+                            ++n_pos_args;
+                        }
+                        else
+                        {
+                            assert(is_keyword_call_argument(arg));
+                            codegen_node(call_argument_value(arg));
+                            code_obj->emit_star(
+                                source_offset, keyword_value_regs + kw_arg_idx);
+                            ++kw_arg_idx;
+                        }
+                    }
+                    assert(kw_arg_idx == n_kw_args);
+
+                    TValue<Tuple> keyword_names =
+                        active_thread()->make_object_value<Tuple>(n_kw_args);
+                    kw_arg_idx = 0;
+                    for(int32_t arg: args)
+                    {
+                        if(is_keyword_call_argument(arg))
+                        {
+                            keyword_names.extract()->initialize_item_unchecked(
+                                kw_arg_idx++, av.constants[arg].value());
+                        }
+                    }
+                    assert(kw_arg_idx == n_kw_args);
+                    uint8_t keyword_names_idx =
+                        code_obj->allocate_constant(keyword_names.raw_value());
+                    code_obj->emit_call_method_attr_keyword(
+                        source_offset, OutgoingArgReg(0), constant_idx,
+                        uint8_t(n_pos_args), keyword_value_regs,
+                        uint8_t(n_kw_args), keyword_names_idx);
+                    return;
+                }
 
                 for(size_t i = 0; i < args.size(); ++i)
                 {
@@ -933,21 +977,14 @@ namespace cl
             codegen_node(children[0]);
             code_obj->emit_star(source_offset, callable_reg);
 
-            if(has_keyword_call_arguments(args))
+            uint32_t n_kw_args = n_keyword_call_arguments(args);
+            if(n_kw_args > 0)
             {
                 uint32_t n_pos_args = 0;
-                uint32_t n_kw_args = 0;
-                for(int32_t arg: args)
-                {
-                    if(is_keyword_call_argument(arg))
-                    {
-                        ++n_kw_args;
-                    }
-                }
+                uint32_t kw_arg_idx = 0;
 
                 TemporaryReg keyword_value_regs(
                     *code_obj, std::max<uint32_t>(n_kw_args, 1));
-                n_kw_args = 0;
                 for(int32_t arg: args)
                 {
                     if(is_positional_call_argument(arg))
@@ -962,22 +999,24 @@ namespace cl
                         assert(is_keyword_call_argument(arg));
                         codegen_node(call_argument_value(arg));
                         code_obj->emit_star(source_offset,
-                                            keyword_value_regs + n_kw_args);
-                        ++n_kw_args;
+                                            keyword_value_regs + kw_arg_idx);
+                        ++kw_arg_idx;
                     }
                 }
+                assert(kw_arg_idx == n_kw_args);
 
                 TValue<Tuple> keyword_names =
                     active_thread()->make_object_value<Tuple>(n_kw_args);
-                uint32_t keyword_idx = 0;
+                kw_arg_idx = 0;
                 for(int32_t arg: args)
                 {
                     if(is_keyword_call_argument(arg))
                     {
                         keyword_names.extract()->initialize_item_unchecked(
-                            keyword_idx++, av.constants[arg].value());
+                            kw_arg_idx++, av.constants[arg].value());
                     }
                 }
+                assert(kw_arg_idx == n_kw_args);
                 uint8_t keyword_names_idx =
                     code_obj->allocate_constant(keyword_names.raw_value());
                 code_obj->emit_call_keyword(

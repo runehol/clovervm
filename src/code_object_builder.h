@@ -325,6 +325,10 @@ namespace cl
                                                   OutgoingArgReg first_arg_reg,
                                                   uint8_t name_idx,
                                                   uint8_t argc);
+        uint32_t emit_call_method_attr_keyword(
+            uint32_t source_offset, OutgoingArgReg first_arg_reg,
+            uint8_t name_idx, uint8_t n_pos_args, uint32_t first_kw_value_reg,
+            uint8_t n_kw_args, uint8_t keyword_names_idx);
         uint32_t emit_call_special_method(
             uint32_t source_offset, OutgoingArgReg first_arg_reg,
             uint8_t name_idx, uint8_t argc, uint8_t missing_exception_type_idx,
