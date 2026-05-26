@@ -1172,7 +1172,7 @@ The preferred opcode shape for this direct-call form is a fused
 attribute-call operation:
 
 ```text
-CallMethodAttr receiver_and_arg_span, name, cache_index, argc
+CallMethodAttrPositional receiver_and_arg_span, name, cache_index, argc
 ```
 
 The current bytecode encoding keeps the receiver and explicit arguments in one
@@ -1198,7 +1198,7 @@ inserted:
 - custom lookup fallback: perform the generic lookup, then call the
   resulting value
 
-At JIT compilation time, a populated `CallMethodAttr` inline cache should
+At JIT compilation time, a populated `CallMethodAttrPositional` inline cache should
 identify the concrete path selected by the observed lookup. Compiled code
 can then lower directly to that path with the cache's guards, instead of
 emitting a runtime switch over all binding cases.

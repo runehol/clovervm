@@ -1,7 +1,7 @@
 # Constructor Thunks
 
 This note documents the first constructor-call implementation for `Class(...)`.
-The design keeps the common case fast without turning `CallSimple` into a large
+The design keeps the common case fast without turning `CallPositional` into a large
 constructor protocol engine.
 
 ## Problem
@@ -33,7 +33,7 @@ That is correct, but it is a poor hot path for ordinary constructors:
 - `*args` and `**kwargs` materialization becomes necessary immediately;
 - the original call site loses the locality that would make inline caches useful.
 
-Putting the full construction protocol directly in `CallSimple` also gets bulky:
+Putting the full construction protocol directly in `CallPositional` also gets bulky:
 the opcode would need constructor dispatch, `__init__` method-load caching,
 initializer call caching, argument preservation, and special return behavior.
 
@@ -91,7 +91,7 @@ sets up the next Python frame on the existing CloverVM stack like ordinary calls
 do.
 
 This spends one extra generated function/frame to keep constructor semantics out
-of `CallSimple` and out of a shared megamorphic `type.__call__` body.
+of `CallPositional` and out of a shared megamorphic `type.__call__` body.
 
 The thunk injects the resolved `__init__` code object as a constant. The thunk
 is already specialized on that implementation's signature, so the resolved
@@ -117,7 +117,7 @@ construction path should handle those cases correctly.
 The original call site remains a normal call:
 
 ```text
-CallSimple callable, first_arg, argc, call_ic
+CallPositional callable, first_arg, argc, call_ic
 ```
 
 When `callable` is an eligible class, the call IC specializes to the class's

@@ -416,7 +416,7 @@ TEST(Codegen, function_multiple_parameters)
         "   15 Star a1\n"
         "   17 LdaSmi 3\n"
         "   19 Star a2\n"
-        "   21 CallSimple r0, {a0..a2}, call_ic[0]\n"
+        "   21 CallPositional r0, {a0..a2}, call_ic[0]\n"
         "   26 Return\n"
         "Constant 0: Code object:\n"
         "    0 Ldar p1\n"
@@ -490,7 +490,7 @@ TEST(Codegen, function_defaults_use_create_function_with_defaults)
         "   16 Star0\n"
         "   17 LdaSmi 1\n"
         "   19 Star a0\n"
-        "   21 CallSimple r0, {a0:1}, call_ic[0]\n"
+        "   21 CallPositional r0, {a0:1}, call_ic[0]\n"
         "   26 Return\n"
         "Constant 0: Code object:\n"
         "    0 Ldar p1\n"
@@ -886,7 +886,7 @@ TEST(Codegen, function_implicit_return_none)
         "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
         "    5 LdaGlobal c[1], module_global_read_ic[0]\n"
         "    8 Star0\n"
-        "    9 CallSimple r0, {a0:0}, call_ic[0]\n"
+        "    9 CallPositional r0, {a0:0}, call_ic[0]\n"
         "   14 Return\n"
         "Constant 0: Code object:\n"
         "    0 LdaSmi 1\n"
@@ -1055,7 +1055,7 @@ TEST(Codegen, direct_method_call_uses_callmethodattr)
         "    2 Star a0\n"
         "    4 Ldar p1\n"
         "    6 Star a1\n"
-        "    8 CallMethodAttr a0, c[0], read_ic[0], call_ic[0], 1\n"
+        "    8 CallMethodAttrPositional a0, c[0], read_ic[0], call_ic[0], 1\n"
         "   14 Return\n"
         "   15 LdaNone\n"
         "   16 Return\n"
@@ -1264,7 +1264,7 @@ TEST(Codegen, direct_range_for_loop_uses_specialized_fast_path_with_fallback)
         "   35 Jump 16\n"
         "   38 Ldar1\n"
         "   39 Star a0\n"
-        "   41 CallSimple r0, {a0:1}, call_ic[0]\n"
+        "   41 CallPositional r0, {a0:1}, call_ic[0]\n"
         "   46 Star a0\n"
         "   48 CallSpecialMethod a0, c[3], read_ic[0], call_ic[1], 0, c[4], "
         "c[5]\n"
@@ -1352,7 +1352,7 @@ TEST(Codegen, non_direct_for_loop_uses_generic_iterator_protocol_calls)
         "    3 Star0\n"
         "    4 LdaSmi 3\n"
         "    6 Star a0\n"
-        "    8 CallSimple r0, {a0:1}, call_ic[0]\n"
+        "    8 CallPositional r0, {a0:1}, call_ic[0]\n"
         "   13 StaGlobal c[1], module_global_mutation_ic[0]\n"
         "   16 LdaGlobal c[1], module_global_read_ic[1]\n"
         "   19 Star a0\n"
@@ -1412,7 +1412,7 @@ TEST(Codegen, user_clover_call_special_name_is_ordinary_call)
         L"\"missing repr\")\n");
 
     EXPECT_EQ(std::string::npos, actual.find("CallSpecialMethod"));
-    EXPECT_NE(std::string::npos, actual.find("CallSimple"));
+    EXPECT_NE(std::string::npos, actual.find("CallPositional"));
 }
 
 TEST(Codegen, trusted_clover_write_stdout_lowers_to_opcode)
@@ -1422,7 +1422,7 @@ TEST(Codegen, trusted_clover_write_stdout_lowers_to_opcode)
         L"    return __clover_write_stdout__(value)\n");
 
     EXPECT_NE(std::string::npos, actual.find("WriteStdout"));
-    EXPECT_EQ(std::string::npos, actual.find("CallSimple"));
+    EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
 }
 
 TEST(Codegen, user_clover_write_stdout_name_is_ordinary_call)
@@ -1432,7 +1432,7 @@ TEST(Codegen, user_clover_write_stdout_name_is_ordinary_call)
                                L"    return __clover_write_stdout__(value)\n");
 
     EXPECT_EQ(std::string::npos, actual.find("WriteStdout"));
-    EXPECT_NE(std::string::npos, actual.find("CallSimple"));
+    EXPECT_NE(std::string::npos, actual.find("CallPositional"));
 }
 
 TEST(Codegen, trusted_clover_globals_lowers_to_intrinsic)
@@ -1442,7 +1442,7 @@ TEST(Codegen, trusted_clover_globals_lowers_to_intrinsic)
         L"    return __clover_globals__()\n");
 
     EXPECT_NE(std::string::npos, actual.find("CallRuntimeIntrinsic0 Globals"));
-    EXPECT_EQ(std::string::npos, actual.find("CallSimple"));
+    EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
 }
 
 TEST(Codegen, user_clover_globals_name_is_ordinary_call)
@@ -1452,7 +1452,7 @@ TEST(Codegen, user_clover_globals_name_is_ordinary_call)
                                L"    return __clover_globals__()\n");
 
     EXPECT_EQ(std::string::npos, actual.find("CallRuntimeIntrinsic0 Globals"));
-    EXPECT_NE(std::string::npos, actual.find("CallSimple"));
+    EXPECT_NE(std::string::npos, actual.find("CallPositional"));
 }
 
 TEST(Codegen, trusted_clover_locals_lowers_to_intrinsic)
@@ -1462,7 +1462,7 @@ TEST(Codegen, trusted_clover_locals_lowers_to_intrinsic)
         L"    return __clover_locals__()\n");
 
     EXPECT_NE(std::string::npos, actual.find("CallRuntimeIntrinsic0 Locals"));
-    EXPECT_EQ(std::string::npos, actual.find("CallSimple"));
+    EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
 }
 
 TEST(Codegen, user_clover_locals_name_is_ordinary_call)
@@ -1472,7 +1472,7 @@ TEST(Codegen, user_clover_locals_name_is_ordinary_call)
                                L"    return __clover_locals__()\n");
 
     EXPECT_EQ(std::string::npos, actual.find("CallRuntimeIntrinsic0 Locals"));
-    EXPECT_NE(std::string::npos, actual.find("CallSimple"));
+    EXPECT_NE(std::string::npos, actual.find("CallPositional"));
 }
 
 TEST(Codegen, trusted_clover_sqrt_lowers_to_opcode)
@@ -1482,7 +1482,7 @@ TEST(Codegen, trusted_clover_sqrt_lowers_to_opcode)
         L"    return __clover_sqrt__(value)\n");
 
     EXPECT_NE(std::string::npos, actual.find("Sqrt"));
-    EXPECT_EQ(std::string::npos, actual.find("CallSimple"));
+    EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
 }
 
 TEST(Codegen, user_clover_sqrt_name_is_ordinary_call)
@@ -1492,5 +1492,5 @@ TEST(Codegen, user_clover_sqrt_name_is_ordinary_call)
                                L"    return __clover_sqrt__(value)\n");
 
     EXPECT_EQ(std::string::npos, actual.find("Sqrt"));
-    EXPECT_NE(std::string::npos, actual.find("CallSimple"));
+    EXPECT_NE(std::string::npos, actual.find("CallPositional"));
 }

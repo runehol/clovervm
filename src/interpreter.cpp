@@ -3314,7 +3314,7 @@ namespace cl
         MUSTTAIL return raise_bare(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value op_call_simple_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_call_positional_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 5;
         int8_t callable_reg = pc[1];
@@ -3359,7 +3359,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_call_simple(PARAMS)
+    static INTERP_CC Value op_call_positional(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 5;
         int8_t callable_reg = pc[1];
@@ -3372,11 +3372,11 @@ namespace cl
 
         if(unlikely(!function_call_cache_matches(cache, fun, n_args)))
         {
-            MUSTTAIL return op_call_simple_slow(ARGS);
+            MUSTTAIL return op_call_positional_slow(ARGS);
         }
         if(unlikely(cache.adaptation != FunctionCallAdaptation::FixedArity))
         {
-            MUSTTAIL return op_call_simple_slow(ARGS);
+            MUSTTAIL return op_call_positional_slow(ARGS);
         }
         TValue<Function> function = TValue<Function>::from_oop(cache.function);
         CodeObject *target_code_object =
@@ -3468,7 +3468,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_call_method_attr_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_call_method_attr_positional_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 6;
         int32_t receiver_reg = int8_t(pc[1]);
@@ -3537,7 +3537,7 @@ namespace cl
         COMPLETE();
     }
 
-    static INTERP_CC Value op_call_method_attr(PARAMS)
+    static INTERP_CC Value op_call_method_attr_positional(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 6;
         int32_t receiver_reg = int8_t(pc[1]);
@@ -3549,7 +3549,7 @@ namespace cl
             code_object->attribute_read_caches[read_cache_idx];
         if(unlikely(!cache.matches(receiver)))
         {
-            MUSTTAIL return op_call_method_attr_slow(ARGS);
+            MUSTTAIL return op_call_method_attr_positional_slow(ARGS);
         }
 
         Value callable;
@@ -3559,7 +3559,7 @@ namespace cl
                                                       callable, self);
         if(unlikely(target_status == MethodCallFastTargetStatus::Slow))
         {
-            MUSTTAIL return op_call_method_attr_slow(ARGS);
+            MUSTTAIL return op_call_method_attr_positional_slow(ARGS);
         }
 
         bool has_self = !self.is_not_present();
@@ -3569,12 +3569,12 @@ namespace cl
 
         if(unlikely(!function_call_cache_matches(call_cache, callable, n_args)))
         {
-            MUSTTAIL return op_call_method_attr_slow(ARGS);
+            MUSTTAIL return op_call_method_attr_positional_slow(ARGS);
         }
         if(unlikely(call_cache.adaptation !=
                     FunctionCallAdaptation::FixedArity))
         {
-            MUSTTAIL return op_call_method_attr_slow(ARGS);
+            MUSTTAIL return op_call_method_attr_positional_slow(ARGS);
         }
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
@@ -4439,7 +4439,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::LoadSubscript, op_load_subscript);
         SET_TABLE_ENTRY(Bytecode::StoreSubscript, op_store_subscript);
         SET_TABLE_ENTRY(Bytecode::DelSubscript, op_del_subscript);
-        SET_TABLE_ENTRY(Bytecode::CallMethodAttr, op_call_method_attr);
+        SET_TABLE_ENTRY(Bytecode::CallMethodAttrPositional,
+                        op_call_method_attr_positional);
         SET_TABLE_ENTRY(Bytecode::CallSpecialMethod, op_call_special_method);
 
         SET_TABLE_ENTRY(Bytecode::Negate, op_negate);
@@ -4469,7 +4470,7 @@ namespace cl
                         op_raise_unwind_with_context);
         SET_TABLE_ENTRY(Bytecode::RaiseBare, op_raise_bare);
 
-        SET_TABLE_ENTRY(Bytecode::CallSimple, op_call_simple);
+        SET_TABLE_ENTRY(Bytecode::CallPositional, op_call_positional);
         SET_TABLE_ENTRY(Bytecode::CallKeyword, op_call_keyword);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic0, op_call_intrinsic0);
         SET_TABLE_ENTRY(Bytecode::CallIntrinsic1, op_call_intrinsic1);

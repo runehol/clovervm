@@ -89,7 +89,7 @@ JIT, language, and runtime work.
 
    Add keyword call support for ordinary functions and constructors, then
    extend toward `**kwargs` and richer call forms. This should extend the
-   existing call-plan model rather than turning `CallSimple` into one generic
+   existing call-plan model rather than turning `CallPositional` into one generic
    slow path.
 
 6. **Constructor semantics beyond tier-1 thunks**

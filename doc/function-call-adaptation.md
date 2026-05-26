@@ -6,7 +6,7 @@ the low-level frame mechanics documented in
 [CloverVM Function Calling Convention](function-calling-convention.md).
 
 The goal is to add Python's richer call binding semantics without turning the
-existing positional `CallSimple` hot path into a broad generic slow path.
+existing positional `CallPositional` hot path into a broad generic slow path.
 
 ## Current State
 
@@ -14,7 +14,7 @@ The implemented call path now has separate positional and keyword-aware entry
 paths:
 
 - callers lay out positional values in a contiguous outgoing register window;
-- `CallSimple`, `CallMethodAttr`, and constructor thunks enter ordinary
+- `CallPositional`, `CallMethodAttrPositional`, and constructor thunks enter ordinary
   `Function` objects through the same frame convention;
 - `CallKeyword` supports explicit caller keywords for ordinary functions and
   eligible constructor thunks;
@@ -376,7 +376,7 @@ starred-call or generic callable protocol work.
               kw_names_const, call_ic
   ```
 
-  Codegen continues to emit `CallSimple` for calls with no keywords. For calls
+  Codegen continues to emit `CallPositional` for calls with no keywords. For calls
   with explicit keywords, it evaluates argument values left to right while
   staging positional values into outgoing argument slots and keyword values into
   a separate contiguous temporary-register span. Keyword names are stored as a
@@ -386,8 +386,8 @@ starred-call or generic callable protocol work.
   helper so direct method calls can bind `self` and then run the same keyword
   adaptation policy.
 
-  Open design point: the current `CallMethodAttr` opcode deliberately fuses
-  attribute lookup, method binding, and `CallSimple`-style frame entry for the
+  Open design point: the current `CallMethodAttrPositional` opcode deliberately fuses
+  attribute lookup, method binding, and `CallPositional`-style frame entry for the
   common `obj.method(...)` shape. Keyword calls could either add a matching
   fused method-keyword opcode, or split method lookup/binding from call entry so
   the same `CallKeyword` machinery can be reused. Splitting reduces opcode
@@ -423,7 +423,7 @@ starred-call or generic callable protocol work.
   missing required arguments, unexpected keywords, duplicate formal fills, and
   varargs initialization. Parser tests cover repeated explicit keyword names.
 
-  Codegen/disassembly tests pin down that `CallSimple` remains the no-keyword
+  Codegen/disassembly tests pin down that `CallPositional` remains the no-keyword
   path and keyword calls carry a names tuple. Keyword call microbenchmarks cover
   all-keyword, mixed positional/keyword, and default-using keyword calls.
 

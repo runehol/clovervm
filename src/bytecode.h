@@ -82,7 +82,7 @@ namespace cl
         LoadSubscript,
         StoreSubscript,
         DelSubscript,
-        CallMethodAttr,
+        CallMethodAttrPositional,
         CallSpecialMethod,
 
         // binary on accumulator. reg op acc
@@ -132,7 +132,7 @@ namespace cl
         Nop,
 
         // function calls
-        CallSimple,
+        CallPositional,
         CallKeyword,
         CallIntrinsic0,
         CallIntrinsic1,

@@ -79,7 +79,7 @@ f()
 ```
 
 clovervm's `LoadAttr` currently loads the underlying attribute value. Binding is
-handled by `CallMethodAttr` and `CallSpecialMethod`, which internally split a
+handled by `CallMethodAttrPositional` and `CallSpecialMethod`, which internally split a
 method call into `callable` and optional `self`.
 
 Reason: this is enough for direct method calls and avoids introducing bound

@@ -3,9 +3,9 @@
 This note collects interpreter optimization ideas. Some sections describe
 implemented baseline machinery plus remaining follow-ups.
 
-## CallSimple Inline Cache
+## CallPositional Inline Cache
 
-`CallSimple` now has a positive, monomorphic inline cache for ordinary
+`CallPositional` now has a positive, monomorphic inline cache for ordinary
 `Function` calls and eligible constructor calls. The cache is keyed by exact
 callable identity and the fixed positional argument count encoded in the
 bytecode.
@@ -22,7 +22,7 @@ Current behavior:
 
 Useful follow-ups:
 
-- Keep only the hottest plan kind in the main `op_call_simple` handler.
+- Keep only the hottest plan kind in the main `op_call_positional` handler.
 - Execute bulkier cached plans through a cold cached slow path.
 - Add structural tests for the constructor-cache lowering and guard shape if
   those decisions become externally visible enough to pin down.
@@ -56,19 +56,19 @@ plan could recognize tiny `CallIntrinsicN; Return` code objects and jump to a
 slimmer adapter when benchmarks show that the extra inline code pays for itself.
 
 Python call features should extend the plan model instead of turning
-`CallSimple` into one generic mega-handler. Defaults and `*args` already flow
+`CallPositional` into one generic mega-handler. Defaults and `*args` already flow
 through call adaptation; keyword arguments and `**kwargs` should add their own
 normalization/adaptation plans rather than becoming an unstructured slow path.
 
 ## CallGlobalSimple Macro Opcode
 
-After `CallSimple` has a useful call-plan cache, add a macro opcode for the
+After `CallPositional` has a useful call-plan cache, add a macro opcode for the
 common pattern:
 
 ```text
 LdaGlobal name
 Star r
-CallSimple r, args
+CallPositional r, args
 ```
 
 A fused opcode could look like:
@@ -78,7 +78,7 @@ CallGlobalSimple const_idx, cache_idx, argc
 ```
 
 The opcode would combine global lookup caching with the same call-plan machinery
-used by `CallSimple`. The hot path for a stable global Python function can avoid
+used by `CallPositional`. The hot path for a stable global Python function can avoid
 materializing the callable in a temporary register and skip two interpreter
 dispatches.
 
@@ -90,15 +90,15 @@ The likely execution tiers are:
 - Fall back to a slow path that resolves the global, validates the call, and
   populates the positive cache entry.
 
-This should be implemented after the `CallSimple` inline cache so the macro
+This should be implemented after the `CallPositional` inline cache so the macro
 opcode can reuse the call-plan builder and plan execution code.
 
 ## AArch64 Scratch Argument Experiment
 
 An experiment widened the threaded-dispatch ABI with three extra scratch words
-so `op_call_simple` could pass decoded operands to `op_call_simple_slow` without
+so `op_call_positional` could pass decoded operands to `op_call_positional_slow` without
 decoding the bytecode again. On AArch64 this stayed in registers (`x5`-`x7`) and
-kept `op_call_simple` frame-free, but the benchmark result was mixed: a small
+kept `op_call_positional` frame-free, but the benchmark result was mixed: a small
 `BM_MethodCall` improvement did not justify regressions in broader call-heavy
 benchmarks.
 

@@ -922,9 +922,9 @@ namespace cl
                     codegen_node(call_argument_value(args[i]));
                     code_obj->emit_star(source_offset, OutgoingArgReg(1 + i));
                 }
-                code_obj->emit_call_method_attr(source_offset,
-                                                OutgoingArgReg(0), constant_idx,
-                                                args.size());
+                code_obj->emit_call_method_attr_positional(
+                    source_offset, OutgoingArgReg(0), constant_idx,
+                    args.size());
                 return;
             }
 
@@ -992,8 +992,8 @@ namespace cl
                 codegen_node(call_argument_value(args[i]));
                 code_obj->emit_star(source_offset, OutgoingArgReg(i));
             }
-            code_obj->emit_call_simple(source_offset, callable_reg,
-                                       OutgoingArgReg(0), args.size());
+            code_obj->emit_call_positional(source_offset, callable_reg,
+                                           OutgoingArgReg(0), args.size());
         }
 
         void codegen_list_literal(int32_t node_idx)
@@ -1911,8 +1911,8 @@ namespace cl
                 code_obj->emit_ldar(source_offset, range_regs + 1 + i);
                 code_obj->emit_star(source_offset, OutgoingArgReg(i));
             }
-            code_obj->emit_call_simple(source_offset, range_regs,
-                                       OutgoingArgReg(0), n_args);
+            code_obj->emit_call_positional(source_offset, range_regs,
+                                           OutgoingArgReg(0), n_args);
             uint8_t iter_constant_idx =
                 code_obj->allocate_constant(interned_string(L"__iter__"));
             uint8_t not_iterable_type_constant_idx =

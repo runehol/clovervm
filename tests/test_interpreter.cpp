@@ -563,7 +563,7 @@ TEST(Interpreter, trace_interpreter_instructions_prints_executed_bytecode)
 
     EXPECT_EQ(Value::from_smi(7), actual);
     EXPECT_NE(std::string::npos, trace.find(">>> enter f\n"));
-    EXPECT_NE(std::string::npos, trace.find("CallSimple"));
+    EXPECT_NE(std::string::npos, trace.find("CallPositional"));
     EXPECT_NE(std::string::npos, trace.find("LdaSmi 7"));
     EXPECT_NE(std::string::npos, trace.find("Return"));
 }
@@ -866,7 +866,7 @@ TEST(Interpreter, function_keyword_call_rejects_missing_required_keyword_only)
                         L"TypeError: wrong number of arguments");
 }
 
-TEST(Interpreter, function_call_simple_rejects_required_keyword_only)
+TEST(Interpreter, function_call_positional_rejects_required_keyword_only)
 {
     expect_python_error(L"def f(a=1, *, b, c=3):\n"
                         L"    return a + b + c\n"
@@ -2693,7 +2693,7 @@ TEST(Interpreter, clover_function_entry_adapter_bytecode_shape)
                            "    5 Star a0\n"
                            "    7 Ldar p2\n"
                            "    9 Star a1\n"
-                           "   11 CallSimple r0, {a0..a1}, call_ic[0]\n"
+                           "   11 CallPositional r0, {a0..a1}, call_ic[0]\n"
                            "   16 ReturnToNative\n"
                            "   17 ReturnPendingExceptionToNative\n"
                            "Exception table:\n"

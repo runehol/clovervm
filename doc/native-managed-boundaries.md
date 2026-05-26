@@ -129,7 +129,7 @@ For fixed-arity intrinsic functions, the generic call path sees a normal
 
 ```text
 caller
-  CallSimple sets up a managed callee frame on the Clover stack
+  CallPositional sets up a managed callee frame on the Clover stack
 
 native thunk frame
   CallIntrinsic0/1/2/3 reads p0, p1, ...
@@ -234,7 +234,7 @@ failure:
 
 The native caller does not handle defaults, varargs, constructor thunk
 selection, or other `Function` entry policy. The wrapper calls the target
-through `CallSimple` so the existing managed call path handles those semantics.
+through `CallPositional` so the existing managed call path handles those semantics.
 
 The contract is intentionally narrow:
 
@@ -272,22 +272,22 @@ p2      arg1
 pN      arg(N - 1)
 ```
 
-The wrapper prepares an ordinary call window and uses `CallSimple`:
+The wrapper prepares an ordinary call window and uses `CallPositional`:
 
 ```text
 copy p0 into callable_slot
 copy p1..pN into a0..a(N - 1)
-CallSimple callable_slot, a0, N, cache_idx
+CallPositional callable_slot, a0, N, cache_idx
 ReturnToNative
 
 handler:
   ReturnPendingExceptionToNative
 
 Exception table:
-  CallSimple range -> handler
+  CallPositional range -> handler
 ```
 
-The copying is intentionally explicit. `CallSimple` expects
+The copying is intentionally explicit. `CallPositional` expects
 the callable separately from the outgoing argument span, while parameters and
 outgoing call slots live in different parts of the frame. With the current
 bytecode set, each copy is a two-step accumulator move:
@@ -391,7 +391,7 @@ function entry adapter:
 
 ```text
 clover_function_entry_adapter_0(function)
-  CallSimple function, a0, 0
+  CallPositional function, a0, 0
 ReturnToNative
 
 handler:
@@ -568,7 +568,7 @@ opcodes.
 
 - Fixed-arity native callables are ordinary `Function` objects with managed
   thunk `CodeObject`s.
-- Native-to-managed calls target `TValue<Function>` and use `CallSimple` so
+- Native-to-managed calls target `TValue<Function>` and use `CallPositional` so
   defaults, varargs, arity checks, and constructor thunks remain in the managed
   call path.
 - The native-to-managed function API is fixed-arity overloads. Common call

@@ -321,9 +321,10 @@ namespace cl
                                  uint8_t name_idx);
         uint32_t emit_del_attr(uint32_t source_offset, uint32_t receiver_reg,
                                uint8_t name_idx);
-        uint32_t emit_call_method_attr(uint32_t source_offset,
-                                       OutgoingArgReg first_arg_reg,
-                                       uint8_t name_idx, uint8_t argc);
+        uint32_t emit_call_method_attr_positional(uint32_t source_offset,
+                                                  OutgoingArgReg first_arg_reg,
+                                                  uint8_t name_idx,
+                                                  uint8_t argc);
         uint32_t emit_call_special_method(
             uint32_t source_offset, OutgoingArgReg first_arg_reg,
             uint8_t name_idx, uint8_t argc, uint8_t missing_exception_type_idx,
@@ -363,8 +364,10 @@ namespace cl
                                      uint8_t target_idx);
         uint32_t emit_call_runtime_intrinsic0(uint32_t source_offset,
                                               RuntimeIntrinsic0 intrinsic);
-        uint32_t emit_call_simple(uint32_t source_offset, uint32_t callable_reg,
-                                  OutgoingArgReg first_arg_reg, uint8_t argc);
+        uint32_t emit_call_positional(uint32_t source_offset,
+                                      uint32_t callable_reg,
+                                      OutgoingArgReg first_arg_reg,
+                                      uint8_t argc);
         uint32_t
         emit_call_keyword(uint32_t source_offset, uint32_t callable_reg,
                           OutgoingArgReg first_arg_reg, uint8_t n_pos_args,

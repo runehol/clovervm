@@ -231,8 +231,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "StoreSubscript");
             case cl::Bytecode::DelSubscript:
                 return format_to(out, "DelSubscript");
-            case cl::Bytecode::CallMethodAttr:
-                return format_to(out, "CallMethodAttr");
+            case cl::Bytecode::CallMethodAttrPositional:
+                return format_to(out, "CallMethodAttrPositional");
             case cl::Bytecode::CallSpecialMethod:
                 return format_to(out, "CallSpecialMethod");
 
@@ -319,8 +319,8 @@ template <> struct fmt::formatter<cl::Bytecode>
             case cl::Bytecode::BitwiseNot:
                 return format_to(out, "BitwiseNot");
 
-            case cl::Bytecode::CallSimple:
-                return format_to(out, "CallSimple");
+            case cl::Bytecode::CallPositional:
+                return format_to(out, "CallPositional");
             case cl::Bytecode::CallKeyword:
                 return format_to(out, "CallKeyword");
             case cl::Bytecode::CallIntrinsic0:
@@ -690,7 +690,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_reg(code_obj, out, pc++);
                 break;
 
-            case cl::Bytecode::CallMethodAttr:
+            case cl::Bytecode::CallMethodAttrPositional:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");
@@ -769,7 +769,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::BitwiseNot:
                 break;
 
-            case cl::Bytecode::CallSimple:
+            case cl::Bytecode::CallPositional:
                 {
                     format_to(out, " ");
                     int8_t callable_reg = code_obj.code[pc++];

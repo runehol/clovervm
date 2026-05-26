@@ -188,7 +188,7 @@ explicit arguments occupy one contiguous outgoing span:
 - user argument 1
 - ...
 
-At runtime, `CallMethodAttr` resolves the attribute in call context. If the
+At runtime, `CallMethodAttrPositional` resolves the attribute in call context. If the
 cached or resolved plan binds the receiver as `self`, the handler writes `self`
 into the receiver register and uses that register as the first argument. If no
 implicit receiver is needed, the handler copies the explicit arguments up by
@@ -208,8 +208,8 @@ When no `self` is inserted, the callee sees:
 
 ## Function Entry
 
-The core transition for function calls is shared by `op_call_simple` and
-`op_call_method_attr` in [src/interpreter.cpp](../src/interpreter.cpp):
+The core transition for function calls is shared by `op_call_positional` and
+`op_call_method_attr_positional` in [src/interpreter.cpp](../src/interpreter.cpp):
 
 ```cpp
 int32_t new_fp_reg = first_arg_reg - round_up_to_abi_alignment(n_args) + 1 -
@@ -227,7 +227,7 @@ pc = code_object->code.data();
 
 This is the key idea: the interpreter does not allocate/copy a fresh argument block. It reinterprets the caller's already-laid-out call window as the callee frame.
 
-`CallSimple` is the public callable path: it resolves a callable's `Function`
+`CallPositional` is the public callable path: it resolves a callable's `Function`
 semantics, including selecting the `ordinary_code_object` and applying any
 arity/default adaptation. Future call-site policies may choose an alternate code
 object such as `stop_returning_code_object` when available. Some VM-generated

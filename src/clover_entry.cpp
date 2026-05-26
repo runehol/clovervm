@@ -54,8 +54,8 @@ namespace cl
 
             JumpTarget handler(&code);
             ExceptionTableRangeBuilder range(&code, handler);
-            code.emit_call_simple(0, callable_reg, OutgoingArgReg(0),
-                                  uint8_t(n_args));
+            code.emit_call_positional(0, callable_reg, OutgoingArgReg(0),
+                                      uint8_t(n_args));
             range.close();
             code.emit_return_to_native(0);
 

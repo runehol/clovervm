@@ -538,16 +538,15 @@ namespace cl
             cache_idx);
     }
 
-    uint32_t
-    CodeObjectBuilder::emit_call_method_attr(uint32_t source_offset,
-                                             OutgoingArgReg first_arg_reg,
-                                             uint8_t name_idx, uint8_t argc)
+    uint32_t CodeObjectBuilder::emit_call_method_attr_positional(
+        uint32_t source_offset, OutgoingArgReg first_arg_reg, uint8_t name_idx,
+        uint8_t argc)
     {
         uint8_t read_cache_idx = allocate_attribute_read_cache();
         uint8_t call_cache_idx = allocate_function_call_cache();
         return emit_opcode_reg_constant_idx_cache_idx_argc(
-            source_offset, Bytecode::CallMethodAttr, first_arg_reg, name_idx,
-            read_cache_idx, call_cache_idx, argc);
+            source_offset, Bytecode::CallMethodAttrPositional, first_arg_reg,
+            name_idx, read_cache_idx, call_cache_idx, argc);
     }
 
     uint32_t CodeObjectBuilder::emit_call_special_method(
@@ -718,13 +717,12 @@ namespace cl
         return result;
     }
 
-    uint32_t CodeObjectBuilder::emit_call_simple(uint32_t source_offset,
-                                                 uint32_t callable_reg,
-                                                 OutgoingArgReg first_arg_reg,
-                                                 uint8_t argc)
+    uint32_t CodeObjectBuilder::emit_call_positional(
+        uint32_t source_offset, uint32_t callable_reg,
+        OutgoingArgReg first_arg_reg, uint8_t argc)
     {
         uint32_t result =
-            emplace_back(source_offset, uint8_t(Bytecode::CallSimple));
+            emplace_back(source_offset, uint8_t(Bytecode::CallPositional));
         uint8_t cache_idx = allocate_function_call_cache();
         emplace_back(source_offset, encode_reg(callable_reg));
         uint32_t first_arg_operand_offset = code_obj->code.size();
