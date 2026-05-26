@@ -23,6 +23,32 @@ namespace cl
         local_scope->reserve_empty_slots(FrameHeaderSize);
     }
 
+    static FunctionSignature
+    constructor_thunk_signature(FunctionSignature init_signature)
+    {
+        FunctionSignature signature = init_signature;
+        --signature.n_parameters;
+        --signature.n_positional_parameters;
+        if(signature.n_posonly_parameters > 0)
+        {
+            --signature.n_posonly_parameters;
+        }
+        else
+        {
+            if(signature.n_pos_or_kw_parameters == 0)
+            {
+                throw std::runtime_error(
+                    "TypeError: __init__ requires a self parameter");
+            }
+            --signature.n_pos_or_kw_parameters;
+        }
+        if(signature.first_default_slot > 0)
+        {
+            --signature.first_default_slot;
+        }
+        return signature;
+    }
+
     static CodeObject *
     make_constructor_thunk_code(ClassObject *cls,
                                 Optional<TValue<Function>> init)
@@ -50,13 +76,8 @@ namespace cl
                                  init_code->get_defining_module(), local_scope,
                                  thunk_name);
             CodeObjectBuilder &code = *code_storage;
-            code.n_parameters() = init_n_parameters - 1;
-            code.n_positional_parameters() =
-                init_code->function_signature.n_positional_parameters - 1;
-            code.function_signature().n_pos_or_kw_parameters =
-                code.n_positional_parameters();
-            code.parameter_flags() =
-                init_code->function_signature.parameter_flags;
+            code.function_signature() =
+                constructor_thunk_signature(init_code->function_signature);
             for(size_t remap_idx = 0;
                 remap_idx < init_code->function_keyword_remap.size();
                 ++remap_idx)
@@ -122,20 +143,37 @@ namespace cl
         return code.finalize();
     }
 
+    static uint32_t default_end_slot(FunctionSignature signature)
+    {
+        return signature.first_default_slot < signature.n_positional_parameters
+                   ? signature.n_positional_parameters
+                   : signature.n_parameters;
+    }
+
+    static uint32_t default_parameter_count(FunctionSignature signature)
+    {
+        return default_end_slot(signature) - signature.first_default_slot;
+    }
+
     static TValue<Tuple>
     make_constructor_thunk_defaults(TValue<Tuple> init_defaults,
-                                    uint32_t init_n_positional_parameters)
+                                    FunctionSignature init_signature)
     {
         uint32_t init_n_defaults = init_defaults.extract()->size();
-        uint32_t first_default_parameter_idx =
-            init_n_positional_parameters - init_n_defaults;
-        if(first_default_parameter_idx > 0)
+        if(init_n_defaults != default_parameter_count(init_signature))
+        {
+            throw std::runtime_error(
+                "TypeError: unsupported __init__ default parameter layout");
+        }
+
+        bool has_self_default = init_signature.first_default_slot == 0;
+        uint32_t thunk_n_defaults =
+            init_n_defaults - (has_self_default ? 1 : 0);
+        if(thunk_n_defaults == init_n_defaults)
         {
             return init_defaults;
         }
 
-        assert(init_n_defaults > 0);
-        uint32_t thunk_n_defaults = init_n_defaults - 1;
         TValue<Tuple> thunk_defaults =
             make_object_value<Tuple>(static_cast<size_t>(thunk_n_defaults));
         for(uint32_t idx = 0; idx < thunk_n_defaults; ++idx)
@@ -168,25 +206,22 @@ namespace cl
                 Optional<TValue<String>>::none());
         }
 
-        TValue<Tuple> thunk_defaults = make_constructor_thunk_defaults(
-            defaults.value(), init_function.extract()
-                                  ->code_object.extract()
-                                  ->function_signature.n_positional_parameters);
+        FunctionSignature init_signature =
+            init_function.extract()->code_object.extract()->function_signature;
+        TValue<Tuple> thunk_defaults =
+            make_constructor_thunk_defaults(defaults.value(), init_signature);
         if(thunk_defaults.extract()->empty())
         {
             return make_object_value<Function>(
                 TValue<CodeObject>::from_oop(code),
                 Optional<TValue<String>>::none());
         }
-        if(thunk_defaults.extract()->size() >
-           code->function_signature.n_positional_parameters)
+        if(thunk_defaults.extract()->size() !=
+           default_parameter_count(code->function_signature))
         {
             throw std::runtime_error(
                 "TypeError: unsupported __init__ default parameter layout");
         }
-        code->function_signature.first_default_slot =
-            code->function_signature.n_positional_parameters -
-            uint32_t(thunk_defaults.extract()->size());
         return make_object_value<Function>(
             TValue<CodeObject>::from_oop(code),
             Optional<TValue<String>>::none(),

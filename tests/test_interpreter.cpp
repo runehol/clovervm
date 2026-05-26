@@ -859,6 +859,24 @@ TEST(Interpreter, class_constructor_accepts_keyword_calls)
     EXPECT_EQ(Value::from_smi(5), file_runner.return_value);
 }
 
+TEST(Interpreter, class_constructor_preserves_keyword_only_defaults)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __init__(self, *, value=7):\n"
+                                 L"        self.value = value\n"
+                                 L"C().value\n");
+    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
+}
+
+TEST(Interpreter, class_constructor_preserves_varargs_keyword_only_defaults)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __init__(self, *items, sep=9):\n"
+                                 L"        self.value = len(items) * 10 + sep\n"
+                                 L"C(1, 2).value\n");
+    EXPECT_EQ(Value::from_smi(29), file_runner.return_value);
+}
+
 TEST(Interpreter, function_keyword_call_rejects_duplicate_formal_fill)
 {
     expect_python_error(L"def f(a):\n"
