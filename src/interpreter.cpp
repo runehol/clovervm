@@ -1588,15 +1588,14 @@ namespace cl
             {
                 continue;
             }
-            if(!function->default_parameters.value().has_value() ||
-               parameter_idx < signature.first_default_slot)
+            if(!function->has_default_for_parameter(parameter_idx))
             {
                 return KeywordCallPlanStatus::WrongArity;
             }
         }
 
         uint32_t default_fill_start_slot =
-            default_fill_start_slot_for_keyword_call(fun, n_pos_args);
+            default_fill_start_slot_for_keyword_call(fun, n_filled_by_position);
         populate_keyword_call_cache_with_guard(
             candidate, guard_value, fun, validity_cell, keyword_names_value,
             n_pos_args, default_fill_start_slot, std::move(keyword_dest_regs));
@@ -1630,11 +1629,8 @@ namespace cl
         CodeObject *target_code_object = fun.extract()->code_object.extract();
         uint32_t first_default_slot =
             fun.extract()->call_signature.function.first_default_slot;
-        FunctionSignature signature = fun.extract()->call_signature.function;
         uint32_t default_end_slot =
-            first_default_slot < signature.n_positional_parameters
-                ? signature.n_positional_parameters
-                : signature.n_parameters;
+            first_default_slot + uint32_t(defaults.extract()->size());
         if(default_fill_start_slot < first_default_slot)
         {
             default_fill_start_slot = first_default_slot;
@@ -1667,10 +1663,9 @@ namespace cl
                                                 n_supplied_positional_args);
     }
 
-    static ALWAYSINLINE void initialize_varargs_argument(ThreadState *thread,
-                                                         Value *new_fp,
-                                                         TValue<Function> fun,
-                                                         uint32_t n_args)
+    static ALWAYSINLINE TValue<Tuple>
+    make_varargs_argument(ThreadState *thread, Value *new_fp,
+                          TValue<Function> fun, uint32_t n_args)
     {
         uint32_t n_positional_parameters =
             fun.extract()->call_signature.function.n_positional_parameters;
@@ -1678,10 +1673,19 @@ namespace cl
                                     ? n_args - n_positional_parameters
                                     : 0;
         CodeObject *target_code_object = fun.extract()->code_object.extract();
-        TValue<Tuple> varargs_tuple = Tuple::from_frame_arguments(
+        return Tuple::from_frame_arguments(
             thread, new_fp,
             target_code_object->encode_reg(n_positional_parameters),
             n_extra_args);
+    }
+
+    static ALWAYSINLINE void store_varargs_argument(Value *new_fp,
+                                                    TValue<Function> fun,
+                                                    TValue<Tuple> varargs_tuple)
+    {
+        uint32_t n_positional_parameters =
+            fun.extract()->call_signature.function.n_positional_parameters;
+        CodeObject *target_code_object = fun.extract()->code_object.extract();
         new_fp[target_code_object->encode_reg(n_positional_parameters)] =
             varargs_tuple.raw_value();
     }
@@ -1748,11 +1752,13 @@ namespace cl
         }
 
         assert(adaptation == FunctionCallAdaptation::Varargs);
-        initialize_varargs_argument(thread, new_fp, fun, n_args);
+        TValue<Tuple> varargs_tuple =
+            make_varargs_argument(thread, new_fp, fun, n_args);
         if(fun.extract()->default_parameters.value().has_value())
         {
             initialize_missing_default_arguments(new_fp, fun, n_args);
         }
+        store_varargs_argument(new_fp, fun, varargs_tuple);
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                        instr_len);
     }
@@ -1769,10 +1775,17 @@ namespace cl
 
         if(cache.adaptation == FunctionCallAdaptation::Varargs)
         {
-            initialize_varargs_argument(thread, new_fp, fun, n_pos_args);
+            TValue<Tuple> varargs_tuple =
+                make_varargs_argument(thread, new_fp, fun, n_pos_args);
+            if(fun.extract()->default_parameters.value().has_value())
+            {
+                initialize_default_parameters_from_slot(
+                    new_fp, fun, cache.default_fill_start_slot);
+            }
+            store_varargs_argument(new_fp, fun, varargs_tuple);
         }
-        if(cache.adaptation != FunctionCallAdaptation::FixedArity &&
-           fun.extract()->default_parameters.value().has_value())
+        else if(cache.adaptation != FunctionCallAdaptation::FixedArity &&
+                fun.extract()->default_parameters.value().has_value())
         {
             initialize_default_parameters_from_slot(
                 new_fp, fun, cache.default_fill_start_slot);
@@ -3185,7 +3198,8 @@ namespace cl
 
             TValue<Function> thunk =
                 TValue<Function>::from_oop(constructor.thunk);
-            if(unlikely(!thunk.extract()->accepts_arity(n_args)))
+            if(unlikely(!thunk.extract()->accepts_positional_only_call_arity(
+                   n_args)))
             {
                 MUSTTAIL return wrong_arity_error(ARGS);
             }
@@ -3211,7 +3225,8 @@ namespace cl
         }
 
         TValue<Function> function = TValue<Function>::from_value_assumed(fun);
-        if(unlikely(!function.extract()->accepts_arity(n_args)))
+        if(unlikely(
+               !function.extract()->accepts_positional_only_call_arity(n_args)))
         {
             MUSTTAIL return wrong_arity_error(ARGS);
         }
@@ -3517,7 +3532,8 @@ namespace cl
             START(0);
             COMPLETE();
         }
-        if(unlikely(!function.extract()->accepts_arity(n_args)))
+        if(unlikely(
+               !function.extract()->accepts_positional_only_call_arity(n_args)))
         {
             MUSTTAIL return wrong_arity_error(ARGS);
         }
@@ -3690,7 +3706,8 @@ namespace cl
             START(0);
             COMPLETE();
         }
-        if(unlikely(!function.extract()->accepts_arity(n_args)))
+        if(unlikely(
+               !function.extract()->accepts_positional_only_call_arity(n_args)))
         {
             MUSTTAIL return wrong_arity_error(ARGS);
         }

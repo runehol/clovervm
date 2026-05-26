@@ -9,6 +9,7 @@
 #include "virtual_machine.h"
 #include <optional>
 #include <stdexcept>
+#include <vector>
 
 namespace cl
 {
@@ -27,6 +28,35 @@ namespace cl
     constructor_thunk_signature(FunctionSignature init_signature)
     {
         FunctionSignature signature = init_signature;
+        uint64_t shifted_default_mask = 0;
+        bool found_default = false;
+        uint32_t first_default_slot = 0;
+        uint32_t init_default_span_size =
+            Function::default_span_size(init_signature);
+        for(uint32_t default_idx = 0; default_idx < init_default_span_size;
+            ++default_idx)
+        {
+            if((init_signature.default_presence_mask &
+                (uint64_t(1) << default_idx)) == 0)
+            {
+                continue;
+            }
+            uint32_t init_slot =
+                init_signature.first_default_slot + default_idx;
+            if(init_slot == 0)
+            {
+                continue;
+            }
+            uint32_t thunk_slot = init_slot - 1;
+            if(!found_default)
+            {
+                found_default = true;
+                first_default_slot = thunk_slot;
+            }
+            shifted_default_mask |= uint64_t(1)
+                                    << (thunk_slot - first_default_slot);
+        }
+
         --signature.n_parameters;
         --signature.n_positional_parameters;
         if(signature.n_posonly_parameters > 0)
@@ -42,9 +72,15 @@ namespace cl
             }
             --signature.n_pos_or_kw_parameters;
         }
-        if(signature.first_default_slot > 0)
+        if(found_default)
         {
-            --signature.first_default_slot;
+            signature.first_default_slot = first_default_slot;
+            signature.default_presence_mask = shifted_default_mask;
+        }
+        else
+        {
+            signature.first_default_slot = 0;
+            signature.default_presence_mask = 0;
         }
         return signature;
     }
@@ -143,43 +179,56 @@ namespace cl
         return code.finalize();
     }
 
-    static uint32_t default_end_slot(FunctionSignature signature)
-    {
-        return signature.first_default_slot < signature.n_positional_parameters
-                   ? signature.n_positional_parameters
-                   : signature.n_parameters;
-    }
-
-    static uint32_t default_parameter_count(FunctionSignature signature)
-    {
-        return default_end_slot(signature) - signature.first_default_slot;
-    }
-
     static TValue<Tuple>
     make_constructor_thunk_defaults(TValue<Tuple> init_defaults,
                                     FunctionSignature init_signature)
     {
-        uint32_t init_n_defaults = init_defaults.extract()->size();
-        if(init_n_defaults != default_parameter_count(init_signature))
+        uint32_t init_default_span_size =
+            Function::default_span_size(init_signature);
+        if(init_defaults.extract()->size() != init_default_span_size)
         {
             throw std::runtime_error(
                 "TypeError: unsupported __init__ default parameter layout");
         }
 
-        bool has_self_default = init_signature.first_default_slot == 0;
-        uint32_t thunk_n_defaults =
-            init_n_defaults - (has_self_default ? 1 : 0);
-        if(thunk_n_defaults == init_n_defaults)
+        FunctionSignature thunk_signature =
+            constructor_thunk_signature(init_signature);
+        uint32_t thunk_default_span_size =
+            Function::default_span_size(thunk_signature);
+        TValue<Tuple> thunk_defaults = make_object_value<Tuple>(
+            static_cast<size_t>(thunk_default_span_size));
+        if(thunk_default_span_size == 0)
         {
-            return init_defaults;
+            return thunk_defaults;
         }
 
-        TValue<Tuple> thunk_defaults =
-            make_object_value<Tuple>(static_cast<size_t>(thunk_n_defaults));
-        for(uint32_t idx = 0; idx < thunk_n_defaults; ++idx)
+        std::vector<Value> default_values(thunk_default_span_size,
+                                          Value::None());
+        for(uint32_t default_idx = 0; default_idx < init_default_span_size;
+            ++default_idx)
+        {
+            if((init_signature.default_presence_mask &
+                (uint64_t(1) << default_idx)) == 0)
+            {
+                continue;
+            }
+            uint32_t init_slot =
+                init_signature.first_default_slot + default_idx;
+            if(init_slot == 0)
+            {
+                continue;
+            }
+            uint32_t thunk_slot = init_slot - 1;
+            uint32_t thunk_default_idx =
+                thunk_slot - thunk_signature.first_default_slot;
+            default_values[thunk_default_idx] =
+                init_defaults.extract()->item_unchecked(default_idx);
+        }
+
+        for(uint32_t idx = 0; idx < thunk_default_span_size; ++idx)
         {
             thunk_defaults.extract()->initialize_item_unchecked(
-                idx, init_defaults.extract()->item_unchecked(idx + 1));
+                idx, default_values[idx]);
         }
         return thunk_defaults;
     }
@@ -217,7 +266,7 @@ namespace cl
                 Optional<TValue<String>>::none());
         }
         if(thunk_defaults.extract()->size() !=
-           default_parameter_count(code->function_signature))
+           Function::default_span_size(code->function_signature))
         {
             throw std::runtime_error(
                 "TypeError: unsupported __init__ default parameter layout");

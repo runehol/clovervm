@@ -481,44 +481,48 @@ namespace cl
             // the
             uint32_t constant_idx =
                 code_obj->allocate_constant(Value::from_oop(fun_obj));
-            uint32_t n_defaults = count_default_parameters(param_children);
-            if(n_defaults == 0)
+            size_t first_default_idx =
+                first_default_parameter_index(param_children);
+            if(first_default_idx == param_children.size())
             {
                 code_obj->emit_create_function(source_offset, constant_idx);
             }
             else
             {
-                TemporaryReg default_values(*code_obj, n_defaults);
-                size_t first_default_idx =
-                    first_default_parameter_index(param_children);
-                if(first_default_idx <
-                   fun_obj->function_signature.n_positional_parameters)
-                {
-                    if(first_default_idx + n_defaults !=
-                       fun_obj->function_signature.n_positional_parameters)
-                    {
-                        throw std::runtime_error(
-                            "SyntaxError: unsupported default parameter "
-                            "layout");
-                    }
-                }
-                else if(first_default_idx + n_defaults != param_children.size())
+                size_t last_default_idx =
+                    last_default_parameter_index(param_children);
+                size_t default_span_size =
+                    last_default_idx - first_default_idx + 1;
+                if(default_span_size > 64)
                 {
                     throw std::runtime_error(
-                        "SyntaxError: unsupported default parameter layout");
+                        "SyntaxError: default parameter span exceeds mask "
+                        "capacity");
                 }
+                TemporaryReg default_values(*code_obj, default_span_size);
+                uint64_t default_presence_mask = 0;
                 fun_obj->function_signature.first_default_slot =
                     uint32_t(first_default_idx);
-                for(size_t i = 0; i < n_defaults; ++i)
+                for(size_t i = 0; i < default_span_size; ++i)
                 {
                     int32_t param_idx = param_children[first_default_idx + i];
                     AstChildren default_children = av.children[param_idx];
-                    assert(default_children.size() == 1);
-                    codegen_node(default_children[0]);
+                    if(default_children.empty())
+                    {
+                        code_obj->emit_lda_none(source_offset);
+                    }
+                    else
+                    {
+                        assert(default_children.size() == 1);
+                        codegen_node(default_children[0]);
+                        default_presence_mask |= uint64_t(1) << i;
+                    }
                     code_obj->emit_star(source_offset, default_values + i);
                 }
+                fun_obj->function_signature.default_presence_mask =
+                    default_presence_mask;
                 code_obj->emit_create_tuple(source_offset, default_values,
-                                            n_defaults);
+                                            default_span_size);
 
                 TemporaryReg default_tuple(*code_obj);
                 code_obj->emit_star(source_offset, default_tuple);
@@ -529,41 +533,26 @@ namespace cl
             emit_variable_store(source_offset, node_idx);
         }
 
-        uint32_t count_default_parameters(AstChildren param_children) const
-        {
-            uint32_t n_defaults = 0;
-            bool after_varargs = false;
-            for(int32_t param_idx: param_children)
-            {
-                if(av.kinds[param_idx].node_kind ==
-                   AstNodeKind::PARAMETER_VARARGS)
-                {
-                    after_varargs = true;
-                    continue;
-                }
-                if(av.kinds[param_idx].node_kind != AstNodeKind::PARAMETER)
-                {
-                    continue;
-                }
-                if(after_varargs && av.children[param_idx].empty())
-                {
-                    throw std::runtime_error(
-                        "SyntaxError: required keyword-only parameters are "
-                        "not implemented yet");
-                }
-                if(!av.children[param_idx].empty())
-                {
-                    ++n_defaults;
-                }
-            }
-            return n_defaults;
-        }
-
         size_t first_default_parameter_index(AstChildren param_children) const
         {
             for(size_t param_idx = 0; param_idx < param_children.size();
                 ++param_idx)
             {
+                int32_t node_idx = param_children[param_idx];
+                if(av.kinds[node_idx].node_kind == AstNodeKind::PARAMETER &&
+                   !av.children[node_idx].empty())
+                {
+                    return param_idx;
+                }
+            }
+            return param_children.size();
+        }
+
+        size_t last_default_parameter_index(AstChildren param_children) const
+        {
+            for(size_t offset = 0; offset < param_children.size(); ++offset)
+            {
+                size_t param_idx = param_children.size() - offset - 1;
                 int32_t node_idx = param_children[param_idx];
                 if(av.kinds[node_idx].node_kind == AstNodeKind::PARAMETER &&
                    !av.children[node_idx].empty())
@@ -2693,6 +2682,20 @@ namespace cl
         return false;
     }
 
+    bool parameter_sequence_has_required_parameter(const AstVector &av,
+                                                   AstChildren param_children)
+    {
+        for(int32_t param_idx: param_children)
+        {
+            if(av.kinds[param_idx].node_kind == AstNodeKind::PARAMETER &&
+               av.children[param_idx].empty())
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     Optional<TValue<String>> docstring_for_body(const AstVector &av,
                                                 int32_t body_idx)
     {
@@ -2751,6 +2754,9 @@ namespace cl
             fun_obj.n_positional_parameters();
         fun_obj.function_signature().n_kwonly_parameters =
             parameter_signature_group(av, children[0], 3).size();
+        fun_obj.function_signature().has_required_keyword_only_parameters =
+            parameter_sequence_has_required_parameter(
+                av, parameter_signature_group(av, children[0], 3));
         assert(fun_obj.n_positional_parameters() <= UINT16_MAX);
         for(uint32_t param_idx = 0; param_idx < param_children.size();
             ++param_idx)

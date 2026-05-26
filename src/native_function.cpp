@@ -25,9 +25,13 @@ namespace cl
         builder.function_signature().n_pos_or_kw_parameters = n_parameters;
         if(default_parameters.has_value())
         {
-            builder.function_signature().first_default_slot =
-                n_parameters -
+            uint32_t n_defaults =
                 uint32_t(default_parameters.value().extract()->size());
+            builder.function_signature().first_default_slot =
+                n_parameters - n_defaults;
+            assert(n_defaults < 64);
+            builder.function_signature().default_presence_mask =
+                (uint64_t(1) << n_defaults) - 1;
         }
         uint32_t target_idx = builder.add_native_function_target(target);
         if(is_extension)

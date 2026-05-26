@@ -73,3 +73,63 @@ def fib(n):
     return fib(n - 2) + fib(n - 1)
 
 assert fib(20) == 10946
+
+
+default_eval_order = 0
+
+def record_default(n):
+    global default_eval_order
+    default_eval_order = default_eval_order * 10 + n
+    return n
+
+def keyword_only_default_holes(a=record_default(1), *, b, c=record_default(2)):
+    return a * 100 + b * 10 + c
+
+assert default_eval_order == 12
+assert keyword_only_default_holes(b=3) == 132
+assert keyword_only_default_holes(4, b=5) == 452
+
+try:
+    keyword_only_default_holes()
+    missing_keyword_only_rejected = False
+except TypeError:
+    missing_keyword_only_rejected = True
+
+assert missing_keyword_only_rejected
+
+try:
+    keyword_only_default_holes(4, 5)
+    positional_keyword_only_rejected = False
+except TypeError:
+    positional_keyword_only_rejected = True
+
+assert positional_keyword_only_rejected
+
+assert keyword_only_default_holes(b=6) == 162
+assert keyword_only_default_holes(b=7) == 172
+
+def varargs_with_default_holes(a=1, *args, b, c=3):
+    return a * 1000 + len(args) * 100 + b * 10 + c
+
+assert varargs_with_default_holes(b=4) == 1043
+assert varargs_with_default_holes(5, 6, 7, b=8) == 5283
+
+def positional_and_keyword_defaults(a=1, *, b, c=3):
+    return a * 100 + b * 10 + c
+
+assert positional_and_keyword_defaults(b=2) == 123
+assert positional_and_keyword_defaults(4, b=5) == 453
+
+class ConstructorDefaultHoles:
+    def __init__(self=0, a=1, *, b, c=3):
+        self.value = a * 100 + b * 10 + c
+
+assert ConstructorDefaultHoles(b=2).value == 123
+assert ConstructorDefaultHoles(4, b=5).value == 453
+
+class ConstructorVarargsDefaultHoles:
+    def __init__(self=0, a=1, *args, b, c=3):
+        self.value = a * 1000 + len(args) * 100 + b * 10 + c
+
+assert ConstructorVarargsDefaultHoles(b=2).value == 1023
+assert ConstructorVarargsDefaultHoles(4, 5, 6, b=7).value == 4273

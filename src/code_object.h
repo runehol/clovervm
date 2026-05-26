@@ -54,6 +54,8 @@ namespace cl
         uint32_t n_pos_or_kw_parameters = 0;
         uint32_t n_kwonly_parameters = 0;
         uint32_t first_default_slot = 0;
+        uint64_t default_presence_mask = 0;
+        bool has_required_keyword_only_parameters = false;
         FunctionParameterFlags parameter_flags = FunctionParameterFlags::None;
 
         bool has_varargs() const

@@ -517,6 +517,10 @@ TEST(Codegen, function_varargs_parameter_layout)
     EXPECT_EQ(3, function_code->function_signature.n_parameters);
     EXPECT_EQ(2, function_code->function_signature.n_positional_parameters);
     EXPECT_EQ(2, function_code->function_signature.n_pos_or_kw_parameters);
+    EXPECT_EQ(1u, function_code->function_signature.first_default_slot);
+    EXPECT_EQ(1u, function_code->function_signature.default_presence_mask);
+    EXPECT_FALSE(
+        function_code->function_signature.has_required_keyword_only_parameters);
     ASSERT_EQ(2u, function_code->function_keyword_remap.size());
     EXPECT_STREQ(L"a", string_as_wchar_t(TValue<String>::from_value_assumed(
                            function_code->function_keyword_remap.name_at(0))));
@@ -551,11 +555,31 @@ TEST(Codegen, function_copies_hot_call_signature_from_code_object)
               function->call_signature.function.n_pos_or_kw_parameters);
     EXPECT_EQ(function_code->function_signature.first_default_slot,
               function->call_signature.function.first_default_slot);
+    EXPECT_EQ(function_code->function_signature.default_presence_mask,
+              function->call_signature.function.default_presence_mask);
+    EXPECT_EQ(
+        function_code->function_signature.has_required_keyword_only_parameters,
+        function->call_signature.function.has_required_keyword_only_parameters);
     EXPECT_EQ(function_code->function_signature.parameter_flags,
               function->call_signature.function.parameter_flags);
     EXPECT_EQ(1u, function_code->function_signature.first_default_slot);
     EXPECT_EQ(1u, function->call_signature.min_positional_arity);
     EXPECT_EQ(Function::VarArgs, function->call_signature.max_positional_arity);
+}
+
+TEST(Codegen, function_default_presence_mask_tracks_holes)
+{
+    test::VmTestContext test_context;
+    CodeObject *module_code =
+        test_context.compile_file(L"def f(a=1, *args, b, c=3):\n"
+                                  L"    return a\n");
+    CodeObject *function_code =
+        module_code->constant_table[0].value().get_ptr<CodeObject>();
+
+    EXPECT_EQ(0u, function_code->function_signature.first_default_slot);
+    EXPECT_EQ(0b1001u, function_code->function_signature.default_presence_mask);
+    EXPECT_TRUE(
+        function_code->function_signature.has_required_keyword_only_parameters);
 }
 
 TEST(Codegen, parameter_frame_offsets_are_padded_to_abi_alignment)

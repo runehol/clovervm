@@ -850,6 +850,39 @@ TEST(Interpreter, function_keyword_call_supports_varargs_before_keyword_only)
     EXPECT_EQ(Value::from_smi(23), file_runner.return_value);
 }
 
+TEST(Interpreter, function_keyword_call_supports_required_keyword_only)
+{
+    test::FileRunner file_runner(L"def f(a=1, *, b, c=3):\n"
+                                 L"    return a * 100 + b * 10 + c\n"
+                                 L"f(b=2)\n");
+    EXPECT_EQ(Value::from_smi(123), file_runner.return_value);
+}
+
+TEST(Interpreter, function_keyword_call_rejects_missing_required_keyword_only)
+{
+    expect_python_error(L"def f(a=1, *, b, c=3):\n"
+                        L"    return a + b + c\n"
+                        L"f()\n",
+                        L"TypeError: wrong number of arguments");
+}
+
+TEST(Interpreter, function_call_simple_rejects_required_keyword_only)
+{
+    expect_python_error(L"def f(a=1, *, b, c=3):\n"
+                        L"    return a + b + c\n"
+                        L"f(2)\n",
+                        L"TypeError: wrong number of arguments");
+}
+
+TEST(Interpreter, function_keyword_call_handles_varargs_default_holes)
+{
+    test::FileRunner file_runner(L"def f(a=1, *args, b, c=3):\n"
+                                 L"    return a * 1000 + len(args) * 100 + "
+                                 L"b * 10 + c\n"
+                                 L"f(5, 6, 7, b=8)\n");
+    EXPECT_EQ(Value::from_smi(5283), file_runner.return_value);
+}
+
 TEST(Interpreter, class_constructor_accepts_keyword_calls)
 {
     test::FileRunner file_runner(L"class C:\n"
@@ -875,6 +908,24 @@ TEST(Interpreter, class_constructor_preserves_varargs_keyword_only_defaults)
                                  L"        self.value = len(items) * 10 + sep\n"
                                  L"C(1, 2).value\n");
     EXPECT_EQ(Value::from_smi(29), file_runner.return_value);
+}
+
+TEST(Interpreter, class_constructor_preserves_required_keyword_only)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __init__(self, a=1, *, b, c=3):\n"
+                                 L"        self.value = a * 100 + b * 10 + c\n"
+                                 L"C(b=2).value\n");
+    EXPECT_EQ(Value::from_smi(123), file_runner.return_value);
+}
+
+TEST(Interpreter, class_constructor_drops_self_default_from_thunk_defaults)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __init__(self=0, *, value=7):\n"
+                                 L"        self.value = value\n"
+                                 L"C().value\n");
+    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
 }
 
 TEST(Interpreter, function_keyword_call_rejects_duplicate_formal_fill)

@@ -20,15 +20,13 @@ paths:
   eligible constructor thunks;
 - `Function` metadata tracks minimum and maximum positional arity, grouped
   signature counts, keyword-bindable parameter remaps, and
-  `first_default_slot`;
-- entry adaptation supports fixed arity, positional defaults, defaulted
-  keyword-only parameters in the compact-default layouts described below, and
-  callee `*args`;
+  `first_default_slot` plus `default_presence_mask`;
+- entry adaptation supports fixed arity, positional defaults, required and
+  defaulted keyword-only parameters, mixed positional/keyword-only default
+  layouts, and callee `*args`;
 - parser/codegen represent explicit caller positional and keyword arguments;
 - parser accepts richer callee signature syntax, but codegen still rejects
-  positional-only parameters, required keyword-only parameters, mixed
-  positional-default plus keyword-only-default layouts, and `**kwargs`
-  parameters for runtime use;
+  positional-only parameters and `**kwargs` parameters for runtime use;
 - caller `*args` and `**kwargs` expansion remain unsupported.
 
 The keyword-call path deliberately does not introduce the full Python callable
@@ -181,36 +179,23 @@ contract.
 
 ## Default Slot Layout
 
-The current runtime supports a compact default suffix tuple plus
-`FunctionSignature::first_default_slot`. For the supported runtime signature
-subset, defaults are contiguous over either positional parameters or
-keyword-only parameters, and this is enough to derive the tuple index from the
-formal slot.
-
-The planned richer signature runtime extends this into a slot-indexed suffix
-that begins at the first callee parameter slot with a default, instead of
-introducing a separate keyword-only default container. The common no-default case
-should still be represented by an empty defaults tuple.
+The runtime stores defaults as a slot-indexed suffix that begins at the first
+callee parameter slot with a default, instead of using separate positional and
+keyword-only default containers. The common no-default case is represented by no
+defaults tuple.
 
 The representation needs:
 
 ```text
 first_default_slot
 default_values tuple
-default_presence mask
+default_presence_mask
 ```
-
-`default_presence` is not implemented yet. Today, the runtime effectively
-assumes that every formal slot in the active default block has a default. This
-is correct only for the currently supported compact positional-default suffix
-and compact keyword-only-default suffix. The presence mask should be added
-before enabling runtime signatures with holes or multiple default blocks, such
-as a function that has both positional defaults and keyword-only defaults.
 
 `first_default_slot` is the lowest callee parameter slot that has any default.
 `default_values[0]` corresponds to that slot, and `default_values[i]`
-corresponds to callee slot `first_default_slot + i`. `default_presence[i]` says
-whether that tuple entry is a real default.
+corresponds to callee slot `first_default_slot + i`. Bit `i` of
+`default_presence_mask` says whether that tuple entry is a real default.
 
 `first_default_slot` belongs in the function signature metadata because it is a
 property of the callee's formal parameter layout. The default values tuple
@@ -220,8 +205,10 @@ function object is created.
 The tuple must contain ordinary Python-visible values only. Placeholder entries
 should use `None`, not VM sentinels such as `not_present`, because tuples are
 normal heap objects and sentinel values would violate tuple storage invariants.
-The mask, not the placeholder value, determines whether an entry is copied.
-This matters because `None` is also a valid user default.
+The mask, not the placeholder value, determines whether an entry can satisfy a
+missing parameter during IC setup. Frame entry still copies the default tuple
+blindly; keyword values and `*args` overwrite any placeholders that should not
+survive. This matters because `None` is also a valid user default.
 
 For example:
 
@@ -245,30 +232,34 @@ can lower to:
 ```text
 first_default_slot = 1
 default_values     = (5, None, 6, 7)
-default_presence   = 1011
+default_presence_mask = 1011
 ```
 
-The `None` at tuple offset 1 is just a valid placeholder for the `*args` slot.
-It is skipped because the mask bit is clear. If a user writes `b=None`, that
-entry is also `None`, but its mask bit is set and the default is copied.
+The `None` at tuple offset 1 is a placeholder for the `*args` slot. If a user
+writes `b=None`, that entry is also `None`, but its mask bit is set and the
+default can satisfy a missing argument.
 
-Constructor thunks need explicit handling when `default_presence` is added.
-Thunk signatures remove initializer slot 0 (`self`), so default metadata must be
-rebuilt by shifting each present initializer default from `init_slot` to
-`init_slot - 1`, skipping any default that would belong to `self`, and then
-constructing the thunk's own `first_default_slot`, defaults tuple, and presence
-mask from the surviving defaults.
+Constructor thunks rebuild default metadata when removing initializer slot 0
+(`self`). Each present initializer default shifts from `init_slot` to
+`init_slot - 1`; defaults that belong to `self` are dropped. The thunk then
+normalizes its own `first_default_slot`, defaults tuple, and presence mask from
+the surviving defaults.
 
-This keeps default initialization uniform:
+This keeps default validation and initialization uniform:
 
 ```text
-for each present default:
-  frame_slot[first_default_slot + i] = default_values[i]
+if slot is missing and default_presence_mask has no corresponding bit:
+  reject the call while building the IC
+
+frame_slot[default_copy_start_slot + i] =
+  default_values[(default_copy_start_slot - first_default_slot) + i]
 ```
 
-Then `*args` initialization can write the varargs slot, and keyword remapping
-can overwrite any named parameter defaults supplied explicitly by the caller.
-No keyword ever maps to `*args`, and `*args` never has a default.
+The mask is cold-path validation metadata. Hot frame entry does not consult it:
+after IC setup has accepted the call shape, frame entry copies a contiguous
+suffix of the default tuple, stores `*args` if present, then copies keyword
+arguments to their encoded destination registers. Defaults that should not
+survive are naturally overwritten.
 
 ## Binding Algorithm
 
@@ -287,17 +278,18 @@ For a keyword-call cache miss in the implemented runtime subset:
    - reject if that formal slot was already filled by position or keyword;
    - mark the formal slot filled;
    - store the encoded destination frame register in the candidate plan.
-6. Reject any remaining required positional-or-keyword parameters.
-7. Compute `default_fill_start_slot = max(n_pos_args, first_default_slot)`.
+6. Reject any remaining required parameter whose default-presence bit is clear.
+7. Compute `default_fill_start_slot = max(n_filled_by_position,
+   first_default_slot)`.
 8. Commit the candidate plan to the live cache.
-9. Apply the plan: copy needed defaults, initialize `*args` if present, copy
-   keyword values to their encoded destination registers, and enter the target
-   function frame using the ordinary frame header and return machinery.
+9. Apply the plan: copy the accepted default tuple suffix, store `*args` if
+   present, copy keyword values to their encoded destination registers, and
+   enter the target function frame using the ordinary frame header and return
+   machinery.
 
 The parser already rejects duplicate explicit keyword names. Caller `*args`,
-caller `**kwargs`, keyword-only parameters, and callee `**kwargs` are deferred,
-so the current binder does not build keyword dictionaries or consume unknown
-keywords.
+caller `**kwargs`, and callee `**kwargs` are deferred, so the current binder
+does not build keyword dictionaries or consume unknown keywords.
 
 ## Keyword Call Inline Cache
 
@@ -356,17 +348,17 @@ starred-call or generic callable protocol work.
 
   It parses `/`, bare `*`, `*args`, keyword-only parameters, and `**kwargs`
   into distinct AST structure. Codegen still rejects the runtime-unsupported
-  callee forms: positional-only parameters, required keyword-only parameters,
-  mixed positional-default plus keyword-only-default layouts, and `**kwargs`.
-  Defaults remain attached to parameter nodes for now.
+  callee forms: positional-only parameters and `**kwargs`. Defaults remain
+  attached to parameter nodes for now.
 
 - [x] **Codegen and function signature metadata**
 
   `CodeObject` and `Function` metadata now go beyond
   `n_positional_parameters` plus `HasVarArgs`. The metadata describes grouped
-  parameter counts, varargs/kwargs flags, `first_default_slot`, and the compact
-  keyword-bindable layout. `Function` keeps the hot call signature copy, while
-  keyword remap metadata stays on `CodeObject`.
+  parameter counts, varargs/kwargs flags, `first_default_slot`,
+  `default_presence_mask`, and the compact keyword-bindable layout. `Function`
+  keeps the hot call signature copy, while keyword remap metadata stays on
+  `CodeObject`.
 
   Constructor-thunk generation mirrors the public constructor signature with
   `self` removed for the currently supported runtime subset.
@@ -435,11 +427,9 @@ starred-call or generic callable protocol work.
   path and keyword calls carry a names tuple. Keyword call microbenchmarks cover
   all-keyword, mixed positional/keyword, and default-using keyword calls.
 
-  Method keyword calls, positional-only parameters, required keyword-only
-  parameters, mixed positional-default plus keyword-only-default layouts, callee
-  `**kwargs`, caller `*args`, caller `**kwargs`, generic `__call__`, and
-  descriptor-heavy callable behavior remain unsupported. Defaulted
-  keyword-only parameters are supported only for compact-default layouts.
+  Method keyword calls, positional-only parameters, callee `**kwargs`, caller
+  `*args`, caller `**kwargs`, generic `__call__`, and descriptor-heavy callable
+  behavior remain unsupported.
 
 ## Deferred Work
 
@@ -447,11 +437,7 @@ The following require separate design/implementation slices:
 
 - keyword method calls, including whether to add a fused method-keyword opcode
   or split method lookup/binding from keyword call entry;
-- default presence metadata for slot-indexed defaults and mixed default blocks,
-  including constructor thunk default-table shifting after removing `self`;
 - runtime support for positional-only parameters;
-- runtime support for required keyword-only parameters and keyword-only defaults
-  outside the current compact-default layouts;
 - callee `**kwargs`, including allocation, insertion order, and interaction
   with unexpected explicit keywords;
 - caller `*args` expansion, including iterable protocol details and error

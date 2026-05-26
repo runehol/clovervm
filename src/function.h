@@ -45,7 +45,7 @@ namespace cl
                 assert(call_signature.function.first_default_slot <=
                        call_signature.function.n_parameters);
                 assert(_default_parameters.value().extract()->size() ==
-                       default_parameter_count(call_signature.function));
+                       default_span_size(call_signature.function));
             }
         }
 
@@ -55,9 +55,55 @@ namespace cl
                    n_args <= call_signature.max_positional_arity;
         }
 
+        bool accepts_positional_only_call_arity(uint32_t n_args) const
+        {
+            return accepts_arity(n_args) &&
+                   !call_signature.function
+                        .has_required_keyword_only_parameters;
+        }
+
         bool has_varargs() const
         {
             return call_signature.function.has_varargs();
+        }
+
+        bool has_default_for_parameter(uint32_t parameter_idx) const
+        {
+            return has_default_for_parameter(call_signature.function,
+                                             parameter_idx);
+        }
+
+        static uint32_t default_span_size(FunctionSignature signature)
+        {
+            if(signature.default_presence_mask == 0)
+            {
+                return 0;
+            }
+            uint32_t span_size = 0;
+            uint64_t mask = signature.default_presence_mask;
+            while(mask != 0)
+            {
+                ++span_size;
+                mask >>= 1;
+            }
+            return span_size;
+        }
+
+        static bool has_default_for_parameter(FunctionSignature signature,
+                                              uint32_t parameter_idx)
+        {
+            if(signature.default_presence_mask == 0 ||
+               parameter_idx < signature.first_default_slot)
+            {
+                return false;
+            }
+            uint32_t default_idx = parameter_idx - signature.first_default_slot;
+            if(default_idx >= 64)
+            {
+                return false;
+            }
+            return (signature.default_presence_mask &
+                    (uint64_t(1) << default_idx)) != 0;
         }
 
         void refresh_signature_from_code_object()
@@ -91,18 +137,18 @@ namespace cl
                 code_object.extract()->function_signature;
             assert(signature.first_default_slot <= signature.n_parameters);
             assert(default_parameters.value().extract()->size() ==
-                   default_parameter_count(signature));
-            return std::min(signature.first_default_slot,
-                            signature.n_positional_parameters);
-        }
-
-        static uint32_t default_parameter_count(FunctionSignature signature)
-        {
-            uint32_t default_end_slot =
-                signature.first_default_slot < signature.n_positional_parameters
-                    ? signature.n_positional_parameters
-                    : signature.n_parameters;
-            return default_end_slot - signature.first_default_slot;
+                   default_span_size(signature));
+            uint32_t min_arity = 0;
+            for(uint32_t parameter_idx = 0;
+                parameter_idx < signature.n_positional_parameters;
+                ++parameter_idx)
+            {
+                if(!has_default_for_parameter(signature, parameter_idx))
+                {
+                    min_arity = parameter_idx + 1;
+                }
+            }
+            return min_arity;
         }
 
         static uint32_t max_arity_for_code(TValue<CodeObject> code_object)
