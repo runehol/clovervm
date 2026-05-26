@@ -1448,6 +1448,62 @@ namespace cl
                                                 thunk, lookup_cell, n_args);
     }
 
+    [[nodiscard]] NOINLINE static Expected<void>
+    populate_positional_call_cache_from_callable(Value callable,
+                                                 uint32_t n_args,
+                                                 FunctionCallInlineCache &cache)
+    {
+        if(unlikely(!callable.is_ptr()))
+        {
+            return Expected<void>::raise_exception(L"TypeError",
+                                                   L"object is not callable");
+        }
+
+        Object *callable_object = callable.get_ptr();
+        if(callable_object->native_layout_id() == NativeLayoutId::ClassObject)
+        {
+            ClassObject *cls = static_cast<ClassObject *>(callable_object);
+            ConstructorThunkLookup constructor =
+                cls->get_or_create_constructor_thunk();
+            if(unlikely(!constructor.is_found()))
+            {
+                return Expected<void>::raise_exception(
+                    L"TypeError", L"object is not callable");
+            }
+
+            TValue<Function> thunk =
+                TValue<Function>::from_oop(constructor.thunk);
+            if(unlikely(!thunk.extract()->accepts_positional_only_call_arity(
+                   n_args)))
+            {
+                return Expected<void>::raise_exception(
+                    L"TypeError", L"wrong number of arguments");
+            }
+            populate_constructor_call_cache(cache, cls, thunk,
+                                            constructor.lookup_cell, n_args);
+            return Expected<void>::ok();
+        }
+
+        if(unlikely(callable_object->native_layout_id() !=
+                    NativeLayoutId::Function))
+        {
+            return Expected<void>::raise_exception(L"TypeError",
+                                                   L"object is not callable");
+        }
+
+        TValue<Function> function =
+            TValue<Function>::from_value_assumed(callable);
+        if(unlikely(
+               !function.extract()->accepts_positional_only_call_arity(n_args)))
+        {
+            return Expected<void>::raise_exception(
+                L"TypeError", L"wrong number of arguments");
+        }
+
+        populate_function_call_cache(cache, function, n_args);
+        return Expected<void>::ok();
+    }
+
     static ALWAYSINLINE bool
     function_call_cache_matches(const FunctionCallInlineCache &cache, Value fun,
                                 uint32_t n_args)
@@ -1761,6 +1817,63 @@ namespace cl
         store_varargs_argument(new_fp, fun, varargs_tuple);
         enter_function_frame_at_new_fp(fp, pc, code_object, fun, new_fp,
                                        instr_len);
+    }
+
+    static ALWAYSINLINE void enter_fixed_positional_call_from_cache(
+        Value *&fp, const uint8_t *&pc, CodeObject *&code_object,
+        FunctionCallInlineCache &cache, int32_t first_arg_reg,
+        uint32_t instr_len)
+    {
+        assert(cache.adaptation == FunctionCallAdaptation::FixedArity);
+        TValue<Function> function = TValue<Function>::from_oop(cache.function);
+        CodeObject *target_code_object =
+            function.extract()->code_object.extract();
+        const uint8_t *target_pc = target_code_object->code.data();
+        int32_t new_fp_reg =
+            first_arg_reg -
+            int32_t(target_code_object->get_padded_n_parameters()) + 1 -
+            FrameHeaderSizeAboveFp;
+        Value *new_fp = fp + new_fp_reg;
+        pc += instr_len;
+
+        initialize_frame_header(new_fp, fp, code_object, pc);
+
+        fp = new_fp;
+        code_object = target_code_object;
+        pc = target_pc;
+    }
+
+    static ALWAYSINLINE void enter_positional_call_from_cache(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        CodeObject *&code_object, FunctionCallInlineCache &cache,
+        int32_t first_arg_reg, uint32_t n_args, uint32_t instr_len)
+    {
+        TValue<Function> function = TValue<Function>::from_oop(cache.function);
+        if(likely(cache.adaptation == FunctionCallAdaptation::FixedArity))
+        {
+            enter_fixed_positional_call_from_cache(fp, pc, code_object, cache,
+                                                   first_arg_reg, instr_len);
+            return;
+        }
+
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object, function, first_arg_reg, n_args,
+            instr_len, cache.adaptation);
+    }
+
+    static ALWAYSINLINE bool try_enter_cached_positional_call(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        CodeObject *&code_object, Value callable, int32_t first_arg_reg,
+        uint32_t n_args, uint32_t instr_len, FunctionCallInlineCache &cache)
+    {
+        if(unlikely(!function_call_cache_matches(cache, callable, n_args)))
+        {
+            return false;
+        }
+
+        enter_positional_call_from_cache(thread, fp, pc, code_object, cache,
+                                         first_arg_reg, n_args, instr_len);
+        return true;
     }
 
     static ALWAYSINLINE void enter_function_frame_from_keyword_args(
@@ -3178,85 +3291,17 @@ namespace cl
         int8_t first_arg_reg = pc[2];
         uint8_t n_args = pc[3];
         uint8_t cache_idx = pc[4];
-        Value fun = fp[callable_reg];
-
-        if(unlikely(!fun.is_ptr()))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        Object *fun_object = fun.get_ptr();
-        if(fun_object->native_layout_id() == NativeLayoutId::ClassObject)
-        {
-            ClassObject *cls = static_cast<ClassObject *>(fun_object);
-            ConstructorThunkLookup constructor =
-                cls->get_or_create_constructor_thunk();
-            if(unlikely(!constructor.is_found()))
-            {
-                MUSTTAIL return not_callable_error(ARGS);
-            }
-
-            TValue<Function> thunk =
-                TValue<Function>::from_oop(constructor.thunk);
-            if(unlikely(!thunk.extract()->accepts_positional_only_call_arity(
-                   n_args)))
-            {
-                MUSTTAIL return wrong_arity_error(ARGS);
-            }
-            FunctionCallInlineCache &call_cache =
-                code_object->function_call_caches[cache_idx];
-            populate_constructor_call_cache(call_cache, cls, thunk,
-                                            constructor.lookup_cell, n_args);
-            enter_function_frame_from_positional_args(
-                thread, fp, pc, code_object, thunk, first_arg_reg, n_args,
-                call_instr_len, call_cache.adaptation);
-            if(unlikely(thread->safepoint_requested()))
-            {
-                MUSTTAIL return op_committed_safepoint_slow(ARGS);
-            }
-
-            START(0);
-            COMPLETE();
-        }
-
-        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        TValue<Function> function = TValue<Function>::from_value_assumed(fun);
-        if(unlikely(
-               !function.extract()->accepts_positional_only_call_arity(n_args)))
-        {
-            MUSTTAIL return wrong_arity_error(ARGS);
-        }
+        Value callable = fp[callable_reg];
         FunctionCallInlineCache &call_cache =
             code_object->function_call_caches[cache_idx];
-        populate_function_call_cache(call_cache, function, n_args);
-        enter_function_frame_from_positional_args(
-            thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, call_cache.adaptation);
-        if(unlikely(thread->safepoint_requested()))
+        if(unlikely(!function_call_cache_matches(call_cache, callable, n_args)))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            INTERP_TRY(populate_positional_call_cache_from_callable(
+                callable, n_args, call_cache));
         }
-
-        START(0);
-        COMPLETE();
-    }
-
-    NOINLINE static INTERP_CC Value op_call_simple_cached_adapt(PARAMS)
-    {
-        static constexpr uint32_t call_instr_len = 5;
-        int8_t first_arg_reg = pc[2];
-        uint8_t n_args = pc[3];
-        uint8_t cache_idx = pc[4];
-        FunctionCallInlineCache &cache =
-            code_object->function_call_caches[cache_idx];
-        TValue<Function> function = TValue<Function>::from_oop(cache.function);
-        enter_function_frame_from_positional_args(
-            thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, cache.adaptation);
+        enter_positional_call_from_cache(thread, fp, pc, code_object,
+                                         call_cache, first_arg_reg, n_args,
+                                         call_instr_len);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -3299,19 +3344,16 @@ namespace cl
         {
             MUSTTAIL return op_call_simple_slow(ARGS);
         }
-
         if(unlikely(cache.adaptation != FunctionCallAdaptation::FixedArity))
         {
-            MUSTTAIL return op_call_simple_cached_adapt(ARGS);
+            MUSTTAIL return op_call_simple_slow(ARGS);
         }
-
-        CodeObject *target_code_object = cache.code_object;
+        TValue<Function> function = TValue<Function>::from_oop(cache.function);
+        CodeObject *target_code_object =
+            function.extract()->code_object.extract();
         const uint8_t *target_pc = target_code_object->code.data();
-        int32_t new_fp_reg =
-            first_arg_reg -
-            int32_t(target_code_object->get_padded_n_parameters()) + 1 -
-            FrameHeaderSizeAboveFp;
-        Value *new_fp = fp + new_fp_reg;
+        Value *new_fp = new_frame_pointer_from_first_arg(fp, target_code_object,
+                                                         first_arg_reg);
         pc += call_instr_len;
 
         initialize_frame_header(new_fp, fp, code_object, pc);
@@ -3499,59 +3541,27 @@ namespace cl
 
         bool has_self = !self.is_not_present();
         uint32_t n_args = n_user_args + (has_self ? 1 : 0);
-
-        if(unlikely(!callable.is_ptr()))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        Object *fun_object = callable.get_ptr();
-        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
-        {
-            MUSTTAIL return not_callable_error(ARGS);
-        }
-
-        TValue<Function> function =
-            TValue<Function>::from_value_assumed(callable);
         FunctionCallInlineCache &call_cache =
             code_object->function_call_caches[call_cache_idx];
-        if(function_call_cache_matches(call_cache, callable, n_args))
-        {
-            int32_t first_arg_reg = prepare_method_call_argument_slots(
-                fp, receiver_reg, n_user_args, self);
-            TValue<Function> cached_function =
-                TValue<Function>::from_oop(call_cache.function);
-            enter_function_frame_from_positional_args(
-                thread, fp, pc, code_object, cached_function, first_arg_reg,
-                n_args, call_instr_len, call_cache.adaptation);
-            if(unlikely(thread->safepoint_requested()))
-            {
-                MUSTTAIL return op_committed_safepoint_slow(ARGS);
-            }
-
-            START(0);
-            COMPLETE();
-        }
-        if(unlikely(
-               !function.extract()->accepts_positional_only_call_arity(n_args)))
-        {
-            MUSTTAIL return wrong_arity_error(ARGS);
-        }
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
-        populate_function_call_cache(call_cache, function, n_args);
-        enter_function_frame_from_positional_args(
-            thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, call_cache.adaptation);
+        if(unlikely(!try_enter_cached_positional_call(
+               thread, fp, pc, code_object, callable, first_arg_reg, n_args,
+               call_instr_len, call_cache)))
+        {
+            INTERP_TRY(populate_positional_call_cache_from_callable(
+                callable, n_args, call_cache));
+            enter_positional_call_from_cache(thread, fp, pc, code_object,
+                                             call_cache, first_arg_reg, n_args,
+                                             call_instr_len);
+        }
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
         }
 
-        {
-            START(0);
-            COMPLETE();
-        }
+        START(0);
+        COMPLETE();
     }
 
     static INTERP_CC Value op_call_method_attr(PARAMS)
@@ -3588,13 +3598,11 @@ namespace cl
         {
             MUSTTAIL return op_call_method_attr_slow(ARGS);
         }
-
         if(unlikely(call_cache.adaptation !=
                     FunctionCallAdaptation::FixedArity))
         {
             MUSTTAIL return op_call_method_attr_slow(ARGS);
         }
-
         int32_t first_arg_reg = prepare_method_call_argument_slots(
             fp, receiver_reg, n_user_args, self);
         TValue<Function> function =

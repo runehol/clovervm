@@ -489,6 +489,46 @@ namespace cl
         std::aligned_storage_t<sizeof(T), alignof(T)> storage_;
     };
 
+    template <> class Expected<void, false>
+    {
+    public:
+        Expected() = delete;
+
+        [[nodiscard]] static Expected ok() { return Expected(true); }
+
+        [[nodiscard]] static Expected raise_exception(const wchar_t *type_name,
+                                                      const wchar_t *message)
+        {
+            return Expected(ErrorTag{},
+                            raise_exception_for_expected(type_name, message));
+        }
+
+        [[nodiscard]] static Expected propagate_exception()
+        {
+            return Expected(ErrorTag{}, propagate_exception_for_expected());
+        }
+
+        bool has_value() const { return has_value_; }
+        bool has_exception() const { return !has_value_; }
+        explicit operator bool() const { return has_value(); }
+
+        void value() const { assert(has_value()); }
+
+    private:
+        struct ErrorTag
+        {
+        };
+
+        explicit Expected(bool has_value) : has_value_(has_value) {}
+
+        Expected(ErrorTag, Value value) : has_value_(false)
+        {
+            assert(value.is_exception_marker());
+        }
+
+        bool has_value_;
+    };
+
     class PropagatedException
     {
     public:
