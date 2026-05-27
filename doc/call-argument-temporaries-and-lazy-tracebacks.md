@@ -287,6 +287,86 @@ The preferred tradeoff is:
 - calling a bound method object through a variable uses a slower adaptation path
   that builds an aligned argument span with the receiver inserted
 
+## Callee `**kwargs`
+
+This note only covers callee-side `**kwargs` collection for existing explicit
+keyword calls. Caller-side `**mapping` unpack remains separate work.
+
+The call opcodes should not each learn how to build a `**kwargs` dictionary.
+Instead, keyword collection belongs in the shared callee binding/adaptation
+layer. Each call form still produces the same logical inputs:
+
+```text
+positional argument span
+optional keyword names tuple
+keyword value span
+```
+
+For callees with a `**kwargs` parameter, positional-only calls initialize that
+parameter slot with an empty dict. Keyword calls use the existing keyword remap
+table with one sentinel entry for keywords that should be collected into that
+dict.
+
+If the remap table currently maps each call-site keyword to a callee parameter
+slot, reserve one impossible slot value:
+
+```cpp
+static constexpr int16_t KeywordRemapToKwargsDict = -1;
+```
+
+or, if the table remains unsigned:
+
+```cpp
+static constexpr uint16_t KeywordRemapToKwargsDict = UINT16_MAX;
+```
+
+The call plan/cache should also carry a flag such as:
+
+```cpp
+bool has_kwargs_dict_targets;
+```
+
+That lets the common keyword-call fast path stay tight when all keywords bind
+formal parameters:
+
+```text
+if !has_kwargs_dict_targets:
+    copy every keyword value to its remapped formal slot
+else:
+    sentinel remap entries insert into the kwargs dict
+```
+
+Cache setup classifies each explicit keyword name in this order:
+
+```text
+name maps keyword-bindable formal:
+    remap[i] = formal slot, unless that formal was already filled
+
+name maps positional-only formal:
+    TypeError
+
+name is unknown and callee has **kwargs:
+    remap[i] = KeywordRemapToKwargsDict
+    has_kwargs_dict_targets = true
+
+name is unknown and callee has no **kwargs:
+    TypeError
+```
+
+This preserves Python's duplicate/multiple-value behavior:
+
+```python
+def f(a, **kwargs):
+    ...
+
+f(1, a=2)   # TypeError, not kwargs={"a": 2}
+```
+
+For static explicit `CallKeyword`, parser/codegen already reject repeated
+keyword names at the call site, so dynamic duplicate-name handling can stay out
+of this initial callee-side `**kwargs` work. Runtime duplicate handling belongs
+with future caller-side `**mapping` unpack support.
+
 ## Alignment Invariant
 
 Every CloverVM call argument span and callee frame entry must start 16-byte
