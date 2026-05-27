@@ -133,12 +133,12 @@ Lowering shape:
 arg_span = reserve_aligned_call_temps(n_user_args + 1)
 
 receiver_tmp = evaluate receiver
-callable_tmp, self_tmp = LoadMethodAttr(receiver_tmp, name)
+callable_tmp = LoadMethodAttr(receiver_tmp, name, arg_span[0])
 
-for each explicit argument i:
+for each explicit positional argument i:
     evaluate argument into arg_span[i + 1]
 
-CallMethod callable_tmp, self_tmp, arg_span, n_user_args
+CallPreparedMethodPositional callable_tmp, arg_span, n_user_args
 release arg_span and call temps
 ```
 
@@ -147,18 +147,18 @@ Python-visible bound method object. It produces:
 
 ```text
 callable_tmp = function/callable to invoke
-self_tmp     = receiver if descriptor binding produced an implicit self,
+arg_span[0]  = receiver if descriptor binding produced an implicit self,
                otherwise not_present
 ```
 
 Plain `LoadAttr` remains Python-visible attribute access and must still produce
 a bound method object when Python semantics require one.
 
-`CallMethod` normalizes the temporary argument span before entering the callee:
+`CallPreparedMethodPositional` normalizes the temporary argument span before
+entering the callee:
 
 ```text
-if self_tmp is present:
-    arg_span[0] = self_tmp
+if arg_span[0] is present:
     call callable_tmp with arg_span[0..n_user_args]
 else:
     move arg_span[1..n_user_args] down to arg_span[0..n_user_args-1]
@@ -185,6 +185,60 @@ f(obj, 1, 2)      -> f(obj, 1, 2)
 ```
 
 Only the caller-side call setup differs.
+
+Fixed keyword method calls use the same split. Positional arguments are
+evaluated into the reserved method-call span, keyword values are evaluated into
+the keyword value span, and `CallPreparedMethodKeyword` performs the same
+maybe-self normalization before entering the keyword-call path.
+
+## Star Calls
+
+Star-argument calls do not need a parallel set of prepared-method opcodes.
+Their argument layout is already dynamic:
+
+```python
+obj.method(*args)
+obj.method(1, *args, **kwargs)
+```
+
+The runtime must expand iterables, merge keyword mappings, compute the final
+argument count, and materialize a final call span. A prepared method receiver is
+just another optional prefix during that expansion.
+
+Method-call lowering for star calls can therefore be:
+
+```text
+receiver_tmp = evaluate receiver
+method_self_tmp = reserve temporary
+callable_tmp = LoadMethodAttr(receiver_tmp, name, method_self_tmp)
+
+evaluate starargs / starkwargs
+
+CallStarArgs callable_tmp, method_self_tmp, starargs
+CallStarArgsStarKwargs callable_tmp, method_self_tmp, starargs, starkwargs
+```
+
+For fixed prepared-method calls, the maybe-self value lives directly in the
+reserved leading slot of the argument span. For star calls there is no fixed
+argument span yet, so `LoadMethodAttr` writes the maybe-self value to an
+ordinary temporary. If that temporary is present, star-call expansion writes it
+as positional argument 0. If it is `not_present`, expansion starts with the
+explicit expanded arguments. Because the final aligned argument span is built
+dynamically, there is no fixed leading-slot move to optimize.
+
+This keeps the intended call opcode surface to:
+
+```text
+CallPositional
+CallKeyword
+CallPreparedMethodPositional
+CallPreparedMethodKeyword
+CallStarArgs
+CallStarArgsStarKwargs
+```
+
+The fixed positional/keyword paths stay specialized for their common layouts,
+while the irregular star paths stay generic and self-aware.
 
 ## Regular Calls
 
@@ -327,7 +381,8 @@ This plan depends on a few explicit invariants:
   Copying locals and live temporaries is more complete; copying only locals is
   cheaper but may constrain future debugging features.
 - How should keyword-call remapping interact with temporary argument spans?
-- Should `LoadMethodAttr` and `CallMethod` replace the existing fused
+- Should `LoadMethodAttr` plus `CallPreparedMethodPositional` /
+  `CallPreparedMethodKeyword` replace the existing fused
   `CallMethodAttrPositional` and `CallMethodAttrKeyword`, or should the old
   opcodes remain only as later peephole/JIT shapes proven to preserve ordering?
 - Which opcodes can raise before a callee frame is committed, and what argument
