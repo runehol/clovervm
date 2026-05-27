@@ -191,10 +191,10 @@ evaluated into the reserved method-call span, keyword values are evaluated into
 the keyword value span, and `CallPreparedMethodKeyword` performs the same
 maybe-self normalization before entering the keyword-call path.
 
-## Star Calls
+## Unpack Calls
 
-Star-argument calls do not need a parallel set of prepared-method opcodes.
-Their argument layout is already dynamic:
+Calls that unpack `*args` or `**kwargs` do not need a parallel set of
+prepared-method opcodes. Their argument layout is already dynamic:
 
 ```python
 obj.method(*args)
@@ -212,16 +212,16 @@ receiver_tmp = evaluate receiver
 method_self_tmp = reserve temporary
 callable_tmp = LoadMethodAttr(receiver_tmp, name, method_self_tmp)
 
-evaluate starargs / starkwargs
+evaluate args_iterable / kwargs_mapping
 
-CallStarArgs callable_tmp, method_self_tmp, starargs
-CallStarArgsStarKwargs callable_tmp, method_self_tmp, starargs, starkwargs
+CallUnpack callable_tmp, method_self_tmp, args_iterable
+CallUnpackKeyword callable_tmp, method_self_tmp, args_iterable, kwargs_mapping
 ```
 
 For fixed prepared-method calls, the maybe-self value lives directly in the
 reserved leading slot of the argument span. For star calls there is no fixed
 argument span yet, so `LoadMethodAttr` writes the maybe-self value to an
-ordinary temporary. If that temporary is present, star-call expansion writes it
+ordinary temporary. If that temporary is present, unpack-call expansion writes it
 as positional argument 0. If it is `not_present`, expansion starts with the
 explicit expanded arguments. Because the final aligned argument span is built
 dynamically, there is no fixed leading-slot move to optimize.
@@ -233,8 +233,8 @@ CallPositional
 CallKeyword
 CallPreparedMethodPositional
 CallPreparedMethodKeyword
-CallStarArgs
-CallStarArgsStarKwargs
+CallUnpack
+CallUnpackKeyword
 ```
 
 The fixed positional/keyword paths stay specialized for their common layouts,
