@@ -91,12 +91,16 @@ namespace cl
         return t;
     }
 
-    CodeObject *codegen_function(const AstVector &av, ModuleObject *module,
-                                 CodeObjectBuilder *parent_code_obj,
-                                 int32_t node_idx, LanguageMode language_mode);
-    CodeObject *codegen_class(const AstVector &av, ModuleObject *module,
-                              CodeObjectBuilder *parent_code_obj,
-                              int32_t node_idx, LanguageMode language_mode);
+    Expected<CodeObject *> codegen_function(const AstVector &av,
+                                            ModuleObject *module,
+                                            CodeObjectBuilder *parent_code_obj,
+                                            int32_t node_idx,
+                                            LanguageMode language_mode);
+    Expected<CodeObject *> codegen_class(const AstVector &av,
+                                         ModuleObject *module,
+                                         CodeObjectBuilder *parent_code_obj,
+                                         int32_t node_idx,
+                                         LanguageMode language_mode);
 
     void reserve_parameter_padding_and_frame_header(
         CodeObjectBuilder *target_code_obj)
@@ -176,8 +180,10 @@ namespace cl
         }
 
         Expected<CodeObject *> run_module();
-        CodeObject *run_function_body(uint32_t source_offset, int32_t body_idx);
-        CodeObject *run_class_body(uint32_t source_offset, int32_t body_idx);
+        Expected<CodeObject *> run_function_body(uint32_t source_offset,
+                                                 int32_t body_idx);
+        Expected<CodeObject *> run_class_body(uint32_t source_offset,
+                                              int32_t body_idx);
 
     private:
         struct LoopTargetSet
@@ -475,7 +481,8 @@ namespace cl
                 supported_runtime_parameter_order(av, children[0]);
             CodeObject *fun_obj =
                 codegen_function(av, code_obj->defining_module().extract(),
-                                 code_obj, node_idx, language_mode);
+                                 code_obj, node_idx, language_mode)
+                    .value();
 
             // stick this code object into the constant table, load it, and call
             // the
@@ -570,7 +577,8 @@ namespace cl
             int32_t bases_idx = children[0];
             CodeObject *class_obj =
                 codegen_class(av, code_obj->defining_module().extract(),
-                              code_obj, node_idx, language_mode);
+                              code_obj, node_idx, language_mode)
+                    .value();
 
             uint32_t body_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(class_obj));
@@ -2779,9 +2787,11 @@ namespace cl
             TValue<String>::from_value_assumed(av.constants[expression_idx]));
     }
 
-    CodeObject *codegen_function(const AstVector &av, ModuleObject *module,
-                                 CodeObjectBuilder *parent_code_obj,
-                                 int32_t node_idx, LanguageMode language_mode)
+    Expected<CodeObject *> codegen_function(const AstVector &av,
+                                            ModuleObject *module,
+                                            CodeObjectBuilder *parent_code_obj,
+                                            int32_t node_idx,
+                                            LanguageMode language_mode)
     {
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
@@ -2837,9 +2847,11 @@ namespace cl
         return fun_builder.run_function_body(source_offset, children[1]);
     }
 
-    CodeObject *codegen_class(const AstVector &av, ModuleObject *module,
-                              CodeObjectBuilder *parent_code_obj,
-                              int32_t node_idx, LanguageMode language_mode)
+    Expected<CodeObject *> codegen_class(const AstVector &av,
+                                         ModuleObject *module,
+                                         CodeObjectBuilder *parent_code_obj,
+                                         int32_t node_idx,
+                                         LanguageMode language_mode)
     {
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
@@ -2859,8 +2871,8 @@ namespace cl
         return class_builder.run_class_body(source_offset, body_idx);
     }
 
-    CodeObject *AstCodegen::run_function_body(uint32_t source_offset,
-                                              int32_t body_idx)
+    Expected<CodeObject *> AstCodegen::run_function_body(uint32_t source_offset,
+                                                         int32_t body_idx)
     {
         emit_local_binding_prologue();
         codegen_node(body_idx);
@@ -2868,16 +2880,16 @@ namespace cl
         // could check that all return paths already have a return statement
         code_obj->emit_lda_none(source_offset);
         code_obj->emit_return(source_offset);
-        return code_obj->finalize();
+        return Expected<CodeObject *>::ok(code_obj->finalize());
     }
 
-    CodeObject *AstCodegen::run_class_body(uint32_t source_offset,
-                                           int32_t body_idx)
+    Expected<CodeObject *> AstCodegen::run_class_body(uint32_t source_offset,
+                                                      int32_t body_idx)
     {
         emit_local_binding_prologue();
         codegen_node(body_idx);
         code_obj->emit_build_class(source_offset);
-        return code_obj->finalize();
+        return Expected<CodeObject *>::ok(code_obj->finalize());
     }
 
     Expected<CodeObject *>
