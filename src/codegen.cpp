@@ -409,7 +409,7 @@ namespace cl
         static constexpr AstKind NumericalConstant =
             AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER);
 
-        ScopedRegister codegen_node_to_register(int32_t node_idx)
+        Expected<ScopedRegister> codegen_node_to_register(int32_t node_idx)
         {
             AstKind kind = av.kinds[node_idx];
             if(kind.node_kind == AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
@@ -418,20 +418,22 @@ namespace cl
                 if(access.scope == BindingScope::Local &&
                    access.presence == Presence::Present)
                 {
-                    return {RegisterIndex(access.slot_idx), std::nullopt};
+                    return Expected<ScopedRegister>::ok(
+                        {RegisterIndex(access.slot_idx), std::nullopt});
                 }
             }
 
             uint32_t source_offset = av.source_offsets[node_idx];
-            codegen_node(node_idx);
+            CL_TRY(codegen_node(node_idx));
             std::optional<TemporaryReg> temp{std::in_place, *code_obj};
             code_obj->emit_star(source_offset, RegisterIndex(*temp));
-            return {RegisterIndex(*temp), std::move(temp)};
+            return Expected<ScopedRegister>::ok(
+                {RegisterIndex(*temp), std::move(temp)});
         }
 
         // used for both regular binary expressions and augmented assignment, so
         // pull out
-        void codegen_binary_expression(int32_t node_idx)
+        Expected<void> codegen_binary_expression(int32_t node_idx)
         {
             AstKind kind = av.kinds[node_idx];
             AstChildren children = av.children[node_idx];
@@ -442,21 +444,23 @@ namespace cl
 
             if(immediate.has_value())
             {
-                codegen_node(children[0]);
+                CL_TRY(codegen_node(children[0]));
                 code_obj->emit_binary_smi_op(source_offset,
                                              entry.binary_acc_smi, *immediate);
             }
             else
             {
-                ScopedRegister lhs_reg = codegen_node_to_register(children[0]);
-                codegen_node(children[1]);
+                ScopedRegister lhs_reg =
+                    CL_TRY(codegen_node_to_register(children[0]));
+                CL_TRY(codegen_node(children[1]));
                 code_obj->emit_binary_op(source_offset, entry.standard,
                                          lhs_reg.reg);
             }
+            return Expected<void>::ok();
         }
 
-        void codegen_comparison_fragment(int32_t node_idx, int32_t recv,
-                                         int32_t prod)
+        Expected<void> codegen_comparison_fragment(int32_t node_idx,
+                                                   int32_t recv, int32_t prod)
         {
             AstKind kind = av.kinds[node_idx];
             assert(kind.node_kind ==
@@ -465,12 +469,13 @@ namespace cl
             uint32_t source_offset = av.source_offsets[node_idx];
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
 
-            codegen_node(children[0]);
+            CL_TRY(codegen_node(children[0]));
             if(prod >= 0)
             {
                 code_obj->emit_star(source_offset, prod);
             }
             code_obj->emit_compare_op(source_offset, entry.standard, recv);
+            return Expected<void>::ok();
         }
 
         Expected<void> codegen_function_definition(int32_t node_idx)
@@ -1095,7 +1100,7 @@ namespace cl
             return Expected<void>::ok();
         }
 
-        void codegen_subscript_assignment(int32_t node_idx)
+        Expected<void> codegen_subscript_assignment(int32_t node_idx)
         {
             AstKind kind = av.kinds[node_idx];
             AstChildren children = av.children[node_idx];
@@ -1103,15 +1108,16 @@ namespace cl
             int32_t lhs_idx = children[0];
             AstChildren lhs_children = av.children[lhs_idx];
             ScopedRegister receiver_reg =
-                codegen_node_to_register(lhs_children[0]);
-            ScopedRegister key_reg = codegen_node_to_register(lhs_children[1]);
+                CL_TRY(codegen_node_to_register(lhs_children[0]));
+            ScopedRegister key_reg =
+                CL_TRY(codegen_node_to_register(lhs_children[1]));
 
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
-                codegen_node(children[1]);
+                CL_TRY(codegen_node(children[1]));
                 code_obj->emit_store_subscript(source_offset, receiver_reg.reg,
                                                key_reg.reg);
-                return;
+                return Expected<void>::ok();
             }
 
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
@@ -1130,28 +1136,30 @@ namespace cl
             {
                 TemporaryReg lhs_value_reg(*code_obj);
                 code_obj->emit_star(source_offset, lhs_value_reg);
-                codegen_node(children[1]);
+                CL_TRY(codegen_node(children[1]));
                 code_obj->emit_binary_op(source_offset, entry.standard,
                                          lhs_value_reg);
             }
 
             code_obj->emit_store_subscript(source_offset, receiver_reg.reg,
                                            key_reg.reg);
+            return Expected<void>::ok();
         }
 
-        void codegen_subscript_target_delete(uint32_t source_offset,
-                                             int32_t target_idx)
+        Expected<void> codegen_subscript_target_delete(uint32_t source_offset,
+                                                       int32_t target_idx)
         {
             AstChildren target_children = av.children[target_idx];
             ScopedRegister receiver_reg =
-                codegen_node_to_register(target_children[0]);
+                CL_TRY(codegen_node_to_register(target_children[0]));
             ScopedRegister key_reg =
-                codegen_node_to_register(target_children[1]);
+                CL_TRY(codegen_node_to_register(target_children[1]));
             code_obj->emit_del_subscript(source_offset, receiver_reg.reg,
                                          key_reg.reg);
+            return Expected<void>::ok();
         }
 
-        void codegen_attribute_assignment(int32_t node_idx)
+        Expected<void> codegen_attribute_assignment(int32_t node_idx)
         {
             AstKind kind = av.kinds[node_idx];
             AstChildren children = av.children[node_idx];
@@ -1161,14 +1169,14 @@ namespace cl
             uint8_t constant_idx =
                 code_obj->allocate_constant(av.constants[lhs_idx]);
             ScopedRegister receiver_reg =
-                codegen_node_to_register(lhs_children[0]);
+                CL_TRY(codegen_node_to_register(lhs_children[0]));
 
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
-                codegen_node(children[1]);
+                CL_TRY(codegen_node(children[1]));
                 code_obj->emit_store_attr(source_offset, receiver_reg.reg,
                                           constant_idx);
-                return;
+                return Expected<void>::ok();
             }
 
             OpTableEntry entry = get_operator_entry(kind.operator_kind);
@@ -1187,25 +1195,27 @@ namespace cl
             {
                 TemporaryReg lhs_value_reg(*code_obj);
                 code_obj->emit_star(source_offset, lhs_value_reg);
-                codegen_node(children[1]);
+                CL_TRY(codegen_node(children[1]));
                 code_obj->emit_binary_op(source_offset, entry.standard,
                                          lhs_value_reg);
             }
 
             code_obj->emit_store_attr(source_offset, receiver_reg.reg,
                                       constant_idx);
+            return Expected<void>::ok();
         }
 
-        void codegen_attribute_target_delete(uint32_t source_offset,
-                                             int32_t target_idx)
+        Expected<void> codegen_attribute_target_delete(uint32_t source_offset,
+                                                       int32_t target_idx)
         {
             AstChildren target_children = av.children[target_idx];
             uint8_t constant_idx =
                 code_obj->allocate_constant(av.constants[target_idx]);
             ScopedRegister receiver_reg =
-                codegen_node_to_register(target_children[0]);
+                CL_TRY(codegen_node_to_register(target_children[0]));
             code_obj->emit_del_attr(source_offset, receiver_reg.reg,
                                     constant_idx);
+            return Expected<void>::ok();
         }
 
         std::optional<uint8_t> direct_range_call_arity(int32_t node_idx) const
@@ -1469,14 +1479,14 @@ namespace cl
             emit_variable_store(source_offset, name_idx);
         }
 
-        void emit_store_accumulator_to_target(uint32_t source_offset,
-                                              int32_t target_idx)
+        Expected<void> emit_store_accumulator_to_target(uint32_t source_offset,
+                                                        int32_t target_idx)
         {
             AstNodeKind target_kind = av.kinds[target_idx].node_kind;
             if(target_kind == AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
             {
                 emit_variable_store(source_offset, target_idx);
-                return;
+                return Expected<void>::ok();
             }
 
             TemporaryReg value_reg(*code_obj);
@@ -1487,11 +1497,11 @@ namespace cl
                 uint8_t constant_idx =
                     code_obj->allocate_constant(av.constants[target_idx]);
                 ScopedRegister receiver_reg =
-                    codegen_node_to_register(target_children[0]);
+                    CL_TRY(codegen_node_to_register(target_children[0]));
                 code_obj->emit_ldar(source_offset, value_reg);
                 code_obj->emit_store_attr(source_offset, receiver_reg.reg,
                                           constant_idx);
-                return;
+                return Expected<void>::ok();
             }
 
             if(target_kind == AstNodeKind::EXPRESSION_BINARY &&
@@ -1499,13 +1509,13 @@ namespace cl
             {
                 AstChildren target_children = av.children[target_idx];
                 ScopedRegister receiver_reg =
-                    codegen_node_to_register(target_children[0]);
+                    CL_TRY(codegen_node_to_register(target_children[0]));
                 ScopedRegister key_reg =
-                    codegen_node_to_register(target_children[1]);
+                    CL_TRY(codegen_node_to_register(target_children[1]));
                 code_obj->emit_ldar(source_offset, value_reg);
                 code_obj->emit_store_subscript(source_offset, receiver_reg.reg,
                                                key_reg.reg);
-                return;
+                return Expected<void>::ok();
             }
 
             throw std::runtime_error(
@@ -1560,8 +1570,9 @@ namespace cl
             return av.children[alias_idx].size() > 1;
         }
 
-        void codegen_with_statement_from_item(AstChildren with_children,
-                                              size_t item_offset)
+        Expected<void>
+        codegen_with_statement_from_item(AstChildren with_children,
+                                         size_t item_offset)
         {
             assert(item_offset + 1 < with_children.size());
             int32_t item_idx = with_children[item_offset];
@@ -1572,7 +1583,7 @@ namespace cl
 
             uint32_t source_offset = av.source_offsets[item_idx];
             int32_t context_expr_idx = item_children[0];
-            codegen_node(context_expr_idx);
+            CL_TRY(codegen_node(context_expr_idx));
             TemporaryReg manager_reg(*code_obj);
             code_obj->emit_star(source_offset, manager_reg);
 
@@ -1583,21 +1594,22 @@ namespace cl
                 context_manager_protocol_type_error_idx(),
                 context_manager_protocol_message_idx());
 
-            auto codegen_protected_body = [&]() {
+            auto codegen_protected_body = [&]() -> Expected<void> {
                 if(item_children.size() == 2)
                 {
-                    emit_store_accumulator_to_target(source_offset,
-                                                     item_children[1]);
+                    CL_TRY(emit_store_accumulator_to_target(source_offset,
+                                                            item_children[1]));
                 }
                 if(item_offset + 2 == with_children.size())
                 {
-                    codegen_node(body_idx);
+                    CL_TRY(codegen_node(body_idx));
                 }
                 else
                 {
-                    codegen_with_statement_from_item(with_children,
-                                                     item_offset + 1);
+                    CL_TRY(codegen_with_statement_from_item(with_children,
+                                                            item_offset + 1));
                 }
+                return Expected<void>::ok();
             };
 
             JumpTarget exceptional_target(code_obj);
@@ -1606,7 +1618,7 @@ namespace cl
                 ExceptionTableRangeBuilder range(code_obj, exceptional_target);
                 active_cleanups.push_back(CleanupContext::with_exit(
                     source_offset, RegisterIndex(manager_reg), &range));
-                codegen_protected_body();
+                CL_TRY(codegen_protected_body());
                 active_cleanups.pop_back();
                 range.close();
             }
@@ -1636,13 +1648,15 @@ namespace cl
             }
 
             done_target.resolve();
+            return Expected<void>::ok();
         }
 
-        void codegen_with_statement(int32_t node_idx)
+        Expected<void> codegen_with_statement(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             assert(children.size() >= 2);
-            codegen_with_statement_from_item(children, 0);
+            CL_TRY(codegen_with_statement_from_item(children, 0));
+            return Expected<void>::ok();
         }
 
         void codegen_try_finally_statement(int32_t node_idx)
@@ -2034,19 +2048,19 @@ namespace cl
 
                         if(lhs_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
                         {
-                            codegen_attribute_assignment(node_idx);
+                            CL_TRY(codegen_attribute_assignment(node_idx));
                             break;
                         }
                         if(lhs_kind == AstNodeKind::EXPRESSION_BINARY)
                         {
-                            codegen_subscript_assignment(node_idx);
+                            CL_TRY(codegen_subscript_assignment(node_idx));
                             break;
                         }
 
                         // augmented assignment
                         if(kind.operator_kind != AstOperatorKind::NOP)
                         {
-                            codegen_binary_expression(node_idx);
+                            CL_TRY(codegen_binary_expression(node_idx));
                         }
                         else
                         {
@@ -2080,8 +2094,8 @@ namespace cl
                                                            component_name_idx);
                             }
                         }
-                        emit_store_accumulator_to_target(source_offset,
-                                                         target_idx);
+                        CL_TRY(emit_store_accumulator_to_target(source_offset,
+                                                                target_idx));
                     }
                     break;
 
@@ -2136,8 +2150,8 @@ namespace cl
                             uint8_t name_idx = code_obj->allocate_constant(
                                 av.constants[alias_idx]);
                             code_obj->emit_import_from(source_offset, name_idx);
-                            emit_store_accumulator_to_target(
-                                source_offset, av.children[alias_idx][0]);
+                            CL_TRY(emit_store_accumulator_to_target(
+                                source_offset, av.children[alias_idx][0]));
                         }
                         else
                         {
@@ -2150,8 +2164,8 @@ namespace cl
                                 code_obj->emit_ldar(source_offset, module_reg);
                                 code_obj->emit_import_from(source_offset,
                                                            name_idx);
-                                emit_store_accumulator_to_target(
-                                    source_offset, av.children[alias_idx][0]);
+                                CL_TRY(emit_store_accumulator_to_target(
+                                    source_offset, av.children[alias_idx][0]));
                             }
                         }
                         break;
@@ -2167,8 +2181,8 @@ namespace cl
                             AstChildren lhs_children = av.children[lhs_idx];
                             uint8_t constant_idx = code_obj->allocate_constant(
                                 av.constants[lhs_idx]);
-                            ScopedRegister receiver_reg =
-                                codegen_node_to_register(lhs_children[0]);
+                            ScopedRegister receiver_reg = CL_TRY(
+                                codegen_node_to_register(lhs_children[0]));
                             CL_TRY(codegen_node(children[2]));
                             code_obj->emit_store_attr(
                                 source_offset, receiver_reg.reg, constant_idx);
@@ -2177,10 +2191,10 @@ namespace cl
                         if(lhs_kind == AstNodeKind::EXPRESSION_BINARY)
                         {
                             AstChildren lhs_children = av.children[lhs_idx];
-                            ScopedRegister receiver_reg =
-                                codegen_node_to_register(lhs_children[0]);
-                            ScopedRegister key_reg =
-                                codegen_node_to_register(lhs_children[1]);
+                            ScopedRegister receiver_reg = CL_TRY(
+                                codegen_node_to_register(lhs_children[0]));
+                            ScopedRegister key_reg = CL_TRY(
+                                codegen_node_to_register(lhs_children[1]));
                             CL_TRY(codegen_node(children[2]));
                             code_obj->emit_store_subscript(
                                 source_offset, receiver_reg.reg, key_reg.reg);
@@ -2218,16 +2232,16 @@ namespace cl
                             av.kinds[target_idx].node_kind;
                         if(target_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
                         {
-                            codegen_attribute_target_delete(source_offset,
-                                                            target_idx);
+                            CL_TRY(codegen_attribute_target_delete(
+                                source_offset, target_idx));
                             continue;
                         }
                         if(target_kind == AstNodeKind::EXPRESSION_BINARY &&
                            av.kinds[target_idx].operator_kind ==
                                AstOperatorKind::SUBSCRIPT)
                         {
-                            codegen_subscript_target_delete(source_offset,
-                                                            target_idx);
+                            CL_TRY(codegen_subscript_target_delete(
+                                source_offset, target_idx));
                             continue;
                         }
                         if(target_kind ==
@@ -2292,13 +2306,13 @@ namespace cl
                     if(kind.operator_kind == AstOperatorKind::SUBSCRIPT)
                     {
                         ScopedRegister receiver_reg =
-                            codegen_node_to_register(children[0]);
+                            CL_TRY(codegen_node_to_register(children[0]));
                         CL_TRY(codegen_node(children[1]));
                         code_obj->emit_load_subscript(source_offset,
                                                       receiver_reg.reg);
                         break;
                     }
-                    codegen_binary_expression(node_idx);
+                    CL_TRY(codegen_binary_expression(node_idx));
                     break;
 
                 case AstNodeKind::EXPRESSION_UNARY:
@@ -2372,7 +2386,7 @@ namespace cl
                         JumpTarget skip_target(code_obj);
 
                         ScopedRegister recv_reg =
-                            codegen_node_to_register(children[0]);
+                            CL_TRY(codegen_node_to_register(children[0]));
                         TemporaryReg prod_reg(*code_obj);
                         int32_t recv = recv_reg.reg;
                         int32_t prod = prod_reg;
@@ -2382,8 +2396,8 @@ namespace cl
                             if(last)
                                 prod = -1;
 
-                            codegen_comparison_fragment(children[i], recv,
-                                                        prod);
+                            CL_TRY(codegen_comparison_fragment(children[i],
+                                                               recv, prod));
 
                             if(!last)
                             {
@@ -2427,7 +2441,7 @@ namespace cl
                 case AstNodeKind::EXPRESSION_ATTRIBUTE:
                     {
                         ScopedRegister receiver_reg =
-                            codegen_node_to_register(children[0]);
+                            CL_TRY(codegen_node_to_register(children[0]));
                         uint8_t constant_idx =
                             code_obj->allocate_constant(av.constants[node_idx]);
                         code_obj->emit_load_attr(
@@ -2559,7 +2573,7 @@ namespace cl
                     break;
 
                 case AstNodeKind::STATEMENT_WITH:
-                    codegen_with_statement(node_idx);
+                    CL_TRY(codegen_with_statement(node_idx));
                     break;
 
                 case AstNodeKind::STATEMENT_BREAK:
