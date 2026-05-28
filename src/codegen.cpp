@@ -175,7 +175,7 @@ namespace cl
                                                  param_children);
         }
 
-        CodeObject *run_module();
+        Expected<CodeObject *> run_module();
         CodeObject *run_function_body(uint32_t source_offset, int32_t body_idx);
         CodeObject *run_class_body(uint32_t source_offset, int32_t body_idx);
 
@@ -2671,21 +2671,21 @@ namespace cl
         }
     };
 
-    CodeObject *AstCodegen::run_module()
+    Expected<CodeObject *> AstCodegen::run_module()
     {
         if(body_idx < 0)
         {
             code_obj->emit_lda_none(0);
             code_obj->emit_return(0);
             CodeObject *result = code_obj->finalize();
-            return incref(result);
+            return Expected<CodeObject *>::ok(incref(result));
         }
         if(av.children[body_idx].empty())
         {
             code_obj->emit_lda_none(0);
             code_obj->emit_return(0);
             CodeObject *result = code_obj->finalize();
-            return incref(result);
+            return Expected<CodeObject *>::ok(incref(result));
         }
 
         if(result_mode == ModuleResultMode::Interactive)
@@ -2702,7 +2702,7 @@ namespace cl
                     code_obj->emit_return(
                         av.source_offsets[statement_children[0]]);
                     CodeObject *result = code_obj->finalize();
-                    return incref(result);
+                    return Expected<CodeObject *>::ok(incref(result));
                 }
             }
 
@@ -2710,13 +2710,13 @@ namespace cl
             code_obj->emit_lda_none(0);
             code_obj->emit_return(0);
             CodeObject *result = code_obj->finalize();
-            return incref(result);
+            return Expected<CodeObject *>::ok(incref(result));
         }
 
         codegen_node(body_idx);
         code_obj->emit_return(0);
         CodeObject *result = code_obj->finalize();
-        return incref(result);
+        return Expected<CodeObject *>::ok(incref(result));
     }
 
     bool has_varargs_parameter(const AstVector &av, AstChildren param_children)
@@ -2893,7 +2893,7 @@ namespace cl
         AstCodegen builder{
             av,           &module_obj, CodegenMode::Module, language_mode,
             av.root_node, {},          result_mode};
-        return Expected<CodeObject *>::ok(builder.run_module());
+        return builder.run_module();
     }
 
     Expected<CodeObject *> codegen_module(const AstVector &av,
