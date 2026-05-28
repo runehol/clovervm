@@ -300,8 +300,8 @@ TEST(Parser, with_stmt_rejects_trailing_comma)
 {
     expect_parse_error(L"with manager(), :\n"
                        L"    pass\n",
-                       "Unexpected token COLON at offset 16 (line 1, column "
-                       "17), near \"with manager(), :\"");
+                       "SyntaxError: Unexpected token COLON at offset 16 "
+                       "(line 1, column 17), near \"with manager(), :\"");
 }
 
 TEST(Parser, try_bare_except_stmt)
@@ -990,8 +990,8 @@ TEST(Parser, expression_assignment_target_not_supported)
 TEST(Parser, unexpected_token_reports_location)
 {
     expect_parse_error(L")\n",
-                       "Unexpected token RPAR at offset 0 (line 1, column 1), "
-                       "near \")\"");
+                       "SyntaxError: Unexpected token RPAR at offset 0 (line "
+                       "1, column 1), near \")\"");
 }
 
 TEST(Parser, parse_error_reports_tab_expanded_column)

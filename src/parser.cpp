@@ -569,10 +569,10 @@ namespace cl
             if(peek() != Token::NAME)
             {
                 uint32_t source_pos = source_pos_for_token();
-                throw std::runtime_error(std::string("Expected token ") +
-                                         to_string(Token::NAME) + ", got " +
-                                         to_string(peek()) +
-                                         format_error_context(source_pos));
+                throw std::runtime_error(
+                    std::string("SyntaxError: Expected token ") +
+                    to_string(Token::NAME) + ", got " + to_string(peek()) +
+                    format_error_context(source_pos));
             }
             int32_t lhs = atom();  // smallest rule that just consumes a name
                                    // and makes a nice node for us
@@ -1188,9 +1188,9 @@ namespace cl
                         throw parse_error_for_tokenizer_error(
                             peek(), source_pos, indentation_level);
                     }
-                    throw std::runtime_error(std::string("Unexpected token ") +
-                                             to_string(peek()) +
-                                             format_error_context(source_pos));
+                    throw std::runtime_error(
+                        std::string("SyntaxError: Unexpected token ") +
+                        to_string(peek()) + format_error_context(source_pos));
 
                     // TODO NAME, STRING, parenthesis, tuples, lists, dicts, ...
                     // (ELLIPSIS)

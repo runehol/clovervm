@@ -18,8 +18,9 @@ namespace cl
         {
             if(idx > kMaxU8Operand)
             {
-                throw std::runtime_error(std::string(table_name) +
-                                         " index out of range");
+                throw std::runtime_error(
+                    "SystemError: " + std::string(table_name) +
+                    " index out of range");
             }
         }
     }  // namespace

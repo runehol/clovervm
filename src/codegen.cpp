@@ -2075,7 +2075,8 @@ namespace cl
                         if(is_star_import && mode() != CodegenMode::Module)
                         {
                             throw std::runtime_error(
-                                "import * only allowed at module level");
+                                "SyntaxError: import * only allowed at module "
+                                "level");
                         }
                         AstChildren aliases;
                         if(!is_star_import)

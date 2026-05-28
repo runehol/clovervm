@@ -683,6 +683,8 @@ namespace cl
         register_builtin_class(
             make_exception_subclass(this, L"IndentationError", exception));
         register_builtin_class(
+            make_exception_subclass(this, L"SystemError", exception));
+        register_builtin_class(
             make_exception_subclass(this, L"ZeroDivisionError", exception));
         register_builtin_class(
             make_exception_subclass(this, L"RuntimeError", exception));

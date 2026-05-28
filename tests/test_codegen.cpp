@@ -129,7 +129,8 @@ TEST(Codegen, bytecode_constant_index_overflow_throws)
 
     test::VmTestContext test_context;
     test::expect_compile_python_error(test_context, source.c_str(),
-                                      L"SyntaxError");
+                                      L"SystemError",
+                                      L"constant table index out of range");
 }
 
 TEST(Codegen, unresolved_jump_target_does_not_mask_codegen_error)
@@ -145,7 +146,7 @@ TEST(Codegen, unresolved_jump_target_does_not_mask_codegen_error)
 
     test::VmTestContext test_context;
     test::expect_compile_python_error(test_context, source.c_str(),
-                                      L"SyntaxError",
+                                      L"SystemError",
                                       L"constant table index out of range");
 }
 

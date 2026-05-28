@@ -51,27 +51,35 @@ namespace cl
         return result;
     }
 
-    [[nodiscard]] static Expected<void>
-    raise_compile_exception(ThreadState *thread, const std::runtime_error &err)
+    [[nodiscard]] static bool
+    raise_compile_exception(ThreadState *thread, const std::runtime_error &err,
+                            const wchar_t *default_type_name = nullptr)
     {
         std::wstring message = compile_error_message_to_wstring(err.what());
-        const wchar_t *type_name = L"SyntaxError";
+        const wchar_t *type_name = default_type_name;
 
         size_t prefix_end = message.find(L": ");
         if(prefix_end != std::wstring::npos)
         {
             std::wstring prefix = message.substr(0, prefix_end);
-            if(prefix == L"SyntaxError" || prefix == L"IndentationError")
+            if(prefix == L"SyntaxError" || prefix == L"IndentationError" ||
+               prefix == L"SystemError")
             {
                 type_name = prefix == L"SyntaxError" ? L"SyntaxError"
-                                                     : L"IndentationError";
+                            : prefix == L"IndentationError"
+                                ? L"IndentationError"
+                                : L"SystemError";
                 message.erase(0, prefix_end + 2);
             }
         }
 
+        if(type_name == nullptr)
+        {
+            return false;
+        }
         (void)thread->set_pending_builtin_exception_string(type_name,
                                                            message.c_str());
-        return Expected<void>::propagate_exception();
+        return true;
     }
 
     PendingException::PendingException()
@@ -461,9 +469,17 @@ namespace cl
             return Expected<CodeObject *>::ok(codegen_module_in_module(
                 av, module, language_mode, result_mode));
         }
+        catch(const ParseError &err)
+        {
+            (void)raise_compile_exception(this, err, L"SyntaxError");
+            return Expected<CodeObject *>::propagate_exception();
+        }
         catch(const std::runtime_error &err)
         {
-            (void)raise_compile_exception(this, err);
+            if(!raise_compile_exception(this, err))
+            {
+                throw;
+            }
             return Expected<CodeObject *>::propagate_exception();
         }
     }
