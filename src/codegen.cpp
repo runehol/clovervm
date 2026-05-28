@@ -789,8 +789,9 @@ namespace cl
             }
         }
 
-        void codegen_trusted_clover_call_special(uint32_t source_offset,
-                                                 AstChildren args)
+        Expected<void>
+        codegen_trusted_clover_call_special(uint32_t source_offset,
+                                            AstChildren args)
         {
             require_positional_call_arguments(args, "__clover_call_special__");
             if(args.size() < 4)
@@ -819,11 +820,11 @@ namespace cl
             uint8_t missing_exception_message_idx =
                 code_obj->allocate_constant(missing_exception_message);
 
-            codegen_node(call_argument_value(args[0]));
+            CL_TRY(codegen_node(call_argument_value(args[0])));
             code_obj->emit_star(source_offset, OutgoingArgReg(0));
             for(size_t i = 4; i < args.size(); ++i)
             {
-                codegen_node(call_argument_value(args[i]));
+                CL_TRY(codegen_node(call_argument_value(args[i])));
                 code_obj->emit_star(source_offset, OutgoingArgReg(i - 3));
             }
 
@@ -831,10 +832,12 @@ namespace cl
                 source_offset, OutgoingArgReg(0), method_name_idx,
                 uint8_t(args.size() - 4), missing_exception_type_idx,
                 missing_exception_message_idx);
+            return Expected<void>::ok();
         }
 
-        void codegen_trusted_clover_write_stdout(uint32_t source_offset,
-                                                 AstChildren args)
+        Expected<void>
+        codegen_trusted_clover_write_stdout(uint32_t source_offset,
+                                            AstChildren args)
         {
             require_positional_call_arguments(args, "__clover_write_stdout__");
             if(args.size() != 1)
@@ -844,14 +847,14 @@ namespace cl
                     "argument");
             }
 
-            codegen_node(call_argument_value(args[0]));
+            CL_TRY(codegen_node(call_argument_value(args[0])));
             code_obj->emit_write_stdout(source_offset);
+            return Expected<void>::ok();
         }
 
-        void codegen_trusted_clover_intrinsic0(uint32_t source_offset,
-                                               AstChildren args,
-                                               RuntimeIntrinsic0 intrinsic,
-                                               const char *helper_name)
+        Expected<void> codegen_trusted_clover_intrinsic0(
+            uint32_t source_offset, AstChildren args,
+            RuntimeIntrinsic0 intrinsic, const char *helper_name)
         {
             require_positional_call_arguments(args, helper_name);
             if(args.size() != 0)
@@ -862,10 +865,11 @@ namespace cl
             }
 
             code_obj->emit_call_runtime_intrinsic0(source_offset, intrinsic);
+            return Expected<void>::ok();
         }
 
-        void codegen_trusted_clover_sqrt(uint32_t source_offset,
-                                         AstChildren args)
+        Expected<void> codegen_trusted_clover_sqrt(uint32_t source_offset,
+                                                   AstChildren args)
         {
             require_positional_call_arguments(args, "__clover_sqrt__");
             if(args.size() != 1)
@@ -874,11 +878,12 @@ namespace cl
                     "SyntaxError: __clover_sqrt__ expects exactly 1 argument");
             }
 
-            codegen_node(call_argument_value(args[0]));
+            CL_TRY(codegen_node(call_argument_value(args[0])));
             code_obj->emit_unary_op(source_offset, Bytecode::Sqrt);
+            return Expected<void>::ok();
         }
 
-        bool try_codegen_trusted_clover_call(int32_t node_idx)
+        Expected<bool> try_codegen_trusted_clover_call(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             AstChildren args = av.children[children[1]];
@@ -887,39 +892,41 @@ namespace cl
             switch(trusted_clover_call_kind(node_idx))
             {
                 case TrustedCloverCall::None:
-                    return false;
+                    return Expected<bool>::ok(false);
                 case TrustedCloverCall::CallSpecial:
-                    codegen_trusted_clover_call_special(source_offset, args);
-                    return true;
+                    CL_TRY(codegen_trusted_clover_call_special(source_offset,
+                                                               args));
+                    return Expected<bool>::ok(true);
                 case TrustedCloverCall::WriteStdout:
-                    codegen_trusted_clover_write_stdout(source_offset, args);
-                    return true;
+                    CL_TRY(codegen_trusted_clover_write_stdout(source_offset,
+                                                               args));
+                    return Expected<bool>::ok(true);
                 case TrustedCloverCall::Globals:
-                    codegen_trusted_clover_intrinsic0(
+                    CL_TRY(codegen_trusted_clover_intrinsic0(
                         source_offset, args, RuntimeIntrinsic0::Globals,
-                        "__clover_globals__");
-                    return true;
+                        "__clover_globals__"));
+                    return Expected<bool>::ok(true);
                 case TrustedCloverCall::Locals:
-                    codegen_trusted_clover_intrinsic0(source_offset, args,
-                                                      RuntimeIntrinsic0::Locals,
-                                                      "__clover_locals__");
-                    return true;
+                    CL_TRY(codegen_trusted_clover_intrinsic0(
+                        source_offset, args, RuntimeIntrinsic0::Locals,
+                        "__clover_locals__"));
+                    return Expected<bool>::ok(true);
                 case TrustedCloverCall::Sqrt:
-                    codegen_trusted_clover_sqrt(source_offset, args);
-                    return true;
+                    CL_TRY(codegen_trusted_clover_sqrt(source_offset, args));
+                    return Expected<bool>::ok(true);
             }
             __builtin_unreachable();
         }
 
-        void codegen_function_call(int32_t node_idx)
+        Expected<void> codegen_function_call(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             AstChildren args = av.children[children[1]];
 
-            if(try_codegen_trusted_clover_call(node_idx))
+            if(CL_TRY(try_codegen_trusted_clover_call(node_idx)))
             {
-                return;
+                return Expected<void>::ok();
             }
 
             if(av.kinds[children[0]].node_kind ==
@@ -928,7 +935,7 @@ namespace cl
                 AstChildren method_children = av.children[children[0]];
                 uint8_t constant_idx =
                     code_obj->allocate_constant(av.constants[children[0]]);
-                codegen_node(method_children[0]);
+                CL_TRY(codegen_node(method_children[0]));
                 code_obj->emit_star(source_offset, OutgoingArgReg(0));
 
                 uint32_t n_kw_args = n_keyword_call_arguments(args);
@@ -943,7 +950,7 @@ namespace cl
                     {
                         if(is_positional_call_argument(arg))
                         {
-                            codegen_node(call_argument_value(arg));
+                            CL_TRY(codegen_node(call_argument_value(arg)));
                             code_obj->emit_star(source_offset,
                                                 OutgoingArgReg(1 + n_pos_args));
                             ++n_pos_args;
@@ -951,7 +958,7 @@ namespace cl
                         else
                         {
                             assert(is_keyword_call_argument(arg));
-                            codegen_node(call_argument_value(arg));
+                            CL_TRY(codegen_node(call_argument_value(arg)));
                             code_obj->emit_star(
                                 source_offset, keyword_value_regs + kw_arg_idx);
                             ++kw_arg_idx;
@@ -977,23 +984,23 @@ namespace cl
                         source_offset, OutgoingArgReg(0), constant_idx,
                         uint8_t(n_pos_args), keyword_value_regs,
                         uint8_t(n_kw_args), keyword_names_idx);
-                    return;
+                    return Expected<void>::ok();
                 }
 
                 for(size_t i = 0; i < args.size(); ++i)
                 {
-                    codegen_node(call_argument_value(args[i]));
+                    CL_TRY(codegen_node(call_argument_value(args[i])));
                     code_obj->emit_star(source_offset, OutgoingArgReg(1 + i));
                 }
                 code_obj->emit_call_method_attr_positional(
                     source_offset, OutgoingArgReg(0), constant_idx,
                     args.size());
-                return;
+                return Expected<void>::ok();
             }
 
             // function itself
             TemporaryReg callable_reg(*code_obj);
-            codegen_node(children[0]);
+            CL_TRY(codegen_node(children[0]));
             code_obj->emit_star(source_offset, callable_reg);
 
             uint32_t n_kw_args = n_keyword_call_arguments(args);
@@ -1008,7 +1015,7 @@ namespace cl
                 {
                     if(is_positional_call_argument(arg))
                     {
-                        codegen_node(call_argument_value(arg));
+                        CL_TRY(codegen_node(call_argument_value(arg)));
                         code_obj->emit_star(source_offset,
                                             OutgoingArgReg(n_pos_args));
                         ++n_pos_args;
@@ -1016,7 +1023,7 @@ namespace cl
                     else
                     {
                         assert(is_keyword_call_argument(arg));
-                        codegen_node(call_argument_value(arg));
+                        CL_TRY(codegen_node(call_argument_value(arg)));
                         code_obj->emit_star(source_offset,
                                             keyword_value_regs + kw_arg_idx);
                         ++kw_arg_idx;
@@ -1042,16 +1049,17 @@ namespace cl
                     source_offset, callable_reg, OutgoingArgReg(0),
                     uint8_t(n_pos_args), keyword_value_regs, uint8_t(n_kw_args),
                     keyword_names_idx);
-                return;
+                return Expected<void>::ok();
             }
 
             for(size_t i = 0; i < args.size(); ++i)
             {
-                codegen_node(call_argument_value(args[i]));
+                CL_TRY(codegen_node(call_argument_value(args[i])));
                 code_obj->emit_star(source_offset, OutgoingArgReg(i));
             }
             code_obj->emit_call_positional(source_offset, callable_reg,
                                            OutgoingArgReg(0), args.size());
+            return Expected<void>::ok();
         }
 
         Expected<void> codegen_list_literal(int32_t node_idx)
@@ -2439,7 +2447,7 @@ namespace cl
                     }
 
                 case AstNodeKind::EXPRESSION_CALL:
-                    codegen_function_call(node_idx);
+                    CL_TRY(codegen_function_call(node_idx));
                     break;
 
                 case AstNodeKind::EXPRESSION_ATTRIBUTE:
