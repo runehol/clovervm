@@ -342,7 +342,11 @@ Cache setup classifies each explicit keyword name in this order:
 name maps keyword-bindable formal:
     remap[i] = formal slot, unless that formal was already filled
 
-name maps positional-only formal:
+name maps positional-only formal and callee has **kwargs:
+    remap[i] = KeywordRemapToKwargsDict
+    has_kwargs_dict_targets = true
+
+name maps positional-only formal and callee has no **kwargs:
     TypeError
 
 name is unknown and callee has **kwargs:
@@ -360,6 +364,17 @@ def f(a, **kwargs):
     ...
 
 f(1, a=2)   # TypeError, not kwargs={"a": 2}
+```
+
+Positional-only names are different. Python allows them to appear as keyword
+names when the callee has `**kwargs`, because they cannot bind the
+positional-only parameter:
+
+```python
+def f(a, /, **kwargs):
+    return kwargs
+
+assert f(1, a=2) == {"a": 2}
 ```
 
 For static explicit `CallKeyword`, parser/codegen already reject repeated
@@ -443,7 +458,10 @@ This plan depends on a few explicit invariants:
 
 - Call-argument temporary spans are ABI-aligned.
 - Reserved call-argument spans remain live across evaluation of all later
-  arguments.
+  arguments, but reservation alone must not make uninitialized `Value` slots
+  visible to GC scanning or traceback preservation. Either the span is
+  initialized with a safe sentinel before any safepoint, or liveness metadata
+  reports only the initialized prefix/subranges.
 - Nested calls allocate separate spans and cannot overwrite an outer live span.
 - Call instructions identify the argument span they consume.
 - After a call commits, the caller's argument span is dead unless the call
