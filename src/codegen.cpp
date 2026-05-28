@@ -2259,7 +2259,7 @@ namespace cl
                 case AstNodeKind::STATEMENT_ASSERT:
                     {
                         JumpTarget ok_target(code_obj);
-                        codegen_node(children[0]);
+                        CL_TRY(codegen_node(children[0]));
                         code_obj->emit_jump_if_true(source_offset, ok_target);
                         if(children.size() == 1)
                         {
@@ -2267,7 +2267,7 @@ namespace cl
                         }
                         else
                         {
-                            codegen_node(children[1]);
+                            CL_TRY(codegen_node(children[1]));
                             code_obj->emit_raise_assertion_error_with_message(
                                 source_offset);
                         }
@@ -2289,7 +2289,7 @@ namespace cl
                     }
                     else
                     {
-                        codegen_node(children[0]);
+                        CL_TRY(codegen_node(children[0]));
                         if(caught_exception_regs.empty())
                         {
                             code_obj->emit_raise_unwind(source_offset);
@@ -2453,7 +2453,7 @@ namespace cl
                 case AstNodeKind::STATEMENT_EXPRESSION:
                     for(int32_t ch_idx: children)
                     {
-                        codegen_node(ch_idx);
+                        CL_TRY(codegen_node(ch_idx));
                     }
                     break;
 
@@ -2464,11 +2464,11 @@ namespace cl
                         for(size_t i = 0; i < children.size() - 1; i += 2)
                         {
                             JumpTarget next_target(code_obj);
-                            codegen_node(
-                                children[i + 0]);  // condition, initial check
+                            CL_TRY(codegen_node(
+                                children[i + 0]));  // condition, initial check
                             code_obj->emit_jump_if_false(source_offset,
                                                          next_target);
-                            codegen_node(children[i + 1]);  // then
+                            CL_TRY(codegen_node(children[i + 1]));  // then
 
                             if(i + 2 != children.size())
                             {
@@ -2481,7 +2481,7 @@ namespace cl
                         }
                         if(children.size() & 1)  // odd -> else
                         {
-                            codegen_node(children.back());  // else
+                            CL_TRY(codegen_node(children.back()));  // else
                         }
                         done_target.resolve();
 
@@ -2494,7 +2494,8 @@ namespace cl
                         JumpTarget else_target(code_obj);
                         JumpTarget break_target(code_obj);
                         JumpTarget continue_target(code_obj);
-                        codegen_node(children[0]);  // condition, initial check
+                        CL_TRY(codegen_node(
+                            children[0]));  // condition, initial check
                         code_obj->emit_jump_if_false(source_offset,
                                                      else_target);
 
@@ -2503,18 +2504,19 @@ namespace cl
                         loop_targets.emplace_back(&break_target,
                                                   &continue_target,
                                                   active_cleanups.size());
-                        codegen_node(children[1]);  // body
+                        CL_TRY(codegen_node(children[1]));  // body
                         loop_targets.pop_back();
 
                         continue_target.resolve();
-                        codegen_node(
-                            children[0]);  // condition, non-initial check
+                        CL_TRY(codegen_node(
+                            children[0]));  // condition, non-initial check
                         code_obj->emit_jump_if_true(source_offset,
                                                     loop_start_target);
                         else_target.resolve();
                         if(children.size() == 3)
                         {
-                            codegen_node(children[2]);  // else clause of a loop
+                            CL_TRY(codegen_node(
+                                children[2]));  // else clause of a loop
                         }
                         break_target.resolve();
                         break;
