@@ -1049,7 +1049,7 @@ namespace cl
                                            OutgoingArgReg(0), args.size());
         }
 
-        void codegen_list_literal(int32_t node_idx)
+        Expected<void> codegen_list_literal(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
@@ -1057,13 +1057,14 @@ namespace cl
             TemporaryReg regs(*code_obj, std::max<size_t>(children.size(), 1));
             for(size_t i = 0; i < children.size(); ++i)
             {
-                codegen_node(children[i]);
+                CL_TRY(codegen_node(children[i]));
                 code_obj->emit_star(source_offset, regs + i);
             }
             code_obj->emit_create_list(source_offset, regs, children.size());
+            return Expected<void>::ok();
         }
 
-        void codegen_tuple_literal(int32_t node_idx)
+        Expected<void> codegen_tuple_literal(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
@@ -1071,13 +1072,14 @@ namespace cl
             TemporaryReg regs(*code_obj, std::max<size_t>(children.size(), 1));
             for(size_t i = 0; i < children.size(); ++i)
             {
-                codegen_node(children[i]);
+                CL_TRY(codegen_node(children[i]));
                 code_obj->emit_star(source_offset, regs + i);
             }
             code_obj->emit_create_tuple(source_offset, regs, children.size());
+            return Expected<void>::ok();
         }
 
-        void codegen_dict_literal(int32_t node_idx)
+        Expected<void> codegen_dict_literal(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
@@ -1085,11 +1087,12 @@ namespace cl
             TemporaryReg regs(*code_obj, std::max<size_t>(children.size(), 1));
             for(size_t i = 0; i < children.size(); ++i)
             {
-                codegen_node(children[i]);
+                CL_TRY(codegen_node(children[i]));
                 code_obj->emit_star(source_offset, regs + i);
             }
             code_obj->emit_create_dict(source_offset, regs,
                                        children.size() / 2);
+            return Expected<void>::ok();
         }
 
         void codegen_subscript_assignment(int32_t node_idx)
@@ -2637,15 +2640,15 @@ namespace cl
                     break;
 
                 case AstNodeKind::EXPRESSION_TUPLE:
-                    codegen_tuple_literal(node_idx);
+                    CL_TRY(codegen_tuple_literal(node_idx));
                     break;
 
                 case AstNodeKind::EXPRESSION_LIST:
-                    codegen_list_literal(node_idx);
+                    CL_TRY(codegen_list_literal(node_idx));
                     break;
 
                 case AstNodeKind::EXPRESSION_DICT:
-                    codegen_dict_literal(node_idx);
+                    CL_TRY(codegen_dict_literal(node_idx));
                     break;
 
                 case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
