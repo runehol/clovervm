@@ -1255,13 +1255,15 @@ namespace cl
             return uint8_t(n_args);
         }
 
-        void codegen_loop_body(int32_t body_idx, JumpTarget &break_target,
-                               JumpTarget &continue_target)
+        Expected<void> codegen_loop_body(int32_t body_idx,
+                                         JumpTarget &break_target,
+                                         JumpTarget &continue_target)
         {
             loop_targets.emplace_back(&break_target, &continue_target,
                                       active_cleanups.size());
-            codegen_node(body_idx);
+            CL_TRY(codegen_node(body_idx));
             loop_targets.pop_back();
+            return Expected<void>::ok();
         }
 
         bool node_has_raise_in_current_exception_context(int32_t node_idx) const
@@ -1862,12 +1864,10 @@ namespace cl
                                          children.size());
         }
 
-        void codegen_iterator_driven_for_loop(uint32_t source_offset,
-                                              int32_t target_idx,
-                                              int32_t body_idx,
-                                              uint32_t iterator_reg,
-                                              JumpTarget &else_target,
-                                              JumpTarget &break_target)
+        Expected<void> codegen_iterator_driven_for_loop(
+            uint32_t source_offset, int32_t target_idx, int32_t body_idx,
+            uint32_t iterator_reg, JumpTarget &else_target,
+            JumpTarget &break_target)
         {
             JumpTarget loop_start_target(code_obj);
             JumpTarget continue_target(code_obj);
@@ -1899,7 +1899,7 @@ namespace cl
             }
             emit_variable_store(source_offset, target_idx);
 
-            codegen_loop_body(body_idx, break_target, continue_target);
+            CL_TRY(codegen_loop_body(body_idx, break_target, continue_target));
 
             continue_target.resolve();
             code_obj->emit_jump(source_offset, loop_start_target);
@@ -1915,10 +1915,12 @@ namespace cl
 
             propagate_exception_target.resolve();
             code_obj->emit_reraise_active_exception(source_offset);
+            return Expected<void>::ok();
         }
 
-        void codegen_direct_range_for_loop(int32_t node_idx, int32_t target_idx,
-                                           uint8_t n_args)
+        Expected<void> codegen_direct_range_for_loop(int32_t node_idx,
+                                                     int32_t target_idx,
+                                                     uint8_t n_args)
         {
             const AstChildren &children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
@@ -1936,11 +1938,11 @@ namespace cl
             JumpTarget else_target(code_obj);
             JumpTarget break_target(code_obj);
 
-            codegen_node(call_children[0]);
+            CL_TRY(codegen_node(call_children[0]));
             code_obj->emit_star(source_offset, range_regs + 0);
             for(size_t i = 0; i < args.size(); ++i)
             {
-                codegen_node(call_argument_value(args[i]));
+                CL_TRY(codegen_node(call_argument_value(args[i])));
                 code_obj->emit_star(source_offset, range_regs + 1 + i);
             }
 
@@ -1971,7 +1973,8 @@ namespace cl
             code_obj->emit_for_iter_range(source_offset, iter_opcode,
                                           range_regs, else_target);
             emit_variable_store(source_offset, target_idx);
-            codegen_loop_body(body_idx, break_target, fast_continue_target);
+            CL_TRY(codegen_loop_body(body_idx, break_target,
+                                     fast_continue_target));
             fast_continue_target.resolve();
             code_obj->emit_jump(source_offset, fast_loop_start_target);
 
@@ -1997,16 +2000,17 @@ namespace cl
                 not_iterable_type_constant_idx,
                 not_iterable_message_constant_idx);
             code_obj->emit_star(source_offset, iterator_reg);
-            codegen_iterator_driven_for_loop(source_offset, target_idx,
-                                             body_idx, iterator_reg,
-                                             else_target, break_target);
+            CL_TRY(codegen_iterator_driven_for_loop(source_offset, target_idx,
+                                                    body_idx, iterator_reg,
+                                                    else_target, break_target));
 
             else_target.resolve();
             if(else_idx >= 0)
             {
-                codegen_node(else_idx);
+                CL_TRY(codegen_node(else_idx));
             }
             break_target.resolve();
+            return Expected<void>::ok();
         }
 
         Expected<void> codegen_node(int32_t node_idx)
@@ -2529,8 +2533,8 @@ namespace cl
                             direct_range_call_arity(children[1]);
                         if(range_call_arity.has_value())
                         {
-                            codegen_direct_range_for_loop(node_idx, target_idx,
-                                                          *range_call_arity);
+                            CL_TRY(codegen_direct_range_for_loop(
+                                node_idx, target_idx, *range_call_arity));
                             break;
                         }
 
@@ -2542,7 +2546,7 @@ namespace cl
                         JumpTarget else_target(code_obj);
                         JumpTarget break_target(code_obj);
 
-                        codegen_node(iterable_idx);
+                        CL_TRY(codegen_node(iterable_idx));
                         uint8_t iter_constant_idx = code_obj->allocate_constant(
                             interned_string(L"__iter__"));
                         uint8_t not_iterable_type_constant_idx =
@@ -2558,13 +2562,13 @@ namespace cl
                             0, not_iterable_type_constant_idx,
                             not_iterable_message_constant_idx);
                         code_obj->emit_star(source_offset, iterator_reg);
-                        codegen_iterator_driven_for_loop(
+                        CL_TRY(codegen_iterator_driven_for_loop(
                             source_offset, target_idx, body_idx, iterator_reg,
-                            else_target, break_target);
+                            else_target, break_target));
                         else_target.resolve();
                         if(else_idx >= 0)
                         {
-                            codegen_node(else_idx);
+                            CL_TRY(codegen_node(else_idx));
                         }
                         break_target.resolve();
                         break;
