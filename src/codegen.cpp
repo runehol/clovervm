@@ -2169,7 +2169,7 @@ namespace cl
                                 av.constants[lhs_idx]);
                             ScopedRegister receiver_reg =
                                 codegen_node_to_register(lhs_children[0]);
-                            codegen_node(children[2]);
+                            CL_TRY(codegen_node(children[2]));
                             code_obj->emit_store_attr(
                                 source_offset, receiver_reg.reg, constant_idx);
                             break;
@@ -2181,7 +2181,7 @@ namespace cl
                                 codegen_node_to_register(lhs_children[0]);
                             ScopedRegister key_reg =
                                 codegen_node_to_register(lhs_children[1]);
-                            codegen_node(children[2]);
+                            CL_TRY(codegen_node(children[2]));
                             code_obj->emit_store_subscript(
                                 source_offset, receiver_reg.reg, key_reg.reg);
                             break;
@@ -2293,7 +2293,7 @@ namespace cl
                     {
                         ScopedRegister receiver_reg =
                             codegen_node_to_register(children[0]);
-                        codegen_node(children[1]);
+                        CL_TRY(codegen_node(children[1]));
                         code_obj->emit_load_subscript(source_offset,
                                                       receiver_reg.reg);
                         break;
@@ -2305,7 +2305,7 @@ namespace cl
                     {
                         OpTableEntry entry =
                             get_operator_entry(kind.operator_kind);
-                        codegen_node(children[0]);
+                        CL_TRY(codegen_node(children[0]));
                         code_obj->emit_unary_op(source_offset, entry.standard);
                         break;
                     }
@@ -2400,7 +2400,7 @@ namespace cl
                 case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
                     {
                         JumpTarget skip_target(code_obj);
-                        codegen_node(children[0]);
+                        CL_TRY(codegen_node(children[0]));
                         switch(kind.operator_kind)
                         {
                             case AstOperatorKind::SHORTCUTTING_AND:
@@ -2415,7 +2415,7 @@ namespace cl
                                 assert(0);
                                 break;
                         }
-                        codegen_node(children[1]);
+                        CL_TRY(codegen_node(children[1]));
                         skip_target.resolve();
                         break;
                     }
