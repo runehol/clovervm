@@ -158,6 +158,50 @@ TEST(Codegen, continue_outside_loop_is_compile_error)
                                       L"'continue' not properly in loop");
 }
 
+TEST(Codegen, unsupported_parameter_shape_is_compile_error)
+{
+    test::VmTestContext test_context;
+    test::expect_compile_python_error(
+        test_context,
+        L"def f(a, /):\n"
+        L"    pass\n",
+        L"SyntaxError",
+        L"positional-only and **kwargs parameters are not implemented yet");
+}
+
+TEST(Codegen, default_parameter_span_limit_is_compile_error)
+{
+    std::wstring source = L"def f(";
+    for(uint32_t idx = 0; idx < 65; ++idx)
+    {
+        if(idx != 0)
+        {
+            source += L", ";
+        }
+        source += L"a";
+        source += std::to_wstring(idx);
+        source += L"=";
+        source += std::to_wstring(idx);
+    }
+    source += L"):\n"
+              L"    pass\n";
+
+    test::VmTestContext test_context;
+    test::expect_compile_python_error(
+        test_context, source.c_str(), L"SyntaxError",
+        L"default parameter span exceeds mask capacity");
+}
+
+TEST(Codegen, class_keyword_arguments_are_compile_error)
+{
+    test::VmTestContext test_context;
+    test::expect_compile_python_error(
+        test_context,
+        L"class C(metaclass=type):\n"
+        L"    pass\n",
+        L"SyntaxError", L"class keyword arguments are not implemented yet");
+}
+
 TEST(Codegen, bytecode_constant_index_overflow_throws)
 {
     std::wstring source;

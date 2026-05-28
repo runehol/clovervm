@@ -132,14 +132,16 @@ namespace cl
                !parameter_signature_group(av, signature_idx, 4).empty();
     }
 
-    AstChildren supported_runtime_parameter_order(const AstVector &av,
-                                                  int32_t signature_idx)
+    Expected<AstChildren>
+    supported_runtime_parameter_order(const AstVector &av,
+                                      int32_t signature_idx)
     {
         if(parameter_signature_has_unsupported_runtime_shape(av, signature_idx))
         {
-            throw std::runtime_error(
-                "SyntaxError: positional-only and **kwargs parameters are not "
-                "implemented yet");
+            return Expected<AstChildren>::raise_exception(
+                L"SyntaxError",
+                L"positional-only and **kwargs parameters are not implemented "
+                L"yet");
         }
 
         AstChildren result = parameter_signature_group(av, signature_idx, 1);
@@ -154,7 +156,7 @@ namespace cl
         {
             result.push_back(param_idx);
         }
-        return result;
+        return Expected<AstChildren>::ok(std::move(result));
     }
 
     TValue<String> ast_string_constant(const AstVector &av, int32_t node_idx)
@@ -483,7 +485,7 @@ namespace cl
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             AstChildren param_children =
-                supported_runtime_parameter_order(av, children[0]);
+                CL_TRY(supported_runtime_parameter_order(av, children[0]));
             CodeObject *fun_obj = CL_TRY(
                 codegen_function(av, code_obj->defining_module().extract(),
                                  code_obj, node_idx, language_mode));
@@ -506,9 +508,9 @@ namespace cl
                     last_default_idx - first_default_idx + 1;
                 if(default_span_size > 64)
                 {
-                    throw std::runtime_error(
-                        "SyntaxError: default parameter span exceeds mask "
-                        "capacity");
+                    return Expected<void>::raise_exception(
+                        L"SyntaxError",
+                        L"default parameter span exceeds mask capacity");
                 }
                 TemporaryReg default_values(*code_obj, default_span_size);
                 uint64_t default_presence_mask = 0;
@@ -608,9 +610,10 @@ namespace cl
                     if(av.kinds[bases[i]].node_kind !=
                        AstNodeKind::CALL_ARGUMENT_POSITIONAL)
                     {
-                        throw std::runtime_error(
-                            "SyntaxError: class keyword arguments are not "
-                            "implemented yet");
+                        return Expected<void>::raise_exception(
+                            L"SyntaxError",
+                            L"class keyword arguments are not implemented "
+                            L"yet");
                     }
                     CL_TRY(codegen_node(call_argument_value(bases[i])));
                     code_obj->emit_star(source_offset, base_regs + i);
@@ -2850,7 +2853,7 @@ namespace cl
         AstChildren children = av.children[node_idx];
         uint32_t source_offset = av.source_offsets[node_idx];
         AstChildren param_children =
-            supported_runtime_parameter_order(av, children[0]);
+            CL_TRY(supported_runtime_parameter_order(av, children[0]));
         Scope *local_scope =
             make_internal_raw<Scope>(parent_code_obj->local_scope());
         TValue<String> function_name =
