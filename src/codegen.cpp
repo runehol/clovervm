@@ -1429,22 +1429,23 @@ namespace cl
             emit_context_exit_call(source_offset, manager_reg);
         }
 
-        void emit_cleanup_body(CleanupContext ctx)
+        Expected<void> emit_cleanup_body(CleanupContext ctx)
         {
             switch(ctx.kind)
             {
                 case CleanupContext::Kind::FinallyBody:
-                    codegen_node(ctx.body_idx);
-                    return;
+                    CL_TRY(codegen_node(ctx.body_idx));
+                    return Expected<void>::ok();
                 case CleanupContext::Kind::WithExit:
                     emit_context_exit_none_call(ctx.source_offset,
                                                 ctx.manager_reg);
-                    return;
+                    return Expected<void>::ok();
             }
+            __builtin_unreachable();
         }
 
         template <typename EmitAfterCleanups>
-        void emit_active_cleanups_until_and_then(
+        Expected<void> emit_active_cleanups_until_and_then(
             size_t target_depth, EmitAfterCleanups emit_after_cleanups)
         {
             assert(target_depth <= active_cleanups.size());
@@ -1459,16 +1460,17 @@ namespace cl
                 {
                     suspensions.push_back(ctx.exception_range->suspend());
                 }
-                emit_cleanup_body(ctx);
+                CL_TRY(emit_cleanup_body(ctx));
             }
 
-            emit_after_cleanups();
+            CL_TRY(emit_after_cleanups());
 
             while(!popped.empty())
             {
                 active_cleanups.push_back(popped.back());
                 popped.pop_back();
             }
+            return Expected<void>::ok();
         }
 
         void emit_drain_active_exception_to_binding(uint32_t source_offset,
@@ -2598,12 +2600,14 @@ namespace cl
                     }
                     else
                     {
-                        emit_active_cleanups_until_and_then(
-                            loop_targets.back().cleanup_depth, [&]() {
+                        CL_TRY(emit_active_cleanups_until_and_then(
+                            loop_targets.back().cleanup_depth,
+                            [&]() -> Expected<void> {
                                 code_obj->emit_jump(
                                     source_offset,
                                     *loop_targets.back().break_target);
-                            });
+                                return Expected<void>::ok();
+                            }));
                     }
                     break;
 
@@ -2615,12 +2619,14 @@ namespace cl
                     }
                     else
                     {
-                        emit_active_cleanups_until_and_then(
-                            loop_targets.back().cleanup_depth, [&]() {
+                        CL_TRY(emit_active_cleanups_until_and_then(
+                            loop_targets.back().cleanup_depth,
+                            [&]() -> Expected<void> {
                                 code_obj->emit_jump(
                                     source_offset,
                                     *loop_targets.back().continue_target);
-                            });
+                                return Expected<void>::ok();
+                            }));
                     }
                     break;
 
@@ -2633,7 +2639,7 @@ namespace cl
                         }
                         if(!children.empty())
                         {
-                            codegen_node(children[0]);
+                            CL_TRY(codegen_node(children[0]));
                         }
                         else
                         {
@@ -2643,11 +2649,13 @@ namespace cl
                         {
                             TemporaryReg return_value(*code_obj);
                             code_obj->emit_star(source_offset, return_value);
-                            emit_active_cleanups_until_and_then(0, [&]() {
-                                code_obj->emit_ldar(source_offset,
-                                                    return_value);
-                                code_obj->emit_return(source_offset);
-                            });
+                            CL_TRY(emit_active_cleanups_until_and_then(
+                                0, [&]() -> Expected<void> {
+                                    code_obj->emit_ldar(source_offset,
+                                                        return_value);
+                                    code_obj->emit_return(source_offset);
+                                    return Expected<void>::ok();
+                                }));
                             break;
                         }
                         code_obj->emit_return(source_offset);
