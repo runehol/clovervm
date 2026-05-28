@@ -1463,6 +1463,15 @@ TEST(Codegen, trusted_clover_call_special_lowers_to_special_method_call)
     EXPECT_NE(std::string::npos, actual.find("\"missing repr\""));
 }
 
+TEST(Codegen, trusted_clover_call_special_rejects_too_few_arguments)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"def call_repr(obj):\n"
+        L"    return __clover_call_special__(obj, \"__repr__\", TypeError)\n",
+        L"SyntaxError",
+        L"__clover_call_special__ expects at least 4 arguments");
+}
+
 TEST(Codegen, user_clover_call_special_name_is_ordinary_call)
 {
     std::string actual = bytecode_str_from_file(
@@ -1484,6 +1493,14 @@ TEST(Codegen, trusted_clover_write_stdout_lowers_to_opcode)
     EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
 }
 
+TEST(Codegen, trusted_clover_write_stdout_rejects_wrong_arity)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"def write():\n"
+        L"    return __clover_write_stdout__()\n",
+        L"SyntaxError", L"__clover_write_stdout__ expects exactly 1 argument");
+}
+
 TEST(Codegen, user_clover_write_stdout_name_is_ordinary_call)
 {
     std::string actual =
@@ -1502,6 +1519,14 @@ TEST(Codegen, trusted_clover_globals_lowers_to_intrinsic)
 
     EXPECT_NE(std::string::npos, actual.find("CallRuntimeIntrinsic0 Globals"));
     EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
+}
+
+TEST(Codegen, trusted_clover_globals_rejects_wrong_arity)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"def read_globals(value):\n"
+        L"    return __clover_globals__(value)\n",
+        L"SyntaxError", L"__clover_globals__ expects exactly 0 arguments");
 }
 
 TEST(Codegen, trusted_clover_globals_rejects_keyword_arguments)
@@ -1551,6 +1576,14 @@ TEST(Codegen, trusted_clover_sqrt_lowers_to_opcode)
 
     EXPECT_NE(std::string::npos, actual.find("Sqrt"));
     EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
+}
+
+TEST(Codegen, trusted_clover_sqrt_rejects_wrong_arity)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"def root():\n"
+        L"    return __clover_sqrt__()\n",
+        L"SyntaxError", L"__clover_sqrt__ expects exactly 1 argument");
 }
 
 TEST(Codegen, user_clover_sqrt_name_is_ordinary_call)

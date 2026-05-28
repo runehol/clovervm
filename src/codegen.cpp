@@ -800,9 +800,9 @@ namespace cl
                 args, L"__clover_call_special__"));
             if(args.size() < 4)
             {
-                throw std::runtime_error(
-                    "SyntaxError: __clover_call_special__ expects at least 4 "
-                    "arguments");
+                return Expected<void>::raise_exception(
+                    L"SyntaxError",
+                    L"__clover_call_special__ expects at least 4 arguments");
             }
 
             Value method_name = literal_string_constant(
@@ -847,9 +847,9 @@ namespace cl
                 args, L"__clover_write_stdout__"));
             if(args.size() != 1)
             {
-                throw std::runtime_error(
-                    "SyntaxError: __clover_write_stdout__ expects exactly 1 "
-                    "argument");
+                return Expected<void>::raise_exception(
+                    L"SyntaxError",
+                    L"__clover_write_stdout__ expects exactly 1 argument");
             }
 
             CL_TRY(codegen_node(call_argument_value(args[0])));
@@ -880,8 +880,9 @@ namespace cl
             CL_TRY(require_positional_call_arguments(args, L"__clover_sqrt__"));
             if(args.size() != 1)
             {
-                throw std::runtime_error(
-                    "SyntaxError: __clover_sqrt__ expects exactly 1 argument");
+                return Expected<void>::raise_exception(
+                    L"SyntaxError",
+                    L"__clover_sqrt__ expects exactly 1 argument");
             }
 
             CL_TRY(codegen_node(call_argument_value(args[0])));
