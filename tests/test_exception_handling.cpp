@@ -10,6 +10,36 @@
 
 using namespace cl;
 
+namespace
+{
+    class MoveOnlyForTryTest
+    {
+    public:
+        explicit MoveOnlyForTryTest(int _value) : value(_value) {}
+        MoveOnlyForTryTest(const MoveOnlyForTryTest &) = delete;
+        MoveOnlyForTryTest &operator=(const MoveOnlyForTryTest &) = delete;
+        MoveOnlyForTryTest(MoveOnlyForTryTest &&other) noexcept
+            : value(other.value)
+        {
+            other.value = -1;
+        }
+        MoveOnlyForTryTest &operator=(MoveOnlyForTryTest &&) = delete;
+
+        int value;
+    };
+
+    Expected<MoveOnlyForTryTest> make_move_only_for_try_test()
+    {
+        return Expected<MoveOnlyForTryTest>::ok(MoveOnlyForTryTest(42));
+    }
+
+    Expected<int> unwrap_move_only_for_try_test()
+    {
+        MoveOnlyForTryTest result = CL_TRY(make_move_only_for_try_test());
+        return Expected<int>::ok(result.value);
+    }
+}  // namespace
+
 static Value propagate_success_for_test(Value value)
 {
     CL_PROPAGATE_EXCEPTION(value);
@@ -42,6 +72,13 @@ TEST(ExceptionPropagation, EvaluatesExpressionOnce)
                                                    Value::exception_marker())
                     .is_exception_marker());
     EXPECT_EQ(1, n_evaluations);
+}
+
+TEST(ExceptionPropagation, TryMovesNoncopyableExpectedPayload)
+{
+    Expected<int> result = unwrap_move_only_for_try_test();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(42, result.value());
 }
 
 static CodeObject *

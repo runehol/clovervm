@@ -590,7 +590,7 @@ namespace cl
         {                                                                      \
             return ::cl::PropagatedException();                                \
         }                                                                      \
-        cl_try_result.value();                                                 \
+        std::move(cl_try_result).value();                                      \
     })
 
 #endif  // CL_TYPED_VALUE_H
