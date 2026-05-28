@@ -1531,6 +1531,45 @@ TEST(Codegen, trusted_clover_call_special_rejects_too_few_arguments)
         L"__clover_call_special__ expects at least 4 arguments");
 }
 
+TEST(Codegen, trusted_clover_call_special_rejects_nonliteral_method_name)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"def call_repr(obj, name):\n"
+        L"    return __clover_call_special__(obj, name, TypeError, "
+        L"\"missing repr\")\n",
+        L"SyntaxError",
+        L"__clover_call_special__ method name must be a string literal");
+}
+
+TEST(Codegen, trusted_clover_call_special_rejects_nonclass_exception_type)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"def call_repr(obj):\n"
+        L"    return __clover_call_special__(obj, \"__repr__\", missing, "
+        L"\"missing repr\")\n",
+        L"SyntaxError",
+        L"__clover_call_special__ exception type must be a builtin class name");
+}
+
+TEST(Codegen, trusted_clover_call_special_rejects_nonliteral_missing_message)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"def call_repr(obj, message):\n"
+        L"    return __clover_call_special__(obj, \"__repr__\", TypeError, "
+        L"message)\n",
+        L"SyntaxError",
+        L"__clover_call_special__ missing-method message must be a string "
+        L"literal");
+}
+
+TEST(Codegen, trusted_clover_unknown_helper_is_compile_error)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"def helper():\n"
+        L"    return __clover_unknown__()\n",
+        L"SyntaxError", L"unknown trusted __clover_* helper");
+}
+
 TEST(Codegen, user_clover_call_special_name_is_ordinary_call)
 {
     std::string actual = bytecode_str_from_file(

@@ -660,73 +660,81 @@ namespace cl
             Sqrt,
         };
 
-        TrustedCloverCall trusted_clover_call_kind(int32_t node_idx) const
+        Expected<TrustedCloverCall>
+        trusted_clover_call_kind(int32_t node_idx) const
         {
             if(language_mode != LanguageMode::TrustedCloverExtensions)
             {
-                return TrustedCloverCall::None;
+                return Expected<TrustedCloverCall>::ok(TrustedCloverCall::None);
             }
 
             const AstChildren &children = av.children[node_idx];
             if(av.kinds[children[0]].node_kind !=
                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
             {
-                return TrustedCloverCall::None;
+                return Expected<TrustedCloverCall>::ok(TrustedCloverCall::None);
             }
 
             TValue<String> name =
                 TValue<String>::from_value_assumed(av.constants[children[0]]);
             if(!string_starts_with(name, L"__clover_"))
             {
-                return TrustedCloverCall::None;
+                return Expected<TrustedCloverCall>::ok(TrustedCloverCall::None);
             }
 
             Value name_value = name.raw_value();
             if(name_value ==
                interned_string(L"__clover_call_special__").raw_value())
             {
-                return TrustedCloverCall::CallSpecial;
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::CallSpecial);
             }
             if(name_value ==
                interned_string(L"__clover_write_stdout__").raw_value())
             {
-                return TrustedCloverCall::WriteStdout;
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::WriteStdout);
             }
             if(name_value == interned_string(L"__clover_globals__").raw_value())
             {
-                return TrustedCloverCall::Globals;
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::Globals);
             }
             if(name_value == interned_string(L"__clover_locals__").raw_value())
             {
-                return TrustedCloverCall::Locals;
+                return Expected<TrustedCloverCall>::ok(
+                    TrustedCloverCall::Locals);
             }
             if(name_value == interned_string(L"__clover_sqrt__").raw_value())
             {
-                return TrustedCloverCall::Sqrt;
+                return Expected<TrustedCloverCall>::ok(TrustedCloverCall::Sqrt);
             }
-            throw std::runtime_error(
-                "SyntaxError: unknown trusted __clover_* helper");
+            return Expected<TrustedCloverCall>::raise_exception(
+                L"SyntaxError", L"unknown trusted __clover_* helper");
         }
 
-        Value literal_string_constant(int32_t node_idx,
-                                      const char *error_message) const
+        Expected<Value>
+        literal_string_constant(int32_t node_idx,
+                                const wchar_t *error_message) const
         {
             AstKind kind = av.kinds[node_idx];
             if(kind.node_kind != AstNodeKind::EXPRESSION_LITERAL ||
                kind.operator_kind != AstOperatorKind::STRING)
             {
-                throw std::runtime_error(error_message);
+                return Expected<Value>::raise_exception(L"SyntaxError",
+                                                        error_message);
             }
-            return av.constants[node_idx];
+            return Expected<Value>::ok(av.constants[node_idx]);
         }
 
-        Value builtin_class_constant_from_name_reference(
-            int32_t node_idx, const char *error_message) const
+        Expected<Value> builtin_class_constant_from_name_reference(
+            int32_t node_idx, const wchar_t *error_message) const
         {
             if(av.kinds[node_idx].node_kind !=
                AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
             {
-                throw std::runtime_error(error_message);
+                return Expected<Value>::raise_exception(L"SyntaxError",
+                                                        error_message);
             }
 
             TValue<String> name = ast_string_constant(av, node_idx);
@@ -737,9 +745,10 @@ namespace cl
             if(!value.is_ptr() || value.get_ptr<Object>()->native_layout_id() !=
                                       NativeLayoutId::ClassObject)
             {
-                throw std::runtime_error(error_message);
+                return Expected<Value>::raise_exception(L"SyntaxError",
+                                                        error_message);
             }
-            return value;
+            return Expected<Value>::ok(value);
         }
 
         bool is_positional_call_argument(int32_t node_idx) const
@@ -808,19 +817,19 @@ namespace cl
                     L"__clover_call_special__ expects at least 4 arguments");
             }
 
-            Value method_name = literal_string_constant(
+            Value method_name = CL_TRY(literal_string_constant(
                 call_argument_value(args[1]),
-                "SyntaxError: __clover_call_special__ method name must be a "
-                "string literal");
+                L"__clover_call_special__ method name must be a string "
+                L"literal"));
             Value missing_exception_type =
-                builtin_class_constant_from_name_reference(
+                CL_TRY(builtin_class_constant_from_name_reference(
                     call_argument_value(args[2]),
-                    "SyntaxError: __clover_call_special__ exception type must "
-                    "be a builtin class name");
-            Value missing_exception_message = literal_string_constant(
+                    L"__clover_call_special__ exception type must be a builtin "
+                    L"class name"));
+            Value missing_exception_message = CL_TRY(literal_string_constant(
                 call_argument_value(args[3]),
-                "SyntaxError: __clover_call_special__ missing-method message "
-                "must be a string literal");
+                L"__clover_call_special__ missing-method message must be a "
+                L"string literal"));
             uint8_t method_name_idx = code_obj->allocate_constant(method_name);
             uint8_t missing_exception_type_idx =
                 code_obj->allocate_constant(missing_exception_type);
@@ -899,7 +908,7 @@ namespace cl
             AstChildren args = av.children[children[1]];
             uint32_t source_offset = av.source_offsets[node_idx];
 
-            switch(trusted_clover_call_kind(node_idx))
+            switch(CL_TRY(trusted_clover_call_kind(node_idx)))
             {
                 case TrustedCloverCall::None:
                     return Expected<bool>::ok(false);
