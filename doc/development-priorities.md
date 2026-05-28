@@ -25,35 +25,7 @@ JIT, language, and runtime work.
 
 ## Priority Order
 
-1. **Iterator protocol completion and range object**
-
-   The first iterator slice is no longer greenfield: generic `iter()` /
-   `next()`, generic `for` lowering, compact `StopIteration` transport, and
-   range/list/tuple iterator objects exist. The remaining foundational gap is
-   that public `range()` still returns a mutable iterator directly. Introduce a
-   reusable `range` object, make `iter(range_obj)` produce fresh
-   `RangeIterator`s, and keep the direct range/list/tuple fast paths aligned
-   with the generic iterator protocol. Iterator exhaustion should continue to
-   integrate with the managed exception-table machinery.
-
-2. **Specific VM exceptions and typed fallibility**
-
-   Replace generic runtime failures with specific VM exceptions for overflow,
-   type errors, unsupported operations, descriptor failures, and other slow
-   paths. This is a prerequisite for making later object-model and language
-   features behave predictably without hiding failures in C++ helpers. Continue
-   converting fallible internal helpers to `Expected<T>` where that makes the
-   success type precise, including non-handle results such as `Expected<int32_t>`
-   in parser or compiler code.
-
-3. **Interpreter-controlled descriptor execution**
-
-   Lookup already classifies descriptor work into plans. The next step is to
-   execute `__get__`, `__set__`, and `__delete__` through explicit interpreter
-   or VM-controlled dispatch so Python-visible execution, allocation, and
-   exceptions are not hidden inside lookup/classification helpers.
-
-4. **Guarded operator/protocol dispatch plans and type profiling**
+1. **Guarded operator/protocol dispatch plans and type profiling**
 
    The design direction for this work is captured in
    [Fast Operator Dispatch](fast-operator-dispatch.md).
@@ -85,19 +57,50 @@ JIT, language, and runtime work.
    profile: guarded fast paths, exact special-method call targets, validity
    cells, and a megamorphic fallback when the site stops being predictable.
 
-5. **Keyword calls and richer call adaptation**
+2. **Slices**
 
-   Add keyword call support for ordinary functions and constructors, then
-   extend toward `**kwargs` and richer call forms. This should extend the
-   existing call-plan model rather than turning `CallPositional` into one generic
-   slow path.
+   Add parse, lowering, and runtime support for `a[i:j:k]`, including
+   list/tuple/string slicing and slice assignment/deletion where appropriate.
+   Slices are important language surface, but should follow the subscription
+   protocol-dispatch work so they can use the same `__getitem__`,
+   `__setitem__`, `__delitem__`, cache, and type-profile machinery instead of
+   growing a separate ad hoc path.
 
-6. **Constructor semantics beyond tier-1 thunks**
+3. **Richer call adaptation and generic callable protocol**
+
+   Extend the call-plan model to the remaining Python call forms: runtime
+   support for positional-only parameters, callee `**kwargs`, caller `*args`,
+   caller `**kwargs`, richer duplicate/error ordering, arbitrary object
+   `__call__`, and native-to-managed keyword-call APIs.
+
+   Keep this as an extension of the existing positional and keyword call-plan
+   model. Do not collapse `CallPositional`, `CallKeyword`, and direct method
+   calls into one broad generic slow path unless measurements show the current
+   specialization is the wrong shape.
+
+4. **Constructor semantics beyond tier-1 thunks**
 
    Expand constructor behavior past the current ordinary-class path. Remaining
-   work includes keyword constructor calls, custom `__new__`, custom metaclass
-   `__call__`, and normalization of constructor failures into specific VM
-   exceptions.
+   work includes custom `__new__`, custom metaclass `__call__`, arbitrary class
+   keyword arguments, generic callable construction paths, and normalization of
+   constructor failures into specific VM exceptions.
+
+5. **Specific VM exceptions and typed fallibility**
+
+   Replace generic runtime failures with specific VM exceptions for overflow,
+   type errors, unsupported operations, descriptor failures, and other slow
+   paths. This is a prerequisite for making later object-model and language
+   features behave predictably without hiding failures in C++ helpers. Continue
+   converting fallible internal helpers to `Expected<T>` where that makes the
+   success type precise, including non-handle results such as `Expected<int32_t>`
+   in parser or compiler code.
+
+6. **Interpreter-controlled descriptor execution**
+
+   Lookup already classifies descriptor work into plans. The next step is to
+   execute `__get__`, `__set__`, and `__delete__` through explicit interpreter
+   or VM-controlled dispatch so Python-visible execution, allocation, and
+   exceptions are not hidden inside lookup/classification helpers.
 
 7. **Full Python dict hashing and equality**
 
@@ -105,95 +108,39 @@ JIT, language, and runtime work.
    the current string-key-oriented internal assumptions. This matters for real
    Python code, imports, module namespaces, mappings, and future library work.
 
-8. **Import system completion**
-
-   The import foundation has landed: module globals are shape-backed
-   `ModuleObject` storage, `globals()` and module-scope `locals()` expose live
-   `SlotDict` views, `sys.modules` and `sys.path` exist, `__main__` is a real
-   module in `sys.modules`, source modules and regular packages load through
-   the bootstrap source finder, `sys` and `builtins` can be rediscovered by an
-   internal builtin finder, simple namespace package directories can be used as
-   package parents, and import statements call the mutable public
-   `builtins.__import__` hook. Absolute imports, dotted imports, packages,
-   aliases, comma import lists, parenthesized from-import lists, submodule
-   parent binding, explicit relative from-imports, module-scope star imports,
-   and small Python-visible `__spec__` / `__loader__` objects are implemented.
-
-   The remaining import work is no longer "invent the module system"; it is
-   completion and compatibility.
-
-   The larger follow-ups remain public `sys.meta_path`, path hooks/importer
-   cache, multi-portion namespace package merging, bytecode caches, frozen
-   modules, extension modules, importlib surface area, and exact module
-   namespace compatibility such as stable `module.__dict__` identity.
-
-9. **Attribute hooks and escaped bound methods**
+8. **Attribute hooks and escaped bound methods**
 
     Implement `__getattribute__`, `__getattr__`, `__setattr__`, and
     `__delattr__`, and add observable bound-method objects for escaped method
     values such as `f = obj.m`. Direct method-call fast paths should remain
     allocation-free when the bound method does not escape.
 
-10. **Slices**
-
-    Add parse, lowering, and runtime support for `a[i:j:k]`, including
-    list/tuple/string slicing and slice assignment/deletion where appropriate.
-    This is useful and contained, but less foundational than iteration, call,
-    descriptor, and module work.
-
-11. **Range object completeness**
-
-    After public `range()` stops returning a mutable iterator directly, finish
-    the remaining range surface: length, indexing, containment, representation,
-    equality where appropriate, and edge-case arithmetic semantics.
-
-12. **Generators, `yield`, and `yield from`**
+9. **Generators, `yield`, and `yield from`**
 
     Generators create long-lived suspended frames, so they should wait until the
     memory/root model is reliable. `yield from` also needs careful interaction
     with `StopIteration.value` and internal no-value sentinels.
 
-13. **Comprehensions and richer syntax**
+10. **Comprehensions and richer syntax**
 
     Add list/dict/set comprehensions, generator expressions, more assignment
     targets, richer string syntax, and other surface-area features after the
     runtime substrate and major semantic protocols are in better shape.
 
-## Near-Term Track
-
-The recommended immediate track is to finish the current import bootstrap slice
-before switching contexts. Imports now work well enough that the remaining
-near-term pieces are smaller and more sharply defined than they were when this
-document last listed module work as a future design option.
-
-Near-term order:
-
-1. Revisit `sys.meta_path` only after internal finder/loader objects have a
-   stable shape worth exposing.
-2. Return to the reusable public `range` object and fresh `iter(range_obj)`
-   behavior.
-3. Continue replacing generic runtime failures with specific VM exceptions and
-   typed `Expected<T>` results where useful.
-4. Add the first guarded operator/protocol dispatch cache for subscription,
-   following [Fast Operator Dispatch](fast-operator-dispatch.md), so protocol
-   sites start collecting useful type profiles for the future JIT.
-5. Continue moving descriptor execution into explicit interpreter/VM-controlled
-   paths rather than hidden lookup helpers.
-6. Add keyword calls for ordinary functions and constructors.
-
 ## Revisit Triggers
 
 Revisit this ordering when:
 
-- `range()` is a reusable object and range/list/tuple/generic iterator paths are
-  semantically complete enough for normal loops;
 - descriptor `__get__`, `__set__`, and `__delete__` execution no longer hides
   Python-visible behavior inside lookup helpers;
 - subscription dispatch has a guarded IC, and the same cache model has a clear
   path to binary/in-place operators, reflected methods, `NotImplemented`
   fallback, and analogous dunder-protocol cases;
-- keyword calls land for ordinary functions and constructors;
-- module namespace compatibility, especially `module.__dict__`, becomes
-  necessary for broader Python source;
+- callee `**kwargs`, caller `*args` / `**kwargs`, positional-only parameters, or
+  generic `__call__` become the next blocker for stdlib module bringup;
+- importlib, public finder/loader APIs, path hooks, or exact module namespace
+  compatibility become necessary for broader Python source;
+- public `range()` semantics become a practical blocker rather than a visible
+  cleanup item;
 - performance measurements show that a lower-priority item has become a
   bottleneck for existing benchmarks.
