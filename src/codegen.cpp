@@ -525,7 +525,7 @@ namespace cl
                     else
                     {
                         assert(default_children.size() == 1);
-                        codegen_node(default_children[0]);
+                        CL_TRY(codegen_node(default_children[0]));
                         default_presence_mask |= uint64_t(1) << i;
                     }
                     code_obj->emit_star(source_offset, default_values + i);
@@ -612,7 +612,7 @@ namespace cl
                             "SyntaxError: class keyword arguments are not "
                             "implemented yet");
                     }
-                    codegen_node(call_argument_value(bases[i]));
+                    CL_TRY(codegen_node(call_argument_value(bases[i])));
                     code_obj->emit_star(source_offset, base_regs + i);
                 }
             }
@@ -2079,7 +2079,7 @@ namespace cl
                         else
                         {
                             // just compute the RHS
-                            codegen_node(children[1]);
+                            CL_TRY(codegen_node(children[1]));
                         }
                         emit_variable_store(source_offset, lhs_idx);
                         break;
@@ -2214,7 +2214,7 @@ namespace cl
                                 source_offset, receiver_reg.reg, key_reg.reg);
                             break;
                         }
-                        codegen_node(children[2]);
+                        CL_TRY(codegen_node(children[2]));
                         emit_variable_store(source_offset, lhs_idx);
                     }
                     else if(!ann_assign_is_simple(node_idx))
@@ -2223,7 +2223,7 @@ namespace cl
                         AstNodeKind lhs_kind = av.kinds[lhs_idx].node_kind;
                         if(lhs_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
                         {
-                            codegen_node(av.children[lhs_idx][0]);
+                            CL_TRY(codegen_node(av.children[lhs_idx][0]));
                             break;
                         }
                         if(lhs_kind == AstNodeKind::EXPRESSION_BINARY &&
@@ -2231,11 +2231,11 @@ namespace cl
                                AstOperatorKind::SUBSCRIPT)
                         {
                             AstChildren lhs_children = av.children[lhs_idx];
-                            codegen_node(lhs_children[0]);
-                            codegen_node(lhs_children[1]);
+                            CL_TRY(codegen_node(lhs_children[0]));
+                            CL_TRY(codegen_node(lhs_children[1]));
                             break;
                         }
-                        codegen_node(lhs_idx);
+                        CL_TRY(codegen_node(lhs_idx));
                     }
                     break;
 
