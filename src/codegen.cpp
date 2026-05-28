@@ -2052,9 +2052,9 @@ namespace cl
 
                 case AstNodeKind::CALL_ARGUMENT_POSITIONAL:
                 case AstNodeKind::CALL_ARGUMENT_KEYWORD:
-                    throw std::runtime_error(
-                        "SystemError: call argument nodes must be lowered by "
-                        "call codegen");
+                    return Expected<void>::raise_exception(
+                        L"SystemError",
+                        L"call argument nodes must be lowered by call codegen");
 
                 case AstNodeKind::STATEMENT_ASSIGN:
                 case AstNodeKind::EXPRESSION_ASSIGN:
@@ -2705,32 +2705,36 @@ namespace cl
                     break;
 
                 case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
-                    throw std::runtime_error(
-                        "SystemError: should not end here - this is handled "
-                        "by EXPRESSION_COMPARISON");
+                    return Expected<void>::raise_exception(
+                        L"SystemError",
+                        L"should not end here - this is handled by "
+                        L"EXPRESSION_COMPARISON");
 
                 case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
                 case AstNodeKind::STATEMENT_ELSE_HANDLER:
                 case AstNodeKind::STATEMENT_FINALLY_HANDLER:
-                    throw std::runtime_error(
-                        "SystemError: should not end here - this is handled "
-                        "by STATEMENT_TRY");
+                    return Expected<void>::raise_exception(
+                        L"SystemError",
+                        L"should not end here - this is handled by "
+                        L"STATEMENT_TRY");
 
                 case AstNodeKind::WITH_ITEM:
                 case AstNodeKind::IMPORT_ALIAS:
                 case AstNodeKind::IMPORT_STAR:
-                    throw std::runtime_error(
-                        "SystemError: should not end here - this is handled "
-                        "by the owning statement");
+                    return Expected<void>::raise_exception(
+                        L"SystemError",
+                        L"should not end here - this is handled by the owning "
+                        L"statement");
 
                 case AstNodeKind::PARAMETER:
                 case AstNodeKind::PARAMETER_VARARGS:
                 case AstNodeKind::PARAMETER_KWARGS:
                 case AstNodeKind::PARAMETER_SEQUENCE:
                 case AstNodeKind::PARAMETER_SIGNATURE:
-                    throw std::runtime_error(
-                        "SystemError: should not end here - this is handled "
-                        "by function definitions");
+                    return Expected<void>::raise_exception(
+                        L"SystemError",
+                        L"should not end here - this is handled by function "
+                        L"definitions");
             }
             return Expected<void>::ok();
         }
