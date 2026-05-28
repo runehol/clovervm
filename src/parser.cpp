@@ -101,13 +101,13 @@ namespace cl
 
         if(prefix_len >= token.size())
         {
-            throw std::runtime_error("Invalid string literal");
+            throw std::runtime_error("SyntaxError: Invalid string literal");
         }
 
         wchar_t quote = token[prefix_len];
         if(quote != L'\'' && quote != L'"')
         {
-            throw std::runtime_error("Invalid string literal");
+            throw std::runtime_error("SyntaxError: Invalid string literal");
         }
         size_t quote_len = 1;
         if(prefix_len + 2 < token.size() && token[prefix_len + 1] == quote &&
@@ -117,13 +117,13 @@ namespace cl
         }
         if(token.size() < prefix_len + quote_len * 2)
         {
-            throw std::runtime_error("Invalid string literal");
+            throw std::runtime_error("SyntaxError: Invalid string literal");
         }
         for(size_t i = 0; i < quote_len; ++i)
         {
             if(token[token.size() - quote_len + i] != quote)
             {
-                throw std::runtime_error("Invalid string literal");
+                throw std::runtime_error("SyntaxError: Invalid string literal");
             }
         }
 
@@ -147,7 +147,8 @@ namespace cl
 
             if(i + 1 >= body.size())
             {
-                throw std::runtime_error("Invalid escape in string literal");
+                throw std::runtime_error(
+                    "SyntaxError: Invalid escape in string literal");
             }
 
             wchar_t esc = body[++i];
@@ -191,7 +192,8 @@ namespace cl
                            !is_hex_digit(body[i + 2]))
                         {
                             throw std::runtime_error(
-                                "Invalid \\x escape in string literal");
+                                "SyntaxError: Invalid \\x escape in string "
+                                "literal");
                         }
                         int value = (hex_value(body[i + 1]) << 4) +
                                     hex_value(body[i + 2]);
@@ -206,7 +208,8 @@ namespace cl
                         if(i + digits >= body.size())
                         {
                             throw std::runtime_error(
-                                "Invalid unicode escape in string literal");
+                                "SyntaxError: Invalid unicode escape in string "
+                                "literal");
                         }
                         uint32_t value = 0;
                         for(size_t j = 1; j <= digits; ++j)
@@ -215,7 +218,8 @@ namespace cl
                             if(!is_hex_digit(h))
                             {
                                 throw std::runtime_error(
-                                    "Invalid unicode escape in string literal");
+                                    "SyntaxError: Invalid unicode escape in "
+                                    "string literal");
                             }
                             value = (value << 4) + hex_value(h);
                         }
@@ -481,8 +485,8 @@ namespace cl
         int32_t not_implemented(const char *construct_name)
         {
             throw std::runtime_error(
-                std::string("Not implemented: ") + construct_name + " (token " +
-                to_string(peek()) + ")" +
+                std::string("SyntaxError: Not implemented: ") + construct_name +
+                " (token " + to_string(peek()) + ")" +
                 format_error_context(source_pos_for_token()));
         }
 

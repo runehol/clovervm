@@ -957,8 +957,9 @@ TEST(Parser, for_stmt_target_not_supported)
 TEST(Parser, yield_stmt_not_implemented)
 {
     expect_parse_error(L"yield 1\n",
-                       "Not implemented: yield statement (token YIELD) at "
-                       "offset 0 (line 1, column 1), near \"yield 1\"");
+                       "SyntaxError: Not implemented: yield statement (token "
+                       "YIELD) at offset 0 (line 1, column 1), near \"yield "
+                       "1\"");
 }
 
 TEST(Parser, del_invalid_target_mentions_subscript)

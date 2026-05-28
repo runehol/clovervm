@@ -90,7 +90,8 @@ namespace cl
                     int32_t rel_dest = target - (pos + 2);
                     if(rel_dest != int16_t(rel_dest))
                     {
-                        throw std::runtime_error("Relocation out of range");
+                        throw std::runtime_error(
+                            "SystemError: Relocation out of range");
                     }
                     builder->set_int16(pos, rel_dest);
                     break;

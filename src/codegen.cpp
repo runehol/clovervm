@@ -688,7 +688,8 @@ namespace cl
             {
                 return TrustedCloverCall::Sqrt;
             }
-            throw std::runtime_error("unknown trusted __clover_* helper");
+            throw std::runtime_error(
+                "SyntaxError: unknown trusted __clover_* helper");
         }
 
         Value literal_string_constant(int32_t node_idx,
@@ -769,7 +770,8 @@ namespace cl
                 if(!is_positional_call_argument(arg))
                 {
                     throw std::runtime_error(fmt::format(
-                        "{} does not accept keyword arguments", helper_name));
+                        "SyntaxError: {} does not accept keyword arguments",
+                        helper_name));
                 }
             }
         }
@@ -781,21 +783,23 @@ namespace cl
             if(args.size() < 4)
             {
                 throw std::runtime_error(
-                    "__clover_call_special__ expects at least 4 arguments");
+                    "SyntaxError: __clover_call_special__ expects at least 4 "
+                    "arguments");
             }
 
             Value method_name = literal_string_constant(
                 call_argument_value(args[1]),
-                "__clover_call_special__ method name must be a string literal");
+                "SyntaxError: __clover_call_special__ method name must be a "
+                "string literal");
             Value missing_exception_type =
                 builtin_class_constant_from_name_reference(
                     call_argument_value(args[2]),
-                    "__clover_call_special__ exception type must be a builtin "
-                    "class name");
+                    "SyntaxError: __clover_call_special__ exception type must "
+                    "be a builtin class name");
             Value missing_exception_message = literal_string_constant(
                 call_argument_value(args[3]),
-                "__clover_call_special__ missing-method message must be a "
-                "string literal");
+                "SyntaxError: __clover_call_special__ missing-method message "
+                "must be a string literal");
             uint8_t method_name_idx = code_obj->allocate_constant(method_name);
             uint8_t missing_exception_type_idx =
                 code_obj->allocate_constant(missing_exception_type);
@@ -823,7 +827,8 @@ namespace cl
             if(args.size() != 1)
             {
                 throw std::runtime_error(
-                    "__clover_write_stdout__ expects exactly 1 argument");
+                    "SyntaxError: __clover_write_stdout__ expects exactly 1 "
+                    "argument");
             }
 
             codegen_node(call_argument_value(args[0]));
@@ -839,7 +844,8 @@ namespace cl
             if(args.size() != 0)
             {
                 throw std::runtime_error(
-                    fmt::format("{} expects exactly 0 arguments", helper_name));
+                    fmt::format("SyntaxError: {} expects exactly 0 arguments",
+                                helper_name));
             }
 
             code_obj->emit_call_runtime_intrinsic0(source_offset, intrinsic);
@@ -852,7 +858,7 @@ namespace cl
             if(args.size() != 1)
             {
                 throw std::runtime_error(
-                    "__clover_sqrt__ expects exactly 1 argument");
+                    "SyntaxError: __clover_sqrt__ expects exactly 1 argument");
             }
 
             codegen_node(call_argument_value(args[0]));
@@ -1492,8 +1498,8 @@ namespace cl
             }
 
             throw std::runtime_error(
-                "We don't support assignment to anything but simple variables, "
-                "attributes, and subscripts yet");
+                "SyntaxError: We don't support assignment to anything but "
+                "simple variables, attributes, and subscripts yet");
         }
 
         uint8_t allocate_import_fromlist_constant(AstChildren aliases)
@@ -1993,7 +1999,8 @@ namespace cl
                 case AstNodeKind::CALL_ARGUMENT_POSITIONAL:
                 case AstNodeKind::CALL_ARGUMENT_KEYWORD:
                     throw std::runtime_error(
-                        "call argument nodes must be lowered by call codegen");
+                        "SystemError: call argument nodes must be lowered by "
+                        "call codegen");
 
                 case AstNodeKind::STATEMENT_ASSIGN:
                 case AstNodeKind::EXPRESSION_ASSIGN:
@@ -2009,9 +2016,9 @@ namespace cl
                                  AstOperatorKind::SUBSCRIPT))
                         {
                             throw std::runtime_error(
-                                "We don't support assignment to anything but "
-                                "simple variables, attributes, and subscripts "
-                                "yet");
+                                "SyntaxError: We don't support assignment to "
+                                "anything but simple variables, attributes, "
+                                "and subscripts yet");
                         }
 
                         if(lhs_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
@@ -2098,7 +2105,8 @@ namespace cl
                         if(level < 0 || level > 255)
                         {
                             throw std::runtime_error(
-                                "relative import level out of range");
+                                "SyntaxError: relative import level out of "
+                                "range");
                         }
                         code_obj->emit_lda_constant(source_offset,
                                                     fromlist_idx);
@@ -2218,8 +2226,8 @@ namespace cl
                             continue;
                         }
                         throw std::runtime_error(
-                            "We don't support del targets except variables and "
-                            "attributes and subscripts yet");
+                            "SyntaxError: We don't support del targets except "
+                            "variables and attributes and subscripts yet");
                     }
                     break;
 
@@ -2634,30 +2642,31 @@ namespace cl
 
                 case AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
                     throw std::runtime_error(
-                        "should not end here - this is handled by "
-                        "EXPRESSION_COMPARISON");
+                        "SystemError: should not end here - this is handled "
+                        "by EXPRESSION_COMPARISON");
 
                 case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
                 case AstNodeKind::STATEMENT_ELSE_HANDLER:
                 case AstNodeKind::STATEMENT_FINALLY_HANDLER:
                     throw std::runtime_error(
-                        "should not end here - this is handled by "
-                        "STATEMENT_TRY");
+                        "SystemError: should not end here - this is handled "
+                        "by STATEMENT_TRY");
 
                 case AstNodeKind::WITH_ITEM:
                 case AstNodeKind::IMPORT_ALIAS:
                 case AstNodeKind::IMPORT_STAR:
                     throw std::runtime_error(
-                        "should not end here - this is handled by "
-                        "the owning statement");
+                        "SystemError: should not end here - this is handled "
+                        "by the owning statement");
 
                 case AstNodeKind::PARAMETER:
                 case AstNodeKind::PARAMETER_VARARGS:
                 case AstNodeKind::PARAMETER_KWARGS:
                 case AstNodeKind::PARAMETER_SEQUENCE:
                 case AstNodeKind::PARAMETER_SIGNATURE:
-                    throw std::runtime_error("should not end here - this is "
-                                             "handled by function definitions");
+                    throw std::runtime_error(
+                        "SystemError: should not end here - this is handled "
+                        "by function definitions");
             }
         }
     };
