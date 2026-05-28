@@ -2606,8 +2606,8 @@ namespace cl
                 case AstNodeKind::STATEMENT_BREAK:
                     if(loop_targets.empty())
                     {
-                        throw std::runtime_error(
-                            "SyntaxError: 'break' outside loop");
+                        return Expected<void>::raise_exception(
+                            L"SyntaxError", L"'break' outside loop");
                     }
                     else
                     {
@@ -2625,8 +2625,8 @@ namespace cl
                 case AstNodeKind::STATEMENT_CONTINUE:
                     if(loop_targets.empty())
                     {
-                        throw std::runtime_error(
-                            "SyntaxError: 'continue' not properly in loop");
+                        return Expected<void>::raise_exception(
+                            L"SyntaxError", L"'continue' not properly in loop");
                     }
                     else
                     {
@@ -2645,8 +2645,8 @@ namespace cl
                     {
                         if(mode() != CodegenMode::Function)
                         {
-                            throw std::runtime_error(
-                                "SyntaxError: 'return' outside function");
+                            return Expected<void>::raise_exception(
+                                L"SyntaxError", L"'return' outside function");
                         }
                         if(!children.empty())
                         {

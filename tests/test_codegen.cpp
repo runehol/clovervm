@@ -143,6 +143,21 @@ TEST(Codegen, empty_file_returns_none)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, break_outside_loop_is_compile_error)
+{
+    test::VmTestContext test_context;
+    test::expect_compile_python_error(test_context, L"break\n", L"SyntaxError",
+                                      L"'break' outside loop");
+}
+
+TEST(Codegen, continue_outside_loop_is_compile_error)
+{
+    test::VmTestContext test_context;
+    test::expect_compile_python_error(test_context, L"continue\n",
+                                      L"SyntaxError",
+                                      L"'continue' not properly in loop");
+}
+
 TEST(Codegen, bytecode_constant_index_overflow_throws)
 {
     std::wstring source;

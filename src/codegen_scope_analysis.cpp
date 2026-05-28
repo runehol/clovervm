@@ -643,6 +643,10 @@ namespace cl
                         }
                         return;
 
+                    case AstNodeKind::STATEMENT_BREAK:
+                    case AstNodeKind::STATEMENT_CONTINUE:
+                        return;
+
                     default:
                         if(is_expression(kind.node_kind))
                         {
@@ -694,6 +698,8 @@ namespace cl
 
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
                     case AstNodeKind::STATEMENT_CLASS_DEF:
+                    case AstNodeKind::STATEMENT_BREAK:
+                    case AstNodeKind::STATEMENT_CONTINUE:
                         return;
 
                     default:
@@ -784,6 +790,10 @@ namespace cl
                             }
                         }
                         break;
+
+                    case AstNodeKind::STATEMENT_BREAK:
+                    case AstNodeKind::STATEMENT_CONTINUE:
+                        return;
 
                     case AstNodeKind::STATEMENT_FOR:
                         {
@@ -1003,6 +1013,10 @@ namespace cl
                                 av.constants[handler_name_idx(children)]);
                         }
                         break;
+
+                    case AstNodeKind::STATEMENT_BREAK:
+                    case AstNodeKind::STATEMENT_CONTINUE:
+                        return;
 
                     default:
                         break;
