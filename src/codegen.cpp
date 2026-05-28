@@ -2880,10 +2880,10 @@ namespace cl
         return code_obj->finalize();
     }
 
-    CodeObject *codegen_module_in_module(const AstVector &av,
-                                         ModuleObject *module,
-                                         LanguageMode language_mode,
-                                         ModuleResultMode result_mode)
+    Expected<CodeObject *>
+    codegen_module_in_module(const AstVector &av, ModuleObject *module,
+                             LanguageMode language_mode,
+                             ModuleResultMode result_mode)
     {
         TValue<ModuleObject> defining_module =
             TValue<ModuleObject>::from_oop(module);
@@ -2893,11 +2893,12 @@ namespace cl
         AstCodegen builder{
             av,           &module_obj, CodegenMode::Module, language_mode,
             av.root_node, {},          result_mode};
-        return builder.run_module();
+        return Expected<CodeObject *>::ok(builder.run_module());
     }
 
-    CodeObject *codegen_module(const AstVector &av, TValue<String> module_name,
-                               LanguageMode language_mode)
+    Expected<CodeObject *> codegen_module(const AstVector &av,
+                                          TValue<String> module_name,
+                                          LanguageMode language_mode)
     {
         ModuleObject *module = active_thread()->make_module_object(
             module_name, active_vm()->global_builtins_module().raw_value(),

@@ -3,6 +3,7 @@
 
 #include "ast.h"
 #include "code_object.h"
+#include "typed_value.h"
 namespace cl
 {
     enum class LanguageMode
@@ -23,10 +24,10 @@ namespace cl
     class String;
     template <typename T> class TValue;
 
-    CodeObject *codegen_module(
+    Expected<CodeObject *> codegen_module(
         const AstVector &av, TValue<String> module_name,
         LanguageMode language_mode = LanguageMode::StandardsCompliant);
-    CodeObject *codegen_module_in_module(
+    Expected<CodeObject *> codegen_module_in_module(
         const AstVector &av, ModuleObject *module,
         LanguageMode language_mode = LanguageMode::StandardsCompliant,
         ModuleResultMode result_mode = ModuleResultMode::File);

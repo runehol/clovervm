@@ -466,8 +466,8 @@ namespace cl
             ModuleResultMode result_mode = start_rule == StartRule::Interactive
                                                ? ModuleResultMode::Interactive
                                                : ModuleResultMode::File;
-            return Expected<CodeObject *>::ok(codegen_module_in_module(
-                av, module, language_mode, result_mode));
+            return codegen_module_in_module(av, module, language_mode,
+                                            result_mode);
         }
         catch(const ParseError &err)
         {
