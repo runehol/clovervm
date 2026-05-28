@@ -1537,9 +1537,10 @@ namespace cl
                 return Expected<void>::ok();
             }
 
-            throw std::runtime_error(
-                "SyntaxError: We don't support assignment to anything but "
-                "simple variables, attributes, and subscripts yet");
+            return Expected<void>::raise_exception(
+                L"SyntaxError",
+                L"We don't support assignment to anything but simple "
+                L"variables, attributes, and subscripts yet");
         }
 
         uint8_t allocate_import_fromlist_constant(AstChildren aliases)
@@ -2065,10 +2066,11 @@ namespace cl
                              av.kinds[lhs_idx].operator_kind ==
                                  AstOperatorKind::SUBSCRIPT))
                         {
-                            throw std::runtime_error(
-                                "SyntaxError: We don't support assignment to "
-                                "anything but simple variables, attributes, "
-                                "and subscripts yet");
+                            return Expected<void>::raise_exception(
+                                L"SyntaxError",
+                                L"We don't support assignment to anything but "
+                                L"simple variables, attributes, and "
+                                L"subscripts yet");
                         }
 
                         if(lhs_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
@@ -2131,9 +2133,9 @@ namespace cl
                                                   AstNodeKind::IMPORT_STAR;
                         if(is_star_import && mode() != CodegenMode::Module)
                         {
-                            throw std::runtime_error(
-                                "SyntaxError: import * only allowed at module "
-                                "level");
+                            return Expected<void>::raise_exception(
+                                L"SyntaxError",
+                                L"import * only allowed at module level");
                         }
                         AstChildren aliases;
                         if(!is_star_import)
@@ -2154,9 +2156,9 @@ namespace cl
                             av.constants[children[0]].value().get_smi();
                         if(level < 0 || level > 255)
                         {
-                            throw std::runtime_error(
-                                "SyntaxError: relative import level out of "
-                                "range");
+                            return Expected<void>::raise_exception(
+                                L"SyntaxError",
+                                L"relative import level out of range");
                         }
                         code_obj->emit_lda_constant(source_offset,
                                                     fromlist_idx);
@@ -2275,9 +2277,10 @@ namespace cl
                             emit_variable_delete(source_offset, target_idx);
                             continue;
                         }
-                        throw std::runtime_error(
-                            "SyntaxError: We don't support del targets except "
-                            "variables and attributes and subscripts yet");
+                        return Expected<void>::raise_exception(
+                            L"SyntaxError",
+                            L"We don't support del targets except variables "
+                            L"and attributes and subscripts yet");
                     }
                     break;
 

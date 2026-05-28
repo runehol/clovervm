@@ -1214,7 +1214,8 @@ TEST(ImportSystem, FromImportStarInFunctionIsRejectedByCodegen)
                                       L"def f():\n"
                                       L"    from assignment import "
                                       L"*\n",
-                                      L"SyntaxError");
+                                      L"SyntaxError",
+                                      L"import * only allowed at module level");
 }
 
 TEST(ImportSystem, RelativeFromImportLoadsSiblingModule)
