@@ -473,16 +473,15 @@ namespace cl
             code_obj->emit_compare_op(source_offset, entry.standard, recv);
         }
 
-        void codegen_function_definition(int32_t node_idx)
+        Expected<void> codegen_function_definition(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             AstChildren param_children =
                 supported_runtime_parameter_order(av, children[0]);
-            CodeObject *fun_obj =
+            CodeObject *fun_obj = CL_TRY(
                 codegen_function(av, code_obj->defining_module().extract(),
-                                 code_obj, node_idx, language_mode)
-                    .value();
+                                 code_obj, node_idx, language_mode));
 
             // stick this code object into the constant table, load it, and call
             // the
@@ -538,6 +537,7 @@ namespace cl
             }
 
             emit_variable_store(source_offset, node_idx);
+            return Expected<void>::ok();
         }
 
         size_t first_default_parameter_index(AstChildren param_children) const
@@ -570,15 +570,14 @@ namespace cl
             return param_children.size();
         }
 
-        void codegen_class_definition(int32_t node_idx)
+        Expected<void> codegen_class_definition(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             uint32_t source_offset = av.source_offsets[node_idx];
             int32_t bases_idx = children[0];
             CodeObject *class_obj =
-                codegen_class(av, code_obj->defining_module().extract(),
-                              code_obj, node_idx, language_mode)
-                    .value();
+                CL_TRY(codegen_class(av, code_obj->defining_module().extract(),
+                                     code_obj, node_idx, language_mode));
 
             uint32_t body_constant_idx =
                 code_obj->allocate_constant(Value::from_oop(class_obj));
@@ -620,6 +619,7 @@ namespace cl
                                         OutgoingArgReg(0));
 
             emit_variable_store(source_offset, node_idx);
+            return Expected<void>::ok();
         }
 
         bool is_variable_reference_named(int32_t node_idx,
@@ -1992,7 +1992,7 @@ namespace cl
             break_target.resolve();
         }
 
-        void codegen_node(int32_t node_idx)
+        Expected<void> codegen_node(int32_t node_idx)
         {
             AstKind kind = av.kinds[node_idx];
             AstChildren children = av.children[node_idx];
@@ -2629,11 +2629,11 @@ namespace cl
                     break;
 
                 case AstNodeKind::STATEMENT_FUNCTION_DEF:
-                    codegen_function_definition(node_idx);
+                    CL_TRY(codegen_function_definition(node_idx));
                     break;
 
                 case AstNodeKind::STATEMENT_CLASS_DEF:
-                    codegen_class_definition(node_idx);
+                    CL_TRY(codegen_class_definition(node_idx));
                     break;
 
                 case AstNodeKind::EXPRESSION_TUPLE:
@@ -2676,6 +2676,7 @@ namespace cl
                         "SystemError: should not end here - this is handled "
                         "by function definitions");
             }
+            return Expected<void>::ok();
         }
     };
 
@@ -2706,7 +2707,7 @@ namespace cl
                 AstChildren statement_children = av.children[body_children[0]];
                 if(statement_children.size() == 1)
                 {
-                    codegen_node(statement_children[0]);
+                    CL_TRY(codegen_node(statement_children[0]));
                     code_obj->emit_return(
                         av.source_offsets[statement_children[0]]);
                     CodeObject *result = code_obj->finalize();
@@ -2714,14 +2715,14 @@ namespace cl
                 }
             }
 
-            codegen_node(body_idx);
+            CL_TRY(codegen_node(body_idx));
             code_obj->emit_lda_none(0);
             code_obj->emit_return(0);
             CodeObject *result = code_obj->finalize();
             return Expected<CodeObject *>::ok(incref(result));
         }
 
-        codegen_node(body_idx);
+        CL_TRY(codegen_node(body_idx));
         code_obj->emit_return(0);
         CodeObject *result = code_obj->finalize();
         return Expected<CodeObject *>::ok(incref(result));
@@ -2875,7 +2876,7 @@ namespace cl
                                                          int32_t body_idx)
     {
         emit_local_binding_prologue();
-        codegen_node(body_idx);
+        CL_TRY(codegen_node(body_idx));
         // finally, emit return None just in case. as a future optimisation, we
         // could check that all return paths already have a return statement
         code_obj->emit_lda_none(source_offset);
@@ -2887,7 +2888,7 @@ namespace cl
                                                       int32_t body_idx)
     {
         emit_local_binding_prologue();
-        codegen_node(body_idx);
+        CL_TRY(codegen_node(body_idx));
         code_obj->emit_build_class(source_offset);
         return Expected<CodeObject *>::ok(code_obj->finalize());
     }
