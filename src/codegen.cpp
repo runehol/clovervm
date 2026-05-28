@@ -1671,7 +1671,7 @@ namespace cl
             return Expected<void>::ok();
         }
 
-        void codegen_try_finally_statement(int32_t node_idx)
+        Expected<void> codegen_try_finally_statement(int32_t node_idx)
         {
             const AstChildren &children = av.children[node_idx];
             assert(children.size() >= 2);
@@ -1680,16 +1680,17 @@ namespace cl
             int32_t body_idx = children[0];
             int32_t finally_body_idx = try_finally_body_idx(children);
 
-            auto codegen_protected_body = [&]() {
+            auto codegen_protected_body = [&]() -> Expected<void> {
                 if(children.size() == 2)
                 {
-                    codegen_node(body_idx);
+                    CL_TRY(codegen_node(body_idx));
                 }
                 else
                 {
-                    codegen_try_except_statement(source_offset, children,
-                                                 children.size() - 1);
+                    CL_TRY(codegen_try_except_statement(source_offset, children,
+                                                        children.size() - 1));
                 }
+                return Expected<void>::ok();
             };
 
             JumpTarget exceptional_target(code_obj);
@@ -1698,12 +1699,12 @@ namespace cl
                 ExceptionTableRangeBuilder range(code_obj, exceptional_target);
                 active_cleanups.push_back(
                     CleanupContext::finally_body(finally_body_idx, &range));
-                codegen_protected_body();
+                CL_TRY(codegen_protected_body());
                 active_cleanups.pop_back();
                 range.close();
             }
 
-            codegen_node(finally_body_idx);
+            CL_TRY(codegen_node(finally_body_idx));
             code_obj->emit_jump(source_offset, done_target);
 
             exceptional_target.resolve();
@@ -1712,18 +1713,19 @@ namespace cl
                 code_obj->emit_drain_active_exception_into(source_offset,
                                                            saved_exception);
                 caught_exception_regs.push_back(RegisterIndex(saved_exception));
-                codegen_node(finally_body_idx);
+                CL_TRY(codegen_node(finally_body_idx));
                 caught_exception_regs.pop_back();
                 code_obj->emit_ldar(source_offset, saved_exception);
                 code_obj->emit_raise_unwind(source_offset);
             }
 
             done_target.resolve();
+            return Expected<void>::ok();
         }
 
-        void codegen_try_except_statement(uint32_t source_offset,
-                                          AstChildren children,
-                                          size_t end_child_offset)
+        Expected<void> codegen_try_except_statement(uint32_t source_offset,
+                                                    AstChildren children,
+                                                    size_t end_child_offset)
         {
             assert(end_child_offset >= 2);
             assert(end_child_offset <= children.size());
@@ -1741,12 +1743,12 @@ namespace cl
             JumpTarget done_target(code_obj);
             {
                 ExceptionTableRangeBuilder range(code_obj, handler_target);
-                codegen_node(body_idx);
+                CL_TRY(codegen_node(body_idx));
                 range.close();
             }
             if(else_body_idx >= 0)
             {
-                codegen_node(else_body_idx);
+                CL_TRY(codegen_node(else_body_idx));
             }
             code_obj->emit_jump(source_offset, done_target);
 
@@ -1770,7 +1772,7 @@ namespace cl
                 if(handler_has_type(handler_children))
                 {
                     JumpTarget no_match_target(code_obj);
-                    codegen_node(handler_type_idx(handler_children));
+                    CL_TRY(codegen_node(handler_type_idx(handler_children)));
                     code_obj->emit_active_exception_is_instance(
                         handler_source_offset);
                     code_obj->emit_jump_if_false(handler_source_offset,
@@ -1790,7 +1792,7 @@ namespace cl
                         }
                         caught_exception_regs.push_back(
                             RegisterIndex(saved_exception));
-                        codegen_node(body_idx);
+                        CL_TRY(codegen_node(body_idx));
                         caught_exception_regs.pop_back();
                         code_obj->emit_jump(handler_source_offset, done_target);
                     }
@@ -1799,14 +1801,14 @@ namespace cl
                         emit_drain_active_exception_to_binding(
                             handler_source_offset,
                             handler_name_idx(handler_children));
-                        codegen_node(body_idx);
+                        CL_TRY(codegen_node(body_idx));
                         code_obj->emit_jump(handler_source_offset, done_target);
                     }
                     else
                     {
                         code_obj->emit_clear_active_exception(
                             handler_source_offset);
-                        codegen_node(body_idx);
+                        CL_TRY(codegen_node(body_idx));
                         code_obj->emit_jump(handler_source_offset, done_target);
                     }
 
@@ -1830,7 +1832,7 @@ namespace cl
                     }
                     caught_exception_regs.push_back(
                         RegisterIndex(saved_exception));
-                    codegen_node(body_idx);
+                    CL_TRY(codegen_node(body_idx));
                     caught_exception_regs.pop_back();
                     code_obj->emit_jump(handler_source_offset, done_target);
                 }
@@ -1839,14 +1841,14 @@ namespace cl
                     emit_drain_active_exception_to_binding(
                         handler_source_offset,
                         handler_name_idx(handler_children));
-                    codegen_node(body_idx);
+                    CL_TRY(codegen_node(body_idx));
                     code_obj->emit_jump(handler_source_offset, done_target);
                 }
                 else
                 {
                     code_obj->emit_clear_active_exception(
                         handler_source_offset);
-                    codegen_node(body_idx);
+                    CL_TRY(codegen_node(body_idx));
                     code_obj->emit_jump(handler_source_offset, done_target);
                 }
                 break;
@@ -1858,20 +1860,22 @@ namespace cl
             }
 
             done_target.resolve();
+            return Expected<void>::ok();
         }
 
-        void codegen_try_statement(int32_t node_idx)
+        Expected<void> codegen_try_statement(int32_t node_idx)
         {
             AstChildren children = av.children[node_idx];
             assert(children.size() >= 2);
             if(try_has_finally(children))
             {
-                codegen_try_finally_statement(node_idx);
-                return;
+                CL_TRY(codegen_try_finally_statement(node_idx));
+                return Expected<void>::ok();
             }
 
-            codegen_try_except_statement(av.source_offsets[node_idx], children,
-                                         children.size());
+            CL_TRY(codegen_try_except_statement(av.source_offsets[node_idx],
+                                                children, children.size()));
+            return Expected<void>::ok();
         }
 
         Expected<void> codegen_iterator_driven_for_loop(
@@ -2585,7 +2589,7 @@ namespace cl
                     }
 
                 case AstNodeKind::STATEMENT_TRY:
-                    codegen_try_statement(node_idx);
+                    CL_TRY(codegen_try_statement(node_idx));
                     break;
 
                 case AstNodeKind::STATEMENT_WITH:
