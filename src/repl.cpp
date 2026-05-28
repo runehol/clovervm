@@ -143,25 +143,27 @@ namespace cl
                 CompileContinuationInfo compile_continuation_info;
                 try
                 {
-                    (void)thr->compile_in_module(
+                    Expected<CodeObject *> code_obj = thr->compile_in_module(
                         source_buffer.c_str(), StartRule::Interactive, module,
                         LanguageMode::StandardsCompliant,
                         &compile_continuation_info);
-                }
-                catch(const ParseError &err)
-                {
-                    if(compile_continuation_info.incomplete_input)
+                    if(code_obj.has_exception())
                     {
-                        continuation_indentation =
-                            compile_continuation_info.next_indentation_level *
-                            repl_indent_width;
+                        if(compile_continuation_info.incomplete_input)
+                        {
+                            thr->clear_pending_exception();
+                            continuation_indentation =
+                                compile_continuation_info
+                                    .next_indentation_level *
+                                repl_indent_width;
+                            continue;
+                        }
+                        print_pending_exception_and_clear(thr);
+                        source_buffer.clear();
+                        suite_waiting_for_blank_line = false;
+                        continuation_indentation = 0;
                         continue;
                     }
-                    std::cerr << err.what() << "\n";
-                    source_buffer.clear();
-                    suite_waiting_for_blank_line = false;
-                    continuation_indentation = 0;
-                    continue;
                 }
                 catch(const std::runtime_error &err)
                 {
@@ -177,19 +179,39 @@ namespace cl
             CompileContinuationInfo compile_continuation_info;
             try
             {
-                CodeObject *code_obj = thr->compile_in_module(
+                Expected<CodeObject *> code_obj = thr->compile_in_module(
                     source_buffer.c_str(), StartRule::Interactive, module,
                     LanguageMode::StandardsCompliant,
                     &compile_continuation_info);
+                if(code_obj.has_exception())
+                {
+                    if(!blank_line &&
+                       compile_continuation_info.incomplete_input)
+                    {
+                        thr->clear_pending_exception();
+                        continuation_indentation =
+                            compile_continuation_info.next_indentation_level *
+                            repl_indent_width;
+                        suite_waiting_for_blank_line =
+                            compile_continuation_info.next_indentation_level >
+                            prompt_indentation_level;
+                        continue;
+                    }
+                    print_pending_exception_and_clear(thr);
+                    source_buffer.clear();
+                    suite_waiting_for_blank_line = false;
+                    continuation_indentation = 0;
+                    continue;
+                }
                 source_buffer.clear();
                 suite_waiting_for_blank_line = false;
                 continuation_indentation = 0;
                 if(print_bytecode)
                 {
-                    fmt::print("{}\n", *code_obj);
+                    fmt::print("{}\n", *code_obj.value());
                 }
 
-                Value result = thr->run_clovervm_code_object(code_obj);
+                Value result = thr->run_clovervm_code_object(code_obj.value());
                 if(result.is_exception_marker())
                 {
                     print_pending_exception_and_clear(thr);
@@ -197,23 +219,6 @@ namespace cl
                 }
 
                 print_value_repr(result, thr);
-            }
-            catch(const ParseError &err)
-            {
-                if(!blank_line && compile_continuation_info.incomplete_input)
-                {
-                    continuation_indentation =
-                        compile_continuation_info.next_indentation_level *
-                        repl_indent_width;
-                    suite_waiting_for_blank_line =
-                        compile_continuation_info.next_indentation_level >
-                        prompt_indentation_level;
-                    continue;
-                }
-                std::cerr << err.what() << "\n";
-                source_buffer.clear();
-                suite_waiting_for_blank_line = false;
-                continuation_indentation = 0;
             }
             catch(const std::runtime_error &err)
             {

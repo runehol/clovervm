@@ -28,9 +28,10 @@ std::string bytecode_str_from_file(const wchar_t *expr)
 std::string bytecode_str_from_interactive(const wchar_t *expr)
 {
     test::VmTestContext test_context;
-    CodeObject *code_obj =
+    Expected<CodeObject *> code_obj =
         test_context.thread()->compile(expr, StartRule::Interactive);
-    return fmt::to_string(*code_obj);
+    EXPECT_TRUE(code_obj.has_value());
+    return fmt::to_string(*code_obj.value());
 }
 
 std::string trusted_builtin_bytecode_str_from_file(const wchar_t *expr)
@@ -42,9 +43,10 @@ std::string trusted_builtin_bytecode_str_from_file(const wchar_t *expr)
             L"<test-builtin>");
     ModuleObject *module = test_context.make_test_module_object(
         module_name, test_context.vm().global_builtins_module().raw_value());
-    CodeObject *code_obj = test_context.thread()->compile_in_module(
+    Expected<CodeObject *> code_obj = test_context.thread()->compile_in_module(
         expr, StartRule::File, module, LanguageMode::TrustedCloverExtensions);
-    return fmt::to_string(*code_obj);
+    EXPECT_TRUE(code_obj.has_value());
+    return fmt::to_string(*code_obj.value());
 }
 
 // Keep this file intentionally small and structural. Interpreter tests own
@@ -125,7 +127,9 @@ TEST(Codegen, bytecode_constant_index_overflow_throws)
         source += L" = 0\n";
     }
 
-    EXPECT_THROW(bytecode_str_from_file(source.c_str()), std::runtime_error);
+    test::VmTestContext test_context;
+    test::expect_compile_python_error(test_context, source.c_str(),
+                                      L"SyntaxError");
 }
 
 TEST(Codegen, unresolved_jump_target_does_not_mask_codegen_error)
@@ -139,15 +143,10 @@ TEST(Codegen, unresolved_jump_target_does_not_mask_codegen_error)
     }
     source += L"assert 1.5\n";
 
-    try
-    {
-        (void)bytecode_str_from_file(source.c_str());
-        FAIL() << "Expected constant table overflow";
-    }
-    catch(const std::runtime_error &err)
-    {
-        EXPECT_STREQ("constant table index out of range", err.what());
-    }
+    test::VmTestContext test_context;
+    test::expect_compile_python_error(test_context, source.c_str(),
+                                      L"SyntaxError",
+                                      L"constant table index out of range");
 }
 
 TEST(Codegen, code_object_builder_reuses_duplicate_constants)
@@ -206,7 +205,9 @@ TEST(Codegen, relative_import_level_overflow_throws)
     source.append(256, L'.');
     source += L"pkg import value\n";
 
-    EXPECT_THROW(bytecode_str_from_file(source.c_str()), std::runtime_error);
+    test::VmTestContext test_context;
+    test::expect_compile_python_error(test_context, source.c_str(),
+                                      L"SyntaxError");
 }
 
 TEST(Codegen, import_statement_uses_import_name_and_normal_store)

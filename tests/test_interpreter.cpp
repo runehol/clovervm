@@ -109,61 +109,40 @@ static void expect_runtime_error(const wchar_t *source,
     }
 }
 
-static std::string narrow_test_wstring(const wchar_t *message)
-{
-    std::string result;
-    for(const wchar_t *ch = message; *ch != 0; ++ch)
-    {
-        result.push_back(*ch >= 0 && *ch <= 0x7f ? static_cast<char>(*ch)
-                                                 : '?');
-    }
-    return result;
-}
-
 static std::wstring cl_test_string_to_wstring(TValue<String> string)
 {
     String *str = string.extract();
     return std::wstring(str->data, size_t(str->count.extract()));
 }
 
-static std::wstring format_pending_python_error(ThreadState *thread)
-{
-    if(thread->pending_exception_kind() == PendingExceptionKind::StopIteration)
-    {
-        return L"StopIteration";
-    }
-
-    EXPECT_EQ(PendingExceptionKind::Object, thread->pending_exception_kind());
-    TValue<Exception> exception = thread->pending_exception_object();
-    std::wstring result = cl_test_string_to_wstring(
-        exception.extract()->get_shape()->get_class()->get_name());
-    std::wstring message =
-        cl_test_string_to_wstring(exception.extract()->message.value());
-    if(!message.empty())
-    {
-        result += L": ";
-        result += message;
-    }
-    return result;
-}
-
 static void expect_thread_python_error(ThreadState *thread,
+                                       const wchar_t *expected_type_name,
                                        const wchar_t *expected_message)
 {
     ASSERT_TRUE(thread->has_pending_exception());
-    std::wstring actual_message = format_pending_python_error(thread);
-    EXPECT_STREQ(expected_message, actual_message.c_str());
-    EXPECT_STREQ(narrow_test_wstring(expected_message).c_str(),
-                 narrow_test_wstring(actual_message.c_str()).c_str());
+    if(std::wstring(expected_type_name) == L"StopIteration" &&
+       thread->pending_exception_kind() == PendingExceptionKind::StopIteration)
+    {
+        EXPECT_EQ(std::wstring(L""), std::wstring(expected_message));
+        return;
+    }
+    ASSERT_EQ(PendingExceptionKind::Object, thread->pending_exception_kind());
+    TValue<Exception> exception = thread->pending_exception_object();
+    EXPECT_EQ(std::wstring(expected_type_name),
+              cl_test_string_to_wstring(
+                  exception.extract()->get_shape()->get_class()->get_name()));
+    EXPECT_EQ(std::wstring(expected_message),
+              cl_test_string_to_wstring(exception.extract()->message.value()));
 }
 
 static void expect_python_error(const wchar_t *source,
+                                const wchar_t *expected_type_name,
                                 const wchar_t *expected_message)
 {
     test::FileRunner file_runner(source);
     EXPECT_TRUE(file_runner.return_value.is_exception_marker());
     expect_thread_python_error(file_runner.test_context().thread(),
-                               expected_message);
+                               expected_type_name, expected_message);
 }
 
 static void expect_range_iterator(Value actual, int64_t expected_current,
@@ -474,13 +453,13 @@ make_return_pending_exception_to_native_code(test::VmTestContext &test_context)
 
 TEST(Interpreter, assert_statement_raises_assertion_error)
 {
-    expect_python_error(L"assert False\n", L"AssertionError");
+    expect_python_error(L"assert False\n", L"AssertionError", L"");
 }
 
 TEST(Interpreter, assert_statement_raises_assertion_error_with_message)
 {
     expect_python_error(L"assert False, \"basic math is broken\"\n",
-                        L"AssertionError: basic math is broken");
+                        L"AssertionError", L"basic math is broken");
 }
 
 TEST(Interpreter, assert_statement_unwinds_nested_frames)
@@ -489,7 +468,7 @@ TEST(Interpreter, assert_statement_unwinds_nested_frames)
                         L"    assert False\n"
                         L"    return 99\n"
                         L"fail()\n",
-                        L"AssertionError");
+                        L"AssertionError", L"");
 }
 
 TEST(Interpreter, float_truthiness_asserts)
@@ -533,7 +512,7 @@ TEST(Interpreter, float_truthiness_while_statement)
 
 TEST(Interpreter, raise_statement_raises_exception_class)
 {
-    expect_python_error(L"raise ValueError\n", L"ValueError");
+    expect_python_error(L"raise ValueError\n", L"ValueError", L"");
 }
 
 TEST(Interpreter, raise_statement_unwinds_nested_frames)
@@ -542,12 +521,12 @@ TEST(Interpreter, raise_statement_unwinds_nested_frames)
                         L"    raise ValueError\n"
                         L"    return 99\n"
                         L"fail()\n",
-                        L"ValueError");
+                        L"ValueError", L"");
 }
 
 TEST(Interpreter, run_clovervm_code_object_returns_pending_exception)
 {
-    expect_python_error(L"raise ValueError\n", L"ValueError");
+    expect_python_error(L"raise ValueError\n", L"ValueError", L"");
 }
 
 TEST(Interpreter, trace_interpreter_instructions_prints_executed_bytecode)
@@ -574,7 +553,7 @@ TEST(Interpreter, try_bare_except_handler_can_raise)
                         L"    raise ValueError\n"
                         L"except:\n"
                         L"    raise TypeError\n",
-                        L"TypeError");
+                        L"TypeError", L"");
 }
 
 TEST(Interpreter, del_global_removes_binding)
@@ -582,13 +561,13 @@ TEST(Interpreter, del_global_removes_binding)
     expect_python_error(L"value = 7\n"
                         L"del value\n"
                         L"value\n",
-                        L"NameError: name 'value' is not defined");
+                        L"NameError", L"name 'value' is not defined");
 }
 
 TEST(Interpreter, del_missing_global_raises_name_error)
 {
-    expect_python_error(L"del missing\n",
-                        L"NameError: name 'missing' is not defined");
+    expect_python_error(L"del missing\n", L"NameError",
+                        L"name 'missing' is not defined");
 }
 
 TEST(Interpreter, module_without_explicit_builtins_uses_default_builtins)
@@ -607,7 +586,7 @@ TEST(Interpreter, del_local_variable_removes_binding)
                         L"    del value\n"
                         L"    return value\n"
                         L"clear(7)\n",
-                        L"NameError: name 'value' is not defined");
+                        L"NameError", L"name 'value' is not defined");
 }
 
 TEST(Interpreter, loop_local_read_after_delete_can_still_raise)
@@ -619,7 +598,7 @@ TEST(Interpreter, loop_local_read_after_delete_can_still_raise)
                         L"        del x\n"
                         L"    return 0\n"
                         L"f(2)\n",
-                        L"NameError: name 'x' is not defined");
+                        L"NameError", L"name 'x' is not defined");
 }
 
 TEST(Interpreter, while_condition_after_delete_can_still_raise)
@@ -630,7 +609,7 @@ TEST(Interpreter, while_condition_after_delete_can_still_raise)
                         L"        del x\n"
                         L"    return 0\n"
                         L"f()\n",
-                        L"NameError: name 'x' is not defined");
+                        L"NameError", L"name 'x' is not defined");
 }
 
 TEST(Interpreter, loop_break_after_delete_ignores_unreachable_assignment)
@@ -643,7 +622,7 @@ TEST(Interpreter, loop_break_after_delete_ignores_unreachable_assignment)
                         L"        x = 1\n"
                         L"    return x\n"
                         L"f()\n",
-                        L"NameError: name 'x' is not defined");
+                        L"NameError", L"name 'x' is not defined");
 }
 
 TEST(Interpreter, loop_continue_after_delete_ignores_unreachable_assignment)
@@ -658,7 +637,7 @@ TEST(Interpreter, loop_continue_after_delete_ignores_unreachable_assignment)
                         L"        x = 1\n"
                         L"    return 0\n"
                         L"f()\n",
-                        L"NameError: name 'x' is not defined");
+                        L"NameError", L"name 'x' is not defined");
 }
 
 TEST(Interpreter, try_handler_entry_accounts_for_protected_prefix_delete)
@@ -675,7 +654,7 @@ TEST(Interpreter, try_handler_entry_accounts_for_protected_prefix_delete)
                         L"        pass\n"
                         L"    return x\n"
                         L"f()\n",
-                        L"NameError: name 'x' is not defined");
+                        L"NameError", L"name 'x' is not defined");
 }
 
 TEST(Interpreter, finally_entry_accounts_for_protected_prefix_delete)
@@ -691,7 +670,7 @@ TEST(Interpreter, finally_entry_accounts_for_protected_prefix_delete)
                         L"    finally:\n"
                         L"        x\n"
                         L"f()\n",
-                        L"NameError: name 'x' is not defined");
+                        L"NameError", L"name 'x' is not defined");
 }
 
 TEST(Interpreter, finally_entry_accounts_for_handler_prefix_delete)
@@ -705,7 +684,7 @@ TEST(Interpreter, finally_entry_accounts_for_handler_prefix_delete)
                         L"    finally:\n"
                         L"        return x\n"
                         L"f()\n",
-                        L"NameError: name 'x' is not defined");
+                        L"NameError", L"name 'x' is not defined");
 }
 
 TEST(Interpreter, with_suppressed_exception_accounts_for_body_prefix_delete)
@@ -723,7 +702,7 @@ TEST(Interpreter, with_suppressed_exception_accounts_for_body_prefix_delete)
                         L"        x = 1\n"
                         L"    return x\n"
                         L"f()\n",
-                        L"NameError: name 'x' is not defined");
+                        L"NameError", L"name 'x' is not defined");
 }
 
 TEST(Interpreter, assert_message_expression_gets_scope_analysis)
@@ -732,7 +711,7 @@ TEST(Interpreter, assert_message_expression_gets_scope_analysis)
                         L"    assert False, missing\n"
                         L"    missing = 1\n"
                         L"f()\n",
-                        L"NameError: name 'missing' is not defined");
+                        L"NameError", L"name 'missing' is not defined");
 }
 
 TEST(Interpreter, del_missing_local_raises_name_error)
@@ -740,7 +719,7 @@ TEST(Interpreter, del_missing_local_raises_name_error)
     expect_python_error(L"def clear():\n"
                         L"    del value\n"
                         L"clear()\n",
-                        L"NameError: name 'value' is not defined");
+                        L"NameError", L"name 'value' is not defined");
 }
 
 TEST(Interpreter, local_read_before_assignment_raises_name_error)
@@ -749,7 +728,7 @@ TEST(Interpreter, local_read_before_assignment_raises_name_error)
                         L"    value\n"
                         L"    value = 7\n"
                         L"read_before_write()\n",
-                        L"NameError: name 'value' is not defined");
+                        L"NameError", L"name 'value' is not defined");
 }
 
 TEST(Interpreter, conditional_local_assignment_raises_on_missing_path)
@@ -759,7 +738,7 @@ TEST(Interpreter, conditional_local_assignment_raises_on_missing_path)
                         L"        value = 7\n"
                         L"    return value\n"
                         L"maybe_write(False)\n",
-                        L"NameError: name 'value' is not defined");
+                        L"NameError", L"name 'value' is not defined");
 }
 
 TEST(Interpreter, function_wrong_arity)
@@ -767,11 +746,11 @@ TEST(Interpreter, function_wrong_arity)
     expect_python_error(L"def f(a):\n"
                         L"    return a\n"
                         L"f()\n",
-                        L"TypeError: wrong number of arguments");
+                        L"TypeError", L"wrong number of arguments");
     expect_python_error(L"def f(a):\n"
                         L"    return a\n"
                         L"f(1, 2)\n",
-                        L"TypeError: wrong number of arguments");
+                        L"TypeError", L"wrong number of arguments");
 }
 
 TEST(Interpreter, function_wrong_arity_unwinds_nested_frames)
@@ -782,7 +761,7 @@ TEST(Interpreter, function_wrong_arity_unwinds_nested_frames)
                         L"    f()\n"
                         L"    return 99\n"
                         L"fail()\n",
-                        L"TypeError: wrong number of arguments");
+                        L"TypeError", L"wrong number of arguments");
 }
 
 TEST(Interpreter, function_keyword_call_reorders_arguments)
@@ -839,7 +818,7 @@ TEST(Interpreter, function_keyword_call_rejects_keyword_only_as_positional)
     expect_python_error(L"def f(a, *, b=2):\n"
                         L"    return a + b\n"
                         L"f(1, 2)\n",
-                        L"TypeError: wrong number of arguments");
+                        L"TypeError", L"wrong number of arguments");
 }
 
 TEST(Interpreter, function_keyword_call_supports_varargs_before_keyword_only)
@@ -863,7 +842,7 @@ TEST(Interpreter, function_keyword_call_rejects_missing_required_keyword_only)
     expect_python_error(L"def f(a=1, *, b, c=3):\n"
                         L"    return a + b + c\n"
                         L"f()\n",
-                        L"TypeError: wrong number of arguments");
+                        L"TypeError", L"wrong number of arguments");
 }
 
 TEST(Interpreter, function_call_positional_rejects_required_keyword_only)
@@ -871,7 +850,7 @@ TEST(Interpreter, function_call_positional_rejects_required_keyword_only)
     expect_python_error(L"def f(a=1, *, b, c=3):\n"
                         L"    return a + b + c\n"
                         L"f(2)\n",
-                        L"TypeError: wrong number of arguments");
+                        L"TypeError", L"wrong number of arguments");
 }
 
 TEST(Interpreter, function_keyword_call_handles_varargs_default_holes)
@@ -933,7 +912,7 @@ TEST(Interpreter, function_keyword_call_rejects_duplicate_formal_fill)
     expect_python_error(L"def f(a):\n"
                         L"    return a\n"
                         L"f(1, a=2)\n",
-                        L"TypeError: invalid keyword argument");
+                        L"TypeError", L"invalid keyword argument");
 }
 
 TEST(Interpreter, function_keyword_call_rejects_unexpected_keyword)
@@ -941,7 +920,7 @@ TEST(Interpreter, function_keyword_call_rejects_unexpected_keyword)
     expect_python_error(L"def f(a):\n"
                         L"    return a\n"
                         L"f(b=1)\n",
-                        L"TypeError: invalid keyword argument");
+                        L"TypeError", L"invalid keyword argument");
 }
 
 TEST(Interpreter, function_keyword_call_rejects_missing_required)
@@ -949,7 +928,7 @@ TEST(Interpreter, function_keyword_call_rejects_missing_required)
     expect_python_error(L"def f(a, b=2):\n"
                         L"    return a + b\n"
                         L"f(b=1)\n",
-                        L"TypeError: wrong number of arguments");
+                        L"TypeError", L"wrong number of arguments");
 }
 
 TEST(Interpreter, function_varargs_collect_empty_tuple)
@@ -970,7 +949,7 @@ TEST(Interpreter, function_varargs_still_requires_positional_arguments)
     expect_python_error(L"def f(a, *args):\n"
                         L"    return a\n"
                         L"f()\n",
-                        L"TypeError: wrong number of arguments");
+                        L"TypeError", L"wrong number of arguments");
 }
 
 TEST(Interpreter, class_definition_binds_class_object)
@@ -1119,7 +1098,8 @@ TEST(Interpreter, class_constructor_rejects_non_none_init_return)
                         L"    def __init__(self):\n"
                         L"        return 1\n"
                         L"Cls()\n",
-                        L"TypeError: __init__ should return None, not a value");
+                        L"TypeError",
+                        L"__init__ should return None, not a value");
 }
 
 TEST(Interpreter, class_constructor_non_none_init_return_unwinds_nested_frames)
@@ -1131,7 +1111,8 @@ TEST(Interpreter, class_constructor_non_none_init_return_unwinds_nested_frames)
                         L"    Cls()\n"
                         L"    return 99\n"
                         L"fail()\n",
-                        L"TypeError: __init__ should return None, not a value");
+                        L"TypeError",
+                        L"__init__ should return None, not a value");
 }
 
 TEST(Interpreter, string_literal_value)
@@ -1229,17 +1210,19 @@ TEST(Interpreter, true_division_values)
 
 TEST(Interpreter, true_division_reports_zero_division)
 {
-    expect_python_error(L"1 / 0\n", L"ZeroDivisionError: division by zero");
-    expect_python_error(L"1 / 0.0\n", L"ZeroDivisionError: division by zero");
-    expect_python_error(L"1 / -0.0\n", L"ZeroDivisionError: division by zero");
+    expect_python_error(L"1 / 0\n", L"ZeroDivisionError", L"division by zero");
+    expect_python_error(L"1 / 0.0\n", L"ZeroDivisionError",
+                        L"division by zero");
+    expect_python_error(L"1 / -0.0\n", L"ZeroDivisionError",
+                        L"division by zero");
 }
 
 TEST(Interpreter, true_division_reports_unsupported_operands)
 {
-    expect_python_error(L"\"a\" / 1\n",
-                        L"TypeError: unsupported operand type(s) for /");
-    expect_python_error(L"1 / \"a\"\n",
-                        L"TypeError: unsupported operand type(s) for /");
+    expect_python_error(L"\"a\" / 1\n", L"TypeError",
+                        L"unsupported operand type(s) for /");
+    expect_python_error(L"1 / \"a\"\n", L"TypeError",
+                        L"unsupported operand type(s) for /");
 }
 
 TEST(Interpreter, floor_division_values)
@@ -1264,12 +1247,13 @@ TEST(Interpreter, floor_division_values)
 
 TEST(Interpreter, floor_division_reports_errors)
 {
-    expect_python_error(L"1 // 0\n", L"ZeroDivisionError: division by zero");
-    expect_python_error(L"1 // 0.0\n", L"ZeroDivisionError: division by zero");
-    expect_python_error(L"\"a\" // 1\n",
-                        L"TypeError: unsupported operand type(s) for //");
-    expect_python_error(L"1 // \"a\"\n",
-                        L"TypeError: unsupported operand type(s) for //");
+    expect_python_error(L"1 // 0\n", L"ZeroDivisionError", L"division by zero");
+    expect_python_error(L"1 // 0.0\n", L"ZeroDivisionError",
+                        L"division by zero");
+    expect_python_error(L"\"a\" // 1\n", L"TypeError",
+                        L"unsupported operand type(s) for //");
+    expect_python_error(L"1 // \"a\"\n", L"TypeError",
+                        L"unsupported operand type(s) for //");
 }
 
 TEST(Interpreter, modulo_values)
@@ -1295,12 +1279,13 @@ TEST(Interpreter, modulo_values)
 
 TEST(Interpreter, modulo_reports_errors)
 {
-    expect_python_error(L"1 % 0\n", L"ZeroDivisionError: division by zero");
-    expect_python_error(L"1 % 0.0\n", L"ZeroDivisionError: division by zero");
-    expect_python_error(L"\"a\" % 1\n",
-                        L"TypeError: unsupported operand type(s) for %");
-    expect_python_error(L"1 % \"a\"\n",
-                        L"TypeError: unsupported operand type(s) for %");
+    expect_python_error(L"1 % 0\n", L"ZeroDivisionError", L"division by zero");
+    expect_python_error(L"1 % 0.0\n", L"ZeroDivisionError",
+                        L"division by zero");
+    expect_python_error(L"\"a\" % 1\n", L"TypeError",
+                        L"unsupported operand type(s) for %");
+    expect_python_error(L"1 % \"a\"\n", L"TypeError",
+                        L"unsupported operand type(s) for %");
 }
 
 TEST(Interpreter, shortcutting_boolean_operators_return_operand_values)
@@ -1357,7 +1342,8 @@ TEST(Interpreter, shortcutting_boolean_operators_compile_math_shaped_cases)
 
 TEST(Interpreter, sqrt_is_not_a_builtin)
 {
-    expect_python_error(L"sqrt(4)\n", L"NameError: name 'sqrt' is not defined");
+    expect_python_error(L"sqrt(4)\n", L"NameError",
+                        L"name 'sqrt' is not defined");
 }
 
 TEST(Interpreter, float_comparison_values)
@@ -1456,7 +1442,7 @@ TEST(Interpreter, string_dunder_add_calls_intrinsic_function)
 
 TEST(Interpreter, string_dunder_add_wrong_type_reports_unimplemented)
 {
-    expect_python_error(L"\"ab\".__add__(3)\n", L"UnimplementedError");
+    expect_python_error(L"\"ab\".__add__(3)\n", L"UnimplementedError", L"");
 }
 
 TEST(Interpreter, string_dunder_add_wrong_type_unwinds_nested_frames)
@@ -1464,7 +1450,7 @@ TEST(Interpreter, string_dunder_add_wrong_type_unwinds_nested_frames)
     expect_python_error(L"def fail():\n"
                         L"    return \"ab\".__add__(3)\n"
                         L"fail()\n",
-                        L"UnimplementedError");
+                        L"UnimplementedError", L"");
 }
 
 TEST(Interpreter, list_literal_returns_list_object)
@@ -1677,42 +1663,42 @@ TEST(Interpreter,
 
 TEST(Interpreter, subscript_store_rejects_tuple_item_assignment)
 {
-    expect_python_error(
-        L"class Cls:\n"
-        L"    pass\n"
-        L"Cls.__mro__[0] = 1\n",
-        L"TypeError: 'tuple' object does not support item assignment");
+    expect_python_error(L"class Cls:\n"
+                        L"    pass\n"
+                        L"Cls.__mro__[0] = 1\n",
+                        L"TypeError",
+                        L"'tuple' object does not support item assignment");
 }
 
 TEST(Interpreter, subscript_store_tuple_item_assignment_unwinds_nested_frames)
 {
-    expect_python_error(
-        L"def fail():\n"
-        L"    class Cls:\n"
-        L"        pass\n"
-        L"    Cls.__mro__[0] = 1\n"
-        L"fail()\n",
-        L"TypeError: 'tuple' object does not support item assignment");
+    expect_python_error(L"def fail():\n"
+                        L"    class Cls:\n"
+                        L"        pass\n"
+                        L"    Cls.__mro__[0] = 1\n"
+                        L"fail()\n",
+                        L"TypeError",
+                        L"'tuple' object does not support item assignment");
 }
 
 TEST(Interpreter, subscript_delete_rejects_tuple_item_deletion)
 {
-    expect_python_error(
-        L"class Cls:\n"
-        L"    pass\n"
-        L"del Cls.__mro__[0]\n",
-        L"TypeError: 'tuple' object does not support item deletion");
+    expect_python_error(L"class Cls:\n"
+                        L"    pass\n"
+                        L"del Cls.__mro__[0]\n",
+                        L"TypeError",
+                        L"'tuple' object does not support item deletion");
 }
 
 TEST(Interpreter, subscript_delete_tuple_item_deletion_unwinds_nested_frames)
 {
-    expect_python_error(
-        L"def fail():\n"
-        L"    class Cls:\n"
-        L"        pass\n"
-        L"    del Cls.__mro__[0]\n"
-        L"fail()\n",
-        L"TypeError: 'tuple' object does not support item deletion");
+    expect_python_error(L"def fail():\n"
+                        L"    class Cls:\n"
+                        L"        pass\n"
+                        L"    del Cls.__mro__[0]\n"
+                        L"fail()\n",
+                        L"TypeError",
+                        L"'tuple' object does not support item deletion");
 }
 
 TEST(Interpreter,
@@ -1746,7 +1732,7 @@ TEST(Interpreter, subscript_load_rejects_non_integer_list_index)
 {
     expect_python_error(L"xs = [1, 2, 3]\n"
                         L"xs[False]\n",
-                        L"TypeError: list indices must be integers");
+                        L"TypeError", L"list indices must be integers");
 }
 
 TEST(Interpreter, subscript_load_non_integer_list_index_unwinds_nested_frames)
@@ -1755,7 +1741,7 @@ TEST(Interpreter, subscript_load_non_integer_list_index_unwinds_nested_frames)
                         L"    xs = [1, 2, 3]\n"
                         L"    return xs[False]\n"
                         L"fail()\n",
-                        L"TypeError: list indices must be integers");
+                        L"TypeError", L"list indices must be integers");
 }
 
 TEST(Interpreter, subscript_load_rejects_non_integer_tuple_index)
@@ -1763,14 +1749,14 @@ TEST(Interpreter, subscript_load_rejects_non_integer_tuple_index)
     expect_python_error(L"class Cls:\n"
                         L"    pass\n"
                         L"Cls.__mro__[False]\n",
-                        L"TypeError: tuple indices must be integers");
+                        L"TypeError", L"tuple indices must be integers");
 }
 
 TEST(Interpreter, subscript_load_rejects_out_of_range_list_index)
 {
     expect_python_error(L"xs = [1, 2, 3]\n"
                         L"xs[3]\n",
-                        L"IndexError: list index out of range");
+                        L"IndexError", L"list index out of range");
 }
 
 TEST(Interpreter, subscript_load_out_of_range_list_index_unwinds_nested_frames)
@@ -1779,7 +1765,7 @@ TEST(Interpreter, subscript_load_out_of_range_list_index_unwinds_nested_frames)
                         L"    xs = [1, 2, 3]\n"
                         L"    return xs[3]\n"
                         L"fail()\n",
-                        L"IndexError: list index out of range");
+                        L"IndexError", L"list index out of range");
 }
 
 TEST(Interpreter, subscript_load_rejects_out_of_range_tuple_index)
@@ -1787,7 +1773,7 @@ TEST(Interpreter, subscript_load_rejects_out_of_range_tuple_index)
     expect_python_error(L"class Cls:\n"
                         L"    pass\n"
                         L"Cls.__mro__[2]\n",
-                        L"IndexError: tuple index out of range");
+                        L"IndexError", L"tuple index out of range");
 }
 
 TEST(Interpreter, subscript_load_out_of_range_tuple_index_unwinds_nested_frames)
@@ -1797,14 +1783,14 @@ TEST(Interpreter, subscript_load_out_of_range_tuple_index_unwinds_nested_frames)
                         L"        pass\n"
                         L"    return Cls.__mro__[2]\n"
                         L"fail()\n",
-                        L"IndexError: tuple index out of range");
+                        L"IndexError", L"tuple index out of range");
 }
 
 TEST(Interpreter, subscript_load_missing_dict_key_raises_key_error)
 {
     expect_python_error(L"xs = {\"alpha\": 1}\n"
                         L"xs[\"beta\"]\n",
-                        L"KeyError");
+                        L"KeyError", L"");
 }
 
 TEST(Interpreter, subscript_load_missing_dict_key_unwinds_nested_frames)
@@ -1813,12 +1799,13 @@ TEST(Interpreter, subscript_load_missing_dict_key_unwinds_nested_frames)
                         L"    xs = {\"alpha\": 1}\n"
                         L"    return xs[\"beta\"]\n"
                         L"fail()\n",
-                        L"KeyError");
+                        L"KeyError", L"");
 }
 
 TEST(Interpreter, subscript_load_rejects_non_subscriptable_receiver)
 {
-    expect_python_error(L"1[0]\n", L"TypeError: object is not subscriptable");
+    expect_python_error(L"1[0]\n", L"TypeError",
+                        L"object is not subscriptable");
 }
 
 TEST(Interpreter, subscript_load_non_subscriptable_unwinds_nested_frames)
@@ -1826,20 +1813,20 @@ TEST(Interpreter, subscript_load_non_subscriptable_unwinds_nested_frames)
     expect_python_error(L"def fail():\n"
                         L"    return 1[0]\n"
                         L"fail()\n",
-                        L"TypeError: object is not subscriptable");
+                        L"TypeError", L"object is not subscriptable");
 }
 
 TEST(Interpreter, subscript_delete_rejects_non_subscriptable_receiver)
 {
-    expect_python_error(L"del (1)[0]\n",
-                        L"TypeError: object is not subscriptable");
+    expect_python_error(L"del (1)[0]\n", L"TypeError",
+                        L"object is not subscriptable");
 }
 
 TEST(Interpreter, subscript_delete_missing_dict_key_raises_key_error)
 {
     expect_python_error(L"xs = {\"alpha\": 1}\n"
                         L"del xs[\"beta\"]\n",
-                        L"KeyError");
+                        L"KeyError", L"");
 }
 
 TEST(Interpreter, subscript_delete_missing_dict_key_unwinds_nested_frames)
@@ -1848,7 +1835,7 @@ TEST(Interpreter, subscript_delete_missing_dict_key_unwinds_nested_frames)
                         L"    xs = {\"alpha\": 1}\n"
                         L"    del xs[\"beta\"]\n"
                         L"fail()\n",
-                        L"KeyError");
+                        L"KeyError", L"");
 }
 
 TEST(Interpreter, attribute_load_and_store_syntax)
@@ -2340,19 +2327,20 @@ TEST(Interpreter, class_call_rejects_arguments)
     expect_python_error(L"class Cls:\n"
                         L"    pass\n"
                         L"Cls(1)\n",
-                        L"TypeError: wrong number of arguments");
+                        L"TypeError", L"wrong number of arguments");
 }
 
 TEST(Interpreter, return_in_class_body_is_rejected)
 {
-    expect_runtime_error(L"class Cls:\n"
-                         L"    return 1\n",
-                         "SyntaxError: 'return' outside function");
+    expect_python_error(L"class Cls:\n"
+                        L"    return 1\n",
+                        L"SyntaxError", L"'return' outside function");
 }
 
 TEST(Interpreter, return_in_module_body_is_rejected)
 {
-    expect_runtime_error(L"return\n", "SyntaxError: 'return' outside function");
+    expect_python_error(L"return\n", L"SyntaxError",
+                        L"'return' outside function");
 }
 
 TEST(Interpreter, global_statement_makes_function_delete_global)
@@ -2363,76 +2351,76 @@ TEST(Interpreter, global_statement_makes_function_delete_global)
                         L"    del a\n"
                         L"f()\n"
                         L"a\n",
-                        L"NameError: name 'a' is not defined");
+                        L"NameError", L"name 'a' is not defined");
 }
 
 TEST(Interpreter, global_statement_rejects_parameter_conflict)
 {
-    expect_runtime_error(L"def f(value):\n"
-                         L"    global value\n",
-                         "SyntaxError: name is parameter and global");
+    expect_python_error(L"def f(value):\n"
+                        L"    global value\n",
+                        L"SyntaxError", L"name is parameter and global");
 }
 
 TEST(Interpreter, global_statement_rejects_prior_function_read)
 {
-    expect_runtime_error(
-        L"def f():\n"
-        L"    value\n"
-        L"    global value\n",
-        "SyntaxError: name is used prior to global declaration");
+    expect_python_error(L"def f():\n"
+                        L"    value\n"
+                        L"    global value\n",
+                        L"SyntaxError",
+                        L"name is used prior to global declaration");
 }
 
 TEST(Interpreter, global_statement_rejects_prior_function_assignment)
 {
-    expect_runtime_error(
-        L"def f():\n"
-        L"    value = 1\n"
-        L"    global value\n",
-        "SyntaxError: name is assigned to before global declaration");
+    expect_python_error(L"def f():\n"
+                        L"    value = 1\n"
+                        L"    global value\n",
+                        L"SyntaxError",
+                        L"name is assigned to before global declaration");
 }
 
 TEST(Interpreter, global_statement_rejects_prior_function_delete)
 {
-    expect_runtime_error(
-        L"def f():\n"
-        L"    del value\n"
-        L"    global value\n",
-        "SyntaxError: name is assigned to before global declaration");
+    expect_python_error(L"def f():\n"
+                        L"    del value\n"
+                        L"    global value\n",
+                        L"SyntaxError",
+                        L"name is assigned to before global declaration");
 }
 
 TEST(Interpreter, module_global_statement_rejects_prior_read)
 {
-    expect_runtime_error(
-        L"value\n"
-        L"global value\n",
-        "SyntaxError: name is used prior to global declaration");
+    expect_python_error(L"value\n"
+                        L"global value\n",
+                        L"SyntaxError",
+                        L"name is used prior to global declaration");
 }
 
 TEST(Interpreter, module_global_statement_rejects_prior_assignment)
 {
-    expect_runtime_error(
-        L"value = 1\n"
-        L"global value\n",
-        "SyntaxError: name is assigned to before global declaration");
+    expect_python_error(L"value = 1\n"
+                        L"global value\n",
+                        L"SyntaxError",
+                        L"name is assigned to before global declaration");
 }
 
 TEST(Interpreter, global_statement_rejects_annotated_name)
 {
-    expect_runtime_error(L"def f():\n"
-                         L"    global value\n"
-                         L"    value: int\n",
-                         "SyntaxError: annotated name can't be global");
+    expect_python_error(L"def f():\n"
+                        L"    global value\n"
+                        L"    value: int\n",
+                        L"SyntaxError", L"annotated name can't be global");
 }
 
 TEST(Interpreter, name_error)
 {
-    expect_python_error(L"missing_name\n",
-                        L"NameError: name 'missing_name' is not defined");
+    expect_python_error(L"missing_name\n", L"NameError",
+                        L"name 'missing_name' is not defined");
 }
 
 TEST(Interpreter, call_non_callable)
 {
-    expect_python_error(L"1()\n", L"TypeError: object is not callable");
+    expect_python_error(L"1()\n", L"TypeError", L"object is not callable");
 }
 
 TEST(Interpreter, call_non_callable_unwinds_nested_frames)
@@ -2441,7 +2429,7 @@ TEST(Interpreter, call_non_callable_unwinds_nested_frames)
                         L"    1()\n"
                         L"    return 99\n"
                         L"fail()\n",
-                        L"TypeError: object is not callable");
+                        L"TypeError", L"object is not callable");
 }
 
 TEST(Interpreter, call_intrinsic_zero_arg_function)
@@ -3111,7 +3099,7 @@ TEST(Interpreter, call_clovervm_method_reports_missing_method)
 
     EXPECT_TRUE(actual.is_exception_marker());
     EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
-    expect_thread_python_error(test_context.thread(), L"AttributeError");
+    expect_thread_python_error(test_context.thread(), L"AttributeError", L"");
     test_context.thread()->clear_pending_exception();
 }
 
@@ -3136,8 +3124,8 @@ TEST(Interpreter, call_clovervm_method_reports_non_callable_method)
 
     EXPECT_TRUE(actual.is_exception_marker());
     EXPECT_EQ(caller_fp, test_context.thread()->clover_frame_frontier());
-    expect_thread_python_error(test_context.thread(),
-                               L"TypeError: object is not callable");
+    expect_thread_python_error(test_context.thread(), L"TypeError",
+                               L"object is not callable");
     test_context.thread()->clear_pending_exception();
 }
 
@@ -3182,7 +3170,7 @@ TEST(Interpreter, native_exception_marker_materializes_stop_iteration)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"StopIteration");
+    expect_thread_python_error(test_context.thread(), L"StopIteration", L"");
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -3210,7 +3198,7 @@ TEST(Interpreter, native_exception_marker_unwinds_nested_frames)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"StopIteration");
+    expect_thread_python_error(test_context.thread(), L"StopIteration", L"");
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -3255,7 +3243,7 @@ TEST(Interpreter, raise_from_handler_sets_exception_context)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"ValueError");
+    expect_thread_python_error(test_context.thread(), L"ValueError", L"");
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -3280,8 +3268,8 @@ TEST(Interpreter, bare_raise_without_active_exception_raises_runtime_error)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(),
-                               L"RuntimeError: No active exception to reraise");
+    expect_thread_python_error(test_context.thread(), L"RuntimeError",
+                               L"No active exception to reraise");
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -3316,7 +3304,7 @@ TEST(Interpreter, try_finally_runs_cleanup_before_reraising)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"ValueError");
+    expect_thread_python_error(test_context.thread(), L"ValueError", L"");
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
@@ -3335,7 +3323,7 @@ TEST(Interpreter, try_finally_raise_chains_body_exception_as_context)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"ValueError");
+    expect_thread_python_error(test_context.thread(), L"ValueError", L"");
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -3363,7 +3351,7 @@ TEST(Interpreter, bare_raise_in_exceptional_finally_reraises_body_exception)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"NameError");
+    expect_thread_python_error(test_context.thread(), L"NameError", L"");
 
     ASSERT_EQ(PendingExceptionKind::Object,
               test_context.thread()->pending_exception_kind());
@@ -3449,7 +3437,7 @@ TEST(Interpreter, return_through_finally_that_raises_runs_cleanup_once)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"ValueError");
+    expect_thread_python_error(test_context.thread(), L"ValueError", L"");
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
@@ -3601,7 +3589,7 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_unmatched_reraise)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"ValueError");
+    expect_thread_python_error(test_context.thread(), L"ValueError", L"");
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
@@ -3623,7 +3611,7 @@ TEST(Interpreter, try_except_finally_runs_cleanup_before_handler_reraise)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"ValueError");
+    expect_thread_python_error(test_context.thread(), L"ValueError", L"");
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
@@ -3674,7 +3662,7 @@ TEST(Interpreter, try_except_else_exception_is_not_caught_by_handlers)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"ValueError");
+    expect_thread_python_error(test_context.thread(), L"ValueError", L"");
 }
 
 TEST(Interpreter, try_except_else_finally_runs_cleanup_after_else)
@@ -3710,7 +3698,7 @@ TEST(Interpreter, try_except_else_finally_cleans_up_else_exception)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"ValueError");
+    expect_thread_python_error(test_context.thread(), L"ValueError", L"");
 
     TValue<String> result_name =
         test_context.vm().get_or_create_interned_string_value(L"result");
@@ -3731,7 +3719,8 @@ TEST(Interpreter, unhandled_pending_exception_reports_class_and_message)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"BaseException: boom");
+    expect_thread_python_error(test_context.thread(), L"BaseException",
+                               L"boom");
 }
 
 TEST(Interpreter, native_exception_marker_requires_pending_exception)
@@ -3769,7 +3758,7 @@ TEST(Interpreter, raise_unwind_raises_exception_class)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"Exception");
+    expect_thread_python_error(test_context.thread(), L"Exception", L"");
 }
 
 TEST(Interpreter, raise_unwind_raises_exception_object)
@@ -3785,7 +3774,7 @@ TEST(Interpreter, raise_unwind_raises_exception_object)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"ValueError: boom");
+    expect_thread_python_error(test_context.thread(), L"ValueError", L"boom");
 }
 
 TEST(Interpreter, raise_unwind_rejects_non_exception)
@@ -3797,9 +3786,8 @@ TEST(Interpreter, raise_unwind_rejects_non_exception)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(),
-                               L"TypeError: exceptions must derive from "
-                               L"BaseException");
+    expect_thread_python_error(test_context.thread(), L"TypeError",
+                               L"exceptions must derive from BaseException");
 }
 
 TEST(Interpreter, import_exception_classes_are_builtins)
@@ -3964,7 +3952,7 @@ TEST(Interpreter, user_code_cannot_use_clover_call_special_as_intrinsic)
 {
     expect_python_error(
         L"__clover_call_special__(1, \"__repr__\", TypeError, \"missing\")\n",
-        L"NameError: name '__clover_call_special__' is not defined");
+        L"NameError", L"name '__clover_call_special__' is not defined");
 }
 
 TEST(Interpreter, user_defined_clover_call_special_name_is_ordinary_function)
@@ -3979,9 +3967,8 @@ TEST(Interpreter, user_defined_clover_call_special_name_is_ordinary_function)
 
 TEST(Interpreter, user_code_cannot_use_clover_write_stdout_as_intrinsic)
 {
-    expect_python_error(L"__clover_write_stdout__(\"hello\")\n",
-                        L"NameError: name '__clover_write_stdout__' is not "
-                        L"defined");
+    expect_python_error(L"__clover_write_stdout__(\"hello\")\n", L"NameError",
+                        L"name '__clover_write_stdout__' is not defined");
 }
 
 TEST(Interpreter, user_defined_clover_write_stdout_name_is_ordinary_function)
@@ -3997,9 +3984,8 @@ TEST(Interpreter, user_defined_clover_write_stdout_name_is_ordinary_function)
 
 TEST(Interpreter, user_code_cannot_use_clover_globals_as_intrinsic)
 {
-    expect_python_error(L"__clover_globals__()\n",
-                        L"NameError: name '__clover_globals__' is not "
-                        L"defined");
+    expect_python_error(L"__clover_globals__()\n", L"NameError",
+                        L"name '__clover_globals__' is not defined");
 }
 
 TEST(Interpreter, user_defined_clover_globals_name_is_ordinary_function)
@@ -4013,9 +3999,8 @@ TEST(Interpreter, user_defined_clover_globals_name_is_ordinary_function)
 
 TEST(Interpreter, user_code_cannot_use_clover_locals_as_intrinsic)
 {
-    expect_python_error(L"__clover_locals__()\n",
-                        L"NameError: name '__clover_locals__' is not "
-                        L"defined");
+    expect_python_error(L"__clover_locals__()\n", L"NameError",
+                        L"name '__clover_locals__' is not defined");
 }
 
 TEST(Interpreter, user_defined_clover_locals_name_is_ordinary_function)
@@ -4058,7 +4043,7 @@ TEST(Interpreter, globals_slotdict_reads_current_module_bindings_only)
     Value builtins_value =
         test_context.run_file(L"globals()[\"__builtins__\"]\n");
     ASSERT_TRUE(can_convert_to<ModuleObject>(builtins_value));
-    expect_python_error(L"globals()[\"len\"]\n", L"KeyError");
+    expect_python_error(L"globals()[\"len\"]\n", L"KeyError", L"");
 }
 
 TEST(Interpreter, main_module_is_inserted_into_sys_modules)
@@ -4075,8 +4060,10 @@ TEST(Interpreter, main_module_file_sets_file_not_name)
 {
     test::VmTestContext test_context;
 
-    CodeObject *code = test_context.thread()->compile(
-        L"(__name__, __file__)\n", StartRule::File, L"/tmp/script.py");
+    CodeObject *code = test_context.thread()
+                           ->compile(L"(__name__, __file__)\n", StartRule::File,
+                                     L"/tmp/script.py")
+                           .value();
     Value result = test_context.thread()->run_clovervm_code_object(code);
     ASSERT_TRUE(can_convert_to<Tuple>(result));
     Tuple *tuple = result.get_ptr<Tuple>();
@@ -4146,12 +4133,12 @@ TEST(Interpreter, globals_slotdict_writes_and_deletes_module_bindings)
 
 TEST(Interpreter, globals_slotdict_rejects_non_string_keys)
 {
-    expect_python_error(L"globals()[1] = 2\n",
-                        L"TypeError: slotdict keys must be strings");
-    expect_python_error(L"globals()[1]\n",
-                        L"TypeError: slotdict keys must be strings");
-    expect_python_error(L"del globals()[1]\n",
-                        L"TypeError: slotdict keys must be strings");
+    expect_python_error(L"globals()[1] = 2\n", L"TypeError",
+                        L"slotdict keys must be strings");
+    expect_python_error(L"globals()[1]\n", L"TypeError",
+                        L"slotdict keys must be strings");
+    expect_python_error(L"del globals()[1]\n", L"TypeError",
+                        L"slotdict keys must be strings");
 }
 
 TEST(Interpreter, globals_slotdict_class_is_not_builtin_binding)
@@ -4163,8 +4150,8 @@ TEST(Interpreter, globals_slotdict_class_is_not_builtin_binding)
     EXPECT_STREQ(
         L"slotdict",
         string_as_wchar_t(TValue<String>::from_value_assumed(class_name)));
-    expect_python_error(L"slotdict\n",
-                        L"NameError: name 'slotdict' is not defined");
+    expect_python_error(L"slotdict\n", L"NameError",
+                        L"name 'slotdict' is not defined");
 }
 
 TEST(Interpreter, locals_builtin_returns_module_slotdict_at_module_scope)
@@ -4182,16 +4169,16 @@ TEST(Interpreter, locals_slotdict_reads_and_writes_module_bindings)
     EXPECT_EQ(Value::from_smi(3), test_context.run_file(L"x = 1\n"
                                                         L"locals()[\"y\"] = 2\n"
                                                         L"x + y\n"));
-    expect_python_error(L"locals()[\"len\"]\n", L"KeyError");
+    expect_python_error(L"locals()[\"len\"]\n", L"KeyError", L"");
 }
 
 TEST(Interpreter, locals_builtin_is_unimplemented_in_function_scope)
 {
-    expect_python_error(
-        L"def f():\n"
-        L"    return locals()\n"
-        L"f()\n",
-        L"UnimplementedError: locals() is only implemented for module scope");
+    expect_python_error(L"def f():\n"
+                        L"    return locals()\n"
+                        L"f()\n",
+                        L"UnimplementedError",
+                        L"locals() is only implemented for module scope");
 }
 
 TEST(Interpreter, instance_dict_returns_fresh_live_slotdict_views)
@@ -4231,12 +4218,12 @@ TEST(Interpreter, slotdict_hides_virtual_special_descriptors)
                         L"    pass\n"
                         L"c = C()\n"
                         L"c.__dict__[\"__class__\"]\n",
-                        L"KeyError");
+                        L"KeyError", L"");
     expect_python_error(L"class C:\n"
                         L"    pass\n"
                         L"c = C()\n"
                         L"c.__dict__[\"__dict__\"]\n",
-                        L"KeyError");
+                        L"KeyError", L"");
 }
 
 TEST(Interpreter, class_assignment_changes_receiver_shape_class)
@@ -4261,39 +4248,39 @@ TEST(Interpreter, class_assignment_changes_receiver_shape_class)
 
 TEST(Interpreter, class_assignment_rejects_builtin_and_class_object_receivers)
 {
-    expect_python_error(
-        L"a = []\n"
-        L"a.__class__ = list\n",
-        L"TypeError: __class__ assignment only supported for mutable types or "
-        L"ModuleType subclasses");
-    expect_python_error(
-        L"class F:\n"
-        L"    pass\n"
-        L"F.__class__ = type\n",
-        L"TypeError: __class__ assignment only supported for mutable types or "
-        L"ModuleType subclasses");
+    expect_python_error(L"a = []\n"
+                        L"a.__class__ = list\n",
+                        L"TypeError",
+                        L"__class__ assignment only supported for mutable "
+                        L"types or ModuleType subclasses");
+    expect_python_error(L"class F:\n"
+                        L"    pass\n"
+                        L"F.__class__ = type\n",
+                        L"TypeError",
+                        L"__class__ assignment only supported for mutable "
+                        L"types or ModuleType subclasses");
 }
 
 TEST(Interpreter, class_assignment_rejects_instance_module_category_switch)
 {
-    expect_python_error(
-        L"class F:\n"
-        L"    pass\n"
-        L"f = F()\n"
-        L"f.__class__ = __builtins__.__class__\n",
-        L"TypeError: __class__ assignment only supported for mutable types or "
-        L"ModuleType subclasses");
+    expect_python_error(L"class F:\n"
+                        L"    pass\n"
+                        L"f = F()\n"
+                        L"f.__class__ = __builtins__.__class__\n",
+                        L"TypeError",
+                        L"__class__ assignment only supported for mutable "
+                        L"types or ModuleType subclasses");
 }
 
 TEST(Interpreter, class_assignment_rejects_module_instance_category_switch)
 {
-    expect_python_error(
-        L"class F:\n"
-        L"    pass\n"
-        L"m = __builtins__\n"
-        L"m.__class__ = F\n",
-        L"TypeError: __class__ assignment only supported for mutable types or "
-        L"ModuleType subclasses");
+    expect_python_error(L"class F:\n"
+                        L"    pass\n"
+                        L"m = __builtins__\n"
+                        L"m.__class__ = F\n",
+                        L"TypeError",
+                        L"__class__ assignment only supported for mutable "
+                        L"types or ModuleType subclasses");
 }
 
 TEST(Interpreter, module_class_assignment_accepts_module_class)
@@ -4587,21 +4574,21 @@ TEST(Interpreter, direct_range_for_loop_reports_integer_argument_errors)
 {
     expect_python_error(L"for x in range(False):\n"
                         L"    0\n",
-                        L"TypeError: range() arguments must be integers");
+                        L"TypeError", L"range() arguments must be integers");
 }
 
 TEST(Interpreter, direct_range_for_loop_reports_zero_step_errors)
 {
     expect_python_error(L"for x in range(1, 4, 0):\n"
                         L"    0\n",
-                        L"ValueError: range() arg 3 must not be zero");
+                        L"ValueError", L"range() arg 3 must not be zero");
 }
 
 TEST(Interpreter, global_delete_does_not_delete_builtin_fallback)
 {
     expect_python_error(L"range\n"
                         L"del range\n",
-                        L"NameError: name 'range' is not defined");
+                        L"NameError", L"name 'range' is not defined");
 }
 
 TEST(Interpreter, global_delete_reveals_builtin_after_shadow_delete)
@@ -4618,12 +4605,12 @@ TEST(Interpreter, global_delete_reveals_builtin_after_shadow_delete)
 
 TEST(Interpreter, range_builtin_requires_integer_argument)
 {
-    expect_python_error(L"range(False)\n",
-                        L"TypeError: range() arguments must be integers");
-    expect_python_error(L"range(1, False)\n",
-                        L"TypeError: range() arguments must be integers");
-    expect_python_error(L"range(1, 2, False)\n",
-                        L"TypeError: range() arguments must be integers");
+    expect_python_error(L"range(False)\n", L"TypeError",
+                        L"range() arguments must be integers");
+    expect_python_error(L"range(1, False)\n", L"TypeError",
+                        L"range() arguments must be integers");
+    expect_python_error(L"range(1, 2, False)\n", L"TypeError",
+                        L"range() arguments must be integers");
 }
 
 TEST(Interpreter, range_integer_argument_error_unwinds_nested_frames)
@@ -4632,13 +4619,13 @@ TEST(Interpreter, range_integer_argument_error_unwinds_nested_frames)
                         L"    range(False)\n"
                         L"    return 99\n"
                         L"fail()\n",
-                        L"TypeError: range() arguments must be integers");
+                        L"TypeError", L"range() arguments must be integers");
 }
 
 TEST(Interpreter, range_builtin_rejects_zero_step)
 {
-    expect_python_error(L"range(1, 2, 0)\n",
-                        L"ValueError: range() arg 3 must not be zero");
+    expect_python_error(L"range(1, 2, 0)\n", L"ValueError",
+                        L"range() arg 3 must not be zero");
 }
 
 TEST(Interpreter, range_zero_step_error_unwinds_nested_frames)
@@ -4647,14 +4634,15 @@ TEST(Interpreter, range_zero_step_error_unwinds_nested_frames)
                         L"    range(1, 2, 0)\n"
                         L"    return 99\n"
                         L"fail()\n",
-                        L"ValueError: range() arg 3 must not be zero");
+                        L"ValueError", L"range() arg 3 must not be zero");
 }
 
 TEST(Interpreter, range_builtin_rejects_wrong_arity_at_function_boundary)
 {
-    expect_python_error(L"range()\n", L"TypeError: wrong number of arguments");
-    expect_python_error(L"range(1, 2, 3, 4)\n",
-                        L"TypeError: wrong number of arguments");
+    expect_python_error(L"range()\n", L"TypeError",
+                        L"wrong number of arguments");
+    expect_python_error(L"range(1, 2, 3, 4)\n", L"TypeError",
+                        L"wrong number of arguments");
 }
 
 TEST(Interpreter, python_defined_iter_builtin_calls_dunder_iter)
@@ -4699,7 +4687,7 @@ TEST(Interpreter, python_defined_next_builtin_returns_default_when_exhausted)
 
 TEST(Interpreter, python_defined_next_builtin_rejects_multiple_defaults)
 {
-    expect_python_error(L"next(iter(()), 42, 43)\n", L"TypeError");
+    expect_python_error(L"next(iter(()), 42, 43)\n", L"TypeError", L"");
 }
 
 TEST(Interpreter, tuple_iterator_next_returns_items_until_stop_iteration)
@@ -4816,7 +4804,7 @@ TEST(Interpreter, python_defined_len_builtin_calls_dunder_len)
 
 TEST(Interpreter, python_defined_len_builtin_missing_method_error)
 {
-    expect_python_error(L"len(1)\n", L"TypeError: object has no len()");
+    expect_python_error(L"len(1)\n", L"TypeError", L"object has no len()");
 }
 
 TEST(Interpreter, python_defined_print_builtin_writes_values_to_stdout)
@@ -4865,16 +4853,17 @@ TEST(Interpreter, python_defined_print_builtin_treats_none_sep_end_as_defaults)
 
 TEST(Interpreter, python_defined_print_builtin_rejects_non_string_sep_end)
 {
-    expect_python_error(L"print(1, sep=2)\n", L"TypeError");
-    expect_python_error(L"print(1, end=2)\n", L"TypeError");
+    expect_python_error(L"print(1, sep=2)\n", L"TypeError", L"");
+    expect_python_error(L"print(1, end=2)\n", L"TypeError", L"");
 }
 
 TEST(Interpreter, interactive_expression_returns_value)
 {
     test::VmTestContext test_context;
 
-    CodeObject *code_obj =
-        test_context.thread()->compile(L"1 + 2\n", StartRule::Interactive);
+    CodeObject *code_obj = test_context.thread()
+                               ->compile(L"1 + 2\n", StartRule::Interactive)
+                               .value();
     Value result = test_context.thread()->run_clovervm_code_object(code_obj);
 
     EXPECT_EQ(Value::from_smi(3), result);
@@ -4889,15 +4878,19 @@ TEST(Interpreter, interactive_assignment_returns_none_and_persists_scope)
     ModuleObject *module = test_context.make_test_module_object(
         module_name, test_context.vm().global_builtins_module().raw_value());
 
-    CodeObject *assignment = test_context.thread()->compile_in_module(
-        L"x = 4\n", StartRule::Interactive, module,
-        LanguageMode::StandardsCompliant);
+    CodeObject *assignment =
+        test_context.thread()
+            ->compile_in_module(L"x = 4\n", StartRule::Interactive, module,
+                                LanguageMode::StandardsCompliant)
+            .value();
     EXPECT_EQ(Value::None(),
               test_context.thread()->run_clovervm_code_object(assignment));
 
-    CodeObject *expression = test_context.thread()->compile_in_module(
-        L"x + 1\n", StartRule::Interactive, module,
-        LanguageMode::StandardsCompliant);
+    CodeObject *expression =
+        test_context.thread()
+            ->compile_in_module(L"x + 1\n", StartRule::Interactive, module,
+                                LanguageMode::StandardsCompliant)
+            .value();
     EXPECT_EQ(Value::from_smi(5),
               test_context.thread()->run_clovervm_code_object(expression));
 }
@@ -4908,7 +4901,7 @@ TEST(Interpreter, python_defined_print_builtin_propagates_str_errors)
                         L"    def __str__(self):\n"
                         L"        return 1\n"
                         L"print(Bad())\n",
-                        L"TypeError: __clover_write_stdout__ expects str");
+                        L"TypeError", L"__clover_write_stdout__ expects str");
 }
 
 TEST(Interpreter, python_defined_sum_builtin_accumulates_iterable)
@@ -4952,23 +4945,24 @@ TEST(Interpreter, python_defined_min_and_max_builtins_compare_items)
 
 TEST(Interpreter, python_defined_min_and_max_builtins_report_empty_input)
 {
-    expect_python_error(L"min()\n", L"TypeError");
-    expect_python_error(L"max()\n", L"TypeError");
-    expect_python_error(L"min(())\n", L"ValueError");
-    expect_python_error(L"max([])\n", L"ValueError");
+    expect_python_error(L"min()\n", L"TypeError", L"");
+    expect_python_error(L"max()\n", L"TypeError", L"");
+    expect_python_error(L"min(())\n", L"ValueError", L"");
+    expect_python_error(L"max([])\n", L"ValueError", L"");
 }
 
 TEST(Interpreter, python_defined_iter_and_next_builtin_missing_method_errors)
 {
-    expect_python_error(L"iter(1)\n", L"TypeError: object is not iterable");
-    expect_python_error(L"next(1)\n", L"TypeError: object is not an iterator");
+    expect_python_error(L"iter(1)\n", L"TypeError", L"object is not iterable");
+    expect_python_error(L"next(1)\n", L"TypeError",
+                        L"object is not an iterator");
 }
 
 TEST(Interpreter, for_loop_rejects_non_iterable)
 {
     expect_python_error(L"for x in 1:\n"
                         L"    x\n",
-                        L"TypeError: object is not iterable");
+                        L"TypeError", L"object is not iterable");
 }
 
 TEST(Interpreter, for_loop_non_iterable_unwinds_nested_frames)
@@ -4978,7 +4972,7 @@ TEST(Interpreter, for_loop_non_iterable_unwinds_nested_frames)
                         L"        x\n"
                         L"    return 99\n"
                         L"fail()\n",
-                        L"TypeError: object is not iterable");
+                        L"TypeError", L"object is not iterable");
 }
 
 TEST(Interpreter, generic_for_loop_uses_iter_and_next_until_stop_iteration)
@@ -5057,7 +5051,7 @@ TEST(Interpreter, generic_for_loop_propagates_non_stop_iteration)
                         L"        raise ValueError\n"
                         L"for x in Iterator():\n"
                         L"    x\n",
-                        L"ValueError");
+                        L"ValueError", L"");
 }
 
 TEST(Interpreter, with_statement_calls_enter_and_exit)
@@ -5103,7 +5097,7 @@ TEST(Interpreter, with_statement_reraises_when_exit_returns_false)
                         L"        return False\n"
                         L"with Manager():\n"
                         L"    raise ValueError\n",
-                        L"ValueError");
+                        L"ValueError", L"");
 }
 
 TEST(Interpreter, with_statement_exit_runs_when_as_target_binding_raises)
@@ -5163,7 +5157,7 @@ TEST(Interpreter, with_statement_exit_that_raises_during_return_runs_once)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"ValueError");
+    expect_thread_python_error(test_context.thread(), L"ValueError", L"");
 
     TValue<String> log_name =
         test_context.vm().get_or_create_interned_string_value(L"log");
@@ -5203,7 +5197,7 @@ TEST(Interpreter, with_statement_inner_exit_stays_suspended_during_outer_exit)
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_TRUE(actual.is_exception_marker());
-    expect_thread_python_error(test_context.thread(), L"ValueError");
+    expect_thread_python_error(test_context.thread(), L"ValueError", L"");
 
     TValue<String> log_name =
         test_context.vm().get_or_create_interned_string_value(L"log");
@@ -5244,7 +5238,7 @@ TEST(Interpreter, left_shift_negative_count)
     expect_python_error(L"a = 1\n"
                         L"b = -1\n"
                         L"a << b\n",
-                        L"ValueError: negative shift count");
+                        L"ValueError", L"negative shift count");
 }
 
 TEST(Interpreter, right_shift_negative_count)
@@ -5252,7 +5246,7 @@ TEST(Interpreter, right_shift_negative_count)
     expect_python_error(L"a = 8\n"
                         L"b = -1\n"
                         L"a >> b\n",
-                        L"ValueError: negative shift count");
+                        L"ValueError", L"negative shift count");
 }
 
 TEST(Interpreter, negative_shift_count_unwinds_nested_frames)
@@ -5261,7 +5255,7 @@ TEST(Interpreter, negative_shift_count_unwinds_nested_frames)
                         L"    1 << -1\n"
                         L"    return 99\n"
                         L"fail()\n",
-                        L"ValueError: negative shift count");
+                        L"ValueError", L"negative shift count");
 }
 
 TEST(Interpreter, left_shift_overflow_smi)

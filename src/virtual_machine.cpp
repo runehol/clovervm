@@ -679,6 +679,10 @@ namespace cl
         register_builtin_class(
             make_exception_subclass(this, L"OverflowError", exception));
         register_builtin_class(
+            make_exception_subclass(this, L"SyntaxError", exception));
+        register_builtin_class(
+            make_exception_subclass(this, L"IndentationError", exception));
+        register_builtin_class(
             make_exception_subclass(this, L"ZeroDivisionError", exception));
         register_builtin_class(
             make_exception_subclass(this, L"RuntimeError", exception));
@@ -856,20 +860,28 @@ namespace cl
                              .raw_value());
 
         ThreadState *thread = get_default_thread();
-        CodeObject *builtins_code = thread->compile_in_module(
+        Expected<CodeObject *> builtins_code = thread->compile_in_module(
             trusted_builtin_source, StartRule::File, builtins_module,
             LanguageMode::TrustedCloverExtensions);
-        Value result = thread->run_clovervm_code_object(builtins_code);
+        if(builtins_code.has_exception())
+        {
+            throw std::runtime_error("failed to compile trusted builtins.py");
+        }
+        Value result = thread->run_clovervm_code_object(builtins_code.value());
         if(result.is_exception_marker())
         {
             throw std::runtime_error(
                 "failed to initialize trusted builtins.py");
         }
 
-        CodeObject *sys_code = thread->compile_in_module(
+        Expected<CodeObject *> sys_code = thread->compile_in_module(
             trusted_sys_source, StartRule::File, sys_module().extract(),
             LanguageMode::TrustedCloverExtensions);
-        result = thread->run_clovervm_code_object(sys_code);
+        if(sys_code.has_exception())
+        {
+            throw std::runtime_error("failed to compile trusted sys.py");
+        }
+        result = thread->run_clovervm_code_object(sys_code.value());
         if(result.is_exception_marker())
         {
             throw std::runtime_error("failed to initialize trusted sys.py");

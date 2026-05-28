@@ -131,18 +131,12 @@ TEST(Parser, compile_in_module_reports_compile_continuation_info)
         module_name, test_context.vm().global_builtins_module().raw_value());
     CompileContinuationInfo compile_continuation_info;
 
-    try
-    {
-        (void)test_context.thread()->compile_in_module(
-            L"if True:\n", StartRule::Interactive, module,
-            LanguageMode::StandardsCompliant, &compile_continuation_info);
-        FAIL() << "Expected ParseError";
-    }
-    catch(const ParseError &)
-    {
-        EXPECT_TRUE(compile_continuation_info.incomplete_input);
-        EXPECT_EQ(1u, compile_continuation_info.next_indentation_level);
-    }
+    Expected<CodeObject *> code = test_context.thread()->compile_in_module(
+        L"if True:\n", StartRule::Interactive, module,
+        LanguageMode::StandardsCompliant, &compile_continuation_info);
+    EXPECT_TRUE(code.has_exception());
+    EXPECT_TRUE(compile_continuation_info.incomplete_input);
+    EXPECT_EQ(1u, compile_continuation_info.next_indentation_level);
 }
 
 TEST(Parser, unterminated_single_string_is_not_incomplete_input)

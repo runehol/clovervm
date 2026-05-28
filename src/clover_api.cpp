@@ -107,9 +107,14 @@ namespace
         }
 
         cl::ThreadState *thread = api_vm->vm.get_default_thread();
-        cl::CodeObject *code = thread->compile(
+        cl::Expected<cl::CodeObject *> code = thread->compile(
             file_contents->c_str(), cl::StartRule::File, filename.c_str());
-        return run_code_object(thread, code, print_bytecode);
+        if(code.has_exception())
+        {
+            std::wcerr << format_pending_python_exception(thread) << L"\n";
+            return CLOVER_STATUS_ERROR;
+        }
+        return run_code_object(thread, code.value(), print_bytecode);
     }
 
     clover_status run_string_impl(clover_vm *api_vm, const char *source,
@@ -124,9 +129,14 @@ namespace
         std::wstring source_text =
             decode_api_string(source, "failed to decode source string");
         cl::ThreadState *thread = api_vm->vm.get_default_thread();
-        cl::CodeObject *code =
+        cl::Expected<cl::CodeObject *> code =
             thread->compile(source_text.c_str(), cl::StartRule::File);
-        return run_code_object(thread, code, print_bytecode);
+        if(code.has_exception())
+        {
+            std::wcerr << format_pending_python_exception(thread) << L"\n";
+            return CLOVER_STATUS_ERROR;
+        }
+        return run_code_object(thread, code.value(), print_bytecode);
     }
 }  // namespace
 

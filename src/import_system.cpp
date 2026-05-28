@@ -401,9 +401,14 @@ namespace cl
                     spec.trusted_clover_extensions
                         ? LanguageMode::TrustedCloverExtensions
                         : LanguageMode::StandardsCompliant;
-                CodeObject *code = thread->compile_in_module(
+                Expected<CodeObject *> code = thread->compile_in_module(
                     source->c_str(), StartRule::File, module, language_mode);
-                Value result = thread->run_clovervm_code_object(code);
+                if(code.has_exception())
+                {
+                    remove_imported_module(thread, name);
+                    return Value::exception_marker();
+                }
+                Value result = thread->run_clovervm_code_object(code.value());
                 if(result.is_exception_marker())
                 {
                     remove_imported_module(thread, name);

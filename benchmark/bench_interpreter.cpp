@@ -177,9 +177,10 @@ namespace
     public:
         CloverProgram(const char *relative_path, int64_t n)
             : thread_(vm_.get_default_thread()),
-              code_(
-                  thread_->compile(make_clover_source(relative_path, n).c_str(),
-                                   StartRule::File))
+              code_(thread_
+                        ->compile(make_clover_source(relative_path, n).c_str(),
+                                  StartRule::File)
+                        .value())
         {
         }
 

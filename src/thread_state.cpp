@@ -14,10 +14,12 @@
 #include "parser.h"
 #include "runtime_helpers.h"
 #include "tokenizer.h"
+#include "unicode.h"
 #include "virtual_machine.h"
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -32,6 +34,45 @@ namespace cl
     static_assert((FrameAlignmentBytes & (FrameAlignmentBytes - 1)) == 0);
 
     thread_local ThreadState *ThreadState::current_thread = nullptr;
+
+    static std::wstring compile_error_message_to_wstring(const char *message)
+    {
+        std::optional<std::wstring> decoded = unicode::decode_utf8(message);
+        if(decoded.has_value())
+        {
+            return *decoded;
+        }
+
+        std::wstring result;
+        for(const char *ch = message; *ch != 0; ++ch)
+        {
+            result.push_back(static_cast<unsigned char>(*ch));
+        }
+        return result;
+    }
+
+    [[nodiscard]] static Expected<void>
+    raise_compile_exception(ThreadState *thread, const std::runtime_error &err)
+    {
+        std::wstring message = compile_error_message_to_wstring(err.what());
+        const wchar_t *type_name = L"SyntaxError";
+
+        size_t prefix_end = message.find(L": ");
+        if(prefix_end != std::wstring::npos)
+        {
+            std::wstring prefix = message.substr(0, prefix_end);
+            if(prefix == L"SyntaxError" || prefix == L"IndentationError")
+            {
+                type_name = prefix == L"SyntaxError" ? L"SyntaxError"
+                                                     : L"IndentationError";
+                message.erase(0, prefix_end + 2);
+            }
+        }
+
+        (void)thread->set_pending_builtin_exception_string(type_name,
+                                                           message.c_str());
+        return Expected<void>::propagate_exception();
+    }
 
     PendingException::PendingException()
         : object(Optional<TValue<Exception>>::none()),
@@ -376,15 +417,17 @@ namespace cl
         return module;
     }
 
-    CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule)
+    Expected<CodeObject *> ThreadState::compile(const wchar_t *str,
+                                                StartRule start_rule)
     {
         ModuleObject *module = make_main_module(Value::not_present());
         return compile_in_module(str, start_rule, module,
                                  LanguageMode::StandardsCompliant);
     }
 
-    CodeObject *ThreadState::compile(const wchar_t *str, StartRule start_rule,
-                                     const wchar_t *main_file)
+    Expected<CodeObject *> ThreadState::compile(const wchar_t *str,
+                                                StartRule start_rule,
+                                                const wchar_t *main_file)
     {
         ActivationScope activation_scope(this);
 
@@ -395,21 +438,34 @@ namespace cl
                                  LanguageMode::StandardsCompliant);
     }
 
-    CodeObject *ThreadState::compile_in_module(
+    Expected<CodeObject *> ThreadState::compile_in_module(
         const wchar_t *str, StartRule start_rule, ModuleObject *module,
         LanguageMode language_mode,
         CompileContinuationInfo *compile_continuation_info)
     {
         ActivationScope activation_scope(this);
 
-        CompilationUnit input(str);
-        TokenVector tv = tokenize(input);
-        AstVector av =
-            parse(*machine, tv, start_rule, compile_continuation_info);
-        ModuleResultMode result_mode = start_rule == StartRule::Interactive
-                                           ? ModuleResultMode::Interactive
-                                           : ModuleResultMode::File;
-        return codegen_module_in_module(av, module, language_mode, result_mode);
+        if(compile_continuation_info != nullptr)
+        {
+            *compile_continuation_info = CompileContinuationInfo{};
+        }
+        try
+        {
+            CompilationUnit input(str);
+            TokenVector tv = tokenize(input);
+            AstVector av =
+                parse(*machine, tv, start_rule, compile_continuation_info);
+            ModuleResultMode result_mode = start_rule == StartRule::Interactive
+                                               ? ModuleResultMode::Interactive
+                                               : ModuleResultMode::File;
+            return Expected<CodeObject *>::ok(codegen_module_in_module(
+                av, module, language_mode, result_mode));
+        }
+        catch(const std::runtime_error &err)
+        {
+            (void)raise_compile_exception(this, err);
+            return Expected<CodeObject *>::propagate_exception();
+        }
     }
 
     void ThreadState::add_to_active_zero_count_table_if_needed(HeapObject *obj)

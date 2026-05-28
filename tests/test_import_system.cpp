@@ -492,8 +492,14 @@ TEST(ImportSystem, ImportModuleAbsoluteRemovesModuleOnCompileFailure)
     replace_sys_path(context, path);
 
     TValue<String> name = module_name(context, L"broken");
-    EXPECT_THROW((void)import_module_absolute(context.thread(), name),
-                 std::exception);
+    Value imported = import_module_absolute(context.thread(), name);
+    EXPECT_TRUE(imported.is_exception_marker());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(L"SyntaxError",
+              value_as_wstring(
+                  exception.extract()->get_shape()->get_class()->get_name()));
     EXPECT_FALSE(
         context.vm().imported_modules().extract()->contains(name.raw_value()));
 }
@@ -1204,11 +1210,11 @@ TEST(ImportSystem, FromImportStarInFunctionIsRejectedByCodegen)
     test::VmTestContext context;
     ThreadState::ActivationScope activation_scope(context.thread());
 
-    EXPECT_THROW((void)context.thread()->compile(L"def f():\n"
-                                                 L"    from assignment import "
-                                                 L"*\n",
-                                                 StartRule::File),
-                 std::runtime_error);
+    test::expect_compile_python_error(context,
+                                      L"def f():\n"
+                                      L"    from assignment import "
+                                      L"*\n",
+                                      L"SyntaxError");
 }
 
 TEST(ImportSystem, RelativeFromImportLoadsSiblingModule)

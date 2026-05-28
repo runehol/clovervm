@@ -3,14 +3,18 @@
 
 #include "code_object.h"
 #include "compilation_unit.h"
+#include "exception_object.h"
 #include "module_object.h"
 #include "parser.h"
+#include "str.h"
 #include "thread_state.h"
 #include "token.h"
 #include "tokenizer.h"
 #include "typed_value.h"
 #include "value.h"
 #include "virtual_machine.h"
+#include <gtest/gtest.h>
+#include <string>
 
 namespace cl::test
 {
@@ -30,12 +34,18 @@ namespace cl::test
 
         CodeObject *compile_file(const wchar_t *source)
         {
-            return thread()->compile(source, StartRule::File);
+            return thread()->compile(source, StartRule::File).value();
         }
 
         Value run_file(const wchar_t *source)
         {
-            return thread()->run_clovervm_code_object(compile_file(source));
+            Expected<CodeObject *> code =
+                thread()->compile(source, StartRule::File);
+            if(code.has_exception())
+            {
+                return Value::exception_marker();
+            }
+            return thread()->run_clovervm_code_object(code.value());
         }
 
     private:
@@ -59,6 +69,31 @@ namespace cl::test
     public:
         Value return_value;
     };
+
+    inline TValue<Exception>
+    expect_compile_python_error(VmTestContext &context, const wchar_t *source,
+                                const wchar_t *expected_type_name,
+                                const wchar_t *expected_message = nullptr)
+    {
+        Expected<CodeObject *> code =
+            context.thread()->compile(source, StartRule::File);
+        EXPECT_TRUE(code.has_exception());
+        EXPECT_TRUE(context.thread()->has_pending_exception());
+        EXPECT_EQ(PendingExceptionKind::Object,
+                  context.thread()->pending_exception_kind());
+        TValue<Exception> exception =
+            context.thread()->pending_exception_object();
+        EXPECT_EQ(
+            std::wstring(expected_type_name),
+            string_as_wchar_t(
+                exception.extract()->get_shape()->get_class()->get_name()));
+        if(expected_message != nullptr)
+        {
+            EXPECT_EQ(std::wstring(expected_message),
+                      string_as_wchar_t(exception.extract()->message.value()));
+        }
+        return exception;
+    }
 
     struct ParsedFile
     {

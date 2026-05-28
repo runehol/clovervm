@@ -593,9 +593,11 @@ TEST(Attr, BuiltinInstancesExposeDunderClassThroughAttributeLookup)
         context.vm().get_or_create_interned_string_value(L"hello"));
     List *list = context.thread()->make_object_raw<List>();
     Dict *dict = context.thread()->make_object_raw<Dict>();
-    CodeObject *code = context.thread()->compile(L"def f():\n"
-                                                 L"    return 1\n",
-                                                 StartRule::File);
+    CodeObject *code = context.thread()
+                           ->compile(L"def f():\n"
+                                     L"    return 1\n",
+                                     StartRule::File)
+                           .value();
     Function *function = context.thread()->make_object_raw<Function>(
         TValue<CodeObject>::from_oop(code), Optional<TValue<String>>::none());
     RangeIterator *range_iterator =
@@ -679,9 +681,11 @@ TEST(Attr, BuiltinInstancesRejectUnsupportedAttributeWrites)
         context.vm().get_or_create_interned_string_value(L"hello"));
     List *list = context.thread()->make_object_raw<List>();
     Dict *dict = context.thread()->make_object_raw<Dict>();
-    CodeObject *code = context.thread()->compile(L"def f():\n"
-                                                 L"    return 1\n",
-                                                 StartRule::File);
+    CodeObject *code = context.thread()
+                           ->compile(L"def f():\n"
+                                     L"    return 1\n",
+                                     StartRule::File)
+                           .value();
     Function *function = context.thread()->make_object_raw<Function>(
         TValue<CodeObject>::from_oop(code), Optional<TValue<String>>::none());
     RangeIterator *range_iterator =
@@ -1260,9 +1264,11 @@ TEST(Attr, LoadMethodBindsSelfOnlyForClassFunctions)
     TValue<String> own_name(
         context.vm().get_or_create_interned_string_value(L"own"));
 
-    CodeObject *method_code = context.thread()->compile(L"def method(self):\n"
-                                                        L"    return self\n",
-                                                        StartRule::File);
+    CodeObject *method_code = context.thread()
+                                  ->compile(L"def method(self):\n"
+                                            L"    return self\n",
+                                            StartRule::File)
+                                  .value();
     (void)context.thread()->run_clovervm_code_object(method_code);
     Value method_value = load_module_global(
         method_code->get_defining_module().extract(), method_name);
@@ -1308,11 +1314,13 @@ TEST(Attr, ClassFunctionMethodPlanSurvivesClassContentsWriteAndReloadsSlot)
     TValue<String> attr_name(
         context.vm().get_or_create_interned_string_value(L"method"));
 
-    CodeObject *method_code = context.thread()->compile(L"def first(self):\n"
-                                                        L"    return self\n"
-                                                        L"def second(self):\n"
-                                                        L"    return self\n",
-                                                        StartRule::File);
+    CodeObject *method_code = context.thread()
+                                  ->compile(L"def first(self):\n"
+                                            L"    return self\n"
+                                            L"def second(self):\n"
+                                            L"    return self\n",
+                                            StartRule::File)
+                                  .value();
     (void)context.thread()->run_clovervm_code_object(method_code);
     Value first_method = load_module_global(
         method_code->get_defining_module().extract(), first_method_name);
