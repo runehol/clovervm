@@ -23,30 +23,24 @@ namespace cl
         FString
     };
 
+    struct CompileContinuationInfo
+    {
+        bool incomplete_input = false;
+        uint32_t next_indentation_level = 0;
+    };
+
     class ParseError : public std::runtime_error
     {
     public:
-        ParseError(std::string message, bool _incomplete_input = false,
-                   uint32_t _next_indentation_level = 0)
-            : std::runtime_error(std::move(message)),
-              incomplete_input_(_incomplete_input),
-              next_indentation_level_(_next_indentation_level)
+        explicit ParseError(std::string message)
+            : std::runtime_error(std::move(message))
         {
         }
-
-        bool incomplete_input() const { return incomplete_input_; }
-        uint32_t next_indentation_level() const
-        {
-            return next_indentation_level_;
-        }
-
-    private:
-        bool incomplete_input_;
-        uint32_t next_indentation_level_;
     };
 
-    AstVector parse(VirtualMachine &vm, const TokenVector &tv,
-                    StartRule start_rule);
+    AstVector
+    parse(VirtualMachine &vm, const TokenVector &tv, StartRule start_rule,
+          CompileContinuationInfo *compile_continuation_info = nullptr);
 
 }  // namespace cl
 

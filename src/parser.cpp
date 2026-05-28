@@ -251,9 +251,15 @@ namespace cl
     class Parser
     {
     public:
-        Parser(VirtualMachine &_vm, const TokenVector &_token_vec)
-            : vm(_vm), token_vec(_token_vec), ast(token_vec.compilation_unit)
+        Parser(VirtualMachine &_vm, const TokenVector &_token_vec,
+               CompileContinuationInfo *_compile_continuation_info)
+            : vm(_vm), token_vec(_token_vec), ast(token_vec.compilation_unit),
+              compile_continuation_info(_compile_continuation_info)
         {
+            if(compile_continuation_info != nullptr)
+            {
+                *compile_continuation_info = CompileContinuationInfo{};
+            }
         }
 
         AstVector parse(StartRule start_rule)
@@ -282,6 +288,7 @@ namespace cl
         VirtualMachine &vm;
         const TokenVector &token_vec;
         AstVector ast;
+        CompileContinuationInfo *compile_continuation_info;
         size_t token_pos = 0;
         uint32_t indentation_level = 0;
 
@@ -335,10 +342,10 @@ namespace cl
                 if(expected == Token::INDENT &&
                    (actual == Token::ENDMARKER || actual == Token::DEDENT))
                 {
-                    throw ParseError(message, true,
-                                     previous_indentation_level + 1);
+                    throw make_parse_error(message, true,
+                                           previous_indentation_level + 1);
                 }
-                throw ParseError(message);
+                throw make_parse_error(message);
             }
         }
 
@@ -373,6 +380,19 @@ namespace cl
                    token == Token::ERRORTOKEN_OPEN_BRACKET_EOF;
         }
 
+        ParseError make_parse_error(std::string message,
+                                    bool incomplete_input = false,
+                                    uint32_t next_indentation_level = 0)
+        {
+            if(compile_continuation_info != nullptr)
+            {
+                compile_continuation_info->incomplete_input = incomplete_input;
+                compile_continuation_info->next_indentation_level =
+                    next_indentation_level;
+            }
+            return ParseError(std::move(message));
+        }
+
         ParseError
         parse_error_for_tokenizer_error(Token token, uint32_t source_pos,
                                         uint32_t error_indentation_level)
@@ -380,26 +400,28 @@ namespace cl
             switch(token)
             {
                 case Token::ERRORTOKEN_INVALID_CHARACTER:
-                    return ParseError(invalid_character_message(source_pos) +
-                                      format_error_context(source_pos));
+                    return make_parse_error(
+                        invalid_character_message(source_pos) +
+                        format_error_context(source_pos));
                 case Token::ERRORTOKEN_UNTERMINATED_STRING:
-                    return ParseError(
+                    return make_parse_error(
                         "SyntaxError: unterminated string literal" +
                         format_error_context(source_pos));
                 case Token::ERRORTOKEN_UNTERMINATED_TRIPLE_STRING:
-                    return ParseError(
+                    return make_parse_error(
                         "SyntaxError: unterminated triple-quoted string "
                         "literal" +
                             format_error_context(source_pos),
                         true, error_indentation_level);
                 case Token::ERRORTOKEN_OPEN_BRACKET_EOF:
-                    return ParseError("SyntaxError: incomplete input" +
-                                          format_error_context(source_pos),
-                                      true, error_indentation_level);
+                    return make_parse_error(
+                        "SyntaxError: incomplete input" +
+                            format_error_context(source_pos),
+                        true, error_indentation_level);
                 default:
-                    return ParseError(std::string("Unexpected token ") +
-                                      to_string(token) +
-                                      format_error_context(source_pos));
+                    return make_parse_error(std::string("Unexpected token ") +
+                                            to_string(token) +
+                                            format_error_context(source_pos));
             }
         }
 
@@ -2259,9 +2281,10 @@ namespace cl
     };
 
     AstVector parse(VirtualMachine &vm, const TokenVector &tv,
-                    StartRule start_rule)
+                    StartRule start_rule,
+                    CompileContinuationInfo *compile_continuation_info)
     {
-        Parser parser(vm, tv);
+        Parser parser(vm, tv, compile_continuation_info);
 
         return parser.parse(start_rule);
     }

@@ -18,6 +18,7 @@ namespace cl
 {
     enum class StartRule;
     enum class LanguageMode;
+    struct CompileContinuationInfo;
 
     class ClassObject;
     class ExceptionObject;
@@ -325,9 +326,10 @@ namespace cl
         CodeObject *compile(const wchar_t *str, StartRule start_rule);
         CodeObject *compile(const wchar_t *str, StartRule start_rule,
                             const wchar_t *main_file);
-        CodeObject *compile_in_module(const wchar_t *str, StartRule start_rule,
-                                      ModuleObject *module,
-                                      LanguageMode language_mode);
+        CodeObject *compile_in_module(
+            const wchar_t *str, StartRule start_rule, ModuleObject *module,
+            LanguageMode language_mode,
+            CompileContinuationInfo *compile_continuation_info = nullptr);
 
         VirtualMachine *get_machine() const { return machine; }
 

@@ -1,4 +1,5 @@
 #include "ast_print.h"
+#include "codegen.h"
 #include "compilation_unit.h"
 #include "float.h"
 #include "parser.h"
@@ -20,14 +21,16 @@ static std::string parse(const wchar_t *in_str)
     return actual;
 }
 
-static std::string parse_with_start_rule(const wchar_t *in_str,
-                                         StartRule start_rule)
+static std::string parse_with_start_rule(
+    const wchar_t *in_str, StartRule start_rule,
+    CompileContinuationInfo *compile_continuation_info = nullptr)
 {
     VirtualMachine vm;
     ThreadState::ActivationScope active_thread(vm.get_default_thread());
     CompilationUnit compilation_unit(in_str);
     TokenVector tokens(tokenize(compilation_unit));
-    AstVector ast = cl::parse(vm, tokens, start_rule);
+    AstVector ast =
+        cl::parse(vm, tokens, start_rule, compile_continuation_info);
     return fmt::to_string(ast);
 }
 
@@ -86,44 +89,74 @@ TEST(Parser, interactive_statement)
 
 TEST(Parser, incomplete_interactive_suite_reports_next_indentation_level)
 {
+    CompileContinuationInfo compile_continuation_info;
     try
     {
-        (void)parse_with_start_rule(L"if True:\n", StartRule::Interactive);
+        (void)parse_with_start_rule(L"if True:\n", StartRule::Interactive,
+                                    &compile_continuation_info);
         FAIL() << "Expected ParseError";
     }
-    catch(const ParseError &err)
+    catch(const ParseError &)
     {
-        EXPECT_TRUE(err.incomplete_input());
-        EXPECT_EQ(1u, err.next_indentation_level());
+        EXPECT_TRUE(compile_continuation_info.incomplete_input);
+        EXPECT_EQ(1u, compile_continuation_info.next_indentation_level);
     }
 }
 
 TEST(Parser, nested_incomplete_interactive_suite_reports_next_indentation_level)
 {
+    CompileContinuationInfo compile_continuation_info;
     try
     {
         (void)parse_with_start_rule(L"if True:\n"
                                     L"    if True:\n",
-                                    StartRule::Interactive);
+                                    StartRule::Interactive,
+                                    &compile_continuation_info);
         FAIL() << "Expected ParseError";
     }
-    catch(const ParseError &err)
+    catch(const ParseError &)
     {
-        EXPECT_TRUE(err.incomplete_input());
-        EXPECT_EQ(2u, err.next_indentation_level());
+        EXPECT_TRUE(compile_continuation_info.incomplete_input);
+        EXPECT_EQ(2u, compile_continuation_info.next_indentation_level);
+    }
+}
+
+TEST(Parser, compile_in_module_reports_compile_continuation_info)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<String> module_name =
+        test_context.vm().get_or_create_interned_string_value(L"<test>");
+    ModuleObject *module = test_context.make_test_module_object(
+        module_name, test_context.vm().global_builtins_module().raw_value());
+    CompileContinuationInfo compile_continuation_info;
+
+    try
+    {
+        (void)test_context.thread()->compile_in_module(
+            L"if True:\n", StartRule::Interactive, module,
+            LanguageMode::StandardsCompliant, &compile_continuation_info);
+        FAIL() << "Expected ParseError";
+    }
+    catch(const ParseError &)
+    {
+        EXPECT_TRUE(compile_continuation_info.incomplete_input);
+        EXPECT_EQ(1u, compile_continuation_info.next_indentation_level);
     }
 }
 
 TEST(Parser, unterminated_single_string_is_not_incomplete_input)
 {
+    CompileContinuationInfo compile_continuation_info;
     try
     {
-        (void)parse_with_start_rule(L"x = \"abc\n", StartRule::Interactive);
+        (void)parse_with_start_rule(L"x = \"abc\n", StartRule::Interactive,
+                                    &compile_continuation_info);
         FAIL() << "Expected ParseError";
     }
-    catch(const ParseError &err)
+    catch(const ParseError &)
     {
-        EXPECT_FALSE(err.incomplete_input());
+        EXPECT_FALSE(compile_continuation_info.incomplete_input);
     }
 }
 
@@ -136,45 +169,51 @@ TEST(Parser, invalid_character_reports_code_point)
 
 TEST(Parser, unterminated_triple_string_reports_current_indentation_level)
 {
+    CompileContinuationInfo compile_continuation_info;
     try
     {
-        (void)parse_with_start_rule(L"x = \"\"\"abc\n", StartRule::Interactive);
+        (void)parse_with_start_rule(L"x = \"\"\"abc\n", StartRule::Interactive,
+                                    &compile_continuation_info);
         FAIL() << "Expected ParseError";
     }
-    catch(const ParseError &err)
+    catch(const ParseError &)
     {
-        EXPECT_TRUE(err.incomplete_input());
-        EXPECT_EQ(0u, err.next_indentation_level());
+        EXPECT_TRUE(compile_continuation_info.incomplete_input);
+        EXPECT_EQ(0u, compile_continuation_info.next_indentation_level);
     }
 }
 
 TEST(Parser, open_bracket_at_eof_reports_current_indentation_level)
 {
+    CompileContinuationInfo compile_continuation_info;
     try
     {
-        (void)parse_with_start_rule(L"x = (1 +\n", StartRule::Interactive);
+        (void)parse_with_start_rule(L"x = (1 +\n", StartRule::Interactive,
+                                    &compile_continuation_info);
         FAIL() << "Expected ParseError";
     }
-    catch(const ParseError &err)
+    catch(const ParseError &)
     {
-        EXPECT_TRUE(err.incomplete_input());
-        EXPECT_EQ(0u, err.next_indentation_level());
+        EXPECT_TRUE(compile_continuation_info.incomplete_input);
+        EXPECT_EQ(0u, compile_continuation_info.next_indentation_level);
     }
 }
 
 TEST(Parser, open_bracket_inside_suite_reports_current_indentation_level)
 {
+    CompileContinuationInfo compile_continuation_info;
     try
     {
         (void)parse_with_start_rule(L"if True:\n"
                                     L"    x = (1 +\n",
-                                    StartRule::Interactive);
+                                    StartRule::Interactive,
+                                    &compile_continuation_info);
         FAIL() << "Expected ParseError";
     }
-    catch(const ParseError &err)
+    catch(const ParseError &)
     {
-        EXPECT_TRUE(err.incomplete_input());
-        EXPECT_EQ(1u, err.next_indentation_level());
+        EXPECT_TRUE(compile_continuation_info.incomplete_input);
+        EXPECT_EQ(1u, compile_continuation_info.next_indentation_level);
     }
 }
 

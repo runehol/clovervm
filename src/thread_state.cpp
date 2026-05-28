@@ -395,16 +395,17 @@ namespace cl
                                  LanguageMode::StandardsCompliant);
     }
 
-    CodeObject *ThreadState::compile_in_module(const wchar_t *str,
-                                               StartRule start_rule,
-                                               ModuleObject *module,
-                                               LanguageMode language_mode)
+    CodeObject *ThreadState::compile_in_module(
+        const wchar_t *str, StartRule start_rule, ModuleObject *module,
+        LanguageMode language_mode,
+        CompileContinuationInfo *compile_continuation_info)
     {
         ActivationScope activation_scope(this);
 
         CompilationUnit input(str);
         TokenVector tv = tokenize(input);
-        AstVector av = parse(*machine, tv, start_rule);
+        AstVector av =
+            parse(*machine, tv, start_rule, compile_continuation_info);
         ModuleResultMode result_mode = start_rule == StartRule::Interactive
                                            ? ModuleResultMode::Interactive
                                            : ModuleResultMode::File;

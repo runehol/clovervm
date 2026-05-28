@@ -140,18 +140,21 @@ namespace cl
 
             if(!blank_line && suite_waiting_for_blank_line)
             {
+                CompileContinuationInfo compile_continuation_info;
                 try
                 {
                     (void)thr->compile_in_module(
                         source_buffer.c_str(), StartRule::Interactive, module,
-                        LanguageMode::StandardsCompliant);
+                        LanguageMode::StandardsCompliant,
+                        &compile_continuation_info);
                 }
                 catch(const ParseError &err)
                 {
-                    if(err.incomplete_input())
+                    if(compile_continuation_info.incomplete_input)
                     {
                         continuation_indentation =
-                            err.next_indentation_level() * repl_indent_width;
+                            compile_continuation_info.next_indentation_level *
+                            repl_indent_width;
                         continue;
                     }
                     std::cerr << err.what() << "\n";
@@ -171,11 +174,13 @@ namespace cl
                 continue;
             }
 
+            CompileContinuationInfo compile_continuation_info;
             try
             {
                 CodeObject *code_obj = thr->compile_in_module(
                     source_buffer.c_str(), StartRule::Interactive, module,
-                    LanguageMode::StandardsCompliant);
+                    LanguageMode::StandardsCompliant,
+                    &compile_continuation_info);
                 source_buffer.clear();
                 suite_waiting_for_blank_line = false;
                 continuation_indentation = 0;
@@ -195,12 +200,14 @@ namespace cl
             }
             catch(const ParseError &err)
             {
-                if(!blank_line && err.incomplete_input())
+                if(!blank_line && compile_continuation_info.incomplete_input)
                 {
                     continuation_indentation =
-                        err.next_indentation_level() * repl_indent_width;
+                        compile_continuation_info.next_indentation_level *
+                        repl_indent_width;
                     suite_waiting_for_blank_line =
-                        err.next_indentation_level() > prompt_indentation_level;
+                        compile_continuation_info.next_indentation_level >
+                        prompt_indentation_level;
                     continue;
                 }
                 std::cerr << err.what() << "\n";
