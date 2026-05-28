@@ -49,6 +49,32 @@ std::string trusted_builtin_bytecode_str_from_file(const wchar_t *expr)
     return fmt::to_string(*code_obj.value());
 }
 
+void expect_trusted_builtin_compile_python_error(
+    const wchar_t *expr, const wchar_t *expected_type_name,
+    const wchar_t *expected_message)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<String> module_name =
+        test_context.vm().get_or_create_interned_string_value(
+            L"<test-builtin>");
+    ModuleObject *module = test_context.make_test_module_object(
+        module_name, test_context.vm().global_builtins_module().raw_value());
+    Expected<CodeObject *> code_obj = test_context.thread()->compile_in_module(
+        expr, StartRule::File, module, LanguageMode::TrustedCloverExtensions);
+
+    EXPECT_TRUE(code_obj.has_exception());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              test_context.thread()->pending_exception_kind());
+    TValue<Exception> exception =
+        test_context.thread()->pending_exception_object();
+    EXPECT_EQ(std::wstring(expected_type_name),
+              string_as_wchar_t(
+                  exception.extract()->get_shape()->get_class()->get_name()));
+    EXPECT_EQ(std::wstring(expected_message),
+              string_as_wchar_t(exception.extract()->message.value()));
+}
+
 // Keep this file intentionally small and structural. Interpreter tests own
 // most semantic coverage; codegen tests should pin down bytecode shapes that
 // matter for lowering strategy or calling conventions.
@@ -1476,6 +1502,15 @@ TEST(Codegen, trusted_clover_globals_lowers_to_intrinsic)
 
     EXPECT_NE(std::string::npos, actual.find("CallRuntimeIntrinsic0 Globals"));
     EXPECT_EQ(std::string::npos, actual.find("CallPositional"));
+}
+
+TEST(Codegen, trusted_clover_globals_rejects_keyword_arguments)
+{
+    expect_trusted_builtin_compile_python_error(
+        L"def read_globals():\n"
+        L"    return __clover_globals__(bad=True)\n",
+        L"SyntaxError",
+        L"__clover_globals__ does not accept keyword arguments");
 }
 
 TEST(Codegen, user_clover_globals_name_is_ordinary_call)

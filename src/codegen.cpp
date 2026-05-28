@@ -775,25 +775,29 @@ namespace cl
             return n_keywords;
         }
 
-        void require_positional_call_arguments(AstChildren args,
-                                               const char *helper_name) const
+        Expected<void>
+        require_positional_call_arguments(AstChildren args,
+                                          const wchar_t *helper_name) const
         {
             for(int32_t arg: args)
             {
                 if(!is_positional_call_argument(arg))
                 {
-                    throw std::runtime_error(fmt::format(
-                        "SyntaxError: {} does not accept keyword arguments",
-                        helper_name));
+                    std::wstring message = helper_name;
+                    message += L" does not accept keyword arguments";
+                    return Expected<void>::raise_exception(L"SyntaxError",
+                                                           message.c_str());
                 }
             }
+            return Expected<void>::ok();
         }
 
         Expected<void>
         codegen_trusted_clover_call_special(uint32_t source_offset,
                                             AstChildren args)
         {
-            require_positional_call_arguments(args, "__clover_call_special__");
+            CL_TRY(require_positional_call_arguments(
+                args, L"__clover_call_special__"));
             if(args.size() < 4)
             {
                 throw std::runtime_error(
@@ -839,7 +843,8 @@ namespace cl
         codegen_trusted_clover_write_stdout(uint32_t source_offset,
                                             AstChildren args)
         {
-            require_positional_call_arguments(args, "__clover_write_stdout__");
+            CL_TRY(require_positional_call_arguments(
+                args, L"__clover_write_stdout__"));
             if(args.size() != 1)
             {
                 throw std::runtime_error(
@@ -854,14 +859,15 @@ namespace cl
 
         Expected<void> codegen_trusted_clover_intrinsic0(
             uint32_t source_offset, AstChildren args,
-            RuntimeIntrinsic0 intrinsic, const char *helper_name)
+            RuntimeIntrinsic0 intrinsic, const wchar_t *helper_name)
         {
-            require_positional_call_arguments(args, helper_name);
+            CL_TRY(require_positional_call_arguments(args, helper_name));
             if(args.size() != 0)
             {
-                throw std::runtime_error(
-                    fmt::format("SyntaxError: {} expects exactly 0 arguments",
-                                helper_name));
+                std::wstring message = helper_name;
+                message += L" expects exactly 0 arguments";
+                return Expected<void>::raise_exception(L"SyntaxError",
+                                                       message.c_str());
             }
 
             code_obj->emit_call_runtime_intrinsic0(source_offset, intrinsic);
@@ -871,7 +877,7 @@ namespace cl
         Expected<void> codegen_trusted_clover_sqrt(uint32_t source_offset,
                                                    AstChildren args)
         {
-            require_positional_call_arguments(args, "__clover_sqrt__");
+            CL_TRY(require_positional_call_arguments(args, L"__clover_sqrt__"));
             if(args.size() != 1)
             {
                 throw std::runtime_error(
@@ -904,12 +910,12 @@ namespace cl
                 case TrustedCloverCall::Globals:
                     CL_TRY(codegen_trusted_clover_intrinsic0(
                         source_offset, args, RuntimeIntrinsic0::Globals,
-                        "__clover_globals__"));
+                        L"__clover_globals__"));
                     return Expected<bool>::ok(true);
                 case TrustedCloverCall::Locals:
                     CL_TRY(codegen_trusted_clover_intrinsic0(
                         source_offset, args, RuntimeIntrinsic0::Locals,
-                        "__clover_locals__"));
+                        L"__clover_locals__"));
                     return Expected<bool>::ok(true);
                 case TrustedCloverCall::Sqrt:
                     CL_TRY(codegen_trusted_clover_sqrt(source_offset, args));
