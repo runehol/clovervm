@@ -312,18 +312,18 @@ namespace cl
             }
         }
 
-        AstVector parse(StartRule start_rule)
+        Expected<AstVector> parse(StartRule start_rule)
         {
             switch(start_rule)
             {
                 case StartRule::File:
-                    ast.root_node = file();
+                    ast.root_node = CL_TRY(file());
                     break;
                 case StartRule::Interactive:
-                    ast.root_node = interactive();
+                    ast.root_node = CL_TRY(interactive());
                     break;
                 case StartRule::Eval:
-                    ast.root_node = eval();
+                    ast.root_node = CL_TRY(eval());
                     break;
                 case StartRule::FuncType:
                     break;
@@ -331,7 +331,7 @@ namespace cl
                     break;
             }
 
-            return std::move(ast);
+            return Expected<AstVector>::ok(std::move(ast));
         }
 
     private:
@@ -2279,7 +2279,7 @@ namespace cl
                                     children);
         }
 
-        int32_t file()
+        Expected<int32_t> file()
         {
             while(match(Token::NEWLINE))
             {
@@ -2296,10 +2296,10 @@ namespace cl
                                        source_pos, AstChildren{});
             }
             consume(Token::ENDMARKER);
-            return idx;
+            return Expected<int32_t>::ok(idx);
         }
 
-        int32_t interactive()
+        Expected<int32_t> interactive()
         {
             while(match(Token::NEWLINE))
             {
@@ -2314,11 +2314,11 @@ namespace cl
             {
             }
             consume(Token::ENDMARKER);
-            return ast.emplace_back(AstNodeKind::STATEMENT_SEQUENCE, source_pos,
-                                    children);
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::STATEMENT_SEQUENCE, source_pos, children));
         }
 
-        int32_t eval()
+        Expected<int32_t> eval()
         {
             int32_t result = expressions();
             while(match(Token::NEWLINE))
@@ -2326,7 +2326,7 @@ namespace cl
             }
 
             consume(Token::ENDMARKER);
-            return result;
+            return Expected<int32_t>::ok(result);
         }
     };
 
@@ -2337,7 +2337,7 @@ namespace cl
         try
         {
             Parser parser(vm, tv, compile_continuation_info);
-            return Expected<AstVector>::ok(parser.parse(start_rule));
+            return parser.parse(start_rule);
         }
         catch(const ParseError &err)
         {
