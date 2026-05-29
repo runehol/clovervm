@@ -4,9 +4,6 @@
 #include "ast.h"
 #include "typed_value.h"
 #include <cstdint>
-#include <stdexcept>
-#include <string>
-#include <utility>
 
 namespace cl
 {
@@ -28,15 +25,6 @@ namespace cl
     {
         bool incomplete_input = false;
         uint32_t next_indentation_level = 0;
-    };
-
-    class ParseError : public std::runtime_error
-    {
-    public:
-        explicit ParseError(std::string message)
-            : std::runtime_error(std::move(message))
-        {
-        }
     };
 
     Expected<AstVector>

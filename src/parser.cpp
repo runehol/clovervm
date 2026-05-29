@@ -14,7 +14,6 @@
 #include <locale>
 #include <optional>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <unordered_set>
 
@@ -58,21 +57,6 @@ namespace cl
         }
 
         return type_name;
-    }
-
-    static Expected<AstVector>
-    raise_parse_exception(const std::runtime_error &err,
-                          const wchar_t *default_type_name = nullptr)
-    {
-        std::wstring message = parser_error_message_to_wstring(err.what());
-        const wchar_t *type_name =
-            parse_exception_type_from_message(message, default_type_name);
-
-        if(type_name == nullptr)
-        {
-            throw;
-        }
-        return Expected<AstVector>::raise_exception(type_name, message.c_str());
     }
 
     template <typename T>
@@ -400,7 +384,7 @@ namespace cl
             return source_pos;
         }
 
-        void consume(Token expected)
+        Expected<void> consume(Token expected)
         {
             uint32_t previous_indentation_level = indentation_level;
             uint32_t source_pos = source_pos_for_token();
@@ -409,7 +393,7 @@ namespace cl
             {
                 if(is_tokenizer_error(actual))
                 {
-                    throw parse_error_for_tokenizer_error(
+                    return raise_parse_error_for_tokenizer_error<void>(
                         actual, source_pos, previous_indentation_level);
                 }
                 std::string message = std::string("Expected token ") +
@@ -419,11 +403,13 @@ namespace cl
                 if(expected == Token::INDENT &&
                    (actual == Token::ENDMARKER || actual == Token::DEDENT))
                 {
-                    throw make_parse_error(message, true,
-                                           previous_indentation_level + 1);
+                    return raise_parse_error<void>(
+                        {std::move(message), true,
+                         previous_indentation_level + 1});
                 }
-                throw make_parse_error(message);
+                return raise_parse_error<void>({std::move(message)});
             }
+            return Expected<void>::ok();
         }
 
         bool match(Token expected)
@@ -457,35 +443,15 @@ namespace cl
                    token == Token::ERRORTOKEN_OPEN_BRACKET_EOF;
         }
 
-        struct ParseErrorDetails
+        struct ParseFailureDetails
         {
             std::string message;
             bool incomplete_input = false;
             uint32_t next_indentation_level = 0;
         };
 
-        ParseError make_parse_error(std::string message,
-                                    bool incomplete_input = false,
-                                    uint32_t next_indentation_level = 0)
-        {
-            if(compile_continuation_info != nullptr)
-            {
-                compile_continuation_info->incomplete_input = incomplete_input;
-                compile_continuation_info->next_indentation_level =
-                    next_indentation_level;
-            }
-            return ParseError(std::move(message));
-        }
-
-        ParseError make_parse_error(ParseErrorDetails details)
-        {
-            return make_parse_error(std::move(details.message),
-                                    details.incomplete_input,
-                                    details.next_indentation_level);
-        }
-
         template <typename T>
-        Expected<T> raise_parse_error(ParseErrorDetails details)
+        Expected<T> raise_parse_error(ParseFailureDetails details)
         {
             if(compile_continuation_info != nullptr)
             {
@@ -498,7 +464,7 @@ namespace cl
                                             L"SyntaxError");
         }
 
-        ParseErrorDetails parse_error_details_for_tokenizer_error(
+        ParseFailureDetails parse_error_details_for_tokenizer_error(
             Token token, uint32_t source_pos, uint32_t error_indentation_level)
         {
             switch(token)
@@ -523,14 +489,6 @@ namespace cl
                             to_string(token) +
                             format_error_context(source_pos)};
             }
-        }
-
-        ParseError
-        parse_error_for_tokenizer_error(Token token, uint32_t source_pos,
-                                        uint32_t error_indentation_level)
-        {
-            return make_parse_error(parse_error_details_for_tokenizer_error(
-                token, source_pos, error_indentation_level));
         }
 
         template <typename T>
@@ -635,9 +593,9 @@ namespace cl
             int32_t stmts = -1;
             if(match(Token::NEWLINE))
             {
-                consume(Token::INDENT);
+                CL_TRY(consume(Token::INDENT));
                 stmts = CL_TRY(statements());
-                consume(Token::DEDENT);
+                CL_TRY(consume(Token::DEDENT));
             }
             else
             {
@@ -705,7 +663,7 @@ namespace cl
             int32_t lhs = CL_TRY(atom());  // smallest rule that just consumes a
                                            // name and makes a nice node for us
             int32_t source_pos = source_pos_for_token();
-            consume(Token::COLONEQUAL);
+            CL_TRY(consume(Token::COLONEQUAL));
             int32_t rhs = CL_TRY(expression());
             return Expected<int32_t>::ok(ast.emplace_back(
                 AstKind(AstNodeKind::EXPRESSION_ASSIGN, AstOperatorKind::NOP),
@@ -859,8 +817,8 @@ namespace cl
             }
             else if(peek() == Token::NOT && peek2() == Token::IN)
             {
-                consume(Token::NOT);
-                consume(Token::IN);
+                CL_TRY(consume(Token::NOT));
+                CL_TRY(consume(Token::IN));
                 ok = AstOperatorKind::NOT_IN;
             }
             assert(ok != AstOperatorKind::NOP);
@@ -1059,7 +1017,7 @@ namespace cl
                     case Token::DOT:
                         {
                             uint32_t source_pos = source_pos_and_advance();
-                            consume(Token::NAME);
+                            CL_TRY(consume(Token::NAME));
                             std::wstring name =
                                 std::wstring(string_for_name_token(
                                     *ast.compilation_unit,
@@ -1076,7 +1034,7 @@ namespace cl
                             uint32_t source_pos =
                                 source_pos_and_advance();  // skip over the LPAR
                             int32_t args = CL_TRY(arguments());
-                            consume(Token::RPAR);
+                            CL_TRY(consume(Token::RPAR));
                             result =
                                 ast.emplace_back(AstNodeKind::EXPRESSION_CALL,
                                                  source_pos, result, args);
@@ -1086,7 +1044,7 @@ namespace cl
                         {
                             uint32_t source_pos = source_pos_and_advance();
                             int32_t index = CL_TRY(expression());
-                            consume(Token::RSQB);
+                            CL_TRY(consume(Token::RSQB));
                             result = ast.emplace_back(
                                 AstKind(AstNodeKind::EXPRESSION_BINARY,
                                         AstOperatorKind::SUBSCRIPT),
@@ -1134,7 +1092,7 @@ namespace cl
                     }
                     TValue<String> name_value =
                         vm.get_or_create_interned_string_value(name);
-                    consume(Token::EQUAL);
+                    CL_TRY(consume(Token::EQUAL));
                     int32_t value = CL_TRY(expression());
                     ch.push_back(ast.emplace_back(
                         AstNodeKind::CALL_ARGUMENT_KEYWORD, name_source_pos,
@@ -1252,13 +1210,13 @@ namespace cl
                                 CL_TRY(sequence_until_stop_token(
                                     result, &Parser::expression, Token::COMMA,
                                     Token::RPAR));
-                            consume(Token::RPAR);
+                            CL_TRY(consume(Token::RPAR));
                             return Expected<int32_t>::ok(
                                 ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE,
                                                  tuple_start_pos, children));
                         }
 
-                        consume(Token::RPAR);
+                        CL_TRY(consume(Token::RPAR));
                         return Expected<int32_t>::ok(result);
                     }
                 case Token::LSQB:
@@ -1277,7 +1235,7 @@ namespace cl
                                 children.push_back(CL_TRY(expression()));
                             }
                         }
-                        consume(Token::RSQB);
+                        CL_TRY(consume(Token::RSQB));
                         return Expected<int32_t>::ok(
                             ast.emplace_back(AstNodeKind::EXPRESSION_LIST,
                                              list_start_pos, children));
@@ -1289,7 +1247,7 @@ namespace cl
                         if(peek() != Token::RBRACE)
                         {
                             children.push_back(CL_TRY(expression()));
-                            consume(Token::COLON);
+                            CL_TRY(consume(Token::COLON));
                             children.push_back(CL_TRY(expression()));
                             while(match(Token::COMMA))
                             {
@@ -1298,11 +1256,11 @@ namespace cl
                                     break;
                                 }
                                 children.push_back(CL_TRY(expression()));
-                                consume(Token::COLON);
+                                CL_TRY(consume(Token::COLON));
                                 children.push_back(CL_TRY(expression()));
                             }
                         }
-                        consume(Token::RBRACE);
+                        CL_TRY(consume(Token::RBRACE));
                         return Expected<int32_t>::ok(
                             ast.emplace_back(AstNodeKind::EXPRESSION_DICT,
                                              dict_start_pos, children));
@@ -1494,7 +1452,7 @@ namespace cl
         Expected<int32_t> return_stmt()
         {
             int32_t source_pos = source_pos_for_token();
-            consume(Token::RETURN);
+            CL_TRY(consume(Token::RETURN));
             AstChildren ch;
             if(peek() != Token::NEWLINE && peek() != Token::SEMI)
             {
@@ -1507,7 +1465,7 @@ namespace cl
         Expected<int32_t> raise_stmt()
         {
             int32_t source_pos = source_pos_for_token();
-            consume(Token::RAISE);
+            CL_TRY(consume(Token::RAISE));
             if(peek() == Token::NEWLINE || peek() == Token::SEMI ||
                peek() == Token::DEDENT || peek() == Token::ENDMARKER)
             {
@@ -1526,7 +1484,7 @@ namespace cl
                 ast.emplace_back(AstNodeKind::STATEMENT_RAISE, source_pos, ch));
         }
 
-        int32_t import_stmt()
+        Expected<int32_t> import_stmt()
         {
             int32_t source_pos = source_pos_for_token();
             if(match(Token::FROM))
@@ -1541,13 +1499,13 @@ namespace cl
                 uint32_t module_source_pos = source_pos;
                 if(peek() != Token::IMPORT)
                 {
-                    consume(Token::NAME);
+                    CL_TRY(consume(Token::NAME));
                     module_source_pos = source_pos_for_previous_token();
                     module_name = std::wstring(string_for_name_token(
                         *ast.compilation_unit, module_source_pos));
                     while(match(Token::DOT))
                     {
-                        consume(Token::NAME);
+                        CL_TRY(consume(Token::NAME));
                         uint32_t component_source_pos =
                             source_pos_for_previous_token();
                         module_name += L".";
@@ -1557,12 +1515,12 @@ namespace cl
                 }
                 else if(level == 0)
                 {
-                    consume(Token::NAME);
+                    CL_TRY(consume(Token::NAME));
                 }
-                consume(Token::IMPORT);
+                CL_TRY(consume(Token::IMPORT));
                 if(peek() == Token::STAR)
                 {
-                    consume(Token::STAR);
+                    CL_TRY(consume(Token::STAR));
                     AstChildren targets;
                     targets.push_back(ast.emplace_back(
                         AstNodeKind::EXPRESSION_LITERAL, module_source_pos,
@@ -1570,9 +1528,9 @@ namespace cl
                     targets.push_back(ast.emplace_back(
                         AstNodeKind::IMPORT_STAR,
                         source_pos_for_previous_token(), AstChildren{}));
-                    return ast.emplace_back(
+                    return Expected<int32_t>::ok(ast.emplace_back(
                         AstNodeKind::STATEMENT_IMPORT_FROM, source_pos, targets,
-                        vm.get_or_create_interned_string_value(module_name));
+                        vm.get_or_create_interned_string_value(module_name)));
                 }
 
                 bool parenthesized = match(Token::LPAR);
@@ -1582,14 +1540,14 @@ namespace cl
                     Value::from_smi(level)));
                 while(true)
                 {
-                    consume(Token::NAME);
+                    CL_TRY(consume(Token::NAME));
                     uint32_t name_source_pos = source_pos_for_previous_token();
                     std::wstring name = std::wstring(string_for_name_token(
                         *ast.compilation_unit, name_source_pos));
                     std::wstring store_name = name;
                     if(match(Token::AS))
                     {
-                        consume(Token::NAME);
+                        CL_TRY(consume(Token::NAME));
                         store_name = std::wstring(string_for_name_token(
                             *ast.compilation_unit,
                             source_pos_for_previous_token()));
@@ -1633,20 +1591,21 @@ namespace cl
                     while(match(Token::NEWLINE))
                     {
                     }
-                    consume(Token::RPAR);
+                    CL_TRY(consume(Token::RPAR));
                 }
 
                 TValue<String> module_name_value =
                     vm.get_or_create_interned_string_value(module_name);
-                return ast.emplace_back(AstNodeKind::STATEMENT_IMPORT_FROM,
-                                        source_pos, targets, module_name_value);
+                return Expected<int32_t>::ok(
+                    ast.emplace_back(AstNodeKind::STATEMENT_IMPORT_FROM,
+                                     source_pos, targets, module_name_value));
             }
 
-            consume(Token::IMPORT);
+            CL_TRY(consume(Token::IMPORT));
             AstChildren aliases;
             while(true)
             {
-                consume(Token::NAME);
+                CL_TRY(consume(Token::NAME));
                 uint32_t name_source_pos = source_pos_for_previous_token();
                 std::wstring name = std::wstring(string_for_name_token(
                     *ast.compilation_unit, name_source_pos));
@@ -1654,7 +1613,7 @@ namespace cl
                 bool has_alias = false;
                 while(match(Token::DOT))
                 {
-                    consume(Token::NAME);
+                    CL_TRY(consume(Token::NAME));
                     uint32_t component_source_pos =
                         source_pos_for_previous_token();
                     name += L".";
@@ -1665,7 +1624,7 @@ namespace cl
                 if(match(Token::AS))
                 {
                     has_alias = true;
-                    consume(Token::NAME);
+                    CL_TRY(consume(Token::NAME));
                     store_name = std::wstring(
                         string_for_name_token(*ast.compilation_unit,
                                               source_pos_for_previous_token()));
@@ -1699,14 +1658,14 @@ namespace cl
                 }
             }
 
-            return ast.emplace_back(AstNodeKind::STATEMENT_IMPORT, source_pos,
-                                    aliases);
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::STATEMENT_IMPORT, source_pos, aliases));
         }
 
         Expected<int32_t> del_stmt()
         {
             int32_t source_pos = source_pos_for_token();
-            consume(Token::DEL);
+            CL_TRY(consume(Token::DEL));
             AstChildren ch;
             ch.push_back(CL_TRY(star_expressions()));
             CL_TRY(validate_del_target(ch.back()));
@@ -1731,7 +1690,7 @@ namespace cl
         Expected<int32_t> assert_stmt()
         {
             int32_t source_pos = source_pos_for_token();
-            consume(Token::ASSERT);
+            CL_TRY(consume(Token::ASSERT));
             AstChildren ch;
             ch.push_back(CL_TRY(expression()));
             if(match(Token::COMMA))
@@ -1742,39 +1701,39 @@ namespace cl
                 AstNodeKind::STATEMENT_ASSERT, source_pos, ch));
         }
 
-        int32_t break_stmt()
+        Expected<int32_t> break_stmt()
         {
             int32_t source_pos = source_pos_for_token();
-            consume(Token::BREAK);
-            return ast.emplace_back(AstNodeKind::STATEMENT_BREAK, source_pos,
-                                    {});
+            CL_TRY(consume(Token::BREAK));
+            return Expected<int32_t>::ok(
+                ast.emplace_back(AstNodeKind::STATEMENT_BREAK, source_pos, {}));
         }
 
-        int32_t continue_stmt()
+        Expected<int32_t> continue_stmt()
         {
             int32_t source_pos = source_pos_for_token();
-            consume(Token::CONTINUE);
-            return ast.emplace_back(AstNodeKind::STATEMENT_CONTINUE, source_pos,
-                                    {});
+            CL_TRY(consume(Token::CONTINUE));
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::STATEMENT_CONTINUE, source_pos, {}));
         }
 
-        int32_t pass_stmt()
+        Expected<int32_t> pass_stmt()
         {
             int32_t source_pos = source_pos_for_token();
-            consume(Token::PASS);
-            return ast.emplace_back(AstNodeKind::STATEMENT_PASS, source_pos,
-                                    AstChildren{});
+            CL_TRY(consume(Token::PASS));
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::STATEMENT_PASS, source_pos, AstChildren{}));
         }
 
-        int32_t global_stmt()
+        Expected<int32_t> global_stmt()
         {
             int32_t source_pos = source_pos_for_token();
-            consume(Token::GLOBAL);
+            CL_TRY(consume(Token::GLOBAL));
 
             AstChildren ch;
             do
             {
-                consume(Token::NAME);
+                CL_TRY(consume(Token::NAME));
                 uint32_t name_source_pos = source_pos_for_previous_token();
                 std::wstring name = std::wstring(string_for_name_token(
                     *ast.compilation_unit, name_source_pos));
@@ -1785,8 +1744,8 @@ namespace cl
             }
             while(match(Token::COMMA));
 
-            return ast.emplace_back(AstNodeKind::STATEMENT_GLOBAL, source_pos,
-                                    ch);
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::STATEMENT_GLOBAL, source_pos, ch));
         }
 
         Expected<int32_t> nonlocal_stmt()
@@ -1804,7 +1763,7 @@ namespace cl
                     return raise_stmt();
                 case Token::IMPORT:
                 case Token::FROM:
-                    return Expected<int32_t>::ok(import_stmt());
+                    return import_stmt();
 
                 case Token::DEL:
                     return del_stmt();
@@ -1813,13 +1772,13 @@ namespace cl
                 case Token::ASSERT:
                     return assert_stmt();
                 case Token::BREAK:
-                    return Expected<int32_t>::ok(break_stmt());
+                    return break_stmt();
                 case Token::CONTINUE:
-                    return Expected<int32_t>::ok(continue_stmt());
+                    return continue_stmt();
                 case Token::PASS:
-                    return Expected<int32_t>::ok(pass_stmt());
+                    return pass_stmt();
                 case Token::GLOBAL:
-                    return Expected<int32_t>::ok(global_stmt());
+                    return global_stmt();
                 case Token::NONLOCAL:
                     return nonlocal_stmt();
 
@@ -1839,7 +1798,7 @@ namespace cl
             }
             while(match(Token::SEMI));
 
-            consume(Token::NEWLINE);
+            CL_TRY(consume(Token::NEWLINE));
 
             if(children.size() == 1)
             {
@@ -1864,23 +1823,23 @@ namespace cl
         Expected<int32_t> function_def_raw()
         {
             int32_t source_pos = source_pos_for_token();
-            consume(Token::DEF);  // todo worry about async later
-            consume(Token::NAME);
+            CL_TRY(consume(Token::DEF));  // todo worry about async later
+            CL_TRY(consume(Token::NAME));
             std::wstring name = std::wstring(string_for_name_token(
                 *ast.compilation_unit, source_pos_for_previous_token()));
             TValue<String> name_str =
                 vm.get_or_create_interned_string_value(name);
-            consume(Token::LPAR);
+            CL_TRY(consume(Token::LPAR));
             int32_t param_seq = CL_TRY(params());
-            consume(Token::RPAR);
+            CL_TRY(consume(Token::RPAR));
             if(peek() == Token::RARROW)
             {
-                consume(Token::RARROW);
+                CL_TRY(consume(Token::RARROW));
                 CL_TRY(expression());  // just swallow that return type
                                        // definition, we ignore it
             }
 
-            consume(Token::COLON);
+            CL_TRY(consume(Token::COLON));
             // todo worry about func_type_comment later
             int32_t body = CL_TRY(block());
             return Expected<int32_t>::ok(
@@ -1899,7 +1858,7 @@ namespace cl
         Expected<int32_t> parse_named_parameter(AstNodeKind kind,
                                                 bool allow_default)
         {
-            consume(Token::NAME);
+            CL_TRY(consume(Token::NAME));
             uint32_t name_source_pos = source_pos_for_previous_token();
             std::wstring name = std::wstring(
                 string_for_name_token(*ast.compilation_unit, name_source_pos));
@@ -2083,21 +2042,21 @@ namespace cl
         {
             AstChildren children;
             int32_t source_pos = source_pos_for_token();
-            consume(Token::IF);
+            CL_TRY(consume(Token::IF));
             children.push_back(CL_TRY(named_expression()));
-            consume(Token::COLON);
+            CL_TRY(consume(Token::COLON));
             children.push_back(CL_TRY(block()));
             while(peek() == Token::ELIF)
             {
-                consume(Token::ELIF);
+                CL_TRY(consume(Token::ELIF));
                 children.push_back(CL_TRY(named_expression()));
-                consume(Token::COLON);
+                CL_TRY(consume(Token::COLON));
                 children.push_back(CL_TRY(block()));
             }
             if(peek() == Token::ELSE)
             {
-                consume(Token::ELSE);
-                consume(Token::COLON);
+                CL_TRY(consume(Token::ELSE));
+                CL_TRY(consume(Token::COLON));
                 children.push_back(CL_TRY(block()));
             }
             return Expected<int32_t>::ok(ast.emplace_back(
@@ -2107,8 +2066,8 @@ namespace cl
         Expected<int32_t> class_def()
         {
             int32_t source_pos = source_pos_for_token();
-            consume(Token::CLASS);
-            consume(Token::NAME);
+            CL_TRY(consume(Token::CLASS));
+            CL_TRY(consume(Token::NAME));
             std::wstring name = std::wstring(string_for_name_token(
                 *ast.compilation_unit, source_pos_for_previous_token()));
             TValue<String> name_str =
@@ -2120,11 +2079,11 @@ namespace cl
             if(match(Token::LPAR))
             {
                 bases = CL_TRY(args());
-                consume(Token::RPAR);
+                CL_TRY(consume(Token::RPAR));
             }
             children.push_back(bases);
 
-            consume(Token::COLON);
+            CL_TRY(consume(Token::COLON));
             children.push_back(CL_TRY(block()));
             return Expected<int32_t>::ok(
                 ast.emplace_back(AstNodeKind::STATEMENT_CLASS_DEF, source_pos,
@@ -2149,14 +2108,14 @@ namespace cl
         Expected<int32_t> with_stmt()
         {
             int32_t source_pos = source_pos_for_token();
-            consume(Token::WITH);
+            CL_TRY(consume(Token::WITH));
             AstChildren children;
             children.push_back(CL_TRY(with_item()));
             while(match(Token::COMMA))
             {
                 children.push_back(CL_TRY(with_item()));
             }
-            consume(Token::COLON);
+            CL_TRY(consume(Token::COLON));
             children.push_back(CL_TRY(block()));
             return Expected<int32_t>::ok(ast.emplace_back(
                 AstNodeKind::STATEMENT_WITH, source_pos, children));
@@ -2166,7 +2125,7 @@ namespace cl
         {
             AstChildren children;
             int32_t source_pos = source_pos_for_token();
-            consume(Token::FOR);
+            CL_TRY(consume(Token::FOR));
             uint32_t target_start_pos = source_pos_for_token();
             int32_t target = -1;
             if(peek() == Token::NAME)
@@ -2194,15 +2153,15 @@ namespace cl
             }
             CL_TRY(validate_assignment_target(target));
             children.push_back(target);
-            consume(Token::IN);
+            CL_TRY(consume(Token::IN));
             children.push_back(CL_TRY(named_expression()));
-            consume(Token::COLON);
+            CL_TRY(consume(Token::COLON));
             children.push_back(CL_TRY(block()));
 
             if(peek() == Token::ELSE)
             {
-                consume(Token::ELSE);
-                consume(Token::COLON);
+                CL_TRY(consume(Token::ELSE));
+                CL_TRY(consume(Token::COLON));
                 children.push_back(CL_TRY(block()));
             }
             return Expected<int32_t>::ok(ast.emplace_back(
@@ -2213,15 +2172,15 @@ namespace cl
         {
             AstChildren children;
             int32_t source_pos = source_pos_for_token();
-            consume(Token::TRY);
-            consume(Token::COLON);
+            CL_TRY(consume(Token::TRY));
+            CL_TRY(consume(Token::COLON));
             children.push_back(CL_TRY(block()));
 
             if(peek() == Token::FINALLY)
             {
                 int32_t finally_source_pos = source_pos_for_token();
-                consume(Token::FINALLY);
-                consume(Token::COLON);
+                CL_TRY(consume(Token::FINALLY));
+                CL_TRY(consume(Token::COLON));
                 AstChildren finally_children;
                 finally_children.push_back(CL_TRY(block()));
                 children.push_back(
@@ -2244,14 +2203,14 @@ namespace cl
                     return not_implemented(L"except after bare except");
                 }
                 int32_t handler_source_pos = source_pos_for_token();
-                consume(Token::EXCEPT);
+                CL_TRY(consume(Token::EXCEPT));
                 AstChildren handler_children;
                 if(peek() != Token::COLON)
                 {
                     handler_children.push_back(CL_TRY(expression()));
                     if(match(Token::AS))
                     {
-                        consume(Token::NAME);
+                        CL_TRY(consume(Token::NAME));
                         uint32_t name_source_pos =
                             source_pos_for_previous_token();
                         std::wstring name = std::wstring(string_for_name_token(
@@ -2267,7 +2226,7 @@ namespace cl
                 {
                     saw_bare_except = true;
                 }
-                consume(Token::COLON);
+                CL_TRY(consume(Token::COLON));
                 handler_children.push_back(CL_TRY(block()));
                 children.push_back(
                     ast.emplace_back(AstNodeKind::STATEMENT_EXCEPT_HANDLER,
@@ -2276,8 +2235,8 @@ namespace cl
             if(peek() == Token::ELSE)
             {
                 int32_t else_source_pos = source_pos_for_token();
-                consume(Token::ELSE);
-                consume(Token::COLON);
+                CL_TRY(consume(Token::ELSE));
+                CL_TRY(consume(Token::COLON));
                 AstChildren else_children;
                 else_children.push_back(CL_TRY(block()));
                 children.push_back(
@@ -2287,8 +2246,8 @@ namespace cl
             if(peek() == Token::FINALLY)
             {
                 int32_t finally_source_pos = source_pos_for_token();
-                consume(Token::FINALLY);
-                consume(Token::COLON);
+                CL_TRY(consume(Token::FINALLY));
+                CL_TRY(consume(Token::COLON));
                 AstChildren finally_children;
                 finally_children.push_back(CL_TRY(block()));
                 children.push_back(
@@ -2304,15 +2263,15 @@ namespace cl
         {
             AstChildren children;
             int32_t source_pos = source_pos_for_token();
-            consume(Token::WHILE);
+            CL_TRY(consume(Token::WHILE));
             children.push_back(CL_TRY(named_expression()));
-            consume(Token::COLON);
+            CL_TRY(consume(Token::COLON));
             children.push_back(CL_TRY(block()));
 
             if(peek() == Token::ELSE)
             {
-                consume(Token::ELSE);
-                consume(Token::COLON);
+                CL_TRY(consume(Token::ELSE));
+                CL_TRY(consume(Token::COLON));
                 children.push_back(CL_TRY(block()));
             }
             return Expected<int32_t>::ok(ast.emplace_back(
@@ -2399,7 +2358,7 @@ namespace cl
                 idx = ast.emplace_back(AstNodeKind::STATEMENT_SEQUENCE,
                                        source_pos, AstChildren{});
             }
-            consume(Token::ENDMARKER);
+            CL_TRY(consume(Token::ENDMARKER));
             return Expected<int32_t>::ok(idx);
         }
 
@@ -2417,7 +2376,7 @@ namespace cl
             while(match(Token::NEWLINE))
             {
             }
-            consume(Token::ENDMARKER);
+            CL_TRY(consume(Token::ENDMARKER));
             return Expected<int32_t>::ok(ast.emplace_back(
                 AstNodeKind::STATEMENT_SEQUENCE, source_pos, children));
         }
@@ -2429,7 +2388,7 @@ namespace cl
             {
             }
 
-            consume(Token::ENDMARKER);
+            CL_TRY(consume(Token::ENDMARKER));
             return Expected<int32_t>::ok(result);
         }
     };
@@ -2438,19 +2397,8 @@ namespace cl
     parse(VirtualMachine &vm, const TokenVector &tv, StartRule start_rule,
           CompileContinuationInfo *compile_continuation_info)
     {
-        try
-        {
-            Parser parser(vm, tv, compile_continuation_info);
-            return parser.parse(start_rule);
-        }
-        catch(const ParseError &err)
-        {
-            return raise_parse_exception(err, L"SyntaxError");
-        }
-        catch(const std::runtime_error &err)
-        {
-            return raise_parse_exception(err);
-        }
+        Parser parser(vm, tv, compile_continuation_info);
+        return parser.parse(start_rule);
     }
 
 }  // namespace cl
