@@ -115,11 +115,6 @@ namespace cl
         return result;
     }
 
-    NOINLINE INTERP_CC Value raise_generic_exception(PARAMS)
-    {
-        throw std::runtime_error("Clovervm exception");
-    }
-
     NOINLINE INTERP_CC Value raise_unknown_opcode_exception(PARAMS)
     {
         throw std::runtime_error("Unknown opcode");
@@ -210,6 +205,102 @@ namespace cl
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
             thread, fp, pc, code_object, L"TypeError",
             L"unsupported operand type(s) for %");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value unsupported_addition_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"unsupported operand type(s) for +");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value unsupported_subtraction_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"unsupported operand type(s) for -");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value unsupported_multiplication_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"unsupported operand type(s) for *");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value unsupported_comparison_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"unsupported operand type(s) for comparison");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value unsupported_unary_arithmetic_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"unsupported operand type for unary arithmetic");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value unsupported_shift_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"unsupported operand type(s) for shift");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value unsupported_truthiness_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"unsupported truthiness for object");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value invalid_range_iteration_state_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"SystemError",
+            L"invalid range iteration state");
         fp = target.fp;
         code_object = target.code_object;
         pc = target.interpreted_pc;
@@ -860,10 +951,6 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value slow_path(PARAMS)
-    {
-        MUSTTAIL return raise_generic_exception(ARGS);
-    }
     NOINLINE static INTERP_CC Value overflow_path(PARAMS)
     {
         MUSTTAIL return raise_overflow_error(ARGS);
@@ -874,7 +961,7 @@ namespace cl
         START(1);
         if(!can_convert_to<Float>(accumulator))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_truthiness_error(ARGS);
         }
 
         accumulator = accumulator.get_ptr<Float>()->value != 0.0
@@ -888,7 +975,7 @@ namespace cl
         int16_t rel_target = read_int16_le(&pc[1]);
         if(!can_convert_to<Float>(accumulator))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_truthiness_error(ARGS);
         }
 
         pc += 3;
@@ -906,7 +993,7 @@ namespace cl
         int16_t rel_target = read_int16_le(&pc[1]);
         if(!can_convert_to<Float>(accumulator))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_truthiness_error(ARGS);
         }
 
         pc += 3;
@@ -1147,7 +1234,7 @@ namespace cl
         if(!try_get_float_or_smi_or_bool(a, &left) ||
            !try_get_float_or_smi_or_bool(b, &right))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_addition_error(ARGS);
         }
 
         accumulator =
@@ -1162,7 +1249,7 @@ namespace cl
         double left;
         if(!try_get_exact_float(a, &left))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_addition_error(ARGS);
         }
 
         accumulator =
@@ -1180,7 +1267,7 @@ namespace cl
         if(!try_get_float_or_smi_or_bool(a, &left) ||
            !try_get_float_or_smi_or_bool(b, &right))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_subtraction_error(ARGS);
         }
 
         accumulator =
@@ -1195,7 +1282,7 @@ namespace cl
         double left;
         if(!try_get_exact_float(a, &left))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_subtraction_error(ARGS);
         }
 
         accumulator =
@@ -1213,7 +1300,7 @@ namespace cl
         if(!try_get_float_or_smi_or_bool(a, &left) ||
            !try_get_float_or_smi_or_bool(b, &right))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_multiplication_error(ARGS);
         }
 
         accumulator =
@@ -1228,7 +1315,7 @@ namespace cl
         double left;
         if(!try_get_exact_float(a, &left))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_multiplication_error(ARGS);
         }
 
         accumulator =
@@ -1246,7 +1333,7 @@ namespace cl
         if(!try_get_float_or_smi_or_bool(a, &left) ||
            !try_get_float_or_smi_or_bool(b, &right))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_comparison_error(ARGS);
         }
 
         accumulator = left < right ? Value::True() : Value::False();
@@ -1262,7 +1349,7 @@ namespace cl
         if(!try_get_float_or_smi_or_bool(a, &left) ||
            !try_get_float_or_smi_or_bool(b, &right))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_comparison_error(ARGS);
         }
 
         accumulator = left <= right ? Value::True() : Value::False();
@@ -1278,7 +1365,7 @@ namespace cl
         if(!try_get_float_or_smi_or_bool(a, &left) ||
            !try_get_float_or_smi_or_bool(b, &right))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_comparison_error(ARGS);
         }
 
         accumulator = left > right ? Value::True() : Value::False();
@@ -1295,7 +1382,7 @@ namespace cl
         if(!try_get_float_or_smi_or_bool(a, &left) ||
            !try_get_float_or_smi_or_bool(b, &right))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_comparison_error(ARGS);
         }
 
         accumulator = left >= right ? Value::True() : Value::False();
@@ -1320,7 +1407,7 @@ namespace cl
                 accumulator = equal ? Value::True() : Value::False();
                 COMPLETE();
             }
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_comparison_error(ARGS);
         }
 
         accumulator = left == right ? Value::True() : Value::False();
@@ -1345,7 +1432,7 @@ namespace cl
                 accumulator = equal ? Value::False() : Value::True();
                 COMPLETE();
             }
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_comparison_error(ARGS);
         }
 
         accumulator = left != right ? Value::True() : Value::False();
@@ -1380,7 +1467,7 @@ namespace cl
         double value;
         if(!try_get_exact_float(a, &value))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_unary_arithmetic_error(ARGS);
         }
 
         accumulator = thread->make_object_value<Float>(-value).raw_value();
@@ -1394,7 +1481,7 @@ namespace cl
         double value;
         if(!try_get_exact_float(a, &value))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_unary_arithmetic_error(ARGS);
         }
 
         accumulator = thread->make_object_value<Float>(value).raw_value();
@@ -2861,7 +2948,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_shift_error(ARGS);
         }
         int64_t shift_count = b.get_smi();
         if(unlikely(shift_count < 0))
@@ -2885,7 +2972,7 @@ namespace cl
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_shift_error(ARGS);
         }
         int64_t shift_count = b.get_smi();
         // Bytecode invariant: codegen only emits LeftShiftSmi for shifts 0..63.
@@ -2908,7 +2995,7 @@ namespace cl
         START_BINARY_REG_ACC();
         if(unlikely(A_OR_B_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_shift_error(ARGS);
         }
 
         int64_t shift_count = b.get_smi();
@@ -2925,7 +3012,7 @@ namespace cl
         START_BINARY_ACC_SMI();
         if(unlikely(A_NOT_SMI()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return unsupported_shift_error(ARGS);
         }
         int64_t shift_count = b.get_smi();
         if(unlikely(shift_count < 0))
@@ -4269,7 +4356,7 @@ namespace cl
 
         if(unlikely(!current.is_smi() || !stop.is_smi() || !step.is_smi()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return invalid_range_iteration_state_error(ARGS);
         }
 
         int64_t current_smi = current.get_smi();
@@ -4278,7 +4365,7 @@ namespace cl
 
         if(unlikely(step_smi == 0))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return invalid_range_iteration_state_error(ARGS);
         }
 
         bool exhausted =
@@ -4396,7 +4483,7 @@ namespace cl
 
         if(unlikely(!current.is_smi() || !stop.is_smi()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return invalid_range_iteration_state_error(ARGS);
         }
 
         int64_t current_smi = current.get_smi();
@@ -4431,7 +4518,7 @@ namespace cl
 
         if(unlikely(!current.is_smi() || !stop.is_smi() || !step.is_smi()))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return invalid_range_iteration_state_error(ARGS);
         }
 
         int64_t current_smi = current.get_smi();
@@ -4439,7 +4526,7 @@ namespace cl
         int64_t step_smi = step.get_smi();
         if(unlikely(step_smi == 0))
         {
-            MUSTTAIL return slow_path(ARGS);
+            MUSTTAIL return invalid_range_iteration_state_error(ARGS);
         }
 
         bool exhausted =

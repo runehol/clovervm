@@ -1283,6 +1283,20 @@ TEST(Interpreter, modulo_reports_errors)
                         L"unsupported operand type(s) for %");
 }
 
+TEST(Interpreter, arithmetic_reports_unsupported_operands)
+{
+    expect_python_error(L"\"a\" + 1\n", L"TypeError",
+                        L"unsupported operand type(s) for +");
+    expect_python_error(L"1 - \"a\"\n", L"TypeError",
+                        L"unsupported operand type(s) for -");
+    expect_python_error(L"\"a\" * 2\n", L"TypeError",
+                        L"unsupported operand type(s) for *");
+    expect_python_error(L"-\"a\"\n", L"TypeError",
+                        L"unsupported operand type for unary arithmetic");
+    expect_python_error(L"\"a\" < 1\n", L"TypeError",
+                        L"unsupported operand type(s) for comparison");
+}
+
 TEST(Interpreter, shortcutting_boolean_operators_return_operand_values)
 {
     test::VmTestContext test_context;
@@ -5252,6 +5266,14 @@ TEST(Interpreter, negative_shift_count_unwinds_nested_frames)
                         L"    return 99\n"
                         L"fail()\n",
                         L"ValueError", L"negative shift count");
+}
+
+TEST(Interpreter, shift_reports_unsupported_operands)
+{
+    expect_python_error(L"\"a\" << 1\n", L"TypeError",
+                        L"unsupported operand type(s) for shift");
+    expect_python_error(L"1 >> \"a\"\n", L"TypeError",
+                        L"unsupported operand type(s) for shift");
 }
 
 TEST(Interpreter, left_shift_overflow_smi)
