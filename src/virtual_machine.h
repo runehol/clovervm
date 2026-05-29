@@ -332,7 +332,7 @@ namespace cl
         FILE *stdout_file_ = stdout;
     };
 
-    [[noreturn]] void throw_bootstrap_python_exception(ThreadState *thread,
+    [[noreturn]] void fatal_bootstrap_python_exception(ThreadState *thread,
                                                        const char *context);
 
     template <typename T>
@@ -341,7 +341,7 @@ namespace cl
     {
         if(result.has_exception())
         {
-            throw_bootstrap_python_exception(vm->get_default_thread(), context);
+            fatal_bootstrap_python_exception(vm->get_default_thread(), context);
         }
         return std::move(result).value();
     }
@@ -352,7 +352,7 @@ namespace cl
     {
         if(result.has_exception())
         {
-            throw_bootstrap_python_exception(vm->get_default_thread(), context);
+            fatal_bootstrap_python_exception(vm->get_default_thread(), context);
         }
     }
 

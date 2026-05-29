@@ -1,10 +1,10 @@
 #include "global_heap.h"
 
+#include "fatal.h"
 #include "thread_local_heap.h"
 
 #include <algorithm>
 #include <cassert>
-#include <cstdlib>
 
 namespace cl
 {
@@ -14,7 +14,7 @@ namespace cl
         abort_missing_slab_for_address(const void *ptr)
         {
             (void)ptr;
-            std::abort();
+            fatal("missing slab for heap address");
         }
     }  // namespace
 

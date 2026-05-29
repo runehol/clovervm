@@ -10,6 +10,7 @@
 #include "ellipsis_type.h"
 #include "exception_object.h"
 #include "exception_propagation.h"
+#include "fatal.h"
 #include "float.h"
 #include "function.h"
 #include "heap_reclamation.h"
@@ -38,7 +39,6 @@
 #include <cstdint>
 #include <cwchar>
 #include <initializer_list>
-#include <stdexcept>
 #include <string>
 
 #include "builtins.inc"
@@ -78,7 +78,7 @@ namespace cl
         return result;
     }
 
-    [[noreturn]] void throw_bootstrap_python_exception(ThreadState *thread,
+    [[noreturn]] void fatal_bootstrap_python_exception(ThreadState *thread,
                                                        const char *context)
     {
         std::string message = "failed to bootstrap VM";
@@ -90,7 +90,7 @@ namespace cl
         message += ": ";
         message += unicode::encode_utf8(
             format_bootstrap_pending_python_exception(thread));
-        throw std::runtime_error(message);
+        fatal(message);
     }
 
     static Value make_class_tuple(std::initializer_list<ClassObject *> classes)
@@ -927,13 +927,14 @@ namespace cl
             LanguageMode::TrustedCloverExtensions);
         if(builtins_code.has_exception())
         {
-            throw std::runtime_error("failed to compile trusted builtins.py");
+            fatal_bootstrap_python_exception(thread,
+                                             "compiling trusted builtins.py");
         }
         Value result = thread->run_clovervm_code_object(builtins_code.value());
         if(result.is_exception_marker())
         {
-            throw std::runtime_error(
-                "failed to initialize trusted builtins.py");
+            fatal_bootstrap_python_exception(
+                thread, "initializing trusted builtins.py");
         }
 
         Expected<CodeObject *> sys_code = thread->compile_in_module(
@@ -941,12 +942,14 @@ namespace cl
             LanguageMode::TrustedCloverExtensions);
         if(sys_code.has_exception())
         {
-            throw std::runtime_error("failed to compile trusted sys.py");
+            fatal_bootstrap_python_exception(thread,
+                                             "compiling trusted sys.py");
         }
         result = thread->run_clovervm_code_object(sys_code.value());
         if(result.is_exception_marker())
         {
-            throw std::runtime_error("failed to initialize trusted sys.py");
+            fatal_bootstrap_python_exception(thread,
+                                             "initializing trusted sys.py");
         }
     }
 

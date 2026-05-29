@@ -1,6 +1,7 @@
 #include "slab_allocator.h"
 
-#include <stdexcept>
+#include "fatal.h"
+
 #include <sys/mman.h>
 
 namespace cl
@@ -12,7 +13,7 @@ namespace cl
                           MAP_PRIVATE | MAP_ANON, -1, 0);
         if(addr == MAP_FAILED)
         {
-            throw std::runtime_error("Out of memory - panic!");
+            fatal("failed to allocate slab");
         }
         start_ptr = reinterpret_cast<char *>(addr);
         assert(reinterpret_cast<uintptr_t>(start_ptr) % SlabLookupGranuleSize ==

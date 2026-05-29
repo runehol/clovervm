@@ -53,6 +53,8 @@ add_library(libclovervm_objects OBJECT
     exception_object.cpp
     exception_object.h
     exception_propagation.h
+    fatal.cpp
+    fatal.h
     float.cpp
     float.h
     function.cpp

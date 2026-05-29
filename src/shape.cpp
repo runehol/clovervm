@@ -1,10 +1,10 @@
 #include "shape.h"
 #include "class_object.h"
+#include "fatal.h"
 #include "refcount.h"
 #include "str.h"
 #include "thread_state.h"
 #include "virtual_machine.h"
-#include <stdexcept>
 
 namespace cl
 {
@@ -217,8 +217,7 @@ namespace cl
         DescriptorLookup descriptor = lookup_descriptor_including_latent(name);
         if(descriptor.is_present())
         {
-            throw std::runtime_error(
-                "shape add transition requires a new property");
+            fatal("shape add transition requires a new property");
         }
 
         DescriptorInfo inserted_info;
@@ -286,8 +285,7 @@ namespace cl
     {
         if(lookup_descriptor_index(name) < 0)
         {
-            throw std::runtime_error(
-                "shape delete transition requires an existing property");
+            fatal("shape delete transition requires an existing property");
         }
 
         DescriptorLookup descriptor = lookup_descriptor_including_latent(name);
