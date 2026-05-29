@@ -17,7 +17,7 @@ template <> struct fmt::formatter<cl::Token>
         -> decltype(ctx.out())
     {
         auto &&out = ctx.out();
-        return format_to(out, "{}", cl::unicode::encode_utf8(cl::to_string(t)));
+        return format_to(out, "{}", cl::to_string(t));
     }
 };
 
@@ -33,7 +33,7 @@ template <> struct fmt::formatter<cl::TokenVector>
         for(size_t i = 0; i < tv.size(); ++i)
         {
             format_to(out, "{:05d} {:10s}", tv.source_offsets[i],
-                      cl::unicode::encode_utf8(cl::to_string(tv.tokens[i])));
+                      cl::to_string(tv.tokens[i]));
 
             switch(tv.tokens[i])
             {

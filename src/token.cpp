@@ -5,7 +5,7 @@
 namespace cl
 {
 
-    const wchar_t *to_string(Token t)
+    const wchar_t *to_wstring(Token t)
     {
         switch(t)
         {
@@ -207,9 +207,14 @@ namespace cl
         return L"<unknown>";
     };
 
+    std::string to_string(Token t)
+    {
+        return unicode::encode_utf8(to_wstring(t));
+    }
+
     std::ostream &operator<<(std::ostream &o, Token t)
     {
-        o << unicode::encode_utf8(to_string(t));
+        o << to_string(t);
         return o;
     }
 

@@ -17,37 +17,10 @@
 
 namespace cl
 {
-    static const wchar_t *
-    parse_exception_type_from_message(std::wstring &message,
-                                      const wchar_t *default_type_name)
-    {
-        const wchar_t *type_name = default_type_name;
-
-        size_t prefix_end = message.find(L": ");
-        if(prefix_end != std::wstring::npos)
-        {
-            std::wstring prefix = message.substr(0, prefix_end);
-            if(prefix == L"SyntaxError" || prefix == L"IndentationError" ||
-               prefix == L"SystemError")
-            {
-                type_name = prefix == L"SyntaxError" ? L"SyntaxError"
-                            : prefix == L"IndentationError"
-                                ? L"IndentationError"
-                                : L"SystemError";
-                message.erase(0, prefix_end + 2);
-            }
-        }
-
-        return type_name;
-    }
-
     template <typename T>
-    static Expected<T> raise_parse_exception(std::wstring message,
-                                             const wchar_t *default_type_name)
+    static Expected<T> raise_parse_exception(const wchar_t *type_name,
+                                             std::wstring message)
     {
-        const wchar_t *type_name =
-            parse_exception_type_from_message(message, default_type_name);
-        assert(type_name != nullptr);
         return Expected<T>::raise_exception(type_name, message.c_str());
     }
 
@@ -376,11 +349,8 @@ namespace cl
                     return raise_parse_error_for_tokenizer_error<void>(
                         actual, source_pos, previous_indentation_level);
                 }
-                std::wstring message = L"Expected token ";
-                message += to_string(expected);
-                message += L", got ";
-                message += to_string(actual);
-                message += format_error_context(source_pos);
+                std::wstring message =
+                    expected_token_message(expected, actual, source_pos);
                 if(expected == Token::INDENT &&
                    (actual == Token::ENDMARKER || actual == Token::DEDENT))
                 {
@@ -424,6 +394,25 @@ namespace cl
                    token == Token::ERRORTOKEN_OPEN_BRACKET_EOF;
         }
 
+        std::wstring expected_token_message(Token expected, Token actual,
+                                            uint32_t source_pos)
+        {
+            std::wstring message = L"Expected token ";
+            message += to_wstring(expected);
+            message += L", got ";
+            message += to_wstring(actual);
+            message += format_error_context(source_pos);
+            return message;
+        }
+
+        std::wstring unexpected_token_message(Token token, uint32_t source_pos)
+        {
+            std::wstring message = L"Unexpected token ";
+            message += to_wstring(token);
+            message += format_error_context(source_pos);
+            return message;
+        }
+
         struct ParseFailureDetails
         {
             std::wstring message;
@@ -441,8 +430,8 @@ namespace cl
                 compile_continuation_info->next_indentation_level =
                     details.next_indentation_level;
             }
-            return raise_parse_exception<T>(std::move(details.message),
-                                            L"SyntaxError");
+            return raise_parse_exception<T>(L"SyntaxError",
+                                            std::move(details.message));
         }
 
         ParseFailureDetails parse_error_details_for_tokenizer_error(
@@ -454,24 +443,19 @@ namespace cl
                     return {invalid_character_message(source_pos) +
                             format_error_context(source_pos)};
                 case Token::ERRORTOKEN_UNTERMINATED_STRING:
-                    return {L"SyntaxError: unterminated string literal" +
+                    return {L"unterminated string literal" +
                             format_error_context(source_pos)};
                 case Token::ERRORTOKEN_UNTERMINATED_TRIPLE_STRING:
-                    return {L"SyntaxError: unterminated triple-quoted string "
+                    return {L"unterminated triple-quoted string "
                             L"literal" +
                                 format_error_context(source_pos),
                             true, error_indentation_level};
                 case Token::ERRORTOKEN_OPEN_BRACKET_EOF:
-                    return {L"SyntaxError: incomplete input" +
+                    return {L"incomplete input" +
                                 format_error_context(source_pos),
                             true, error_indentation_level};
                 default:
-                    {
-                        std::wstring message = L"Unexpected token ";
-                        message += to_string(token);
-                        message += format_error_context(source_pos);
-                        return {std::move(message)};
-                    }
+                    return {unexpected_token_message(token, source_pos)};
             }
         }
 
@@ -493,8 +477,8 @@ namespace cl
 
             std::wostringstream out;
             out.imbue(std::locale::classic());
-            out << L"SyntaxError: invalid character '" << invalid_char
-                << L"' (U+" << std::uppercase << std::hex << std::setw(4)
+            out << L"invalid character '" << invalid_char << L"' (U+"
+                << std::uppercase << std::hex << std::setw(4)
                 << std::setfill(L'0') << code_point << L")";
             return out.str();
         }
@@ -536,7 +520,7 @@ namespace cl
             std::wstring message = L"Not implemented: ";
             message += construct_name;
             message += L" (token ";
-            message += to_string(peek());
+            message += to_wstring(peek());
             message += L")";
             message += format_error_context(source_pos_for_token());
             return Expected<int32_t>::raise_exception(L"SyntaxError",
@@ -627,11 +611,8 @@ namespace cl
             if(peek() != Token::NAME)
             {
                 uint32_t source_pos = source_pos_for_token();
-                std::wstring message = L"Expected token ";
-                message += to_string(Token::NAME);
-                message += L", got ";
-                message += to_string(peek());
-                message += format_error_context(source_pos);
+                std::wstring message =
+                    expected_token_message(Token::NAME, peek(), source_pos);
                 return Expected<int32_t>::raise_exception(L"SyntaxError",
                                                           message.c_str());
             }
@@ -1248,10 +1229,8 @@ namespace cl
                         return raise_parse_error_for_tokenizer_error<int32_t>(
                             peek(), source_pos, indentation_level);
                     }
-                    std::wstring message = L"SyntaxError: Unexpected token ";
-                    message += to_string(peek());
-                    message += format_error_context(source_pos);
-                    return raise_parse_error<int32_t>({std::move(message)});
+                    return raise_parse_error<int32_t>(
+                        {unexpected_token_message(peek(), source_pos)});
 
                     // TODO NAME, STRING, parenthesis, tuples, lists, dicts, ...
                     // (ELLIPSIS)

@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstdint>
 #include <iosfwd>
+#include <string>
 #include <vector>
 
 namespace cl
@@ -124,7 +125,8 @@ namespace cl
         ERRORTOKEN_OPEN_BRACKET_EOF,
     };
 
-    const wchar_t *to_string(Token t);
+    const wchar_t *to_wstring(Token t);
+    std::string to_string(Token t);
     std::ostream &operator<<(std::ostream &o, Token t);
 
     class TokenVector
