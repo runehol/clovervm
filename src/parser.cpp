@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -19,6 +20,51 @@
 
 namespace cl
 {
+    static std::wstring parser_error_message_to_wstring(const char *message)
+    {
+        std::optional<std::wstring> decoded = unicode::decode_utf8(message);
+        if(decoded.has_value())
+        {
+            return *decoded;
+        }
+
+        std::wstring result;
+        for(const char *ch = message; *ch != 0; ++ch)
+        {
+            result.push_back(static_cast<unsigned char>(*ch));
+        }
+        return result;
+    }
+
+    static Expected<AstVector>
+    raise_parse_exception(const std::runtime_error &err,
+                          const wchar_t *default_type_name = nullptr)
+    {
+        std::wstring message = parser_error_message_to_wstring(err.what());
+        const wchar_t *type_name = default_type_name;
+
+        size_t prefix_end = message.find(L": ");
+        if(prefix_end != std::wstring::npos)
+        {
+            std::wstring prefix = message.substr(0, prefix_end);
+            if(prefix == L"SyntaxError" || prefix == L"IndentationError" ||
+               prefix == L"SystemError")
+            {
+                type_name = prefix == L"SyntaxError" ? L"SyntaxError"
+                            : prefix == L"IndentationError"
+                                ? L"IndentationError"
+                                : L"SystemError";
+                message.erase(0, prefix_end + 2);
+            }
+        }
+
+        if(type_name == nullptr)
+        {
+            throw;
+        }
+        return Expected<AstVector>::raise_exception(type_name, message.c_str());
+    }
+
     static std::wstring remove_number_separators(std::wstring_view token)
     {
         std::wstring result;
@@ -2284,13 +2330,23 @@ namespace cl
         }
     };
 
-    AstVector parse(VirtualMachine &vm, const TokenVector &tv,
-                    StartRule start_rule,
-                    CompileContinuationInfo *compile_continuation_info)
+    Expected<AstVector>
+    parse(VirtualMachine &vm, const TokenVector &tv, StartRule start_rule,
+          CompileContinuationInfo *compile_continuation_info)
     {
-        Parser parser(vm, tv, compile_continuation_info);
-
-        return parser.parse(start_rule);
+        try
+        {
+            Parser parser(vm, tv, compile_continuation_info);
+            return Expected<AstVector>::ok(parser.parse(start_rule));
+        }
+        catch(const ParseError &err)
+        {
+            return raise_parse_exception(err, L"SyntaxError");
+        }
+        catch(const std::runtime_error &err)
+        {
+            return raise_parse_exception(err);
+        }
     }
 
 }  // namespace cl

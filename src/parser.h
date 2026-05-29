@@ -2,6 +2,7 @@
 #define CL_PARSER_H
 
 #include "ast.h"
+#include "typed_value.h"
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -38,7 +39,7 @@ namespace cl
         }
     };
 
-    AstVector
+    Expected<AstVector>
     parse(VirtualMachine &vm, const TokenVector &tv, StartRule start_rule,
           CompileContinuationInfo *compile_continuation_info = nullptr);
 

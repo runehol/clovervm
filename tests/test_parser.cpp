@@ -7,10 +7,10 @@
 #include "test_helpers.h"
 #include "token_print.h"
 #include "tokenizer.h"
+#include "unicode.h"
 #include "virtual_machine.h"
 #include <fmt/xchar.h>
 #include <gtest/gtest.h>
-#include <stdexcept>
 
 using namespace cl;
 
@@ -30,22 +30,49 @@ static std::string parse_with_start_rule(
     CompilationUnit compilation_unit(in_str);
     TokenVector tokens(tokenize(compilation_unit).value());
     AstVector ast =
-        cl::parse(vm, tokens, start_rule, compile_continuation_info);
+        cl::parse(vm, tokens, start_rule, compile_continuation_info).value();
     return fmt::to_string(ast);
+}
+
+static Expected<AstVector> parse_ast_with_start_rule(
+    const wchar_t *in_str, StartRule start_rule,
+    CompileContinuationInfo *compile_continuation_info = nullptr)
+{
+    VirtualMachine vm;
+    ThreadState::ActivationScope active_thread(vm.get_default_thread());
+    CompilationUnit compilation_unit(in_str);
+    TokenVector tokens(tokenize(compilation_unit).value());
+    return cl::parse(vm, tokens, start_rule, compile_continuation_info);
 }
 
 static void expect_parse_error(const wchar_t *source,
                                const char *expected_message)
 {
-    try
+    VirtualMachine vm;
+    ThreadState::ActivationScope active_thread(vm.get_default_thread());
+    CompilationUnit compilation_unit(source);
+    TokenVector tokens(tokenize(compilation_unit).value());
+    Expected<AstVector> ast = cl::parse(vm, tokens, StartRule::File);
+    EXPECT_TRUE(ast.has_exception());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              vm.get_default_thread()->pending_exception_kind());
+    TValue<Exception> exception =
+        vm.get_default_thread()->pending_exception_object();
+    std::wstring actual = string_as_wchar_t(
+        exception.extract()->get_shape()->get_class()->get_name());
+    actual += L": ";
+    actual += string_as_wchar_t(exception.extract()->message.value());
+    std::string expected(expected_message);
+    if(expected.rfind("SyntaxError: ", 0) == 0 ||
+       expected.rfind("IndentationError: ", 0) == 0 ||
+       expected.rfind("SystemError: ", 0) == 0)
     {
-        (void)parse(source);
-        FAIL() << "Expected std::runtime_error with message: "
-               << expected_message;
+        EXPECT_EQ(expected, unicode::encode_utf8(actual));
     }
-    catch(const std::runtime_error &err)
+    else
     {
-        EXPECT_STREQ(expected_message, err.what());
+        EXPECT_EQ(expected, unicode::encode_utf8(string_as_wchar_t(
+                                exception.extract()->message.value())));
     }
 }
 
@@ -90,35 +117,23 @@ TEST(Parser, interactive_statement)
 TEST(Parser, incomplete_interactive_suite_reports_next_indentation_level)
 {
     CompileContinuationInfo compile_continuation_info;
-    try
-    {
-        (void)parse_with_start_rule(L"if True:\n", StartRule::Interactive,
-                                    &compile_continuation_info);
-        FAIL() << "Expected ParseError";
-    }
-    catch(const ParseError &)
-    {
-        EXPECT_TRUE(compile_continuation_info.incomplete_input);
-        EXPECT_EQ(1u, compile_continuation_info.next_indentation_level);
-    }
+    Expected<AstVector> ast = parse_ast_with_start_rule(
+        L"if True:\n", StartRule::Interactive, &compile_continuation_info);
+    EXPECT_TRUE(ast.has_exception());
+    EXPECT_TRUE(compile_continuation_info.incomplete_input);
+    EXPECT_EQ(1u, compile_continuation_info.next_indentation_level);
 }
 
 TEST(Parser, nested_incomplete_interactive_suite_reports_next_indentation_level)
 {
     CompileContinuationInfo compile_continuation_info;
-    try
-    {
-        (void)parse_with_start_rule(L"if True:\n"
-                                    L"    if True:\n",
-                                    StartRule::Interactive,
-                                    &compile_continuation_info);
-        FAIL() << "Expected ParseError";
-    }
-    catch(const ParseError &)
-    {
-        EXPECT_TRUE(compile_continuation_info.incomplete_input);
-        EXPECT_EQ(2u, compile_continuation_info.next_indentation_level);
-    }
+    Expected<AstVector> ast = parse_ast_with_start_rule(
+        L"if True:\n"
+        L"    if True:\n",
+        StartRule::Interactive, &compile_continuation_info);
+    EXPECT_TRUE(ast.has_exception());
+    EXPECT_TRUE(compile_continuation_info.incomplete_input);
+    EXPECT_EQ(2u, compile_continuation_info.next_indentation_level);
 }
 
 TEST(Parser, compile_in_module_reports_compile_continuation_info)
@@ -142,16 +157,10 @@ TEST(Parser, compile_in_module_reports_compile_continuation_info)
 TEST(Parser, unterminated_single_string_is_not_incomplete_input)
 {
     CompileContinuationInfo compile_continuation_info;
-    try
-    {
-        (void)parse_with_start_rule(L"x = \"abc\n", StartRule::Interactive,
-                                    &compile_continuation_info);
-        FAIL() << "Expected ParseError";
-    }
-    catch(const ParseError &)
-    {
-        EXPECT_FALSE(compile_continuation_info.incomplete_input);
-    }
+    Expected<AstVector> ast = parse_ast_with_start_rule(
+        L"x = \"abc\n", StartRule::Interactive, &compile_continuation_info);
+    EXPECT_TRUE(ast.has_exception());
+    EXPECT_FALSE(compile_continuation_info.incomplete_input);
 }
 
 TEST(Parser, invalid_character_reports_code_point)
@@ -164,51 +173,33 @@ TEST(Parser, invalid_character_reports_code_point)
 TEST(Parser, unterminated_triple_string_reports_current_indentation_level)
 {
     CompileContinuationInfo compile_continuation_info;
-    try
-    {
-        (void)parse_with_start_rule(L"x = \"\"\"abc\n", StartRule::Interactive,
-                                    &compile_continuation_info);
-        FAIL() << "Expected ParseError";
-    }
-    catch(const ParseError &)
-    {
-        EXPECT_TRUE(compile_continuation_info.incomplete_input);
-        EXPECT_EQ(0u, compile_continuation_info.next_indentation_level);
-    }
+    Expected<AstVector> ast = parse_ast_with_start_rule(
+        L"x = \"\"\"abc\n", StartRule::Interactive, &compile_continuation_info);
+    EXPECT_TRUE(ast.has_exception());
+    EXPECT_TRUE(compile_continuation_info.incomplete_input);
+    EXPECT_EQ(0u, compile_continuation_info.next_indentation_level);
 }
 
 TEST(Parser, open_bracket_at_eof_reports_current_indentation_level)
 {
     CompileContinuationInfo compile_continuation_info;
-    try
-    {
-        (void)parse_with_start_rule(L"x = (1 +\n", StartRule::Interactive,
-                                    &compile_continuation_info);
-        FAIL() << "Expected ParseError";
-    }
-    catch(const ParseError &)
-    {
-        EXPECT_TRUE(compile_continuation_info.incomplete_input);
-        EXPECT_EQ(0u, compile_continuation_info.next_indentation_level);
-    }
+    Expected<AstVector> ast = parse_ast_with_start_rule(
+        L"x = (1 +\n", StartRule::Interactive, &compile_continuation_info);
+    EXPECT_TRUE(ast.has_exception());
+    EXPECT_TRUE(compile_continuation_info.incomplete_input);
+    EXPECT_EQ(0u, compile_continuation_info.next_indentation_level);
 }
 
 TEST(Parser, open_bracket_inside_suite_reports_current_indentation_level)
 {
     CompileContinuationInfo compile_continuation_info;
-    try
-    {
-        (void)parse_with_start_rule(L"if True:\n"
-                                    L"    x = (1 +\n",
-                                    StartRule::Interactive,
-                                    &compile_continuation_info);
-        FAIL() << "Expected ParseError";
-    }
-    catch(const ParseError &)
-    {
-        EXPECT_TRUE(compile_continuation_info.incomplete_input);
-        EXPECT_EQ(1u, compile_continuation_info.next_indentation_level);
-    }
+    Expected<AstVector> ast = parse_ast_with_start_rule(
+        L"if True:\n"
+        L"    x = (1 +\n",
+        StartRule::Interactive, &compile_continuation_info);
+    EXPECT_TRUE(ast.has_exception());
+    EXPECT_TRUE(compile_continuation_info.incomplete_input);
+    EXPECT_EQ(1u, compile_continuation_info.next_indentation_level);
 }
 
 TEST(Parser, if_stmt)

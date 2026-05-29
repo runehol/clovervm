@@ -100,7 +100,7 @@ namespace cl::test
         explicit ParsedFile(const wchar_t *source)
             : active_thread(vm.get_default_thread()), compilation_unit(source),
               tokens(tokenize(compilation_unit).value()),
-              ast(cl::parse(vm, tokens, StartRule::File))
+              ast(cl::parse(vm, tokens, StartRule::File).value())
         {
         }
 

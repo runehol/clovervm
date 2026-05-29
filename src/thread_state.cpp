@@ -14,13 +14,10 @@
 #include "parser.h"
 #include "runtime_helpers.h"
 #include "tokenizer.h"
-#include "unicode.h"
 #include "virtual_machine.h"
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
-#include <optional>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -34,53 +31,6 @@ namespace cl
     static_assert((FrameAlignmentBytes & (FrameAlignmentBytes - 1)) == 0);
 
     thread_local ThreadState *ThreadState::current_thread = nullptr;
-
-    static std::wstring compile_error_message_to_wstring(const char *message)
-    {
-        std::optional<std::wstring> decoded = unicode::decode_utf8(message);
-        if(decoded.has_value())
-        {
-            return *decoded;
-        }
-
-        std::wstring result;
-        for(const char *ch = message; *ch != 0; ++ch)
-        {
-            result.push_back(static_cast<unsigned char>(*ch));
-        }
-        return result;
-    }
-
-    [[nodiscard]] static bool
-    raise_compile_exception(ThreadState *thread, const std::runtime_error &err,
-                            const wchar_t *default_type_name = nullptr)
-    {
-        std::wstring message = compile_error_message_to_wstring(err.what());
-        const wchar_t *type_name = default_type_name;
-
-        size_t prefix_end = message.find(L": ");
-        if(prefix_end != std::wstring::npos)
-        {
-            std::wstring prefix = message.substr(0, prefix_end);
-            if(prefix == L"SyntaxError" || prefix == L"IndentationError" ||
-               prefix == L"SystemError")
-            {
-                type_name = prefix == L"SyntaxError" ? L"SyntaxError"
-                            : prefix == L"IndentationError"
-                                ? L"IndentationError"
-                                : L"SystemError";
-                message.erase(0, prefix_end + 2);
-            }
-        }
-
-        if(type_name == nullptr)
-        {
-            return false;
-        }
-        (void)thread->set_pending_builtin_exception_string(type_name,
-                                                           message.c_str());
-        return true;
-    }
 
     PendingException::PendingException()
         : object(Optional<TValue<Exception>>::none()),
@@ -459,31 +409,14 @@ namespace cl
         {
             *compile_continuation_info = CompileContinuationInfo{};
         }
-        try
-        {
-            CompilationUnit input(str);
-            TokenVector tv = CL_TRY(tokenize(input));
-            AstVector av =
-                parse(*machine, tv, start_rule, compile_continuation_info);
-            ModuleResultMode result_mode = start_rule == StartRule::Interactive
-                                               ? ModuleResultMode::Interactive
-                                               : ModuleResultMode::File;
-            return codegen_module_in_module(av, module, language_mode,
-                                            result_mode);
-        }
-        catch(const ParseError &err)
-        {
-            (void)raise_compile_exception(this, err, L"SyntaxError");
-            return Expected<CodeObject *>::propagate_exception();
-        }
-        catch(const std::runtime_error &err)
-        {
-            if(!raise_compile_exception(this, err))
-            {
-                throw;
-            }
-            return Expected<CodeObject *>::propagate_exception();
-        }
+        CompilationUnit input(str);
+        TokenVector tv = CL_TRY(tokenize(input));
+        AstVector av =
+            CL_TRY(parse(*machine, tv, start_rule, compile_continuation_info));
+        ModuleResultMode result_mode = start_rule == StartRule::Interactive
+                                           ? ModuleResultMode::Interactive
+                                           : ModuleResultMode::File;
+        return codegen_module_in_module(av, module, language_mode, result_mode);
     }
 
     void ThreadState::add_to_active_zero_count_table_if_needed(HeapObject *obj)
