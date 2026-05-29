@@ -567,7 +567,7 @@ namespace cl
             }
             else
             {
-                stmts = simple_stmts();
+                stmts = CL_TRY(simple_stmts());
             }
             return Expected<int32_t>::ok(stmts);
         }
@@ -1703,48 +1703,48 @@ namespace cl
             return not_implemented("nonlocal statement");
         }
 
-        int32_t simple_stmt()
+        Expected<int32_t> simple_stmt()
         {
             switch(peek())
             {
                 case Token::RETURN:
-                    return return_stmt();
+                    return Expected<int32_t>::ok(return_stmt());
                 case Token::RAISE:
-                    return raise_stmt();
+                    return Expected<int32_t>::ok(raise_stmt());
                 case Token::IMPORT:
                 case Token::FROM:
-                    return import_stmt();
+                    return Expected<int32_t>::ok(import_stmt());
 
                 case Token::DEL:
-                    return del_stmt();
+                    return Expected<int32_t>::ok(del_stmt());
                 case Token::YIELD:
-                    return yield_stmt();
+                    return Expected<int32_t>::ok(yield_stmt());
                 case Token::ASSERT:
-                    return assert_stmt();
+                    return Expected<int32_t>::ok(assert_stmt());
                 case Token::BREAK:
-                    return break_stmt();
+                    return Expected<int32_t>::ok(break_stmt());
                 case Token::CONTINUE:
-                    return continue_stmt();
+                    return Expected<int32_t>::ok(continue_stmt());
                 case Token::PASS:
-                    return pass_stmt();
+                    return Expected<int32_t>::ok(pass_stmt());
                 case Token::GLOBAL:
-                    return global_stmt();
+                    return Expected<int32_t>::ok(global_stmt());
                 case Token::NONLOCAL:
-                    return nonlocal_stmt();
+                    return Expected<int32_t>::ok(nonlocal_stmt());
 
                 default:
-                    return assignment();
+                    return Expected<int32_t>::ok(assignment());
             }
         }
 
-        int32_t simple_stmts()
+        Expected<int32_t> simple_stmts()
         {
             AstChildren children;
             int32_t source_pos = source_pos_for_token();
             do
             {
 
-                children.emplace_back(simple_stmt());
+                children.emplace_back(CL_TRY(simple_stmt()));
             }
             while(match(Token::SEMI));
 
@@ -1752,12 +1752,12 @@ namespace cl
 
             if(children.size() == 1)
             {
-                return children[0];
+                return Expected<int32_t>::ok(children[0]);
             }
             else
             {
-                return ast.emplace_back(AstNodeKind::STATEMENT_SEQUENCE,
-                                        source_pos, children);
+                return Expected<int32_t>::ok(ast.emplace_back(
+                    AstNodeKind::STATEMENT_SEQUENCE, source_pos, children));
             }
         }
 
@@ -2266,7 +2266,7 @@ namespace cl
                     return compound_statement();
 
                 default:
-                    return Expected<int32_t>::ok(simple_stmts());
+                    return simple_stmts();
             }
         }
 
