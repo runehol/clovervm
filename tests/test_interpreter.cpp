@@ -1158,6 +1158,13 @@ TEST(Interpreter, float_literal_values)
     ASSERT_TRUE(can_convert_to<Float>(negative_tiny_actual));
     EXPECT_EQ(0.0, negative_tiny_actual.get_ptr<Float>()->value);
     EXPECT_TRUE(std::signbit(negative_tiny_actual.get_ptr<Float>()->value));
+
+    std::wstring tiny_decimal_source = L"0." + std::wstring(400, L'0') + L"1\n";
+    Value tiny_decimal_actual =
+        test_context.run_file(tiny_decimal_source.c_str());
+    ASSERT_TRUE(can_convert_to<Float>(tiny_decimal_actual));
+    EXPECT_EQ(0.0, tiny_decimal_actual.get_ptr<Float>()->value);
+    EXPECT_FALSE(std::signbit(tiny_decimal_actual.get_ptr<Float>()->value));
 }
 
 TEST(Interpreter, float_arithmetic_values)
