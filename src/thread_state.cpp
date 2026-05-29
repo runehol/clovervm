@@ -288,8 +288,9 @@ namespace cl
         uint32_t total_args = n_args + (has_self ? 1 : 0);
         if(total_args > MaxCloverFunctionEntryAdapterArgs)
         {
-            throw std::runtime_error(
-                "SystemError: unsupported Clover method call adapter arity");
+            return set_pending_builtin_exception_string(
+                L"SystemError",
+                L"unsupported Clover method call adapter arity");
         }
 
         Value method_args[MaxCloverFunctionEntryAdapterArgs];
