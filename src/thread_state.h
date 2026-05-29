@@ -324,12 +324,11 @@ namespace cl
                 make_object_raw<T>(std::forward<Args>(args)...));
         }
 
-        [[nodiscard]] Expected<CodeObject *> compile(const wchar_t *str,
-                                                     StartRule start_rule);
-        [[nodiscard]] Expected<CodeObject *> compile(const wchar_t *str,
-                                                     StartRule start_rule,
-                                                     const wchar_t *main_file);
-        [[nodiscard]] Expected<CodeObject *> compile_in_module(
+        Expected<CodeObject *> compile(const wchar_t *str,
+                                       StartRule start_rule);
+        Expected<CodeObject *> compile(const wchar_t *str, StartRule start_rule,
+                                       const wchar_t *main_file);
+        Expected<CodeObject *> compile_in_module(
             const wchar_t *str, StartRule start_rule, ModuleObject *module,
             LanguageMode language_mode,
             CompileContinuationInfo *compile_continuation_info = nullptr);

@@ -1448,10 +1448,8 @@ namespace cl
                                                 thunk, lookup_cell, n_args);
     }
 
-    [[nodiscard]] NOINLINE static Expected<void>
-    populate_positional_call_cache_from_callable(Value callable,
-                                                 uint32_t n_args,
-                                                 FunctionCallInlineCache &cache)
+    NOINLINE static Expected<void> populate_positional_call_cache_from_callable(
+        Value callable, uint32_t n_args, FunctionCallInlineCache &cache)
     {
         if(unlikely(!callable.is_ptr()))
         {
@@ -1555,7 +1553,7 @@ namespace cl
                                                : first_default_slot;
     }
 
-    [[nodiscard]] static Expected<void> build_and_populate_keyword_call_cache(
+    static Expected<void> build_and_populate_keyword_call_cache(
         KeywordCallInlineCache &cache, Value guard_value, TValue<Function> fun,
         ValidityCell *validity_cell, Value keyword_names_value,
         uint32_t n_pos_args, uint32_t n_kw_args)
@@ -1658,12 +1656,9 @@ namespace cl
         return Expected<void>::ok();
     }
 
-    [[nodiscard]] NOINLINE static Expected<void>
-    populate_keyword_call_cache_from_callable(Value callable,
-                                              Value keyword_names,
-                                              uint32_t n_pos_args,
-                                              uint32_t n_kw_args,
-                                              KeywordCallInlineCache &cache)
+    NOINLINE static Expected<void> populate_keyword_call_cache_from_callable(
+        Value callable, Value keyword_names, uint32_t n_pos_args,
+        uint32_t n_kw_args, KeywordCallInlineCache &cache)
     {
         if(unlikely(!callable.is_ptr()))
         {
