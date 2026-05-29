@@ -1,8 +1,10 @@
 #include "compilation_unit.h"
+#include "exception_object.h"
+#include "str.h"
+#include "test_helpers.h"
 #include "token_print.h"
 #include "tokenizer.h"
 #include <gtest/gtest.h>
-#include <stdexcept>
 #include <vector>
 
 using namespace cl;
@@ -11,7 +13,7 @@ static void expect_number_spellings(const wchar_t *source,
                                     const std::vector<std::wstring> &expected)
 {
     CompilationUnit input(source);
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
 
     std::vector<std::wstring> actual;
     for(size_t i = 0; i < tv.tokens.size(); ++i)
@@ -28,19 +30,22 @@ static void expect_number_spellings(const wchar_t *source,
 }
 
 static void expect_tokenize_error(const wchar_t *source,
-                                  const char *expected_message)
+                                  const wchar_t *expected_type_name,
+                                  const wchar_t *expected_message)
 {
-    try
-    {
-        CompilationUnit input(source);
-        (void)tokenize(input);
-        FAIL() << "Expected std::runtime_error with message: "
-               << expected_message;
-    }
-    catch(const std::runtime_error &err)
-    {
-        EXPECT_STREQ(expected_message, err.what());
-    }
+    test::VmTestContext context;
+    ThreadState::ActivationScope activation_scope(context.thread());
+    CompilationUnit input(source);
+    Expected<TokenVector> result = tokenize(input);
+    EXPECT_TRUE(result.has_exception());
+    ASSERT_EQ(PendingExceptionKind::Object,
+              context.thread()->pending_exception_kind());
+    TValue<Exception> exception = context.thread()->pending_exception_object();
+    EXPECT_EQ(std::wstring(expected_type_name),
+              string_as_wchar_t(
+                  exception.extract()->get_shape()->get_class()->get_name()));
+    EXPECT_EQ(std::wstring(expected_message),
+              string_as_wchar_t(exception.extract()->message.value()));
 }
 
 TEST(Tokenizer, simple)
@@ -49,7 +54,7 @@ TEST(Tokenizer, simple)
     std::vector<Token> expected_tokens = {Token::NAME, Token::PLUS, Token::NAME,
                                           Token::NEWLINE, Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -60,7 +65,7 @@ TEST(Tokenizer, simple2)
                                           Token::INT_NUMBER, Token::NEWLINE,
                                           Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -71,7 +76,7 @@ TEST(Tokenizer, unterminated_single_string_emits_error_token)
                                           Token::ERRORTOKEN_UNTERMINATED_STRING,
                                           Token::NEWLINE, Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -82,7 +87,7 @@ TEST(Tokenizer, invalid_character_emits_error_token)
                                           Token::ERRORTOKEN_INVALID_CHARACTER,
                                           Token::NEWLINE, Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -93,7 +98,7 @@ TEST(Tokenizer, unterminated_triple_string_emits_error_token)
         Token::NAME, Token::EQUAL, Token::ERRORTOKEN_UNTERMINATED_TRIPLE_STRING,
         Token::NEWLINE, Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -105,7 +110,7 @@ TEST(Tokenizer, open_bracket_at_eof_emits_error_token)
         Token::INT_NUMBER, Token::PLUS,  Token::ERRORTOKEN_OPEN_BRACKET_EOF,
         Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -117,7 +122,7 @@ TEST(Tokenizer, number_formats)
         Token::PLUS,       Token::INT_NUMBER, Token::PLUS,
         Token::INT_NUMBER, Token::NEWLINE,    Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
     expect_number_spellings(L"0xff + 0b1010 + 0o77 + 1_000_000",
                             {L"0xff", L"0b1010", L"0o77", L"1_000_000"});
@@ -132,7 +137,7 @@ TEST(Tokenizer, float_number_formats)
         Token::FLOAT_NUMBER, Token::PLUS,    Token::FLOAT_NUMBER, Token::PLUS,
         Token::FLOAT_NUMBER, Token::NEWLINE, Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
     expect_number_spellings(
         L"1.0 + 1. + .5 + 1e3 + 1E3 + 1.2e-3 + 1_2.3_4",
@@ -164,7 +169,7 @@ TEST(Tokenizer, factorial)
         Token::NAME,    Token::MINUS,   Token::INT_NUMBER, Token::RPAR,
         Token::NEWLINE, Token::DEDENT,  Token::DEDENT,     Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -190,7 +195,7 @@ TEST(Tokenizer, factorial_with_comments)
         Token::RPAR,       Token::NEWLINE, Token::DEDENT,  Token::DEDENT,
         Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -201,7 +206,7 @@ TEST(Tokenizer, simple_strings)
     std::vector<Token> expected_tokens = {Token::STRING, Token::STRING,
                                           Token::NEWLINE, Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -212,7 +217,7 @@ TEST(Tokenizer, strings_support_prefixes_single_quotes_and_escapes)
                                           Token::STRING,  Token::STRING,
                                           Token::NEWLINE, Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 
     std::vector<std::wstring> expected_spellings = {
@@ -239,7 +244,7 @@ TEST(Tokenizer, triple_quoted_strings_may_span_lines)
                                           Token::STRING, Token::NEWLINE,
                                           Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 
     std::vector<std::wstring> expected_spellings = {
@@ -278,7 +283,7 @@ TEST(Tokenizer, comment_issue)
         Token::COMMA,   Token::INT_NUMBER, Token::NEWLINE, Token::NAME,
         Token::EQUAL,   Token::INT_NUMBER, Token::NEWLINE, Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -292,7 +297,7 @@ TEST(Tokenizer, leading_comment_and_blank_lines_collapse_to_one_newline)
                                           Token::EQUAL,   Token::INT_NUMBER,
                                           Token::NEWLINE, Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -308,7 +313,7 @@ TEST(Tokenizer, interior_comment_and_blank_lines_collapse_to_one_newline)
         Token::NEWLINE,    Token::NAME,    Token::EQUAL,
         Token::INT_NUMBER, Token::NEWLINE, Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -325,7 +330,7 @@ TEST(Tokenizer, blank_line_inside_block_emits_newline_without_indent_changes)
         Token::NEWLINE, Token::NAME,   Token::EQUAL,    Token::INT_NUMBER,
         Token::NEWLINE, Token::DEDENT, Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -343,7 +348,7 @@ TEST(Tokenizer, newlines_inside_brackets_do_not_emit_newline_or_indent_tokens)
         Token::COLON,   Token::INT_NUMBER, Token::RBRACE, Token::RPAR,
         Token::NEWLINE, Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -353,7 +358,7 @@ TEST(Tokenizer, ellipsis_token)
     std::vector<Token> expected_tokens = {Token::ELLIPSIS, Token::NEWLINE,
                                           Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -368,7 +373,7 @@ TEST(Tokenizer, comments_inside_brackets_do_not_end_statement)
         Token::INT_NUMBER, Token::COMMA,   Token::INT_NUMBER,
         Token::RPAR,       Token::NEWLINE, Token::ENDMARKER};
 
-    TokenVector tv = tokenize(input);
+    TokenVector tv = tokenize(input).value();
     EXPECT_EQ(tv.tokens, expected_tokens);
 }
 
@@ -377,6 +382,7 @@ TEST(Tokenizer, bad_indentation)
     expect_tokenize_error(L"if True:\n"
                           L"    a = 1\n"
                           L"  b = 2\n",
-                          "IndentationError: unindent does not match any outer "
-                          "indentation level 2");
+                          L"IndentationError",
+                          L"unindent does not match any outer "
+                          L"indentation level 2");
 }

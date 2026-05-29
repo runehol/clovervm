@@ -282,7 +282,7 @@ namespace cl
         return keywords;
     }
 
-    TokenVector tokenize(CompilationUnit &cu)
+    Expected<TokenVector> tokenize(CompilationUnit &cu)
     {
         const std::wstring &source_code = cu.source_code;
         TokenVector tokens(&cu);
@@ -294,7 +294,8 @@ namespace cl
         indents.push_back(0);
         if(source_code.size() > std::numeric_limits<uint32_t>::max())
         {
-            throw std::runtime_error("Too large file");
+            return Expected<TokenVector>::raise_exception(
+                L"SyntaxError", L"source file too large");
         }
         uint32_t pos = 0;
         uint32_t end = source_code.size();
@@ -361,10 +362,12 @@ namespace cl
                             if(std::find(indents.begin(), indents.end(),
                                          column) == indents.end())
                             {
-                                throw std::runtime_error(
-                                    "IndentationError: unindent does not match "
-                                    "any outer indentation level " +
-                                    std::to_string(column));
+                                std::wstring message =
+                                    L"unindent does not match any outer "
+                                    L"indentation level " +
+                                    std::to_wstring(column);
+                                return Expected<TokenVector>::raise_exception(
+                                    L"IndentationError", message.c_str());
                             }
 
                             while(column < indents.back())
@@ -836,7 +839,7 @@ namespace cl
 
         tokens.emplace_back(Token::ENDMARKER, end);
 
-        return tokens;
+        return Expected<TokenVector>::ok(std::move(tokens));
     }
 
 }  // namespace cl

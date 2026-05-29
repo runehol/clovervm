@@ -28,7 +28,7 @@ static std::string parse_with_start_rule(
     VirtualMachine vm;
     ThreadState::ActivationScope active_thread(vm.get_default_thread());
     CompilationUnit compilation_unit(in_str);
-    TokenVector tokens(tokenize(compilation_unit));
+    TokenVector tokens(tokenize(compilation_unit).value());
     AstVector ast =
         cl::parse(vm, tokens, start_rule, compile_continuation_info);
     return fmt::to_string(ast);

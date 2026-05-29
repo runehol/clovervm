@@ -462,7 +462,7 @@ namespace cl
         try
         {
             CompilationUnit input(str);
-            TokenVector tv = tokenize(input);
+            TokenVector tv = CL_TRY(tokenize(input));
             AstVector av =
                 parse(*machine, tv, start_rule, compile_continuation_info);
             ModuleResultMode result_mode = start_rule == StartRule::Interactive
