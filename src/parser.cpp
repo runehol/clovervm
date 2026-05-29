@@ -1800,7 +1800,7 @@ namespace cl
             TValue<String> name_str =
                 vm.get_or_create_interned_string_value(name);
             consume(Token::LPAR);
-            int32_t param_seq = params();
+            int32_t param_seq = CL_TRY(params());
             consume(Token::RPAR);
             if(peek() == Token::RARROW)
             {
@@ -1817,7 +1817,7 @@ namespace cl
                                  source_pos, {param_seq, body}, name_str));
         }
 
-        int32_t params() { return parameters(); }
+        Expected<int32_t> params() { return parameters(); }
 
         int32_t parameter_sequence(uint32_t source_pos, AstChildren children)
         {
@@ -1825,7 +1825,8 @@ namespace cl
                                     children);
         }
 
-        int32_t parse_named_parameter(AstNodeKind kind, bool allow_default)
+        Expected<int32_t> parse_named_parameter(AstNodeKind kind,
+                                                bool allow_default)
         {
             consume(Token::NAME);
             uint32_t name_source_pos = source_pos_for_previous_token();
@@ -1843,20 +1844,21 @@ namespace cl
                 {
                     if(kind == AstNodeKind::PARAMETER_VARARGS)
                     {
-                        throw std::runtime_error(
-                            "SyntaxError: varargs parameter cannot have a "
-                            "default");
+                        return Expected<int32_t>::raise_exception(
+                            L"SyntaxError",
+                            L"varargs parameter cannot have a default");
                     }
-                    throw std::runtime_error(
-                        "SyntaxError: kwargs parameter cannot have a default");
+                    return Expected<int32_t>::raise_exception(
+                        L"SyntaxError",
+                        L"kwargs parameter cannot have a default");
                 }
                 parameter_children.push_back(expression());
             }
-            return ast.emplace_back(kind, name_source_pos, parameter_children,
-                                    v);
+            return Expected<int32_t>::ok(
+                ast.emplace_back(kind, name_source_pos, parameter_children, v));
         }
 
-        int32_t parameters()
+        Expected<int32_t> parameters()
         {
             int32_t source_pos = source_pos_for_token();
             AstChildren posonly;
@@ -1875,9 +1877,9 @@ namespace cl
                 {
                     if(seen_slash || parsing_kwonly || pos_or_kw.empty())
                     {
-                        throw std::runtime_error(
-                            "SyntaxError: invalid positional-only parameter "
-                            "separator");
+                        return Expected<int32_t>::raise_exception(
+                            L"SyntaxError",
+                            L"invalid positional-only parameter separator");
                     }
                     seen_slash = true;
                     posonly = pos_or_kw;
@@ -1886,9 +1888,10 @@ namespace cl
                     {
                         if(peek() != Token::RPAR)
                         {
-                            throw std::runtime_error(
-                                "SyntaxError: positional-only separator must "
-                                "be followed by ',' or ')'");
+                            return Expected<int32_t>::raise_exception(
+                                L"SyntaxError",
+                                L"positional-only separator must be followed "
+                                L"by ',' or ')'");
                         }
                         break;
                     }
@@ -1902,20 +1905,21 @@ namespace cl
                 {
                     if(seen_star)
                     {
-                        throw std::runtime_error(
-                            "SyntaxError: * argument may appear only once");
+                        return Expected<int32_t>::raise_exception(
+                            L"SyntaxError", L"* argument may appear only once");
                     }
                     seen_star = true;
                     parsing_kwonly = true;
                     if(peek() == Token::NAME)
                     {
-                        vararg.push_back(parse_named_parameter(
-                            AstNodeKind::PARAMETER_VARARGS, false));
+                        vararg.push_back(CL_TRY(parse_named_parameter(
+                            AstNodeKind::PARAMETER_VARARGS, false)));
                     }
                     else if(peek() == Token::RPAR)
                     {
-                        throw std::runtime_error(
-                            "SyntaxError: named arguments must follow bare *");
+                        return Expected<int32_t>::raise_exception(
+                            L"SyntaxError",
+                            L"named arguments must follow bare *");
                     }
                     else
                     {
@@ -1929,9 +1933,9 @@ namespace cl
                     {
                         if(vararg.empty())
                         {
-                            throw std::runtime_error(
-                                "SyntaxError: named arguments must follow "
-                                "bare *");
+                            return Expected<int32_t>::raise_exception(
+                                L"SyntaxError",
+                                L"named arguments must follow bare *");
                         }
                         break;
                     }
@@ -1942,21 +1946,23 @@ namespace cl
                 {
                     if(bare_star_needs_kwonly)
                     {
-                        throw std::runtime_error(
-                            "SyntaxError: named arguments must follow bare *");
+                        return Expected<int32_t>::raise_exception(
+                            L"SyntaxError",
+                            L"named arguments must follow bare *");
                     }
-                    kwarg.push_back(parse_named_parameter(
-                        AstNodeKind::PARAMETER_KWARGS, false));
+                    kwarg.push_back(CL_TRY(parse_named_parameter(
+                        AstNodeKind::PARAMETER_KWARGS, false)));
                     if(match(Token::COMMA) && peek() != Token::RPAR)
                     {
-                        throw std::runtime_error(
-                            "SyntaxError: arguments cannot follow **kwargs");
+                        return Expected<int32_t>::raise_exception(
+                            L"SyntaxError",
+                            L"arguments cannot follow **kwargs");
                     }
                     break;
                 }
 
                 int32_t parameter =
-                    parse_named_parameter(AstNodeKind::PARAMETER, true);
+                    CL_TRY(parse_named_parameter(AstNodeKind::PARAMETER, true));
                 if(parsing_kwonly)
                 {
                     bare_star_needs_kwonly = false;
@@ -1970,9 +1976,9 @@ namespace cl
                     }
                     else if(seen_default)
                     {
-                        throw std::runtime_error(
-                            "SyntaxError: non-default argument follows default "
-                            "argument");
+                        return Expected<int32_t>::raise_exception(
+                            L"SyntaxError",
+                            L"non-default argument follows default argument");
                     }
                     pos_or_kw.push_back(parameter);
                 }
@@ -1997,8 +2003,9 @@ namespace cl
             signature_children.push_back(
                 parameter_sequence(source_pos, kwonly));
             signature_children.push_back(parameter_sequence(source_pos, kwarg));
-            return ast.emplace_back(AstNodeKind::PARAMETER_SIGNATURE,
-                                    source_pos, signature_children);
+            return Expected<int32_t>::ok(
+                ast.emplace_back(AstNodeKind::PARAMETER_SIGNATURE, source_pos,
+                                 signature_children));
         }
 
         Expected<int32_t> if_stmt()
