@@ -249,7 +249,13 @@ namespace cl
 
     NOINLINE INTERP_CC Value module_global_assignment_error(PARAMS)
     {
-        throw std::runtime_error("NameError: cannot assign global");
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"NameError", L"cannot assign global");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE INTERP_CC Value not_callable_error(PARAMS)
@@ -266,12 +272,25 @@ namespace cl
 
     NOINLINE INTERP_CC Value attribute_error(PARAMS)
     {
-        throw std::runtime_error("AttributeError");
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"AttributeError", L"");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE INTERP_CC Value attribute_assignment_error(PARAMS)
     {
-        throw std::runtime_error("AttributeError: cannot assign attribute");
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"AttributeError",
+            L"cannot assign attribute");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE INTERP_CC Value subscript_error(PARAMS)
@@ -313,13 +332,25 @@ namespace cl
 
     NOINLINE INTERP_CC Value method_lookup_error(PARAMS)
     {
-        throw std::runtime_error("AttributeError");
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"AttributeError", L"");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE INTERP_CC Value descriptor_dispatch_error(PARAMS)
     {
-        throw std::runtime_error(
-            "TypeError: descriptor __get__ requires interpreter dispatch");
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"descriptor __get__ requires interpreter dispatch");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     NOINLINE INTERP_CC Value wrong_arity_error(PARAMS)

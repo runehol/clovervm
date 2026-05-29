@@ -1985,15 +1985,9 @@ TEST(Interpreter, del_attr_missing_attribute_raises_attribute_error)
     store_global_to_module_for_test(test_context, call_code, L"obj",
                                     Value::from_oop(obj));
 
-    try
-    {
-        (void)test_context.thread()->run_clovervm_code_object(call_code);
-        FAIL() << "Expected AttributeError";
-    }
-    catch(const std::runtime_error &err)
-    {
-        EXPECT_STREQ("AttributeError", err.what());
-    }
+    Value actual = test_context.thread()->run_clovervm_code_object(call_code);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"AttributeError", L"");
 }
 
 TEST(Interpreter, cached_class_attribute_read_observes_class_write)
@@ -4327,9 +4321,9 @@ TEST(Interpreter, function_and_module_dicts_are_slotdicts)
 
 TEST(Interpreter, builtin_container_instances_do_not_expose_dict)
 {
-    EXPECT_THROW(test::FileRunner(L"[].__dict__\n"), std::runtime_error);
-    EXPECT_THROW(test::FileRunner(L"{}.__dict__\n"), std::runtime_error);
-    EXPECT_THROW(test::FileRunner(L"().__dict__\n"), std::runtime_error);
+    expect_python_error(L"[].__dict__\n", L"AttributeError", L"");
+    expect_python_error(L"{}.__dict__\n", L"AttributeError", L"");
+    expect_python_error(L"().__dict__\n", L"AttributeError", L"");
 }
 
 TEST(Interpreter, builtin_type_classes_are_vm_roots_and_builtins)
