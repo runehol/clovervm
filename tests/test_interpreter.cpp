@@ -94,21 +94,6 @@ static CapturedStdoutRun run_file_with_captured_stdout(const wchar_t *source)
     return CapturedStdoutRun{return_value, stdout_text};
 }
 
-static void expect_runtime_error(const wchar_t *source,
-                                 const char *expected_message)
-{
-    try
-    {
-        (void)test::FileRunner(source);
-        FAIL() << "Expected std::runtime_error with message: "
-               << expected_message;
-    }
-    catch(const std::runtime_error &err)
-    {
-        EXPECT_STREQ(expected_message, err.what());
-    }
-}
-
 static std::wstring cl_test_string_to_wstring(TValue<String> string)
 {
     String *str = string.extract();
@@ -5277,30 +5262,33 @@ TEST(Interpreter, negative_shift_count_unwinds_nested_frames)
 
 TEST(Interpreter, left_shift_overflow_smi)
 {
-    expect_runtime_error(L"1 << 58\n", "Clovervm exception");
+    expect_python_error(L"1 << 58\n", L"OverflowError", L"integer overflow");
 }
 
 TEST(Interpreter, left_shift_overflow_register)
 {
-    expect_runtime_error(L"a = 1\n"
-                         L"b = 58\n"
-                         L"a << b\n",
-                         "Clovervm exception");
+    expect_python_error(L"a = 1\n"
+                        L"b = 58\n"
+                        L"a << b\n",
+                        L"OverflowError", L"integer overflow");
 }
 
 TEST(Interpreter, add_overflow)
 {
-    expect_runtime_error(L"288230376151711743 + 1\n", "Clovervm exception");
+    expect_python_error(L"288230376151711743 + 1\n", L"OverflowError",
+                        L"integer overflow");
 }
 
 TEST(Interpreter, subtract_overflow)
 {
-    expect_runtime_error(L"-288230376151711743 - 2\n", "Clovervm exception");
+    expect_python_error(L"-288230376151711743 - 2\n", L"OverflowError",
+                        L"integer overflow");
 }
 
 TEST(Interpreter, multiply_overflow)
 {
-    expect_runtime_error(L"288230376151711743 * 2\n", "Clovervm exception");
+    expect_python_error(L"288230376151711743 * 2\n", L"OverflowError",
+                        L"integer overflow");
 }
 
 TEST(Interpreter, negate_overflow)
@@ -5310,7 +5298,7 @@ TEST(Interpreter, negate_overflow)
     Value actual = file_runner.return_value;
     EXPECT_EQ(expected, actual);
 
-    expect_runtime_error(L"x = -288230376151711743 - 1\n"
-                         L"-x\n",
-                         "Clovervm exception");
+    expect_python_error(L"x = -288230376151711743 - 1\n"
+                        L"-x\n",
+                        L"OverflowError", L"integer overflow");
 }

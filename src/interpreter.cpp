@@ -158,6 +158,17 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE INTERP_CC Value raise_overflow_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"OverflowError", L"integer overflow");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE INTERP_CC Value zero_division_error(PARAMS)
     {
         ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
@@ -824,7 +835,7 @@ namespace cl
     }
     NOINLINE static INTERP_CC Value overflow_path(PARAMS)
     {
-        MUSTTAIL return raise_generic_exception(ARGS);
+        MUSTTAIL return raise_overflow_error(ARGS);
     }
 
     NOINLINE static INTERP_CC Value op_not_float_truthiness(PARAMS)
