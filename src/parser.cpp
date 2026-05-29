@@ -620,27 +620,31 @@ namespace cl
 
         int32_t expression() { return disjunction(); }
 
-        int32_t assignment_expression()
+        Expected<int32_t> assignment_expression()
         {
             if(peek() != Token::NAME)
             {
                 uint32_t source_pos = source_pos_for_token();
-                throw std::runtime_error(
-                    std::string("SyntaxError: Expected token ") +
-                    to_string(Token::NAME) + ", got " + to_string(peek()) +
-                    format_error_context(source_pos));
+                std::wstring message =
+                    unicode::decode_utf8(std::string("Expected token ") +
+                                         to_string(Token::NAME) + ", got " +
+                                         to_string(peek()) +
+                                         format_error_context(source_pos))
+                        .value();
+                return Expected<int32_t>::raise_exception(L"SyntaxError",
+                                                          message.c_str());
             }
             int32_t lhs = atom();  // smallest rule that just consumes a name
                                    // and makes a nice node for us
             int32_t source_pos = source_pos_for_token();
             consume(Token::COLONEQUAL);
             int32_t rhs = expression();
-            return ast.emplace_back(
+            return Expected<int32_t>::ok(ast.emplace_back(
                 AstKind(AstNodeKind::EXPRESSION_ASSIGN, AstOperatorKind::NOP),
-                source_pos, lhs, rhs);
+                source_pos, lhs, rhs));
         }
 
-        int32_t named_expression()
+        Expected<int32_t> named_expression()
         {
             if(peek() == Token::NAME && peek2() == Token::COLONEQUAL)
             {
@@ -648,7 +652,7 @@ namespace cl
             }
             else
             {
-                return expression();
+                return Expected<int32_t>::ok(expression());
             }
         }
 
@@ -2013,13 +2017,13 @@ namespace cl
             AstChildren children;
             int32_t source_pos = source_pos_for_token();
             consume(Token::IF);
-            children.push_back(named_expression());
+            children.push_back(CL_TRY(named_expression()));
             consume(Token::COLON);
             children.push_back(CL_TRY(block()));
             while(peek() == Token::ELIF)
             {
                 consume(Token::ELIF);
-                children.push_back(named_expression());
+                children.push_back(CL_TRY(named_expression()));
                 consume(Token::COLON);
                 children.push_back(CL_TRY(block()));
             }
@@ -2064,7 +2068,7 @@ namespace cl
         {
             int32_t source_pos = source_pos_for_token();
             AstChildren children;
-            children.push_back(named_expression());
+            children.push_back(CL_TRY(named_expression()));
             if(match(Token::AS))
             {
                 int32_t target = star_expression();
@@ -2123,7 +2127,7 @@ namespace cl
             CL_TRY(validate_assignment_target(target));
             children.push_back(target);
             consume(Token::IN);
-            children.push_back(named_expression());
+            children.push_back(CL_TRY(named_expression()));
             consume(Token::COLON);
             children.push_back(CL_TRY(block()));
 
@@ -2233,7 +2237,7 @@ namespace cl
             AstChildren children;
             int32_t source_pos = source_pos_for_token();
             consume(Token::WHILE);
-            children.push_back(named_expression());
+            children.push_back(CL_TRY(named_expression()));
             consume(Token::COLON);
             children.push_back(CL_TRY(block()));
 
