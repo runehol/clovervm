@@ -415,22 +415,29 @@ namespace cl
           interned_strings(&interned_global_heap), range_builtin(Value::None()),
           native_library_handles_(std::make_unique<NativeLibraryHandleCache>())
     {
+        struct BootstrapCleanup
+        {
+            VirtualMachine *vm;
+            bool armed = true;
+
+            ~BootstrapCleanup()
+            {
+                if(armed)
+                {
+                    vm->range_builtin = Value::None();
+                    vm->global_builtins_module_ = nullptr;
+                    vm->sys_module_ = nullptr;
+                    vm->imported_modules_ = nullptr;
+                }
+            }
+        } bootstrap_cleanup{this};
+
         // make the main thread
         ThreadState *default_thread = make_new_thread();
         ThreadState::ActivationScope activation_scope(default_thread);
-        try
-        {
-            initialize_builtins();
-            default_thread->switch_to_new_heap_slabs();
-        }
-        catch(...)
-        {
-            range_builtin = Value::None();
-            global_builtins_module_ = nullptr;
-            sys_module_ = nullptr;
-            imported_modules_ = nullptr;
-            throw;
-        }
+        initialize_builtins();
+        default_thread->switch_to_new_heap_slabs();
+        bootstrap_cleanup.armed = false;
     }
 
     VirtualMachine::~VirtualMachine()
