@@ -556,20 +556,20 @@ namespace cl
             return children;
         }
 
-        int32_t block()
+        Expected<int32_t> block()
         {
             int32_t stmts = -1;
             if(match(Token::NEWLINE))
             {
                 consume(Token::INDENT);
-                stmts = statements();
+                stmts = CL_TRY(statements());
                 consume(Token::DEDENT);
             }
             else
             {
                 stmts = simple_stmts();
             }
-            return stmts;
+            return Expected<int32_t>::ok(stmts);
         }
         // expressions
 
@@ -1761,7 +1761,7 @@ namespace cl
             }
         }
 
-        int32_t function_def()
+        Expected<int32_t> function_def()
         {
             if(peek() == Token::AT)
             {
@@ -1770,7 +1770,7 @@ namespace cl
             return function_def_raw();
         }
 
-        int32_t function_def_raw()
+        Expected<int32_t> function_def_raw()
         {
             int32_t source_pos = source_pos_for_token();
             consume(Token::DEF);  // todo worry about async later
@@ -1791,9 +1791,10 @@ namespace cl
 
             consume(Token::COLON);
             // todo worry about func_type_comment later
-            int32_t body = block();
-            return ast.emplace_back(AstNodeKind::STATEMENT_FUNCTION_DEF,
-                                    source_pos, {param_seq, body}, name_str);
+            int32_t body = CL_TRY(block());
+            return Expected<int32_t>::ok(
+                ast.emplace_back(AstNodeKind::STATEMENT_FUNCTION_DEF,
+                                 source_pos, {param_seq, body}, name_str));
         }
 
         int32_t params() { return parameters(); }
@@ -1980,32 +1981,32 @@ namespace cl
                                     source_pos, signature_children);
         }
 
-        int32_t if_stmt()
+        Expected<int32_t> if_stmt()
         {
             AstChildren children;
             int32_t source_pos = source_pos_for_token();
             consume(Token::IF);
             children.push_back(named_expression());
             consume(Token::COLON);
-            children.push_back(block());
+            children.push_back(CL_TRY(block()));
             while(peek() == Token::ELIF)
             {
                 consume(Token::ELIF);
                 children.push_back(named_expression());
                 consume(Token::COLON);
-                children.push_back(block());
+                children.push_back(CL_TRY(block()));
             }
             if(peek() == Token::ELSE)
             {
                 consume(Token::ELSE);
                 consume(Token::COLON);
-                children.push_back(block());
+                children.push_back(CL_TRY(block()));
             }
-            return ast.emplace_back(AstNodeKind::STATEMENT_IF, source_pos,
-                                    children);
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::STATEMENT_IF, source_pos, children));
         }
 
-        int32_t class_def()
+        Expected<int32_t> class_def()
         {
             int32_t source_pos = source_pos_for_token();
             consume(Token::CLASS);
@@ -2026,9 +2027,10 @@ namespace cl
             children.push_back(bases);
 
             consume(Token::COLON);
-            children.push_back(block());
-            return ast.emplace_back(AstNodeKind::STATEMENT_CLASS_DEF,
-                                    source_pos, children, name_str);
+            children.push_back(CL_TRY(block()));
+            return Expected<int32_t>::ok(
+                ast.emplace_back(AstNodeKind::STATEMENT_CLASS_DEF, source_pos,
+                                 children, name_str));
         }
 
         int32_t with_item()
@@ -2046,7 +2048,7 @@ namespace cl
                                     children);
         }
 
-        int32_t with_stmt()
+        Expected<int32_t> with_stmt()
         {
             int32_t source_pos = source_pos_for_token();
             consume(Token::WITH);
@@ -2057,12 +2059,12 @@ namespace cl
                 children.push_back(with_item());
             }
             consume(Token::COLON);
-            children.push_back(block());
-            return ast.emplace_back(AstNodeKind::STATEMENT_WITH, source_pos,
-                                    children);
+            children.push_back(CL_TRY(block()));
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::STATEMENT_WITH, source_pos, children));
         }
 
-        int32_t for_stmt()
+        Expected<int32_t> for_stmt()
         {
             AstChildren children;
             int32_t source_pos = source_pos_for_token();
@@ -2096,25 +2098,25 @@ namespace cl
             consume(Token::IN);
             children.push_back(named_expression());
             consume(Token::COLON);
-            children.push_back(block());
+            children.push_back(CL_TRY(block()));
 
             if(peek() == Token::ELSE)
             {
                 consume(Token::ELSE);
                 consume(Token::COLON);
-                children.push_back(block());
+                children.push_back(CL_TRY(block()));
             }
-            return ast.emplace_back(AstNodeKind::STATEMENT_FOR, source_pos,
-                                    children);
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::STATEMENT_FOR, source_pos, children));
         }
 
-        int32_t try_stmt()
+        Expected<int32_t> try_stmt()
         {
             AstChildren children;
             int32_t source_pos = source_pos_for_token();
             consume(Token::TRY);
             consume(Token::COLON);
-            children.push_back(block());
+            children.push_back(CL_TRY(block()));
 
             if(peek() == Token::FINALLY)
             {
@@ -2122,17 +2124,18 @@ namespace cl
                 consume(Token::FINALLY);
                 consume(Token::COLON);
                 AstChildren finally_children;
-                finally_children.push_back(block());
+                finally_children.push_back(CL_TRY(block()));
                 children.push_back(
                     ast.emplace_back(AstNodeKind::STATEMENT_FINALLY_HANDLER,
                                      finally_source_pos, finally_children));
-                return ast.emplace_back(AstNodeKind::STATEMENT_TRY, source_pos,
-                                        children);
+                return Expected<int32_t>::ok(ast.emplace_back(
+                    AstNodeKind::STATEMENT_TRY, source_pos, children));
             }
 
             if(peek() != Token::EXCEPT)
             {
-                return not_implemented("try statement without except");
+                return Expected<int32_t>::ok(
+                    not_implemented("try statement without except"));
             }
 
             bool saw_bare_except = false;
@@ -2140,7 +2143,8 @@ namespace cl
             {
                 if(saw_bare_except)
                 {
-                    return not_implemented("except after bare except");
+                    return Expected<int32_t>::ok(
+                        not_implemented("except after bare except"));
                 }
                 int32_t handler_source_pos = source_pos_for_token();
                 consume(Token::EXCEPT);
@@ -2167,7 +2171,7 @@ namespace cl
                     saw_bare_except = true;
                 }
                 consume(Token::COLON);
-                handler_children.push_back(block());
+                handler_children.push_back(CL_TRY(block()));
                 children.push_back(
                     ast.emplace_back(AstNodeKind::STATEMENT_EXCEPT_HANDLER,
                                      handler_source_pos, handler_children));
@@ -2178,7 +2182,7 @@ namespace cl
                 consume(Token::ELSE);
                 consume(Token::COLON);
                 AstChildren else_children;
-                else_children.push_back(block());
+                else_children.push_back(CL_TRY(block()));
                 children.push_back(
                     ast.emplace_back(AstNodeKind::STATEMENT_ELSE_HANDLER,
                                      else_source_pos, else_children));
@@ -2189,38 +2193,38 @@ namespace cl
                 consume(Token::FINALLY);
                 consume(Token::COLON);
                 AstChildren finally_children;
-                finally_children.push_back(block());
+                finally_children.push_back(CL_TRY(block()));
                 children.push_back(
                     ast.emplace_back(AstNodeKind::STATEMENT_FINALLY_HANDLER,
                                      finally_source_pos, finally_children));
             }
 
-            return ast.emplace_back(AstNodeKind::STATEMENT_TRY, source_pos,
-                                    children);
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::STATEMENT_TRY, source_pos, children));
         }
 
-        int32_t while_stmt()
+        Expected<int32_t> while_stmt()
         {
             AstChildren children;
             int32_t source_pos = source_pos_for_token();
             consume(Token::WHILE);
             children.push_back(named_expression());
             consume(Token::COLON);
-            children.push_back(block());
+            children.push_back(CL_TRY(block()));
 
             if(peek() == Token::ELSE)
             {
                 consume(Token::ELSE);
                 consume(Token::COLON);
-                children.push_back(block());
+                children.push_back(CL_TRY(block()));
             }
-            return ast.emplace_back(AstNodeKind::STATEMENT_WHILE, source_pos,
-                                    children);
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::STATEMENT_WHILE, source_pos, children));
         }
 
         int32_t match_stmt() { return not_implemented("match statement"); }
 
-        int32_t compound_statement()
+        Expected<int32_t> compound_statement()
         {
             switch(peek())
             {
@@ -2242,11 +2246,11 @@ namespace cl
                     return while_stmt();
 
                 default:
-                    return match_stmt();
+                    return Expected<int32_t>::ok(match_stmt());
             }
         }
 
-        int32_t statement()
+        Expected<int32_t> statement()
         {
             switch(peek())
             {
@@ -2262,21 +2266,21 @@ namespace cl
                     return compound_statement();
 
                 default:
-                    return simple_stmts();
+                    return Expected<int32_t>::ok(simple_stmts());
             }
         }
 
-        int32_t statements()
+        Expected<int32_t> statements()
         {
             int32_t source_pos = source_pos_for_token();
             AstChildren children;
             do
             {
-                children.push_back(statement());
+                children.push_back(CL_TRY(statement()));
             }
             while(peek() != Token::DEDENT && peek() != Token::ENDMARKER);
-            return ast.emplace_back(AstNodeKind::STATEMENT_SEQUENCE, source_pos,
-                                    children);
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::STATEMENT_SEQUENCE, source_pos, children));
         }
 
         Expected<int32_t> file()
@@ -2288,7 +2292,7 @@ namespace cl
             int32_t idx = -1;
             if(!is_at_end())
             {
-                idx = statements();
+                idx = CL_TRY(statements());
             }
             else
             {
@@ -2308,7 +2312,7 @@ namespace cl
             AstChildren children;
             if(!is_at_end())
             {
-                children.push_back(statement());
+                children.push_back(CL_TRY(statement()));
             }
             while(match(Token::NEWLINE))
             {
