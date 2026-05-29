@@ -6,8 +6,8 @@
 #include "typed_value.h"
 #include <cassert>
 #include <optional>
-#include <stdexcept>
 #include <unordered_map>
+#include <utility>
 
 namespace cl
 {
@@ -111,11 +111,12 @@ namespace cl
             {
             }
 
-            ScopeAnalysis run(int32_t body_idx, CodegenMode mode,
-                              AstChildren param_children)
+            Expected<ScopeAnalysis> run(int32_t body_idx, CodegenMode mode,
+                                        AstChildren param_children)
             {
                 AnalysisState analysis(mode, av.size());
-                validate_global_declarations(mode, body_idx, param_children);
+                CL_TRY(validate_global_declarations(mode, body_idx,
+                                                    param_children));
                 collect_global_declarations(analysis, body_idx);
                 if(mode == CodegenMode::Function)
                 {
@@ -128,7 +129,7 @@ namespace cl
                 collect_code_object_bindings(analysis, body_idx);
                 FlowState state = initial_flow_state(analysis.result);
                 analyze_flow_node(analysis, body_idx, state);
-                return std::move(analysis.result);
+                return Expected<ScopeAnalysis>::ok(std::move(analysis.result));
             }
 
         private:
@@ -363,7 +364,7 @@ namespace cl
                 global_name_state(state, name).assigned = true;
             }
 
-            void
+            Expected<void>
             mark_global_validation_annotation(GlobalDeclarationState &state,
                                               Value name)
             {
@@ -371,41 +372,45 @@ namespace cl
                     global_name_state(state, name);
                 if(entry.global && state.mode == CodegenMode::Function)
                 {
-                    throw std::runtime_error(
-                        "SyntaxError: annotated name can't be global");
+                    return Expected<void>::raise_exception(
+                        L"SyntaxError", L"annotated name can't be global");
                 }
                 entry.annotated = true;
+                return Expected<void>::ok();
             }
 
-            void declare_global_name(GlobalDeclarationState &state, Value name)
+            Expected<void> declare_global_name(GlobalDeclarationState &state,
+                                               Value name)
             {
                 GlobalDeclarationState::NameState &entry =
                     global_name_state(state, name);
                 if(entry.parameter)
                 {
-                    throw std::runtime_error(
-                        "SyntaxError: name is parameter and global");
+                    return Expected<void>::raise_exception(
+                        L"SyntaxError", L"name is parameter and global");
                 }
                 if(entry.annotated)
                 {
-                    throw std::runtime_error(
-                        "SyntaxError: annotated name can't be global");
+                    return Expected<void>::raise_exception(
+                        L"SyntaxError", L"annotated name can't be global");
                 }
                 if(entry.assigned)
                 {
-                    throw std::runtime_error(
-                        "SyntaxError: name is assigned to before global "
-                        "declaration");
+                    return Expected<void>::raise_exception(
+                        L"SyntaxError",
+                        L"name is assigned to before global declaration");
                 }
                 if(entry.used)
                 {
-                    throw std::runtime_error("SyntaxError: name is used prior "
-                                             "to global declaration");
+                    return Expected<void>::raise_exception(
+                        L"SyntaxError",
+                        L"name is used prior to global declaration");
                 }
                 entry.global = true;
+                return Expected<void>::ok();
             }
 
-            void validate_global_declaration_expression(
+            Expected<void> validate_global_declaration_expression(
                 GlobalDeclarationState &state, int32_t node_idx)
             {
                 AstKind kind = av.kinds[node_idx];
@@ -416,24 +421,23 @@ namespace cl
                     case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
                         mark_global_validation_use(state,
                                                    av.constants[node_idx]);
-                        return;
+                        return Expected<void>::ok();
 
                     case AstNodeKind::EXPRESSION_ATTRIBUTE:
-                        validate_global_declaration_expression(state,
-                                                               children[0]);
-                        return;
+                        return validate_global_declaration_expression(
+                            state, children[0]);
 
                     default:
                         for(int32_t child_idx: children)
                         {
-                            validate_global_declaration_expression(state,
-                                                                   child_idx);
+                            CL_TRY(validate_global_declaration_expression(
+                                state, child_idx));
                         }
-                        return;
+                        return Expected<void>::ok();
                 }
             }
 
-            void validate_global_declaration_assignment_target(
+            Expected<void> validate_global_declaration_assignment_target(
                 GlobalDeclarationState &state, int32_t target_idx,
                 bool augmented_assignment)
             {
@@ -450,30 +454,29 @@ namespace cl
                     }
                     mark_global_validation_assignment(state,
                                                       av.constants[target_idx]);
-                    return;
+                    return Expected<void>::ok();
                 }
 
                 if(target_kind.node_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
                 {
-                    validate_global_declaration_expression(state,
-                                                           target_children[0]);
-                    return;
+                    return validate_global_declaration_expression(
+                        state, target_children[0]);
                 }
 
                 if(target_kind.node_kind == AstNodeKind::EXPRESSION_BINARY &&
                    target_kind.operator_kind == AstOperatorKind::SUBSCRIPT)
                 {
-                    validate_global_declaration_expression(state,
-                                                           target_children[0]);
-                    validate_global_declaration_expression(state,
-                                                           target_children[1]);
-                    return;
+                    CL_TRY(validate_global_declaration_expression(
+                        state, target_children[0]));
+                    return validate_global_declaration_expression(
+                        state, target_children[1]);
                 }
 
-                validate_global_declaration_expression(state, target_idx);
+                return validate_global_declaration_expression(state,
+                                                              target_idx);
             }
 
-            void
+            Expected<void>
             validate_global_declarations_in_node(GlobalDeclarationState &state,
                                                  int32_t node_idx)
             {
@@ -485,9 +488,10 @@ namespace cl
                     case AstNodeKind::STATEMENT_GLOBAL:
                         for(int32_t name_idx: children)
                         {
-                            declare_global_name(state, av.constants[name_idx]);
+                            CL_TRY(declare_global_name(state,
+                                                       av.constants[name_idx]));
                         }
-                        return;
+                        return Expected<void>::ok();
 
                     case AstNodeKind::STATEMENT_FUNCTION_DEF:
                         {
@@ -497,24 +501,25 @@ namespace cl
                             {
                                 for(int32_t default_idx: av.children[param_idx])
                                 {
-                                    validate_global_declaration_expression(
-                                        state, default_idx);
+                                    CL_TRY(
+                                        validate_global_declaration_expression(
+                                            state, default_idx));
                                 }
                             }
                             mark_global_validation_assignment(
                                 state, av.constants[node_idx]);
-                            return;
+                            return Expected<void>::ok();
                         }
 
                     case AstNodeKind::STATEMENT_CLASS_DEF:
                         for(int32_t base_idx: av.children[children[0]])
                         {
-                            validate_global_declaration_expression(state,
-                                                                   base_idx);
+                            CL_TRY(validate_global_declaration_expression(
+                                state, base_idx));
                         }
                         mark_global_validation_assignment(
                             state, av.constants[node_idx]);
-                        return;
+                        return Expected<void>::ok();
 
                     case AstNodeKind::STATEMENT_IMPORT:
                         for(int32_t alias_idx: children)
@@ -522,7 +527,7 @@ namespace cl
                             mark_global_validation_assignment(
                                 state, av.constants[av.children[alias_idx][0]]);
                         }
-                        return;
+                        return Expected<void>::ok();
 
                     case AstNodeKind::STATEMENT_IMPORT_FROM:
                         for(size_t child_offset = 1;
@@ -537,7 +542,7 @@ namespace cl
                             mark_global_validation_assignment(
                                 state, av.constants[av.children[alias_idx][0]]);
                         }
-                        return;
+                        return Expected<void>::ok();
 
                     case AstNodeKind::STATEMENT_ASSIGN:
                     case AstNodeKind::EXPRESSION_ASSIGN:
@@ -545,127 +550,130 @@ namespace cl
                             int32_t lhs_idx = children[0];
                             if(kind.operator_kind != AstOperatorKind::NOP)
                             {
-                                validate_global_declaration_assignment_target(
-                                    state, lhs_idx, true);
+                                CL_TRY(
+                                    validate_global_declaration_assignment_target(
+                                        state, lhs_idx, true));
                             }
-                            validate_global_declaration_expression(state,
-                                                                   children[1]);
+                            CL_TRY(validate_global_declaration_expression(
+                                state, children[1]));
                             if(kind.operator_kind == AstOperatorKind::NOP)
                             {
-                                validate_global_declaration_assignment_target(
-                                    state, lhs_idx, false);
+                                CL_TRY(
+                                    validate_global_declaration_assignment_target(
+                                        state, lhs_idx, false));
                             }
-                            return;
+                            return Expected<void>::ok();
                         }
 
                     case AstNodeKind::STATEMENT_ANN_ASSIGN:
                         if(av.kinds[children[0]].node_kind ==
                            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
-                            mark_global_validation_annotation(
-                                state, av.constants[children[0]]);
+                            CL_TRY(mark_global_validation_annotation(
+                                state, av.constants[children[0]]));
                         }
                         else
                         {
-                            validate_global_declaration_assignment_target(
-                                state, children[0], false);
+                            CL_TRY(
+                                validate_global_declaration_assignment_target(
+                                    state, children[0], false));
                         }
                         if(children.size() == 3)
                         {
-                            validate_global_declaration_expression(state,
-                                                                   children[2]);
+                            CL_TRY(validate_global_declaration_expression(
+                                state, children[2]));
                         }
-                        return;
+                        return Expected<void>::ok();
 
                     case AstNodeKind::STATEMENT_DEL:
                         for(int32_t target_idx: children)
                         {
-                            validate_global_declaration_assignment_target(
-                                state, target_idx, false);
+                            CL_TRY(
+                                validate_global_declaration_assignment_target(
+                                    state, target_idx, false));
                         }
-                        return;
+                        return Expected<void>::ok();
 
                     case AstNodeKind::STATEMENT_FOR:
-                        validate_global_declaration_expression(state,
-                                                               children[1]);
-                        validate_global_declaration_assignment_target(
-                            state, children[0], false);
-                        validate_global_declarations_in_node(state,
-                                                             children[2]);
+                        CL_TRY(validate_global_declaration_expression(
+                            state, children[1]));
+                        CL_TRY(validate_global_declaration_assignment_target(
+                            state, children[0], false));
+                        CL_TRY(validate_global_declarations_in_node(
+                            state, children[2]));
                         if(children.size() == 4)
                         {
-                            validate_global_declarations_in_node(state,
-                                                                 children[3]);
+                            CL_TRY(validate_global_declarations_in_node(
+                                state, children[3]));
                         }
-                        return;
+                        return Expected<void>::ok();
 
                     case AstNodeKind::STATEMENT_WITH:
                         for(size_t child_offset = 0;
                             child_offset + 1 < children.size(); ++child_offset)
                         {
-                            validate_global_declarations_in_node(
-                                state, children[child_offset]);
+                            CL_TRY(validate_global_declarations_in_node(
+                                state, children[child_offset]));
                         }
-                        validate_global_declarations_in_node(state,
-                                                             children.back());
-                        return;
+                        return validate_global_declarations_in_node(
+                            state, children.back());
 
                     case AstNodeKind::WITH_ITEM:
-                        validate_global_declaration_expression(state,
-                                                               children[0]);
+                        CL_TRY(validate_global_declaration_expression(
+                            state, children[0]));
                         if(children.size() == 2)
                         {
-                            validate_global_declaration_assignment_target(
-                                state, children[1], false);
+                            CL_TRY(
+                                validate_global_declaration_assignment_target(
+                                    state, children[1], false));
                         }
-                        return;
+                        return Expected<void>::ok();
 
                     case AstNodeKind::STATEMENT_EXCEPT_HANDLER:
                         if(handler_has_type(children))
                         {
-                            validate_global_declaration_expression(
-                                state, handler_type_idx(children));
+                            CL_TRY(validate_global_declaration_expression(
+                                state, handler_type_idx(children)));
                         }
                         if(handler_has_name(children))
                         {
-                            validate_global_declaration_assignment_target(
-                                state, handler_name_idx(children), false);
+                            CL_TRY(
+                                validate_global_declaration_assignment_target(
+                                    state, handler_name_idx(children), false));
                         }
-                        validate_global_declarations_in_node(
+                        return validate_global_declarations_in_node(
                             state, handler_body_idx(children));
-                        return;
 
                     case AstNodeKind::STATEMENT_SEQUENCE:
                         for(int32_t child_idx: children)
                         {
-                            validate_global_declarations_in_node(state,
-                                                                 child_idx);
+                            CL_TRY(validate_global_declarations_in_node(
+                                state, child_idx));
                         }
-                        return;
+                        return Expected<void>::ok();
 
                     case AstNodeKind::STATEMENT_BREAK:
                     case AstNodeKind::STATEMENT_CONTINUE:
-                        return;
+                        return Expected<void>::ok();
 
                     default:
                         if(is_expression(kind.node_kind))
                         {
-                            validate_global_declaration_expression(state,
-                                                                   node_idx);
-                            return;
+                            return validate_global_declaration_expression(
+                                state, node_idx);
                         }
                         for(int32_t child_idx: children)
                         {
-                            validate_global_declarations_in_node(state,
-                                                                 child_idx);
+                            CL_TRY(validate_global_declarations_in_node(
+                                state, child_idx));
                         }
-                        return;
+                        return Expected<void>::ok();
                 }
             }
 
-            void validate_global_declarations(CodegenMode mode,
-                                              int32_t body_idx,
-                                              AstChildren param_children)
+            Expected<void>
+            validate_global_declarations(CodegenMode mode, int32_t body_idx,
+                                         AstChildren param_children)
             {
                 GlobalDeclarationState state{mode, {}};
                 if(mode == CodegenMode::Function)
@@ -677,7 +685,7 @@ namespace cl
                     }
                 }
 
-                validate_global_declarations_in_node(state, body_idx);
+                return validate_global_declarations_in_node(state, body_idx);
             }
 
             void collect_global_declarations(AnalysisState &analysis,
@@ -1805,10 +1813,9 @@ namespace cl
         };
     }  // namespace
 
-    ScopeAnalysis analyze_code_object_scope(const AstVector &av,
-                                            CodeObjectBuilder *target_code_obj,
-                                            int32_t body_idx, CodegenMode mode,
-                                            AstChildren param_children)
+    Expected<ScopeAnalysis> analyze_code_object_scope(
+        const AstVector &av, CodeObjectBuilder *target_code_obj,
+        int32_t body_idx, CodegenMode mode, AstChildren param_children)
     {
         ScopeAnalyzer analyzer(av, target_code_obj);
         return analyzer.run(body_idx, mode, param_children);

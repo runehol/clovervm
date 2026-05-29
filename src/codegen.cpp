@@ -11,7 +11,6 @@
 #include "typed_value.h"
 #include <fmt/core.h>
 #include <optional>
-#include <stdexcept>
 #include <utility>
 
 namespace cl
@@ -169,16 +168,17 @@ namespace cl
     public:
         using RegisterIndex = int32_t;
 
-        AstCodegen(const AstVector &_av, CodeObjectBuilder *_code_obj,
-                   CodegenMode _mode, LanguageMode _language_mode,
-                   int32_t _body_idx, AstChildren param_children,
-                   ModuleResultMode _result_mode = ModuleResultMode::File)
-            : av(_av), code_obj(_code_obj), body_idx(_body_idx),
-              analysis(_mode, _av.size()), language_mode(_language_mode),
-              result_mode(_result_mode)
+        static Expected<AstCodegen>
+        make(const AstVector &av, CodeObjectBuilder *code_obj, CodegenMode mode,
+             LanguageMode language_mode, int32_t body_idx,
+             AstChildren param_children,
+             ModuleResultMode result_mode = ModuleResultMode::File)
         {
-            analysis = analyze_code_object_scope(av, code_obj, _body_idx, _mode,
-                                                 param_children);
+            ScopeAnalysis analysis = CL_TRY(analyze_code_object_scope(
+                av, code_obj, body_idx, mode, param_children));
+            return Expected<AstCodegen>::ok(
+                AstCodegen(av, code_obj, body_idx, std::move(analysis),
+                           language_mode, result_mode));
         }
 
         Expected<CodeObject *> run_module();
@@ -188,6 +188,15 @@ namespace cl
                                               int32_t body_idx);
 
     private:
+        AstCodegen(const AstVector &_av, CodeObjectBuilder *_code_obj,
+                   int32_t _body_idx, ScopeAnalysis _analysis,
+                   LanguageMode _language_mode, ModuleResultMode _result_mode)
+            : av(_av), code_obj(_code_obj), body_idx(_body_idx),
+              analysis(std::move(_analysis)), language_mode(_language_mode),
+              result_mode(_result_mode)
+        {
+        }
+
         struct LoopTargetSet
         {
             LoopTargetSet(JumpTarget *_break_target,
@@ -2911,9 +2920,9 @@ namespace cl
         }
         reserve_parameter_padding_and_frame_header(&fun_obj);
 
-        AstCodegen fun_builder{
-            av,          &fun_obj,      CodegenMode::Function, language_mode,
-            children[1], param_children};
+        AstCodegen fun_builder = CL_TRY(
+            AstCodegen::make(av, &fun_obj, CodegenMode::Function, language_mode,
+                             children[1], param_children));
         return fun_builder.run_function_body(source_offset, children[1]);
     }
 
@@ -2936,8 +2945,8 @@ namespace cl
         class_obj.get_local_scope_ptr()->reserve_empty_slots(2);
         reserve_parameter_padding_and_frame_header(&class_obj);
 
-        AstCodegen class_builder{
-            av, &class_obj, CodegenMode::Class, language_mode, body_idx, {}};
+        AstCodegen class_builder = CL_TRY(AstCodegen::make(
+            av, &class_obj, CodegenMode::Class, language_mode, body_idx, {}));
         return class_builder.run_class_body(source_offset, body_idx);
     }
 
@@ -2972,9 +2981,9 @@ namespace cl
         CodeObjectBuilder module_obj(
             av.compilation_unit, defining_module, nullptr,
             TValue<String>::from_value_assumed(module->get_name_binding()));
-        AstCodegen builder{
-            av,           &module_obj, CodegenMode::Module, language_mode,
-            av.root_node, {},          result_mode};
+        AstCodegen builder = CL_TRY(
+            AstCodegen::make(av, &module_obj, CodegenMode::Module,
+                             language_mode, av.root_node, {}, result_mode));
         return builder.run_module();
     }
 

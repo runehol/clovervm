@@ -2,6 +2,7 @@
 #define CL_CODEGEN_SCOPE_ANALYSIS_H
 
 #include "ast.h"
+#include "typed_value.h"
 #include "value.h"
 #include <cstddef>
 #include <cstdint>
@@ -62,10 +63,9 @@ namespace cl
         }
     };
 
-    ScopeAnalysis analyze_code_object_scope(const AstVector &av,
-                                            CodeObjectBuilder *target_code_obj,
-                                            int32_t body_idx, CodegenMode mode,
-                                            AstChildren param_children = {});
+    Expected<ScopeAnalysis> analyze_code_object_scope(
+        const AstVector &av, CodeObjectBuilder *target_code_obj,
+        int32_t body_idx, CodegenMode mode, AstChildren param_children = {});
 
 }  // namespace cl
 
