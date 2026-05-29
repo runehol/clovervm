@@ -2,6 +2,7 @@
 #define CL_AST_PRINT_H
 
 #include "ast.h"
+#include "fatal.h"
 #include "str.h"
 #include "tokenizer.h"
 #include "typed_value.h"
@@ -226,7 +227,8 @@ template <> struct fmt::formatter<cl::AstVector>
                 break;
 
             case cl::AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
-                throw std::runtime_error("should be handled elsewhere");
+                cl::fatal("AST comparison fragment should be handled by "
+                          "EXPRESSION_COMPARISON");
 
             case cl::AstNodeKind::EXPRESSION_COMPARISON:
                 render_node(av, out, children[0], indent, self_precedence);

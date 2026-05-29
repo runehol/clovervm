@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <fmt/core.h>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -24,14 +25,10 @@ namespace cl
 {
     static constexpr uint32_t repl_indent_width = 4;
 
-    static std::wstring decode_stdin_line(const std::string &bytes)
+    static std::optional<std::wstring>
+    decode_stdin_line(const std::string &bytes)
     {
-        std::optional<std::wstring> result = unicode::decode_utf8(bytes);
-        if(!result.has_value())
-        {
-            throw std::runtime_error("failed to decode stdin");
-        }
-        return *result;
+        return unicode::decode_utf8(bytes);
     }
 
     static std::wstring cl_string_to_wstring(TValue<String> string)
@@ -120,22 +117,18 @@ namespace cl
                 return 0;
             }
 
-            std::wstring source;
-            try
+            std::optional<std::wstring> source = decode_stdin_line(line);
+            if(!source.has_value())
             {
-                source = decode_stdin_line(line);
-            }
-            catch(const std::runtime_error &err)
-            {
-                std::cerr << err.what() << "\n";
+                std::cerr << "failed to decode stdin\n";
                 continue;
             }
-            bool blank_line = is_blank_line(source);
+            bool blank_line = is_blank_line(*source);
             if(source_buffer.empty() && blank_line)
             {
                 continue;
             }
-            source_buffer += source;
+            source_buffer += *source;
             source_buffer += L"\n";
 
             if(!blank_line && suite_waiting_for_blank_line)

@@ -387,39 +387,47 @@ namespace cl
         Value exec_source_module(ThreadState *thread, const ModuleSpec &spec,
                                  TValue<String> name, ModuleObject *module)
         {
-            try
+            bool remove_module_on_exit = true;
+            struct RemoveImportedModuleOnExit
             {
-                std::optional<std::wstring> source =
-                    read_source_text_file(spec.origin);
-                if(!source.has_value())
-                {
-                    remove_imported_module(thread, name);
-                    return set_module_load_failed(thread, spec.name);
-                }
+                ThreadState *thread;
+                TValue<String> name;
+                bool *enabled;
 
-                LanguageMode language_mode =
-                    spec.trusted_clover_extensions
-                        ? LanguageMode::TrustedCloverExtensions
-                        : LanguageMode::StandardsCompliant;
-                Expected<CodeObject *> code = thread->compile_in_module(
-                    source->c_str(), StartRule::File, module, language_mode);
-                if(code.has_exception())
+                ~RemoveImportedModuleOnExit()
                 {
-                    remove_imported_module(thread, name);
-                    return Value::exception_marker();
+                    if(*enabled)
+                    {
+                        remove_imported_module(thread, name);
+                    }
                 }
-                Value result = thread->run_clovervm_code_object(code.value());
-                if(result.is_exception_marker())
-                {
-                    remove_imported_module(thread, name);
-                    return result;
-                }
-            }
-            catch(...)
+            } remove_imported_module_on_exit{thread, name,
+                                             &remove_module_on_exit};
+
+            std::optional<std::wstring> source =
+                read_source_text_file(spec.origin);
+            if(!source.has_value())
             {
-                remove_imported_module(thread, name);
-                throw;
+                return set_module_load_failed(thread, spec.name);
             }
+
+            LanguageMode language_mode =
+                spec.trusted_clover_extensions
+                    ? LanguageMode::TrustedCloverExtensions
+                    : LanguageMode::StandardsCompliant;
+            Expected<CodeObject *> code = thread->compile_in_module(
+                source->c_str(), StartRule::File, module, language_mode);
+            if(code.has_exception())
+            {
+                return Value::exception_marker();
+            }
+            Value result = thread->run_clovervm_code_object(code.value());
+            if(result.is_exception_marker())
+            {
+                return result;
+            }
+
+            remove_module_on_exit = false;
 
             return module_from_sys_modules_after_exec(thread, name);
         }
