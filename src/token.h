@@ -124,7 +124,7 @@ namespace cl
         ERRORTOKEN_OPEN_BRACKET_EOF,
     };
 
-    const char *to_string(Token t);
+    const wchar_t *to_string(Token t);
     std::ostream &operator<<(std::ostream &o, Token t);
 
     class TokenVector

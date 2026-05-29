@@ -1,214 +1,215 @@
 #include "token.h"
+#include "unicode.h"
 #include <ostream>
 
 namespace cl
 {
 
-    const char *to_string(Token t)
+    const wchar_t *to_string(Token t)
     {
         switch(t)
         {
             case Token::ENDMARKER:
-                return "ENDMARKER";
+                return L"ENDMARKER";
             case Token::NAME:
-                return "NAME";
+                return L"NAME";
             case Token::INT_NUMBER:
-                return "INT_NUMBER";
+                return L"INT_NUMBER";
             case Token::FLOAT_NUMBER:
-                return "FLOAT_NUMBER";
+                return L"FLOAT_NUMBER";
             case Token::STRING:
-                return "STRING";
+                return L"STRING";
             case Token::NEWLINE:
-                return "NEWLINE";
+                return L"NEWLINE";
             case Token::INDENT:
-                return "INDENT";
+                return L"INDENT";
             case Token::DEDENT:
-                return "DEDENT";
+                return L"DEDENT";
             case Token::LPAR:
-                return "LPAR";
+                return L"LPAR";
             case Token::RPAR:
-                return "RPAR";
+                return L"RPAR";
             case Token::LSQB:
-                return "LSQB";
+                return L"LSQB";
             case Token::RSQB:
-                return "RSQB";
+                return L"RSQB";
             case Token::COLON:
-                return "COLON";
+                return L"COLON";
             case Token::COMMA:
-                return "COMMA";
+                return L"COMMA";
             case Token::SEMI:
-                return "SEMI";
+                return L"SEMI";
             case Token::PLUS:
-                return "PLUS";
+                return L"PLUS";
             case Token::MINUS:
-                return "MINUS";
+                return L"MINUS";
             case Token::STAR:
-                return "STAR";
+                return L"STAR";
             case Token::SLASH:
-                return "SLASH";
+                return L"SLASH";
             case Token::VBAR:
-                return "VBAR";
+                return L"VBAR";
             case Token::AMPER:
-                return "AMPER";
+                return L"AMPER";
             case Token::LESS:
-                return "LESS";
+                return L"LESS";
             case Token::GREATER:
-                return "GREATER";
+                return L"GREATER";
             case Token::EQUAL:
-                return "EQUAL";
+                return L"EQUAL";
             case Token::DOT:
-                return "DOT";
+                return L"DOT";
             case Token::PERCENT:
-                return "PERCENT";
+                return L"PERCENT";
             case Token::LBRACE:
-                return "LBRACE";
+                return L"LBRACE";
             case Token::RBRACE:
-                return "RBRACE";
+                return L"RBRACE";
             case Token::EQEQUAL:
-                return "EQEQUAL";
+                return L"EQEQUAL";
             case Token::NOTEQUAL:
-                return "NOTEQUAL";
+                return L"NOTEQUAL";
             case Token::LESSEQUAL:
-                return "LESSEQUAL";
+                return L"LESSEQUAL";
             case Token::GREATEREQUAL:
-                return "GREATEREQUAL";
+                return L"GREATEREQUAL";
             case Token::TILDE:
-                return "TILDE";
+                return L"TILDE";
             case Token::CIRCUMFLEX:
-                return "CIRCUMFLEX";
+                return L"CIRCUMFLEX";
             case Token::LEFTSHIFT:
-                return "LEFTSHIFT";
+                return L"LEFTSHIFT";
             case Token::RIGHTSHIFT:
-                return "RIGHTSHIFT";
+                return L"RIGHTSHIFT";
             case Token::DOUBLESTAR:
-                return "DOUBLESTAR";
+                return L"DOUBLESTAR";
             case Token::PLUSEQUAL:
-                return "PLUSEQUAL";
+                return L"PLUSEQUAL";
             case Token::MINEQUAL:
-                return "MINEQUAL";
+                return L"MINEQUAL";
             case Token::STAREQUAL:
-                return "STAREQUAL";
+                return L"STAREQUAL";
             case Token::SLASHEQUAL:
-                return "SLASHEQUAL";
+                return L"SLASHEQUAL";
             case Token::PERCENTEQUAL:
-                return "PERCENTEQUAL";
+                return L"PERCENTEQUAL";
             case Token::AMPEREQUAL:
-                return "AMPEREQUAL";
+                return L"AMPEREQUAL";
             case Token::VBAREQUAL:
-                return "VBAREQUAL";
+                return L"VBAREQUAL";
             case Token::CIRCUMFLEXEQUAL:
-                return "CIRCUMFLEXEQUAL";
+                return L"CIRCUMFLEXEQUAL";
             case Token::LEFTSHIFTEQUAL:
-                return "LEFTSHIFTEQUAL";
+                return L"LEFTSHIFTEQUAL";
             case Token::RIGHTSHIFTEQUAL:
-                return "RIGHTSHIFTEQUAL";
+                return L"RIGHTSHIFTEQUAL";
             case Token::DOUBLESTAREQUAL:
-                return "DOUBLESTAREQUAL";
+                return L"DOUBLESTAREQUAL";
             case Token::DOUBLESLASH:
-                return "DOUBLESLASH";
+                return L"DOUBLESLASH";
             case Token::DOUBLESLASHEQUAL:
-                return "DOUBLESLASHEQUAL";
+                return L"DOUBLESLASHEQUAL";
             case Token::EXCLAMATION:
-                return "EXCLAMATION";
+                return L"EXCLAMATION";
             case Token::AT:
-                return "AT";
+                return L"AT";
             case Token::ATEQUAL:
-                return "ATEQUAL";
+                return L"ATEQUAL";
             case Token::RARROW:
-                return "RARROW";
+                return L"RARROW";
             case Token::ELLIPSIS:
-                return "ELLIPSIS";
+                return L"ELLIPSIS";
             case Token::COLONEQUAL:
-                return "COLONEQUAL";
+                return L"COLONEQUAL";
             case Token::FALSE:
-                return "FALSE";
+                return L"FALSE";
             case Token::NONE:
-                return "NONE";
+                return L"NONE";
             case Token::TRUE:
-                return "TRUE";
+                return L"TRUE";
             case Token::AND:
-                return "AND";
+                return L"AND";
             case Token::AS:
-                return "AS";
+                return L"AS";
             case Token::ASSERT:
-                return "ASSERT";
+                return L"ASSERT";
             case Token::AWAIT:
-                return "AWAIT";
+                return L"AWAIT";
             case Token::ASYNC:
-                return "ASYNC";
+                return L"ASYNC";
             case Token::BREAK:
-                return "BREAK";
+                return L"BREAK";
             case Token::CLASS:
-                return "CLASS";
+                return L"CLASS";
             case Token::CONTINUE:
-                return "CONTINUE";
+                return L"CONTINUE";
             case Token::DEF:
-                return "DEF";
+                return L"DEF";
             case Token::DEL:
-                return "DEL";
+                return L"DEL";
             case Token::ELIF:
-                return "ELIF";
+                return L"ELIF";
             case Token::ELSE:
-                return "ELSE";
+                return L"ELSE";
             case Token::EXCEPT:
-                return "EXCEPT";
+                return L"EXCEPT";
             case Token::FINALLY:
-                return "FINALLY";
+                return L"FINALLY";
             case Token::FOR:
-                return "FOR";
+                return L"FOR";
             case Token::FROM:
-                return "FROM";
+                return L"FROM";
             case Token::GLOBAL:
-                return "GLOBAL";
+                return L"GLOBAL";
             case Token::IF:
-                return "IF";
+                return L"IF";
             case Token::IMPORT:
-                return "IMPORT";
+                return L"IMPORT";
             case Token::IN:
-                return "IN";
+                return L"IN";
             case Token::IS:
-                return "IS";
+                return L"IS";
             case Token::LAMBDA:
-                return "LAMBDA";
+                return L"LAMBDA";
             case Token::NONLOCAL:
-                return "NONLOCAL";
+                return L"NONLOCAL";
             case Token::NOT:
-                return "NOT";
+                return L"NOT";
             case Token::OR:
-                return "OR";
+                return L"OR";
             case Token::PASS:
-                return "PASS";
+                return L"PASS";
             case Token::RAISE:
-                return "RAISE";
+                return L"RAISE";
             case Token::RETURN:
-                return "RETURN";
+                return L"RETURN";
             case Token::TRY:
-                return "TRY";
+                return L"TRY";
             case Token::WHILE:
-                return "WHILE";
+                return L"WHILE";
             case Token::WITH:
-                return "WITH";
+                return L"WITH";
             case Token::YIELD:
-                return "YIELD";
+                return L"YIELD";
             case Token::TYPE_IGNORE:
-                return "TYPE_IGNORE";
+                return L"TYPE_IGNORE";
             case Token::TYPE_COMMENT:
-                return "TYPE_COMMENT";
+                return L"TYPE_COMMENT";
             case Token::ERRORTOKEN_INVALID_CHARACTER:
-                return "ERRORTOKEN_INVALID_CHARACTER";
+                return L"ERRORTOKEN_INVALID_CHARACTER";
             case Token::ERRORTOKEN_UNTERMINATED_STRING:
-                return "ERRORTOKEN_UNTERMINATED_STRING";
+                return L"ERRORTOKEN_UNTERMINATED_STRING";
             case Token::ERRORTOKEN_UNTERMINATED_TRIPLE_STRING:
-                return "ERRORTOKEN_UNTERMINATED_TRIPLE_STRING";
+                return L"ERRORTOKEN_UNTERMINATED_TRIPLE_STRING";
             case Token::ERRORTOKEN_OPEN_BRACKET_EOF:
-                return "ERRORTOKEN_OPEN_BRACKET_EOF";
+                return L"ERRORTOKEN_OPEN_BRACKET_EOF";
         }
-        return "<unknown>";
+        return L"<unknown>";
     };
 
     std::ostream &operator<<(std::ostream &o, Token t)
     {
-        o << to_string(t);
+        o << unicode::encode_utf8(to_string(t));
         return o;
     }
 
