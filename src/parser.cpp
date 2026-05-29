@@ -528,12 +528,18 @@ namespace cl
                    std::to_string(column) + "), near \"" + snippet + "\"";
         }
 
-        int32_t not_implemented(const char *construct_name)
+        Expected<int32_t> not_implemented(const wchar_t *construct_name)
         {
-            throw std::runtime_error(
-                std::string("SyntaxError: Not implemented: ") + construct_name +
-                " (token " + to_string(peek()) + ")" +
-                format_error_context(source_pos_for_token()));
+            std::wstring message = L"Not implemented: ";
+            message += construct_name;
+            message += L" (token ";
+            message += unicode::decode_utf8(to_string(peek())).value();
+            message += L")";
+            message += unicode::decode_utf8(
+                           format_error_context(source_pos_for_token()))
+                           .value();
+            return Expected<int32_t>::raise_exception(L"SyntaxError",
+                                                      message.c_str());
         }
 
         // now the parser itself
@@ -1266,7 +1272,7 @@ namespace cl
             }
         }
 
-        void validate_assignment_target(int32_t lhs)
+        Expected<void> validate_assignment_target(int32_t lhs)
         {
             if(ast.kinds[lhs].node_kind ==
                    AstNodeKind::EXPRESSION_VARIABLE_REFERENCE ||
@@ -1274,13 +1280,18 @@ namespace cl
                (ast.kinds[lhs].node_kind == AstNodeKind::EXPRESSION_BINARY &&
                 ast.kinds[lhs].operator_kind == AstOperatorKind::SUBSCRIPT))
             {
-                return;
+                return Expected<void>::ok();
             }
 
-            throw std::runtime_error(
-                std::string("SyntaxError: assignment target must be a simple "
-                            "variable, attribute, or subscript") +
-                format_error_context(assignment_target_source_pos(lhs)));
+            std::wstring message =
+                L"assignment target must be a simple variable, attribute, or "
+                L"subscript";
+            message +=
+                unicode::decode_utf8(
+                    format_error_context(assignment_target_source_pos(lhs)))
+                    .value();
+            return Expected<void>::raise_exception(L"SyntaxError",
+                                                   message.c_str());
         }
 
         uint32_t del_target_source_pos(int32_t node_idx)
@@ -1288,7 +1299,7 @@ namespace cl
             return assignment_target_source_pos(node_idx);
         }
 
-        void validate_del_target(int32_t target)
+        Expected<void> validate_del_target(int32_t target)
         {
             if(ast.kinds[target].node_kind ==
                    AstNodeKind::EXPRESSION_VARIABLE_REFERENCE ||
@@ -1297,14 +1308,16 @@ namespace cl
                (ast.kinds[target].node_kind == AstNodeKind::EXPRESSION_BINARY &&
                 ast.kinds[target].operator_kind == AstOperatorKind::SUBSCRIPT))
             {
-                return;
+                return Expected<void>::ok();
             }
 
-            throw std::runtime_error(
-                std::string(
-                    "SyntaxError: del target must be a variable, attribute, or "
-                    "subscript") +
-                format_error_context(del_target_source_pos(target)));
+            std::wstring message =
+                L"del target must be a variable, attribute, or subscript";
+            message += unicode::decode_utf8(
+                           format_error_context(del_target_source_pos(target)))
+                           .value();
+            return Expected<void>::raise_exception(L"SyntaxError",
+                                                   message.c_str());
         }
 
         Expected<int32_t> assignment()
@@ -1315,12 +1328,12 @@ namespace cl
 
             if(match(Token::COLON))
             {
-                validate_assignment_target(lhs);
+                CL_TRY(validate_assignment_target(lhs));
                 int32_t annotation = expression();
                 AstChildren annotation_children{lhs, annotation};
                 if(match(Token::EQUAL))
                 {
-                    annotation_children.push_back(annotated_rhs());
+                    annotation_children.push_back(CL_TRY(annotated_rhs()));
                 }
                 Value simple =
                     !lhs_parenthesized &&
@@ -1383,24 +1396,27 @@ namespace cl
                         AstNodeKind::STATEMENT_EXPRESSION, source_pos, lhs));
             }
 
-            validate_assignment_target(lhs);
+            CL_TRY(validate_assignment_target(lhs));
             source_pos = source_pos_and_advance();
-            int32_t rhs = annotated_rhs();
+            int32_t rhs = CL_TRY(annotated_rhs());
             return Expected<int32_t>::ok(ast.emplace_back(
                 AstKind(AstNodeKind::STATEMENT_ASSIGN, op_kind), source_pos,
                 lhs, rhs));
         }
 
-        int32_t yield_expr() { return not_implemented("yield expression"); }
+        Expected<int32_t> yield_expr()
+        {
+            return not_implemented(L"yield expression");
+        }
 
-        int32_t annotated_rhs()
+        Expected<int32_t> annotated_rhs()
         {
             switch(peek())
             {
                 case Token::YIELD:
                     return yield_expr();
                 default:
-                    return star_expressions();
+                    return Expected<int32_t>::ok(star_expressions());
             }
         }
 
@@ -1417,7 +1433,7 @@ namespace cl
                                     ch);
         }
 
-        int32_t raise_stmt()
+        Expected<int32_t> raise_stmt()
         {
             int32_t source_pos = source_pos_for_token();
             consume(Token::RAISE);
@@ -1425,18 +1441,18 @@ namespace cl
                peek() == Token::DEDENT || peek() == Token::ENDMARKER)
             {
                 AstChildren ch;
-                return ast.emplace_back(AstNodeKind::STATEMENT_RAISE,
-                                        source_pos, ch);
+                return Expected<int32_t>::ok(ast.emplace_back(
+                    AstNodeKind::STATEMENT_RAISE, source_pos, ch));
             }
 
             AstChildren ch;
             ch.push_back(expression());
             if(peek() == Token::FROM)
             {
-                return not_implemented("raise from statement");
+                return not_implemented(L"raise from statement");
             }
-            return ast.emplace_back(AstNodeKind::STATEMENT_RAISE, source_pos,
-                                    ch);
+            return Expected<int32_t>::ok(
+                ast.emplace_back(AstNodeKind::STATEMENT_RAISE, source_pos, ch));
         }
 
         int32_t import_stmt()
@@ -1622,7 +1638,7 @@ namespace cl
             consume(Token::DEL);
             AstChildren ch;
             ch.push_back(star_expressions());
-            validate_del_target(ch.back());
+            CL_TRY(validate_del_target(ch.back()));
             while(match(Token::COMMA))
             {
                 if(peek() == Token::NEWLINE || peek() == Token::SEMI)
@@ -1630,7 +1646,7 @@ namespace cl
                     break;
                 }
                 ch.push_back(star_expressions());
-                validate_del_target(ch.back());
+                CL_TRY(validate_del_target(ch.back()));
             }
             return Expected<int32_t>::ok(
                 ast.emplace_back(AstNodeKind::STATEMENT_DEL, source_pos, ch));
@@ -1638,7 +1654,7 @@ namespace cl
 
         Expected<int32_t> yield_stmt()
         {
-            return Expected<int32_t>::ok(not_implemented("yield statement"));
+            return not_implemented(L"yield statement");
         }
 
         int32_t assert_stmt()
@@ -1704,7 +1720,7 @@ namespace cl
 
         Expected<int32_t> nonlocal_stmt()
         {
-            return Expected<int32_t>::ok(not_implemented("nonlocal statement"));
+            return not_implemented(L"nonlocal statement");
         }
 
         Expected<int32_t> simple_stmt()
@@ -1714,7 +1730,7 @@ namespace cl
                 case Token::RETURN:
                     return Expected<int32_t>::ok(return_stmt());
                 case Token::RAISE:
-                    return Expected<int32_t>::ok(raise_stmt());
+                    return raise_stmt();
                 case Token::IMPORT:
                 case Token::FROM:
                     return Expected<int32_t>::ok(import_stmt());
@@ -2037,7 +2053,7 @@ namespace cl
                                  children, name_str));
         }
 
-        int32_t with_item()
+        Expected<int32_t> with_item()
         {
             int32_t source_pos = source_pos_for_token();
             AstChildren children;
@@ -2045,11 +2061,11 @@ namespace cl
             if(match(Token::AS))
             {
                 int32_t target = star_expression();
-                validate_assignment_target(target);
+                CL_TRY(validate_assignment_target(target));
                 children.push_back(target);
             }
-            return ast.emplace_back(AstNodeKind::WITH_ITEM, source_pos,
-                                    children);
+            return Expected<int32_t>::ok(
+                ast.emplace_back(AstNodeKind::WITH_ITEM, source_pos, children));
         }
 
         Expected<int32_t> with_stmt()
@@ -2057,10 +2073,10 @@ namespace cl
             int32_t source_pos = source_pos_for_token();
             consume(Token::WITH);
             AstChildren children;
-            children.push_back(with_item());
+            children.push_back(CL_TRY(with_item()));
             while(match(Token::COMMA))
             {
-                children.push_back(with_item());
+                children.push_back(CL_TRY(with_item()));
             }
             consume(Token::COLON);
             children.push_back(CL_TRY(block()));
@@ -2097,7 +2113,7 @@ namespace cl
             {
                 target = star_expressions();
             }
-            validate_assignment_target(target);
+            CL_TRY(validate_assignment_target(target));
             children.push_back(target);
             consume(Token::IN);
             children.push_back(named_expression());
@@ -2138,8 +2154,7 @@ namespace cl
 
             if(peek() != Token::EXCEPT)
             {
-                return Expected<int32_t>::ok(
-                    not_implemented("try statement without except"));
+                return not_implemented(L"try statement without except");
             }
 
             bool saw_bare_except = false;
@@ -2147,8 +2162,7 @@ namespace cl
             {
                 if(saw_bare_except)
                 {
-                    return Expected<int32_t>::ok(
-                        not_implemented("except after bare except"));
+                    return not_implemented(L"except after bare except");
                 }
                 int32_t handler_source_pos = source_pos_for_token();
                 consume(Token::EXCEPT);
@@ -2226,7 +2240,10 @@ namespace cl
                 AstNodeKind::STATEMENT_WHILE, source_pos, children));
         }
 
-        int32_t match_stmt() { return not_implemented("match statement"); }
+        Expected<int32_t> match_stmt()
+        {
+            return not_implemented(L"match statement");
+        }
 
         Expected<int32_t> compound_statement()
         {
@@ -2250,7 +2267,7 @@ namespace cl
                     return while_stmt();
 
                 default:
-                    return Expected<int32_t>::ok(match_stmt());
+                    return match_stmt();
             }
         }
 
