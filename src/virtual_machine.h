@@ -231,7 +231,7 @@ namespace cl
             assert(dunder_class_name_ != nullptr);
             return TValue<String>::from_oop(dunder_class_name_);
         }
-        CodeObject *clover_function_entry_adapter(uint32_t n_args);
+        Expected<CodeObject *> clover_function_entry_adapter(uint32_t n_args);
 
         template <typename T, typename... Args>
         T *make_immortal_internal_raw(Args &&...args)

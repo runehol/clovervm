@@ -230,7 +230,8 @@ namespace cl
         test::VmTestContext context;
         ThreadState *thread = context.thread();
         CodeObject *code = make_return_42_test_code(context);
-        CodeObject *adapter = context.vm().clover_function_entry_adapter(0);
+        CodeObject *adapter =
+            context.vm().clover_function_entry_adapter(0).value();
         TargetSafepointRecorder recorder;
         begin_recording_target_safepoints(context, &recorder, adapter);
         context.vm().request_safepoint();

@@ -2685,7 +2685,8 @@ TEST(Interpreter, clover_function_entry_adapter_bytecode_shape)
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
-    CodeObject *adapter = test_context.vm().clover_function_entry_adapter(2);
+    CodeObject *adapter =
+        test_context.vm().clover_function_entry_adapter(2).value();
 
     std::string actual = fmt::to_string(*adapter);
     std::string expected = "Code object:\n"
@@ -2710,7 +2711,8 @@ TEST(Interpreter, clover_function_entry_adapter_calls_managed_function)
     Value function = make_test_function(test_context, L"f",
                                         L"def f(a, b):\n"
                                         L"    return a + b\n");
-    CodeObject *adapter = test_context.vm().clover_function_entry_adapter(2);
+    CodeObject *adapter =
+        test_context.vm().clover_function_entry_adapter(2).value();
     Value args[] = {Value::from_smi(20), Value::from_smi(22)};
     Value *caller_fp = test_context.thread()->clover_frame_frontier();
     Value *adapter_fp = prepare_clover_function_entry_adapter_frame(
@@ -2731,7 +2733,8 @@ TEST(Interpreter, clover_function_entry_adapter_returns_pending_exception)
     Value function = make_test_function(test_context, L"f",
                                         L"def f():\n"
                                         L"    raise ValueError\n");
-    CodeObject *adapter = test_context.vm().clover_function_entry_adapter(0);
+    CodeObject *adapter =
+        test_context.vm().clover_function_entry_adapter(0).value();
     Value *caller_fp = test_context.thread()->clover_frame_frontier();
     Value *adapter_fp = prepare_clover_function_entry_adapter_frame(
         test_context.thread(), adapter, function, nullptr, 0);

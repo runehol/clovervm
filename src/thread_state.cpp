@@ -185,7 +185,8 @@ namespace cl
         TValue<Function> function, const Value *args, uint32_t n_args)
     {
         ActivationScope activation_scope(this);
-        CodeObject *adapter = machine->clover_function_entry_adapter(n_args);
+        CodeObject *adapter =
+            CL_TRY(machine->clover_function_entry_adapter(n_args));
         Value *caller_fp = clover_frame_frontier();
         Value *adapter_fp = entry_frame_pointer(caller_fp, adapter);
         adapter_fp[FrameHeaderPreviousFpOffset].as.ptr =

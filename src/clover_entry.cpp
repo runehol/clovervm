@@ -6,7 +6,6 @@
 #include "runtime_helpers.h"
 #include "scope.h"
 #include "virtual_machine.h"
-#include <stdexcept>
 
 namespace cl
 {
@@ -21,14 +20,15 @@ namespace cl
         local_scope->reserve_empty_slots(FrameHeaderSize);
     }
 
-    CodeObject *
+    Expected<CodeObject *>
     make_clover_function_entry_adapter_code_object(VirtualMachine *vm,
                                                    uint32_t n_args)
     {
         if(n_args > MaxCloverFunctionEntryAdapterArgs)
         {
-            throw std::runtime_error(
-                "unsupported Clover function entry adapter arity");
+            return Expected<CodeObject *>::raise_exception(
+                L"SystemError",
+                L"unsupported Clover function entry adapter arity");
         }
 
         TValue<String> adapter_name = vm->get_or_create_interned_string_value(
@@ -43,27 +43,26 @@ namespace cl
 
         {
             CodeObjectBuilder::TemporaryReg callable_reg(code);
-            code.emit_ldar(0, 0).value();
-            code.emit_star(0, callable_reg).value();
+            CL_TRY(code.emit_ldar(0, 0));
+            CL_TRY(code.emit_star(0, callable_reg));
 
             for(uint32_t arg_idx = 0; arg_idx < n_args; ++arg_idx)
             {
-                code.emit_ldar(0, arg_idx + 1).value();
-                code.emit_star(0, OutgoingArgReg(arg_idx)).value();
+                CL_TRY(code.emit_ldar(0, arg_idx + 1));
+                CL_TRY(code.emit_star(0, OutgoingArgReg(arg_idx)));
             }
 
             JumpTarget handler(&code);
             ExceptionTableRangeBuilder range(&code, handler);
-            code.emit_call_positional(0, callable_reg, OutgoingArgReg(0),
-                                      uint8_t(n_args))
-                .value();
+            CL_TRY(code.emit_call_positional(0, callable_reg, OutgoingArgReg(0),
+                                             uint8_t(n_args)));
             range.close();
-            code.emit_return_to_native(0).value();
+            CL_TRY(code.emit_return_to_native(0));
 
-            handler.resolve().value();
-            code.emit_return_pending_exception_to_native(0).value();
+            CL_TRY(handler.resolve());
+            CL_TRY(code.emit_return_pending_exception_to_native(0));
         }
-        return code.finalize().value();
+        return code.finalize();
     }
 
 }  // namespace cl

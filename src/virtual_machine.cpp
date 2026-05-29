@@ -492,20 +492,22 @@ namespace cl
         return TValue<Dict>::from_oop(imported_modules_);
     }
 
-    CodeObject *VirtualMachine::clover_function_entry_adapter(uint32_t n_args)
+    Expected<CodeObject *>
+    VirtualMachine::clover_function_entry_adapter(uint32_t n_args)
     {
         if(n_args >= clover_function_entry_adapters.size())
         {
-            throw std::runtime_error(
-                "unsupported Clover function entry adapter arity");
+            return Expected<CodeObject *>::raise_exception(
+                L"SystemError",
+                L"unsupported Clover function entry adapter arity");
         }
         CodeObject *&adapter = clover_function_entry_adapters[n_args];
         if(adapter == nullptr)
         {
-            adapter =
-                make_clover_function_entry_adapter_code_object(this, n_args);
+            adapter = CL_TRY(
+                make_clover_function_entry_adapter_code_object(this, n_args));
         }
-        return adapter;
+        return Expected<CodeObject *>::ok(adapter);
     }
 
     void VirtualMachine::install_native_layout_mappings(
