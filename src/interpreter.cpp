@@ -117,7 +117,15 @@ namespace cl
 
     NOINLINE INTERP_CC Value raise_unknown_opcode_exception(PARAMS)
     {
-        throw std::runtime_error("Unknown opcode");
+        (void)thread->set_pending_builtin_exception_string(L"SystemError",
+                                                           L"Unknown opcode");
+        ExceptionalTarget target =
+            resolve_exceptional_frame_exit(thread, fp, pc, code_object);
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
     }
 
     static NOINLINE ExceptionalTarget
@@ -305,6 +313,58 @@ namespace cl
         code_object = target.code_object;
         pc = target.interpreted_pc;
         START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value active_exception_required_system_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"SystemError",
+            L"active exception required");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value exception_handler_type_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError",
+            L"catching classes that do not inherit from BaseException is not "
+            L"implemented yet");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value
+    exception_marker_without_pending_exception_system_error(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"SystemError",
+            L"exception marker without pending exception");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value
+    pending_exception_native_return_without_pending_exception_system_error(
+        PARAMS)
+    {
+        START(1);
+        (void)thread->set_pending_builtin_exception_string(
+            L"SystemError",
+            L"pending exception native return without pending exception");
+        Value *restored_fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
+        thread->set_clover_frame_frontier(restored_fp);
+        return Value::exception_marker();
         COMPLETE();
     }
 
@@ -745,8 +805,7 @@ namespace cl
     {
         if(!thread->has_pending_exception())
         {
-            throw std::runtime_error(
-                "InternalError: active exception required");
+            MUSTTAIL return active_exception_required_system_error(ARGS);
         }
         if(thread->pending_exception_kind() ==
            PendingExceptionKind::StopIteration)
@@ -756,8 +815,7 @@ namespace cl
         else if(thread->pending_exception_kind() !=
                 PendingExceptionKind::Object)
         {
-            throw std::runtime_error(
-                "InternalError: active exception required");
+            MUSTTAIL return active_exception_required_system_error(ARGS);
         }
 
         accumulator = thread->pending_exception_object().raw_value();
@@ -769,14 +827,11 @@ namespace cl
     {
         if(!thread->has_pending_exception())
         {
-            throw std::runtime_error(
-                "InternalError: active exception required");
+            MUSTTAIL return active_exception_required_system_error(ARGS);
         }
         if(!can_convert_to<ClassObject>(accumulator))
         {
-            throw std::runtime_error(
-                "TypeError: catching classes that do not inherit from "
-                "BaseException is not implemented yet");
+            MUSTTAIL return exception_handler_type_error(ARGS);
         }
 
         ClassObject *handler_class = accumulator.get_ptr<ClassObject>();
@@ -794,8 +849,7 @@ namespace cl
                     NativeLayoutId::StopIteration);
                 break;
             case PendingExceptionKind::None:
-                throw std::runtime_error(
-                    "InternalError: active exception required");
+                MUSTTAIL return active_exception_required_system_error(ARGS);
         }
 
         accumulator = exception_class == handler_class ||
@@ -810,8 +864,7 @@ namespace cl
     {
         if(!thread->has_pending_exception())
         {
-            throw std::runtime_error(
-                "InternalError: active exception required");
+            MUSTTAIL return active_exception_required_system_error(ARGS);
         }
         if(thread->pending_exception_kind() ==
            PendingExceptionKind::StopIteration)
@@ -821,8 +874,7 @@ namespace cl
         else if(thread->pending_exception_kind() !=
                 PendingExceptionKind::Object)
         {
-            throw std::runtime_error(
-                "InternalError: active exception required");
+            MUSTTAIL return active_exception_required_system_error(ARGS);
         }
 
         START(2);
@@ -843,8 +895,7 @@ namespace cl
     {
         if(!thread->has_pending_exception())
         {
-            throw std::runtime_error(
-                "InternalError: active exception required");
+            MUSTTAIL return active_exception_required_system_error(ARGS);
         }
 
         ExceptionalTarget target =
@@ -4568,8 +4619,8 @@ namespace cl
     {
         if(!thread->has_pending_exception())
         {
-            throw std::runtime_error(
-                "InternalError: exception marker without pending exception");
+            MUSTTAIL return exception_marker_without_pending_exception_system_error(
+                ARGS);
         }
 
         if(thread->pending_exception_kind() ==
@@ -4580,8 +4631,8 @@ namespace cl
         else if(thread->pending_exception_kind() !=
                 PendingExceptionKind::Object)
         {
-            throw std::runtime_error(
-                "InternalError: exception marker without pending exception");
+            MUSTTAIL return exception_marker_without_pending_exception_system_error(
+                ARGS);
         }
 
         ExceptionalTarget target =
@@ -4621,9 +4672,8 @@ namespace cl
     NOINLINE static INTERP_CC Value
     op_return_pending_exception_to_native_slow(PARAMS)
     {
-        throw std::runtime_error(
-            "InternalError: pending exception native return without pending "
-            "exception");
+        MUSTTAIL return pending_exception_native_return_without_pending_exception_system_error(
+            ARGS);
     }
 
     static INTERP_CC Value op_return_pending_exception_to_native(PARAMS)

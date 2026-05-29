@@ -2658,19 +2658,12 @@ TEST(Interpreter, return_pending_exception_to_native_requires_pending_exception)
     Value *wrapper_fp =
         prepare_native_return_wrapper_frame(test_context.thread());
 
-    try
-    {
-        (void)run_interpreter(wrapper_fp, code_object, 0,
-                              test_context.thread());
-        FAIL() << "Expected std::runtime_error";
-    }
-    catch(const std::runtime_error &err)
-    {
-        EXPECT_STREQ(
-            "InternalError: pending exception native return without pending "
-            "exception",
-            err.what());
-    }
+    Value actual =
+        run_interpreter(wrapper_fp, code_object, 0, test_context.thread());
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(
+        test_context.thread(), L"SystemError",
+        L"pending exception native return without pending exception");
 }
 
 TEST(Interpreter, clover_function_entry_adapter_bytecode_shape)
@@ -3744,17 +3737,10 @@ TEST(Interpreter, native_exception_marker_requires_pending_exception)
         make_intrinsic_function(&test_context.vm(),
                                 native_marker_without_pending_exception));
 
-    try
-    {
-        (void)test_context.thread()->run_clovervm_code_object(code_obj);
-        FAIL() << "Expected internal exception-marker error";
-    }
-    catch(const std::runtime_error &err)
-    {
-        EXPECT_STREQ(
-            "InternalError: exception marker without pending exception",
-            err.what());
-    }
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_TRUE(actual.is_exception_marker());
+    expect_thread_python_error(test_context.thread(), L"SystemError",
+                               L"exception marker without pending exception");
 }
 
 TEST(Interpreter, raise_unwind_raises_exception_class)
