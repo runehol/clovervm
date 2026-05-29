@@ -262,6 +262,7 @@ namespace cl
             assert(current_thread != nullptr);
             return current_thread;
         }
+        static ThreadState *get_active_or_null() { return current_thread; }
 
         template <typename T, typename... Args>
         T *make_internal_raw(Args &&...args)

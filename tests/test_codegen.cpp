@@ -169,6 +169,32 @@ TEST(Codegen, unsupported_parameter_shape_is_compile_error)
         L"positional-only and **kwargs parameters are not implemented yet");
 }
 
+TEST(Codegen, unresolved_jump_target_allows_expected_codegen_error)
+{
+    test::VmTestContext test_context;
+    test::expect_compile_python_error(
+        test_context,
+        L"if True:\n"
+        L"    def f(a, /):\n"
+        L"        pass\n",
+        L"SyntaxError",
+        L"positional-only and **kwargs parameters are not implemented yet");
+}
+
+TEST(Codegen, exception_table_range_allows_expected_codegen_error)
+{
+    test::VmTestContext test_context;
+    test::expect_compile_python_error(
+        test_context,
+        L"try:\n"
+        L"    def f(a, /):\n"
+        L"        pass\n"
+        L"finally:\n"
+        L"    pass\n",
+        L"SyntaxError",
+        L"positional-only and **kwargs parameters are not implemented yet");
+}
+
 TEST(Codegen, default_parameter_span_limit_is_compile_error)
 {
     std::wstring source = L"def f(";

@@ -14,6 +14,12 @@ namespace cl
     {
         static constexpr uint32_t kMaxU8Operand = 255;
 
+        bool pending_exception_is_propagating()
+        {
+            ThreadState *thread = ThreadState::get_active_or_null();
+            return thread != nullptr && thread->has_pending_exception();
+        }
+
         void check_u8_operand_index(uint32_t idx, const char *table_name)
         {
             if(idx > kMaxU8Operand)
@@ -27,7 +33,7 @@ namespace cl
 
     JumpTarget::~JumpTarget()
     {
-        if(std::uncaught_exceptions() > 0)
+        if(std::uncaught_exceptions() > 0 || pending_exception_is_propagating())
         {
             return;
         }
@@ -129,6 +135,10 @@ namespace cl
 
     ExceptionTableRangeBuilder::~ExceptionTableRangeBuilder()
     {
+        if(std::uncaught_exceptions() > 0 || pending_exception_is_propagating())
+        {
+            return;
+        }
         assert(closed);
     }
 
