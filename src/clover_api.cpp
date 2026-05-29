@@ -15,6 +15,7 @@
 #include <fmt/core.h>
 #include <iostream>
 #include <new>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -25,15 +26,9 @@ struct clover_vm
 
 namespace
 {
-    std::wstring decode_api_string(const char *str, const char *error_message)
+    std::optional<std::wstring> decode_api_string(const char *str)
     {
-        std::optional<std::wstring> result =
-            cl::unicode::decode_utf8_c_string(str);
-        if(!result.has_value())
-        {
-            throw std::runtime_error(error_message);
-        }
-        return *result;
+        return cl::unicode::decode_utf8_c_string(str);
     }
 
     std::wstring cl_string_to_wstring(cl::TValue<cl::String> string)
@@ -95,10 +90,14 @@ namespace
             return CLOVER_STATUS_ERROR;
         }
 
-        std::wstring filename =
-            decode_api_string(path, "failed to decode source filename");
+        std::optional<std::wstring> filename = decode_api_string(path);
+        if(!filename.has_value())
+        {
+            std::cerr << "failed to decode source filename\n";
+            return CLOVER_STATUS_ERROR;
+        }
         std::optional<std::wstring> file_contents =
-            cl::read_source_text_file(filename);
+            cl::read_source_text_file(*filename);
         if(!file_contents.has_value())
         {
             std::cerr << "failed to open or decode source file '" << path
@@ -108,7 +107,7 @@ namespace
 
         cl::ThreadState *thread = api_vm->vm.get_default_thread();
         cl::Expected<cl::CodeObject *> code = thread->compile(
-            file_contents->c_str(), cl::StartRule::File, filename.c_str());
+            file_contents->c_str(), cl::StartRule::File, filename->c_str());
         if(code.has_exception())
         {
             std::wcerr << format_pending_python_exception(thread) << L"\n";
@@ -126,11 +125,15 @@ namespace
             return CLOVER_STATUS_ERROR;
         }
 
-        std::wstring source_text =
-            decode_api_string(source, "failed to decode source string");
+        std::optional<std::wstring> source_text = decode_api_string(source);
+        if(!source_text.has_value())
+        {
+            std::cerr << "failed to decode source string\n";
+            return CLOVER_STATUS_ERROR;
+        }
         cl::ThreadState *thread = api_vm->vm.get_default_thread();
         cl::Expected<cl::CodeObject *> code =
-            thread->compile(source_text.c_str(), cl::StartRule::File);
+            thread->compile(source_text->c_str(), cl::StartRule::File);
         if(code.has_exception())
         {
             std::wcerr << format_pending_python_exception(thread) << L"\n";
