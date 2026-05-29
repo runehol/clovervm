@@ -60,7 +60,7 @@ namespace cl
             CL_TRY(code.emit_return_to_native(0));
 
             CL_TRY(handler.resolve());
-            CL_TRY(code.emit_return_pending_exception_to_native(0));
+            CL_TRY(code.emit_return_exception_marker_to_native(0));
         }
         return code.finalize();
     }

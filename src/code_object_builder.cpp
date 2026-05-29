@@ -385,11 +385,11 @@ namespace cl
     }
 
     Expected<uint32_t>
-    CodeObjectBuilder::emit_return_pending_exception_to_native(
+    CodeObjectBuilder::emit_return_exception_marker_to_native(
         uint32_t source_offset)
     {
         return emit_opcode(source_offset,
-                           Bytecode::ReturnPendingExceptionToNative);
+                           Bytecode::ReturnExceptionMarkerToNative);
     }
 
     Expected<uint32_t>

@@ -290,7 +290,7 @@ namespace cl
         emit_return_or_raise_exception(uint32_t source_offset);
         Expected<uint32_t> emit_return_to_native(uint32_t source_offset);
         Expected<uint32_t>
-        emit_return_pending_exception_to_native(uint32_t source_offset);
+        emit_return_exception_marker_to_native(uint32_t source_offset);
         Expected<uint32_t> emit_lda_active_exception(uint32_t source_offset);
         Expected<uint32_t>
         emit_active_exception_is_instance(uint32_t source_offset);

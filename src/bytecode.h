@@ -185,7 +185,7 @@ namespace cl
         Return,
         ReturnOrRaiseException,
         ReturnToNative,
-        ReturnPendingExceptionToNative,
+        ReturnExceptionMarkerToNative,
         LdaActiveException,
         ActiveExceptionIsInstance,
         DrainActiveExceptionInto,

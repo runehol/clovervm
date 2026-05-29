@@ -433,16 +433,16 @@ static CodeObject *make_return_to_native_code(test::VmTestContext &test_context)
 }
 
 static CodeObject *
-make_return_pending_exception_to_native_code(test::VmTestContext &test_context)
+make_return_exception_marker_to_native_code(test::VmTestContext &test_context)
 {
     TValue<String> name = test_context.vm().get_or_create_interned_string_value(
-        L"<return-pending-exception-to-native-test>");
+        L"<return-exception-marker-to-native-test>");
     CodeObjectBuilder builder(
         &test_context.vm(), nullptr,
         TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
             name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
-    builder.emit_return_pending_exception_to_native(0).value();
+    builder.emit_return_exception_marker_to_native(0).value();
     return builder.finalize().value();
 }
 
@@ -2627,12 +2627,12 @@ TEST(Interpreter, return_to_native_restores_clover_frame_frontier)
 }
 
 TEST(Interpreter,
-     return_pending_exception_to_native_restores_clover_frame_frontier)
+     return_exception_marker_to_native_restores_clover_frame_frontier)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
     CodeObject *code_object =
-        make_return_pending_exception_to_native_code(test_context);
+        make_return_exception_marker_to_native_code(test_context);
     Value *caller_fp = test_context.thread()->clover_frame_frontier();
     Value *wrapper_fp =
         prepare_native_return_wrapper_frame(test_context.thread());
@@ -2649,12 +2649,12 @@ TEST(Interpreter,
     test_context.thread()->clear_pending_exception();
 }
 
-TEST(Interpreter, return_pending_exception_to_native_requires_pending_exception)
+TEST(Interpreter, return_exception_marker_to_native_requires_pending_exception)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
     CodeObject *code_object =
-        make_return_pending_exception_to_native_code(test_context);
+        make_return_exception_marker_to_native_code(test_context);
     Value *wrapper_fp =
         prepare_native_return_wrapper_frame(test_context.thread());
 
@@ -2663,7 +2663,7 @@ TEST(Interpreter, return_pending_exception_to_native_requires_pending_exception)
     EXPECT_TRUE(actual.is_exception_marker());
     expect_thread_python_error(
         test_context.thread(), L"SystemError",
-        L"pending exception native return without pending exception");
+        L"exception marker native return without pending exception");
 }
 
 TEST(Interpreter, clover_function_entry_adapter_bytecode_shape)
@@ -2684,7 +2684,7 @@ TEST(Interpreter, clover_function_entry_adapter_bytecode_shape)
                            "    9 Star a1\n"
                            "   11 CallPositional r0, {a0..a1}, call_ic[0]\n"
                            "   16 ReturnToNative\n"
-                           "   17 ReturnPendingExceptionToNative\n"
+                           "   17 ReturnExceptionMarkerToNative\n"
                            "Exception table:\n"
                            "    11..16 -> 17\n";
     EXPECT_EQ(expected, actual);

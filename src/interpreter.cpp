@@ -355,13 +355,13 @@ namespace cl
     }
 
     NOINLINE INTERP_CC Value
-    pending_exception_native_return_without_pending_exception_system_error(
+    exception_marker_native_return_without_pending_exception_system_error(
         PARAMS)
     {
         START(1);
         (void)thread->set_pending_builtin_exception_string(
             L"SystemError",
-            L"pending exception native return without pending exception");
+            L"exception marker native return without pending exception");
         Value *restored_fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
         thread->set_clover_frame_frontier(restored_fp);
         return Value::exception_marker();
@@ -4670,18 +4670,18 @@ namespace cl
     }
 
     NOINLINE static INTERP_CC Value
-    op_return_pending_exception_to_native_slow(PARAMS)
+    op_return_exception_marker_to_native_slow(PARAMS)
     {
-        MUSTTAIL return pending_exception_native_return_without_pending_exception_system_error(
+        MUSTTAIL return exception_marker_native_return_without_pending_exception_system_error(
             ARGS);
     }
 
-    static INTERP_CC Value op_return_pending_exception_to_native(PARAMS)
+    static INTERP_CC Value op_return_exception_marker_to_native(PARAMS)
     {
         START(1);
         if(unlikely(!thread->has_pending_exception()))
         {
-            MUSTTAIL return op_return_pending_exception_to_native_slow(ARGS);
+            MUSTTAIL return op_return_exception_marker_to_native_slow(ARGS);
         }
 
         Value *restored_fp = (Value *)fp[FrameHeaderPreviousFpOffset].as.ptr;
@@ -4812,8 +4812,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::ReturnOrRaiseException,
                         op_return_or_raise_exception);
         SET_TABLE_ENTRY(Bytecode::ReturnToNative, op_return_to_native);
-        SET_TABLE_ENTRY(Bytecode::ReturnPendingExceptionToNative,
-                        op_return_pending_exception_to_native);
+        SET_TABLE_ENTRY(Bytecode::ReturnExceptionMarkerToNative,
+                        op_return_exception_marker_to_native);
         SET_TABLE_ENTRY(Bytecode::LdaActiveException, op_lda_active_exception);
         SET_TABLE_ENTRY(Bytecode::ActiveExceptionIsInstance,
                         op_active_exception_is_instance);
