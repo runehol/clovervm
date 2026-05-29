@@ -2,6 +2,7 @@
 
 #include "attribute_descriptor.h"
 #include "class_object.h"
+#include "fatal.h"
 #include "function.h"
 #include "module_object.h"
 #include "runtime_helpers.h"
@@ -566,8 +567,7 @@ namespace cl
         if(plan.kind == AttributeReadPlanKind::DataDescriptorGet ||
            plan.kind == AttributeReadPlanKind::NonDataDescriptorGet)
         {
-            throw std::runtime_error(
-                "TypeError: descriptor __get__ requires interpreter dispatch");
+            fatal("descriptor __get__ requires interpreter dispatch");
         }
 
         __builtin_unreachable();

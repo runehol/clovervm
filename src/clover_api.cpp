@@ -14,9 +14,7 @@
 #include "virtual_machine.h"
 #include <fmt/core.h>
 #include <iostream>
-#include <new>
 #include <optional>
-#include <stdexcept>
 #include <string>
 
 struct clover_vm
@@ -146,22 +144,7 @@ namespace
 extern "C"
 {
 
-    CL_EXPORT clover_vm *clover_vm_new(void)
-    {
-        try
-        {
-            return new clover_vm();
-        }
-        catch(const std::bad_alloc &)
-        {
-            return nullptr;
-        }
-        catch(const std::exception &err)
-        {
-            std::cerr << err.what() << "\n";
-            return nullptr;
-        }
-    }
+    CL_EXPORT clover_vm *clover_vm_new(void) { return new clover_vm(); }
 
     CL_EXPORT void clover_vm_destroy(clover_vm *vm) { delete vm; }
 
@@ -178,30 +161,14 @@ extern "C"
     CL_EXPORT clover_status clover_vm_run_file(clover_vm *vm, const char *path,
                                                int print_bytecode)
     {
-        try
-        {
-            return run_file_impl(vm, path, print_bytecode != 0);
-        }
-        catch(const std::exception &err)
-        {
-            std::cerr << err.what() << "\n";
-            return CLOVER_STATUS_ERROR;
-        }
+        return run_file_impl(vm, path, print_bytecode != 0);
     }
 
     CL_EXPORT clover_status clover_vm_run_string(clover_vm *vm,
                                                  const char *source,
                                                  int print_bytecode)
     {
-        try
-        {
-            return run_string_impl(vm, source, print_bytecode != 0);
-        }
-        catch(const std::exception &err)
-        {
-            std::cerr << err.what() << "\n";
-            return CLOVER_STATUS_ERROR;
-        }
+        return run_string_impl(vm, source, print_bytecode != 0);
     }
 
     CL_EXPORT clover_status clover_vm_run_interactive(clover_vm *vm,
@@ -213,17 +180,9 @@ extern "C"
             return CLOVER_STATUS_ERROR;
         }
 
-        try
-        {
-            return cl::run_repl(vm->vm, print_bytecode != 0) == 0
-                       ? CLOVER_STATUS_OK
-                       : CLOVER_STATUS_ERROR;
-        }
-        catch(const std::exception &err)
-        {
-            std::cerr << err.what() << "\n";
-            return CLOVER_STATUS_ERROR;
-        }
+        return cl::run_repl(vm->vm, print_bytecode != 0) == 0
+                   ? CLOVER_STATUS_OK
+                   : CLOVER_STATUS_ERROR;
     }
 
 }  // extern "C"

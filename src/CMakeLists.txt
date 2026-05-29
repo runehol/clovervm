@@ -201,6 +201,12 @@ target_include_directories(
 
 target_link_libraries(
     libclovervm_objects PRIVATE project_options project_warnings)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang|GNU")
+    target_compile_options(libclovervm_objects PRIVATE -fno-exceptions)
+else()
+    message(FATAL_ERROR
+        "libclovervm no-exceptions build is not configured for this compiler")
+endif()
 target_compile_definitions(libclovervm_objects
     PRIVATE CLOVERVM_BUILDING_SHARED)
 target_link_libraries(
