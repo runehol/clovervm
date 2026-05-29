@@ -545,9 +545,10 @@ namespace cl
         // now the parser itself
 
         // helper to build sequences
-        AstChildren sequence_until_stop_token(int32_t initial,
-                                              int32_t (Parser::*parse_member)(),
-                                              Token separator, Token stop)
+        Expected<AstChildren>
+        sequence_until_stop_token(int32_t initial,
+                                  Expected<int32_t> (Parser::*parse_member)(),
+                                  Token separator, Token stop)
         {
             AstChildren children;
             children.push_back(initial);
@@ -556,10 +557,10 @@ namespace cl
                 if(peek() == stop)
                     break;
 
-                int32_t member = (this->*parse_member)();
+                int32_t member = CL_TRY((this->*parse_member)());
                 children.push_back(member);
             }
-            return children;
+            return Expected<AstChildren>::ok(std::move(children));
         }
 
         Expected<int32_t> block()
@@ -579,46 +580,46 @@ namespace cl
         }
         // expressions
 
-        int32_t genexp() { return expression(); }
+        Expected<int32_t> genexp() { return expression(); }
 
-        int32_t star_expressions()
+        Expected<int32_t> star_expressions()
         {
             uint32_t tuple_start_pos = source_pos_for_token();
-            int32_t result = star_expression();
+            int32_t result = CL_TRY(star_expression());
             if(peek() == Token::COMMA)
             {
-                AstChildren children =
+                AstChildren children = CL_TRY(
                     sequence_until_stop_token(result, &Parser::star_expression,
-                                              Token::COMMA, Token::NEWLINE);
-                return ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE,
-                                        tuple_start_pos, children);
+                                              Token::COMMA, Token::NEWLINE));
+                return Expected<int32_t>::ok(ast.emplace_back(
+                    AstNodeKind::EXPRESSION_TUPLE, tuple_start_pos, children));
             }
             else
             {
-                return result;
+                return Expected<int32_t>::ok(result);
             }
         }
 
-        int32_t star_expression() { return expression(); }
+        Expected<int32_t> star_expression() { return expression(); }
 
-        int32_t expressions()
+        Expected<int32_t> expressions()
         {
             uint32_t tuple_start_pos = source_pos_for_token();
-            int32_t result = expression();
+            int32_t result = CL_TRY(expression());
             if(peek() == Token::COMMA)
             {
-                AstChildren children = sequence_until_stop_token(
-                    result, &Parser::expression, Token::COMMA, Token::NEWLINE);
-                return ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE,
-                                        tuple_start_pos, children);
+                AstChildren children = CL_TRY(sequence_until_stop_token(
+                    result, &Parser::expression, Token::COMMA, Token::NEWLINE));
+                return Expected<int32_t>::ok(ast.emplace_back(
+                    AstNodeKind::EXPRESSION_TUPLE, tuple_start_pos, children));
             }
             else
             {
-                return result;
+                return Expected<int32_t>::ok(result);
             }
         }
 
-        int32_t expression() { return disjunction(); }
+        Expected<int32_t> expression() { return disjunction(); }
 
         Expected<int32_t> assignment_expression()
         {
@@ -634,11 +635,11 @@ namespace cl
                 return Expected<int32_t>::raise_exception(L"SyntaxError",
                                                           message.c_str());
             }
-            int32_t lhs = atom();  // smallest rule that just consumes a name
-                                   // and makes a nice node for us
+            int32_t lhs = CL_TRY(atom());  // smallest rule that just consumes a
+                                           // name and makes a nice node for us
             int32_t source_pos = source_pos_for_token();
             consume(Token::COLONEQUAL);
-            int32_t rhs = expression();
+            int32_t rhs = CL_TRY(expression());
             return Expected<int32_t>::ok(ast.emplace_back(
                 AstKind(AstNodeKind::EXPRESSION_ASSIGN, AstOperatorKind::NOP),
                 source_pos, lhs, rhs));
@@ -652,62 +653,62 @@ namespace cl
             }
             else
             {
-                return Expected<int32_t>::ok(expression());
+                return expression();
             }
         }
 
-        int32_t disjunction()
+        Expected<int32_t> disjunction()
         {
-            int32_t lhs = conjunction();
+            int32_t lhs = CL_TRY(conjunction());
             if(peek() == Token::OR)
             {
                 uint32_t source_pos = source_pos_and_advance();
-                int32_t rhs = disjunction();
-                return ast.emplace_back(
+                int32_t rhs = CL_TRY(disjunction());
+                return Expected<int32_t>::ok(ast.emplace_back(
                     AstKind(AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY,
                             AstOperatorKind::SHORTCUTTING_OR),
-                    source_pos, lhs, rhs);
+                    source_pos, lhs, rhs));
             }
             else
             {
-                return lhs;
+                return Expected<int32_t>::ok(lhs);
             }
         }
 
-        int32_t conjunction()
+        Expected<int32_t> conjunction()
         {
-            int32_t lhs = inversion();
+            int32_t lhs = CL_TRY(inversion());
             if(peek() == Token::AND)
             {
                 uint32_t source_pos = source_pos_and_advance();
-                int32_t rhs = conjunction();
-                return ast.emplace_back(
+                int32_t rhs = CL_TRY(conjunction());
+                return Expected<int32_t>::ok(ast.emplace_back(
                     AstKind(AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY,
                             AstOperatorKind::SHORTCUTTING_AND),
-                    source_pos, lhs, rhs);
+                    source_pos, lhs, rhs));
             }
             else
             {
-                return lhs;
+                return Expected<int32_t>::ok(lhs);
             }
         }
 
-        int32_t inversion()
+        Expected<int32_t> inversion()
         {
             if(match(Token::NOT))
             {
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_UNARY,
-                                                AstOperatorKind::NOT),
-                                        source_pos_for_previous_token(),
-                                        inversion());
+                return Expected<int32_t>::ok(ast.emplace_back(
+                    AstKind(AstNodeKind::EXPRESSION_UNARY,
+                            AstOperatorKind::NOT),
+                    source_pos_for_previous_token(), CL_TRY(inversion())));
             }
             return comparison();
         }
 
-        int32_t comparison()
+        Expected<int32_t> comparison()
         {
             AstChildren ch;
-            ch.push_back(bitwise_or());
+            ch.push_back(CL_TRY(bitwise_or()));
             uint32_t source_pos = source_pos_for_token();
             while(1)
             {
@@ -735,21 +736,21 @@ namespace cl
                 }
                 if(!valid_lookahead)
                     break;
-                ch.push_back(comparison_fragment());
+                ch.push_back(CL_TRY(comparison_fragment()));
             }
 
             if(ch.size() == 1)
             {
-                return ch[0];
+                return Expected<int32_t>::ok(ch[0]);
             }
             else
             {
-                return ast.emplace_back(AstNodeKind::EXPRESSION_COMPARISON,
-                                        source_pos, ch);
+                return Expected<int32_t>::ok(ast.emplace_back(
+                    AstNodeKind::EXPRESSION_COMPARISON, source_pos, ch));
             }
         }
 
-        int32_t comparison_fragment()
+        Expected<int32_t> comparison_fragment()
         {
             AstOperatorKind ok = AstOperatorKind::NOP;
             uint32_t source_pos = source_pos_for_token();
@@ -796,60 +797,60 @@ namespace cl
                 ok = AstOperatorKind::NOT_IN;
             }
             assert(ok != AstOperatorKind::NOP);
-            int32_t ch = bitwise_or();
-            return ast.emplace_back(
+            int32_t ch = CL_TRY(bitwise_or());
+            return Expected<int32_t>::ok(ast.emplace_back(
                 AstKind(AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT, ok),
-                source_pos, ch);
+                source_pos, ch));
         }
 
-        int32_t bitwise_or()
+        Expected<int32_t> bitwise_or()
         {
-            int32_t result = bitwise_xor();
+            int32_t result = CL_TRY(bitwise_xor());
             while(match(Token::VBAR))
             {
                 uint32_t source_pos = source_pos_for_previous_token();
-                int32_t rhs = bitwise_xor();
+                int32_t rhs = CL_TRY(bitwise_xor());
                 result =
                     ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_BINARY,
                                              AstOperatorKind::BITWISE_OR),
                                      source_pos, result, rhs);
             }
-            return result;
+            return Expected<int32_t>::ok(result);
         }
 
-        int32_t bitwise_xor()
+        Expected<int32_t> bitwise_xor()
         {
-            int32_t result = bitwise_and();
+            int32_t result = CL_TRY(bitwise_and());
             while(match(Token::CIRCUMFLEX))
             {
                 uint32_t source_pos = source_pos_for_previous_token();
-                int32_t rhs = bitwise_and();
+                int32_t rhs = CL_TRY(bitwise_and());
                 result =
                     ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_BINARY,
                                              AstOperatorKind::BITWISE_XOR),
                                      source_pos, result, rhs);
             }
-            return result;
+            return Expected<int32_t>::ok(result);
         }
 
-        int32_t bitwise_and()
+        Expected<int32_t> bitwise_and()
         {
-            int32_t result = shift_expr();
+            int32_t result = CL_TRY(shift_expr());
             while(match(Token::AMPER))
             {
                 uint32_t source_pos = source_pos_for_previous_token();
-                int32_t rhs = shift_expr();
+                int32_t rhs = CL_TRY(shift_expr());
                 result =
                     ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_BINARY,
                                              AstOperatorKind::BITWISE_AND),
                                      source_pos, result, rhs);
             }
-            return result;
+            return Expected<int32_t>::ok(result);
         }
 
-        int32_t shift_expr()
+        Expected<int32_t> shift_expr()
         {
-            int32_t result = sum();
+            int32_t result = CL_TRY(sum());
             while(true)
             {
                 AstOperatorKind op_kind = AstOperatorKind::NOP;
@@ -863,20 +864,20 @@ namespace cl
                         break;
 
                     default:
-                        return result;
+                        return Expected<int32_t>::ok(result);
                 }
 
                 uint32_t source_pos = source_pos_and_advance();
-                int32_t rhs = sum();
+                int32_t rhs = CL_TRY(sum());
                 result = ast.emplace_back(
                     AstKind(AstNodeKind::EXPRESSION_BINARY, op_kind),
                     source_pos, result, rhs);
             }
         }
 
-        int32_t sum()
+        Expected<int32_t> sum()
         {
-            int32_t result = term();
+            int32_t result = CL_TRY(term());
             while(true)
             {
                 AstOperatorKind op_kind = AstOperatorKind::NOP;
@@ -890,20 +891,20 @@ namespace cl
                         break;
 
                     default:
-                        return result;
+                        return Expected<int32_t>::ok(result);
                 }
 
                 uint32_t source_pos = source_pos_and_advance();
-                int32_t rhs = term();
+                int32_t rhs = CL_TRY(term());
                 result = ast.emplace_back(
                     AstKind(AstNodeKind::EXPRESSION_BINARY, op_kind),
                     source_pos, result, rhs);
             }
         }
 
-        int32_t term()
+        Expected<int32_t> term()
         {
-            int32_t result = factor();
+            int32_t result = CL_TRY(factor());
             while(true)
             {
                 AstOperatorKind op_kind = AstOperatorKind::NOP;
@@ -926,19 +927,18 @@ namespace cl
                         break;
 
                     default:
-                        return result;
+                        return Expected<int32_t>::ok(result);
                 }
 
                 uint32_t source_pos = source_pos_and_advance();
-                int32_t rhs = factor();
+                int32_t rhs = CL_TRY(factor());
                 result = ast.emplace_back(
                     AstKind(AstNodeKind::EXPRESSION_BINARY, op_kind),
                     source_pos, result, rhs);
             }
-            return result;
         }
 
-        int32_t factor()
+        Expected<int32_t> factor()
         {
             AstOperatorKind op_kind = AstOperatorKind::NOP;
             switch(peek())
@@ -958,32 +958,33 @@ namespace cl
             }
 
             uint32_t source_pos = source_pos_and_advance();
-            int32_t inner = factor();
-            return ast.emplace_back(
+            int32_t inner = CL_TRY(factor());
+            return Expected<int32_t>::ok(ast.emplace_back(
                 AstKind(AstNodeKind::EXPRESSION_UNARY, op_kind), source_pos,
-                inner);
+                inner));
         }
 
-        int32_t power()
+        Expected<int32_t> power()
         {
-            int32_t lhs = await_primary();
+            int32_t lhs = CL_TRY(await_primary());
             if(peek() == Token::DOUBLESTAR)
             {
                 uint32_t source_pos = source_pos_and_advance();
-                int32_t rhs = power();
-                return ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_BINARY,
-                                                AstOperatorKind::POWER),
-                                        source_pos, lhs, rhs);
+                int32_t rhs = CL_TRY(power());
+                return Expected<int32_t>::ok(
+                    ast.emplace_back(AstKind(AstNodeKind::EXPRESSION_BINARY,
+                                             AstOperatorKind::POWER),
+                                     source_pos, lhs, rhs));
             }
             else
             {
-                return lhs;
+                return Expected<int32_t>::ok(lhs);
             }
         }
 
-        int32_t await_primary()
+        Expected<int32_t> await_primary()
         {
-            int32_t result = primary();
+            int32_t result = CL_TRY(primary());
             while(true)
             {
                 switch(peek())
@@ -1007,7 +1008,7 @@ namespace cl
                         {
                             uint32_t source_pos =
                                 source_pos_and_advance();  // skip over the LPAR
-                            int32_t args = arguments();
+                            int32_t args = CL_TRY(arguments());
                             consume(Token::RPAR);
                             result =
                                 ast.emplace_back(AstNodeKind::EXPRESSION_CALL,
@@ -1017,7 +1018,7 @@ namespace cl
                     case Token::LSQB:
                         {
                             uint32_t source_pos = source_pos_and_advance();
-                            int32_t index = expression();
+                            int32_t index = CL_TRY(expression());
                             consume(Token::RSQB);
                             result = ast.emplace_back(
                                 AstKind(AstNodeKind::EXPRESSION_BINARY,
@@ -1027,18 +1028,14 @@ namespace cl
                         }
 
                     default:
-                        return result;
+                        return Expected<int32_t>::ok(result);
                 }
             }
         }
 
-        int32_t arguments()
-        {
-            int32_t result = args();
-            return result;
-        }
+        Expected<int32_t> arguments() { return args(); }
 
-        int32_t args()
+        Expected<int32_t> args()
         {
             int32_t source_pos = source_pos_for_token();
             AstChildren ch;
@@ -1048,15 +1045,15 @@ namespace cl
             {
                 if(peek() == Token::STAR)
                 {
-                    throw std::runtime_error(
-                        "SyntaxError: starred call arguments are not "
-                        "implemented yet");
+                    return Expected<int32_t>::raise_exception(
+                        L"SyntaxError",
+                        L"starred call arguments are not implemented yet");
                 }
                 if(peek() == Token::DOUBLESTAR)
                 {
-                    throw std::runtime_error(
-                        "SyntaxError: keyword argument unpacking is not "
-                        "implemented yet");
+                    return Expected<int32_t>::raise_exception(
+                        L"SyntaxError",
+                        L"keyword argument unpacking is not implemented yet");
                 }
                 if(peek() == Token::NAME && peek2() == Token::EQUAL)
                 {
@@ -1065,13 +1062,13 @@ namespace cl
                         *ast.compilation_unit, name_source_pos));
                     if(!keyword_names.insert(name).second)
                     {
-                        throw std::runtime_error(
-                            "SyntaxError: keyword argument repeated");
+                        return Expected<int32_t>::raise_exception(
+                            L"SyntaxError", L"keyword argument repeated");
                     }
                     TValue<String> name_value =
                         vm.get_or_create_interned_string_value(name);
                     consume(Token::EQUAL);
-                    int32_t value = expression();
+                    int32_t value = CL_TRY(expression());
                     ch.push_back(ast.emplace_back(
                         AstNodeKind::CALL_ARGUMENT_KEYWORD, name_source_pos,
                         AstChildren{value}, name_value));
@@ -1081,11 +1078,11 @@ namespace cl
                 {
                     if(seen_keyword)
                     {
-                        throw std::runtime_error(
-                            "SyntaxError: positional argument follows keyword "
-                            "argument");
+                        return Expected<int32_t>::raise_exception(
+                            L"SyntaxError",
+                            L"positional argument follows keyword argument");
                     }
-                    int32_t value = expression();
+                    int32_t value = CL_TRY(expression());
                     ch.push_back(ast.emplace_back(
                         AstNodeKind::CALL_ARGUMENT_POSITIONAL,
                         ast.source_offsets[value], AstChildren{value}));
@@ -1095,13 +1092,13 @@ namespace cl
                 if(peek() == Token::RPAR)
                     break;
             }
-            return ast.emplace_back(AstNodeKind::PARAMETER_SEQUENCE, source_pos,
-                                    ch);
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::PARAMETER_SEQUENCE, source_pos, ch));
         }
 
-        int32_t primary() { return atom(); }
+        Expected<int32_t> primary() { return atom(); }
 
-        int32_t atom()
+        Expected<int32_t> atom()
         {
             switch(peek())
             {
@@ -1111,9 +1108,9 @@ namespace cl
                             *ast.compilation_unit, source_pos_for_token()));
                         TValue<String> v =
                             vm.get_or_create_interned_string_value(name);
-                        return ast.emplace_back(
+                        return Expected<int32_t>::ok(ast.emplace_back(
                             AstNodeKind::EXPRESSION_VARIABLE_REFERENCE,
-                            source_pos_and_advance(), v);
+                            source_pos_and_advance(), v));
                     }
 
                 case Token::INT_NUMBER:
@@ -1122,10 +1119,10 @@ namespace cl
                             *ast.compilation_unit, source_pos_for_token());
                         int64_t iv = std::stoll(std::wstring(token));
                         Value v = Value::from_smi(iv);
-                        return ast.emplace_back(
+                        return Expected<int32_t>::ok(ast.emplace_back(
                             AstKind(AstNodeKind::EXPRESSION_LITERAL,
                                     AstOperatorKind::NUMBER),
-                            source_pos_and_advance(), v);
+                            source_pos_and_advance(), v));
                     }
                 case Token::FLOAT_NUMBER:
                     {
@@ -1133,10 +1130,10 @@ namespace cl
                             *ast.compilation_unit, source_pos_for_token());
                         double value = parse_float_literal(token);
                         TValue<Float> v = make_object_value<Float>(value);
-                        return ast.emplace_back(
+                        return Expected<int32_t>::ok(ast.emplace_back(
                             AstKind(AstNodeKind::EXPRESSION_LITERAL,
                                     AstOperatorKind::NUMBER),
-                            source_pos_and_advance(), v);
+                            source_pos_and_advance(), v));
                     }
                 case Token::STRING:
                     {
@@ -1146,55 +1143,56 @@ namespace cl
                             decode_python_string_literal(token);
                         TValue<String> v =
                             vm.get_or_create_interned_string_value(value);
-                        return ast.emplace_back(
+                        return Expected<int32_t>::ok(ast.emplace_back(
                             AstKind(AstNodeKind::EXPRESSION_LITERAL,
                                     AstOperatorKind::STRING),
-                            source_pos_and_advance(), v);
+                            source_pos_and_advance(), v));
                     }
                 case Token::NONE:
-                    return ast.emplace_back(
+                    return Expected<int32_t>::ok(ast.emplace_back(
                         AstKind(AstNodeKind::EXPRESSION_LITERAL,
                                 AstOperatorKind::NONE),
-                        source_pos_and_advance(), Value::None());
+                        source_pos_and_advance(), Value::None()));
                 case Token::TRUE:
-                    return ast.emplace_back(
+                    return Expected<int32_t>::ok(ast.emplace_back(
                         AstKind(AstNodeKind::EXPRESSION_LITERAL,
                                 AstOperatorKind::TRUE),
-                        source_pos_and_advance(), Value::True());
+                        source_pos_and_advance(), Value::True()));
                 case Token::FALSE:
-                    return ast.emplace_back(
+                    return Expected<int32_t>::ok(ast.emplace_back(
                         AstKind(AstNodeKind::EXPRESSION_LITERAL,
                                 AstOperatorKind::FALSE),
-                        source_pos_and_advance(), Value::False());
+                        source_pos_and_advance(), Value::False()));
                 case Token::ELLIPSIS:
-                    return ast.emplace_back(
+                    return Expected<int32_t>::ok(ast.emplace_back(
                         AstKind(AstNodeKind::EXPRESSION_LITERAL,
                                 AstOperatorKind::ELLIPSIS),
-                        source_pos_and_advance(), Value::Ellipsis());
+                        source_pos_and_advance(), Value::Ellipsis()));
                 case Token::LPAR:
                     {
                         uint32_t tuple_start_pos = source_pos_and_advance();
                         if(match(Token::RPAR))
                         {
-                            return ast.emplace_back(
+                            return Expected<int32_t>::ok(ast.emplace_back(
                                 AstNodeKind::EXPRESSION_TUPLE, tuple_start_pos,
-                                AstChildren{});
+                                AstChildren{}));
                         }
 
-                        int32_t result = genexp();
+                        int32_t result = CL_TRY(genexp());
                         if(peek() == Token::COMMA)
                         {
-                            AstChildren children = sequence_until_stop_token(
-                                result, &Parser::expression, Token::COMMA,
-                                Token::RPAR);
+                            AstChildren children =
+                                CL_TRY(sequence_until_stop_token(
+                                    result, &Parser::expression, Token::COMMA,
+                                    Token::RPAR));
                             consume(Token::RPAR);
-                            return ast.emplace_back(
-                                AstNodeKind::EXPRESSION_TUPLE, tuple_start_pos,
-                                children);
+                            return Expected<int32_t>::ok(
+                                ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE,
+                                                 tuple_start_pos, children));
                         }
 
                         consume(Token::RPAR);
-                        return result;
+                        return Expected<int32_t>::ok(result);
                     }
                 case Token::LSQB:
                     {
@@ -1202,19 +1200,20 @@ namespace cl
                         AstChildren children;
                         if(peek() != Token::RSQB)
                         {
-                            children.push_back(expression());
+                            children.push_back(CL_TRY(expression()));
                             while(match(Token::COMMA))
                             {
                                 if(peek() == Token::RSQB)
                                 {
                                     break;
                                 }
-                                children.push_back(expression());
+                                children.push_back(CL_TRY(expression()));
                             }
                         }
                         consume(Token::RSQB);
-                        return ast.emplace_back(AstNodeKind::EXPRESSION_LIST,
-                                                list_start_pos, children);
+                        return Expected<int32_t>::ok(
+                            ast.emplace_back(AstNodeKind::EXPRESSION_LIST,
+                                             list_start_pos, children));
                     }
                 case Token::LBRACE:
                     {
@@ -1222,23 +1221,24 @@ namespace cl
                         AstChildren children;
                         if(peek() != Token::RBRACE)
                         {
-                            children.push_back(expression());
+                            children.push_back(CL_TRY(expression()));
                             consume(Token::COLON);
-                            children.push_back(expression());
+                            children.push_back(CL_TRY(expression()));
                             while(match(Token::COMMA))
                             {
                                 if(peek() == Token::RBRACE)
                                 {
                                     break;
                                 }
-                                children.push_back(expression());
+                                children.push_back(CL_TRY(expression()));
                                 consume(Token::COLON);
-                                children.push_back(expression());
+                                children.push_back(CL_TRY(expression()));
                             }
                         }
                         consume(Token::RBRACE);
-                        return ast.emplace_back(AstNodeKind::EXPRESSION_DICT,
-                                                dict_start_pos, children);
+                        return Expected<int32_t>::ok(
+                            ast.emplace_back(AstNodeKind::EXPRESSION_DICT,
+                                             dict_start_pos, children));
                     }
 
                 default:
@@ -1328,12 +1328,12 @@ namespace cl
         {
             int32_t source_pos = source_pos_for_token();
             bool lhs_parenthesized = peek() == Token::LPAR;
-            int32_t lhs = star_expressions();
+            int32_t lhs = CL_TRY(star_expressions());
 
             if(match(Token::COLON))
             {
                 CL_TRY(validate_assignment_target(lhs));
-                int32_t annotation = expression();
+                int32_t annotation = CL_TRY(expression());
                 AstChildren annotation_children{lhs, annotation};
                 if(match(Token::EQUAL))
                 {
@@ -1420,21 +1420,21 @@ namespace cl
                 case Token::YIELD:
                     return yield_expr();
                 default:
-                    return Expected<int32_t>::ok(star_expressions());
+                    return star_expressions();
             }
         }
 
-        int32_t return_stmt()
+        Expected<int32_t> return_stmt()
         {
             int32_t source_pos = source_pos_for_token();
             consume(Token::RETURN);
             AstChildren ch;
             if(peek() != Token::NEWLINE && peek() != Token::SEMI)
             {
-                ch.push_back(star_expressions());
+                ch.push_back(CL_TRY(star_expressions()));
             }
-            return ast.emplace_back(AstNodeKind::STATEMENT_RETURN, source_pos,
-                                    ch);
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::STATEMENT_RETURN, source_pos, ch));
         }
 
         Expected<int32_t> raise_stmt()
@@ -1450,7 +1450,7 @@ namespace cl
             }
 
             AstChildren ch;
-            ch.push_back(expression());
+            ch.push_back(CL_TRY(expression()));
             if(peek() == Token::FROM)
             {
                 return not_implemented(L"raise from statement");
@@ -1641,7 +1641,7 @@ namespace cl
             int32_t source_pos = source_pos_for_token();
             consume(Token::DEL);
             AstChildren ch;
-            ch.push_back(star_expressions());
+            ch.push_back(CL_TRY(star_expressions()));
             CL_TRY(validate_del_target(ch.back()));
             while(match(Token::COMMA))
             {
@@ -1649,7 +1649,7 @@ namespace cl
                 {
                     break;
                 }
-                ch.push_back(star_expressions());
+                ch.push_back(CL_TRY(star_expressions()));
                 CL_TRY(validate_del_target(ch.back()));
             }
             return Expected<int32_t>::ok(
@@ -1661,18 +1661,18 @@ namespace cl
             return not_implemented(L"yield statement");
         }
 
-        int32_t assert_stmt()
+        Expected<int32_t> assert_stmt()
         {
             int32_t source_pos = source_pos_for_token();
             consume(Token::ASSERT);
             AstChildren ch;
-            ch.push_back(expression());
+            ch.push_back(CL_TRY(expression()));
             if(match(Token::COMMA))
             {
-                ch.push_back(expression());
+                ch.push_back(CL_TRY(expression()));
             }
-            return ast.emplace_back(AstNodeKind::STATEMENT_ASSERT, source_pos,
-                                    ch);
+            return Expected<int32_t>::ok(ast.emplace_back(
+                AstNodeKind::STATEMENT_ASSERT, source_pos, ch));
         }
 
         int32_t break_stmt()
@@ -1732,7 +1732,7 @@ namespace cl
             switch(peek())
             {
                 case Token::RETURN:
-                    return Expected<int32_t>::ok(return_stmt());
+                    return return_stmt();
                 case Token::RAISE:
                     return raise_stmt();
                 case Token::IMPORT:
@@ -1744,7 +1744,7 @@ namespace cl
                 case Token::YIELD:
                     return yield_stmt();
                 case Token::ASSERT:
-                    return Expected<int32_t>::ok(assert_stmt());
+                    return assert_stmt();
                 case Token::BREAK:
                     return Expected<int32_t>::ok(break_stmt());
                 case Token::CONTINUE:
@@ -1809,8 +1809,8 @@ namespace cl
             if(peek() == Token::RARROW)
             {
                 consume(Token::RARROW);
-                expression();  // just swallow that return type definition, we
-                               // ignore it
+                CL_TRY(expression());  // just swallow that return type
+                                       // definition, we ignore it
             }
 
             consume(Token::COLON);
@@ -1840,7 +1840,7 @@ namespace cl
             AstChildren parameter_children;
             if(match(Token::COLON))
             {
-                expression();
+                CL_TRY(expression());
             }
             if(match(Token::EQUAL))
             {
@@ -1856,7 +1856,7 @@ namespace cl
                         L"SyntaxError",
                         L"kwargs parameter cannot have a default");
                 }
-                parameter_children.push_back(expression());
+                parameter_children.push_back(CL_TRY(expression()));
             }
             return Expected<int32_t>::ok(
                 ast.emplace_back(kind, name_source_pos, parameter_children, v));
@@ -2052,7 +2052,7 @@ namespace cl
                                              source_pos, AstChildren{});
             if(match(Token::LPAR))
             {
-                bases = args();
+                bases = CL_TRY(args());
                 consume(Token::RPAR);
             }
             children.push_back(bases);
@@ -2071,7 +2071,7 @@ namespace cl
             children.push_back(CL_TRY(named_expression()));
             if(match(Token::AS))
             {
-                int32_t target = star_expression();
+                int32_t target = CL_TRY(star_expression());
                 CL_TRY(validate_assignment_target(target));
                 children.push_back(target);
             }
@@ -2112,9 +2112,10 @@ namespace cl
                                      source_pos_and_advance(), v);
                 if(peek() == Token::COMMA)
                 {
-                    AstChildren target_children = sequence_until_stop_token(
-                        target, &Parser::star_expression, Token::COMMA,
-                        Token::IN);
+                    AstChildren target_children =
+                        CL_TRY(sequence_until_stop_token(
+                            target, &Parser::star_expression, Token::COMMA,
+                            Token::IN));
                     target =
                         ast.emplace_back(AstNodeKind::EXPRESSION_TUPLE,
                                          target_start_pos, target_children);
@@ -2122,7 +2123,7 @@ namespace cl
             }
             else
             {
-                target = star_expressions();
+                target = CL_TRY(star_expressions());
             }
             CL_TRY(validate_assignment_target(target));
             children.push_back(target);
@@ -2180,7 +2181,7 @@ namespace cl
                 AstChildren handler_children;
                 if(peek() != Token::COLON)
                 {
-                    handler_children.push_back(expression());
+                    handler_children.push_back(CL_TRY(expression()));
                     if(match(Token::AS))
                     {
                         consume(Token::NAME);
@@ -2356,7 +2357,7 @@ namespace cl
 
         Expected<int32_t> eval()
         {
-            int32_t result = expressions();
+            int32_t result = CL_TRY(expressions());
             while(match(Token::NEWLINE))
             {
             }
