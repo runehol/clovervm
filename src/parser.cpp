@@ -36,11 +36,10 @@ namespace cl
         return result;
     }
 
-    static Expected<AstVector>
-    raise_parse_exception(const std::runtime_error &err,
-                          const wchar_t *default_type_name = nullptr)
+    static const wchar_t *
+    parse_exception_type_from_message(std::wstring &message,
+                                      const wchar_t *default_type_name)
     {
-        std::wstring message = parser_error_message_to_wstring(err.what());
         const wchar_t *type_name = default_type_name;
 
         size_t prefix_end = message.find(L": ");
@@ -58,11 +57,34 @@ namespace cl
             }
         }
 
+        return type_name;
+    }
+
+    static Expected<AstVector>
+    raise_parse_exception(const std::runtime_error &err,
+                          const wchar_t *default_type_name = nullptr)
+    {
+        std::wstring message = parser_error_message_to_wstring(err.what());
+        const wchar_t *type_name =
+            parse_exception_type_from_message(message, default_type_name);
+
         if(type_name == nullptr)
         {
             throw;
         }
         return Expected<AstVector>::raise_exception(type_name, message.c_str());
+    }
+
+    template <typename T>
+    static Expected<T> raise_parse_exception(std::string message,
+                                             const wchar_t *default_type_name)
+    {
+        std::wstring wide_message =
+            parser_error_message_to_wstring(message.c_str());
+        const wchar_t *type_name =
+            parse_exception_type_from_message(wide_message, default_type_name);
+        assert(type_name != nullptr);
+        return Expected<T>::raise_exception(type_name, wide_message.c_str());
     }
 
     static std::wstring remove_number_separators(std::wstring_view token)
@@ -435,6 +457,13 @@ namespace cl
                    token == Token::ERRORTOKEN_OPEN_BRACKET_EOF;
         }
 
+        struct ParseErrorDetails
+        {
+            std::string message;
+            bool incomplete_input = false;
+            uint32_t next_indentation_level = 0;
+        };
+
         ParseError make_parse_error(std::string message,
                                     bool incomplete_input = false,
                                     uint32_t next_indentation_level = 0)
@@ -448,36 +477,69 @@ namespace cl
             return ParseError(std::move(message));
         }
 
-        ParseError
-        parse_error_for_tokenizer_error(Token token, uint32_t source_pos,
-                                        uint32_t error_indentation_level)
+        ParseError make_parse_error(ParseErrorDetails details)
+        {
+            return make_parse_error(std::move(details.message),
+                                    details.incomplete_input,
+                                    details.next_indentation_level);
+        }
+
+        template <typename T>
+        Expected<T> raise_parse_error(ParseErrorDetails details)
+        {
+            if(compile_continuation_info != nullptr)
+            {
+                compile_continuation_info->incomplete_input =
+                    details.incomplete_input;
+                compile_continuation_info->next_indentation_level =
+                    details.next_indentation_level;
+            }
+            return raise_parse_exception<T>(std::move(details.message),
+                                            L"SyntaxError");
+        }
+
+        ParseErrorDetails parse_error_details_for_tokenizer_error(
+            Token token, uint32_t source_pos, uint32_t error_indentation_level)
         {
             switch(token)
             {
                 case Token::ERRORTOKEN_INVALID_CHARACTER:
-                    return make_parse_error(
-                        invalid_character_message(source_pos) +
-                        format_error_context(source_pos));
+                    return {invalid_character_message(source_pos) +
+                            format_error_context(source_pos)};
                 case Token::ERRORTOKEN_UNTERMINATED_STRING:
-                    return make_parse_error(
-                        "SyntaxError: unterminated string literal" +
-                        format_error_context(source_pos));
+                    return {"SyntaxError: unterminated string literal" +
+                            format_error_context(source_pos)};
                 case Token::ERRORTOKEN_UNTERMINATED_TRIPLE_STRING:
-                    return make_parse_error(
-                        "SyntaxError: unterminated triple-quoted string "
-                        "literal" +
-                            format_error_context(source_pos),
-                        true, error_indentation_level);
+                    return {"SyntaxError: unterminated triple-quoted string "
+                            "literal" +
+                                format_error_context(source_pos),
+                            true, error_indentation_level};
                 case Token::ERRORTOKEN_OPEN_BRACKET_EOF:
-                    return make_parse_error(
-                        "SyntaxError: incomplete input" +
-                            format_error_context(source_pos),
-                        true, error_indentation_level);
+                    return {"SyntaxError: incomplete input" +
+                                format_error_context(source_pos),
+                            true, error_indentation_level};
                 default:
-                    return make_parse_error(std::string("Unexpected token ") +
-                                            to_string(token) +
-                                            format_error_context(source_pos));
+                    return {std::string("Unexpected token ") +
+                            to_string(token) +
+                            format_error_context(source_pos)};
             }
+        }
+
+        ParseError
+        parse_error_for_tokenizer_error(Token token, uint32_t source_pos,
+                                        uint32_t error_indentation_level)
+        {
+            return make_parse_error(parse_error_details_for_tokenizer_error(
+                token, source_pos, error_indentation_level));
+        }
+
+        template <typename T>
+        Expected<T>
+        raise_parse_error_for_tokenizer_error(Token token, uint32_t source_pos,
+                                              uint32_t error_indentation_level)
+        {
+            return raise_parse_error<T>(parse_error_details_for_tokenizer_error(
+                token, source_pos, error_indentation_level));
         }
 
         std::string invalid_character_message(uint32_t source_pos)
@@ -1250,12 +1312,12 @@ namespace cl
                     uint32_t source_pos = source_pos_for_token();
                     if(is_tokenizer_error(peek()))
                     {
-                        throw parse_error_for_tokenizer_error(
+                        return raise_parse_error_for_tokenizer_error<int32_t>(
                             peek(), source_pos, indentation_level);
                     }
-                    throw std::runtime_error(
-                        std::string("SyntaxError: Unexpected token ") +
-                        to_string(peek()) + format_error_context(source_pos));
+                    return raise_parse_error<int32_t>(
+                        {std::string("SyntaxError: Unexpected token ") +
+                         to_string(peek()) + format_error_context(source_pos)});
 
                     // TODO NAME, STRING, parenthesis, tuples, lists, dicts, ...
                     // (ELLIPSIS)
