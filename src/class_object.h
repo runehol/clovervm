@@ -114,13 +114,6 @@ namespace cl
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
         ClassObject(
-            ClassObject *metaclass, TValue<String> name,
-            uint32_t instance_default_inline_slot_count, TValue<Tuple> bases,
-            NativeLayoutId instance_native_layout_id,
-            ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
-            ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
-
-        ClassObject(
             TValue<String> name, uint32_t instance_default_inline_slot_count,
             ClassObject *single_base, NativeLayoutId instance_native_layout_id,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),

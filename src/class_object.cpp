@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <deque>
 #include <iterator>
-#include <stdexcept>
 #include <vector>
 
 namespace cl
@@ -293,33 +292,6 @@ namespace cl
                       instance_shape_flags)
     {
         install_bootstrap_class(metaclass);
-    }
-
-    ClassObject::ClassObject(ClassObject *metaclass, TValue<String> _name,
-                             uint32_t _instance_default_inline_slot_count,
-                             TValue<Tuple> _bases,
-                             NativeLayoutId instance_native_layout_id,
-                             ShapeFlags class_shape_flags,
-                             ShapeFlags instance_shape_flags)
-        : ClassObject(BootstrapObjectTag{}, _name,
-                      _instance_default_inline_slot_count, nullptr,
-                      instance_native_layout_id, class_shape_flags,
-                      instance_shape_flags)
-    {
-        install_bootstrap_class(metaclass);
-        Expected<void> bases_valid = validate_bases(_bases);
-        if(bases_valid.has_exception())
-        {
-            throw std::runtime_error("TypeError: invalid class bases");
-        }
-        bases = _bases.raw_value();
-        Expected<TValue<Tuple>> computed_mro =
-            compute_mro(this, _bases.extract());
-        if(computed_mro.has_exception())
-        {
-            throw std::runtime_error("TypeError: invalid class MRO");
-        }
-        mro = computed_mro.value().raw_value();
     }
 
     ClassObject::ClassObject(TValue<String> _name,
