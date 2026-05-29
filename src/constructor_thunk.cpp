@@ -146,37 +146,39 @@ namespace cl
         CodeObjectBuilder &code = *code_storage;
         reserve_parameter_slots_and_frame_header(&code);
 
-        uint32_t class_const_idx = code.allocate_constant(Value::from_oop(cls));
-        code.emit_create_instance_known_class(0, class_const_idx);
+        uint32_t class_const_idx =
+            code.allocate_constant(Value::from_oop(cls)).value();
+        code.emit_create_instance_known_class(0, class_const_idx).value();
         if(!has_init)
         {
-            code.emit_return(0);
-            return code.finalize();
+            code.emit_return(0).value();
+            return code.finalize().value();
         }
 
         {
             CodeObjectBuilder::TemporaryReg instance_reg(code);
 
             uint32_t init_code_const_idx =
-                code.allocate_constant(Value::from_oop(init_code));
-            code.emit_star(0, instance_reg);
+                code.allocate_constant(Value::from_oop(init_code)).value();
+            code.emit_star(0, instance_reg).value();
 
-            code.emit_ldar(0, instance_reg);
-            code.emit_star(0, OutgoingArgReg(0));
+            code.emit_ldar(0, instance_reg).value();
+            code.emit_star(0, OutgoingArgReg(0)).value();
             for(uint32_t param_idx = 0; param_idx < code.n_parameters();
                 ++param_idx)
             {
-                code.emit_ldar(0, param_idx);
-                code.emit_star(0, OutgoingArgReg(param_idx + 1));
+                code.emit_ldar(0, param_idx).value();
+                code.emit_star(0, OutgoingArgReg(param_idx + 1)).value();
             }
 
             code.emit_call_code_object(0, init_code_const_idx,
-                                       OutgoingArgReg(0), init_n_parameters);
-            code.emit_check_init_returned_none(0);
-            code.emit_ldar(0, instance_reg);
-            code.emit_return(0);
+                                       OutgoingArgReg(0), init_n_parameters)
+                .value();
+            code.emit_check_init_returned_none(0).value();
+            code.emit_ldar(0, instance_reg).value();
+            code.emit_return(0).value();
         }
-        return code.finalize();
+        return code.finalize().value();
     }
 
     static TValue<Tuple>

@@ -43,26 +43,27 @@ namespace cl
 
         {
             CodeObjectBuilder::TemporaryReg callable_reg(code);
-            code.emit_ldar(0, 0);
-            code.emit_star(0, callable_reg);
+            code.emit_ldar(0, 0).value();
+            code.emit_star(0, callable_reg).value();
 
             for(uint32_t arg_idx = 0; arg_idx < n_args; ++arg_idx)
             {
-                code.emit_ldar(0, arg_idx + 1);
-                code.emit_star(0, OutgoingArgReg(arg_idx));
+                code.emit_ldar(0, arg_idx + 1).value();
+                code.emit_star(0, OutgoingArgReg(arg_idx)).value();
             }
 
             JumpTarget handler(&code);
             ExceptionTableRangeBuilder range(&code, handler);
             code.emit_call_positional(0, callable_reg, OutgoingArgReg(0),
-                                      uint8_t(n_args));
+                                      uint8_t(n_args))
+                .value();
             range.close();
-            code.emit_return_to_native(0);
+            code.emit_return_to_native(0).value();
 
-            handler.resolve();
-            code.emit_return_pending_exception_to_native(0);
+            handler.resolve().value();
+            code.emit_return_pending_exception_to_native(0).value();
         }
-        return code.finalize();
+        return code.finalize().value();
     }
 
 }  // namespace cl

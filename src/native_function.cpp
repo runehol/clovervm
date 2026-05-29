@@ -33,18 +33,21 @@ namespace cl
             builder.function_signature().default_presence_mask =
                 (uint64_t(1) << n_defaults) - 1;
         }
-        uint32_t target_idx = builder.add_native_function_target(target);
+        uint32_t target_idx =
+            builder.add_native_function_target(target).value();
         if(is_extension)
         {
-            builder.emit_call_extension(0, call_opcode, uint8_t(target_idx));
+            builder.emit_call_extension(0, call_opcode, uint8_t(target_idx))
+                .value();
         }
         else
         {
-            builder.emit_call_intrinsic(0, call_opcode, uint8_t(target_idx));
+            builder.emit_call_intrinsic(0, call_opcode, uint8_t(target_idx))
+                .value();
         }
-        builder.emit_return_or_raise_exception(0);
+        builder.emit_return_or_raise_exception(0).value();
         TValue<CodeObject> code =
-            TValue<CodeObject>::from_oop(builder.finalize());
+            TValue<CodeObject>::from_oop(builder.finalize().value());
         if(default_parameters.has_value())
         {
             return vm->make_immortal_object_value<Function>(code, docstring,

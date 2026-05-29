@@ -202,9 +202,9 @@ namespace cl
             TValue<ModuleObject>::from_oop(context.make_test_module_object(
                 name, context.vm().global_builtins_module().raw_value())),
             nullptr, name);
-        builder.emit_lda_smi(0, 42);
-        builder.emit_return(0);
-        return builder.finalize();
+        builder.emit_lda_smi(0, 42).value();
+        builder.emit_return(0).value();
+        return builder.finalize().value();
     }
 
     TEST(ThreadState, CallSafepointPublishesCommittedCalleeFrame)

@@ -2,6 +2,7 @@
 #define CL_CODE_OBJECT_BUILDER_H
 
 #include "code_object.h"
+#include "typed_value.h"
 #include <cassert>
 #include <cstdint>
 #include <unordered_map>
@@ -39,20 +40,21 @@ namespace cl
 
         ~JumpTarget();
 
-        void resolve();
+        Expected<void> resolve();
 
-        void add_relocation(uint32_t pos);
-        void add_bytecode_relative_i16_relocation(uint32_t operand_offset);
-        void
+        Expected<void> add_relocation(uint32_t pos);
+        Expected<void>
+        add_bytecode_relative_i16_relocation(uint32_t operand_offset);
+        Expected<void>
         add_exception_table_start_absolute_u32_relocation(uint32_t entry_idx);
-        void
+        Expected<void>
         add_exception_table_end_absolute_u32_relocation(uint32_t entry_idx);
-        void
+        Expected<void>
         add_exception_table_handler_absolute_u32_relocation(uint32_t entry_idx);
 
     private:
-        void add_relocation(JumpRelocation relocation);
-        void resolve_relocation(JumpRelocation relocation);
+        Expected<void> add_relocation(JumpRelocation relocation);
+        Expected<void> resolve_relocation(JumpRelocation relocation);
 
         CodeObjectBuilder *builder;
         int32_t target;
@@ -262,117 +264,145 @@ namespace cl
             return code_obj->size();
         }
 
-        uint32_t emit_clear_local(uint32_t source_offset, uint32_t reg);
-        uint32_t emit_ldar(uint32_t source_offset, uint32_t reg);
-        uint32_t emit_load_local_checked(uint32_t source_offset, uint32_t reg);
-        uint32_t emit_lda_global(uint32_t source_offset, uint8_t name_idx);
-        uint32_t emit_star(uint32_t source_offset, uint32_t reg);
-        uint32_t emit_star(uint32_t source_offset, OutgoingArgReg reg);
-        uint32_t emit_sta_global(uint32_t source_offset, uint8_t name_idx);
-        uint32_t emit_del_local(uint32_t source_offset, uint32_t reg);
-        uint32_t emit_del_global(uint32_t source_offset, uint8_t name_idx);
-        uint32_t emit_lda_none(uint32_t source_offset);
-        uint32_t emit_lda_true(uint32_t source_offset);
-        uint32_t emit_lda_false(uint32_t source_offset);
-        uint32_t emit_lda_smi(uint32_t source_offset, int8_t smi);
-        uint32_t emit_lda_constant(uint32_t source_offset,
-                                   uint8_t constant_idx);
-        uint32_t emit_return(uint32_t source_offset);
-        uint32_t emit_return_or_raise_exception(uint32_t source_offset);
-        uint32_t emit_return_to_native(uint32_t source_offset);
-        uint32_t
+        Expected<uint32_t> emit_clear_local(uint32_t source_offset,
+                                            uint32_t reg);
+        Expected<uint32_t> emit_ldar(uint32_t source_offset, uint32_t reg);
+        Expected<uint32_t> emit_load_local_checked(uint32_t source_offset,
+                                                   uint32_t reg);
+        Expected<uint32_t> emit_lda_global(uint32_t source_offset,
+                                           uint8_t name_idx);
+        Expected<uint32_t> emit_star(uint32_t source_offset, uint32_t reg);
+        Expected<uint32_t> emit_star(uint32_t source_offset,
+                                     OutgoingArgReg reg);
+        Expected<uint32_t> emit_sta_global(uint32_t source_offset,
+                                           uint8_t name_idx);
+        Expected<uint32_t> emit_del_local(uint32_t source_offset, uint32_t reg);
+        Expected<uint32_t> emit_del_global(uint32_t source_offset,
+                                           uint8_t name_idx);
+        Expected<uint32_t> emit_lda_none(uint32_t source_offset);
+        Expected<uint32_t> emit_lda_true(uint32_t source_offset);
+        Expected<uint32_t> emit_lda_false(uint32_t source_offset);
+        Expected<uint32_t> emit_lda_smi(uint32_t source_offset, int8_t smi);
+        Expected<uint32_t> emit_lda_constant(uint32_t source_offset,
+                                             uint8_t constant_idx);
+        Expected<uint32_t> emit_return(uint32_t source_offset);
+        Expected<uint32_t>
+        emit_return_or_raise_exception(uint32_t source_offset);
+        Expected<uint32_t> emit_return_to_native(uint32_t source_offset);
+        Expected<uint32_t>
         emit_return_pending_exception_to_native(uint32_t source_offset);
-        uint32_t emit_lda_active_exception(uint32_t source_offset);
-        uint32_t emit_active_exception_is_instance(uint32_t source_offset);
-        uint32_t emit_drain_active_exception_into(uint32_t source_offset,
-                                                  uint32_t reg);
-        uint32_t emit_clear_active_exception(uint32_t source_offset);
-        uint32_t emit_reraise_active_exception(uint32_t source_offset);
-        uint32_t emit_build_class(uint32_t source_offset);
-        uint32_t emit_check_init_returned_none(uint32_t source_offset);
-        uint32_t emit_raise_assertion_error(uint32_t source_offset);
-        uint32_t
+        Expected<uint32_t> emit_lda_active_exception(uint32_t source_offset);
+        Expected<uint32_t>
+        emit_active_exception_is_instance(uint32_t source_offset);
+        Expected<uint32_t>
+        emit_drain_active_exception_into(uint32_t source_offset, uint32_t reg);
+        Expected<uint32_t> emit_clear_active_exception(uint32_t source_offset);
+        Expected<uint32_t>
+        emit_reraise_active_exception(uint32_t source_offset);
+        Expected<uint32_t> emit_build_class(uint32_t source_offset);
+        Expected<uint32_t>
+        emit_check_init_returned_none(uint32_t source_offset);
+        Expected<uint32_t> emit_raise_assertion_error(uint32_t source_offset);
+        Expected<uint32_t>
         emit_raise_assertion_error_with_message(uint32_t source_offset);
-        uint32_t emit_raise_unwind(uint32_t source_offset);
-        uint32_t emit_raise_unwind_with_context(uint32_t source_offset,
-                                                uint32_t context_reg);
-        uint32_t emit_raise_bare(uint32_t source_offset);
-        uint32_t emit_write_stdout(uint32_t source_offset);
-        uint32_t emit_create_instance_known_class(uint32_t source_offset,
-                                                  uint8_t class_idx);
-        uint32_t emit_create_function(uint32_t source_offset, uint8_t code_idx);
-        uint32_t emit_create_function_with_defaults(uint32_t source_offset,
-                                                    uint8_t code_idx,
-                                                    uint32_t defaults_reg);
-        uint32_t emit_create_tuple(uint32_t source_offset, uint32_t first_reg,
-                                   uint8_t n_regs);
-        uint32_t emit_create_tuple(uint32_t source_offset, OutgoingArgReg reg,
-                                   uint8_t n_regs);
-        uint32_t emit_create_list(uint32_t source_offset, uint32_t first_reg,
-                                  uint8_t n_regs);
-        uint32_t emit_create_dict(uint32_t source_offset, uint32_t first_reg,
-                                  uint8_t n_entries);
-        uint32_t emit_create_class(uint32_t source_offset,
-                                   uint8_t body_constant_idx,
-                                   OutgoingArgReg first_arg_reg);
-        uint32_t emit_load_attr(uint32_t source_offset, uint32_t receiver_reg,
-                                uint8_t name_idx);
-        uint32_t emit_store_attr(uint32_t source_offset, uint32_t receiver_reg,
-                                 uint8_t name_idx);
-        uint32_t emit_del_attr(uint32_t source_offset, uint32_t receiver_reg,
-                               uint8_t name_idx);
-        uint32_t emit_call_method_attr_positional(uint32_t source_offset,
-                                                  OutgoingArgReg first_arg_reg,
-                                                  uint8_t name_idx,
-                                                  uint8_t argc);
-        uint32_t emit_call_method_attr_keyword(
+        Expected<uint32_t> emit_raise_unwind(uint32_t source_offset);
+        Expected<uint32_t>
+        emit_raise_unwind_with_context(uint32_t source_offset,
+                                       uint32_t context_reg);
+        Expected<uint32_t> emit_raise_bare(uint32_t source_offset);
+        Expected<uint32_t> emit_write_stdout(uint32_t source_offset);
+        Expected<uint32_t>
+        emit_create_instance_known_class(uint32_t source_offset,
+                                         uint8_t class_idx);
+        Expected<uint32_t> emit_create_function(uint32_t source_offset,
+                                                uint8_t code_idx);
+        Expected<uint32_t> emit_create_function_with_defaults(
+            uint32_t source_offset, uint8_t code_idx, uint32_t defaults_reg);
+        Expected<uint32_t> emit_create_tuple(uint32_t source_offset,
+                                             uint32_t first_reg,
+                                             uint8_t n_regs);
+        Expected<uint32_t> emit_create_tuple(uint32_t source_offset,
+                                             OutgoingArgReg reg,
+                                             uint8_t n_regs);
+        Expected<uint32_t> emit_create_list(uint32_t source_offset,
+                                            uint32_t first_reg, uint8_t n_regs);
+        Expected<uint32_t> emit_create_dict(uint32_t source_offset,
+                                            uint32_t first_reg,
+                                            uint8_t n_entries);
+        Expected<uint32_t> emit_create_class(uint32_t source_offset,
+                                             uint8_t body_constant_idx,
+                                             OutgoingArgReg first_arg_reg);
+        Expected<uint32_t> emit_load_attr(uint32_t source_offset,
+                                          uint32_t receiver_reg,
+                                          uint8_t name_idx);
+        Expected<uint32_t> emit_store_attr(uint32_t source_offset,
+                                           uint32_t receiver_reg,
+                                           uint8_t name_idx);
+        Expected<uint32_t> emit_del_attr(uint32_t source_offset,
+                                         uint32_t receiver_reg,
+                                         uint8_t name_idx);
+        Expected<uint32_t>
+        emit_call_method_attr_positional(uint32_t source_offset,
+                                         OutgoingArgReg first_arg_reg,
+                                         uint8_t name_idx, uint8_t argc);
+        Expected<uint32_t> emit_call_method_attr_keyword(
             uint32_t source_offset, OutgoingArgReg first_arg_reg,
             uint8_t name_idx, uint8_t n_pos_args, uint32_t first_kw_value_reg,
             uint8_t n_kw_args, uint8_t keyword_names_idx);
-        uint32_t emit_call_special_method(
+        Expected<uint32_t> emit_call_special_method(
             uint32_t source_offset, OutgoingArgReg first_arg_reg,
             uint8_t name_idx, uint8_t argc, uint8_t missing_exception_type_idx,
             uint8_t missing_exception_message_idx);
-        uint32_t emit_load_subscript(uint32_t source_offset,
-                                     uint32_t receiver_reg);
-        uint32_t emit_store_subscript(uint32_t source_offset,
-                                      uint32_t receiver_reg, uint32_t key_reg);
-        uint32_t emit_del_subscript(uint32_t source_offset,
-                                    uint32_t receiver_reg, uint32_t key_reg);
-        uint32_t emit_jump(uint32_t source_offset, JumpTarget &target);
-        uint32_t emit_jump_if_false(uint32_t source_offset, JumpTarget &target);
-        uint32_t emit_jump_if_true(uint32_t source_offset, JumpTarget &target);
-        uint32_t emit_for_iter(uint32_t source_offset, uint32_t iterator_reg,
-                               JumpTarget &target);
-        uint32_t emit_for_prep_range(uint32_t source_offset, Bytecode op,
-                                     uint32_t range_regs, JumpTarget &target);
-        uint32_t emit_for_iter_range(uint32_t source_offset, Bytecode op,
-                                     uint32_t range_regs, JumpTarget &target);
-        uint32_t emit_binary_op(uint32_t source_offset, Bytecode op,
-                                uint32_t lhs_reg);
-        uint32_t emit_binary_smi_op(uint32_t source_offset, Bytecode op,
-                                    int8_t rhs);
-        uint32_t emit_compare_op(uint32_t source_offset, Bytecode op,
-                                 uint32_t lhs_reg);
-        uint32_t emit_unary_op(uint32_t source_offset, Bytecode op);
-        uint32_t emit_call_code_object(uint32_t source_offset,
-                                       uint8_t code_object_idx,
-                                       OutgoingArgReg first_arg_reg,
-                                       uint8_t argc);
-        uint32_t emit_import_name(uint32_t source_offset, uint8_t name_idx,
-                                  uint8_t level);
-        uint32_t emit_import_from(uint32_t source_offset, uint8_t name_idx);
-        uint32_t emit_call_intrinsic(uint32_t source_offset, Bytecode op,
-                                     uint8_t target_idx);
-        uint32_t emit_call_extension(uint32_t source_offset, Bytecode op,
-                                     uint8_t target_idx);
-        uint32_t emit_call_runtime_intrinsic0(uint32_t source_offset,
-                                              RuntimeIntrinsic0 intrinsic);
-        uint32_t emit_call_positional(uint32_t source_offset,
-                                      uint32_t callable_reg,
-                                      OutgoingArgReg first_arg_reg,
-                                      uint8_t argc);
-        uint32_t
+        Expected<uint32_t> emit_load_subscript(uint32_t source_offset,
+                                               uint32_t receiver_reg);
+        Expected<uint32_t> emit_store_subscript(uint32_t source_offset,
+                                                uint32_t receiver_reg,
+                                                uint32_t key_reg);
+        Expected<uint32_t> emit_del_subscript(uint32_t source_offset,
+                                              uint32_t receiver_reg,
+                                              uint32_t key_reg);
+        Expected<uint32_t> emit_jump(uint32_t source_offset,
+                                     JumpTarget &target);
+        Expected<uint32_t> emit_jump_if_false(uint32_t source_offset,
+                                              JumpTarget &target);
+        Expected<uint32_t> emit_jump_if_true(uint32_t source_offset,
+                                             JumpTarget &target);
+        Expected<uint32_t> emit_for_iter(uint32_t source_offset,
+                                         uint32_t iterator_reg,
+                                         JumpTarget &target);
+        Expected<uint32_t> emit_for_prep_range(uint32_t source_offset,
+                                               Bytecode op, uint32_t range_regs,
+                                               JumpTarget &target);
+        Expected<uint32_t> emit_for_iter_range(uint32_t source_offset,
+                                               Bytecode op, uint32_t range_regs,
+                                               JumpTarget &target);
+        Expected<uint32_t> emit_binary_op(uint32_t source_offset, Bytecode op,
+                                          uint32_t lhs_reg);
+        Expected<uint32_t> emit_binary_smi_op(uint32_t source_offset,
+                                              Bytecode op, int8_t rhs);
+        Expected<uint32_t> emit_compare_op(uint32_t source_offset, Bytecode op,
+                                           uint32_t lhs_reg);
+        Expected<uint32_t> emit_unary_op(uint32_t source_offset, Bytecode op);
+        Expected<uint32_t> emit_call_code_object(uint32_t source_offset,
+                                                 uint8_t code_object_idx,
+                                                 OutgoingArgReg first_arg_reg,
+                                                 uint8_t argc);
+        Expected<uint32_t> emit_import_name(uint32_t source_offset,
+                                            uint8_t name_idx, uint8_t level);
+        Expected<uint32_t> emit_import_from(uint32_t source_offset,
+                                            uint8_t name_idx);
+        Expected<uint32_t> emit_call_intrinsic(uint32_t source_offset,
+                                               Bytecode op, uint8_t target_idx);
+        Expected<uint32_t> emit_call_extension(uint32_t source_offset,
+                                               Bytecode op, uint8_t target_idx);
+        Expected<uint32_t>
+        emit_call_runtime_intrinsic0(uint32_t source_offset,
+                                     RuntimeIntrinsic0 intrinsic);
+        Expected<uint32_t> emit_call_positional(uint32_t source_offset,
+                                                uint32_t callable_reg,
+                                                OutgoingArgReg first_arg_reg,
+                                                uint8_t argc);
+        Expected<uint32_t>
         emit_call_keyword(uint32_t source_offset, uint32_t callable_reg,
                           OutgoingArgReg first_arg_reg, uint8_t n_pos_args,
                           uint32_t first_kw_value_reg, uint8_t n_kw_args,
@@ -382,73 +412,80 @@ namespace cl
         uint32_t add_exception_table_entry(uint32_t start_pc, uint32_t end_pc,
                                            JumpTarget &handler);
 
-        uint32_t allocate_constant(Value val);
-        uint32_t allocate_constant(TValue<String> val)
+        Expected<uint8_t> allocate_constant(Value val);
+        Expected<uint8_t> allocate_constant(TValue<String> val)
         {
             return allocate_constant(val.raw_value());
         }
-        uint32_t add_native_function_target(NativeFunctionTarget target);
+        Expected<uint8_t>
+        add_native_function_target(NativeFunctionTarget target);
 
-        CodeObject *finalize();
+        Expected<CodeObject *> finalize();
 
     private:
         friend class JumpTarget;
 
-        uint32_t allocate_attribute_read_cache();
-        uint32_t allocate_attribute_mutation_cache();
-        uint32_t allocate_module_global_read_cache();
-        uint32_t allocate_module_global_mutation_cache();
-        uint32_t allocate_function_call_cache();
-        uint32_t allocate_keyword_call_cache();
+        Expected<uint8_t> allocate_attribute_read_cache();
+        Expected<uint8_t> allocate_attribute_mutation_cache();
+        Expected<uint8_t> allocate_module_global_read_cache();
+        Expected<uint8_t> allocate_module_global_mutation_cache();
+        Expected<uint8_t> allocate_function_call_cache();
+        Expected<uint8_t> allocate_keyword_call_cache();
         uint32_t emplace_back(uint32_t source_offset, uint8_t c);
-        uint32_t emit_opcode(uint32_t source_offset, Bytecode c);
-        uint32_t emit_opcode_smi(uint32_t source_offset, Bytecode c,
-                                 int8_t smi);
-        uint32_t emit_opcode_constant_idx(uint32_t source_offset, Bytecode c,
-                                          uint8_t constant_idx);
-        uint32_t emit_opcode_constant_idx_cache_idx(uint32_t source_offset,
+        Expected<uint32_t> emit_opcode(uint32_t source_offset, Bytecode c);
+        Expected<uint32_t> emit_opcode_smi(uint32_t source_offset, Bytecode c,
+                                           int8_t smi);
+        Expected<uint32_t> emit_opcode_constant_idx(uint32_t source_offset,
                                                     Bytecode c,
-                                                    uint8_t constant_idx,
-                                                    uint8_t cache_idx);
-        uint32_t emit_opcode_constant_idx_reg(uint32_t source_offset,
-                                              Bytecode c, uint8_t constant_idx,
-                                              uint32_t reg);
-        uint32_t emit_opcode_constant_idx_reg(uint32_t source_offset,
-                                              Bytecode c, uint8_t constant_idx,
-                                              OutgoingArgReg reg);
-        uint32_t emit_opcode_constant_idx_reg_argc(uint32_t source_offset,
-                                                   Bytecode c,
-                                                   uint8_t constant_idx,
-                                                   OutgoingArgReg reg,
-                                                   uint8_t argc);
-        uint32_t emit_opcode_reg(uint32_t source_offset, Bytecode c,
-                                 uint32_t reg);
-        uint32_t emit_opcode_reg(uint32_t source_offset, Bytecode c,
-                                 OutgoingArgReg reg);
-        uint32_t emit_opcode_reg_range(uint32_t source_offset, Bytecode c,
-                                       uint32_t reg, uint8_t n_regs);
-        uint32_t emit_opcode_reg_range(uint32_t source_offset, Bytecode c,
-                                       OutgoingArgReg reg, uint8_t n_regs);
-        uint32_t emit_opcode_reg_constant_idx(uint32_t source_offset,
-                                              Bytecode c, uint32_t reg,
-                                              uint8_t constant_idx);
-        uint32_t emit_opcode_native_target_idx(uint32_t source_offset,
-                                               Bytecode c, uint8_t target_idx);
-        uint32_t emit_opcode_reg_constant_idx_cache_idx(uint32_t source_offset,
+                                                    uint8_t constant_idx);
+        Expected<uint32_t>
+        emit_opcode_constant_idx_cache_idx(uint32_t source_offset, Bytecode c,
+                                           uint8_t constant_idx,
+                                           uint8_t cache_idx);
+        Expected<uint32_t> emit_opcode_constant_idx_reg(uint32_t source_offset,
+                                                        Bytecode c,
+                                                        uint8_t constant_idx,
+                                                        uint32_t reg);
+        Expected<uint32_t> emit_opcode_constant_idx_reg(uint32_t source_offset,
+                                                        Bytecode c,
+                                                        uint8_t constant_idx,
+                                                        OutgoingArgReg reg);
+        Expected<uint32_t>
+        emit_opcode_constant_idx_reg_argc(uint32_t source_offset, Bytecode c,
+                                          uint8_t constant_idx,
+                                          OutgoingArgReg reg, uint8_t argc);
+        Expected<uint32_t> emit_opcode_reg(uint32_t source_offset, Bytecode c,
+                                           uint32_t reg);
+        Expected<uint32_t> emit_opcode_reg(uint32_t source_offset, Bytecode c,
+                                           OutgoingArgReg reg);
+        Expected<uint32_t> emit_opcode_reg_range(uint32_t source_offset,
+                                                 Bytecode c, uint32_t reg,
+                                                 uint8_t n_regs);
+        Expected<uint32_t> emit_opcode_reg_range(uint32_t source_offset,
+                                                 Bytecode c, OutgoingArgReg reg,
+                                                 uint8_t n_regs);
+        Expected<uint32_t> emit_opcode_reg_constant_idx(uint32_t source_offset,
                                                         Bytecode c,
                                                         uint32_t reg,
-                                                        uint8_t constant_idx,
-                                                        uint8_t cache_idx);
-        uint32_t emit_opcode_reg_constant_idx_cache_idx_argc(
+                                                        uint8_t constant_idx);
+        Expected<uint32_t> emit_opcode_native_target_idx(uint32_t source_offset,
+                                                         Bytecode c,
+                                                         uint8_t target_idx);
+        Expected<uint32_t> emit_opcode_reg_constant_idx_cache_idx(
+            uint32_t source_offset, Bytecode c, uint32_t reg,
+            uint8_t constant_idx, uint8_t cache_idx);
+        Expected<uint32_t> emit_opcode_reg_constant_idx_cache_idx_argc(
             uint32_t source_offset, Bytecode c, OutgoingArgReg reg,
             uint8_t constant_idx, uint8_t read_cache_idx,
             uint8_t call_cache_idx, uint8_t argc);
-        uint32_t emit_opcode_reg_reg(uint32_t source_offset, Bytecode c,
-                                     uint32_t first_reg, uint32_t second_reg);
-        uint32_t emit_opcode_reg_jump(uint32_t source_offset, Bytecode c,
-                                      uint32_t reg, JumpTarget &target);
-        uint32_t emit_jump(uint32_t source_offset, Bytecode c,
-                           JumpTarget &target);
+        Expected<uint32_t> emit_opcode_reg_reg(uint32_t source_offset,
+                                               Bytecode c, uint32_t first_reg,
+                                               uint32_t second_reg);
+        Expected<uint32_t> emit_opcode_reg_jump(uint32_t source_offset,
+                                                Bytecode c, uint32_t reg,
+                                                JumpTarget &target);
+        Expected<uint32_t> emit_jump(uint32_t source_offset, Bytecode c,
+                                     JumpTarget &target);
         void set_int16(uint32_t pos, int16_t v);
         void set_exception_table_start_pc(uint32_t entry_idx, uint32_t pc);
         void set_exception_table_end_pc(uint32_t entry_idx, uint32_t pc);

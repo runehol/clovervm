@@ -46,13 +46,13 @@ make_module_global_test_code(test::VmTestContext &context, ModuleObject *module,
                               TValue<ModuleObject>::from_oop(module), nullptr,
                               name);
     emit_body(builder);
-    return builder.finalize();
+    return builder.finalize().value();
 }
 
 static uint8_t allocate_name_constant(CodeObjectBuilder &builder,
                                       TValue<String> name)
 {
-    uint32_t name_idx = builder.allocate_constant(name);
+    uint32_t name_idx = builder.allocate_constant(name).value();
     assert(name_idx <= UINT8_MAX);
     return uint8_t(name_idx);
 }
@@ -340,8 +340,8 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsModuleSlot)
         context, module, L"<module-global-load-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_global(0, name_idx);
-            builder.emit_return(0);
+            builder.emit_lda_global(0, name_idx).value();
+            builder.emit_return(0).value();
         });
 
     EXPECT_EQ(Value::from_smi(42),
@@ -375,8 +375,8 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalReadsBuiltinsAfterModuleMiss)
         context, module, L"<module-global-builtin-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_global(0, name_idx);
-            builder.emit_return(0);
+            builder.emit_lda_global(0, name_idx).value();
+            builder.emit_return(0).value();
         });
 
     EXPECT_EQ(Value::from_smi(7),
@@ -404,8 +404,8 @@ TEST(ModuleGlobalBytecode, LoadModuleGlobalMissingNameRaisesNameError)
         context, module, L"<module-global-missing-load-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_global(0, name_idx);
-            builder.emit_return(0);
+            builder.emit_lda_global(0, name_idx).value();
+            builder.emit_return(0).value();
         });
 
     Value result = context.thread()->run_clovervm_code_object(code);
@@ -434,10 +434,10 @@ TEST(ModuleGlobalBytecode, StoreModuleGlobalWritesModuleSlot)
         context, module, L"<module-global-store-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_smi(0, 11);
-            builder.emit_sta_global(0, name_idx);
-            builder.emit_lda_global(0, name_idx);
-            builder.emit_return(0);
+            builder.emit_lda_smi(0, 11).value();
+            builder.emit_sta_global(0, name_idx).value();
+            builder.emit_lda_global(0, name_idx).value();
+            builder.emit_return(0).value();
         });
 
     EXPECT_EQ(Value::from_smi(11),
@@ -482,9 +482,9 @@ TEST(ModuleGlobalBytecode, DeleteModuleGlobalDeletesModuleSlot)
         context, module, L"<module-global-delete-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_del_global(0, name_idx);
-            builder.emit_lda_global(0, name_idx);
-            builder.emit_return(0);
+            builder.emit_del_global(0, name_idx).value();
+            builder.emit_lda_global(0, name_idx).value();
+            builder.emit_return(0).value();
         });
 
     EXPECT_EQ(Value::from_smi(2),
@@ -514,8 +514,8 @@ TEST(ModuleGlobalBytecode, DeleteModuleGlobalMissingNameRaisesNameError)
         context, module, L"<module-global-missing-delete-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_del_global(0, name_idx);
-            builder.emit_return(0);
+            builder.emit_del_global(0, name_idx).value();
+            builder.emit_return(0).value();
         });
 
     Value result = context.thread()->run_clovervm_code_object(code);
@@ -543,8 +543,8 @@ TEST(ModuleGlobalBytecode, CachedLoadReadsReboundModuleValue)
         context, module, L"<module-global-cached-rebind-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_global(0, name_idx);
-            builder.emit_return(0);
+            builder.emit_lda_global(0, name_idx).value();
+            builder.emit_return(0).value();
         });
 
     EXPECT_EQ(Value::from_smi(1),
@@ -581,8 +581,8 @@ TEST(ModuleGlobalBytecode, CachedModuleLoadInvalidatesAndRevealsBuiltin)
         context, module, L"<module-global-cached-delete-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_global(0, name_idx);
-            builder.emit_return(0);
+            builder.emit_lda_global(0, name_idx).value();
+            builder.emit_return(0).value();
         });
 
     EXPECT_EQ(Value::from_smi(1),
@@ -620,8 +620,8 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadReadsReboundBuiltinsValue)
         context, module, L"<module-global-cached-builtin-rebind-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_global(0, name_idx);
-            builder.emit_return(0);
+            builder.emit_lda_global(0, name_idx).value();
+            builder.emit_return(0).value();
         });
 
     EXPECT_EQ(Value::from_smi(1),
@@ -665,8 +665,8 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadInvalidatesOnBuiltinsReassignment)
         context, module, L"<module-global-cached-builtin-reassign-test>",
         [&](CodeObjectBuilder &builder) {
             uint8_t name_idx = allocate_name_constant(builder, global_name);
-            builder.emit_lda_global(0, name_idx);
-            builder.emit_return(0);
+            builder.emit_lda_global(0, name_idx).value();
+            builder.emit_return(0).value();
         });
 
     EXPECT_EQ(Value::from_smi(1),

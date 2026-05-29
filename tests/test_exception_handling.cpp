@@ -92,20 +92,20 @@ make_lda_active_exception_handler_code(test::VmTestContext &test_context,
         TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
             name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
-    uint32_t constant_idx = builder.allocate_constant(raised);
+    uint32_t constant_idx = builder.allocate_constant(raised).value();
     JumpTarget handler(&builder);
 
     {
         ExceptionTableRangeBuilder range(&builder, handler);
-        builder.emit_lda_constant(0, uint8_t(constant_idx));
-        builder.emit_raise_unwind(0);
+        builder.emit_lda_constant(0, uint8_t(constant_idx)).value();
+        builder.emit_raise_unwind(0).value();
         range.close();
     }
 
-    handler.resolve();
-    builder.emit_lda_active_exception(0);
-    builder.emit_return(0);
-    return builder.finalize();
+    handler.resolve().value();
+    builder.emit_lda_active_exception(0).value();
+    builder.emit_return(0).value();
+    return builder.finalize().value();
 }
 
 static CodeObject *
@@ -119,21 +119,21 @@ make_clear_active_exception_handler_code(test::VmTestContext &test_context,
         TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
             name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
-    uint32_t constant_idx = builder.allocate_constant(raised);
+    uint32_t constant_idx = builder.allocate_constant(raised).value();
     JumpTarget handler(&builder);
 
     {
         ExceptionTableRangeBuilder range(&builder, handler);
-        builder.emit_lda_constant(0, uint8_t(constant_idx));
-        builder.emit_raise_unwind(0);
+        builder.emit_lda_constant(0, uint8_t(constant_idx)).value();
+        builder.emit_raise_unwind(0).value();
         range.close();
     }
 
-    handler.resolve();
-    builder.emit_clear_active_exception(0);
-    builder.emit_lda_smi(0, 42);
-    builder.emit_return(0);
-    return builder.finalize();
+    handler.resolve().value();
+    builder.emit_clear_active_exception(0).value();
+    builder.emit_lda_smi(0, 42).value();
+    builder.emit_return(0).value();
+    return builder.finalize().value();
 }
 
 static CodeObject *
@@ -147,24 +147,24 @@ make_drain_active_exception_handler_code(test::VmTestContext &test_context,
         TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
             name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
-    uint32_t constant_idx = builder.allocate_constant(raised);
+    uint32_t constant_idx = builder.allocate_constant(raised).value();
     JumpTarget handler(&builder);
 
     {
         ExceptionTableRangeBuilder range(&builder, handler);
-        builder.emit_lda_constant(0, uint8_t(constant_idx));
-        builder.emit_raise_unwind(0);
+        builder.emit_lda_constant(0, uint8_t(constant_idx)).value();
+        builder.emit_raise_unwind(0).value();
         range.close();
     }
 
-    handler.resolve();
+    handler.resolve().value();
     {
         CodeObjectBuilder::TemporaryReg saved_exception(builder);
-        builder.emit_drain_active_exception_into(0, saved_exception);
-        builder.emit_ldar(0, saved_exception);
+        builder.emit_drain_active_exception_into(0, saved_exception).value();
+        builder.emit_ldar(0, saved_exception).value();
     }
-    builder.emit_return(0);
-    return builder.finalize();
+    builder.emit_return(0).value();
+    return builder.finalize().value();
 }
 
 static CodeObject *
@@ -178,7 +178,7 @@ make_reraise_active_exception_handler_code(test::VmTestContext &test_context,
         TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
             name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
-    uint32_t constant_idx = builder.allocate_constant(raised);
+    uint32_t constant_idx = builder.allocate_constant(raised).value();
     JumpTarget inner_handler(&builder);
     JumpTarget outer_handler(&builder);
 
@@ -186,21 +186,21 @@ make_reraise_active_exception_handler_code(test::VmTestContext &test_context,
         ExceptionTableRangeBuilder outer_range(&builder, outer_handler);
         {
             ExceptionTableRangeBuilder inner_range(&builder, inner_handler);
-            builder.emit_lda_constant(0, uint8_t(constant_idx));
-            builder.emit_raise_unwind(0);
+            builder.emit_lda_constant(0, uint8_t(constant_idx)).value();
+            builder.emit_raise_unwind(0).value();
             inner_range.close();
         }
 
-        inner_handler.resolve();
-        builder.emit_reraise_active_exception(0);
+        inner_handler.resolve().value();
+        builder.emit_reraise_active_exception(0).value();
         outer_range.close();
     }
 
-    outer_handler.resolve();
-    builder.emit_clear_active_exception(0);
-    builder.emit_lda_smi(0, 99);
-    builder.emit_return(0);
-    return builder.finalize();
+    outer_handler.resolve().value();
+    builder.emit_clear_active_exception(0).value();
+    builder.emit_lda_smi(0, 99).value();
+    builder.emit_return(0).value();
+    return builder.finalize().value();
 }
 
 static CodeObject *
@@ -213,9 +213,9 @@ make_lda_active_exception_code(test::VmTestContext &test_context)
         TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
             name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
-    builder.emit_lda_active_exception(0);
-    builder.emit_return(0);
-    return builder.finalize();
+    builder.emit_lda_active_exception(0).value();
+    builder.emit_return(0).value();
+    return builder.finalize().value();
 }
 
 static CodeObject *
@@ -229,11 +229,11 @@ make_active_exception_is_instance_code(test::VmTestContext &test_context,
         TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
             name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
-    uint32_t constant_idx = builder.allocate_constant(handler_class);
-    builder.emit_lda_constant(0, uint8_t(constant_idx));
-    builder.emit_active_exception_is_instance(0);
-    builder.emit_return(0);
-    return builder.finalize();
+    uint32_t constant_idx = builder.allocate_constant(handler_class).value();
+    builder.emit_lda_constant(0, uint8_t(constant_idx)).value();
+    builder.emit_active_exception_is_instance(0).value();
+    builder.emit_return(0).value();
+    return builder.finalize().value();
 }
 
 TEST(ExceptionHandling, lda_active_exception_reads_pending_exception_object)

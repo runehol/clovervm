@@ -277,12 +277,12 @@ TEST(Codegen, code_object_builder_reuses_duplicate_constants)
     TValue<String> name =
         test_context.vm().get_or_create_interned_string_value(L"name");
 
-    EXPECT_EQ(0u, builder.allocate_constant(name));
-    EXPECT_EQ(0u, builder.allocate_constant(name));
-    EXPECT_EQ(1u, builder.allocate_constant(Value::from_smi(7)));
-    EXPECT_EQ(1u, builder.allocate_constant(Value::from_smi(7)));
+    EXPECT_EQ(0u, builder.allocate_constant(name).value());
+    EXPECT_EQ(0u, builder.allocate_constant(name).value());
+    EXPECT_EQ(1u, builder.allocate_constant(Value::from_smi(7)).value());
+    EXPECT_EQ(1u, builder.allocate_constant(Value::from_smi(7)).value());
 
-    CodeObject *code_obj = builder.finalize();
+    CodeObject *code_obj = builder.finalize().value();
     EXPECT_EQ(size_t(2), code_obj->constant_table.size());
 }
 
@@ -299,16 +299,18 @@ TEST(Codegen, bytecode_cache_index_overflow_throws)
     CodeObjectBuilder builder(&test_context.vm(), nullptr,
                               TValue<ModuleObject>::from_oop(module), nullptr,
                               code_name);
-    uint32_t name_idx = builder.allocate_constant(
-        test_context.vm().get_or_create_interned_string_value(L"name"));
+    uint32_t name_idx =
+        builder
+            .allocate_constant(
+                test_context.vm().get_or_create_interned_string_value(L"name"))
+            .value();
     ASSERT_EQ(0u, name_idx);
 
     for(uint32_t idx = 0; idx < 256; ++idx)
     {
-        builder.emit_lda_global(0, uint8_t(name_idx));
+        builder.emit_lda_global(0, uint8_t(name_idx)).value();
     }
-    EXPECT_THROW(builder.emit_lda_global(0, uint8_t(name_idx)),
-                 std::runtime_error);
+    EXPECT_TRUE(builder.emit_lda_global(0, uint8_t(name_idx)).has_exception());
 }
 
 TEST(Codegen, relative_import_level_overflow_throws)

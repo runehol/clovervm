@@ -379,11 +379,11 @@ static CodeObject *make_raise_unwind_code(test::VmTestContext &test_context,
         TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
             name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
-    uint32_t constant_idx = builder.allocate_constant(raised);
-    builder.emit_lda_constant(0, uint8_t(constant_idx));
-    builder.emit_raise_unwind(0);
-    builder.emit_return(0);
-    return builder.finalize();
+    uint32_t constant_idx = builder.allocate_constant(raised).value();
+    builder.emit_lda_constant(0, uint8_t(constant_idx)).value();
+    builder.emit_raise_unwind(0).value();
+    builder.emit_return(0).value();
+    return builder.finalize().value();
 }
 
 static Value *prepare_native_return_wrapper_frame(ThreadState *thread)
@@ -432,9 +432,9 @@ static CodeObject *make_return_to_native_code(test::VmTestContext &test_context)
         TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
             name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
-    builder.emit_lda_smi(0, 42);
-    builder.emit_return_to_native(0);
-    return builder.finalize();
+    builder.emit_lda_smi(0, 42).value();
+    builder.emit_return_to_native(0).value();
+    return builder.finalize().value();
 }
 
 static CodeObject *
@@ -447,8 +447,8 @@ make_return_pending_exception_to_native_code(test::VmTestContext &test_context)
         TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
             name, test_context.vm().global_builtins_module().raw_value())),
         nullptr, name);
-    builder.emit_return_pending_exception_to_native(0);
-    return builder.finalize();
+    builder.emit_return_pending_exception_to_native(0).value();
+    return builder.finalize().value();
 }
 
 TEST(Interpreter, assert_statement_raises_assertion_error)

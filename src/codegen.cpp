@@ -341,19 +341,22 @@ namespace cl
             return *analysis.deletes[node_idx];
         }
 
-        void emit_local_binding_prologue()
+        Expected<void> emit_local_binding_prologue()
         {
             for(const BindingInfo &binding: analysis.bindings)
             {
                 if(binding.scope == BindingScope::Local &&
                    binding.needs_entry_clear)
                 {
-                    code_obj->emit_clear_local(0, binding.local_slot_idx);
+                    CL_TRY(
+                        code_obj->emit_clear_local(0, binding.local_slot_idx));
                 }
             }
+            return Expected<void>::ok();
         }
 
-        void emit_variable_load(uint32_t source_offset, int32_t node_idx)
+        Expected<void> emit_variable_load(uint32_t source_offset,
+                                          int32_t node_idx)
         {
             const NameAccessAnalysis &access = load_access(node_idx);
             switch(access.scope)
@@ -361,52 +364,68 @@ namespace cl
                 case BindingScope::Local:
                     if(access.presence == Presence::Present)
                     {
-                        code_obj->emit_ldar(source_offset, access.slot_idx);
+                        CL_TRY(code_obj->emit_ldar(source_offset,
+                                                   access.slot_idx));
                     }
                     else
                     {
-                        code_obj->emit_load_local_checked(source_offset,
-                                                          access.slot_idx);
+                        CL_TRY(code_obj->emit_load_local_checked(
+                            source_offset, access.slot_idx));
                     }
                     break;
                 case BindingScope::Global:
-                    code_obj->emit_lda_global(
-                        source_offset,
-                        code_obj->allocate_constant(av.constants[node_idx]));
+                    {
+                        uint8_t name_idx = CL_TRY(code_obj->allocate_constant(
+                            av.constants[node_idx]));
+                        CL_TRY(
+                            code_obj->emit_lda_global(source_offset, name_idx));
+                    }
                     break;
             }
+            return Expected<void>::ok();
         }
 
-        void emit_variable_store(uint32_t source_offset, int32_t node_idx)
+        Expected<void> emit_variable_store(uint32_t source_offset,
+                                           int32_t node_idx)
         {
             const NameAccessAnalysis &access = store_access(node_idx);
             switch(access.scope)
             {
                 case BindingScope::Local:
-                    code_obj->emit_star(source_offset, access.slot_idx);
+                    CL_TRY(code_obj->emit_star(source_offset, access.slot_idx));
                     break;
                 case BindingScope::Global:
-                    code_obj->emit_sta_global(
-                        source_offset,
-                        code_obj->allocate_constant(av.constants[node_idx]));
+                    {
+                        uint8_t name_idx = CL_TRY(code_obj->allocate_constant(
+                            av.constants[node_idx]));
+                        CL_TRY(
+                            code_obj->emit_sta_global(source_offset, name_idx));
+                    }
                     break;
             }
+            return Expected<void>::ok();
         }
 
-        void emit_variable_delete(uint32_t source_offset, int32_t node_idx)
+        Expected<void> emit_variable_delete(uint32_t source_offset,
+                                            int32_t node_idx)
         {
             const NameAccessAnalysis &access = delete_access(node_idx);
             switch(access.scope)
             {
                 case BindingScope::Local:
-                    code_obj->emit_del_local(source_offset, access.slot_idx);
+                    CL_TRY(code_obj->emit_del_local(source_offset,
+                                                    access.slot_idx));
                     break;
                 case BindingScope::Global:
-                    code_obj->emit_del_global(
-                        source_offset,
-                        code_obj->allocate_constant(av.constants[node_idx]));
+                    {
+                        uint8_t name_idx = CL_TRY(code_obj->allocate_constant(
+                            av.constants[node_idx]));
+                        CL_TRY(
+                            code_obj->emit_del_global(source_offset, name_idx));
+                    }
                     break;
             }
+            return Expected<void>::ok();
         }
 
         using TemporaryReg = CodeObjectBuilder::TemporaryReg;
@@ -437,7 +456,7 @@ namespace cl
             uint32_t source_offset = av.source_offsets[node_idx];
             CL_TRY(codegen_node(node_idx));
             std::optional<TemporaryReg> temp{std::in_place, *code_obj};
-            code_obj->emit_star(source_offset, RegisterIndex(*temp));
+            CL_TRY(code_obj->emit_star(source_offset, RegisterIndex(*temp)));
             return Expected<ScopedRegister>::ok(
                 {RegisterIndex(*temp), std::move(temp)});
         }
@@ -456,16 +475,16 @@ namespace cl
             if(immediate.has_value())
             {
                 CL_TRY(codegen_node(children[0]));
-                code_obj->emit_binary_smi_op(source_offset,
-                                             entry.binary_acc_smi, *immediate);
+                CL_TRY(code_obj->emit_binary_smi_op(
+                    source_offset, entry.binary_acc_smi, *immediate));
             }
             else
             {
                 ScopedRegister lhs_reg =
                     CL_TRY(codegen_node_to_register(children[0]));
                 CL_TRY(codegen_node(children[1]));
-                code_obj->emit_binary_op(source_offset, entry.standard,
-                                         lhs_reg.reg);
+                CL_TRY(code_obj->emit_binary_op(source_offset, entry.standard,
+                                                lhs_reg.reg));
             }
             return Expected<void>::ok();
         }
@@ -483,9 +502,10 @@ namespace cl
             CL_TRY(codegen_node(children[0]));
             if(prod >= 0)
             {
-                code_obj->emit_star(source_offset, prod);
+                CL_TRY(code_obj->emit_star(source_offset, prod));
             }
-            code_obj->emit_compare_op(source_offset, entry.standard, recv);
+            CL_TRY(
+                code_obj->emit_compare_op(source_offset, entry.standard, recv));
             return Expected<void>::ok();
         }
 
@@ -502,12 +522,13 @@ namespace cl
             // stick this code object into the constant table, load it, and call
             // the
             uint32_t constant_idx =
-                code_obj->allocate_constant(Value::from_oop(fun_obj));
+                CL_TRY(code_obj->allocate_constant(Value::from_oop(fun_obj)));
             size_t first_default_idx =
                 first_default_parameter_index(param_children);
             if(first_default_idx == param_children.size())
             {
-                code_obj->emit_create_function(source_offset, constant_idx);
+                CL_TRY(code_obj->emit_create_function(source_offset,
+                                                      constant_idx));
             }
             else
             {
@@ -531,7 +552,7 @@ namespace cl
                     AstChildren default_children = av.children[param_idx];
                     if(default_children.empty())
                     {
-                        code_obj->emit_lda_none(source_offset);
+                        CL_TRY(code_obj->emit_lda_none(source_offset));
                     }
                     else
                     {
@@ -539,20 +560,21 @@ namespace cl
                         CL_TRY(codegen_node(default_children[0]));
                         default_presence_mask |= uint64_t(1) << i;
                     }
-                    code_obj->emit_star(source_offset, default_values + i);
+                    CL_TRY(
+                        code_obj->emit_star(source_offset, default_values + i));
                 }
                 fun_obj->function_signature.default_presence_mask =
                     default_presence_mask;
-                code_obj->emit_create_tuple(source_offset, default_values,
-                                            default_span_size);
+                CL_TRY(code_obj->emit_create_tuple(
+                    source_offset, default_values, default_span_size));
 
                 TemporaryReg default_tuple(*code_obj);
-                code_obj->emit_star(source_offset, default_tuple);
-                code_obj->emit_create_function_with_defaults(
-                    source_offset, constant_idx, default_tuple);
+                CL_TRY(code_obj->emit_star(source_offset, default_tuple));
+                CL_TRY(code_obj->emit_create_function_with_defaults(
+                    source_offset, constant_idx, default_tuple));
             }
 
-            emit_variable_store(source_offset, node_idx);
+            CL_TRY(emit_variable_store(source_offset, node_idx));
             return Expected<void>::ok();
         }
 
@@ -596,21 +618,24 @@ namespace cl
                                      code_obj, node_idx, language_mode));
 
             uint32_t body_constant_idx =
-                code_obj->allocate_constant(Value::from_oop(class_obj));
+                CL_TRY(code_obj->allocate_constant(Value::from_oop(class_obj)));
             AstChildren bases = av.children[bases_idx];
             uint32_t name_constant_idx =
-                code_obj->allocate_constant(av.constants[node_idx]);
-            code_obj->emit_lda_constant(source_offset, name_constant_idx);
-            code_obj->emit_star(source_offset, OutgoingArgReg(0));
+                CL_TRY(code_obj->allocate_constant(av.constants[node_idx]));
+            CL_TRY(
+                code_obj->emit_lda_constant(source_offset, name_constant_idx));
+            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
 
             TemporaryReg base_regs(*code_obj,
                                    std::max<size_t>(bases.size(), 1));
             if(bases.empty())
             {
-                uint32_t object_constant_idx = code_obj->allocate_constant(
-                    Value::from_oop(active_vm()->object_class()));
-                code_obj->emit_lda_constant(source_offset, object_constant_idx);
-                code_obj->emit_star(source_offset, base_regs);
+                uint32_t object_constant_idx =
+                    CL_TRY(code_obj->allocate_constant(
+                        Value::from_oop(active_vm()->object_class())));
+                CL_TRY(code_obj->emit_lda_constant(source_offset,
+                                                   object_constant_idx));
+                CL_TRY(code_obj->emit_star(source_offset, base_regs));
             }
             else
             {
@@ -625,17 +650,17 @@ namespace cl
                             L"yet");
                     }
                     CL_TRY(codegen_node(call_argument_value(bases[i])));
-                    code_obj->emit_star(source_offset, base_regs + i);
+                    CL_TRY(code_obj->emit_star(source_offset, base_regs + i));
                 }
             }
-            code_obj->emit_create_tuple(source_offset, base_regs,
-                                        std::max<size_t>(bases.size(), 1));
-            code_obj->emit_star(source_offset, OutgoingArgReg(1));
+            CL_TRY(code_obj->emit_create_tuple(
+                source_offset, base_regs, std::max<size_t>(bases.size(), 1)));
+            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(1)));
 
-            code_obj->emit_create_class(source_offset, body_constant_idx,
-                                        OutgoingArgReg(0));
+            CL_TRY(code_obj->emit_create_class(source_offset, body_constant_idx,
+                                               OutgoingArgReg(0)));
 
-            emit_variable_store(source_offset, node_idx);
+            CL_TRY(emit_variable_store(source_offset, node_idx));
             return Expected<void>::ok();
         }
 
@@ -839,24 +864,26 @@ namespace cl
                 call_argument_value(args[3]),
                 L"__clover_call_special__ missing-method message must be a "
                 L"string literal"));
-            uint8_t method_name_idx = code_obj->allocate_constant(method_name);
+            uint8_t method_name_idx =
+                CL_TRY(code_obj->allocate_constant(method_name));
             uint8_t missing_exception_type_idx =
-                code_obj->allocate_constant(missing_exception_type);
+                CL_TRY(code_obj->allocate_constant(missing_exception_type));
             uint8_t missing_exception_message_idx =
-                code_obj->allocate_constant(missing_exception_message);
+                CL_TRY(code_obj->allocate_constant(missing_exception_message));
 
             CL_TRY(codegen_node(call_argument_value(args[0])));
-            code_obj->emit_star(source_offset, OutgoingArgReg(0));
+            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
             for(size_t i = 4; i < args.size(); ++i)
             {
                 CL_TRY(codegen_node(call_argument_value(args[i])));
-                code_obj->emit_star(source_offset, OutgoingArgReg(i - 3));
+                CL_TRY(
+                    code_obj->emit_star(source_offset, OutgoingArgReg(i - 3)));
             }
 
-            code_obj->emit_call_special_method(
+            CL_TRY(code_obj->emit_call_special_method(
                 source_offset, OutgoingArgReg(0), method_name_idx,
                 uint8_t(args.size() - 4), missing_exception_type_idx,
-                missing_exception_message_idx);
+                missing_exception_message_idx));
             return Expected<void>::ok();
         }
 
@@ -874,7 +901,7 @@ namespace cl
             }
 
             CL_TRY(codegen_node(call_argument_value(args[0])));
-            code_obj->emit_write_stdout(source_offset);
+            CL_TRY(code_obj->emit_write_stdout(source_offset));
             return Expected<void>::ok();
         }
 
@@ -891,7 +918,8 @@ namespace cl
                                                        message.c_str());
             }
 
-            code_obj->emit_call_runtime_intrinsic0(source_offset, intrinsic);
+            CL_TRY(code_obj->emit_call_runtime_intrinsic0(source_offset,
+                                                          intrinsic));
             return Expected<void>::ok();
         }
 
@@ -907,7 +935,7 @@ namespace cl
             }
 
             CL_TRY(codegen_node(call_argument_value(args[0])));
-            code_obj->emit_unary_op(source_offset, Bytecode::Sqrt);
+            CL_TRY(code_obj->emit_unary_op(source_offset, Bytecode::Sqrt));
             return Expected<void>::ok();
         }
 
@@ -961,10 +989,10 @@ namespace cl
                AstNodeKind::EXPRESSION_ATTRIBUTE)
             {
                 AstChildren method_children = av.children[children[0]];
-                uint8_t constant_idx =
-                    code_obj->allocate_constant(av.constants[children[0]]);
+                uint8_t constant_idx = CL_TRY(
+                    code_obj->allocate_constant(av.constants[children[0]]));
                 CL_TRY(codegen_node(method_children[0]));
-                code_obj->emit_star(source_offset, OutgoingArgReg(0));
+                CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
 
                 uint32_t n_kw_args = n_keyword_call_arguments(args);
                 if(n_kw_args > 0)
@@ -979,16 +1007,17 @@ namespace cl
                         if(is_positional_call_argument(arg))
                         {
                             CL_TRY(codegen_node(call_argument_value(arg)));
-                            code_obj->emit_star(source_offset,
-                                                OutgoingArgReg(1 + n_pos_args));
+                            CL_TRY(code_obj->emit_star(
+                                source_offset, OutgoingArgReg(1 + n_pos_args)));
                             ++n_pos_args;
                         }
                         else
                         {
                             assert(is_keyword_call_argument(arg));
                             CL_TRY(codegen_node(call_argument_value(arg)));
-                            code_obj->emit_star(
-                                source_offset, keyword_value_regs + kw_arg_idx);
+                            CL_TRY(code_obj->emit_star(source_offset,
+                                                       keyword_value_regs +
+                                                           kw_arg_idx));
                             ++kw_arg_idx;
                         }
                     }
@@ -1006,30 +1035,31 @@ namespace cl
                         }
                     }
                     assert(kw_arg_idx == n_kw_args);
-                    uint8_t keyword_names_idx =
-                        code_obj->allocate_constant(keyword_names.raw_value());
-                    code_obj->emit_call_method_attr_keyword(
+                    uint8_t keyword_names_idx = CL_TRY(
+                        code_obj->allocate_constant(keyword_names.raw_value()));
+                    CL_TRY(code_obj->emit_call_method_attr_keyword(
                         source_offset, OutgoingArgReg(0), constant_idx,
                         uint8_t(n_pos_args), keyword_value_regs,
-                        uint8_t(n_kw_args), keyword_names_idx);
+                        uint8_t(n_kw_args), keyword_names_idx));
                     return Expected<void>::ok();
                 }
 
                 for(size_t i = 0; i < args.size(); ++i)
                 {
                     CL_TRY(codegen_node(call_argument_value(args[i])));
-                    code_obj->emit_star(source_offset, OutgoingArgReg(1 + i));
+                    CL_TRY(code_obj->emit_star(source_offset,
+                                               OutgoingArgReg(1 + i)));
                 }
-                code_obj->emit_call_method_attr_positional(
+                CL_TRY(code_obj->emit_call_method_attr_positional(
                     source_offset, OutgoingArgReg(0), constant_idx,
-                    args.size());
+                    args.size()));
                 return Expected<void>::ok();
             }
 
             // function itself
             TemporaryReg callable_reg(*code_obj);
             CL_TRY(codegen_node(children[0]));
-            code_obj->emit_star(source_offset, callable_reg);
+            CL_TRY(code_obj->emit_star(source_offset, callable_reg));
 
             uint32_t n_kw_args = n_keyword_call_arguments(args);
             if(n_kw_args > 0)
@@ -1044,16 +1074,16 @@ namespace cl
                     if(is_positional_call_argument(arg))
                     {
                         CL_TRY(codegen_node(call_argument_value(arg)));
-                        code_obj->emit_star(source_offset,
-                                            OutgoingArgReg(n_pos_args));
+                        CL_TRY(code_obj->emit_star(source_offset,
+                                                   OutgoingArgReg(n_pos_args)));
                         ++n_pos_args;
                     }
                     else
                     {
                         assert(is_keyword_call_argument(arg));
                         CL_TRY(codegen_node(call_argument_value(arg)));
-                        code_obj->emit_star(source_offset,
-                                            keyword_value_regs + kw_arg_idx);
+                        CL_TRY(code_obj->emit_star(
+                            source_offset, keyword_value_regs + kw_arg_idx));
                         ++kw_arg_idx;
                     }
                 }
@@ -1071,22 +1101,22 @@ namespace cl
                     }
                 }
                 assert(kw_arg_idx == n_kw_args);
-                uint8_t keyword_names_idx =
-                    code_obj->allocate_constant(keyword_names.raw_value());
-                code_obj->emit_call_keyword(
+                uint8_t keyword_names_idx = CL_TRY(
+                    code_obj->allocate_constant(keyword_names.raw_value()));
+                CL_TRY(code_obj->emit_call_keyword(
                     source_offset, callable_reg, OutgoingArgReg(0),
                     uint8_t(n_pos_args), keyword_value_regs, uint8_t(n_kw_args),
-                    keyword_names_idx);
+                    keyword_names_idx));
                 return Expected<void>::ok();
             }
 
             for(size_t i = 0; i < args.size(); ++i)
             {
                 CL_TRY(codegen_node(call_argument_value(args[i])));
-                code_obj->emit_star(source_offset, OutgoingArgReg(i));
+                CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(i)));
             }
-            code_obj->emit_call_positional(source_offset, callable_reg,
-                                           OutgoingArgReg(0), args.size());
+            CL_TRY(code_obj->emit_call_positional(
+                source_offset, callable_reg, OutgoingArgReg(0), args.size()));
             return Expected<void>::ok();
         }
 
@@ -1099,9 +1129,10 @@ namespace cl
             for(size_t i = 0; i < children.size(); ++i)
             {
                 CL_TRY(codegen_node(children[i]));
-                code_obj->emit_star(source_offset, regs + i);
+                CL_TRY(code_obj->emit_star(source_offset, regs + i));
             }
-            code_obj->emit_create_list(source_offset, regs, children.size());
+            CL_TRY(code_obj->emit_create_list(source_offset, regs,
+                                              children.size()));
             return Expected<void>::ok();
         }
 
@@ -1114,9 +1145,10 @@ namespace cl
             for(size_t i = 0; i < children.size(); ++i)
             {
                 CL_TRY(codegen_node(children[i]));
-                code_obj->emit_star(source_offset, regs + i);
+                CL_TRY(code_obj->emit_star(source_offset, regs + i));
             }
-            code_obj->emit_create_tuple(source_offset, regs, children.size());
+            CL_TRY(code_obj->emit_create_tuple(source_offset, regs,
+                                               children.size()));
             return Expected<void>::ok();
         }
 
@@ -1129,10 +1161,10 @@ namespace cl
             for(size_t i = 0; i < children.size(); ++i)
             {
                 CL_TRY(codegen_node(children[i]));
-                code_obj->emit_star(source_offset, regs + i);
+                CL_TRY(code_obj->emit_star(source_offset, regs + i));
             }
-            code_obj->emit_create_dict(source_offset, regs,
-                                       children.size() / 2);
+            CL_TRY(code_obj->emit_create_dict(source_offset, regs,
+                                              children.size() / 2));
             return Expected<void>::ok();
         }
 
@@ -1151,8 +1183,8 @@ namespace cl
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
                 CL_TRY(codegen_node(children[1]));
-                code_obj->emit_store_subscript(source_offset, receiver_reg.reg,
-                                               key_reg.reg);
+                CL_TRY(code_obj->emit_store_subscript(
+                    source_offset, receiver_reg.reg, key_reg.reg));
                 return Expected<void>::ok();
             }
 
@@ -1160,25 +1192,26 @@ namespace cl
             std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
                 kind.operator_kind, entry, children[1]);
 
-            code_obj->emit_ldar(source_offset, key_reg.reg);
-            code_obj->emit_load_subscript(source_offset, receiver_reg.reg);
+            CL_TRY(code_obj->emit_ldar(source_offset, key_reg.reg));
+            CL_TRY(
+                code_obj->emit_load_subscript(source_offset, receiver_reg.reg));
 
             if(immediate.has_value())
             {
-                code_obj->emit_binary_smi_op(source_offset,
-                                             entry.binary_acc_smi, *immediate);
+                CL_TRY(code_obj->emit_binary_smi_op(
+                    source_offset, entry.binary_acc_smi, *immediate));
             }
             else
             {
                 TemporaryReg lhs_value_reg(*code_obj);
-                code_obj->emit_star(source_offset, lhs_value_reg);
+                CL_TRY(code_obj->emit_star(source_offset, lhs_value_reg));
                 CL_TRY(codegen_node(children[1]));
-                code_obj->emit_binary_op(source_offset, entry.standard,
-                                         lhs_value_reg);
+                CL_TRY(code_obj->emit_binary_op(source_offset, entry.standard,
+                                                lhs_value_reg));
             }
 
-            code_obj->emit_store_subscript(source_offset, receiver_reg.reg,
-                                           key_reg.reg);
+            CL_TRY(code_obj->emit_store_subscript(
+                source_offset, receiver_reg.reg, key_reg.reg));
             return Expected<void>::ok();
         }
 
@@ -1190,8 +1223,8 @@ namespace cl
                 CL_TRY(codegen_node_to_register(target_children[0]));
             ScopedRegister key_reg =
                 CL_TRY(codegen_node_to_register(target_children[1]));
-            code_obj->emit_del_subscript(source_offset, receiver_reg.reg,
-                                         key_reg.reg);
+            CL_TRY(code_obj->emit_del_subscript(source_offset, receiver_reg.reg,
+                                                key_reg.reg));
             return Expected<void>::ok();
         }
 
@@ -1203,15 +1236,15 @@ namespace cl
             int32_t lhs_idx = children[0];
             AstChildren lhs_children = av.children[lhs_idx];
             uint8_t constant_idx =
-                code_obj->allocate_constant(av.constants[lhs_idx]);
+                CL_TRY(code_obj->allocate_constant(av.constants[lhs_idx]));
             ScopedRegister receiver_reg =
                 CL_TRY(codegen_node_to_register(lhs_children[0]));
 
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
                 CL_TRY(codegen_node(children[1]));
-                code_obj->emit_store_attr(source_offset, receiver_reg.reg,
-                                          constant_idx);
+                CL_TRY(code_obj->emit_store_attr(
+                    source_offset, receiver_reg.reg, constant_idx));
                 return Expected<void>::ok();
             }
 
@@ -1219,25 +1252,25 @@ namespace cl
             std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
                 kind.operator_kind, entry, children[1]);
 
-            code_obj->emit_load_attr(source_offset, receiver_reg.reg,
-                                     constant_idx);
+            CL_TRY(code_obj->emit_load_attr(source_offset, receiver_reg.reg,
+                                            constant_idx));
 
             if(immediate.has_value())
             {
-                code_obj->emit_binary_smi_op(source_offset,
-                                             entry.binary_acc_smi, *immediate);
+                CL_TRY(code_obj->emit_binary_smi_op(
+                    source_offset, entry.binary_acc_smi, *immediate));
             }
             else
             {
                 TemporaryReg lhs_value_reg(*code_obj);
-                code_obj->emit_star(source_offset, lhs_value_reg);
+                CL_TRY(code_obj->emit_star(source_offset, lhs_value_reg));
                 CL_TRY(codegen_node(children[1]));
-                code_obj->emit_binary_op(source_offset, entry.standard,
-                                         lhs_value_reg);
+                CL_TRY(code_obj->emit_binary_op(source_offset, entry.standard,
+                                                lhs_value_reg));
             }
 
-            code_obj->emit_store_attr(source_offset, receiver_reg.reg,
-                                      constant_idx);
+            CL_TRY(code_obj->emit_store_attr(source_offset, receiver_reg.reg,
+                                             constant_idx));
             return Expected<void>::ok();
         }
 
@@ -1246,11 +1279,11 @@ namespace cl
         {
             AstChildren target_children = av.children[target_idx];
             uint8_t constant_idx =
-                code_obj->allocate_constant(av.constants[target_idx]);
+                CL_TRY(code_obj->allocate_constant(av.constants[target_idx]));
             ScopedRegister receiver_reg =
                 CL_TRY(codegen_node_to_register(target_children[0]));
-            code_obj->emit_del_attr(source_offset, receiver_reg.reg,
-                                    constant_idx);
+            CL_TRY(code_obj->emit_del_attr(source_offset, receiver_reg.reg,
+                                           constant_idx));
             return Expected<void>::ok();
         }
 
@@ -1410,51 +1443,55 @@ namespace cl
             return else_children[0];
         }
 
-        uint8_t context_manager_protocol_type_error_idx()
+        Expected<uint8_t> context_manager_protocol_type_error_idx()
         {
             return code_obj->allocate_constant(Value::from_oop(
                 active_thread()->class_for_builtin_name(L"TypeError")));
         }
 
-        uint8_t context_manager_protocol_message_idx()
+        Expected<uint8_t> context_manager_protocol_message_idx()
         {
             return code_obj->allocate_constant(
                 interned_string(L"object does not support the context "
                                 L"manager protocol"));
         }
 
-        uint8_t enter_method_name_idx()
+        Expected<uint8_t> enter_method_name_idx()
         {
             return code_obj->allocate_constant(interned_string(L"__enter__"));
         }
 
-        uint8_t exit_method_name_idx()
+        Expected<uint8_t> exit_method_name_idx()
         {
             return code_obj->allocate_constant(interned_string(L"__exit__"));
         }
 
-        void emit_context_exit_call(uint32_t source_offset,
-                                    RegisterIndex manager_reg)
+        Expected<void> emit_context_exit_call(uint32_t source_offset,
+                                              RegisterIndex manager_reg)
         {
-            code_obj->emit_ldar(source_offset, manager_reg);
-            code_obj->emit_star(source_offset, OutgoingArgReg(0));
-            code_obj->emit_call_special_method(
-                source_offset, OutgoingArgReg(0), exit_method_name_idx(), 3,
-                context_manager_protocol_type_error_idx(),
-                context_manager_protocol_message_idx());
+            CL_TRY(code_obj->emit_ldar(source_offset, manager_reg));
+            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
+            CL_TRY(code_obj->emit_call_special_method(
+                source_offset, OutgoingArgReg(0),
+                CL_TRY(exit_method_name_idx()), 3,
+                CL_TRY(context_manager_protocol_type_error_idx()),
+                CL_TRY(context_manager_protocol_message_idx())));
+            return Expected<void>::ok();
         }
 
-        void emit_context_exit_none_call(uint32_t source_offset,
-                                         RegisterIndex manager_reg)
+        Expected<void> emit_context_exit_none_call(uint32_t source_offset,
+                                                   RegisterIndex manager_reg)
         {
-            code_obj->emit_ldar(source_offset, manager_reg);
-            code_obj->emit_star(source_offset, OutgoingArgReg(0));
+            CL_TRY(code_obj->emit_ldar(source_offset, manager_reg));
+            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
             for(uint8_t arg_idx = 0; arg_idx < 3; ++arg_idx)
             {
-                code_obj->emit_lda_none(source_offset);
-                code_obj->emit_star(source_offset, OutgoingArgReg(1 + arg_idx));
+                CL_TRY(code_obj->emit_lda_none(source_offset));
+                CL_TRY(code_obj->emit_star(source_offset,
+                                           OutgoingArgReg(1 + arg_idx)));
             }
-            emit_context_exit_call(source_offset, manager_reg);
+            CL_TRY(emit_context_exit_call(source_offset, manager_reg));
+            return Expected<void>::ok();
         }
 
         Expected<void> emit_cleanup_body(CleanupContext ctx)
@@ -1465,8 +1502,8 @@ namespace cl
                     CL_TRY(codegen_node(ctx.body_idx));
                     return Expected<void>::ok();
                 case CleanupContext::Kind::WithExit:
-                    emit_context_exit_none_call(ctx.source_offset,
-                                                ctx.manager_reg);
+                    CL_TRY(emit_context_exit_none_call(ctx.source_offset,
+                                                       ctx.manager_reg));
                     return Expected<void>::ok();
             }
             __builtin_unreachable();
@@ -1501,22 +1538,24 @@ namespace cl
             return Expected<void>::ok();
         }
 
-        void emit_drain_active_exception_to_binding(uint32_t source_offset,
-                                                    int32_t name_idx)
+        Expected<void>
+        emit_drain_active_exception_to_binding(uint32_t source_offset,
+                                               int32_t name_idx)
         {
             const NameAccessAnalysis &access = store_access(name_idx);
             if(access.scope == BindingScope::Local)
             {
-                code_obj->emit_drain_active_exception_into(source_offset,
-                                                           access.slot_idx);
-                return;
+                CL_TRY(code_obj->emit_drain_active_exception_into(
+                    source_offset, access.slot_idx));
+                return Expected<void>::ok();
             }
 
             TemporaryReg saved_exception(*code_obj);
-            code_obj->emit_drain_active_exception_into(source_offset,
-                                                       saved_exception);
-            code_obj->emit_ldar(source_offset, saved_exception);
-            emit_variable_store(source_offset, name_idx);
+            CL_TRY(code_obj->emit_drain_active_exception_into(source_offset,
+                                                              saved_exception));
+            CL_TRY(code_obj->emit_ldar(source_offset, saved_exception));
+            CL_TRY(emit_variable_store(source_offset, name_idx));
+            return Expected<void>::ok();
         }
 
         Expected<void> emit_store_accumulator_to_target(uint32_t source_offset,
@@ -1525,22 +1564,22 @@ namespace cl
             AstNodeKind target_kind = av.kinds[target_idx].node_kind;
             if(target_kind == AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
             {
-                emit_variable_store(source_offset, target_idx);
+                CL_TRY(emit_variable_store(source_offset, target_idx));
                 return Expected<void>::ok();
             }
 
             TemporaryReg value_reg(*code_obj);
-            code_obj->emit_star(source_offset, value_reg);
+            CL_TRY(code_obj->emit_star(source_offset, value_reg));
             if(target_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
             {
                 AstChildren target_children = av.children[target_idx];
-                uint8_t constant_idx =
-                    code_obj->allocate_constant(av.constants[target_idx]);
+                uint8_t constant_idx = CL_TRY(
+                    code_obj->allocate_constant(av.constants[target_idx]));
                 ScopedRegister receiver_reg =
                     CL_TRY(codegen_node_to_register(target_children[0]));
-                code_obj->emit_ldar(source_offset, value_reg);
-                code_obj->emit_store_attr(source_offset, receiver_reg.reg,
-                                          constant_idx);
+                CL_TRY(code_obj->emit_ldar(source_offset, value_reg));
+                CL_TRY(code_obj->emit_store_attr(
+                    source_offset, receiver_reg.reg, constant_idx));
                 return Expected<void>::ok();
             }
 
@@ -1552,9 +1591,9 @@ namespace cl
                     CL_TRY(codegen_node_to_register(target_children[0]));
                 ScopedRegister key_reg =
                     CL_TRY(codegen_node_to_register(target_children[1]));
-                code_obj->emit_ldar(source_offset, value_reg);
-                code_obj->emit_store_subscript(source_offset, receiver_reg.reg,
-                                               key_reg.reg);
+                CL_TRY(code_obj->emit_ldar(source_offset, value_reg));
+                CL_TRY(code_obj->emit_store_subscript(
+                    source_offset, receiver_reg.reg, key_reg.reg));
                 return Expected<void>::ok();
             }
 
@@ -1564,7 +1603,7 @@ namespace cl
                 L"variables, attributes, and subscripts yet");
         }
 
-        uint8_t allocate_import_fromlist_constant(AstChildren aliases)
+        Expected<uint8_t> allocate_import_fromlist_constant(AstChildren aliases)
         {
             TValue<Tuple> fromlist =
                 active_thread()->make_object_value<Tuple>(aliases.size());
@@ -1576,7 +1615,7 @@ namespace cl
             return code_obj->allocate_constant(fromlist.raw_value());
         }
 
-        uint8_t allocate_star_import_fromlist_constant()
+        Expected<uint8_t> allocate_star_import_fromlist_constant()
         {
             TValue<Tuple> fromlist =
                 active_thread()->make_object_value<Tuple>(1);
@@ -1626,14 +1665,15 @@ namespace cl
             int32_t context_expr_idx = item_children[0];
             CL_TRY(codegen_node(context_expr_idx));
             TemporaryReg manager_reg(*code_obj);
-            code_obj->emit_star(source_offset, manager_reg);
+            CL_TRY(code_obj->emit_star(source_offset, manager_reg));
 
-            code_obj->emit_ldar(source_offset, manager_reg);
-            code_obj->emit_star(source_offset, OutgoingArgReg(0));
-            code_obj->emit_call_special_method(
-                source_offset, OutgoingArgReg(0), enter_method_name_idx(), 0,
-                context_manager_protocol_type_error_idx(),
-                context_manager_protocol_message_idx());
+            CL_TRY(code_obj->emit_ldar(source_offset, manager_reg));
+            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
+            CL_TRY(code_obj->emit_call_special_method(
+                source_offset, OutgoingArgReg(0),
+                CL_TRY(enter_method_name_idx()), 0,
+                CL_TRY(context_manager_protocol_type_error_idx()),
+                CL_TRY(context_manager_protocol_message_idx())));
 
             auto codegen_protected_body = [&]() -> Expected<void> {
                 if(item_children.size() == 2)
@@ -1664,31 +1704,31 @@ namespace cl
                 range.close();
             }
 
-            emit_context_exit_none_call(source_offset, manager_reg);
-            code_obj->emit_jump(source_offset, done_target);
+            CL_TRY(emit_context_exit_none_call(source_offset, manager_reg));
+            CL_TRY(code_obj->emit_jump(source_offset, done_target));
 
-            exceptional_target.resolve();
+            CL_TRY(exceptional_target.resolve());
             {
                 TemporaryReg saved_exception(*code_obj);
-                uint8_t class_name_idx =
-                    code_obj->allocate_constant(interned_string(L"__class__"));
+                uint8_t class_name_idx = CL_TRY(
+                    code_obj->allocate_constant(interned_string(L"__class__")));
 
-                code_obj->emit_drain_active_exception_into(source_offset,
-                                                           saved_exception);
-                code_obj->emit_load_attr(source_offset, saved_exception,
-                                         class_name_idx);
-                code_obj->emit_star(source_offset, OutgoingArgReg(1));
-                code_obj->emit_ldar(source_offset, saved_exception);
-                code_obj->emit_star(source_offset, OutgoingArgReg(2));
-                code_obj->emit_lda_none(source_offset);
-                code_obj->emit_star(source_offset, OutgoingArgReg(3));
-                emit_context_exit_call(source_offset, manager_reg);
-                code_obj->emit_jump_if_true(source_offset, done_target);
-                code_obj->emit_ldar(source_offset, saved_exception);
-                code_obj->emit_raise_unwind(source_offset);
+                CL_TRY(code_obj->emit_drain_active_exception_into(
+                    source_offset, saved_exception));
+                CL_TRY(code_obj->emit_load_attr(source_offset, saved_exception,
+                                                class_name_idx));
+                CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(1)));
+                CL_TRY(code_obj->emit_ldar(source_offset, saved_exception));
+                CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(2)));
+                CL_TRY(code_obj->emit_lda_none(source_offset));
+                CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(3)));
+                CL_TRY(emit_context_exit_call(source_offset, manager_reg));
+                CL_TRY(code_obj->emit_jump_if_true(source_offset, done_target));
+                CL_TRY(code_obj->emit_ldar(source_offset, saved_exception));
+                CL_TRY(code_obj->emit_raise_unwind(source_offset));
             }
 
-            done_target.resolve();
+            CL_TRY(done_target.resolve());
             return Expected<void>::ok();
         }
 
@@ -1734,21 +1774,21 @@ namespace cl
             }
 
             CL_TRY(codegen_node(finally_body_idx));
-            code_obj->emit_jump(source_offset, done_target);
+            CL_TRY(code_obj->emit_jump(source_offset, done_target));
 
-            exceptional_target.resolve();
+            CL_TRY(exceptional_target.resolve());
             {
                 TemporaryReg saved_exception(*code_obj);
-                code_obj->emit_drain_active_exception_into(source_offset,
-                                                           saved_exception);
+                CL_TRY(code_obj->emit_drain_active_exception_into(
+                    source_offset, saved_exception));
                 caught_exception_regs.push_back(RegisterIndex(saved_exception));
                 CL_TRY(codegen_node(finally_body_idx));
                 caught_exception_regs.pop_back();
-                code_obj->emit_ldar(source_offset, saved_exception);
-                code_obj->emit_raise_unwind(source_offset);
+                CL_TRY(code_obj->emit_ldar(source_offset, saved_exception));
+                CL_TRY(code_obj->emit_raise_unwind(source_offset));
             }
 
-            done_target.resolve();
+            CL_TRY(done_target.resolve());
             return Expected<void>::ok();
         }
 
@@ -1779,9 +1819,9 @@ namespace cl
             {
                 CL_TRY(codegen_node(else_body_idx));
             }
-            code_obj->emit_jump(source_offset, done_target);
+            CL_TRY(code_obj->emit_jump(source_offset, done_target));
 
-            handler_target.resolve();
+            CL_TRY(handler_target.resolve());
             bool has_bare_handler = false;
             for(size_t child_offset = 1;
                 child_offset < handler_end_child_offset; ++child_offset)
@@ -1802,46 +1842,49 @@ namespace cl
                 {
                     JumpTarget no_match_target(code_obj);
                     CL_TRY(codegen_node(handler_type_idx(handler_children)));
-                    code_obj->emit_active_exception_is_instance(
-                        handler_source_offset);
-                    code_obj->emit_jump_if_false(handler_source_offset,
-                                                 no_match_target);
+                    CL_TRY(code_obj->emit_active_exception_is_instance(
+                        handler_source_offset));
+                    CL_TRY(code_obj->emit_jump_if_false(handler_source_offset,
+                                                        no_match_target));
                     if(needs_original_exception)
                     {
                         TemporaryReg saved_exception(*code_obj);
-                        code_obj->emit_drain_active_exception_into(
-                            handler_source_offset, saved_exception);
+                        CL_TRY(code_obj->emit_drain_active_exception_into(
+                            handler_source_offset, saved_exception));
                         if(binds_exception_name)
                         {
-                            code_obj->emit_ldar(handler_source_offset,
-                                                saved_exception);
-                            emit_variable_store(
+                            CL_TRY(code_obj->emit_ldar(handler_source_offset,
+                                                       saved_exception));
+                            CL_TRY(emit_variable_store(
                                 handler_source_offset,
-                                handler_name_idx(handler_children));
+                                handler_name_idx(handler_children)));
                         }
                         caught_exception_regs.push_back(
                             RegisterIndex(saved_exception));
                         CL_TRY(codegen_node(body_idx));
                         caught_exception_regs.pop_back();
-                        code_obj->emit_jump(handler_source_offset, done_target);
+                        CL_TRY(code_obj->emit_jump(handler_source_offset,
+                                                   done_target));
                     }
                     else if(binds_exception_name)
                     {
-                        emit_drain_active_exception_to_binding(
+                        CL_TRY(emit_drain_active_exception_to_binding(
                             handler_source_offset,
-                            handler_name_idx(handler_children));
+                            handler_name_idx(handler_children)));
                         CL_TRY(codegen_node(body_idx));
-                        code_obj->emit_jump(handler_source_offset, done_target);
+                        CL_TRY(code_obj->emit_jump(handler_source_offset,
+                                                   done_target));
                     }
                     else
                     {
-                        code_obj->emit_clear_active_exception(
-                            handler_source_offset);
+                        CL_TRY(code_obj->emit_clear_active_exception(
+                            handler_source_offset));
                         CL_TRY(codegen_node(body_idx));
-                        code_obj->emit_jump(handler_source_offset, done_target);
+                        CL_TRY(code_obj->emit_jump(handler_source_offset,
+                                                   done_target));
                     }
 
-                    no_match_target.resolve();
+                    CL_TRY(no_match_target.resolve());
                     continue;
                 }
 
@@ -1850,45 +1893,49 @@ namespace cl
                 if(needs_original_exception)
                 {
                     TemporaryReg saved_exception(*code_obj);
-                    code_obj->emit_drain_active_exception_into(
-                        handler_source_offset, saved_exception);
+                    CL_TRY(code_obj->emit_drain_active_exception_into(
+                        handler_source_offset, saved_exception));
                     if(binds_exception_name)
                     {
-                        code_obj->emit_ldar(handler_source_offset,
-                                            saved_exception);
-                        emit_variable_store(handler_source_offset,
-                                            handler_name_idx(handler_children));
+                        CL_TRY(code_obj->emit_ldar(handler_source_offset,
+                                                   saved_exception));
+                        CL_TRY(emit_variable_store(
+                            handler_source_offset,
+                            handler_name_idx(handler_children)));
                     }
                     caught_exception_regs.push_back(
                         RegisterIndex(saved_exception));
                     CL_TRY(codegen_node(body_idx));
                     caught_exception_regs.pop_back();
-                    code_obj->emit_jump(handler_source_offset, done_target);
+                    CL_TRY(code_obj->emit_jump(handler_source_offset,
+                                               done_target));
                 }
                 else if(binds_exception_name)
                 {
-                    emit_drain_active_exception_to_binding(
+                    CL_TRY(emit_drain_active_exception_to_binding(
                         handler_source_offset,
-                        handler_name_idx(handler_children));
+                        handler_name_idx(handler_children)));
                     CL_TRY(codegen_node(body_idx));
-                    code_obj->emit_jump(handler_source_offset, done_target);
+                    CL_TRY(code_obj->emit_jump(handler_source_offset,
+                                               done_target));
                 }
                 else
                 {
-                    code_obj->emit_clear_active_exception(
-                        handler_source_offset);
+                    CL_TRY(code_obj->emit_clear_active_exception(
+                        handler_source_offset));
                     CL_TRY(codegen_node(body_idx));
-                    code_obj->emit_jump(handler_source_offset, done_target);
+                    CL_TRY(code_obj->emit_jump(handler_source_offset,
+                                               done_target));
                 }
                 break;
             }
 
             if(!has_bare_handler)
             {
-                code_obj->emit_reraise_active_exception(source_offset);
+                CL_TRY(code_obj->emit_reraise_active_exception(source_offset));
             }
 
-            done_target.resolve();
+            CL_TRY(done_target.resolve());
             return Expected<void>::ok();
         }
 
@@ -1916,48 +1963,49 @@ namespace cl
             JumpTarget continue_target(code_obj);
             JumpTarget stop_iteration_handler_target(code_obj);
             JumpTarget propagate_exception_target(code_obj);
-            uint8_t next_constant_idx =
-                code_obj->allocate_constant(interned_string(L"__next__"));
+            uint8_t next_constant_idx = CL_TRY(
+                code_obj->allocate_constant(interned_string(L"__next__")));
             uint8_t not_iterator_type_constant_idx =
-                code_obj->allocate_constant(Value::from_oop(
-                    active_thread()->class_for_builtin_name(L"TypeError")));
+                CL_TRY(code_obj->allocate_constant(Value::from_oop(
+                    active_thread()->class_for_builtin_name(L"TypeError"))));
             uint8_t not_iterator_message_constant_idx =
-                code_obj->allocate_constant(
-                    interned_string(L"object is not an iterator"));
+                CL_TRY(code_obj->allocate_constant(
+                    interned_string(L"object is not an iterator")));
             uint8_t stop_iteration_constant_idx =
-                code_obj->allocate_constant(Value::from_oop(
-                    active_thread()->class_for_builtin_name(L"StopIteration")));
+                CL_TRY(code_obj->allocate_constant(
+                    Value::from_oop(active_thread()->class_for_builtin_name(
+                        L"StopIteration"))));
 
-            loop_start_target.resolve();
-            code_obj->emit_ldar(source_offset, iterator_reg);
-            code_obj->emit_star(source_offset, OutgoingArgReg(0));
+            CL_TRY(loop_start_target.resolve());
+            CL_TRY(code_obj->emit_ldar(source_offset, iterator_reg));
+            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
             {
                 ExceptionTableRangeBuilder range(code_obj,
                                                  stop_iteration_handler_target);
-                code_obj->emit_call_special_method(
+                CL_TRY(code_obj->emit_call_special_method(
                     source_offset, OutgoingArgReg(0), next_constant_idx, 0,
                     not_iterator_type_constant_idx,
-                    not_iterator_message_constant_idx);
+                    not_iterator_message_constant_idx));
                 range.close();
             }
-            emit_variable_store(source_offset, target_idx);
+            CL_TRY(emit_variable_store(source_offset, target_idx));
 
             CL_TRY(codegen_loop_body(body_idx, break_target, continue_target));
 
-            continue_target.resolve();
-            code_obj->emit_jump(source_offset, loop_start_target);
+            CL_TRY(continue_target.resolve());
+            CL_TRY(code_obj->emit_jump(source_offset, loop_start_target));
 
-            stop_iteration_handler_target.resolve();
-            code_obj->emit_lda_constant(source_offset,
-                                        stop_iteration_constant_idx);
-            code_obj->emit_active_exception_is_instance(source_offset);
-            code_obj->emit_jump_if_false(source_offset,
-                                         propagate_exception_target);
-            code_obj->emit_clear_active_exception(source_offset);
-            code_obj->emit_jump(source_offset, else_target);
+            CL_TRY(stop_iteration_handler_target.resolve());
+            CL_TRY(code_obj->emit_lda_constant(source_offset,
+                                               stop_iteration_constant_idx));
+            CL_TRY(code_obj->emit_active_exception_is_instance(source_offset));
+            CL_TRY(code_obj->emit_jump_if_false(source_offset,
+                                                propagate_exception_target));
+            CL_TRY(code_obj->emit_clear_active_exception(source_offset));
+            CL_TRY(code_obj->emit_jump(source_offset, else_target));
 
-            propagate_exception_target.resolve();
-            code_obj->emit_reraise_active_exception(source_offset);
+            CL_TRY(propagate_exception_target.resolve());
+            CL_TRY(code_obj->emit_reraise_active_exception(source_offset));
             return Expected<void>::ok();
         }
 
@@ -1982,11 +2030,11 @@ namespace cl
             JumpTarget break_target(code_obj);
 
             CL_TRY(codegen_node(call_children[0]));
-            code_obj->emit_star(source_offset, range_regs + 0);
+            CL_TRY(code_obj->emit_star(source_offset, range_regs + 0));
             for(size_t i = 0; i < args.size(); ++i)
             {
                 CL_TRY(codegen_node(call_argument_value(args[i])));
-                code_obj->emit_star(source_offset, range_regs + 1 + i);
+                CL_TRY(code_obj->emit_star(source_offset, range_regs + 1 + i));
             }
 
             Bytecode prep_opcode = Bytecode::Invalid;
@@ -2009,50 +2057,51 @@ namespace cl
                     assert(false);
             }
 
-            code_obj->emit_for_prep_range(source_offset, prep_opcode,
-                                          range_regs, generic_fallback_target);
+            CL_TRY(code_obj->emit_for_prep_range(source_offset, prep_opcode,
+                                                 range_regs,
+                                                 generic_fallback_target));
 
-            fast_loop_start_target.resolve();
-            code_obj->emit_for_iter_range(source_offset, iter_opcode,
-                                          range_regs, else_target);
-            emit_variable_store(source_offset, target_idx);
+            CL_TRY(fast_loop_start_target.resolve());
+            CL_TRY(code_obj->emit_for_iter_range(source_offset, iter_opcode,
+                                                 range_regs, else_target));
+            CL_TRY(emit_variable_store(source_offset, target_idx));
             CL_TRY(codegen_loop_body(body_idx, break_target,
                                      fast_continue_target));
-            fast_continue_target.resolve();
-            code_obj->emit_jump(source_offset, fast_loop_start_target);
+            CL_TRY(fast_continue_target.resolve());
+            CL_TRY(code_obj->emit_jump(source_offset, fast_loop_start_target));
 
-            generic_fallback_target.resolve();
+            CL_TRY(generic_fallback_target.resolve());
             for(size_t i = 0; i < args.size(); ++i)
             {
-                code_obj->emit_ldar(source_offset, range_regs + 1 + i);
-                code_obj->emit_star(source_offset, OutgoingArgReg(i));
+                CL_TRY(code_obj->emit_ldar(source_offset, range_regs + 1 + i));
+                CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(i)));
             }
-            code_obj->emit_call_positional(source_offset, range_regs,
-                                           OutgoingArgReg(0), n_args);
-            uint8_t iter_constant_idx =
-                code_obj->allocate_constant(interned_string(L"__iter__"));
+            CL_TRY(code_obj->emit_call_positional(source_offset, range_regs,
+                                                  OutgoingArgReg(0), n_args));
+            uint8_t iter_constant_idx = CL_TRY(
+                code_obj->allocate_constant(interned_string(L"__iter__")));
             uint8_t not_iterable_type_constant_idx =
-                code_obj->allocate_constant(Value::from_oop(
-                    active_thread()->class_for_builtin_name(L"TypeError")));
+                CL_TRY(code_obj->allocate_constant(Value::from_oop(
+                    active_thread()->class_for_builtin_name(L"TypeError"))));
             uint8_t not_iterable_message_constant_idx =
-                code_obj->allocate_constant(
-                    interned_string(L"object is not iterable"));
-            code_obj->emit_star(source_offset, OutgoingArgReg(0));
-            code_obj->emit_call_special_method(
+                CL_TRY(code_obj->allocate_constant(
+                    interned_string(L"object is not iterable")));
+            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
+            CL_TRY(code_obj->emit_call_special_method(
                 source_offset, OutgoingArgReg(0), iter_constant_idx, 0,
                 not_iterable_type_constant_idx,
-                not_iterable_message_constant_idx);
-            code_obj->emit_star(source_offset, iterator_reg);
+                not_iterable_message_constant_idx));
+            CL_TRY(code_obj->emit_star(source_offset, iterator_reg));
             CL_TRY(codegen_iterator_driven_for_loop(source_offset, target_idx,
                                                     body_idx, iterator_reg,
                                                     else_target, break_target));
 
-            else_target.resolve();
+            CL_TRY(else_target.resolve());
             if(else_idx >= 0)
             {
                 CL_TRY(codegen_node(else_idx));
             }
-            break_target.resolve();
+            CL_TRY(break_target.resolve());
             return Expected<void>::ok();
         }
 
@@ -2065,7 +2114,7 @@ namespace cl
             {
 
                 case AstNodeKind::EXPRESSION_VARIABLE_REFERENCE:
-                    emit_variable_load(source_offset, node_idx);
+                    CL_TRY(emit_variable_load(source_offset, node_idx));
                     break;
 
                 case AstNodeKind::CALL_ARGUMENT_POSITIONAL:
@@ -2115,7 +2164,7 @@ namespace cl
                             // just compute the RHS
                             CL_TRY(codegen_node(children[1]));
                         }
-                        emit_variable_store(source_offset, lhs_idx);
+                        CL_TRY(emit_variable_store(source_offset, lhs_idx));
                         break;
                     }
 
@@ -2123,10 +2172,11 @@ namespace cl
                     for(int32_t alias_idx: children)
                     {
                         int32_t target_idx = av.children[alias_idx][0];
-                        uint8_t name_idx = code_obj->allocate_constant(
-                            av.constants[alias_idx]);
-                        code_obj->emit_lda_none(source_offset);
-                        code_obj->emit_import_name(source_offset, name_idx, 0);
+                        uint8_t name_idx = CL_TRY(code_obj->allocate_constant(
+                            av.constants[alias_idx]));
+                        CL_TRY(code_obj->emit_lda_none(source_offset));
+                        CL_TRY(code_obj->emit_import_name(source_offset,
+                                                          name_idx, 0));
                         if(import_alias_has_explicit_target(alias_idx))
                         {
                             std::vector<std::wstring> components =
@@ -2135,11 +2185,11 @@ namespace cl
                                 component_idx < components.size();
                                 ++component_idx)
                             {
-                                uint8_t component_name_idx =
+                                uint8_t component_name_idx = CL_TRY(
                                     code_obj->allocate_constant(interned_string(
-                                        components[component_idx]));
-                                code_obj->emit_import_from(source_offset,
-                                                           component_name_idx);
+                                        components[component_idx])));
+                                CL_TRY(code_obj->emit_import_from(
+                                    source_offset, component_name_idx));
                             }
                         }
                         CL_TRY(emit_store_accumulator_to_target(source_offset,
@@ -2167,12 +2217,13 @@ namespace cl
                                 aliases.push_back(children[child_offset]);
                             }
                         }
-                        uint8_t fromlist_idx =
+                        uint8_t fromlist_idx = CL_TRY(
                             is_star_import
                                 ? allocate_star_import_fromlist_constant()
-                                : allocate_import_fromlist_constant(aliases);
+                                : allocate_import_fromlist_constant(aliases));
                         uint8_t module_name_idx =
-                            code_obj->allocate_constant(av.constants[node_idx]);
+                            CL_TRY(code_obj->allocate_constant(
+                                av.constants[node_idx]));
                         int64_t level =
                             av.constants[children[0]].value().get_smi();
                         if(level < 0 || level > 255)
@@ -2181,37 +2232,42 @@ namespace cl
                                 L"SyntaxError",
                                 L"relative import level out of range");
                         }
-                        code_obj->emit_lda_constant(source_offset,
-                                                    fromlist_idx);
-                        code_obj->emit_import_name(source_offset,
-                                                   module_name_idx,
-                                                   static_cast<uint8_t>(level));
+                        CL_TRY(code_obj->emit_lda_constant(source_offset,
+                                                           fromlist_idx));
+                        CL_TRY(code_obj->emit_import_name(
+                            source_offset, module_name_idx,
+                            static_cast<uint8_t>(level)));
                         if(is_star_import)
                         {
-                            code_obj->emit_call_runtime_intrinsic0(
-                                source_offset, RuntimeIntrinsic0::ImportStar);
+                            CL_TRY(code_obj->emit_call_runtime_intrinsic0(
+                                source_offset, RuntimeIntrinsic0::ImportStar));
                             break;
                         }
                         if(aliases.size() == 1)
                         {
                             int32_t alias_idx = aliases[0];
-                            uint8_t name_idx = code_obj->allocate_constant(
-                                av.constants[alias_idx]);
-                            code_obj->emit_import_from(source_offset, name_idx);
+                            uint8_t name_idx =
+                                CL_TRY(code_obj->allocate_constant(
+                                    av.constants[alias_idx]));
+                            CL_TRY(code_obj->emit_import_from(source_offset,
+                                                              name_idx));
                             CL_TRY(emit_store_accumulator_to_target(
                                 source_offset, av.children[alias_idx][0]));
                         }
                         else
                         {
                             TemporaryReg module_reg(*code_obj);
-                            code_obj->emit_star(source_offset, module_reg);
+                            CL_TRY(
+                                code_obj->emit_star(source_offset, module_reg));
                             for(int32_t alias_idx: aliases)
                             {
-                                uint8_t name_idx = code_obj->allocate_constant(
-                                    av.constants[alias_idx]);
-                                code_obj->emit_ldar(source_offset, module_reg);
-                                code_obj->emit_import_from(source_offset,
-                                                           name_idx);
+                                uint8_t name_idx =
+                                    CL_TRY(code_obj->allocate_constant(
+                                        av.constants[alias_idx]));
+                                CL_TRY(code_obj->emit_ldar(source_offset,
+                                                           module_reg));
+                                CL_TRY(code_obj->emit_import_from(source_offset,
+                                                                  name_idx));
                                 CL_TRY(emit_store_accumulator_to_target(
                                     source_offset, av.children[alias_idx][0]));
                             }
@@ -2227,13 +2283,14 @@ namespace cl
                         if(lhs_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
                         {
                             AstChildren lhs_children = av.children[lhs_idx];
-                            uint8_t constant_idx = code_obj->allocate_constant(
-                                av.constants[lhs_idx]);
+                            uint8_t constant_idx =
+                                CL_TRY(code_obj->allocate_constant(
+                                    av.constants[lhs_idx]));
                             ScopedRegister receiver_reg = CL_TRY(
                                 codegen_node_to_register(lhs_children[0]));
                             CL_TRY(codegen_node(children[2]));
-                            code_obj->emit_store_attr(
-                                source_offset, receiver_reg.reg, constant_idx);
+                            CL_TRY(code_obj->emit_store_attr(
+                                source_offset, receiver_reg.reg, constant_idx));
                             break;
                         }
                         if(lhs_kind == AstNodeKind::EXPRESSION_BINARY)
@@ -2244,12 +2301,12 @@ namespace cl
                             ScopedRegister key_reg = CL_TRY(
                                 codegen_node_to_register(lhs_children[1]));
                             CL_TRY(codegen_node(children[2]));
-                            code_obj->emit_store_subscript(
-                                source_offset, receiver_reg.reg, key_reg.reg);
+                            CL_TRY(code_obj->emit_store_subscript(
+                                source_offset, receiver_reg.reg, key_reg.reg));
                             break;
                         }
                         CL_TRY(codegen_node(children[2]));
-                        emit_variable_store(source_offset, lhs_idx);
+                        CL_TRY(emit_variable_store(source_offset, lhs_idx));
                     }
                     else if(!ann_assign_is_simple(node_idx))
                     {
@@ -2295,7 +2352,8 @@ namespace cl
                         if(target_kind ==
                            AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
                         {
-                            emit_variable_delete(source_offset, target_idx);
+                            CL_TRY(emit_variable_delete(source_offset,
+                                                        target_idx));
                             continue;
                         }
                         return Expected<void>::raise_exception(
@@ -2309,18 +2367,22 @@ namespace cl
                     {
                         JumpTarget ok_target(code_obj);
                         CL_TRY(codegen_node(children[0]));
-                        code_obj->emit_jump_if_true(source_offset, ok_target);
+                        CL_TRY(code_obj->emit_jump_if_true(source_offset,
+                                                           ok_target));
                         if(children.size() == 1)
                         {
-                            code_obj->emit_raise_assertion_error(source_offset);
+                            CL_TRY(code_obj->emit_raise_assertion_error(
+                                source_offset));
                         }
                         else
                         {
                             CL_TRY(codegen_node(children[1]));
-                            code_obj->emit_raise_assertion_error_with_message(
-                                source_offset);
+                            CL_TRY(
+                                code_obj
+                                    ->emit_raise_assertion_error_with_message(
+                                        source_offset));
                         }
-                        ok_target.resolve();
+                        CL_TRY(ok_target.resolve());
                     }
                     break;
 
@@ -2329,24 +2391,24 @@ namespace cl
                     {
                         if(caught_exception_regs.empty())
                         {
-                            code_obj->emit_raise_bare(source_offset);
+                            CL_TRY(code_obj->emit_raise_bare(source_offset));
                             break;
                         }
-                        code_obj->emit_ldar(source_offset,
-                                            caught_exception_regs.back());
-                        code_obj->emit_raise_unwind(source_offset);
+                        CL_TRY(code_obj->emit_ldar(
+                            source_offset, caught_exception_regs.back()));
+                        CL_TRY(code_obj->emit_raise_unwind(source_offset));
                     }
                     else
                     {
                         CL_TRY(codegen_node(children[0]));
                         if(caught_exception_regs.empty())
                         {
-                            code_obj->emit_raise_unwind(source_offset);
+                            CL_TRY(code_obj->emit_raise_unwind(source_offset));
                         }
                         else
                         {
-                            code_obj->emit_raise_unwind_with_context(
-                                source_offset, caught_exception_regs.back());
+                            CL_TRY(code_obj->emit_raise_unwind_with_context(
+                                source_offset, caught_exception_regs.back()));
                         }
                     }
                     break;
@@ -2357,8 +2419,8 @@ namespace cl
                         ScopedRegister receiver_reg =
                             CL_TRY(codegen_node_to_register(children[0]));
                         CL_TRY(codegen_node(children[1]));
-                        code_obj->emit_load_subscript(source_offset,
-                                                      receiver_reg.reg);
+                        CL_TRY(code_obj->emit_load_subscript(source_offset,
+                                                             receiver_reg.reg));
                         break;
                     }
                     CL_TRY(codegen_binary_expression(node_idx));
@@ -2369,7 +2431,8 @@ namespace cl
                         OpTableEntry entry =
                             get_operator_entry(kind.operator_kind);
                         CL_TRY(codegen_node(children[0]));
-                        code_obj->emit_unary_op(source_offset, entry.standard);
+                        CL_TRY(code_obj->emit_unary_op(source_offset,
+                                                       entry.standard));
                         break;
                     }
                 case AstNodeKind::EXPRESSION_LITERAL:
@@ -2378,21 +2441,21 @@ namespace cl
                         switch(kind.operator_kind)
                         {
                             case AstOperatorKind::NONE:
-                                code_obj->emit_lda_none(source_offset);
+                                CL_TRY(code_obj->emit_lda_none(source_offset));
                                 break;
                             case AstOperatorKind::TRUE:
-                                code_obj->emit_lda_true(source_offset);
+                                CL_TRY(code_obj->emit_lda_true(source_offset));
                                 break;
                             case AstOperatorKind::FALSE:
-                                code_obj->emit_lda_false(source_offset);
+                                CL_TRY(code_obj->emit_lda_false(source_offset));
                                 break;
                             case AstOperatorKind::ELLIPSIS:
                                 {
                                     uint32_t constant_idx =
-                                        code_obj->allocate_constant(
-                                            Value::Ellipsis());
-                                    code_obj->emit_lda_constant(source_offset,
-                                                                constant_idx);
+                                        CL_TRY(code_obj->allocate_constant(
+                                            Value::Ellipsis()));
+                                    CL_TRY(code_obj->emit_lda_constant(
+                                        source_offset, constant_idx));
                                     break;
                                 }
 
@@ -2401,15 +2464,15 @@ namespace cl
                                     Value val = av.constants[node_idx];
                                     if(val.is_smi8())
                                     {
-                                        code_obj->emit_lda_smi(source_offset,
-                                                               val.get_smi());
+                                        CL_TRY(code_obj->emit_lda_smi(
+                                            source_offset, val.get_smi()));
                                     }
                                     else
                                     {
-                                        uint32_t constant_idx =
-                                            code_obj->allocate_constant(val);
-                                        code_obj->emit_lda_constant(
-                                            source_offset, constant_idx);
+                                        uint32_t constant_idx = CL_TRY(
+                                            code_obj->allocate_constant(val));
+                                        CL_TRY(code_obj->emit_lda_constant(
+                                            source_offset, constant_idx));
                                         break;
                                     }
                                     break;
@@ -2418,10 +2481,10 @@ namespace cl
                             case AstOperatorKind::STRING:
                                 {
                                     uint32_t constant_idx =
-                                        code_obj->allocate_constant(
-                                            av.constants[node_idx]);
-                                    code_obj->emit_lda_constant(source_offset,
-                                                                constant_idx);
+                                        CL_TRY(code_obj->allocate_constant(
+                                            av.constants[node_idx]));
+                                    CL_TRY(code_obj->emit_lda_constant(
+                                        source_offset, constant_idx));
                                     break;
                                 }
                             default:
@@ -2450,12 +2513,12 @@ namespace cl
 
                             if(!last)
                             {
-                                code_obj->emit_jump_if_false(source_offset,
-                                                             skip_target);
+                                CL_TRY(code_obj->emit_jump_if_false(
+                                    source_offset, skip_target));
                             }
                             std::swap(recv, prod);
                         }
-                        skip_target.resolve();
+                        CL_TRY(skip_target.resolve());
 
                         break;
                     }
@@ -2467,19 +2530,19 @@ namespace cl
                         switch(kind.operator_kind)
                         {
                             case AstOperatorKind::SHORTCUTTING_AND:
-                                code_obj->emit_jump_if_false(source_offset,
-                                                             skip_target);
+                                CL_TRY(code_obj->emit_jump_if_false(
+                                    source_offset, skip_target));
                                 break;
                             case AstOperatorKind::SHORTCUTTING_OR:
-                                code_obj->emit_jump_if_true(source_offset,
-                                                            skip_target);
+                                CL_TRY(code_obj->emit_jump_if_true(
+                                    source_offset, skip_target));
                                 break;
                             default:
                                 assert(0);
                                 break;
                         }
                         CL_TRY(codegen_node(children[1]));
-                        skip_target.resolve();
+                        CL_TRY(skip_target.resolve());
                         break;
                     }
 
@@ -2492,9 +2555,10 @@ namespace cl
                         ScopedRegister receiver_reg =
                             CL_TRY(codegen_node_to_register(children[0]));
                         uint8_t constant_idx =
-                            code_obj->allocate_constant(av.constants[node_idx]);
-                        code_obj->emit_load_attr(
-                            source_offset, receiver_reg.reg, constant_idx);
+                            CL_TRY(code_obj->allocate_constant(
+                                av.constants[node_idx]));
+                        CL_TRY(code_obj->emit_load_attr(
+                            source_offset, receiver_reg.reg, constant_idx));
                         break;
                     }
 
@@ -2515,8 +2579,8 @@ namespace cl
                             JumpTarget next_target(code_obj);
                             CL_TRY(codegen_node(
                                 children[i + 0]));  // condition, initial check
-                            code_obj->emit_jump_if_false(source_offset,
-                                                         next_target);
+                            CL_TRY(code_obj->emit_jump_if_false(source_offset,
+                                                                next_target));
                             CL_TRY(codegen_node(children[i + 1]));  // then
 
                             if(i + 2 != children.size())
@@ -2524,15 +2588,16 @@ namespace cl
                                 // if we have more to emit, we have to generate
                                 // a jump to the done target. otherwise, we'll
                                 // just fall through
-                                code_obj->emit_jump(source_offset, done_target);
+                                CL_TRY(code_obj->emit_jump(source_offset,
+                                                           done_target));
                             }
-                            next_target.resolve();
+                            CL_TRY(next_target.resolve());
                         }
                         if(children.size() & 1)  // odd -> else
                         {
                             CL_TRY(codegen_node(children.back()));  // else
                         }
-                        done_target.resolve();
+                        CL_TRY(done_target.resolve());
 
                         break;
                     }
@@ -2545,10 +2610,10 @@ namespace cl
                         JumpTarget continue_target(code_obj);
                         CL_TRY(codegen_node(
                             children[0]));  // condition, initial check
-                        code_obj->emit_jump_if_false(source_offset,
-                                                     else_target);
+                        CL_TRY(code_obj->emit_jump_if_false(source_offset,
+                                                            else_target));
 
-                        loop_start_target.resolve();
+                        CL_TRY(loop_start_target.resolve());
 
                         loop_targets.emplace_back(&break_target,
                                                   &continue_target,
@@ -2556,18 +2621,18 @@ namespace cl
                         CL_TRY(codegen_node(children[1]));  // body
                         loop_targets.pop_back();
 
-                        continue_target.resolve();
+                        CL_TRY(continue_target.resolve());
                         CL_TRY(codegen_node(
                             children[0]));  // condition, non-initial check
-                        code_obj->emit_jump_if_true(source_offset,
-                                                    loop_start_target);
-                        else_target.resolve();
+                        CL_TRY(code_obj->emit_jump_if_true(source_offset,
+                                                           loop_start_target));
+                        CL_TRY(else_target.resolve());
                         if(children.size() == 3)
                         {
                             CL_TRY(codegen_node(
                                 children[2]));  // else clause of a loop
                         }
-                        break_target.resolve();
+                        CL_TRY(break_target.resolve());
                         break;
                     }
 
@@ -2592,30 +2657,33 @@ namespace cl
                         JumpTarget break_target(code_obj);
 
                         CL_TRY(codegen_node(iterable_idx));
-                        uint8_t iter_constant_idx = code_obj->allocate_constant(
-                            interned_string(L"__iter__"));
+                        uint8_t iter_constant_idx =
+                            CL_TRY(code_obj->allocate_constant(
+                                interned_string(L"__iter__")));
                         uint8_t not_iterable_type_constant_idx =
-                            code_obj->allocate_constant(Value::from_oop(
+                            CL_TRY(code_obj->allocate_constant(Value::from_oop(
                                 active_thread()->class_for_builtin_name(
-                                    L"TypeError")));
+                                    L"TypeError"))));
                         uint8_t not_iterable_message_constant_idx =
-                            code_obj->allocate_constant(
-                                interned_string(L"object is not iterable"));
-                        code_obj->emit_star(source_offset, OutgoingArgReg(0));
-                        code_obj->emit_call_special_method(
+                            CL_TRY(code_obj->allocate_constant(
+                                interned_string(L"object is not iterable")));
+                        CL_TRY(code_obj->emit_star(source_offset,
+                                                   OutgoingArgReg(0)));
+                        CL_TRY(code_obj->emit_call_special_method(
                             source_offset, OutgoingArgReg(0), iter_constant_idx,
                             0, not_iterable_type_constant_idx,
-                            not_iterable_message_constant_idx);
-                        code_obj->emit_star(source_offset, iterator_reg);
+                            not_iterable_message_constant_idx));
+                        CL_TRY(
+                            code_obj->emit_star(source_offset, iterator_reg));
                         CL_TRY(codegen_iterator_driven_for_loop(
                             source_offset, target_idx, body_idx, iterator_reg,
                             else_target, break_target));
-                        else_target.resolve();
+                        CL_TRY(else_target.resolve());
                         if(else_idx >= 0)
                         {
                             CL_TRY(codegen_node(else_idx));
                         }
-                        break_target.resolve();
+                        CL_TRY(break_target.resolve());
                         break;
                     }
 
@@ -2638,9 +2706,9 @@ namespace cl
                         CL_TRY(emit_active_cleanups_until_and_then(
                             loop_targets.back().cleanup_depth,
                             [&]() -> Expected<void> {
-                                code_obj->emit_jump(
+                                CL_TRY(code_obj->emit_jump(
                                     source_offset,
-                                    *loop_targets.back().break_target);
+                                    *loop_targets.back().break_target));
                                 return Expected<void>::ok();
                             }));
                     }
@@ -2657,9 +2725,9 @@ namespace cl
                         CL_TRY(emit_active_cleanups_until_and_then(
                             loop_targets.back().cleanup_depth,
                             [&]() -> Expected<void> {
-                                code_obj->emit_jump(
+                                CL_TRY(code_obj->emit_jump(
                                     source_offset,
-                                    *loop_targets.back().continue_target);
+                                    *loop_targets.back().continue_target));
                                 return Expected<void>::ok();
                             }));
                     }
@@ -2678,22 +2746,24 @@ namespace cl
                         }
                         else
                         {
-                            code_obj->emit_lda_none(source_offset);
+                            CL_TRY(code_obj->emit_lda_none(source_offset));
                         }
                         if(!active_cleanups.empty())
                         {
                             TemporaryReg return_value(*code_obj);
-                            code_obj->emit_star(source_offset, return_value);
+                            CL_TRY(code_obj->emit_star(source_offset,
+                                                       return_value));
                             CL_TRY(emit_active_cleanups_until_and_then(
                                 0, [&]() -> Expected<void> {
-                                    code_obj->emit_ldar(source_offset,
-                                                        return_value);
-                                    code_obj->emit_return(source_offset);
+                                    CL_TRY(code_obj->emit_ldar(source_offset,
+                                                               return_value));
+                                    CL_TRY(
+                                        code_obj->emit_return(source_offset));
                                     return Expected<void>::ok();
                                 }));
                             break;
                         }
-                        code_obj->emit_return(source_offset);
+                        CL_TRY(code_obj->emit_return(source_offset));
                         break;
                     }
 
@@ -2762,16 +2832,16 @@ namespace cl
     {
         if(body_idx < 0)
         {
-            code_obj->emit_lda_none(0);
-            code_obj->emit_return(0);
-            CodeObject *result = code_obj->finalize();
+            CL_TRY(code_obj->emit_lda_none(0));
+            CL_TRY(code_obj->emit_return(0));
+            CodeObject *result = CL_TRY(code_obj->finalize());
             return Expected<CodeObject *>::ok(incref(result));
         }
         if(av.children[body_idx].empty())
         {
-            code_obj->emit_lda_none(0);
-            code_obj->emit_return(0);
-            CodeObject *result = code_obj->finalize();
+            CL_TRY(code_obj->emit_lda_none(0));
+            CL_TRY(code_obj->emit_return(0));
+            CodeObject *result = CL_TRY(code_obj->finalize());
             return Expected<CodeObject *>::ok(incref(result));
         }
 
@@ -2786,23 +2856,23 @@ namespace cl
                 if(statement_children.size() == 1)
                 {
                     CL_TRY(codegen_node(statement_children[0]));
-                    code_obj->emit_return(
-                        av.source_offsets[statement_children[0]]);
-                    CodeObject *result = code_obj->finalize();
+                    CL_TRY(code_obj->emit_return(
+                        av.source_offsets[statement_children[0]]));
+                    CodeObject *result = CL_TRY(code_obj->finalize());
                     return Expected<CodeObject *>::ok(incref(result));
                 }
             }
 
             CL_TRY(codegen_node(body_idx));
-            code_obj->emit_lda_none(0);
-            code_obj->emit_return(0);
-            CodeObject *result = code_obj->finalize();
+            CL_TRY(code_obj->emit_lda_none(0));
+            CL_TRY(code_obj->emit_return(0));
+            CodeObject *result = CL_TRY(code_obj->finalize());
             return Expected<CodeObject *>::ok(incref(result));
         }
 
         CL_TRY(codegen_node(body_idx));
-        code_obj->emit_return(0);
-        CodeObject *result = code_obj->finalize();
+        CL_TRY(code_obj->emit_return(0));
+        CodeObject *result = CL_TRY(code_obj->finalize());
         return Expected<CodeObject *>::ok(incref(result));
     }
 
@@ -2953,22 +3023,22 @@ namespace cl
     Expected<CodeObject *> AstCodegen::run_function_body(uint32_t source_offset,
                                                          int32_t body_idx)
     {
-        emit_local_binding_prologue();
+        CL_TRY(emit_local_binding_prologue());
         CL_TRY(codegen_node(body_idx));
         // finally, emit return None just in case. as a future optimisation, we
         // could check that all return paths already have a return statement
-        code_obj->emit_lda_none(source_offset);
-        code_obj->emit_return(source_offset);
-        return Expected<CodeObject *>::ok(code_obj->finalize());
+        CL_TRY(code_obj->emit_lda_none(source_offset));
+        CL_TRY(code_obj->emit_return(source_offset));
+        return code_obj->finalize();
     }
 
     Expected<CodeObject *> AstCodegen::run_class_body(uint32_t source_offset,
                                                       int32_t body_idx)
     {
-        emit_local_binding_prologue();
+        CL_TRY(emit_local_binding_prologue());
         CL_TRY(codegen_node(body_idx));
-        code_obj->emit_build_class(source_offset);
-        return Expected<CodeObject *>::ok(code_obj->finalize());
+        CL_TRY(code_obj->emit_build_class(source_offset));
+        return code_obj->finalize();
     }
 
     Expected<CodeObject *>

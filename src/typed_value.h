@@ -47,7 +47,8 @@ namespace cl
     // Expected<T> is split by storage representation. Value-like payloads can
     // use Value::exception_marker() as an in-band exception niche; ordinary C++
     // payloads need an explicit success flag and manually managed storage.
-    template <typename T, bool = IsValueLike<T>::value> class Expected;
+    template <typename T, bool = IsValueLike<T>::value>
+    class [[nodiscard]] Expected;
 
     template <typename T, typename = void>
     struct HasSemanticType : std::false_type
@@ -290,7 +291,7 @@ namespace cl
 
     // Compact Expected<T> representation for Value and TValue-like handles.
     // The pending-exception state is carried by Value::exception_marker().
-    template <typename T> class Expected<T, true>
+    template <typename T> class [[nodiscard]] Expected<T, true>
     {
     public:
         using semantic_type = typename T::semantic_type;
@@ -345,7 +346,7 @@ namespace cl
 
     // General Expected<T> representation for non-Value payloads, such as AST
     // indexes. This deliberately uses a bool word instead of sentinel values.
-    template <typename T> class Expected<T, false>
+    template <typename T> class [[nodiscard]] Expected<T, false>
     {
     public:
         using semantic_type = T;
@@ -489,7 +490,7 @@ namespace cl
         std::aligned_storage_t<sizeof(T), alignof(T)> storage_;
     };
 
-    template <> class Expected<void, false>
+    template <> class [[nodiscard]] Expected<void, false>
     {
     public:
         Expected() = delete;
