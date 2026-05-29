@@ -1307,7 +1307,7 @@ namespace cl
                 format_error_context(del_target_source_pos(target)));
         }
 
-        int32_t assignment()
+        Expected<int32_t> assignment()
         {
             int32_t source_pos = source_pos_for_token();
             bool lhs_parenthesized = peek() == Token::LPAR;
@@ -1328,9 +1328,9 @@ namespace cl
                                 AstNodeKind::EXPRESSION_VARIABLE_REFERENCE
                         ? Value::True()
                         : Value::False();
-                return ast.emplace_back(AstNodeKind::STATEMENT_ANN_ASSIGN,
-                                        source_pos, annotation_children,
-                                        simple);
+                return Expected<int32_t>::ok(
+                    ast.emplace_back(AstNodeKind::STATEMENT_ANN_ASSIGN,
+                                     source_pos, annotation_children, simple));
             }
 
             AstOperatorKind op_kind = AstOperatorKind::FALSE;
@@ -1379,16 +1379,16 @@ namespace cl
                     op_kind = AstOperatorKind::INT_DIVIDE;
                     break;
                 default:
-                    return ast.emplace_back(AstNodeKind::STATEMENT_EXPRESSION,
-                                            source_pos, lhs);
+                    return Expected<int32_t>::ok(ast.emplace_back(
+                        AstNodeKind::STATEMENT_EXPRESSION, source_pos, lhs));
             }
 
             validate_assignment_target(lhs);
             source_pos = source_pos_and_advance();
             int32_t rhs = annotated_rhs();
-            return ast.emplace_back(
+            return Expected<int32_t>::ok(ast.emplace_back(
                 AstKind(AstNodeKind::STATEMENT_ASSIGN, op_kind), source_pos,
-                lhs, rhs);
+                lhs, rhs));
         }
 
         int32_t yield_expr() { return not_implemented("yield expression"); }
@@ -1616,7 +1616,7 @@ namespace cl
                                     aliases);
         }
 
-        int32_t del_stmt()
+        Expected<int32_t> del_stmt()
         {
             int32_t source_pos = source_pos_for_token();
             consume(Token::DEL);
@@ -1632,10 +1632,14 @@ namespace cl
                 ch.push_back(star_expressions());
                 validate_del_target(ch.back());
             }
-            return ast.emplace_back(AstNodeKind::STATEMENT_DEL, source_pos, ch);
+            return Expected<int32_t>::ok(
+                ast.emplace_back(AstNodeKind::STATEMENT_DEL, source_pos, ch));
         }
 
-        int32_t yield_stmt() { return not_implemented("yield statement"); }
+        Expected<int32_t> yield_stmt()
+        {
+            return Expected<int32_t>::ok(not_implemented("yield statement"));
+        }
 
         int32_t assert_stmt()
         {
@@ -1698,9 +1702,9 @@ namespace cl
                                     ch);
         }
 
-        int32_t nonlocal_stmt()
+        Expected<int32_t> nonlocal_stmt()
         {
-            return not_implemented("nonlocal statement");
+            return Expected<int32_t>::ok(not_implemented("nonlocal statement"));
         }
 
         Expected<int32_t> simple_stmt()
@@ -1716,9 +1720,9 @@ namespace cl
                     return Expected<int32_t>::ok(import_stmt());
 
                 case Token::DEL:
-                    return Expected<int32_t>::ok(del_stmt());
+                    return del_stmt();
                 case Token::YIELD:
-                    return Expected<int32_t>::ok(yield_stmt());
+                    return yield_stmt();
                 case Token::ASSERT:
                     return Expected<int32_t>::ok(assert_stmt());
                 case Token::BREAK:
@@ -1730,10 +1734,10 @@ namespace cl
                 case Token::GLOBAL:
                     return Expected<int32_t>::ok(global_stmt());
                 case Token::NONLOCAL:
-                    return Expected<int32_t>::ok(nonlocal_stmt());
+                    return nonlocal_stmt();
 
                 default:
-                    return Expected<int32_t>::ok(assignment());
+                    return assignment();
             }
         }
 
