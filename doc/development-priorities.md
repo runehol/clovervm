@@ -16,10 +16,12 @@ JIT, language, and runtime work.
 - Do not turn feature work into hidden semantic shortcuts. If a feature can run
   Python bytecode, allocate observably, invoke descriptors, or raise, it should
   be routed through explicit VM dispatch and pending-exception propagation.
-- Keep fallibility visible in types. Native/interpreter boundaries may still use
-  `[[nodiscard]] Value` plus `Value::exception_marker()`, but typed internal
-  APIs should move toward `Expected<T>`, including non-`Value` results such as
-  parser indexes.
+- Keep fallibility visible in types. `libclovervm` is built without C++
+  exceptions, so VM failures must travel through pending Python exception state,
+  `Value::exception_marker()`, or `Expected<T>` rather than C++ exception
+  transport. Native/interpreter boundaries may still use `[[nodiscard]] Value`
+  plus `Value::exception_marker()`, while typed internal APIs should continue to
+  use `Expected<T>`, including non-`Value` results such as parser indexes.
 - Prefer architecture that supports future no-GIL and C-extension work without
   forcing immediate implementation of those larger goals.
 
@@ -85,43 +87,33 @@ JIT, language, and runtime work.
    keyword arguments, generic callable construction paths, and normalization of
    constructor failures into specific VM exceptions.
 
-5. **Specific VM exceptions and typed fallibility**
-
-   Replace generic runtime failures with specific VM exceptions for overflow,
-   type errors, unsupported operations, descriptor failures, and other slow
-   paths. This is a prerequisite for making later object-model and language
-   features behave predictably without hiding failures in C++ helpers. Continue
-   converting fallible internal helpers to `Expected<T>` where that makes the
-   success type precise, including non-handle results such as `Expected<int32_t>`
-   in parser or compiler code.
-
-6. **Interpreter-controlled descriptor execution**
+5. **Interpreter-controlled descriptor execution**
 
    Lookup already classifies descriptor work into plans. The next step is to
    execute `__get__`, `__set__`, and `__delete__` through explicit interpreter
    or VM-controlled dispatch so Python-visible execution, allocation, and
    exceptions are not hidden inside lookup/classification helpers.
 
-7. **Full Python dict hashing and equality**
+6. **Full Python dict hashing and equality**
 
    Python `dict` needs arbitrary-key hashing and equality semantics rather than
    the current string-key-oriented internal assumptions. This matters for real
    Python code, imports, module namespaces, mappings, and future library work.
 
-8. **Attribute hooks and escaped bound methods**
+7. **Attribute hooks and escaped bound methods**
 
     Implement `__getattribute__`, `__getattr__`, `__setattr__`, and
     `__delattr__`, and add observable bound-method objects for escaped method
     values such as `f = obj.m`. Direct method-call fast paths should remain
     allocation-free when the bound method does not escape.
 
-9. **Generators, `yield`, and `yield from`**
+8. **Generators, `yield`, and `yield from`**
 
     Generators create long-lived suspended frames, so they should wait until the
     memory/root model is reliable. `yield from` also needs careful interaction
     with `StopIteration.value` and internal no-value sentinels.
 
-10. **Comprehensions and richer syntax**
+9. **Comprehensions and richer syntax**
 
     Add list/dict/set comprehensions, generator expressions, more assignment
     targets, richer string syntax, and other surface-area features after the
