@@ -123,7 +123,8 @@ namespace cl
         return 10 + (c - L'A');
     }
 
-    static std::wstring decode_python_string_literal(std::wstring_view token)
+    static Expected<std::wstring>
+    decode_python_string_literal(std::wstring_view token)
     {
         size_t prefix_len = 0;
         bool is_raw = false;
@@ -147,13 +148,15 @@ namespace cl
 
         if(prefix_len >= token.size())
         {
-            throw std::runtime_error("SyntaxError: Invalid string literal");
+            return Expected<std::wstring>::raise_exception(
+                L"SyntaxError", L"Invalid string literal");
         }
 
         wchar_t quote = token[prefix_len];
         if(quote != L'\'' && quote != L'"')
         {
-            throw std::runtime_error("SyntaxError: Invalid string literal");
+            return Expected<std::wstring>::raise_exception(
+                L"SyntaxError", L"Invalid string literal");
         }
         size_t quote_len = 1;
         if(prefix_len + 2 < token.size() && token[prefix_len + 1] == quote &&
@@ -163,13 +166,15 @@ namespace cl
         }
         if(token.size() < prefix_len + quote_len * 2)
         {
-            throw std::runtime_error("SyntaxError: Invalid string literal");
+            return Expected<std::wstring>::raise_exception(
+                L"SyntaxError", L"Invalid string literal");
         }
         for(size_t i = 0; i < quote_len; ++i)
         {
             if(token[token.size() - quote_len + i] != quote)
             {
-                throw std::runtime_error("SyntaxError: Invalid string literal");
+                return Expected<std::wstring>::raise_exception(
+                    L"SyntaxError", L"Invalid string literal");
             }
         }
 
@@ -177,7 +182,7 @@ namespace cl
             prefix_len + quote_len, token.size() - prefix_len - quote_len * 2));
         if(is_raw)
         {
-            return body;
+            return Expected<std::wstring>::ok(std::move(body));
         }
 
         std::wstring out;
@@ -193,8 +198,8 @@ namespace cl
 
             if(i + 1 >= body.size())
             {
-                throw std::runtime_error(
-                    "SyntaxError: Invalid escape in string literal");
+                return Expected<std::wstring>::raise_exception(
+                    L"SyntaxError", L"Invalid escape in string literal");
             }
 
             wchar_t esc = body[++i];
@@ -237,9 +242,9 @@ namespace cl
                         if(i + 2 >= body.size() || !is_hex_digit(body[i + 1]) ||
                            !is_hex_digit(body[i + 2]))
                         {
-                            throw std::runtime_error(
-                                "SyntaxError: Invalid \\x escape in string "
-                                "literal");
+                            return Expected<std::wstring>::raise_exception(
+                                L"SyntaxError",
+                                L"Invalid \\x escape in string literal");
                         }
                         int value = (hex_value(body[i + 1]) << 4) +
                                     hex_value(body[i + 2]);
@@ -253,9 +258,9 @@ namespace cl
                         size_t digits = esc == L'u' ? 4 : 8;
                         if(i + digits >= body.size())
                         {
-                            throw std::runtime_error(
-                                "SyntaxError: Invalid unicode escape in string "
-                                "literal");
+                            return Expected<std::wstring>::raise_exception(
+                                L"SyntaxError",
+                                L"Invalid unicode escape in string literal");
                         }
                         uint32_t value = 0;
                         for(size_t j = 1; j <= digits; ++j)
@@ -263,9 +268,9 @@ namespace cl
                             wchar_t h = body[i + j];
                             if(!is_hex_digit(h))
                             {
-                                throw std::runtime_error(
-                                    "SyntaxError: Invalid unicode escape in "
-                                    "string literal");
+                                return Expected<std::wstring>::raise_exception(
+                                    L"SyntaxError", L"Invalid unicode escape "
+                                                    L"in string literal");
                             }
                             value = (value << 4) + hex_value(h);
                         }
@@ -295,7 +300,7 @@ namespace cl
                     break;
             }
         }
-        return out;
+        return Expected<std::wstring>::ok(std::move(out));
     }
 
     class Parser
@@ -1140,7 +1145,7 @@ namespace cl
                         std::wstring_view token = string_for_string_token(
                             *ast.compilation_unit, source_pos_for_token());
                         std::wstring value =
-                            decode_python_string_literal(token);
+                            CL_TRY(decode_python_string_literal(token));
                         TValue<String> v =
                             vm.get_or_create_interned_string_value(value);
                         return Expected<int32_t>::ok(ast.emplace_back(
