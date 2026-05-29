@@ -449,7 +449,7 @@ namespace cl
         }
     }
 
-    static void
+    static Expected<void>
     reject_set_name_notifications_until_supported(Value *fp,
                                                   CodeObject *body_code)
     {
@@ -473,28 +473,30 @@ namespace cl
             Value self;
             if(load_method(value, set_name_name, callable, self))
             {
-                throw std::runtime_error(
-                    "TypeError: __set_name__ notifications are not "
-                    "implemented yet");
+                return Expected<void>::raise_exception(
+                    L"TypeError",
+                    L"__set_name__ notifications are not implemented yet");
             }
         }
+        return Expected<void>::ok();
     }
 
     static constexpr uint32_t ClassBodyNameParameter = 0;
     static constexpr uint32_t ClassBodyBasesParameter = 1;
     static constexpr uint32_t ClassBodyParameterCount = 2;
 
-    static Value build_class_from_frame(ThreadState *thread, Value *fp,
-                                        CodeObject *body_code)
+    static Expected<Value> build_class_from_frame(ThreadState *thread,
+                                                  Value *fp,
+                                                  CodeObject *body_code)
     {
         TValue<String> class_name = TValue<String>::from_value_assumed(
             fp[body_code->encode_reg(ClassBodyNameParameter)]);
         TValue<Tuple> bases = TValue<Tuple>::from_value_assumed(
             fp[body_code->encode_reg(ClassBodyBasesParameter)]);
 
-        TValue<ClassObject> cls = thread->make_internal_value<ClassObject>(
-            thread->get_machine()->type_class(), class_name,
-            kDefaultFactoryInlineSlotCount, bases, NativeLayoutId::Instance);
+        TValue<ClassObject> cls = CL_TRY(ClassObject::make(
+            thread, thread->get_machine()->type_class(), class_name,
+            kDefaultFactoryInlineSlotCount, bases, NativeLayoutId::Instance));
         Scope *local_scope = body_code->get_local_scope_ptr();
         for(uint32_t slot_idx = 0; slot_idx < local_scope->size(); ++slot_idx)
         {
@@ -511,12 +513,12 @@ namespace cl
             if(!cls.extract()->set_own_property(
                    local_scope->get_name_by_slot_index(slot_idx), value))
             {
-                throw std::runtime_error(
-                    "TypeError: cannot set read-only class attribute");
+                return Expected<Value>::raise_exception(
+                    L"TypeError", L"cannot set read-only class attribute");
             }
         }
-        reject_set_name_notifications_until_supported(fp, body_code);
-        return Value::from_oop(cls.extract());
+        CL_TRY(reject_set_name_notifications_until_supported(fp, body_code));
+        return Expected<Value>::ok(Value::from_oop(cls.extract()));
     }
 
     NOINLINE INTERP_CC Value not_iterator_error(PARAMS)
@@ -3206,7 +3208,19 @@ namespace cl
 
     static INTERP_CC Value op_build_class(PARAMS)
     {
-        accumulator = build_class_from_frame(thread, fp, code_object);
+        Expected<Value> built_class =
+            build_class_from_frame(thread, fp, code_object);
+        if(unlikely(built_class.has_exception()))
+        {
+            ExceptionalTarget target =
+                resolve_exceptional_frame_exit(thread, fp, pc, code_object);
+            fp = target.fp;
+            code_object = target.code_object;
+            pc = target.interpreted_pc;
+            START(0);
+            COMPLETE();
+        }
+        accumulator = built_class.value();
 
         restore_frame_header(fp, pc, code_object);
 

@@ -4,6 +4,7 @@
 #include "function.h"
 #include "runtime_helpers.h"
 #include "str.h"
+#include "thread_state.h"
 #include "tuple.h"
 #include "virtual_machine.h"
 #include <algorithm>
@@ -106,7 +107,8 @@ namespace cl
         return is_subclass_of(obj->get_shape()->get_class(), cls);
     }
 
-    static Value compute_mro(ClassObject *cls, const Tuple *bases)
+    static Expected<TValue<Tuple>> compute_mro(ClassObject *cls,
+                                               const Tuple *bases)
     {
         TValue<String> dunder_mro_name = interned_string(L"__mro__");
         std::vector<std::deque<ClassObject *>> sequences;
@@ -135,19 +137,20 @@ namespace cl
             }
             if(candidate == nullptr)
             {
-                throw std::runtime_error(
-                    "TypeError: cannot create a consistent method resolution "
-                    "order");
+                return Expected<TValue<Tuple>>::raise_exception(
+                    L"TypeError",
+                    L"cannot create a consistent method resolution order");
             }
 
             linearized.push_back(candidate);
             remove_c3_merge_candidate(candidate, sequences);
         }
 
-        return tuple_from_vector<ClassObject>(linearized);
+        return Expected<TValue<Tuple>>::ok(TValue<Tuple>::from_value_assumed(
+            tuple_from_vector<ClassObject>(linearized)));
     }
 
-    void ClassObject::validate_bases(TValue<Tuple> bases)
+    Expected<void> ClassObject::validate_bases(TValue<Tuple> bases)
     {
         Tuple *bases_tuple = bases.extract();
         std::vector<ClassObject *> seen_bases;
@@ -158,16 +161,18 @@ namespace cl
                 try_convert_to<ClassObject>(bases_tuple->item_unchecked(idx));
             if(base == nullptr)
             {
-                throw std::runtime_error(
-                    "TypeError: class bases must be class objects");
+                return Expected<void>::raise_exception(
+                    L"TypeError", L"class bases must be class objects");
             }
             if(std::find(seen_bases.begin(), seen_bases.end(), base) !=
                seen_bases.end())
             {
-                throw std::runtime_error("TypeError: duplicate base class");
+                return Expected<void>::raise_exception(L"TypeError",
+                                                       L"duplicate base class");
             }
             seen_bases.push_back(base);
         }
+        return Expected<void>::ok();
     }
 
     ClassObject::ClassObject(BootstrapObjectTag, TValue<String> _name,
@@ -269,7 +274,10 @@ namespace cl
         {
             Value bases_tuple = make_bases_tuple(single_base);
             bases = bases_tuple;
-            mro = compute_mro(this, assume_convert_to<Tuple>(bases_tuple));
+            Expected<TValue<Tuple>> computed_mro =
+                compute_mro(this, assume_convert_to<Tuple>(bases_tuple));
+            assert(computed_mro.has_value());
+            mro = computed_mro.value().raw_value();
         }
     }
 
@@ -299,9 +307,19 @@ namespace cl
                       instance_shape_flags)
     {
         install_bootstrap_class(metaclass);
-        validate_bases(_bases);
+        Expected<void> bases_valid = validate_bases(_bases);
+        if(bases_valid.has_exception())
+        {
+            throw std::runtime_error("TypeError: invalid class bases");
+        }
         bases = _bases.raw_value();
-        mro = compute_mro(this, _bases.extract());
+        Expected<TValue<Tuple>> computed_mro =
+            compute_mro(this, _bases.extract());
+        if(computed_mro.has_exception())
+        {
+            throw std::runtime_error("TypeError: invalid class MRO");
+        }
+        mro = computed_mro.value().raw_value();
     }
 
     ClassObject::ClassObject(TValue<String> _name,
@@ -315,6 +333,24 @@ namespace cl
                       instance_native_layout_id, class_shape_flags,
                       instance_shape_flags)
     {
+    }
+
+    Expected<TValue<ClassObject>> ClassObject::make(
+        ThreadState *thread, ClassObject *metaclass, TValue<String> name,
+        uint32_t instance_default_inline_slot_count, TValue<Tuple> bases,
+        NativeLayoutId instance_native_layout_id, ShapeFlags class_shape_flags,
+        ShapeFlags instance_shape_flags)
+    {
+        TValue<ClassObject> cls = thread->make_internal_value<ClassObject>(
+            BootstrapObjectTag{}, name, instance_default_inline_slot_count,
+            nullptr, instance_native_layout_id, class_shape_flags,
+            instance_shape_flags);
+        cls.extract()->install_bootstrap_class(metaclass);
+        CL_TRY(validate_bases(bases));
+        cls.extract()->bases = bases.raw_value();
+        cls.extract()->mro =
+            CL_TRY(compute_mro(cls.extract(), bases.extract())).raw_value();
+        return Expected<TValue<ClassObject>>::ok(cls);
     }
 
     ClassObject *ClassObject::make_bootstrap_builtin_class(

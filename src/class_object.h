@@ -20,6 +20,7 @@ namespace cl
 {
     class ClassObject;
     class Function;
+    class ThreadState;
     class Tuple;
 
     enum class MroValidityCellInstallMode : uint8_t
@@ -122,6 +123,13 @@ namespace cl
         ClassObject(
             TValue<String> name, uint32_t instance_default_inline_slot_count,
             ClassObject *single_base, NativeLayoutId instance_native_layout_id,
+            ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
+            ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
+
+        static Expected<TValue<ClassObject>> make(
+            ThreadState *thread, ClassObject *metaclass, TValue<String> name,
+            uint32_t instance_default_inline_slot_count, TValue<Tuple> bases,
+            NativeLayoutId instance_native_layout_id,
             ShapeFlags class_shape_flags = shape_flag(ShapeFlag::IsClassObject),
             ShapeFlags instance_shape_flags = mutable_attribute_shape_flags());
 
@@ -240,7 +248,7 @@ namespace cl
             ShapeFlags shape_flags);
 
         Value make_bases_tuple(ClassObject *single_base) const;
-        static void validate_bases(TValue<Tuple> bases);
+        static Expected<void> validate_bases(TValue<Tuple> bases);
         NOINLINE ValidityCell *
         create_mro_shape_and_contents_validity_cell_slow() const;
         NOINLINE ValidityCell *

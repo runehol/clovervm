@@ -1066,20 +1066,20 @@ TEST(Interpreter, class_body_attributes_preserve_shape_insertion_order)
 
 TEST(Interpreter, class_body_readonly_metadata_store_is_rejected)
 {
-    expect_runtime_error(L"class Cls:\n"
-                         L"    __name__ = 1\n",
-                         "TypeError: cannot set read-only class attribute");
+    expect_python_error(L"class Cls:\n"
+                        L"    __name__ = 1\n",
+                        L"TypeError", L"cannot set read-only class attribute");
 }
 
 TEST(Interpreter, set_name_notification_is_explicitly_unsupported)
 {
-    expect_runtime_error(L"class Descriptor:\n"
-                         L"    def __set_name__(self, owner, name):\n"
-                         L"        self.owner = owner\n"
-                         L"class Owner:\n"
-                         L"    field = Descriptor()\n",
-                         "TypeError: __set_name__ notifications are not "
-                         "implemented yet");
+    expect_python_error(L"class Descriptor:\n"
+                        L"    def __set_name__(self, owner, name):\n"
+                        L"        self.owner = owner\n"
+                        L"class Owner:\n"
+                        L"    field = Descriptor()\n",
+                        L"TypeError",
+                        L"__set_name__ notifications are not implemented yet");
 }
 
 TEST(Interpreter, class_call_allocates_instance)
@@ -2305,35 +2305,35 @@ TEST(Interpreter, object_class_has_empty_bases_tuple)
 
 TEST(Interpreter, class_definition_rejects_non_class_base)
 {
-    expect_runtime_error(L"Base = 1\n"
-                         L"class Derived(Base):\n"
-                         L"    pass\n",
-                         "TypeError: class bases must be class objects");
+    expect_python_error(L"Base = 1\n"
+                        L"class Derived(Base):\n"
+                        L"    pass\n",
+                        L"TypeError", L"class bases must be class objects");
 }
 
 TEST(Interpreter, class_definition_rejects_duplicate_base)
 {
-    expect_runtime_error(L"class Base:\n"
-                         L"    pass\n"
-                         L"class Derived(Base, Base):\n"
-                         L"    pass\n",
-                         "TypeError: duplicate base class");
+    expect_python_error(L"class Base:\n"
+                        L"    pass\n"
+                        L"class Derived(Base, Base):\n"
+                        L"    pass\n",
+                        L"TypeError", L"duplicate base class");
 }
 
 TEST(Interpreter, class_definition_rejects_inconsistent_c3_mro)
 {
-    expect_runtime_error(L"class X:\n"
-                         L"    pass\n"
-                         L"class Y:\n"
-                         L"    pass\n"
-                         L"class A(X, Y):\n"
-                         L"    pass\n"
-                         L"class B(Y, X):\n"
-                         L"    pass\n"
-                         L"class C(A, B):\n"
-                         L"    pass\n",
-                         "TypeError: cannot create a consistent method "
-                         "resolution order");
+    expect_python_error(L"class X:\n"
+                        L"    pass\n"
+                        L"class Y:\n"
+                        L"    pass\n"
+                        L"class A(X, Y):\n"
+                        L"    pass\n"
+                        L"class B(Y, X):\n"
+                        L"    pass\n"
+                        L"class C(A, B):\n"
+                        L"    pass\n",
+                        L"TypeError",
+                        L"cannot create a consistent method resolution order");
 }
 
 TEST(Interpreter, class_call_rejects_arguments)
