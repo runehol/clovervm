@@ -689,12 +689,14 @@ namespace cl
         }
     }
 
-    ConstructorThunkLookup ClassObject::create_constructor_thunk_slow() const
+    Expected<ConstructorThunkLookup>
+    ClassObject::create_constructor_thunk_slow() const
     {
         ClassObject *self = const_cast<ClassObject *>(this);
         if(get_shape()->get_class() != active_vm()->type_class())
         {
-            return ConstructorThunkLookup{nullptr, nullptr};
+            return Expected<ConstructorThunkLookup>::ok(
+                ConstructorThunkLookup{nullptr, nullptr});
         }
 
         ValidityCell *lookup_cell =
@@ -702,7 +704,8 @@ namespace cl
         Function *existing = constructor_thunk.extract();
         if(existing != nullptr && lookup_cell->is_valid())
         {
-            return ConstructorThunkLookup{existing, lookup_cell};
+            return Expected<ConstructorThunkLookup>::ok(
+                ConstructorThunkLookup{existing, lookup_cell});
         }
 
         TValue<String> new_name(interned_string(L"__new__"));
@@ -710,7 +713,8 @@ namespace cl
             resolve_attr_read_descriptor(Value::from_oop(self), new_name);
         if(new_descriptor.is_found())
         {
-            return ConstructorThunkLookup{nullptr, nullptr};
+            return Expected<ConstructorThunkLookup>::ok(
+                ConstructorThunkLookup{nullptr, nullptr});
         }
 
         TValue<String> init_name(interned_string(L"__init__"));
@@ -718,10 +722,11 @@ namespace cl
             resolve_attr_read_descriptor(Value::from_oop(self), init_name);
         if(!init_descriptor.is_found())
         {
-            TValue<Function> thunk = make_constructor_thunk_function(
-                self, Optional<TValue<Function>>::none());
+            TValue<Function> thunk = CL_TRY(make_constructor_thunk_function(
+                self, Optional<TValue<Function>>::none()));
             constructor_thunk = thunk.extract();
-            return ConstructorThunkLookup{thunk.extract(), lookup_cell};
+            return Expected<ConstructorThunkLookup>::ok(
+                ConstructorThunkLookup{thunk.extract(), lookup_cell});
         }
 
         if(!init_descriptor.is_cacheable() ||
@@ -730,21 +735,24 @@ namespace cl
            init_descriptor.plan.kind ==
                AttributeReadPlanKind::NonDataDescriptorGet)
         {
-            return ConstructorThunkLookup{nullptr, nullptr};
+            return Expected<ConstructorThunkLookup>::ok(
+                ConstructorThunkLookup{nullptr, nullptr});
         }
 
         Value init_value =
             load_attr_from_plan(Value::from_oop(self), init_descriptor.plan);
         if(!can_convert_to<Function>(init_value))
         {
-            return ConstructorThunkLookup{nullptr, nullptr};
+            return Expected<ConstructorThunkLookup>::ok(
+                ConstructorThunkLookup{nullptr, nullptr});
         }
 
-        TValue<Function> thunk = make_constructor_thunk_function(
+        TValue<Function> thunk = CL_TRY(make_constructor_thunk_function(
             self, Optional<TValue<Function>>::some(
-                      TValue<Function>::from_value_assumed(init_value)));
+                      TValue<Function>::from_value_assumed(init_value))));
         constructor_thunk = thunk.extract();
-        return ConstructorThunkLookup{thunk.extract(), lookup_cell};
+        return Expected<ConstructorThunkLookup>::ok(
+            ConstructorThunkLookup{thunk.extract(), lookup_cell});
     }
 
     Value ClassObject::make_bases_tuple(ClassObject *single_base) const

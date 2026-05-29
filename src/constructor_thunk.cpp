@@ -8,7 +8,6 @@
 #include "tuple.h"
 #include "virtual_machine.h"
 #include <optional>
-#include <stdexcept>
 #include <vector>
 
 namespace cl
@@ -24,7 +23,7 @@ namespace cl
         local_scope->reserve_empty_slots(FrameHeaderSize);
     }
 
-    static FunctionSignature
+    static Expected<FunctionSignature>
     constructor_thunk_signature(FunctionSignature init_signature)
     {
         FunctionSignature signature = init_signature;
@@ -67,8 +66,8 @@ namespace cl
         {
             if(signature.n_pos_or_kw_parameters == 0)
             {
-                throw std::runtime_error(
-                    "TypeError: __init__ requires a self parameter");
+                return Expected<FunctionSignature>::raise_exception(
+                    L"TypeError", L"__init__ requires a self parameter");
             }
             --signature.n_pos_or_kw_parameters;
         }
@@ -82,10 +81,10 @@ namespace cl
             signature.first_default_slot = 0;
             signature.default_presence_mask = 0;
         }
-        return signature;
+        return Expected<FunctionSignature>::ok(signature);
     }
 
-    static CodeObject *
+    static Expected<CodeObject *>
     make_constructor_thunk_code(ClassObject *cls,
                                 Optional<TValue<Function>> init)
     {
@@ -104,16 +103,16 @@ namespace cl
             if(init_n_parameters == 0 ||
                init_code->function_signature.n_positional_parameters == 0)
             {
-                throw std::runtime_error(
-                    "TypeError: __init__ requires a self parameter");
+                return Expected<CodeObject *>::raise_exception(
+                    L"TypeError", L"__init__ requires a self parameter");
             }
 
             code_storage.emplace(init_code->compilation_unit,
                                  init_code->get_defining_module(), local_scope,
                                  thunk_name);
             CodeObjectBuilder &code = *code_storage;
-            code.function_signature() =
-                constructor_thunk_signature(init_code->function_signature);
+            code.function_signature() = CL_TRY(
+                constructor_thunk_signature(init_code->function_signature));
             for(size_t remap_idx = 0;
                 remap_idx < init_code->function_keyword_remap.size();
                 ++remap_idx)
@@ -147,41 +146,40 @@ namespace cl
         reserve_parameter_slots_and_frame_header(&code);
 
         uint32_t class_const_idx =
-            code.allocate_constant(Value::from_oop(cls)).value();
-        code.emit_create_instance_known_class(0, class_const_idx).value();
+            CL_TRY(code.allocate_constant(Value::from_oop(cls)));
+        CL_TRY(code.emit_create_instance_known_class(0, class_const_idx));
         if(!has_init)
         {
-            code.emit_return(0).value();
-            return code.finalize().value();
+            CL_TRY(code.emit_return(0));
+            return code.finalize();
         }
 
         {
             CodeObjectBuilder::TemporaryReg instance_reg(code);
 
             uint32_t init_code_const_idx =
-                code.allocate_constant(Value::from_oop(init_code)).value();
-            code.emit_star(0, instance_reg).value();
+                CL_TRY(code.allocate_constant(Value::from_oop(init_code)));
+            CL_TRY(code.emit_star(0, instance_reg));
 
-            code.emit_ldar(0, instance_reg).value();
-            code.emit_star(0, OutgoingArgReg(0)).value();
+            CL_TRY(code.emit_ldar(0, instance_reg));
+            CL_TRY(code.emit_star(0, OutgoingArgReg(0)));
             for(uint32_t param_idx = 0; param_idx < code.n_parameters();
                 ++param_idx)
             {
-                code.emit_ldar(0, param_idx).value();
-                code.emit_star(0, OutgoingArgReg(param_idx + 1)).value();
+                CL_TRY(code.emit_ldar(0, param_idx));
+                CL_TRY(code.emit_star(0, OutgoingArgReg(param_idx + 1)));
             }
 
-            code.emit_call_code_object(0, init_code_const_idx,
-                                       OutgoingArgReg(0), init_n_parameters)
-                .value();
-            code.emit_check_init_returned_none(0).value();
-            code.emit_ldar(0, instance_reg).value();
-            code.emit_return(0).value();
+            CL_TRY(code.emit_call_code_object(
+                0, init_code_const_idx, OutgoingArgReg(0), init_n_parameters));
+            CL_TRY(code.emit_check_init_returned_none(0));
+            CL_TRY(code.emit_ldar(0, instance_reg));
+            CL_TRY(code.emit_return(0));
         }
-        return code.finalize().value();
+        return code.finalize();
     }
 
-    static TValue<Tuple>
+    static Expected<TValue<Tuple>>
     make_constructor_thunk_defaults(TValue<Tuple> init_defaults,
                                     FunctionSignature init_signature)
     {
@@ -189,19 +187,20 @@ namespace cl
             Function::default_span_size(init_signature);
         if(init_defaults.extract()->size() != init_default_span_size)
         {
-            throw std::runtime_error(
-                "TypeError: unsupported __init__ default parameter layout");
+            return Expected<TValue<Tuple>>::raise_exception(
+                L"SystemError",
+                L"unsupported __init__ default parameter layout");
         }
 
         FunctionSignature thunk_signature =
-            constructor_thunk_signature(init_signature);
+            CL_TRY(constructor_thunk_signature(init_signature));
         uint32_t thunk_default_span_size =
             Function::default_span_size(thunk_signature);
         TValue<Tuple> thunk_defaults = make_object_value<Tuple>(
             static_cast<size_t>(thunk_default_span_size));
         if(thunk_default_span_size == 0)
         {
-            return thunk_defaults;
+            return Expected<TValue<Tuple>>::ok(thunk_defaults);
         }
 
         std::vector<Value> default_values(thunk_default_span_size,
@@ -232,19 +231,19 @@ namespace cl
             thunk_defaults.extract()->initialize_item_unchecked(
                 idx, default_values[idx]);
         }
-        return thunk_defaults;
+        return Expected<TValue<Tuple>>::ok(thunk_defaults);
     }
 
-    TValue<Function>
+    Expected<TValue<Function>>
     make_constructor_thunk_function(ClassObject *cls,
                                     Optional<TValue<Function>> init)
     {
-        CodeObject *code = make_constructor_thunk_code(cls, init);
+        CodeObject *code = CL_TRY(make_constructor_thunk_code(cls, init));
         if(!init.has_value())
         {
-            return make_object_value<Function>(
-                TValue<CodeObject>::from_oop(code),
-                Optional<TValue<String>>::none());
+            return Expected<TValue<Function>>::ok(
+                make_object_value<Function>(TValue<CodeObject>::from_oop(code),
+                                            Optional<TValue<String>>::none()));
         }
 
         TValue<Function> init_function = init.value();
@@ -252,30 +251,31 @@ namespace cl
             init_function.extract()->default_parameters.value();
         if(!defaults.has_value())
         {
-            return make_object_value<Function>(
-                TValue<CodeObject>::from_oop(code),
-                Optional<TValue<String>>::none());
+            return Expected<TValue<Function>>::ok(
+                make_object_value<Function>(TValue<CodeObject>::from_oop(code),
+                                            Optional<TValue<String>>::none()));
         }
 
         FunctionSignature init_signature =
             init_function.extract()->code_object.extract()->function_signature;
-        TValue<Tuple> thunk_defaults =
-            make_constructor_thunk_defaults(defaults.value(), init_signature);
+        TValue<Tuple> thunk_defaults = CL_TRY(
+            make_constructor_thunk_defaults(defaults.value(), init_signature));
         if(thunk_defaults.extract()->empty())
         {
-            return make_object_value<Function>(
-                TValue<CodeObject>::from_oop(code),
-                Optional<TValue<String>>::none());
+            return Expected<TValue<Function>>::ok(
+                make_object_value<Function>(TValue<CodeObject>::from_oop(code),
+                                            Optional<TValue<String>>::none()));
         }
         if(thunk_defaults.extract()->size() !=
            Function::default_span_size(code->function_signature))
         {
-            throw std::runtime_error(
-                "TypeError: unsupported __init__ default parameter layout");
+            return Expected<TValue<Function>>::raise_exception(
+                L"SystemError",
+                L"unsupported __init__ default parameter layout");
         }
-        return make_object_value<Function>(
+        return Expected<TValue<Function>>::ok(make_object_value<Function>(
             TValue<CodeObject>::from_oop(code),
             Optional<TValue<String>>::none(),
-            Optional<TValue<Tuple>>::some(thunk_defaults));
+            Optional<TValue<Tuple>>::some(thunk_defaults)));
     }
 }  // namespace cl

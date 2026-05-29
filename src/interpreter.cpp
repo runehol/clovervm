@@ -1462,7 +1462,7 @@ namespace cl
         {
             ClassObject *cls = static_cast<ClassObject *>(callable_object);
             ConstructorThunkLookup constructor =
-                cls->get_or_create_constructor_thunk();
+                CL_TRY(cls->get_or_create_constructor_thunk());
             if(unlikely(!constructor.is_found()))
             {
                 return Expected<void>::raise_exception(
@@ -1671,7 +1671,7 @@ namespace cl
         {
             ClassObject *cls = static_cast<ClassObject *>(callable_object);
             ConstructorThunkLookup constructor =
-                cls->get_or_create_constructor_thunk();
+                CL_TRY(cls->get_or_create_constructor_thunk());
             if(unlikely(!constructor.is_found()))
             {
                 return Expected<void>::raise_exception(

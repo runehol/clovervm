@@ -217,14 +217,15 @@ namespace cl
         {
             return constructor_thunk.extract();
         }
-        ALWAYSINLINE ConstructorThunkLookup
+        ALWAYSINLINE Expected<ConstructorThunkLookup>
         get_or_create_constructor_thunk() const
         {
             ValidityCell *cell = mro_shape_and_contents_validity_cell.extract();
             Function *thunk = constructor_thunk.extract();
             if(likely(thunk != nullptr && cell != nullptr && cell->is_valid()))
             {
-                return ConstructorThunkLookup{thunk, cell};
+                return Expected<ConstructorThunkLookup>::ok(
+                    ConstructorThunkLookup{thunk, cell});
             }
             return create_constructor_thunk_slow();
         }
@@ -245,7 +246,8 @@ namespace cl
         NOINLINE ValidityCell *
         create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_slow()
             const;
-        NOINLINE ConstructorThunkLookup create_constructor_thunk_slow() const;
+        NOINLINE Expected<ConstructorThunkLookup>
+        create_constructor_thunk_slow() const;
         void install_validity_cell_along_mro(
             ValidityCell *cell, MroValidityCellInstallMode mode,
             MroValidityCellDependency dependency) const;

@@ -8,7 +8,7 @@ namespace cl
 {
     class ClassObject;
 
-    TValue<Function>
+    Expected<TValue<Function>>
     make_constructor_thunk_function(ClassObject *cls,
                                     Optional<TValue<Function>> init);
 }  // namespace cl
