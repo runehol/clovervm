@@ -11,7 +11,7 @@
 
 namespace cl
 {
-    static TValue<Function> make_native_function_with_target(
+    static Expected<TValue<Function>> make_native_function_with_target(
         VirtualMachine *vm, TValue<String> name, NativeFunctionTarget target,
         Bytecode call_opcode, uint32_t n_parameters,
         Optional<TValue<String>> docstring, bool is_extension,
@@ -34,29 +34,31 @@ namespace cl
                 (uint64_t(1) << n_defaults) - 1;
         }
         uint32_t target_idx =
-            builder.add_native_function_target(target).value();
+            CL_TRY(builder.add_native_function_target(target));
         if(is_extension)
         {
-            builder.emit_call_extension(0, call_opcode, uint8_t(target_idx))
-                .value();
+            CL_TRY(builder.emit_call_extension(0, call_opcode,
+                                               uint8_t(target_idx)));
         }
         else
         {
-            builder.emit_call_intrinsic(0, call_opcode, uint8_t(target_idx))
-                .value();
+            CL_TRY(builder.emit_call_intrinsic(0, call_opcode,
+                                               uint8_t(target_idx)));
         }
-        builder.emit_return_or_raise_exception(0).value();
+        CL_TRY(builder.emit_return_or_raise_exception(0));
         TValue<CodeObject> code =
-            TValue<CodeObject>::from_oop(builder.finalize().value());
+            TValue<CodeObject>::from_oop(CL_TRY(builder.finalize()));
         if(default_parameters.has_value())
         {
-            return vm->make_immortal_object_value<Function>(code, docstring,
-                                                            default_parameters);
+            return Expected<TValue<Function>>::ok(
+                vm->make_immortal_object_value<Function>(code, docstring,
+                                                         default_parameters));
         }
-        return vm->make_immortal_object_value<Function>(code, docstring);
+        return Expected<TValue<Function>>::ok(
+            vm->make_immortal_object_value<Function>(code, docstring));
     }
 
-    static TValue<Function> make_intrinsic_function_with_target(
+    static Expected<TValue<Function>> make_intrinsic_function_with_target(
         VirtualMachine *vm, NativeFunctionTarget target, Bytecode call_opcode,
         uint32_t n_parameters,
         Optional<TValue<Tuple>> default_parameters =
@@ -166,7 +168,7 @@ namespace cl
         return BuiltinIntrinsicMethod{name, target, 7, doc};
     }
 
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction0 function,
                             Optional<TValue<Tuple>> default_parameters)
     {
@@ -176,7 +178,7 @@ namespace cl
             vm, target, Bytecode::CallIntrinsic0, 0, default_parameters);
     }
 
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction1 function,
                             Optional<TValue<Tuple>> default_parameters)
     {
@@ -186,7 +188,7 @@ namespace cl
             vm, target, Bytecode::CallIntrinsic1, 1, default_parameters);
     }
 
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction2 function,
                             Optional<TValue<Tuple>> default_parameters)
     {
@@ -196,7 +198,7 @@ namespace cl
             vm, target, Bytecode::CallIntrinsic2, 2, default_parameters);
     }
 
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction3 function,
                             Optional<TValue<Tuple>> default_parameters)
     {
@@ -206,7 +208,7 @@ namespace cl
             vm, target, Bytecode::CallIntrinsic3, 3, default_parameters);
     }
 
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction4 function,
                             Optional<TValue<Tuple>> default_parameters)
     {
@@ -216,7 +218,7 @@ namespace cl
             vm, target, Bytecode::CallIntrinsic4, 4, default_parameters);
     }
 
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction5 function,
                             Optional<TValue<Tuple>> default_parameters)
     {
@@ -226,7 +228,7 @@ namespace cl
             vm, target, Bytecode::CallIntrinsic5, 5, default_parameters);
     }
 
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction6 function,
                             Optional<TValue<Tuple>> default_parameters)
     {
@@ -236,7 +238,7 @@ namespace cl
             vm, target, Bytecode::CallIntrinsic6, 6, default_parameters);
     }
 
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction7 function,
                             Optional<TValue<Tuple>> default_parameters)
     {
@@ -246,7 +248,7 @@ namespace cl
             vm, target, Bytecode::CallIntrinsic7, 7, default_parameters);
     }
 
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm,
                             const BuiltinIntrinsicMethod &method)
     {
@@ -261,10 +263,10 @@ namespace cl
             method.n_parameters, docstring, false);
     }
 
-    TValue<Function> make_extension_function(VirtualMachine *vm,
-                                             TValue<String> name,
-                                             clover_extension_fn_0 function,
-                                             Optional<TValue<String>> docstring)
+    Expected<TValue<Function>>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_0 function,
+                            Optional<TValue<String>> docstring)
     {
         NativeFunctionTarget target;
         target.extension0 = function;
@@ -272,10 +274,10 @@ namespace cl
             vm, name, target, Bytecode::CallExtension0, 0, docstring, true);
     }
 
-    TValue<Function> make_extension_function(VirtualMachine *vm,
-                                             TValue<String> name,
-                                             clover_extension_fn_1 function,
-                                             Optional<TValue<String>> docstring)
+    Expected<TValue<Function>>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_1 function,
+                            Optional<TValue<String>> docstring)
     {
         NativeFunctionTarget target;
         target.extension1 = function;
@@ -283,10 +285,10 @@ namespace cl
             vm, name, target, Bytecode::CallExtension1, 1, docstring, true);
     }
 
-    TValue<Function> make_extension_function(VirtualMachine *vm,
-                                             TValue<String> name,
-                                             clover_extension_fn_2 function,
-                                             Optional<TValue<String>> docstring)
+    Expected<TValue<Function>>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_2 function,
+                            Optional<TValue<String>> docstring)
     {
         NativeFunctionTarget target;
         target.extension2 = function;
@@ -294,10 +296,10 @@ namespace cl
             vm, name, target, Bytecode::CallExtension2, 2, docstring, true);
     }
 
-    TValue<Function> make_extension_function(VirtualMachine *vm,
-                                             TValue<String> name,
-                                             clover_extension_fn_3 function,
-                                             Optional<TValue<String>> docstring)
+    Expected<TValue<Function>>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_3 function,
+                            Optional<TValue<String>> docstring)
     {
         NativeFunctionTarget target;
         target.extension3 = function;
@@ -305,10 +307,10 @@ namespace cl
             vm, name, target, Bytecode::CallExtension3, 3, docstring, true);
     }
 
-    TValue<Function> make_extension_function(VirtualMachine *vm,
-                                             TValue<String> name,
-                                             clover_extension_fn_4 function,
-                                             Optional<TValue<String>> docstring)
+    Expected<TValue<Function>>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_4 function,
+                            Optional<TValue<String>> docstring)
     {
         NativeFunctionTarget target;
         target.extension4 = function;
@@ -316,10 +318,10 @@ namespace cl
             vm, name, target, Bytecode::CallExtension4, 4, docstring, true);
     }
 
-    TValue<Function> make_extension_function(VirtualMachine *vm,
-                                             TValue<String> name,
-                                             clover_extension_fn_5 function,
-                                             Optional<TValue<String>> docstring)
+    Expected<TValue<Function>>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_5 function,
+                            Optional<TValue<String>> docstring)
     {
         NativeFunctionTarget target;
         target.extension5 = function;
@@ -327,10 +329,10 @@ namespace cl
             vm, name, target, Bytecode::CallExtension5, 5, docstring, true);
     }
 
-    TValue<Function> make_extension_function(VirtualMachine *vm,
-                                             TValue<String> name,
-                                             clover_extension_fn_6 function,
-                                             Optional<TValue<String>> docstring)
+    Expected<TValue<Function>>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_6 function,
+                            Optional<TValue<String>> docstring)
     {
         NativeFunctionTarget target;
         target.extension6 = function;
@@ -338,10 +340,10 @@ namespace cl
             vm, name, target, Bytecode::CallExtension6, 6, docstring, true);
     }
 
-    TValue<Function> make_extension_function(VirtualMachine *vm,
-                                             TValue<String> name,
-                                             clover_extension_fn_7 function,
-                                             Optional<TValue<String>> docstring)
+    Expected<TValue<Function>>
+    make_extension_function(VirtualMachine *vm, TValue<String> name,
+                            clover_extension_fn_7 function,
+                            Optional<TValue<String>> docstring)
     {
         NativeFunctionTarget target;
         target.extension7 = function;
@@ -349,7 +351,7 @@ namespace cl
             vm, name, target, Bytecode::CallExtension7, 7, docstring, true);
     }
 
-    void
+    Expected<void>
     install_builtin_intrinsic_methods(VirtualMachine *vm, ClassObject *cls,
                                       const BuiltinIntrinsicMethod *methods,
                                       uint32_t method_count)
@@ -363,13 +365,16 @@ namespace cl
         for(uint32_t method_idx = 0; method_idx < method_count; ++method_idx)
         {
             const BuiltinIntrinsicMethod &method = methods[method_idx];
+            TValue<Function> function =
+                CL_TRY(make_intrinsic_function(vm, method));
             bool stored = cls->define_own_property(
                 vm->get_or_create_interned_string_value(method.name),
-                make_intrinsic_function(vm, method).raw_value(), method_flags);
+                function.raw_value(), method_flags);
             assert(stored);
             (void)stored;
         }
         cls->set_shape(cls->get_shape()->clone_with_flags(class_shape_flags));
+        return Expected<void>::ok();
     }
 
 }  // namespace cl

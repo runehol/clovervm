@@ -323,38 +323,44 @@ namespace cl
         (void)installed;
     }
 
-    void install_builtin_function_bindings(VirtualMachine *vm)
+    Expected<void> install_builtin_function_bindings(VirtualMachine *vm)
     {
         install_builtin_function_binding(
             vm, L"isinstance",
-            make_intrinsic_function(vm, builtin_isinstance).raw_value());
+            CL_TRY(make_intrinsic_function(vm, builtin_isinstance))
+                .raw_value());
         install_builtin_function_binding(
             vm, L"issubclass",
-            make_intrinsic_function(vm, builtin_issubclass).raw_value());
+            CL_TRY(make_intrinsic_function(vm, builtin_issubclass))
+                .raw_value());
         install_builtin_function_binding(
             vm, L"setattr",
-            make_intrinsic_function(vm, builtin_setattr).raw_value());
+            CL_TRY(make_intrinsic_function(vm, builtin_setattr)).raw_value());
         install_builtin_function_binding(
             vm, L"delattr",
-            make_intrinsic_function(vm, builtin_delattr).raw_value());
+            CL_TRY(make_intrinsic_function(vm, builtin_delattr)).raw_value());
         install_builtin_function_binding(
             vm, L"callable",
-            make_intrinsic_function(vm, builtin_callable).raw_value());
+            CL_TRY(make_intrinsic_function(vm, builtin_callable)).raw_value());
         install_builtin_function_binding(
-            vm, L"ord", make_intrinsic_function(vm, builtin_ord).raw_value());
+            vm, L"ord",
+            CL_TRY(make_intrinsic_function(vm, builtin_ord)).raw_value());
         install_builtin_function_binding(
-            vm, L"chr", make_intrinsic_function(vm, builtin_chr).raw_value());
+            vm, L"chr",
+            CL_TRY(make_intrinsic_function(vm, builtin_chr)).raw_value());
         install_builtin_function_binding(
             vm, L"_clover_builtin_getattr",
-            make_intrinsic_function(vm, builtin_getattr).raw_value());
+            CL_TRY(make_intrinsic_function(vm, builtin_getattr)).raw_value());
         install_builtin_function_binding(
             vm, L"_clover_builtin_getattr_default",
-            make_intrinsic_function(vm, builtin_getattr_default).raw_value());
+            CL_TRY(make_intrinsic_function(vm, builtin_getattr_default))
+                .raw_value());
         install_builtin_function_binding(
             vm, L"_clover_builtin_hasattr",
-            make_intrinsic_function(vm, builtin_hasattr).raw_value());
+            CL_TRY(make_intrinsic_function(vm, builtin_hasattr)).raw_value());
         install_builtin_function_binding(
             vm, L"_clover_builtin_dir",
-            make_intrinsic_function(vm, builtin_dir).raw_value());
+            CL_TRY(make_intrinsic_function(vm, builtin_dir)).raw_value());
+        return Expected<void>::ok();
     }
 }  // namespace cl

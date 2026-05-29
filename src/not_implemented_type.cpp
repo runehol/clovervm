@@ -39,8 +39,11 @@ namespace cl
                                      native_not_implemented_type_str,
                                      L"Return repr(self)."),
         };
-        install_builtin_intrinsic_methods(vm, vm->not_implemented_type_class(),
-                                          methods, std::size(methods));
+        unwrap_bootstrap_expected(vm,
+                                  install_builtin_intrinsic_methods(
+                                      vm, vm->not_implemented_type_class(),
+                                      methods, std::size(methods)),
+                                  "installing intrinsic methods");
     }
 
 }  // namespace cl

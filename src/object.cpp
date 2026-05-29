@@ -184,8 +184,11 @@ namespace cl
             builtin_intrinsic_method(L"__repr__", native_object_repr,
                                      L"Return repr(self)."),
         };
-        install_builtin_intrinsic_methods(vm, vm->object_class(), methods,
-                                          std::size(methods));
+        unwrap_bootstrap_expected(
+            vm,
+            install_builtin_intrinsic_methods(vm, vm->object_class(), methods,
+                                              std::size(methods)),
+            "installing intrinsic methods");
     }
 
     void Object::install_bootstrap_class(ClassObject *new_cls)

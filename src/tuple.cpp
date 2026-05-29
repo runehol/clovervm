@@ -181,8 +181,11 @@ namespace cl
             builtin_intrinsic_method(L"count", native_tuple_count,
                                      L"Return number of occurrences of value."),
         };
-        install_builtin_intrinsic_methods(vm, vm->tuple_class(), methods,
-                                          std::size(methods));
+        unwrap_bootstrap_expected(
+            vm,
+            install_builtin_intrinsic_methods(vm, vm->tuple_class(), methods,
+                                              std::size(methods)),
+            "installing intrinsic methods");
 
         ClassObject *cls = vm->tuple_class();
         ShapeFlags class_shape_flags = cls->get_shape()->flags();
@@ -193,10 +196,14 @@ namespace cl
             descriptor_flag(DescriptorFlag::StableSlot);
         bool stored = cls->define_own_property(
             vm->get_or_create_interned_string_value(L"index"),
-            make_intrinsic_function(
-                vm, native_tuple_index,
-                Optional<TValue<Tuple>>::some(tuple_default_pair(
-                    vm, Value::from_smi(0), Value::from_smi(value_smi_max))))
+            unwrap_bootstrap_expected(
+                vm,
+                make_intrinsic_function(
+                    vm, native_tuple_index,
+                    Optional<TValue<Tuple>>::some(
+                        tuple_default_pair(vm, Value::from_smi(0),
+                                           Value::from_smi(value_smi_max)))),
+                "creating intrinsic function")
                 .raw_value(),
             method_flags);
         assert(stored);

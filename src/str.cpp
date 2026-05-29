@@ -637,8 +637,11 @@ namespace cl
                 L"isspace", native_str_isspace,
                 L"Return whether all chars are whitespace."),
         };
-        install_builtin_intrinsic_methods(vm, vm->str_class(), methods,
-                                          std::size(methods));
+        unwrap_bootstrap_expected(
+            vm,
+            install_builtin_intrinsic_methods(vm, vm->str_class(), methods,
+                                              std::size(methods)),
+            "installing intrinsic methods");
     }
 
     uint64_t string_hash(TValue<String> s)

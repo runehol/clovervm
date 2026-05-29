@@ -3,6 +3,7 @@
 
 #include "code_object.h"
 #include "function.h"
+#include "typed_value.h"
 
 namespace cl
 {
@@ -43,75 +44,75 @@ namespace cl
     builtin_intrinsic_method(const wchar_t *name, IntrinsicFunction7 function,
                              const wchar_t *doc = nullptr);
 
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction0 function,
                             Optional<TValue<Tuple>> default_parameters =
                                 Optional<TValue<Tuple>>::none());
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction1 function,
                             Optional<TValue<Tuple>> default_parameters =
                                 Optional<TValue<Tuple>>::none());
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction2 function,
                             Optional<TValue<Tuple>> default_parameters =
                                 Optional<TValue<Tuple>>::none());
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction3 function,
                             Optional<TValue<Tuple>> default_parameters =
                                 Optional<TValue<Tuple>>::none());
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction4 function,
                             Optional<TValue<Tuple>> default_parameters =
                                 Optional<TValue<Tuple>>::none());
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction5 function,
                             Optional<TValue<Tuple>> default_parameters =
                                 Optional<TValue<Tuple>>::none());
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction6 function,
                             Optional<TValue<Tuple>> default_parameters =
                                 Optional<TValue<Tuple>>::none());
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction7 function,
                             Optional<TValue<Tuple>> default_parameters =
                                 Optional<TValue<Tuple>>::none());
-    TValue<Function>
+    Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm,
                             const BuiltinIntrinsicMethod &method);
-    TValue<Function>
+    Expected<TValue<Function>>
     make_extension_function(VirtualMachine *vm, TValue<String> name,
                             clover_extension_fn_0 function,
                             Optional<TValue<String>> docstring);
-    TValue<Function>
+    Expected<TValue<Function>>
     make_extension_function(VirtualMachine *vm, TValue<String> name,
                             clover_extension_fn_1 function,
                             Optional<TValue<String>> docstring);
-    TValue<Function>
+    Expected<TValue<Function>>
     make_extension_function(VirtualMachine *vm, TValue<String> name,
                             clover_extension_fn_2 function,
                             Optional<TValue<String>> docstring);
-    TValue<Function>
+    Expected<TValue<Function>>
     make_extension_function(VirtualMachine *vm, TValue<String> name,
                             clover_extension_fn_3 function,
                             Optional<TValue<String>> docstring);
-    TValue<Function>
+    Expected<TValue<Function>>
     make_extension_function(VirtualMachine *vm, TValue<String> name,
                             clover_extension_fn_4 function,
                             Optional<TValue<String>> docstring);
-    TValue<Function>
+    Expected<TValue<Function>>
     make_extension_function(VirtualMachine *vm, TValue<String> name,
                             clover_extension_fn_5 function,
                             Optional<TValue<String>> docstring);
-    TValue<Function>
+    Expected<TValue<Function>>
     make_extension_function(VirtualMachine *vm, TValue<String> name,
                             clover_extension_fn_6 function,
                             Optional<TValue<String>> docstring);
-    TValue<Function>
+    Expected<TValue<Function>>
     make_extension_function(VirtualMachine *vm, TValue<String> name,
                             clover_extension_fn_7 function,
                             Optional<TValue<String>> docstring);
 
-    void
+    Expected<void>
     install_builtin_intrinsic_methods(VirtualMachine *vm, ClassObject *cls,
                                       const BuiltinIntrinsicMethod *methods,
                                       uint32_t method_count);

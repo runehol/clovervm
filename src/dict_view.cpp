@@ -190,10 +190,14 @@ namespace cl
             NativeLayoutId::DictKeysView};
         BuiltinClassMethod methods[] = {
             {vm->get_or_create_interned_string_value(L"__len__"),
-             make_intrinsic_function(vm, native_dict_keys_view_len)
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, native_dict_keys_view_len),
+                 "creating intrinsic function")
                  .raw_value()},
             {vm->get_or_create_interned_string_value(L"__iter__"),
-             make_intrinsic_function(vm, native_dict_keys_view_iter)
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, native_dict_keys_view_iter),
+                 "creating intrinsic function")
                  .raw_value()},
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictKeysView>(
@@ -210,10 +214,14 @@ namespace cl
             NativeLayoutId::DictValuesView};
         BuiltinClassMethod methods[] = {
             {vm->get_or_create_interned_string_value(L"__len__"),
-             make_intrinsic_function(vm, native_dict_values_view_len)
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, native_dict_values_view_len),
+                 "creating intrinsic function")
                  .raw_value()},
             {vm->get_or_create_interned_string_value(L"__iter__"),
-             make_intrinsic_function(vm, native_dict_values_view_iter)
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, native_dict_values_view_iter),
+                 "creating intrinsic function")
                  .raw_value()},
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictValuesView>(
@@ -230,10 +238,14 @@ namespace cl
             NativeLayoutId::DictItemsView};
         BuiltinClassMethod methods[] = {
             {vm->get_or_create_interned_string_value(L"__len__"),
-             make_intrinsic_function(vm, native_dict_items_view_len)
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, native_dict_items_view_len),
+                 "creating intrinsic function")
                  .raw_value()},
             {vm->get_or_create_interned_string_value(L"__iter__"),
-             make_intrinsic_function(vm, native_dict_items_view_iter)
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, native_dict_items_view_iter),
+                 "creating intrinsic function")
                  .raw_value()},
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictItemsView>(
@@ -250,10 +262,14 @@ namespace cl
             NativeLayoutId::DictKeyIterator};
         BuiltinClassMethod methods[] = {
             {vm->get_or_create_interned_string_value(L"__iter__"),
-             make_intrinsic_function(vm, native_dict_key_iterator_iter)
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, native_dict_key_iterator_iter),
+                 "creating intrinsic function")
                  .raw_value()},
             {vm->get_or_create_interned_string_value(L"__next__"),
-             make_intrinsic_function(vm, native_dict_key_iterator_next)
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, native_dict_key_iterator_next),
+                 "creating intrinsic function")
                  .raw_value()},
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictKeyIterator>(
@@ -270,10 +286,16 @@ namespace cl
             NativeLayoutId::DictValueIterator};
         BuiltinClassMethod methods[] = {
             {vm->get_or_create_interned_string_value(L"__iter__"),
-             make_intrinsic_function(vm, native_dict_value_iterator_iter)
+             unwrap_bootstrap_expected(
+                 vm,
+                 make_intrinsic_function(vm, native_dict_value_iterator_iter),
+                 "creating intrinsic function")
                  .raw_value()},
             {vm->get_or_create_interned_string_value(L"__next__"),
-             make_intrinsic_function(vm, native_dict_value_iterator_next)
+             unwrap_bootstrap_expected(
+                 vm,
+                 make_intrinsic_function(vm, native_dict_value_iterator_next),
+                 "creating intrinsic function")
                  .raw_value()},
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictValueIterator>(
@@ -290,10 +312,16 @@ namespace cl
             NativeLayoutId::DictItemIterator};
         BuiltinClassMethod methods[] = {
             {vm->get_or_create_interned_string_value(L"__iter__"),
-             make_intrinsic_function(vm, native_dict_item_iterator_iter)
+             unwrap_bootstrap_expected(
+                 vm,
+                 make_intrinsic_function(vm, native_dict_item_iterator_iter),
+                 "creating intrinsic function")
                  .raw_value()},
             {vm->get_or_create_interned_string_value(L"__next__"),
-             make_intrinsic_function(vm, native_dict_item_iterator_next)
+             unwrap_bootstrap_expected(
+                 vm,
+                 make_intrinsic_function(vm, native_dict_item_iterator_next),
+                 "creating intrinsic function")
                  .raw_value()},
         };
         ClassObject *cls = ClassObject::make_builtin_class<DictItemIterator>(

@@ -88,8 +88,11 @@ namespace cl
             builtin_intrinsic_method(L"__len__", native_slotdict_len,
                                      L"Return len(self)."),
         };
-        install_builtin_intrinsic_methods(vm, vm->slotdict_class(), methods,
-                                          std::size(methods));
+        unwrap_bootstrap_expected(
+            vm,
+            install_builtin_intrinsic_methods(vm, vm->slotdict_class(), methods,
+                                              std::size(methods)),
+            "installing intrinsic methods");
     }
 
     bool SlotDict::key_is_string(Value key)

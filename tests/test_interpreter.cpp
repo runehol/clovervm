@@ -336,6 +336,16 @@ static void store_global_to_module_for_test(test::VmTestContext &test_context,
                             name_value, value.raw_value()));
 }
 
+static void store_global_to_module_for_test(test::VmTestContext &test_context,
+                                            CodeObject *code_object,
+                                            const wchar_t *name,
+                                            Expected<TValue<Function>> value)
+{
+    ASSERT_TRUE(value.has_value());
+    store_global_to_module_for_test(test_context, code_object, name,
+                                    value.value());
+}
+
 static Value load_global_from_module_for_test(CodeObject *code_object,
                                               TValue<String> name)
 {
@@ -1494,6 +1504,7 @@ TEST(Interpreter, list_literal_evaluates_elements_left_to_right)
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
         make_intrinsic_function(&test_context.vm(), native_next_counter)
+            .value()
             .raw_value();
     ASSERT_TRUE(store_module_global(code_obj->get_defining_module().extract(),
                                     name, next_counter));
@@ -1564,6 +1575,7 @@ TEST(Interpreter, tuple_literal_evaluates_elements_left_to_right)
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
         make_intrinsic_function(&test_context.vm(), native_next_counter)
+            .value()
             .raw_value();
     ASSERT_TRUE(store_module_global(code_obj->get_defining_module().extract(),
                                     name, next_counter));
@@ -1652,6 +1664,7 @@ TEST(Interpreter,
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
         make_intrinsic_function(&test_context.vm(), native_next_counter)
+            .value()
             .raw_value();
     ASSERT_TRUE(store_module_global(code_obj->get_defining_module().extract(),
                                     name, next_counter));
@@ -1719,6 +1732,7 @@ TEST(Interpreter,
         test_context.vm().get_or_create_interned_string_value(L"next_counter");
     Value next_counter =
         make_intrinsic_function(&test_context.vm(), native_next_counter)
+            .value()
             .raw_value();
     ASSERT_TRUE(store_module_global(code_obj->get_defining_module().extract(),
                                     name, next_counter));
@@ -2513,7 +2527,7 @@ TEST(Interpreter, intrinsic_function_thunk_uses_return_or_raise_adapter)
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
     TValue<Function> native =
-        make_intrinsic_function(&test_context.vm(), native_zero);
+        make_intrinsic_function(&test_context.vm(), native_zero).value();
 
     std::string actual =
         fmt::to_string(*native.extract()->code_object.extract());

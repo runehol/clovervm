@@ -332,6 +332,30 @@ namespace cl
         FILE *stdout_file_ = stdout;
     };
 
+    [[noreturn]] void throw_bootstrap_python_exception(ThreadState *thread,
+                                                       const char *context);
+
+    template <typename T>
+    T unwrap_bootstrap_expected(VirtualMachine *vm, Expected<T> result,
+                                const char *context)
+    {
+        if(result.has_exception())
+        {
+            throw_bootstrap_python_exception(vm->get_default_thread(), context);
+        }
+        return std::move(result).value();
+    }
+
+    inline void unwrap_bootstrap_expected(VirtualMachine *vm,
+                                          Expected<void> result,
+                                          const char *context)
+    {
+        if(result.has_exception())
+        {
+            throw_bootstrap_python_exception(vm->get_default_thread(), context);
+        }
+    }
+
 }  // namespace cl
 
 #endif  // CL_VIRTUAL_MACHINE_H

@@ -38,8 +38,11 @@ namespace cl
             builtin_intrinsic_method(L"__repr__", native_int_str,
                                      L"Return repr(self)."),
         };
-        install_builtin_intrinsic_methods(vm, vm->int_class(), methods,
-                                          std::size(methods));
+        unwrap_bootstrap_expected(
+            vm,
+            install_builtin_intrinsic_methods(vm, vm->int_class(), methods,
+                                              std::size(methods)),
+            "installing intrinsic methods");
     }
 
 }  // namespace cl

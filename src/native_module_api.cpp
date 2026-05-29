@@ -132,11 +132,16 @@ namespace cl
             {
                 return CLOVER_STATUS_ERROR;
             }
-            return add_function(
-                builder, *decoded_name,
+            Expected<TValue<Function>> extension_function =
                 make_extension_function(builder->thread->get_machine(),
                                         *decoded_name, function,
-                                        *decoded_docstring));
+                                        *decoded_docstring);
+            if(extension_function.has_exception())
+            {
+                return CLOVER_STATUS_ERROR;
+            }
+            return add_function(builder, *decoded_name,
+                                extension_function.value());
         }
 
     }  // namespace

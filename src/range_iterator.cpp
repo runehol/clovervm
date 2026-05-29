@@ -55,10 +55,14 @@ namespace cl
             NativeLayoutId::RangeIterator};
         BuiltinClassMethod methods[] = {
             {vm->get_or_create_interned_string_value(L"__iter__"),
-             make_intrinsic_function(vm, native_range_iterator_iter)
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, native_range_iterator_iter),
+                 "creating intrinsic function")
                  .raw_value()},
             {vm->get_or_create_interned_string_value(L"__next__"),
-             make_intrinsic_function(vm, native_range_iterator_next)
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, native_range_iterator_next),
+                 "creating intrinsic function")
                  .raw_value()},
         };
         ClassObject *cls = ClassObject::make_builtin_class<RangeIterator>(

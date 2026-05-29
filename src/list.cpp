@@ -266,8 +266,11 @@ namespace cl
             builtin_intrinsic_method(L"reverse", native_list_reverse,
                                      L"Reverse list in place."),
         };
-        install_builtin_intrinsic_methods(vm, vm->list_class(), methods,
-                                          std::size(methods));
+        unwrap_bootstrap_expected(
+            vm,
+            install_builtin_intrinsic_methods(vm, vm->list_class(), methods,
+                                              std::size(methods)),
+            "installing intrinsic methods");
 
         ClassObject *cls = vm->list_class();
         ShapeFlags class_shape_flags = cls->get_shape()->flags();
@@ -280,7 +283,10 @@ namespace cl
                            Optional<TValue<Tuple>> defaults) {
             bool stored = cls->define_own_property(
                 vm->get_or_create_interned_string_value(name),
-                make_intrinsic_function(vm, function, defaults).raw_value(),
+                unwrap_bootstrap_expected(
+                    vm, make_intrinsic_function(vm, function, defaults),
+                    "creating intrinsic function")
+                    .raw_value(),
                 method_flags);
             assert(stored);
             (void)stored;

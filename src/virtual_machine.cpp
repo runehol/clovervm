@@ -33,16 +33,66 @@
 #include "tuple.h"
 #include "tuple_iterator.h"
 #include "typed_value.h"
+#include "unicode.h"
 #include <cassert>
 #include <cstdint>
 #include <cwchar>
 #include <initializer_list>
 #include <stdexcept>
+#include <string>
 
 #include "builtins.inc"
 
 namespace cl
 {
+    static std::wstring vm_string_to_wstring(TValue<String> string)
+    {
+        String *str = string.extract();
+        return std::wstring(str->data, size_t(str->count.extract()));
+    }
+
+    static std::wstring
+    format_bootstrap_pending_python_exception(ThreadState *thread)
+    {
+        if(thread->pending_exception_kind() ==
+           PendingExceptionKind::StopIteration)
+        {
+            return L"StopIteration";
+        }
+
+        if(thread->pending_exception_kind() != PendingExceptionKind::Object)
+        {
+            return L"InternalError: exception marker without pending exception";
+        }
+
+        TValue<Exception> exception = thread->pending_exception_object();
+        std::wstring result = vm_string_to_wstring(
+            exception.extract()->get_shape()->get_class()->get_name());
+        std::wstring message =
+            vm_string_to_wstring(exception.extract()->message.value());
+        if(!message.empty())
+        {
+            result += L": ";
+            result += message;
+        }
+        return result;
+    }
+
+    [[noreturn]] void throw_bootstrap_python_exception(ThreadState *thread,
+                                                       const char *context)
+    {
+        std::string message = "failed to bootstrap VM";
+        if(context != nullptr && context[0] != '\0')
+        {
+            message += " while ";
+            message += context;
+        }
+        message += ": ";
+        message += unicode::encode_utf8(
+            format_bootstrap_pending_python_exception(thread));
+        throw std::runtime_error(message);
+    }
+
     static Value make_class_tuple(std::initializer_list<ClassObject *> classes)
     {
         Tuple *tuple = make_object_raw<Tuple>(classes.size());
@@ -839,12 +889,17 @@ namespace cl
         TValue<Tuple> range_defaults = make_object_value<Tuple>(2);
         range_defaults.extract()->initialize_item_unchecked(0, Value::None());
         range_defaults.extract()->initialize_item_unchecked(1, Value::None());
-        range_builtin = make_intrinsic_function(
-                            this, builtin_range,
-                            Optional<TValue<Tuple>>::some(range_defaults))
+        ThreadState *thread = get_default_thread();
+        range_builtin = unwrap_bootstrap_expected(
+                            this,
+                            make_intrinsic_function(
+                                this, builtin_range,
+                                Optional<TValue<Tuple>>::some(range_defaults)),
+                            "installing range")
                             .raw_value();
         install_builtin_binding(range_name, range_builtin);
-        install_builtin_function_bindings(this);
+        unwrap_bootstrap_expected(this, install_builtin_function_bindings(this),
+                                  "installing builtin functions");
 
         TValue<String> import_name =
             get_or_create_interned_string_value(L"__import__");
@@ -856,12 +911,15 @@ namespace cl
         import_defaults.extract()->initialize_item_unchecked(
             3, Value::from_smi(0));
         install_builtin_binding(
-            import_name, make_intrinsic_function(
-                             this, builtin_import,
-                             Optional<TValue<Tuple>>::some(import_defaults))
-                             .raw_value());
+            import_name,
+            unwrap_bootstrap_expected(
+                this,
+                make_intrinsic_function(
+                    this, builtin_import,
+                    Optional<TValue<Tuple>>::some(import_defaults)),
+                "installing __import__")
+                .raw_value());
 
-        ThreadState *thread = get_default_thread();
         Expected<CodeObject *> builtins_code = thread->compile_in_module(
             trusted_builtin_source, StartRule::File, builtins_module,
             LanguageMode::TrustedCloverExtensions);
