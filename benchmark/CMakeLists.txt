@@ -38,6 +38,8 @@ add_executable(bench_clovervm
     pystone_arithmetic.cpp
     pystone_lite.cpp
     recursive_fib.cpp
+    str_constructor_int.cpp
+    str_constructor_string.cpp
     while_loop.cpp
 )
 

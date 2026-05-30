@@ -8,6 +8,12 @@ namespace benchmark_cpp
     int64_t recursive_fib_run(int64_t n);
     int64_t recursive_fib_items(int64_t n);
 
+    int64_t str_constructor_int_run(int64_t n);
+    int64_t str_constructor_int_items(int64_t n);
+
+    int64_t str_constructor_string_run(int64_t n);
+    int64_t str_constructor_string_items(int64_t n);
+
     int64_t while_loop_run(int64_t n);
     int64_t while_loop_items(int64_t n);
 

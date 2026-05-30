@@ -37,6 +37,12 @@ namespace
             {"benchmark/recursive_fib.py",
              {benchmark_cpp::recursive_fib_run,
               benchmark_cpp::recursive_fib_items}},
+            {"benchmark/str_constructor_int.py",
+             {benchmark_cpp::str_constructor_int_run,
+              benchmark_cpp::str_constructor_int_items}},
+            {"benchmark/str_constructor_string.py",
+             {benchmark_cpp::str_constructor_string_run,
+              benchmark_cpp::str_constructor_string_items}},
             {"benchmark/while_loop.py",
              {benchmark_cpp::while_loop_run, benchmark_cpp::while_loop_items}},
             {"benchmark/for_loop.py",
@@ -623,6 +629,26 @@ static void BM_ClassInstantiationWithInit(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_ClassInstantiationWithInit, CloverProgram)
     ->Name("BM_ClassInstantiationWithInit")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_StrConstructorString(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/str_constructor_string.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_StrConstructorString, CloverProgram)
+    ->Name("BM_StrConstructorString")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_StrConstructorInt(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/str_constructor_int.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_StrConstructorInt, CloverProgram)
+    ->Name("BM_StrConstructorInt")
     ->Arg(100000);
 
 template <typename Program>
