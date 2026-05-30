@@ -1,11 +1,11 @@
 # Fast Operator Dispatch
 
 This note sketches inline caching for Python operator and implicit protocol
-dispatch. The first implementation slice is subscription dispatch:
-`obj[key]`, `obj[key] = value`, and `del obj[key]`. Subscription exercises the
-same dunder-method lookup and validity-cell machinery as overloaded operators,
-but it has one protocol owner and no reflected or in-place candidate ordering.
-The same cache model should later extend to binary and in-place operators,
+dispatch. The first implementation slice is get-item subscription dispatch:
+`obj[key]`. Get-item subscription exercises the same dunder-method lookup and
+validity-cell machinery as overloaded operators, but it has one protocol owner
+and no reflected or in-place candidate ordering. The same cache model should
+later extend to store/delete subscription, binary and in-place operators,
 attribute access, numeric conversion, and truthiness. The goal is to speed up
 overloaded protocol dispatch without caching arbitrary Python method behavior.
 
@@ -50,6 +50,14 @@ trusted for that shortcut.
   `__new__`, `__init__`, metaclass `__call__`, `__init_subclass__`,
   `__mro_entries__`, `__class_getitem__`, `__instancecheck__`, and
   `__subclasscheck__` have their own protocol and cache-shape concerns.
+- Do not implement class subscription through `__class_getitem__` in the first
+  get-item slice. Class-object receivers should stay on the existing slow/error
+  behavior or an explicitly separate class-subscription path until that protocol
+  is designed.
+- Do not implement arbitrary descriptor dispatch as part of the first get-item
+  slice. Clovervm's current special-method support is function-shaped; once
+  descriptors are supported, descriptor cacheability and replay need an explicit
+  extension to this plan.
 - Do not treat context managers as solved by this design. Clovervm may currently
   lower `with` by calling `__enter__` and `__exit__` as ordinary methods, but
   that is not the same as a designed dunder-method dispatch cache for context
@@ -57,13 +65,21 @@ trusted for that shortcut.
 
 ## Hot-Path Boundary
 
-Fast operator dispatch starts after an opcode's direct builtin path has failed
-or decided that a Python protocol dispatch is required. The first subscription
-slice should preserve any exact builtin fast paths that are already worth
-keeping ahead of the cache, such as list/tuple/string indexing by SMI or exact
-slice keys. The cacheable continuation is for shape pairs that need dunder
-method dispatch or that become profitable only after the generic dispatcher has
-published a trusted handler.
+Fast operator dispatch starts after an opcode's direct inline-value path has
+failed or decided that a Python protocol dispatch is required. Existing direct
+native-layout subscription ladders for builtin containers should be migrated
+incrementally into protocol-selected trusted handlers. Until a builtin container
+exposes the relevant dunder method, its existing direct path may remain in
+place. Once `list.__getitem__`, `tuple.__getitem__`, `str.__getitem__`, or
+`dict.__getitem__` exists, the corresponding exact-container special case
+should move behind special-method lookup: the first execution at a bytecode site
+runs the generic get-item dispatcher, proves which dunder method was selected,
+and then installs a `GetItemIC` entry or trusted native handler for later hits.
+
+This migration avoids a fixed global opcode ladder such as "try list, then
+tuple, then string, then dict, then generic." It also keeps the trusted-handler
+contract meaningful: a native list/tuple/string/dict handler runs from the IC
+only after a guarded dunder lookup has selected the trusted builtin method.
 
 When binary arithmetic moves onto this cache model, `+`, `-`, and `*` should
 continue to check and handle SMI-plus-SMI inline before probing an operator
@@ -167,7 +183,7 @@ hot operator path can pay the cache-miss cost.
 
 ## Cache Kinds
 
-The first subscription design should use two cache actions with a shared
+The first get-item design should use two cache actions with a shared
 validation shape:
 
 ```cpp
@@ -195,10 +211,10 @@ observed key shape is part of the site's profile and keeps trusted handlers from
 quietly skipping key-side behavior they have not proved.
 
 Operator inline caches live on the code object, like the existing attribute,
-module-global, and function-call caches. Every subscription opcode form that can
-leave the direct builtin fast path and invoke Python dunder-method dispatch
-should carry a cache index operand. Pure direct opcodes or specialized opcodes
-that cannot call dunder methods do not need an operator-cache index.
+module-global, and function-call caches. `LoadSubscript` forms that can invoke
+`__getitem__` should carry a get-item cache index operand. Store/delete
+subscription should get their own cache shapes after get-item has proven the
+lookup, call replay, and trusted-handler structure.
 
 On a miss, the generic dispatcher runs and the opcode miss path installs a new
 entry for that cache index. The entry may represent a successful trusted handler,
@@ -460,12 +476,13 @@ trace step or discard it. `clear_operator_trustedness()` exists for paths that
 intentionally discard the publication, such as exception paths where no cache
 candidate can be installed.
 
-The same record shape is used whether the method returns a real result or
-`NotImplemented`. A trusted method that returns `NotImplemented` should publish
-`trusted = true` with no handler, so the dispatcher can record that this
-dispatch-affecting step was trusted even though the protocol must continue. A
-trusted method that handles the operation may also publish the direct handler
-that can be used by a later cache hit.
+For the first get-item slice, the method's return value is simply the
+subscription result. If `__getitem__` returns the `NotImplemented` singleton,
+the operation returns that object; subscription has no binary-operator-style
+`NotImplemented` continuation. Later operator families may use the same
+publication record for methods that return `NotImplemented` as a protocol
+continue signal, but that result policy belongs to those family-specific
+dispatchers, not to the shared cache payload.
 
 Trust and handler availability are separate facts:
 
@@ -491,12 +508,15 @@ forward method, rhs reflected method, or lhs in-place method, and it records the
 lookup result and validity cell in the trace. The publication only describes
 the call that just returned.
 
-The required protocol is:
+The publication slot has no outer state to restore. The required protocol is:
 
-- clear the thread-local trusted publication before invoking an operator
-  method that may publish one
+- assert that the thread-local trusted publication is empty before invoking an
+  operator method that may publish one
+- clear the slot in release builds before the call if that is cheaper than
+  carrying a defensive error path
 - the method may publish trustedness and an optional handler only after it has
   established the current call's dispatch-visible behavior
+- publication asserts that the slot is empty before setting it
 - immediately after the call returns, the operator dispatcher reads and clears
   the publication
 - no operator dispatch may run between the method return and that read/clear
@@ -513,13 +533,11 @@ continue. The dispatcher must consume that record into the current trace step or
 discard it before any later candidate is considered.
 
 Trusted implementations may perform nested operator dispatch internally. The
-publication rule is only about the outgoing edge after the publication is made:
-a trusted publication must not remain live across nested operator dispatch.
-Implementations that need to dispatch internally should do that work first, let
-the nested dispatchers consume their own publications, and then publish the
-outer trusted record immediately before returning to the outer operator
-dispatcher. The entry edge and the body before publication do not need to be
-operator-dispatch-free.
+rule is that they must do that work before publishing the outer trusted record.
+If a trusted method publishes and then starts nested operator dispatch, nested
+dispatch entry will see a non-empty publication slot and fail the invariant.
+Trusted publication should therefore be the final dispatch-visible action before
+returning to the dispatcher that invoked the method.
 
 If an implementation represents `NotImplemented` propagation with an internal
 exception-like path, the trusted publication still has to be installed before
@@ -528,10 +546,11 @@ normal Python binary-operator semantics, `NotImplemented` is a return value, not
 `NotImplementedError`.
 
 This handles reentrancy because nested operator dispatches use the same
-clear-call-read-clear protocol. A nested dispatch may publish, consume, and
-clear its own publication while the outer method is running. When control returns
-to the outer dispatcher, the only publication it may consume is one published by
-the outer method call after any nested dispatch completed.
+empty-on-entry, publish-once, consume-and-clear protocol. A nested dispatch may
+publish, consume, and clear its own publication while the outer method is
+running. When control returns to the outer dispatcher, the only publication it
+may consume is one published by the outer method call after any nested dispatch
+completed.
 
 A trusted handler must satisfy a strict contract:
 
@@ -552,13 +571,28 @@ A trusted handler must satisfy a strict contract:
 
 ## Dunder Method Call Cache
 
-For arbitrary dunder methods, the cache may skip lookup but not method
-behavior. It may call only the first method that the generic dispatcher would
-call under the guarded dispatch facts. The method may be implemented in Python
-or C++; the cache kind is about preserving the dunder method call, not the
-implementation language.
+For arbitrary dunder methods, the cache may skip lookup but not method behavior.
+It may call only the method that the family-specific dispatcher selected under
+the guarded dispatch facts. The method may be implemented in Python or C++; the
+cache kind is about preserving the dunder method call, not the implementation
+language.
 
-The action is:
+For the first get-item slice, the action is:
+
+```text
+call cached selected __getitem__ method
+if it raises or returns exception_marker:
+    propagate the exception
+otherwise:
+    return the method result
+```
+
+There is no `NotImplemented` continuation for get-item subscription. Returning
+`NotImplemented` from `__getitem__` returns that singleton as the subscription
+result.
+
+Later continuation protocols, such as binary operators and in-place operators,
+need a family-specific result policy:
 
 ```text
 call cached first dunder method
@@ -568,12 +602,12 @@ otherwise:
     resume generic operator dispatch after the candidate just executed
 ```
 
-The fallback must not call the first candidate again. The cache has already
-executed that dunder method, and running the full dispatcher from the beginning
-would duplicate its side effects. Instead, the cache entry must contain enough
-resume information to continue the operator protocol from the next candidate:
-for example, whether the cached first call was the lhs forward method, rhs
-reflected method, or lhs in-place method.
+For those later continuation protocols, the fallback must not call the first
+candidate again. The cache has already executed that dunder method, and running
+the full dispatcher from the beginning would duplicate its side effects.
+Instead, the cache entry must contain enough resume information to continue the
+operator protocol from the next candidate: for example, whether the cached first
+call was the lhs forward method, rhs reflected method, or lhs in-place method.
 
 The resumed dispatcher must re-check any dispatch facts that may have been
 invalidated by the first dunder method call before it executes later candidates.
@@ -804,8 +838,13 @@ Python 3 slicing uses the same protocol with a `slice` object as the key:
 protocols. They should not be part of the Python 3 operator-dispatch design
 unless clovervm intentionally adds a compatibility deviation.
 
-Subscription is a good trial family for dunder-method dispatch caching. It is
-high impact, but its protocol is simpler than binary arithmetic:
+Class-object subscription is intentionally excluded from the first slice.
+Python's `Class[key]` protocol may try metaclass `__getitem__` and then
+`__class_getitem__`; that is a separate class-subscription design. The first
+`GetItemIC` should handle ordinary instance/container subscription only.
+
+Get-item subscription is a good trial family for dunder-method dispatch
+caching. It is high impact, but its protocol is simpler than binary arithmetic:
 
 - there is only one protocol owner, the container
 - there is no reflected candidate
@@ -848,10 +887,10 @@ A cache that skips the dunder method must still preserve any key-side behavior
 that the trusted handler assumes away. For example, list indexing may need
 `__index__`, dict lookup may need hashing and equality, and slicing requires
 correct slice-object behavior. Those are trusted-handler dependencies, not
-reflected subscription dispatch dependencies. The first subscription cache
-should therefore start with exact key shapes where the handler does not skip
-arbitrary Python key behavior, such as SMI index keys and exact `slice` keys
-whose components have already been constructed.
+reflected subscription dispatch dependencies. The first get-item cache should
+therefore start with exact key shapes where the handler does not skip arbitrary
+Python key behavior, such as SMI index keys and exact `slice` keys whose
+components have already been constructed.
 
 A concrete get-item cache entry can therefore stay simple and scan-friendly:
 
@@ -875,7 +914,9 @@ struct GetItemIC
 
     // Used when handler == nullptr. It is colocated with the lookup plan so a
     // later polymorphic cache keeps each dunder lookup arm paired with its
-    // corresponding function-call entry plan.
+    // corresponding function-call entry plan. The first slice assumes cacheable
+    // __getitem__ methods use the same Function-shaped call machinery as
+    // CallSpecialMethod.
     FunctionCallInlineCache call_cache;
 };
 ```
@@ -953,19 +994,22 @@ container shape + key shape + method_plan validity + handler:
 In that later design, a key-shape miss could fall back to
 `DunderMethodCall` through the still-valid `method_plan`, then update or add a
 handler specialization for the newly observed key shape. That refinement should
-wait until the monomorphic subscription cache is correct and measured.
+wait until the monomorphic get-item cache is correct and measured.
 
-`SetItemIC` and `DelItemIC` should use the same shape and plan pattern but with
-their own handler typedefs and cache arrays. `__setitem__` is a ternary call
-boundary (`container`, `key`, `value`), but its initial dispatch profile is
-still binary-shaped: container shape plus key shape. The value is passed to the
-selected handler or Python method but is not part of the first dispatch guard.
+Store and delete subscription are later extensions. `SetItemIC` and `DelItemIC`
+should use the same shape and plan pattern but with their own handler typedefs
+and cache arrays once get-item is proven. `__setitem__` is a ternary call
+boundary (`container`, `key`, `value`), but its initial dispatch profile can
+still be binary-shaped when the trusted handler proves it does not depend on
+value shape for dispatch. If a trusted set-item handler assumes value-side
+behavior away, it needs either an additional value guard or a narrower
+recognized case.
 
 Multi-method protocols such as binary arithmetic, in-place arithmetic, and rich
 comparison are more complicated because they may have multiple candidate methods,
 `NotImplemented` continuation, reflected-method ordering, and resume state after
-a cached first call. They should be handled after the subscription cache has
-proven the `TrustedHandler` / `DunderMethodCall` structure.
+a cached first call. They should be handled after the get-item subscription
+cache has proven the `TrustedHandler` / `DunderMethodCall` structure.
 
 ### Numeric Conversion Protocols
 
@@ -1090,6 +1134,3 @@ Equivalently:
 - What exact shape should the trace recognizer and trusted-handler table use?
 - How much of the binary cache validation path can be shared with in-place
   operator caches without obscuring the interpreter hot path?
-- How should the `ThreadState` trusted-publication side channel be hardened?
-  The likely answer is an RAII/scoped publication guard or debug-only invariant
-  checks that prove no publication survives past the call edge that produced it.
