@@ -1,3 +1,3 @@
 display_name: Implement Stdlib Module
-short_description: Build stdlib modules from CPython
-default_prompt: 'Implement a standard library module: discover its interface from local Python help(), consult CPython source and tests, split native and Python code appropriately, adapt tests with attribution, and verify the repository checks.'
+short_description: Build Python-compatible stdlib modules
+default_prompt: 'Use $implement-stdlib-module to implement a standard library module: inspect local Python help/signatures, compare CPython source and tests, preserve supported call behavior, split native primitives from Python policy, update bringup status, and verify repository checks.'
