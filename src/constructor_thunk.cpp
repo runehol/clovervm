@@ -24,7 +24,7 @@ namespace cl
     }
 
     static Expected<FunctionSignature>
-    constructor_thunk_signature(FunctionSignature init_signature)
+    init_only_constructor_thunk_signature(FunctionSignature init_signature)
     {
         FunctionSignature signature = init_signature;
         uint64_t shifted_default_mask = 0;
@@ -85,8 +85,8 @@ namespace cl
     }
 
     static Expected<CodeObject *>
-    make_constructor_thunk_code(ClassObject *cls,
-                                Optional<TValue<Function>> init)
+    make_init_only_constructor_thunk_code(ClassObject *cls,
+                                          Optional<TValue<Function>> init)
     {
         Scope *local_scope = make_internal_raw<Scope>(nullptr);
         TValue<String> thunk_name(interned_string(L"<constructor_thunk>"));
@@ -111,8 +111,9 @@ namespace cl
                                  init_code->get_defining_module(), local_scope,
                                  thunk_name);
             CodeObjectBuilder &code = *code_storage;
-            code.function_signature() = CL_TRY(
-                constructor_thunk_signature(init_code->function_signature));
+            code.function_signature() =
+                CL_TRY(init_only_constructor_thunk_signature(
+                    init_code->function_signature));
             for(size_t remap_idx = 0;
                 remap_idx < init_code->function_keyword_remap.size();
                 ++remap_idx)
@@ -180,8 +181,8 @@ namespace cl
     }
 
     static Expected<TValue<Tuple>>
-    make_constructor_thunk_defaults(TValue<Tuple> init_defaults,
-                                    FunctionSignature init_signature)
+    make_init_only_constructor_thunk_defaults(TValue<Tuple> init_defaults,
+                                              FunctionSignature init_signature)
     {
         uint32_t init_default_span_size =
             Function::default_span_size(init_signature);
@@ -193,7 +194,7 @@ namespace cl
         }
 
         FunctionSignature thunk_signature =
-            CL_TRY(constructor_thunk_signature(init_signature));
+            CL_TRY(init_only_constructor_thunk_signature(init_signature));
         uint32_t thunk_default_span_size =
             Function::default_span_size(thunk_signature);
         TValue<Tuple> thunk_defaults = make_object_value<Tuple>(
@@ -235,10 +236,11 @@ namespace cl
     }
 
     Expected<TValue<Function>>
-    make_constructor_thunk_function(ClassObject *cls,
-                                    Optional<TValue<Function>> init)
+    make_init_only_constructor_thunk_function(ClassObject *cls,
+                                              Optional<TValue<Function>> init)
     {
-        CodeObject *code = CL_TRY(make_constructor_thunk_code(cls, init));
+        CodeObject *code =
+            CL_TRY(make_init_only_constructor_thunk_code(cls, init));
         if(!init.has_value())
         {
             return Expected<TValue<Function>>::ok(
@@ -258,8 +260,9 @@ namespace cl
 
         FunctionSignature init_signature =
             init_function.extract()->code_object.extract()->function_signature;
-        TValue<Tuple> thunk_defaults = CL_TRY(
-            make_constructor_thunk_defaults(defaults.value(), init_signature));
+        TValue<Tuple> thunk_defaults =
+            CL_TRY(make_init_only_constructor_thunk_defaults(defaults.value(),
+                                                             init_signature));
         if(thunk_defaults.extract()->empty())
         {
             return Expected<TValue<Function>>::ok(
