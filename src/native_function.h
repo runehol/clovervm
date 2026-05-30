@@ -17,6 +17,7 @@ namespace cl
         NativeFunctionTarget target;
         uint32_t n_parameters;
         const wchar_t *doc;
+        Optional<TValue<Tuple>> default_parameters;
     };
 
     BuiltinIntrinsicMethod
@@ -43,6 +44,8 @@ namespace cl
     BuiltinIntrinsicMethod
     builtin_intrinsic_method(const wchar_t *name, IntrinsicFunction7 function,
                              const wchar_t *doc = nullptr);
+    BuiltinIntrinsicMethod with_defaults(BuiltinIntrinsicMethod method,
+                                         TValue<Tuple> defaults);
 
     Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction0 function,

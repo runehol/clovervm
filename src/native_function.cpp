@@ -102,7 +102,8 @@ namespace cl
     {
         NativeFunctionTarget target;
         target.fixed0 = function;
-        return BuiltinIntrinsicMethod{name, target, 0, doc};
+        return BuiltinIntrinsicMethod{name, target, 0, doc,
+                                      Optional<TValue<Tuple>>::none()};
     }
 
     BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
@@ -111,7 +112,8 @@ namespace cl
     {
         NativeFunctionTarget target;
         target.fixed1 = function;
-        return BuiltinIntrinsicMethod{name, target, 1, doc};
+        return BuiltinIntrinsicMethod{name, target, 1, doc,
+                                      Optional<TValue<Tuple>>::none()};
     }
 
     BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
@@ -120,7 +122,8 @@ namespace cl
     {
         NativeFunctionTarget target;
         target.fixed2 = function;
-        return BuiltinIntrinsicMethod{name, target, 2, doc};
+        return BuiltinIntrinsicMethod{name, target, 2, doc,
+                                      Optional<TValue<Tuple>>::none()};
     }
 
     BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
@@ -129,7 +132,8 @@ namespace cl
     {
         NativeFunctionTarget target;
         target.fixed3 = function;
-        return BuiltinIntrinsicMethod{name, target, 3, doc};
+        return BuiltinIntrinsicMethod{name, target, 3, doc,
+                                      Optional<TValue<Tuple>>::none()};
     }
 
     BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
@@ -138,7 +142,8 @@ namespace cl
     {
         NativeFunctionTarget target;
         target.fixed4 = function;
-        return BuiltinIntrinsicMethod{name, target, 4, doc};
+        return BuiltinIntrinsicMethod{name, target, 4, doc,
+                                      Optional<TValue<Tuple>>::none()};
     }
 
     BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
@@ -147,7 +152,8 @@ namespace cl
     {
         NativeFunctionTarget target;
         target.fixed5 = function;
-        return BuiltinIntrinsicMethod{name, target, 5, doc};
+        return BuiltinIntrinsicMethod{name, target, 5, doc,
+                                      Optional<TValue<Tuple>>::none()};
     }
 
     BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
@@ -156,7 +162,8 @@ namespace cl
     {
         NativeFunctionTarget target;
         target.fixed6 = function;
-        return BuiltinIntrinsicMethod{name, target, 6, doc};
+        return BuiltinIntrinsicMethod{name, target, 6, doc,
+                                      Optional<TValue<Tuple>>::none()};
     }
 
     BuiltinIntrinsicMethod builtin_intrinsic_method(const wchar_t *name,
@@ -165,7 +172,15 @@ namespace cl
     {
         NativeFunctionTarget target;
         target.fixed7 = function;
-        return BuiltinIntrinsicMethod{name, target, 7, doc};
+        return BuiltinIntrinsicMethod{name, target, 7, doc,
+                                      Optional<TValue<Tuple>>::none()};
+    }
+
+    BuiltinIntrinsicMethod with_defaults(BuiltinIntrinsicMethod method,
+                                         TValue<Tuple> defaults)
+    {
+        method.default_parameters = Optional<TValue<Tuple>>::some(defaults);
+        return method;
     }
 
     Expected<TValue<Function>>
@@ -260,7 +275,7 @@ namespace cl
         return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(method.name),
             method.target, call_intrinsic_opcode_for_arity(method.n_parameters),
-            method.n_parameters, docstring, false);
+            method.n_parameters, docstring, false, method.default_parameters);
     }
 
     Expected<TValue<Function>>

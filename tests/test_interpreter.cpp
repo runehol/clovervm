@@ -260,6 +260,16 @@ static Value native_add(ThreadState *thread, Value left, Value right)
     return Value::from_smi(left.get_smi() + right.get_smi());
 }
 
+static Value native_add_three(ThreadState *thread, Value left, Value right,
+                              Value third)
+{
+    if(!left.is_smi() || !right.is_smi() || !third.is_smi())
+    {
+        throw std::runtime_error("native_add_three expected smi arguments");
+    }
+    return Value::from_smi(left.get_smi() + right.get_smi() + third.get_smi());
+}
+
 static Value native_stop_iteration_with_value(ThreadState *thread)
 {
     return active_thread()->set_pending_stop_iteration_value(
@@ -3287,6 +3297,31 @@ TEST(Interpreter, call_intrinsic_two_arg_function)
     store_global_to_module_for_test(
         test_context, code_obj, L"native_add",
         make_intrinsic_function(&test_context.vm(), native_add));
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::from_smi(42), actual);
+}
+
+TEST(Interpreter, builtin_intrinsic_method_defaults_are_used)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+    TValue<String> class_name(
+        test_context.vm().get_or_create_interned_string_value(L"Builtin"));
+    ClassObject *cls = test_context.thread()->make_internal_raw<ClassObject>(
+        class_name, 2, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
+    TValue<Tuple> defaults = test_context.thread()->make_object_value<Tuple>(1);
+    defaults.extract()->initialize_item_unchecked(0, Value::from_smi(30));
+    BuiltinIntrinsicMethod methods[] = {with_defaults(
+        builtin_intrinsic_method(L"add3", native_add_three), defaults)};
+    ASSERT_TRUE(install_builtin_intrinsic_methods(&test_context.vm(), cls,
+                                                  methods, std::size(methods))
+                    .has_value());
+
+    CodeObject *code_obj = test_context.compile_file(L"Builtin.add3(5, 7)\n");
+    store_global_to_module_for_test(test_context, code_obj, L"Builtin",
+                                    Value::from_oop(cls));
 
     Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
     EXPECT_EQ(Value::from_smi(42), actual);
