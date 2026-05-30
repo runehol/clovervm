@@ -2,14 +2,37 @@
 
 #include "class_object.h"
 #include "native_function.h"
+#include "owned.h"
 #include "str.h"
 #include "thread_state.h"
+#include "tuple.h"
+#include "value.h"
 #include "virtual_machine.h"
 #include <iterator>
 #include <string>
 
 namespace cl
 {
+    static Value native_int_new(ThreadState *thread, Value cls_value, Value obj)
+    {
+        if(cls_value != Value::from_oop(active_vm()->int_class()))
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"TypeError", L"int.__new__ expects int as cls");
+        }
+
+        if((obj.as.integer & value_not_smi_or_boolean_mask) == 0)
+        {
+            Value result;
+            result.as.integer = obj.as.integer & value_boolean_to_integer_mask;
+            return result;
+        }
+
+        return thread->set_pending_builtin_exception_string(
+            L"TypeError",
+            L"int conversion is only implemented for int and bool");
+    }
+
     static Value native_int_str(ThreadState *thread, Value self)
     {
         if(!self.is_smi())
@@ -32,7 +55,14 @@ namespace cl
 
     void install_int_class_methods(VirtualMachine *vm)
     {
+        Owned<TValue<Tuple>> int_new_defaults(
+            active_thread()->make_object_value<Tuple>(1));
+        int_new_defaults.extract()->initialize_item_unchecked(
+            0, Value::from_smi(0));
         BuiltinIntrinsicMethod methods[] = {
+            with_defaults(builtin_intrinsic_method(L"__new__", native_int_new,
+                                                   L"Create an int object."),
+                          int_new_defaults.value()),
             builtin_intrinsic_method(L"__str__", native_int_str,
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_int_str,

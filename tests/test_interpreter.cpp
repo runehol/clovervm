@@ -1037,6 +1037,36 @@ TEST(Interpreter, class_constructor_custom_new_with_init_has_no_thunk_yet)
                         L"TypeError", L"object is not callable");
 }
 
+TEST(Interpreter, int_constructor_defaults_to_zero)
+{
+    test::FileRunner file_runner(L"int()\n");
+    EXPECT_EQ(Value::from_smi(0), file_runner.return_value);
+}
+
+TEST(Interpreter, int_constructor_returns_int_argument)
+{
+    test::FileRunner file_runner(L"int(42)\n");
+    EXPECT_EQ(Value::from_smi(42), file_runner.return_value);
+}
+
+TEST(Interpreter, int_constructor_converts_bool)
+{
+    test::FileRunner true_runner(L"int(True)\n");
+    EXPECT_EQ(Value::from_smi(1), true_runner.return_value);
+
+    test::FileRunner false_runner(L"int(False)\n");
+    EXPECT_EQ(Value::from_smi(0), false_runner.return_value);
+}
+
+TEST(Interpreter, int_constructor_rejects_unsupported_value)
+{
+    expect_python_error(L"class C:\n"
+                        L"    pass\n"
+                        L"int(C())\n",
+                        L"TypeError",
+                        L"int conversion is only implemented for int and bool");
+}
+
 TEST(Interpreter, function_keyword_call_rejects_duplicate_formal_fill)
 {
     expect_python_error(L"def f(a):\n"
