@@ -8,11 +8,92 @@
 #include "tuple.h"
 #include "value.h"
 #include "virtual_machine.h"
+#include <cwctype>
 #include <iterator>
 #include <string>
 
 namespace cl
 {
+    static Value invalid_int_literal(ThreadState *thread)
+    {
+        return thread->set_pending_builtin_exception_string(
+            L"ValueError", L"invalid literal for int()");
+    }
+
+    static bool is_ascii_digit(cl_wchar ch) { return ch >= L'0' && ch <= L'9'; }
+
+    static Value parse_int_string(ThreadState *thread, TValue<String> string)
+    {
+        String *str = string.extract();
+        size_t begin = 0;
+        size_t end = size_t(str->count.extract());
+        while(begin < end && std::iswspace(str->data[begin]))
+        {
+            ++begin;
+        }
+        while(begin < end && std::iswspace(str->data[end - 1]))
+        {
+            --end;
+        }
+        if(begin == end)
+        {
+            return invalid_int_literal(thread);
+        }
+
+        bool negative = false;
+        if(str->data[begin] == L'+' || str->data[begin] == L'-')
+        {
+            negative = str->data[begin] == L'-';
+            ++begin;
+        }
+
+        static constexpr uint64_t positive_limit =
+            static_cast<uint64_t>(value_smi_max);
+        static constexpr uint64_t negative_limit = positive_limit + 1;
+        uint64_t limit = negative ? negative_limit : positive_limit;
+        uint64_t parsed = 0;
+        bool saw_digit = false;
+        bool previous_underscore = false;
+        for(size_t idx = begin; idx < end; ++idx)
+        {
+            cl_wchar ch = str->data[idx];
+            if(ch == L'_')
+            {
+                if(!saw_digit || previous_underscore)
+                {
+                    return invalid_int_literal(thread);
+                }
+                previous_underscore = true;
+                continue;
+            }
+            if(!is_ascii_digit(ch))
+            {
+                return invalid_int_literal(thread);
+            }
+
+            uint64_t digit = static_cast<uint64_t>(ch - L'0');
+            if(parsed > (limit - digit) / 10)
+            {
+                return thread->set_pending_builtin_exception_string(
+                    L"OverflowError", L"integer overflow");
+            }
+            parsed = parsed * 10 + digit;
+            saw_digit = true;
+            previous_underscore = false;
+        }
+        if(!saw_digit || previous_underscore)
+        {
+            return invalid_int_literal(thread);
+        }
+
+        int64_t result = static_cast<int64_t>(parsed);
+        if(negative)
+        {
+            result = -result;
+        }
+        return Value::from_smi(result);
+    }
+
     static Value native_int_new(ThreadState *thread, Value cls_value, Value obj)
     {
         if(cls_value != Value::from_oop(active_vm()->int_class()))
@@ -28,9 +109,15 @@ namespace cl
             return result;
         }
 
+        if(can_convert_to<String>(obj))
+        {
+            return parse_int_string(thread,
+                                    TValue<String>::from_value_assumed(obj));
+        }
+
         return thread->set_pending_builtin_exception_string(
             L"TypeError",
-            L"int conversion is only implemented for int and bool");
+            L"int conversion is only implemented for int, bool and str");
     }
 
     static Value native_int_str(ThreadState *thread, Value self)

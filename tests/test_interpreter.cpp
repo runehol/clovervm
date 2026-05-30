@@ -1058,13 +1058,42 @@ TEST(Interpreter, int_constructor_converts_bool)
     EXPECT_EQ(Value::from_smi(0), false_runner.return_value);
 }
 
+TEST(Interpreter, int_constructor_converts_string)
+{
+    EXPECT_EQ(Value::from_smi(123),
+              test::FileRunner(L"int('123')\n").return_value);
+    EXPECT_EQ(Value::from_smi(-42),
+              test::FileRunner(L"int('  -42  ')\n").return_value);
+    EXPECT_EQ(Value::from_smi(1000),
+              test::FileRunner(L"int('1_000')\n").return_value);
+}
+
+TEST(Interpreter, int_constructor_rejects_invalid_string)
+{
+    expect_python_error(L"int('')\n", L"ValueError",
+                        L"invalid literal for int()");
+    expect_python_error(L"int('12x')\n", L"ValueError",
+                        L"invalid literal for int()");
+    expect_python_error(L"int('1__2')\n", L"ValueError",
+                        L"invalid literal for int()");
+}
+
+TEST(Interpreter, int_constructor_reports_string_overflow)
+{
+    expect_python_error(L"int('288230376151711744')\n", L"OverflowError",
+                        L"integer overflow");
+    expect_python_error(L"int('-288230376151711745')\n", L"OverflowError",
+                        L"integer overflow");
+}
+
 TEST(Interpreter, int_constructor_rejects_unsupported_value)
 {
     expect_python_error(L"class C:\n"
                         L"    pass\n"
                         L"int(C())\n",
                         L"TypeError",
-                        L"int conversion is only implemented for int and bool");
+                        L"int conversion is only implemented for int, bool and "
+                        L"str");
 }
 
 TEST(Interpreter, function_keyword_call_rejects_duplicate_formal_fill)
