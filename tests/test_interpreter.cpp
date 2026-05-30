@@ -971,6 +971,62 @@ TEST(Interpreter, class_constructor_drops_self_default_from_thunk_defaults)
     EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
 }
 
+TEST(Interpreter, class_constructor_calls_new_without_init)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __new__(cls):\n"
+                                 L"        return 42\n"
+                                 L"C()\n");
+    EXPECT_EQ(Value::from_smi(42), file_runner.return_value);
+}
+
+TEST(Interpreter, class_constructor_new_only_passes_class)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __new__(cls):\n"
+                                 L"        return cls is C\n"
+                                 L"C()\n");
+    EXPECT_EQ(Value::True(), file_runner.return_value);
+}
+
+TEST(Interpreter, class_constructor_new_only_preserves_defaults)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __new__(cls, value=7):\n"
+                                 L"        return value\n"
+                                 L"C()\n");
+    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
+}
+
+TEST(Interpreter, class_constructor_new_only_accepts_keyword_calls)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __new__(cls, value=7):\n"
+                                 L"        return value\n"
+                                 L"C(value=11)\n");
+    EXPECT_EQ(Value::from_smi(11), file_runner.return_value);
+}
+
+TEST(Interpreter, class_constructor_new_only_preserves_keyword_only_defaults)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __new__(cls, *, value=7):\n"
+                                 L"        return value\n"
+                                 L"C()\n");
+    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
+}
+
+TEST(Interpreter, class_constructor_custom_new_with_init_has_no_thunk_yet)
+{
+    expect_python_error(L"class C:\n"
+                        L"    def __new__(cls):\n"
+                        L"        return 42\n"
+                        L"    def __init__(self):\n"
+                        L"        pass\n"
+                        L"C()\n",
+                        L"TypeError", L"object is not callable");
+}
+
 TEST(Interpreter, function_keyword_call_rejects_duplicate_formal_fill)
 {
     expect_python_error(L"def f(a):\n"

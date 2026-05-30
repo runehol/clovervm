@@ -719,16 +719,11 @@ namespace cl
         TValue<String> new_name(interned_string(L"__new__"));
         AttributeReadDescriptor new_descriptor =
             resolve_attr_read_descriptor(Value::from_oop(self), new_name);
-        if(new_descriptor.is_found())
-        {
-            return Expected<ConstructorThunkLookup>::ok(
-                ConstructorThunkLookup{nullptr, nullptr});
-        }
 
         TValue<String> init_name(interned_string(L"__init__"));
         AttributeReadDescriptor init_descriptor =
             resolve_attr_read_descriptor(Value::from_oop(self), init_name);
-        if(!init_descriptor.is_found())
+        if(!new_descriptor.is_found() && !init_descriptor.is_found())
         {
             TValue<Function> thunk =
                 CL_TRY(make_init_only_constructor_thunk_function(
@@ -736,6 +731,38 @@ namespace cl
             constructor_thunk = thunk.extract();
             return Expected<ConstructorThunkLookup>::ok(
                 ConstructorThunkLookup{thunk.extract(), lookup_cell});
+        }
+        if(new_descriptor.is_found() && !init_descriptor.is_found())
+        {
+            if(!new_descriptor.is_cacheable() ||
+               new_descriptor.plan.kind ==
+                   AttributeReadPlanKind::DataDescriptorGet ||
+               new_descriptor.plan.kind ==
+                   AttributeReadPlanKind::NonDataDescriptorGet)
+            {
+                return Expected<ConstructorThunkLookup>::ok(
+                    ConstructorThunkLookup{nullptr, nullptr});
+            }
+
+            Value new_value =
+                load_attr_from_plan(Value::from_oop(self), new_descriptor.plan);
+            if(!can_convert_to<Function>(new_value))
+            {
+                return Expected<ConstructorThunkLookup>::ok(
+                    ConstructorThunkLookup{nullptr, nullptr});
+            }
+
+            TValue<Function> thunk =
+                CL_TRY(make_new_only_constructor_thunk_function(
+                    self, TValue<Function>::from_value_assumed(new_value)));
+            constructor_thunk = thunk.extract();
+            return Expected<ConstructorThunkLookup>::ok(
+                ConstructorThunkLookup{thunk.extract(), lookup_cell});
+        }
+        if(new_descriptor.is_found())
+        {
+            return Expected<ConstructorThunkLookup>::ok(
+                ConstructorThunkLookup{nullptr, nullptr});
         }
 
         if(!init_descriptor.is_cacheable() ||

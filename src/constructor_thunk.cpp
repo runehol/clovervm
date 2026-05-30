@@ -114,6 +114,13 @@ namespace cl
                                                       L"__init__");
     }
 
+    static Expected<FunctionSignature>
+    new_only_constructor_thunk_signature(FunctionSignature new_signature)
+    {
+        return constructor_thunk_signature_drop_first(new_signature,
+                                                      L"__new__");
+    }
+
     static Expected<CodeObject *>
     make_init_only_constructor_thunk_code(ClassObject *cls,
                                           Optional<TValue<Function>> init)
@@ -261,6 +268,56 @@ namespace cl
             init_defaults, init_signature, L"__init__");
     }
 
+    static Expected<CodeObject *>
+    make_new_only_constructor_thunk_code(ClassObject *cls,
+                                         TValue<Function> new_)
+    {
+        CodeObject *new_code = new_.extract()->code_object.extract();
+        uint32_t new_n_parameters = new_code->function_signature.n_parameters;
+        if(new_n_parameters == 0 ||
+           new_code->function_signature.n_positional_parameters == 0)
+        {
+            return Expected<CodeObject *>::raise_exception(
+                L"TypeError", L"__new__ requires a cls parameter");
+        }
+
+        Scope *local_scope = make_internal_raw<Scope>(nullptr);
+        TValue<String> thunk_name(interned_string(L"<constructor_thunk>"));
+        CodeObjectBuilder code(new_code->compilation_unit,
+                               new_code->get_defining_module(), local_scope,
+                               thunk_name);
+        code.function_signature() = CL_TRY(
+            new_only_constructor_thunk_signature(new_code->function_signature));
+        copy_keyword_remap_drop_first(code, new_code);
+        reserve_parameter_slots_and_frame_header(&code);
+
+        uint32_t class_const_idx =
+            CL_TRY(code.allocate_constant(Value::from_oop(cls)));
+        uint32_t new_code_const_idx =
+            CL_TRY(code.allocate_constant(Value::from_oop(new_code)));
+        CL_TRY(code.emit_lda_constant(0, class_const_idx));
+        CL_TRY(code.emit_star(0, OutgoingArgReg(0)));
+        for(uint32_t param_idx = 0; param_idx < code.n_parameters();
+            ++param_idx)
+        {
+            CL_TRY(code.emit_ldar(0, param_idx));
+            CL_TRY(code.emit_star(0, OutgoingArgReg(param_idx + 1)));
+        }
+
+        CL_TRY(code.emit_call_code_object(0, new_code_const_idx,
+                                          OutgoingArgReg(0), new_n_parameters));
+        CL_TRY(code.emit_return(0));
+        return code.finalize();
+    }
+
+    static Expected<TValue<Tuple>>
+    make_new_only_constructor_thunk_defaults(TValue<Tuple> new_defaults,
+                                             FunctionSignature new_signature)
+    {
+        return make_constructor_thunk_defaults_drop_first(
+            new_defaults, new_signature, L"__new__");
+    }
+
     Expected<TValue<Function>>
     make_init_only_constructor_thunk_function(ClassObject *cls,
                                               Optional<TValue<Function>> init)
@@ -301,6 +358,45 @@ namespace cl
             return Expected<TValue<Function>>::raise_exception(
                 L"SystemError",
                 L"unsupported __init__ default parameter layout");
+        }
+        return Expected<TValue<Function>>::ok(make_object_value<Function>(
+            TValue<CodeObject>::from_oop(code),
+            Optional<TValue<String>>::none(),
+            Optional<TValue<Tuple>>::some(thunk_defaults)));
+    }
+
+    Expected<TValue<Function>>
+    make_new_only_constructor_thunk_function(ClassObject *cls,
+                                             TValue<Function> new_)
+    {
+        CodeObject *code =
+            CL_TRY(make_new_only_constructor_thunk_code(cls, new_));
+        Optional<TValue<Tuple>> defaults =
+            new_.extract()->default_parameters.value();
+        if(!defaults.has_value())
+        {
+            return Expected<TValue<Function>>::ok(
+                make_object_value<Function>(TValue<CodeObject>::from_oop(code),
+                                            Optional<TValue<String>>::none()));
+        }
+
+        FunctionSignature new_signature =
+            new_.extract()->code_object.extract()->function_signature;
+        TValue<Tuple> thunk_defaults =
+            CL_TRY(make_new_only_constructor_thunk_defaults(defaults.value(),
+                                                            new_signature));
+        if(thunk_defaults.extract()->empty())
+        {
+            return Expected<TValue<Function>>::ok(
+                make_object_value<Function>(TValue<CodeObject>::from_oop(code),
+                                            Optional<TValue<String>>::none()));
+        }
+        if(thunk_defaults.extract()->size() !=
+           Function::default_span_size(code->function_signature))
+        {
+            return Expected<TValue<Function>>::raise_exception(
+                L"SystemError",
+                L"unsupported __new__ default parameter layout");
         }
         return Expected<TValue<Function>>::ok(make_object_value<Function>(
             TValue<CodeObject>::from_oop(code),

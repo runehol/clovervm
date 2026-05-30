@@ -11,6 +11,9 @@ namespace cl
     Expected<TValue<Function>>
     make_init_only_constructor_thunk_function(ClassObject *cls,
                                               Optional<TValue<Function>> init);
+    Expected<TValue<Function>>
+    make_new_only_constructor_thunk_function(ClassObject *cls,
+                                             TValue<Function> new_);
 }  // namespace cl
 
 #endif  // CL_CONSTRUCTOR_THUNK_H
