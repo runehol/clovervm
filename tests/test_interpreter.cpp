@@ -446,6 +446,75 @@ make_return_exception_marker_to_native_code(test::VmTestContext &test_context)
     return builder.finalize().value();
 }
 
+static Value run_is_instance_of_known_class(test::VmTestContext &test_context,
+                                            Value value, ClassObject *cls)
+{
+    TValue<String> name = test_context.vm().get_or_create_interned_string_value(
+        L"<is-instance-of-known-class-test>");
+    CodeObjectBuilder builder(
+        &test_context.vm(), nullptr,
+        TValue<ModuleObject>::from_oop(test_context.make_test_module_object(
+            name, test_context.vm().global_builtins_module().raw_value())),
+        nullptr, name);
+    uint32_t value_idx = builder.allocate_constant(value).value();
+    uint32_t class_idx =
+        builder.allocate_constant(Value::from_oop(cls)).value();
+    builder.emit_lda_constant(0, uint8_t(value_idx)).value();
+    builder.emit_is_instance_of_known_class(0, uint8_t(class_idx)).value();
+    builder.emit_return(0).value();
+    CodeObject *code_obj = builder.finalize().value();
+    return test_context.thread()->run_clovervm_code_object(code_obj);
+}
+
+TEST(Interpreter, is_instance_of_known_class_handles_inline_values)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    EXPECT_EQ(Value::True(),
+              run_is_instance_of_known_class(test_context, Value::from_smi(42),
+                                             test_context.vm().int_class()));
+    EXPECT_EQ(Value::True(),
+              run_is_instance_of_known_class(test_context, Value::True(),
+                                             test_context.vm().int_class()));
+    EXPECT_EQ(Value::False(),
+              run_is_instance_of_known_class(test_context, Value::from_smi(42),
+                                             test_context.vm().str_class()));
+}
+
+TEST(Interpreter, is_instance_of_known_class_follows_mro)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> base_name(
+        test_context.vm().get_or_create_interned_string_value(L"Base"));
+    TValue<String> child_name(
+        test_context.vm().get_or_create_interned_string_value(L"Child"));
+    TValue<String> sibling_name(
+        test_context.vm().get_or_create_interned_string_value(L"Sibling"));
+    ClassObject *base = test_context.thread()->make_internal_raw<ClassObject>(
+        base_name, 2, test_context.vm().object_class(),
+        NativeLayoutId::Instance);
+    ClassObject *child = test_context.thread()->make_internal_raw<ClassObject>(
+        child_name, 2, base, NativeLayoutId::Instance);
+    ClassObject *sibling =
+        test_context.thread()->make_internal_raw<ClassObject>(
+            sibling_name, 2, test_context.vm().object_class(),
+            NativeLayoutId::Instance);
+    Instance *obj = test_context.thread()->make_internal_raw<Instance>(child);
+
+    EXPECT_EQ(Value::True(), run_is_instance_of_known_class(
+                                 test_context, Value::from_oop(obj), child));
+    EXPECT_EQ(Value::True(), run_is_instance_of_known_class(
+                                 test_context, Value::from_oop(obj), base));
+    EXPECT_EQ(Value::True(),
+              run_is_instance_of_known_class(test_context, Value::from_oop(obj),
+                                             test_context.vm().object_class()));
+    EXPECT_EQ(Value::False(), run_is_instance_of_known_class(
+                                  test_context, Value::from_oop(obj), sibling));
+}
+
 TEST(Interpreter, assert_statement_raises_assertion_error)
 {
     expect_python_error(L"assert False\n", L"AssertionError", L"");

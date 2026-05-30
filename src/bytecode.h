@@ -172,6 +172,7 @@ namespace cl
         CreateFunctionWithDefaults,
         CreateClass,
         CreateInstanceKnownClass,
+        IsInstanceOfKnownClass,
         BuildClass,
         CheckInitReturnedNone,
         WriteStdout,

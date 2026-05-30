@@ -388,6 +388,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "CreateClass");
             case cl::Bytecode::CreateInstanceKnownClass:
                 return format_to(out, "CreateInstanceKnownClass");
+            case cl::Bytecode::IsInstanceOfKnownClass:
+                return format_to(out, "IsInstanceOfKnownClass");
             case cl::Bytecode::CreateList:
                 return format_to(out, "CreateList");
             case cl::Bytecode::CreateTuple:
@@ -955,6 +957,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 break;
 
             case cl::Bytecode::CreateInstanceKnownClass:
+            case cl::Bytecode::IsInstanceOfKnownClass:
                 format_to(out, " ");
                 disassemble_constant(code_obj, out, pc++);
                 break;

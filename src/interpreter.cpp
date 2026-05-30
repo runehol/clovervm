@@ -3310,6 +3310,21 @@ namespace cl
         COMPLETE();
     }
 
+    static INTERP_CC Value op_is_instance_of_known_class(PARAMS)
+    {
+        START(2);
+        uint8_t const_offset = pc[1];
+        ClassObject *target_class = assume_convert_to<ClassObject>(
+            code_object->constant_table[const_offset].value());
+        ClassObject *actual_class = thread->class_of_value(accumulator);
+        accumulator = actual_class == target_class ||
+                              is_subclass_of(actual_class, target_class)
+                          ? Value::True()
+                          : Value::False();
+
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_create_list(PARAMS)
     {
         START(3);
@@ -4761,6 +4776,8 @@ namespace cl
                         op_create_function_with_defaults);
         SET_TABLE_ENTRY(Bytecode::CreateInstanceKnownClass,
                         op_create_instance_known_class);
+        SET_TABLE_ENTRY(Bytecode::IsInstanceOfKnownClass,
+                        op_is_instance_of_known_class);
         SET_TABLE_ENTRY(Bytecode::CreateClass, op_create_class);
         SET_TABLE_ENTRY(Bytecode::BuildClass, op_build_class);
         SET_TABLE_ENTRY(Bytecode::CheckInitReturnedNone,
