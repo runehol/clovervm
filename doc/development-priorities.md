@@ -123,13 +123,41 @@ JIT, language, and runtime work.
     Candidate work includes improving zero-count-table processing, slab reuse,
     and size-class behavior for very small short-lived objects.
 
-8. **Generators, `yield`, and `yield from`**
+8. **Inner functions with variable capture**
+
+    Implement nested functions that capture variables from enclosing function
+    scopes, following the cell-based design in
+    [Closure Cells](closure-cells.md). This should cover free-variable reads,
+    captured local rebinding, shared cells across multiple closures, and
+    `nonlocal` binding analysis rather than treating captures as copied values
+    or parent-frame lookups.
+
+    The implementation should keep ordinary uncaptured locals as direct frame
+    slots and introduce cell storage only for bindings that Python semantics
+    require to be shared with nested functions. Captured bindings are heap
+    objects and therefore need explicit lifetime, root visibility, teardown, and
+    pending-exception behavior for uninitialized cell reads.
+
+9. **Remaining basic operators**
+
+    Fill in the parsed-but-not-yet-executable basic operators once the higher
+    priority operator/protocol dispatch design is settled enough that they do
+    not become another ad hoc semantic path.
+
+    Known gaps include `**` / power, `&`, `|`, `^`, unary `~`, `@`, `in`, and
+    `not in`. Some of these already have parser and codegen surface, such as
+    `Pow`, bitwise bytecodes, and containment test bytecodes, but either lack
+    interpreter handlers or lack a real bytecode mapping. The `operator` module
+    mirrors the same gap for `pow`, `matmul`, bitwise functional helpers, and
+    `invert`.
+
+10. **Generators, `yield`, and `yield from`**
 
     Generators create long-lived suspended frames, so they should wait until the
     memory/root model is reliable. `yield from` also needs careful interaction
     with `StopIteration.value` and internal no-value sentinels.
 
-9. **Comprehensions and richer syntax**
+11. **Comprehensions and richer syntax**
 
     Add list/dict/set comprehensions, generator expressions, more assignment
     targets, richer string syntax, and other surface-area features after the
