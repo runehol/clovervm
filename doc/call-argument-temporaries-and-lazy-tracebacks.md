@@ -2,23 +2,26 @@
 
 ## Goal
 
-This note records a proposed direction for two related problems:
+This note ties together two constraints on call lowering:
 
 - direct method-call lowering must preserve Python's method lookup ordering
-- lazy traceback support should not force every frame to carry a permanent
-  outgoing-call area that later has to be copied as dead state
+- lazy traceback preservation should copy live frame state, not dead call
+  scratch space
 
-The core idea is to treat call arguments as ordinary temporary ranges reserved
-by codegen, rather than as a separate frame-global outgoing argument area.
-When an exception unwinds past a frame, traceback preservation can then copy the
-actual live frame extent with one bulk copy, without also copying a hole of dead
-outgoing argument slots.
+Call arguments live in ordinary temporary registers. A call reserves a
+call-frame-aligned temporary span, evaluates arguments while that span remains
+live, and enters the callee using that span as the argument window. Nested calls
+reserve their own spans above any already-live outer call span, so they cannot
+overwrite prepared outer arguments.
 
-This is a design note, not a description of the current implementation. The
-current calling convention is documented in
-[function-calling-convention.md](function-calling-convention.md).
+This model keeps the frame's relevant state close to the compiler's lifetime
+model:
 
-## Problem: Method Lookup Ordering
+```text
+locals + live temporaries + live call-argument spans
+```
+
+## Method Lookup Ordering
 
 Python evaluates the receiver and resolves the method attribute before
 evaluating call arguments. That ordering is visible if an argument expression
@@ -45,8 +48,7 @@ The method selected by `obj.method` must be the method visible before
 `mutate()` runs. Argument side effects may mutate the object or class, but they
 must not affect which method target this call uses.
 
-CPython preserves this while still optimizing method calls by splitting the
-operation:
+The preserving shape is:
 
 ```text
 evaluate receiver
@@ -55,65 +57,45 @@ evaluate explicit arguments
 call callable with maybe-self prepended if present
 ```
 
-CloverVM's current fused direct method-call opcodes resolve the attribute at
-call execution time, after arguments have already been evaluated. That makes
-argument mutation semantically visible in the method lookup.
+Fused direct method-call opcodes that resolve the attribute at call execution
+time do not preserve this ordering if arguments have already been evaluated.
 
-## Problem: Outgoing Argument Slots
+## Call Argument Spans
 
-CloverVM currently has a distinct outgoing argument area (`a0`, `a1`, ...). That
-area is useful for native-call alignment and frame entry, but it creates two
-pressures:
+A call argument span is an ordinary temporary-register reservation with
+call-frame alignment. Since a `Value` is 8 bytes, the span's first semantic
+register must place the callee frame pointer on a 16-byte boundary.
 
-- prepared arguments can be clobbered by nested calls during later argument
-  evaluation unless the area is specially protected
-- a permanent outgoing area is dead state after a call commits, but it still
-  expands the physical frame footprint that lazy traceback preservation might
-  need to copy
-
-Lazy tracebacks do not need call-entry argument snapshots. Python tracebacks
-expose frames, locations, source text, and current/preserved locals. Once a
-callee frame has been entered, parameters live in the callee's local slots. If
-that frame later unwinds into a traceback, preserving the frame is the relevant
-operation, not preserving the caller's old outgoing argument area.
-
-## Proposed Direction
-
-Codegen reserves call arguments from the ordinary temporary area.
-
-For each call site:
+For each fixed call site:
 
 ```text
-reserve a 16-byte-aligned temporary span for the call arguments
-evaluate the callable/receiver and arguments while that span remains live
-enter the callee using that span as the argument window
+reserve a call-frame-aligned temporary span
+evaluate the callable/receiver and arguments while the span remains live
+emit a call instruction that consumes the span
 release the span when the call has committed/returned
 ```
 
-Nested calls allocate their own temporary spans after the currently live spans.
-They cannot overwrite arguments already prepared for an outer call.
+The span's semantic size is the number of argument registers the call opcode
+uses. Alignment padding is an allocator detail. Zero-argument calls still
+reserve a one-register semantic anchor, but the emitted argument count remains
+zero; the anchor gives call adaptation a valid aligned insertion point for any
+extra arguments it must synthesize.
 
-The alignment requirement is part of the call protocol, not just an allocator
-preference. Since a `Value` is 8 bytes, a valid call argument span must start on
-an even slot boundary so the callee frame remains 16-byte aligned for native ABI
-interoperability.
+At the call opcode, the call argument span must be the topmost live temporary
+reservation. Call adaptation may use registers beyond the semantic argument
+span, so no unrelated temporary may sit above it.
 
-This keeps the frame's live extent honest:
-
-```text
-locals + live temporaries + live call-argument spans
-```
-
-instead of:
+Keyword calls have two live regions:
 
 ```text
-locals + temporaries + permanent outgoing-call area
+keyword value span
+positional/call-frame argument span
 ```
 
-At exception unwind time, preserving a frame for a future traceback can be a
-single allocation plus one bulk copy of the live frame extent. The copy should
-not include a maximum outgoing-call area unless that area is actually live for
-the faulting instruction.
+The keyword value span is allocated before the positional argument span. Both
+regions remain live across all argument evaluation. This ordering keeps keyword
+values out of the area that call adaptation may extend above the positional
+argument span.
 
 ## Direct Method Calls
 
@@ -130,7 +112,7 @@ arg_span[2] = explicit argument 1
 Lowering shape:
 
 ```text
-arg_span = reserve_aligned_call_temps(n_user_args + 1)
+arg_span = reserve_call_frame_temps(n_user_args + 1)
 
 receiver_tmp = evaluate receiver
 callable_tmp = LoadMethodAttr(receiver_tmp, name, arg_span[0])
@@ -169,12 +151,10 @@ The no-self case pays the move. That is acceptable because ordinary class
 function method calls bind `self`; no-self method-call syntax is the less common
 case.
 
-The move is required for CloverVM's frame-entry convention. CPython can model
-the no-self case as starting the argument vector one stack slot later. CloverVM
-cannot do that directly because call argument spans must remain 16-byte aligned;
-with 8-byte `Value` slots, starting at `arg_span[1]` would misalign the callee
-frame. The no-self path therefore has to copy the explicit arguments down by one
-slot before entering the callee.
+The move is required for CloverVM's frame-entry convention. Starting the
+argument vector at `arg_span[1]` would put the callee frame on the wrong
+16-byte boundary, so the no-self path copies the explicit arguments down before
+entering the callee.
 
 The callee does not need method-specific bytecode. It receives an ordinary
 contiguous positional argument vector:
@@ -187,9 +167,9 @@ f(obj, 1, 2)      -> f(obj, 1, 2)
 Only the caller-side call setup differs.
 
 Fixed keyword method calls use the same split. Positional arguments are
-evaluated into the reserved method-call span, keyword values are evaluated into
-the keyword value span, and `CallPreparedMethodKeyword` performs the same
-maybe-self normalization before entering the keyword-call path.
+evaluated into the reserved method-call span. Keyword values are evaluated into
+the keyword value span allocated below it. `CallPreparedMethodKeyword` performs
+the same maybe-self normalization before entering the keyword-call path.
 
 ## Unpack Calls
 
@@ -242,11 +222,11 @@ while the irregular star paths stay generic and self-aware.
 
 ## Regular Calls
 
-Regular calls reserve exactly the explicit argument count:
+Regular calls start explicit arguments at slot 0:
 
 ```text
 callable_tmp = evaluate callable
-arg_span = reserve_aligned_call_temps(n_args)
+arg_span = reserve_call_frame_temps(max(n_args, 1))
 
 for each argument i:
     evaluate argument into arg_span[i]
@@ -255,11 +235,11 @@ Call callable_tmp, arg_span, n_args
 release arg_span and callable_tmp
 ```
 
-If a future unified call protocol wants a CPython-style always-present
-`self_or_null` slot, regular calls can reserve and fill a leading sentinel slot.
-That should be justified by implementation simplicity or performance evidence;
-with CloverVM's 16-byte alignment requirement, starting the call from the second
-slot is not a valid substitute for normal frame entry.
+A CPython-style always-present `self_or_null` slot should not be added to every
+regular call without strong evidence. A leading maybe-self slot would make the
+common non-bound regular call start its real arguments at slot 1. Because slot 1
+is only 8-byte aligned, the VM would then either have to copy arguments down for
+ordinary calls or allow misaligned managed frame entry.
 
 One runtime case still needs to insert a receiver for ordinary call syntax:
 
@@ -269,17 +249,7 @@ c(1, 2)
 ```
 
 Here codegen sees a regular call, but the callable may be a Python-visible bound
-method object. CPython handles this by giving every call a `self_or_null` stack
-slot; regular calls push `NULL`, and bound-method expansion can replace that
-slot with the method's receiver.
-
-CloverVM should not adopt that exact layout for every regular call unless there
-is strong evidence for it. A leading maybe-self slot would make the common
-non-bound regular call start its real arguments at slot 1. Because slot 1 is
-only 8-byte aligned, the VM would then either have to copy arguments down for
-ordinary calls or allow misaligned managed frame entry.
-
-The preferred tradeoff is:
+method object. The preferred tradeoff is:
 
 - direct method-call syntax reserves a leading maybe-self slot, because binding
   is common there
@@ -457,34 +427,35 @@ single bulk-copy design.
 This plan depends on a few explicit invariants:
 
 - Call-argument temporary spans are ABI-aligned.
-- Reserved call-argument spans remain live across evaluation of all later
-  arguments, but reservation alone must not make uninitialized `Value` slots
-  visible to GC scanning or traceback preservation. Either the span is
-  initialized with a safe sentinel before any safepoint, or liveness metadata
-  reports only the initialized prefix/subranges.
+- A call instruction only consumes a call-argument span that is the topmost live
+  temporary reservation.
+- The span size reported to call emitters is semantic size; allocator padding is
+  not visible to bytecode.
+- Zero-argument calls reserve a one-register semantic anchor while still
+  emitting argument count zero.
+- Keyword value spans are allocated before positional call-argument spans and
+  stay live across all argument evaluation.
 - Nested calls allocate separate spans and cannot overwrite an outer live span.
 - Call instructions identify the argument span they consume.
 - After a call commits, the caller's argument span is dead unless the call
   failed before frame entry in a way that still needs those values.
-- Each safepoint/exception point can report the frame's live extent for scanning
-  and preservation.
 - Traceback preservation copies live frame state, not maximum frame capacity.
+- Lazy traceback preservation must not treat uninitialized alignment padding or
+  uninitialized call-span slots as Python-visible frame state.
 
 ## Open Questions
 
-- How should the temporary allocator express an aligned range reservation?
-- Should call argument spans be released lexically by RAII in codegen, or should
-  bytecode carry explicit stack-top/lifetime metadata?
 - What live extent is required for frame introspection beyond `f_locals`?
   Copying locals and live temporaries is more complete; copying only locals is
   cheaper but may constrain future debugging features.
-- How should keyword-call remapping interact with temporary argument spans?
 - Should `LoadMethodAttr` plus `CallPreparedMethodPositional` /
-  `CallPreparedMethodKeyword` replace the existing fused
-  `CallMethodAttrPositional` and `CallMethodAttrKeyword`, or should the old
+  `CallPreparedMethodKeyword` replace the fused
+  `CallMethodAttrPositional` and `CallMethodAttrKeyword`, or should the fused
   opcodes remain only as later peephole/JIT shapes proven to preserve ordering?
 - Which opcodes can raise before a callee frame is committed, and what argument
   span state must be preserved or cleaned up in those paths?
+- How should lazy traceback preservation represent per-instruction temporary
+  liveness, especially for partially initialized call spans?
 
 ## Non-Goals
 
