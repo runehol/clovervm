@@ -59,6 +59,15 @@ JIT, language, and runtime work.
    profile: guarded fast paths, exact special-method call targets, validity
    cells, and a megamorphic fallback when the site stops being predictable.
 
+   Recent constructor benchmarks reinforce that this is not only an operator
+   issue. Once `str(int)` bypassed generic `__str__` lookup, the remaining
+   benchmark pressure moved to general VM work: cached calls, Python-level
+   `len()` lowering through `__clover_call_special__`, and short-lived string
+   allocation/reclamation. The next protocol-dispatch slice should therefore
+   include cached dunder method calls for implicit protocols such as `__len__`,
+   `__iter__`, `__next__`, and numeric conversions, not just arithmetic
+   operators.
+
 2. **Slices**
 
    Add parse, lowering, and runtime support for `a[i:j:k]`, including
@@ -80,32 +89,39 @@ JIT, language, and runtime work.
    calls into one broad generic slow path unless measurements show the current
    specialization is the wrong shape.
 
-4. **Constructor semantics beyond tier-1 thunks**
+   Call adaptation must remain call-site-shaped, not just callee-shaped. A
+   function with defaults can still use the fixed-arity frame-entry path when a
+   positional call supplies every parameter slot; default initialization is only
+   needed for call sites that leave defaulted slots unfilled.
 
-   Expand constructor behavior past the current ordinary-class path. Remaining
-   work includes custom `__new__`, custom metaclass `__call__`, arbitrary class
-   keyword arguments, generic callable construction paths, and normalization of
-   constructor failures into specific VM exceptions.
-
-5. **Interpreter-controlled descriptor execution**
+4. **Interpreter-controlled descriptor execution**
 
    Lookup already classifies descriptor work into plans. The next step is to
    execute `__get__`, `__set__`, and `__delete__` through explicit interpreter
    or VM-controlled dispatch so Python-visible execution, allocation, and
    exceptions are not hidden inside lookup/classification helpers.
 
-6. **Full Python dict hashing and equality**
+5. **Full Python dict hashing and equality**
 
    Python `dict` needs arbitrary-key hashing and equality semantics rather than
    the current string-key-oriented internal assumptions. This matters for real
    Python code, imports, module namespaces, mappings, and future library work.
 
-7. **Attribute hooks and escaped bound methods**
+6. **Attribute hooks and escaped bound methods**
 
     Implement `__getattribute__`, `__getattr__`, `__setattr__`, and
     `__delattr__`, and add observable bound-method objects for escaped method
     values such as `f = obj.m`. Direct method-call fast paths should remain
     allocation-free when the bound method does not escape.
+
+7. **Short-lived allocation and reclamation pressure**
+
+    Repeated constructor/conversion benchmarks now spend significant time
+    allocating and reclaiming tiny temporary objects, especially strings. Before
+    treating formatting or protocol code as the primary remaining bottleneck,
+    measure whether the benchmark has become an allocator/reclamation workload.
+    Candidate work includes improving zero-count-table processing, slab reuse,
+    and size-class behavior for very small short-lived objects.
 
 8. **Generators, `yield`, and `yield from`**
 
