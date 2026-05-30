@@ -1336,6 +1336,22 @@ TEST(Interpreter, str_constructor_converts_int)
                              file_runner.return_value)));
 }
 
+TEST(Interpreter, str_constructor_converts_negative_int)
+{
+    test::FileRunner file_runner(L"str(-123)\n");
+    ASSERT_TRUE(can_convert_to<String>(file_runner.return_value));
+    EXPECT_STREQ(L"-123", string_as_wchar_t(TValue<String>::from_value_assumed(
+                              file_runner.return_value)));
+}
+
+TEST(Interpreter, str_constructor_converts_bool_via_dunder_str)
+{
+    test::FileRunner file_runner(L"str(True)\n");
+    ASSERT_TRUE(can_convert_to<String>(file_runner.return_value));
+    EXPECT_STREQ(L"True", string_as_wchar_t(TValue<String>::from_value_assumed(
+                              file_runner.return_value)));
+}
+
 TEST(Interpreter, str_constructor_calls_dunder_str)
 {
     test::FileRunner file_runner(L"class C:\n"

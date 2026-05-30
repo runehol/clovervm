@@ -15,6 +15,45 @@
 
 namespace cl
 {
+    static Value smi_to_str_string(ThreadState *thread, Value value)
+    {
+        assert(value.is_smi());
+
+        int64_t smi = value.get_smi();
+        uint64_t magnitude;
+        bool negative = smi < 0;
+        if(negative)
+        {
+            magnitude = static_cast<uint64_t>(-(smi + 1)) + 1;
+        }
+        else
+        {
+            magnitude = static_cast<uint64_t>(smi);
+        }
+
+        cl_wchar buffer[32];
+        size_t pos = std::size(buffer);
+        do
+        {
+            buffer[--pos] = static_cast<cl_wchar>(L'0' + (magnitude % 10));
+            magnitude /= 10;
+        }
+        while(magnitude != 0);
+        if(negative)
+        {
+            buffer[--pos] = L'-';
+        }
+
+        size_t len = std::size(buffer) - pos;
+        TValue<String> result = thread->make_object_value<String>(
+            TValue<SMI>::from_smi(static_cast<int64_t>(len)));
+        for(size_t idx = 0; idx < len; ++idx)
+        {
+            result.extract()->data[idx] = buffer[pos + idx];
+        }
+        return result.raw_value();
+    }
+
     void String::install_bootstrap_class(ClassObject *new_cls)
     {
         assert(new_cls != nullptr);
@@ -42,6 +81,10 @@ namespace cl
         if(can_convert_to<String>(obj))
         {
             return obj;
+        }
+        if(obj.is_smi())
+        {
+            return smi_to_str_string(thread, obj);
         }
         return value_to_str_string(obj);
     }
