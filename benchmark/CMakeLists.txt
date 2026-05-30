@@ -29,6 +29,8 @@ add_executable(bench_clovervm
     instance_attribute_read.cpp
     instance_attribute_refcounted_write.cpp
     instance_attribute_write.cpp
+    int_constructor_int.cpp
+    int_constructor_string.cpp
     method_call.cpp
     method_call_class_attribute_write.cpp
     method_keyword_call.cpp

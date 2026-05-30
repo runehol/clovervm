@@ -43,6 +43,12 @@ namespace
             {"benchmark/str_constructor_string.py",
              {benchmark_cpp::str_constructor_string_run,
               benchmark_cpp::str_constructor_string_items}},
+            {"benchmark/int_constructor_int.py",
+             {benchmark_cpp::int_constructor_int_run,
+              benchmark_cpp::int_constructor_int_items}},
+            {"benchmark/int_constructor_string.py",
+             {benchmark_cpp::int_constructor_string_run,
+              benchmark_cpp::int_constructor_string_items}},
             {"benchmark/while_loop.py",
              {benchmark_cpp::while_loop_run, benchmark_cpp::while_loop_items}},
             {"benchmark/for_loop.py",
@@ -649,6 +655,26 @@ static void BM_StrConstructorInt(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_StrConstructorInt, CloverProgram)
     ->Name("BM_StrConstructorInt")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_IntConstructorInt(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/int_constructor_int.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_IntConstructorInt, CloverProgram)
+    ->Name("BM_IntConstructorInt")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_IntConstructorString(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/int_constructor_string.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_IntConstructorString, CloverProgram)
+    ->Name("BM_IntConstructorString")
     ->Arg(100000);
 
 template <typename Program>
