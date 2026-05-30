@@ -115,11 +115,11 @@ static clover_value os_listdir(clover_context *ctx, clover_value path_value)
     }
 
     DIR *dir = opendir(path.data);
-    int saved_errno = errno;
+    int opendir_errno = errno;
     path_string_destroy(&path);
     if(dir == NULL)
     {
-        errno = saved_errno;
+        errno = opendir_errno;
         return raise_errno(ctx);
     }
 
@@ -156,12 +156,12 @@ static clover_value os_listdir(clover_context *ctx, clover_value path_value)
         items[count] = clover_string_from_utf8(ctx, entry->d_name);
         ++count;
     }
-    int saved_errno = errno;
+    int readdir_errno = errno;
     closedir(dir);
-    if(saved_errno != 0)
+    if(readdir_errno != 0)
     {
         free(items);
-        errno = saved_errno;
+        errno = readdir_errno;
         return raise_errno(ctx);
     }
 
@@ -498,7 +498,7 @@ static clover_value os_path_split(clover_context *ctx, clover_value path_value)
         return result;
     }
 
-    size_t head_size = (size_t)(last_sep - path);
+    size_t head_size = (size_t)(last_sep - path.data);
     const char *tail = last_sep + 1;
     if(head_size == 0)
     {
