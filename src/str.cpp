@@ -3,10 +3,12 @@
 #include "exception_propagation.h"
 #include "list.h"
 #include "native_function.h"
+#include "owned.h"
 #include "string_builder.h"
 #include "thread_state.h"
 #include "tuple.h"
 #include "unicode.h"
+#include "value_string.h"
 #include "virtual_machine.h"
 #include <cwctype>
 #include <iterator>
@@ -28,6 +30,20 @@ namespace cl
         {
             Object::set_shape(new_cls->get_instance_root_shape());
         }
+    }
+
+    static Value native_str_new(ThreadState *thread, Value cls_value, Value obj)
+    {
+        if(cls_value != Value::from_oop(active_vm()->str_class()))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"str.__new__ expects str as cls");
+        }
+        if(can_convert_to<String>(obj))
+        {
+            return obj;
+        }
+        return value_to_str_string(obj);
     }
 
     static Value native_str_str(ThreadState *thread, Value self)
@@ -588,7 +604,14 @@ namespace cl
 
     void install_str_class_methods(VirtualMachine *vm)
     {
+        Owned<TValue<Tuple>> str_new_defaults(
+            active_thread()->make_object_value<Tuple>(1));
+        str_new_defaults.extract()->initialize_item_unchecked(
+            0, vm->get_or_create_interned_string_value(L"").raw_value());
         BuiltinIntrinsicMethod methods[] = {
+            with_defaults(builtin_intrinsic_method(L"__new__", native_str_new,
+                                                   L"Create a str object."),
+                          str_new_defaults.value()),
             builtin_intrinsic_method(L"__str__", native_str_str,
                                      L"Return str(self)."),
             builtin_intrinsic_method(L"__repr__", native_str_repr,

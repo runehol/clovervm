@@ -1254,6 +1254,58 @@ TEST(Interpreter, string_literal_value)
                  string_as_wchar_t(TValue<String>::from_value_assumed(actual)));
 }
 
+TEST(Interpreter, str_constructor_no_args_returns_empty_string)
+{
+    test::FileRunner file_runner(L"str()\n");
+    ASSERT_TRUE(can_convert_to<String>(file_runner.return_value));
+    EXPECT_STREQ(L"", string_as_wchar_t(TValue<String>::from_value_assumed(
+                          file_runner.return_value)));
+}
+
+TEST(Interpreter, str_constructor_returns_exact_string_argument)
+{
+    EXPECT_EQ(Value::True(), test::FileRunner(L"s = 'hello'\n"
+                                              L"str(s) is s\n")
+                                 .return_value);
+}
+
+TEST(Interpreter, str_constructor_converts_int)
+{
+    test::FileRunner file_runner(L"str(123)\n");
+    ASSERT_TRUE(can_convert_to<String>(file_runner.return_value));
+    EXPECT_STREQ(L"123", string_as_wchar_t(TValue<String>::from_value_assumed(
+                             file_runner.return_value)));
+}
+
+TEST(Interpreter, str_constructor_calls_dunder_str)
+{
+    test::FileRunner file_runner(L"class C:\n"
+                                 L"    def __str__(self):\n"
+                                 L"        return 'custom'\n"
+                                 L"str(C())\n");
+    ASSERT_TRUE(can_convert_to<String>(file_runner.return_value));
+    EXPECT_STREQ(L"custom",
+                 string_as_wchar_t(TValue<String>::from_value_assumed(
+                     file_runner.return_value)));
+}
+
+TEST(Interpreter, str_constructor_rejects_non_string_dunder_str_return)
+{
+    expect_python_error(L"class C:\n"
+                        L"    def __str__(self):\n"
+                        L"        return 123\n"
+                        L"str(C())\n",
+                        L"TypeError", L"__str__ returned non-str");
+}
+
+TEST(Interpreter, str_dunder_new_converts_value)
+{
+    test::FileRunner file_runner(L"str.__new__(str, 123)\n");
+    ASSERT_TRUE(can_convert_to<String>(file_runner.return_value));
+    EXPECT_STREQ(L"123", string_as_wchar_t(TValue<String>::from_value_assumed(
+                             file_runner.return_value)));
+}
+
 TEST(Interpreter, float_literal_values)
 {
     test::VmTestContext test_context;
