@@ -44,16 +44,14 @@ namespace cl
 
         {
             CodeObjectBuilder::TemporaryReg callable_reg(code);
-            CL_TRY(code.emit_ldar(0, 0));
-            CL_TRY(code.emit_star(0, callable_reg));
+            CL_TRY(code.emit_mov(0, callable_reg, 0));
 
             CodeObjectBuilder::TemporaryReg call_args(
                 code, std::max<uint32_t>(n_args, 1),
                 RegisterAlignment::CallFrame);
             for(uint32_t arg_idx = 0; arg_idx < n_args; ++arg_idx)
             {
-                CL_TRY(code.emit_ldar(0, arg_idx + 1));
-                CL_TRY(code.emit_star(0, call_args + arg_idx));
+                CL_TRY(code.emit_mov(0, call_args + arg_idx, arg_idx + 1));
             }
 
             JumpTarget handler(&code);

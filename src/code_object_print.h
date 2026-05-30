@@ -145,6 +145,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "ClearLocal");
             case cl::Bytecode::Star:
                 return format_to(out, "Star");
+            case cl::Bytecode::Mov:
+                return format_to(out, "Mov");
             case cl::Bytecode::Ldar0:
                 return format_to(out, "Ldar0");
             case cl::Bytecode::Ldar1:
@@ -596,6 +598,13 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::Star:
             case cl::Bytecode::DelLocal:
                 format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::Mov:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
                 disassemble_reg(code_obj, out, pc++);
                 break;
 

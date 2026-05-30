@@ -283,6 +283,8 @@ namespace cl
         Expected<uint32_t> emit_lda_global(uint32_t source_offset,
                                            uint8_t name_idx);
         Expected<uint32_t> emit_star(uint32_t source_offset, uint32_t reg);
+        Expected<uint32_t> emit_mov(uint32_t source_offset, uint32_t dst_reg,
+                                    uint32_t src_reg);
         Expected<uint32_t> emit_sta_global(uint32_t source_offset,
                                            uint8_t name_idx);
         Expected<uint32_t> emit_del_local(uint32_t source_offset, uint32_t reg);

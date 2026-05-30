@@ -34,6 +34,8 @@ namespace cl
         ClearLocal,
         // store accumulator to register
         Star,
+        // copy a value between registers without touching the accumulator
+        Mov,
         // fast single-byte optimisation opcodes for the first 16 registers
         Ldar0,
         Ldar1,

@@ -329,6 +329,14 @@ namespace cl
         return emit_opcode_reg(source_offset, Bytecode::Star, reg);
     }
 
+    Expected<uint32_t> CodeObjectBuilder::emit_mov(uint32_t source_offset,
+                                                   uint32_t dst_reg,
+                                                   uint32_t src_reg)
+    {
+        return emit_opcode_reg_reg(source_offset, Bytecode::Mov, dst_reg,
+                                   src_reg);
+    }
+
     Expected<uint32_t>
     CodeObjectBuilder::emit_sta_global(uint32_t source_offset, uint8_t name_idx)
     {

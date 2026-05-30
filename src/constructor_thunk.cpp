@@ -187,13 +187,12 @@ namespace cl
             {
                 CodeObjectBuilder::TemporaryReg call_args(
                     code, init_n_parameters, RegisterAlignment::CallFrame);
-                CL_TRY(code.emit_ldar(0, instance_reg));
-                CL_TRY(code.emit_star(0, call_args));
+                CL_TRY(code.emit_mov(0, call_args, instance_reg));
                 for(uint32_t param_idx = 0; param_idx < code.n_parameters();
                     ++param_idx)
                 {
-                    CL_TRY(code.emit_ldar(0, param_idx));
-                    CL_TRY(code.emit_star(0, call_args + param_idx + 1));
+                    CL_TRY(
+                        code.emit_mov(0, call_args + param_idx + 1, param_idx));
                 }
 
                 CL_TRY(code.emit_call_code_object(
@@ -307,8 +306,7 @@ namespace cl
             for(uint32_t param_idx = 0; param_idx < code.n_parameters();
                 ++param_idx)
             {
-                CL_TRY(code.emit_ldar(0, param_idx));
-                CL_TRY(code.emit_star(0, call_args + param_idx + 1));
+                CL_TRY(code.emit_mov(0, call_args + param_idx + 1, param_idx));
             }
 
             CL_TRY(code.emit_call_code_object(0, new_code_const_idx, call_args,

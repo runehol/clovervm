@@ -2581,6 +2581,16 @@ namespace cl
         COMPLETE();
     }
 
+    static INTERP_CC Value op_mov(PARAMS)
+    {
+        START(3);
+        int8_t dst_reg = pc[1];
+        int8_t src_reg = pc[2];
+        fp[dst_reg] = fp[src_reg];
+
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_del_local(PARAMS)
     {
         START(2);
@@ -4728,6 +4738,7 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::LoadLocalChecked, op_load_local_checked);
         SET_TABLE_ENTRY(Bytecode::ClearLocal, op_clear_local);
         SET_TABLE_ENTRY(Bytecode::Star, op_star);
+        SET_TABLE_ENTRY(Bytecode::Mov, op_mov);
         SET_TABLE_ENTRY(Bytecode::LdaConstant, op_lda_constant);
         SET_TABLE_ENTRY(Bytecode::LdaSmi, op_lda_smi);
         SET_TABLE_ENTRY(Bytecode::LdaTrue, op_lda_true);

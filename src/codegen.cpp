@@ -436,10 +436,35 @@ namespace cl
             std::optional<TemporaryReg> temp;
         };
 
+        struct ValueLocation
+        {
+            enum class Kind
+            {
+                Accumulator,
+                Register
+            };
+
+            static ValueLocation accumulator()
+            {
+                return ValueLocation{Kind::Accumulator, 0};
+            }
+
+            static ValueLocation reg(RegisterIndex reg)
+            {
+                return ValueLocation{Kind::Register, reg};
+            }
+
+            bool is_register() const { return kind == Kind::Register; }
+
+            Kind kind;
+            RegisterIndex register_index;
+        };
+
         static constexpr AstKind NumericalConstant =
             AstKind(AstNodeKind::EXPRESSION_LITERAL, AstOperatorKind::NUMBER);
 
-        Expected<ScopedRegister> codegen_node_to_register(int32_t node_idx)
+        Expected<ValueLocation>
+        codegen_node_into_value_location(int32_t node_idx)
         {
             AstKind kind = av.kinds[node_idx];
             if(kind.node_kind == AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
@@ -448,17 +473,50 @@ namespace cl
                 if(access.scope == BindingScope::Local &&
                    access.presence == Presence::Present)
                 {
-                    return Expected<ScopedRegister>::ok(
-                        {RegisterIndex(access.slot_idx), std::nullopt});
+                    return Expected<ValueLocation>::ok(
+                        ValueLocation::reg(RegisterIndex(access.slot_idx)));
                 }
             }
 
-            uint32_t source_offset = av.source_offsets[node_idx];
             CL_TRY(codegen_node(node_idx));
+            return Expected<ValueLocation>::ok(ValueLocation::accumulator());
+        }
+
+        Expected<ScopedRegister> codegen_node_into_a_register(int32_t node_idx)
+        {
+            uint32_t source_offset = av.source_offsets[node_idx];
+            ValueLocation location =
+                CL_TRY(codegen_node_into_value_location(node_idx));
+            if(location.is_register())
+            {
+                return Expected<ScopedRegister>::ok(
+                    {location.register_index, std::nullopt});
+            }
+
             std::optional<TemporaryReg> temp{std::in_place, *code_obj};
             CL_TRY(code_obj->emit_star(source_offset, RegisterIndex(*temp)));
             return Expected<ScopedRegister>::ok(
                 {RegisterIndex(*temp), std::move(temp)});
+        }
+
+        Expected<void> codegen_node_into_specific_register(int32_t node_idx,
+                                                           RegisterIndex reg)
+        {
+            uint32_t source_offset = av.source_offsets[node_idx];
+            ValueLocation location =
+                CL_TRY(codegen_node_into_value_location(node_idx));
+            if(location.is_register())
+            {
+                if(location.register_index != reg)
+                {
+                    CL_TRY(code_obj->emit_mov(source_offset, reg,
+                                              location.register_index));
+                }
+                return Expected<void>::ok();
+            }
+
+            CL_TRY(code_obj->emit_star(source_offset, reg));
+            return Expected<void>::ok();
         }
 
         // used for both regular binary expressions and augmented assignment, so
@@ -481,7 +539,7 @@ namespace cl
             else
             {
                 ScopedRegister lhs_reg =
-                    CL_TRY(codegen_node_to_register(children[0]));
+                    CL_TRY(codegen_node_into_a_register(children[0]));
                 CL_TRY(codegen_node(children[1]));
                 CL_TRY(code_obj->emit_binary_op(source_offset, entry.standard,
                                                 lhs_reg.reg));
@@ -557,8 +615,10 @@ namespace cl
                     else
                     {
                         assert(default_children.size() == 1);
-                        CL_TRY(codegen_node(default_children[0]));
+                        CL_TRY(codegen_node_into_specific_register(
+                            default_children[0], default_values + i));
                         default_presence_mask |= uint64_t(1) << i;
+                        continue;
                     }
                     CL_TRY(
                         code_obj->emit_star(source_offset, default_values + i));
@@ -646,8 +706,8 @@ namespace cl
                             L"class keyword arguments are not implemented "
                             L"yet");
                     }
-                    CL_TRY(codegen_node(call_argument_value(bases[i])));
-                    CL_TRY(code_obj->emit_star(source_offset, base_regs + i));
+                    CL_TRY(codegen_node_into_specific_register(
+                        call_argument_value(bases[i]), base_regs + i));
                 }
             }
             CL_TRY(code_obj->emit_create_tuple(
@@ -660,8 +720,8 @@ namespace cl
             CL_TRY(
                 code_obj->emit_lda_constant(source_offset, name_constant_idx));
             CL_TRY(code_obj->emit_star(source_offset, call_args));
-            CL_TRY(code_obj->emit_ldar(source_offset, bases_tuple));
-            CL_TRY(code_obj->emit_star(source_offset, call_args + 1));
+            CL_TRY(
+                code_obj->emit_mov(source_offset, call_args + 1, bases_tuple));
             CL_TRY(code_obj->emit_create_class(source_offset, body_constant_idx,
                                                call_args));
 
@@ -878,12 +938,12 @@ namespace cl
 
             TemporaryReg call_args(*code_obj, args.size() - 3,
                                    RegisterAlignment::CallFrame);
-            CL_TRY(codegen_node(call_argument_value(args[0])));
-            CL_TRY(code_obj->emit_star(source_offset, call_args));
+            CL_TRY(codegen_node_into_specific_register(
+                call_argument_value(args[0]), call_args));
             for(size_t i = 4; i < args.size(); ++i)
             {
-                CL_TRY(codegen_node(call_argument_value(args[i])));
-                CL_TRY(code_obj->emit_star(source_offset, call_args + i - 3));
+                CL_TRY(codegen_node_into_specific_register(
+                    call_argument_value(args[i]), call_args + i - 3));
             }
 
             CL_TRY(code_obj->emit_call_special_method(
@@ -1008,25 +1068,24 @@ namespace cl
                         *code_obj, std::max<uint32_t>(n_kw_args, 1));
                     TemporaryReg call_args(*code_obj, n_pos_args + 1,
                                            RegisterAlignment::CallFrame);
-                    CL_TRY(codegen_node(method_children[0]));
-                    CL_TRY(code_obj->emit_star(source_offset, call_args));
+                    CL_TRY(codegen_node_into_specific_register(
+                        method_children[0], call_args));
                     n_pos_args = 0;
                     for(int32_t arg: args)
                     {
                         if(is_positional_call_argument(arg))
                         {
-                            CL_TRY(codegen_node(call_argument_value(arg)));
-                            CL_TRY(code_obj->emit_star(
-                                source_offset, call_args + 1 + n_pos_args));
+                            CL_TRY(codegen_node_into_specific_register(
+                                call_argument_value(arg),
+                                call_args + 1 + n_pos_args));
                             ++n_pos_args;
                         }
                         else
                         {
                             assert(is_keyword_call_argument(arg));
-                            CL_TRY(codegen_node(call_argument_value(arg)));
-                            CL_TRY(code_obj->emit_star(source_offset,
-                                                       keyword_value_regs +
-                                                           kw_arg_idx));
+                            CL_TRY(codegen_node_into_specific_register(
+                                call_argument_value(arg),
+                                keyword_value_regs + kw_arg_idx));
                             ++kw_arg_idx;
                         }
                     }
@@ -1055,13 +1114,12 @@ namespace cl
 
                 TemporaryReg call_args(*code_obj, args.size() + 1,
                                        RegisterAlignment::CallFrame);
-                CL_TRY(codegen_node(method_children[0]));
-                CL_TRY(code_obj->emit_star(source_offset, call_args));
+                CL_TRY(codegen_node_into_specific_register(method_children[0],
+                                                           call_args));
                 for(size_t i = 0; i < args.size(); ++i)
                 {
-                    CL_TRY(codegen_node(call_argument_value(args[i])));
-                    CL_TRY(
-                        code_obj->emit_star(source_offset, call_args + 1 + i));
+                    CL_TRY(codegen_node_into_specific_register(
+                        call_argument_value(args[i]), call_args + 1 + i));
                 }
                 CL_TRY(code_obj->emit_call_method_attr_positional(
                     source_offset, call_args, constant_idx, args.size()));
@@ -1070,8 +1128,8 @@ namespace cl
 
             // function itself
             TemporaryReg callable_reg(*code_obj);
-            CL_TRY(codegen_node(children[0]));
-            CL_TRY(code_obj->emit_star(source_offset, callable_reg));
+            CL_TRY(
+                codegen_node_into_specific_register(children[0], callable_reg));
 
             uint32_t n_kw_args = n_keyword_call_arguments(args);
             if(n_kw_args > 0)
@@ -1089,17 +1147,16 @@ namespace cl
                 {
                     if(is_positional_call_argument(arg))
                     {
-                        CL_TRY(codegen_node(call_argument_value(arg)));
-                        CL_TRY(code_obj->emit_star(source_offset,
-                                                   call_args + n_pos_args));
+                        CL_TRY(codegen_node_into_specific_register(
+                            call_argument_value(arg), call_args + n_pos_args));
                         ++n_pos_args;
                     }
                     else
                     {
                         assert(is_keyword_call_argument(arg));
-                        CL_TRY(codegen_node(call_argument_value(arg)));
-                        CL_TRY(code_obj->emit_star(
-                            source_offset, keyword_value_regs + kw_arg_idx));
+                        CL_TRY(codegen_node_into_specific_register(
+                            call_argument_value(arg),
+                            keyword_value_regs + kw_arg_idx));
                         ++kw_arg_idx;
                     }
                 }
@@ -1129,8 +1186,8 @@ namespace cl
                                    RegisterAlignment::CallFrame);
             for(size_t i = 0; i < args.size(); ++i)
             {
-                CL_TRY(codegen_node(call_argument_value(args[i])));
-                CL_TRY(code_obj->emit_star(source_offset, call_args + i));
+                CL_TRY(codegen_node_into_specific_register(
+                    call_argument_value(args[i]), call_args + i));
             }
             CL_TRY(code_obj->emit_call_positional(source_offset, callable_reg,
                                                   call_args, args.size()));
@@ -1145,8 +1202,8 @@ namespace cl
             TemporaryReg regs(*code_obj, std::max<size_t>(children.size(), 1));
             for(size_t i = 0; i < children.size(); ++i)
             {
-                CL_TRY(codegen_node(children[i]));
-                CL_TRY(code_obj->emit_star(source_offset, regs + i));
+                CL_TRY(
+                    codegen_node_into_specific_register(children[i], regs + i));
             }
             CL_TRY(code_obj->emit_create_list(source_offset, regs,
                                               children.size()));
@@ -1161,8 +1218,8 @@ namespace cl
             TemporaryReg regs(*code_obj, std::max<size_t>(children.size(), 1));
             for(size_t i = 0; i < children.size(); ++i)
             {
-                CL_TRY(codegen_node(children[i]));
-                CL_TRY(code_obj->emit_star(source_offset, regs + i));
+                CL_TRY(
+                    codegen_node_into_specific_register(children[i], regs + i));
             }
             CL_TRY(code_obj->emit_create_tuple(source_offset, regs,
                                                children.size()));
@@ -1177,8 +1234,8 @@ namespace cl
             TemporaryReg regs(*code_obj, std::max<size_t>(children.size(), 1));
             for(size_t i = 0; i < children.size(); ++i)
             {
-                CL_TRY(codegen_node(children[i]));
-                CL_TRY(code_obj->emit_star(source_offset, regs + i));
+                CL_TRY(
+                    codegen_node_into_specific_register(children[i], regs + i));
             }
             CL_TRY(code_obj->emit_create_dict(source_offset, regs,
                                               children.size() / 2));
@@ -1193,9 +1250,9 @@ namespace cl
             int32_t lhs_idx = children[0];
             AstChildren lhs_children = av.children[lhs_idx];
             ScopedRegister receiver_reg =
-                CL_TRY(codegen_node_to_register(lhs_children[0]));
+                CL_TRY(codegen_node_into_a_register(lhs_children[0]));
             ScopedRegister key_reg =
-                CL_TRY(codegen_node_to_register(lhs_children[1]));
+                CL_TRY(codegen_node_into_a_register(lhs_children[1]));
 
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
@@ -1237,9 +1294,9 @@ namespace cl
         {
             AstChildren target_children = av.children[target_idx];
             ScopedRegister receiver_reg =
-                CL_TRY(codegen_node_to_register(target_children[0]));
+                CL_TRY(codegen_node_into_a_register(target_children[0]));
             ScopedRegister key_reg =
-                CL_TRY(codegen_node_to_register(target_children[1]));
+                CL_TRY(codegen_node_into_a_register(target_children[1]));
             CL_TRY(code_obj->emit_del_subscript(source_offset, receiver_reg.reg,
                                                 key_reg.reg));
             return Expected<void>::ok();
@@ -1255,7 +1312,7 @@ namespace cl
             uint8_t constant_idx =
                 CL_TRY(code_obj->allocate_constant(av.constants[lhs_idx]));
             ScopedRegister receiver_reg =
-                CL_TRY(codegen_node_to_register(lhs_children[0]));
+                CL_TRY(codegen_node_into_a_register(lhs_children[0]));
 
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
@@ -1298,7 +1355,7 @@ namespace cl
             uint8_t constant_idx =
                 CL_TRY(code_obj->allocate_constant(av.constants[target_idx]));
             ScopedRegister receiver_reg =
-                CL_TRY(codegen_node_to_register(target_children[0]));
+                CL_TRY(codegen_node_into_a_register(target_children[0]));
             CL_TRY(code_obj->emit_del_attr(source_offset, receiver_reg.reg,
                                            constant_idx));
             return Expected<void>::ok();
@@ -1487,8 +1544,7 @@ namespace cl
                                               RegisterIndex manager_reg,
                                               uint32_t call_args)
         {
-            CL_TRY(code_obj->emit_ldar(source_offset, manager_reg));
-            CL_TRY(code_obj->emit_star(source_offset, call_args));
+            CL_TRY(code_obj->emit_mov(source_offset, call_args, manager_reg));
             CL_TRY(code_obj->emit_call_special_method(
                 source_offset, call_args, CL_TRY(exit_method_name_idx()), 3,
                 CL_TRY(context_manager_protocol_type_error_idx()),
@@ -1593,7 +1649,7 @@ namespace cl
                 uint8_t constant_idx = CL_TRY(
                     code_obj->allocate_constant(av.constants[target_idx]));
                 ScopedRegister receiver_reg =
-                    CL_TRY(codegen_node_to_register(target_children[0]));
+                    CL_TRY(codegen_node_into_a_register(target_children[0]));
                 CL_TRY(code_obj->emit_ldar(source_offset, value_reg));
                 CL_TRY(code_obj->emit_store_attr(
                     source_offset, receiver_reg.reg, constant_idx));
@@ -1605,9 +1661,9 @@ namespace cl
             {
                 AstChildren target_children = av.children[target_idx];
                 ScopedRegister receiver_reg =
-                    CL_TRY(codegen_node_to_register(target_children[0]));
+                    CL_TRY(codegen_node_into_a_register(target_children[0]));
                 ScopedRegister key_reg =
-                    CL_TRY(codegen_node_to_register(target_children[1]));
+                    CL_TRY(codegen_node_into_a_register(target_children[1]));
                 CL_TRY(code_obj->emit_ldar(source_offset, value_reg));
                 CL_TRY(code_obj->emit_store_subscript(
                     source_offset, receiver_reg.reg, key_reg.reg));
@@ -1680,15 +1736,15 @@ namespace cl
 
             uint32_t source_offset = av.source_offsets[item_idx];
             int32_t context_expr_idx = item_children[0];
-            CL_TRY(codegen_node(context_expr_idx));
             TemporaryReg manager_reg(*code_obj);
-            CL_TRY(code_obj->emit_star(source_offset, manager_reg));
+            CL_TRY(codegen_node_into_specific_register(context_expr_idx,
+                                                       manager_reg));
 
             {
                 TemporaryReg call_args(*code_obj, 1,
                                        RegisterAlignment::CallFrame);
-                CL_TRY(code_obj->emit_ldar(source_offset, manager_reg));
-                CL_TRY(code_obj->emit_star(source_offset, call_args));
+                CL_TRY(
+                    code_obj->emit_mov(source_offset, call_args, manager_reg));
                 CL_TRY(code_obj->emit_call_special_method(
                     source_offset, call_args, CL_TRY(enter_method_name_idx()),
                     0, CL_TRY(context_manager_protocol_type_error_idx()),
@@ -1740,8 +1796,8 @@ namespace cl
                 CL_TRY(code_obj->emit_load_attr(source_offset, saved_exception,
                                                 class_name_idx));
                 CL_TRY(code_obj->emit_star(source_offset, call_args + 1));
-                CL_TRY(code_obj->emit_ldar(source_offset, saved_exception));
-                CL_TRY(code_obj->emit_star(source_offset, call_args + 2));
+                CL_TRY(code_obj->emit_mov(source_offset, call_args + 2,
+                                          saved_exception));
                 CL_TRY(code_obj->emit_lda_none(source_offset));
                 CL_TRY(code_obj->emit_star(source_offset, call_args + 3));
                 CL_TRY(emit_context_exit_call(source_offset, manager_reg,
@@ -2003,8 +2059,8 @@ namespace cl
             {
                 TemporaryReg call_args(*code_obj, 1,
                                        RegisterAlignment::CallFrame);
-                CL_TRY(code_obj->emit_ldar(source_offset, iterator_reg));
-                CL_TRY(code_obj->emit_star(source_offset, call_args));
+                CL_TRY(
+                    code_obj->emit_mov(source_offset, call_args, iterator_reg));
                 ExceptionTableRangeBuilder range(code_obj,
                                                  stop_iteration_handler_target);
                 CL_TRY(code_obj->emit_call_special_method(
@@ -2054,12 +2110,12 @@ namespace cl
             JumpTarget else_target(code_obj);
             JumpTarget break_target(code_obj);
 
-            CL_TRY(codegen_node(call_children[0]));
-            CL_TRY(code_obj->emit_star(source_offset, range_regs + 0));
+            CL_TRY(codegen_node_into_specific_register(call_children[0],
+                                                       range_regs + 0));
             for(size_t i = 0; i < args.size(); ++i)
             {
-                CL_TRY(codegen_node(call_argument_value(args[i])));
-                CL_TRY(code_obj->emit_star(source_offset, range_regs + 1 + i));
+                CL_TRY(codegen_node_into_specific_register(
+                    call_argument_value(args[i]), range_regs + 1 + i));
             }
 
             Bytecode prep_opcode = Bytecode::Invalid;
@@ -2101,9 +2157,8 @@ namespace cl
                                        RegisterAlignment::CallFrame);
                 for(size_t i = 0; i < args.size(); ++i)
                 {
-                    CL_TRY(
-                        code_obj->emit_ldar(source_offset, range_regs + 1 + i));
-                    CL_TRY(code_obj->emit_star(source_offset, call_args + i));
+                    CL_TRY(code_obj->emit_mov(source_offset, call_args + i,
+                                              range_regs + 1 + i));
                 }
                 CL_TRY(code_obj->emit_call_positional(source_offset, range_regs,
                                                       call_args, n_args));
@@ -2195,6 +2250,17 @@ namespace cl
                         }
                         else
                         {
+                            const NameAccessAnalysis &access =
+                                store_access(lhs_idx);
+                            if(kind.node_kind ==
+                                   AstNodeKind::STATEMENT_ASSIGN &&
+                               access.scope == BindingScope::Local)
+                            {
+                                CL_TRY(codegen_node_into_specific_register(
+                                    children[1], access.slot_idx));
+                                break;
+                            }
+
                             // just compute the RHS
                             CL_TRY(codegen_node(children[1]));
                         }
@@ -2321,7 +2387,7 @@ namespace cl
                                 CL_TRY(code_obj->allocate_constant(
                                     av.constants[lhs_idx]));
                             ScopedRegister receiver_reg = CL_TRY(
-                                codegen_node_to_register(lhs_children[0]));
+                                codegen_node_into_a_register(lhs_children[0]));
                             CL_TRY(codegen_node(children[2]));
                             CL_TRY(code_obj->emit_store_attr(
                                 source_offset, receiver_reg.reg, constant_idx));
@@ -2331,9 +2397,9 @@ namespace cl
                         {
                             AstChildren lhs_children = av.children[lhs_idx];
                             ScopedRegister receiver_reg = CL_TRY(
-                                codegen_node_to_register(lhs_children[0]));
+                                codegen_node_into_a_register(lhs_children[0]));
                             ScopedRegister key_reg = CL_TRY(
-                                codegen_node_to_register(lhs_children[1]));
+                                codegen_node_into_a_register(lhs_children[1]));
                             CL_TRY(codegen_node(children[2]));
                             CL_TRY(code_obj->emit_store_subscript(
                                 source_offset, receiver_reg.reg, key_reg.reg));
@@ -2451,7 +2517,7 @@ namespace cl
                     if(kind.operator_kind == AstOperatorKind::SUBSCRIPT)
                     {
                         ScopedRegister receiver_reg =
-                            CL_TRY(codegen_node_to_register(children[0]));
+                            CL_TRY(codegen_node_into_a_register(children[0]));
                         CL_TRY(codegen_node(children[1]));
                         CL_TRY(code_obj->emit_load_subscript(source_offset,
                                                              receiver_reg.reg));
@@ -2532,7 +2598,7 @@ namespace cl
                         JumpTarget skip_target(code_obj);
 
                         ScopedRegister recv_reg =
-                            CL_TRY(codegen_node_to_register(children[0]));
+                            CL_TRY(codegen_node_into_a_register(children[0]));
                         TemporaryReg prod_reg(*code_obj);
                         int32_t recv = recv_reg.reg;
                         int32_t prod = prod_reg;
@@ -2587,7 +2653,7 @@ namespace cl
                 case AstNodeKind::EXPRESSION_ATTRIBUTE:
                     {
                         ScopedRegister receiver_reg =
-                            CL_TRY(codegen_node_to_register(children[0]));
+                            CL_TRY(codegen_node_into_a_register(children[0]));
                         uint8_t constant_idx =
                             CL_TRY(code_obj->allocate_constant(
                                 av.constants[node_idx]));
@@ -2690,7 +2756,6 @@ namespace cl
                         JumpTarget else_target(code_obj);
                         JumpTarget break_target(code_obj);
 
-                        CL_TRY(codegen_node(iterable_idx));
                         uint8_t iter_constant_idx =
                             CL_TRY(code_obj->allocate_constant(
                                 interned_string(L"__iter__")));
@@ -2704,8 +2769,8 @@ namespace cl
                         {
                             TemporaryReg call_args(
                                 *code_obj, 1, RegisterAlignment::CallFrame);
-                            CL_TRY(
-                                code_obj->emit_star(source_offset, call_args));
+                            CL_TRY(codegen_node_into_specific_register(
+                                iterable_idx, call_args));
                             CL_TRY(code_obj->emit_call_special_method(
                                 source_offset, call_args, iter_constant_idx, 0,
                                 not_iterable_type_constant_idx,

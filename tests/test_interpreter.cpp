@@ -2945,12 +2945,9 @@ TEST(Interpreter, clover_function_entry_adapter_bytecode_shape)
 
     std::string actual = fmt::to_string(*adapter);
     std::string expected = "Code object:\n"
-                           "    0 Ldar p0\n"
-                           "    2 Star0\n"
-                           "    3 Ldar p1\n"
-                           "    5 Star2\n"
-                           "    6 Ldar p2\n"
-                           "    8 Star3\n"
+                           "    0 Mov r0, p0\n"
+                           "    3 Mov r2, p1\n"
+                           "    6 Mov r3, p2\n"
                            "    9 CallPositional r0, {r2..r3}, call_ic[0]\n"
                            "   14 ReturnToNative\n"
                            "   15 ReturnExceptionMarkerToNative\n"
