@@ -1,0 +1,3 @@
+display_name: Python Semantics Design
+short_description: Map Python behavior to clovervm design
+default_prompt: 'Use $python-semantics-design to analyze the Python-visible semantics, compare CPython behavior with clovervm, and propose a design with tests.'
