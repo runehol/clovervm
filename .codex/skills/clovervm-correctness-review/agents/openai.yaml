@@ -1,0 +1,3 @@
+display_name: clovervm Correctness Review
+short_description: Review clovervm diffs for real bugs
+default_prompt: 'Use $clovervm-correctness-review to inspect this clovervm change for likely correctness bugs, prioritize findings by severity, and report verification performed.'
