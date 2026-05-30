@@ -23,30 +23,31 @@ namespace cl
         local_scope->reserve_empty_slots(FrameHeaderSize);
     }
 
-    static Expected<FunctionSignature>
-    init_only_constructor_thunk_signature(FunctionSignature init_signature)
+    static Expected<FunctionSignature> constructor_thunk_signature_drop_first(
+        FunctionSignature source_signature,
+        const wchar_t *dropped_parameter_description)
     {
-        FunctionSignature signature = init_signature;
+        FunctionSignature signature = source_signature;
         uint64_t shifted_default_mask = 0;
         bool found_default = false;
         uint32_t first_default_slot = 0;
-        uint32_t init_default_span_size =
-            Function::default_span_size(init_signature);
-        for(uint32_t default_idx = 0; default_idx < init_default_span_size;
+        uint32_t source_default_span_size =
+            Function::default_span_size(source_signature);
+        for(uint32_t default_idx = 0; default_idx < source_default_span_size;
             ++default_idx)
         {
-            if((init_signature.default_presence_mask &
+            if((source_signature.default_presence_mask &
                 (uint64_t(1) << default_idx)) == 0)
             {
                 continue;
             }
-            uint32_t init_slot =
-                init_signature.first_default_slot + default_idx;
-            if(init_slot == 0)
+            uint32_t source_slot =
+                source_signature.first_default_slot + default_idx;
+            if(source_slot == 0)
             {
                 continue;
             }
-            uint32_t thunk_slot = init_slot - 1;
+            uint32_t thunk_slot = source_slot - 1;
             if(!found_default)
             {
                 found_default = true;
@@ -66,8 +67,10 @@ namespace cl
         {
             if(signature.n_pos_or_kw_parameters == 0)
             {
+                std::wstring message = dropped_parameter_description;
+                message += L" requires a parameter";
                 return Expected<FunctionSignature>::raise_exception(
-                    L"TypeError", L"__init__ requires a self parameter");
+                    L"TypeError", message.c_str());
             }
             --signature.n_pos_or_kw_parameters;
         }
@@ -82,6 +85,33 @@ namespace cl
             signature.default_presence_mask = 0;
         }
         return Expected<FunctionSignature>::ok(signature);
+    }
+
+    static void copy_keyword_remap_drop_first(CodeObjectBuilder &code,
+                                              CodeObject *source_code)
+    {
+        for(size_t remap_idx = 0;
+            remap_idx < source_code->function_keyword_remap.size(); ++remap_idx)
+        {
+            uint16_t source_parameter_idx =
+                source_code->function_keyword_remap.parameter_index_at(
+                    remap_idx);
+            if(source_parameter_idx == 0)
+            {
+                continue;
+            }
+            code.function_keyword_remap().add(
+                TValue<String>::from_value_assumed(
+                    source_code->function_keyword_remap.name_at(remap_idx)),
+                uint16_t(source_parameter_idx - 1));
+        }
+    }
+
+    static Expected<FunctionSignature>
+    init_only_constructor_thunk_signature(FunctionSignature init_signature)
+    {
+        return constructor_thunk_signature_drop_first(init_signature,
+                                                      L"__init__");
     }
 
     static Expected<CodeObject *>
@@ -114,22 +144,7 @@ namespace cl
             code.function_signature() =
                 CL_TRY(init_only_constructor_thunk_signature(
                     init_code->function_signature));
-            for(size_t remap_idx = 0;
-                remap_idx < init_code->function_keyword_remap.size();
-                ++remap_idx)
-            {
-                uint16_t init_parameter_idx =
-                    init_code->function_keyword_remap.parameter_index_at(
-                        remap_idx);
-                if(init_parameter_idx == 0)
-                {
-                    continue;
-                }
-                code.function_keyword_remap().add(
-                    TValue<String>::from_value_assumed(
-                        init_code->function_keyword_remap.name_at(remap_idx)),
-                    uint16_t(init_parameter_idx - 1));
-            }
+            copy_keyword_remap_drop_first(code, init_code);
         }
         else
         {
@@ -180,21 +195,24 @@ namespace cl
         return code.finalize();
     }
 
-    static Expected<TValue<Tuple>>
-    make_init_only_constructor_thunk_defaults(TValue<Tuple> init_defaults,
-                                              FunctionSignature init_signature)
+    static Expected<TValue<Tuple>> make_constructor_thunk_defaults_drop_first(
+        TValue<Tuple> source_defaults, FunctionSignature source_signature,
+        const wchar_t *source_parameter_layout_description)
     {
-        uint32_t init_default_span_size =
-            Function::default_span_size(init_signature);
-        if(init_defaults.extract()->size() != init_default_span_size)
+        uint32_t source_default_span_size =
+            Function::default_span_size(source_signature);
+        if(source_defaults.extract()->size() != source_default_span_size)
         {
-            return Expected<TValue<Tuple>>::raise_exception(
-                L"SystemError",
-                L"unsupported __init__ default parameter layout");
+            std::wstring message = L"unsupported ";
+            message += source_parameter_layout_description;
+            message += L" default parameter layout";
+            return Expected<TValue<Tuple>>::raise_exception(L"SystemError",
+                                                            message.c_str());
         }
 
         FunctionSignature thunk_signature =
-            CL_TRY(init_only_constructor_thunk_signature(init_signature));
+            CL_TRY(constructor_thunk_signature_drop_first(
+                source_signature, source_parameter_layout_description));
         uint32_t thunk_default_span_size =
             Function::default_span_size(thunk_signature);
         TValue<Tuple> thunk_defaults = make_object_value<Tuple>(
@@ -206,25 +224,25 @@ namespace cl
 
         std::vector<Value> default_values(thunk_default_span_size,
                                           Value::None());
-        for(uint32_t default_idx = 0; default_idx < init_default_span_size;
+        for(uint32_t default_idx = 0; default_idx < source_default_span_size;
             ++default_idx)
         {
-            if((init_signature.default_presence_mask &
+            if((source_signature.default_presence_mask &
                 (uint64_t(1) << default_idx)) == 0)
             {
                 continue;
             }
-            uint32_t init_slot =
-                init_signature.first_default_slot + default_idx;
-            if(init_slot == 0)
+            uint32_t source_slot =
+                source_signature.first_default_slot + default_idx;
+            if(source_slot == 0)
             {
                 continue;
             }
-            uint32_t thunk_slot = init_slot - 1;
+            uint32_t thunk_slot = source_slot - 1;
             uint32_t thunk_default_idx =
                 thunk_slot - thunk_signature.first_default_slot;
             default_values[thunk_default_idx] =
-                init_defaults.extract()->item_unchecked(default_idx);
+                source_defaults.extract()->item_unchecked(default_idx);
         }
 
         for(uint32_t idx = 0; idx < thunk_default_span_size; ++idx)
@@ -233,6 +251,14 @@ namespace cl
                 idx, default_values[idx]);
         }
         return Expected<TValue<Tuple>>::ok(thunk_defaults);
+    }
+
+    static Expected<TValue<Tuple>>
+    make_init_only_constructor_thunk_defaults(TValue<Tuple> init_defaults,
+                                              FunctionSignature init_signature)
+    {
+        return make_constructor_thunk_defaults_drop_first(
+            init_defaults, init_signature, L"__init__");
     }
 
     Expected<TValue<Function>>
