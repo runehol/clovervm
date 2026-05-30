@@ -1583,24 +1583,6 @@ namespace cl
                    fun.extract()->call_signature.max_positional_arity;
     }
 
-    static ALWAYSINLINE FunctionCallAdaptation
-    classify_function_call_adaptation(TValue<Function> fun)
-    {
-        if(fun.extract()->has_varargs())
-        {
-            return FunctionCallAdaptation::Varargs;
-        }
-        if(fun.extract()->default_parameters.value().has_value())
-        {
-            return FunctionCallAdaptation::Defaults;
-        }
-        if(is_fixed_arity_function(fun))
-        {
-            return FunctionCallAdaptation::FixedArity;
-        }
-        return FunctionCallAdaptation::Defaults;
-    }
-
     static ALWAYSINLINE void populate_function_call_cache_with_guard(
         FunctionCallInlineCache &cache, Value guard_value, TValue<Function> fun,
         ValidityCell *validity_cell, uint32_t n_args)
@@ -1610,7 +1592,23 @@ namespace cl
         cache.code_object = fun.extract()->code_object.extract();
         cache.validity_cell = validity_cell;
         cache.n_args = n_args;
-        cache.adaptation = classify_function_call_adaptation(fun);
+        if(fun.extract()->has_varargs())
+        {
+            cache.adaptation = FunctionCallAdaptation::Varargs;
+        }
+        else if(fun.extract()->default_parameters.value().has_value())
+        {
+            cache.adaptation =
+                n_args == fun.extract()->call_signature.function.n_parameters
+                    ? FunctionCallAdaptation::FixedArity
+                    : FunctionCallAdaptation::Defaults;
+        }
+        else
+        {
+            cache.adaptation = is_fixed_arity_function(fun)
+                                   ? FunctionCallAdaptation::FixedArity
+                                   : FunctionCallAdaptation::Defaults;
+        }
     }
 
     static ALWAYSINLINE void
@@ -1721,7 +1719,22 @@ namespace cl
         cache.keyword_names = keyword_names;
         cache.n_pos_args = n_pos_args;
         cache.default_fill_start_slot = default_fill_start_slot;
-        cache.adaptation = classify_function_call_adaptation(fun);
+        if(fun.extract()->has_varargs())
+        {
+            cache.adaptation = FunctionCallAdaptation::Varargs;
+        }
+        else if(fun.extract()->default_parameters.value().has_value())
+        {
+            cache.adaptation = FunctionCallAdaptation::Defaults;
+        }
+        else if(is_fixed_arity_function(fun))
+        {
+            cache.adaptation = FunctionCallAdaptation::FixedArity;
+        }
+        else
+        {
+            cache.adaptation = FunctionCallAdaptation::Defaults;
+        }
         cache.keyword_dest_regs = std::move(keyword_dest_regs);
     }
 
