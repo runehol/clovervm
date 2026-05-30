@@ -248,24 +248,24 @@ first root-scanning contract. One likely reason to add this later is support for
 a mixed native/managed stack model where the scanner must recognize transition
 frames between native and managed execution.
 
-Outgoing argument windows are tricky because runtime call adaptation can place
-values on the stack that were not statically pushed by codegen. Examples include
+Temporary call argument spans are tricky because runtime call adaptation can
+place values on the stack that were not statically pushed by codegen. Examples include
 tuples or dictionaries materialized for `*args` or `**kwargs` adaptation for the
 concrete callee. Codegen may know the lowest argument slot it emitted, but it
 does not necessarily know the full runtime extent created by adaptation.
 
 The initial interpreter reclamation design should therefore only allow
-safepoints at places where the outgoing argument area is known dead: function
+safepoints at places where call argument preparation is known dead: function
 entry, normal function return to the caller, and loop back branches. Exception
 propagation and unwind paths are not safepoint locations. At those points, the
-outgoing argument area does not need to be scanned.
+temporary call argument span does not need to be scanned as call-entry state.
 
 These safepoint locations also give useful liveness facts:
 
 - At function entry, the callee frame has been established and argument
   adaptation has completed. The current implementation publishes the
-  frame-owned scan slice computed from the `CodeObject`'s below-frame and
-  outgoing-call slot counts, and uses the no-accumulator helper path.
+  frame-owned scan slice computed from the `CodeObject`'s below-frame slot
+  count, and uses the no-accumulator helper path.
 - At normal function return, the safepoint occurs while the returning frame is
   committed: the caller frame has been restored, and the return value lives in
   the accumulator carried by the published interpreter state. The implementation
@@ -291,7 +291,7 @@ storage if that is simpler, but these liveness facts define where eager clearing
 or narrower interpreter scans are allowed without per-PC safepoint maps.
 
 Do not try to support safepoints during call preparation or argument adaptation
-by reconstructing a dynamic outgoing-argument extent. That path is too subtle to
+by reconstructing a dynamic call-argument extent. That path is too subtle to
 make into a reliable root-scanning contract.
 
 Native helpers must not reach a safepoint while holding borrowed `Value`s only
@@ -303,19 +303,19 @@ Function entry means after the callee frame is fully established and after
 argument adaptation has completed. It does not mean the caller's function-call
 site. This is deliberately different from the more conventional "call
 safepoint" location, because call-site and adaptation state may contain transient
-outgoing argument layouts that are not part of the initial root-scanning
+temporary call argument layouts that are not part of the initial root-scanning
 contract.
 
 Safepoints around native/managed transitions need a separate design pass.
 
 For the first version, a conservative root set such as
 `absl::flat_hash_set<HeapObject *>` is acceptable. Stale values in dead
-temporaries or outgoing call slots may retain zero-refcount objects for extra
+temporaries or dead call argument slots may retain zero-refcount objects for extra
 safepoints, but they do not compromise memory safety.
 
 Stack hygiene can reduce conservative-scan retention. Frame slots may be
 initialized to non-pointer sentinels, and codegen may clear known-dead
-temporaries or outgoing call windows around safepoint-capable operations. This
+temporaries or call argument spans around safepoint-capable operations. This
 clearing is root-set hygiene only; stack slots do not own references and must
 not `DECREF` when cleared. It is not a correctness requirement: conservative
 scans may find stale pointer-shaped values in frame slots, and those values are

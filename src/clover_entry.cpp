@@ -6,6 +6,7 @@
 #include "runtime_helpers.h"
 #include "scope.h"
 #include "virtual_machine.h"
+#include <algorithm>
 
 namespace cl
 {
@@ -46,15 +47,18 @@ namespace cl
             CL_TRY(code.emit_ldar(0, 0));
             CL_TRY(code.emit_star(0, callable_reg));
 
+            CodeObjectBuilder::TemporaryReg call_args(
+                code, std::max<uint32_t>(n_args, 1),
+                RegisterAlignment::CallFrame);
             for(uint32_t arg_idx = 0; arg_idx < n_args; ++arg_idx)
             {
                 CL_TRY(code.emit_ldar(0, arg_idx + 1));
-                CL_TRY(code.emit_star(0, OutgoingArgReg(arg_idx)));
+                CL_TRY(code.emit_star(0, call_args + arg_idx));
             }
 
             JumpTarget handler(&code);
             ExceptionTableRangeBuilder range(&code, handler);
-            CL_TRY(code.emit_call_positional(0, callable_reg, OutgoingArgReg(0),
+            CL_TRY(code.emit_call_positional(0, callable_reg, call_args,
                                              uint8_t(n_args)));
             range.close();
             CL_TRY(code.emit_return_to_native(0));

@@ -185,16 +185,6 @@ namespace cl
         std::vector<int8_t> keyword_dest_regs;
     };
 
-    struct OutgoingArgReg
-    {
-        explicit OutgoingArgReg(uint32_t _slot_offset)
-            : slot_offset(_slot_offset)
-        {
-        }
-
-        uint32_t slot_offset;
-    };
-
     struct ExceptionTableEntry
     {
         uint32_t start_pc;
@@ -212,6 +202,7 @@ namespace cl
         FrameHeaderSizeAboveFp + FrameHeaderSizeBelowFp;
     static_assert(FrameHeaderSizeAboveFp ==
                   FrameHeaderReturnPcOffset - FrameHeaderPreviousFpOffset + 1);
+    static constexpr uint32_t ClassBodyParameterCount = 2;
 
     static constexpr uintptr_t FrameAlignmentBytes = 16;
 
@@ -251,7 +242,6 @@ namespace cl
         FunctionKeywordRemap function_keyword_remap;
         uint32_t n_locals = 0;
         uint32_t n_temporaries = 0;
-        uint32_t n_outgoing_call_slots = 0;
 
         Scope *get_local_scope_ptr() const { return local_scope.extract(); }
         TValue<ModuleObject> get_defining_module() const
@@ -279,8 +269,7 @@ namespace cl
 
         uint32_t get_n_registers() const
         {
-            return function_signature.n_parameters + n_temporaries + n_locals +
-                   n_outgoing_call_slots;
+            return function_signature.n_parameters + n_temporaries + n_locals;
         }
 
         uint32_t get_padded_n_parameters() const
@@ -291,13 +280,6 @@ namespace cl
         uint32_t get_padded_n_ordinary_below_frame_slots() const
         {
             return round_up_to_abi_alignment(n_locals + n_temporaries);
-        }
-
-        uint32_t get_outgoing_arg_reg(uint32_t outgoing_slot_offset) const
-        {
-            return get_padded_n_parameters() + FrameHeaderSize +
-                   get_padded_n_ordinary_below_frame_slots() +
-                   outgoing_slot_offset;
         }
 
         int8_t encode_reg(uint32_t reg) const
@@ -312,8 +294,7 @@ namespace cl
             assert(reg >= 0);
             assert(uint32_t(reg) <
                    get_padded_n_parameters() + FrameHeaderSize +
-                       get_padded_n_ordinary_below_frame_slots() +
-                       n_outgoing_call_slots);
+                       get_padded_n_ordinary_below_frame_slots());
             return uint32_t(reg);
         }
 

@@ -276,8 +276,9 @@ The wrapper prepares an ordinary call window and uses `CallPositional`:
 
 ```text
 copy p0 into callable_slot
-copy p1..pN into a0..a(N - 1)
-CallPositional callable_slot, a0, N, cache_idx
+reserve aligned temporary call argument span
+copy p1..pN into the call argument span
+CallPositional callable_slot, first_call_arg, N, cache_idx
 ReturnToNative
 
 handler:
@@ -288,15 +289,14 @@ Exception table:
 ```
 
 The copying is intentionally explicit. `CallPositional` expects
-the callable separately from the outgoing argument span, while parameters and
-outgoing call slots live in different parts of the frame. With the current
+the callable separately from the temporary call argument span. With the current
 bytecode set, each copy is a two-step accumulator move:
 
 ```text
 Ldar p1
-Star a0
+Star first_call_arg
 Ldar p2
-Star a1
+Star first_call_arg + 1
 ...
 ```
 
@@ -391,7 +391,7 @@ function entry adapter:
 
 ```text
 clover_function_entry_adapter_0(function)
-  CallPositional function, a0, 0
+  CallPositional function, first_call_arg, 0
 ReturnToNative
 
 handler:
@@ -526,7 +526,7 @@ fp->fp[0]                                      previous Clover frame pointer
     fp[-1]                                     r0
     fp[-2]                                     r1
     ...
-    fp[-n]                                     outgoing/scratch area
+    fp[-n]                                     temporaries / call arguments
 
 lower addresses
 ```

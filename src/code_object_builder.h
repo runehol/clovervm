@@ -28,6 +28,12 @@ namespace cl
         uint32_t index;
     };
 
+    enum class RegisterAlignment : uint8_t
+    {
+        None,
+        CallFrame,
+    };
+
     class JumpTarget
     {
     public:
@@ -115,10 +121,19 @@ namespace cl
     class CodeObjectBuilder
     {
     public:
+        struct RegisterReservation
+        {
+            uint32_t allocated_reg = 0;
+            uint32_t allocated_n_regs = 0;
+            uint32_t semantic_reg = 0;
+        };
+
         class TemporaryReg
         {
         public:
-            TemporaryReg(CodeObjectBuilder &_builder, uint32_t _n_regs = 1);
+            TemporaryReg(
+                CodeObjectBuilder &_builder, uint32_t _n_regs = 1,
+                RegisterAlignment _alignment = RegisterAlignment::None);
 
             TemporaryReg(const TemporaryReg &) = delete;
             TemporaryReg &operator=(const TemporaryReg &) = delete;
@@ -128,12 +143,12 @@ namespace cl
 
             ~TemporaryReg();
 
-            operator uint32_t() const { return reg; }
+            operator uint32_t() const { return reservation.semantic_reg; }
 
         private:
             CodeObjectBuilder *builder;
             uint32_t n_regs;
-            uint32_t reg;
+            RegisterReservation reservation;
         };
 
         CodeObjectBuilder(const CompilationUnit *compilation_unit,
@@ -152,9 +167,7 @@ namespace cl
               temporary_reg(other.temporary_reg),
               max_temporary_reg(other.max_temporary_reg),
               constant_indices_by_raw_value(
-                  std::move(other.constant_indices_by_raw_value)),
-              outgoing_arg_relocations(
-                  std::move(other.outgoing_arg_relocations))
+                  std::move(other.constant_indices_by_raw_value))
         {
             other.code_obj = nullptr;
             other.finalized = true;
@@ -246,17 +259,15 @@ namespace cl
             return code_obj->get_padded_n_parameters();
         }
 
-        uint32_t get_outgoing_arg_reg(uint32_t outgoing_slot_offset) const
-        {
-            assert(code_obj != nullptr);
-            return code_obj->get_outgoing_arg_reg(outgoing_slot_offset);
-        }
-
         int8_t encode_reg(uint32_t reg) const
         {
             assert(code_obj != nullptr);
             return code_obj->encode_reg(reg);
         }
+
+        bool is_call_frame_aligned_register(uint32_t first_arg_reg) const;
+        void assert_call_args_are_topmost(uint32_t first_arg_reg,
+                                          uint32_t n_call_arg_regs) const;
 
         size_t size() const
         {
@@ -272,8 +283,6 @@ namespace cl
         Expected<uint32_t> emit_lda_global(uint32_t source_offset,
                                            uint8_t name_idx);
         Expected<uint32_t> emit_star(uint32_t source_offset, uint32_t reg);
-        Expected<uint32_t> emit_star(uint32_t source_offset,
-                                     OutgoingArgReg reg);
         Expected<uint32_t> emit_sta_global(uint32_t source_offset,
                                            uint8_t name_idx);
         Expected<uint32_t> emit_del_local(uint32_t source_offset, uint32_t reg);
@@ -324,9 +333,6 @@ namespace cl
         Expected<uint32_t> emit_create_tuple(uint32_t source_offset,
                                              uint32_t first_reg,
                                              uint8_t n_regs);
-        Expected<uint32_t> emit_create_tuple(uint32_t source_offset,
-                                             OutgoingArgReg reg,
-                                             uint8_t n_regs);
         Expected<uint32_t> emit_create_list(uint32_t source_offset,
                                             uint32_t first_reg, uint8_t n_regs);
         Expected<uint32_t> emit_create_dict(uint32_t source_offset,
@@ -334,7 +340,7 @@ namespace cl
                                             uint8_t n_entries);
         Expected<uint32_t> emit_create_class(uint32_t source_offset,
                                              uint8_t body_constant_idx,
-                                             OutgoingArgReg first_arg_reg);
+                                             uint32_t first_arg_reg);
         Expected<uint32_t> emit_load_attr(uint32_t source_offset,
                                           uint32_t receiver_reg,
                                           uint8_t name_idx);
@@ -346,16 +352,17 @@ namespace cl
                                          uint8_t name_idx);
         Expected<uint32_t>
         emit_call_method_attr_positional(uint32_t source_offset,
-                                         OutgoingArgReg first_arg_reg,
+                                         uint32_t first_arg_reg,
                                          uint8_t name_idx, uint8_t argc);
         Expected<uint32_t> emit_call_method_attr_keyword(
-            uint32_t source_offset, OutgoingArgReg first_arg_reg,
-            uint8_t name_idx, uint8_t n_pos_args, uint32_t first_kw_value_reg,
-            uint8_t n_kw_args, uint8_t keyword_names_idx);
-        Expected<uint32_t> emit_call_special_method(
-            uint32_t source_offset, OutgoingArgReg first_arg_reg,
-            uint8_t name_idx, uint8_t argc, uint8_t missing_exception_type_idx,
-            uint8_t missing_exception_message_idx);
+            uint32_t source_offset, uint32_t first_arg_reg, uint8_t name_idx,
+            uint8_t n_pos_args, uint32_t first_kw_value_reg, uint8_t n_kw_args,
+            uint8_t keyword_names_idx);
+        Expected<uint32_t>
+        emit_call_special_method(uint32_t source_offset, uint32_t first_arg_reg,
+                                 uint8_t name_idx, uint8_t argc,
+                                 uint8_t missing_exception_type_idx,
+                                 uint8_t missing_exception_message_idx);
         Expected<uint32_t> emit_load_subscript(uint32_t source_offset,
                                                uint32_t receiver_reg);
         Expected<uint32_t> emit_store_subscript(uint32_t source_offset,
@@ -388,7 +395,7 @@ namespace cl
         Expected<uint32_t> emit_unary_op(uint32_t source_offset, Bytecode op);
         Expected<uint32_t> emit_call_code_object(uint32_t source_offset,
                                                  uint8_t code_object_idx,
-                                                 OutgoingArgReg first_arg_reg,
+                                                 uint32_t first_arg_reg,
                                                  uint8_t argc);
         Expected<uint32_t> emit_import_name(uint32_t source_offset,
                                             uint8_t name_idx, uint8_t level);
@@ -403,11 +410,11 @@ namespace cl
                                      RuntimeIntrinsic0 intrinsic);
         Expected<uint32_t> emit_call_positional(uint32_t source_offset,
                                                 uint32_t callable_reg,
-                                                OutgoingArgReg first_arg_reg,
+                                                uint32_t first_arg_reg,
                                                 uint8_t argc);
         Expected<uint32_t>
         emit_call_keyword(uint32_t source_offset, uint32_t callable_reg,
-                          OutgoingArgReg first_arg_reg, uint8_t n_pos_args,
+                          uint32_t first_arg_reg, uint8_t n_pos_args,
                           uint32_t first_kw_value_reg, uint8_t n_kw_args,
                           uint8_t keyword_names_idx);
         uint32_t add_exception_table_entry(JumpTarget &start, JumpTarget &end,
@@ -449,23 +456,14 @@ namespace cl
                                                         Bytecode c,
                                                         uint8_t constant_idx,
                                                         uint32_t reg);
-        Expected<uint32_t> emit_opcode_constant_idx_reg(uint32_t source_offset,
-                                                        Bytecode c,
-                                                        uint8_t constant_idx,
-                                                        OutgoingArgReg reg);
         Expected<uint32_t>
         emit_opcode_constant_idx_reg_argc(uint32_t source_offset, Bytecode c,
-                                          uint8_t constant_idx,
-                                          OutgoingArgReg reg, uint8_t argc);
+                                          uint8_t constant_idx, uint32_t reg,
+                                          uint8_t argc);
         Expected<uint32_t> emit_opcode_reg(uint32_t source_offset, Bytecode c,
                                            uint32_t reg);
-        Expected<uint32_t> emit_opcode_reg(uint32_t source_offset, Bytecode c,
-                                           OutgoingArgReg reg);
         Expected<uint32_t> emit_opcode_reg_range(uint32_t source_offset,
                                                  Bytecode c, uint32_t reg,
-                                                 uint8_t n_regs);
-        Expected<uint32_t> emit_opcode_reg_range(uint32_t source_offset,
-                                                 Bytecode c, OutgoingArgReg reg,
                                                  uint8_t n_regs);
         Expected<uint32_t> emit_opcode_reg_constant_idx(uint32_t source_offset,
                                                         Bytecode c,
@@ -478,7 +476,7 @@ namespace cl
             uint32_t source_offset, Bytecode c, uint32_t reg,
             uint8_t constant_idx, uint8_t cache_idx);
         Expected<uint32_t> emit_opcode_reg_constant_idx_cache_idx_argc(
-            uint32_t source_offset, Bytecode c, OutgoingArgReg reg,
+            uint32_t source_offset, Bytecode c, uint32_t reg,
             uint8_t constant_idx, uint8_t read_cache_idx,
             uint8_t call_cache_idx, uint8_t argc);
         Expected<uint32_t> emit_opcode_reg_reg(uint32_t source_offset,
@@ -495,25 +493,17 @@ namespace cl
         void set_exception_table_handler_pc(uint32_t entry_idx, uint32_t pc);
         void set_encoded_reg(uint32_t pos, uint32_t reg);
         void assert_not_finalized() const;
-        void patch_outgoing_arg_relocations();
-        void add_outgoing_arg_relocation(uint32_t operand_offset,
-                                         uint32_t outgoing_slot_offset);
         uint32_t first_temporary_reg() const;
         void sync_temporary_reg_base();
-        uint32_t reserve_registers(uint32_t n_regs);
-        void release_registers(uint32_t reg, uint32_t n_regs);
+        RegisterReservation reserve_registers(uint32_t n_regs,
+                                              RegisterAlignment alignment);
+        void release_registers(RegisterReservation reservation);
 
         CodeObject *code_obj;
         bool finalized = false;
         uint32_t temporary_reg = FrameHeaderSize;
         uint32_t max_temporary_reg = FrameHeaderSize;
         std::unordered_map<uint64_t, uint32_t> constant_indices_by_raw_value;
-        struct OutgoingArgRelocation
-        {
-            uint32_t operand_offset;
-        };
-
-        std::vector<OutgoingArgRelocation> outgoing_arg_relocations;
     };
 
 }  // namespace cl

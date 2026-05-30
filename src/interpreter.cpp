@@ -567,8 +567,7 @@ namespace cl
     lowest_live_stack_slot_for_current_frame(Value *fp, CodeObject *code_object)
     {
         uint32_t n_below_frame_slots =
-            code_object->get_padded_n_ordinary_below_frame_slots() +
-            code_object->n_outgoing_call_slots;
+            code_object->get_padded_n_ordinary_below_frame_slots();
         return fp - int32_t(n_below_frame_slots);
     }
 
@@ -676,7 +675,6 @@ namespace cl
 
     static constexpr uint32_t ClassBodyNameParameter = 0;
     static constexpr uint32_t ClassBodyBasesParameter = 1;
-    static constexpr uint32_t ClassBodyParameterCount = 2;
 
     static Expected<Value> build_class_from_frame(ThreadState *thread,
                                                   Value *fp,

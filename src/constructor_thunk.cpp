@@ -184,17 +184,21 @@ namespace cl
                 CL_TRY(code.allocate_constant(Value::from_oop(init_code)));
             CL_TRY(code.emit_star(0, instance_reg));
 
-            CL_TRY(code.emit_ldar(0, instance_reg));
-            CL_TRY(code.emit_star(0, OutgoingArgReg(0)));
-            for(uint32_t param_idx = 0; param_idx < code.n_parameters();
-                ++param_idx)
             {
-                CL_TRY(code.emit_ldar(0, param_idx));
-                CL_TRY(code.emit_star(0, OutgoingArgReg(param_idx + 1)));
-            }
+                CodeObjectBuilder::TemporaryReg call_args(
+                    code, init_n_parameters, RegisterAlignment::CallFrame);
+                CL_TRY(code.emit_ldar(0, instance_reg));
+                CL_TRY(code.emit_star(0, call_args));
+                for(uint32_t param_idx = 0; param_idx < code.n_parameters();
+                    ++param_idx)
+                {
+                    CL_TRY(code.emit_ldar(0, param_idx));
+                    CL_TRY(code.emit_star(0, call_args + param_idx + 1));
+                }
 
-            CL_TRY(code.emit_call_code_object(
-                0, init_code_const_idx, OutgoingArgReg(0), init_n_parameters));
+                CL_TRY(code.emit_call_code_object(
+                    0, init_code_const_idx, call_args, init_n_parameters));
+            }
             CL_TRY(code.emit_check_init_returned_none(0));
             CL_TRY(code.emit_ldar(0, instance_reg));
             CL_TRY(code.emit_return(0));
@@ -296,16 +300,20 @@ namespace cl
         uint32_t new_code_const_idx =
             CL_TRY(code.allocate_constant(Value::from_oop(new_code)));
         CL_TRY(code.emit_lda_constant(0, class_const_idx));
-        CL_TRY(code.emit_star(0, OutgoingArgReg(0)));
-        for(uint32_t param_idx = 0; param_idx < code.n_parameters();
-            ++param_idx)
         {
-            CL_TRY(code.emit_ldar(0, param_idx));
-            CL_TRY(code.emit_star(0, OutgoingArgReg(param_idx + 1)));
-        }
+            CodeObjectBuilder::TemporaryReg call_args(
+                code, new_n_parameters, RegisterAlignment::CallFrame);
+            CL_TRY(code.emit_star(0, call_args));
+            for(uint32_t param_idx = 0; param_idx < code.n_parameters();
+                ++param_idx)
+            {
+                CL_TRY(code.emit_ldar(0, param_idx));
+                CL_TRY(code.emit_star(0, call_args + param_idx + 1));
+            }
 
-        CL_TRY(code.emit_call_code_object(0, new_code_const_idx,
-                                          OutgoingArgReg(0), new_n_parameters));
+            CL_TRY(code.emit_call_code_object(0, new_code_const_idx, call_args,
+                                              new_n_parameters));
+        }
         CL_TRY(code.emit_return(0));
         return code.finalize();
     }

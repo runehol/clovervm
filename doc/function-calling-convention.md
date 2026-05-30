@@ -74,7 +74,6 @@ Each `CodeObject` tracks:
 - `n_parameters`
 - `n_locals`
 - `n_temporaries`
-- `n_outgoing_call_slots`
 
 Parameter slots are physically padded to the ABI alignment. Since `Value` is 8
 bytes and the ABI alignment is 16 bytes, this currently means rounding slot
@@ -102,7 +101,7 @@ and reports total register storage as:
 ```cpp
 uint32_t get_n_registers() const
 {
-    return n_parameters + n_temporaries + n_locals + n_outgoing_call_slots;
+    return n_parameters + n_temporaries + n_locals;
 }
 ```
 
@@ -118,7 +117,6 @@ The bytecode printer exposes the register naming convention in [src/code_object_
 
 - `p0`, `p1`, ... are parameter registers
 - `r0`, `r1`, ... are local/temporary registers
-- `a0`, `a1`, ... are outgoing call-area registers
 
 The encoding rule is in [src/code_object.h](../src/code_object.h):
 
@@ -147,9 +145,6 @@ fp->fp[0]                  previous frame pointer
     fp[-2]                 r1
     fp[-3]                 r2
     ...
-    fp[-1 - padded_n_ordinary_below_frame_slots] a0
-    fp[-2 - padded_n_ordinary_below_frame_slots] a1
-    ...
 
 lower addresses
 ```
@@ -158,30 +153,28 @@ So:
 
 - parameters are above `fp`
 - locals/temporaries are below `fp`
-- ordinary below-frame slots are padded before the outgoing area when needed
-- the outgoing call area is below all ordinary locals and temporaries
 - larger logical register numbers move downward in memory
 
 ## Call Argument Layout
 
 ### Simple calls
 
-For a direct call like `f(x, y)`, the caller prepares one contiguous outgoing
-span:
+For a direct call like `f(x, y)`, codegen reserves one ABI-aligned temporary
+span for the positional call arguments:
 
-- the callable itself lives outside the outgoing argument span
-- `a0` is the first user argument
-- `a1` is the second user argument
+- the callable itself lives outside the call argument span
+- the first temporary in the span is the first user argument
+- the next temporary in the span is the second user argument
 - and so on
 
-For a zero-argument call, the call instruction still carries an `a0` argument
-anchor. That gives the callee a well-defined place to append default arguments
-before entering the frame.
+For a zero-argument call, codegen still reserves a one-register call argument
+span and emits an argument count of zero. That anchor gives the callee a
+well-defined place to append default arguments before entering the frame.
 
 ### Method calls
 
 For direct method-call syntax such as `obj.method(x)`, the receiver and
-explicit arguments occupy one contiguous outgoing span:
+explicit arguments occupy one contiguous temporary call argument span:
 
 - receiver
 - user argument 0
@@ -334,8 +327,8 @@ Before call in caller frame:
 
     ... caller locals/temps ...
     [callable = f]
-    [arg0 = x]
-    [arg1 = y]
+    [aligned call arg 0 = x]
+    [call arg 1 = y]
     ...
 
 After `new_fp = fp + first_arg_reg - round_up_to_abi_alignment(n_args) + 1 - 4`:
@@ -391,8 +384,8 @@ stack frames.
 
 ```text
 Clover stack:
-  VM-managed frame headers, parameters, locals, temporaries, outgoing call
-  windows, interpreted frame materialization, and future JIT frames
+  VM-managed frame headers, parameters, locals, temporaries, temporary call
+  argument spans, interpreted frame materialization, and future JIT frames
 
 native stack:
   threaded interpreter implementation frames, C++ runtime helpers, native
@@ -408,8 +401,9 @@ future deoptimization metadata.
 
 If you are reasoning about CloverVM calls, the safest mental model is:
 
-1. The callable lives separately from the outgoing argument span.
-2. The outgoing argument span starts at `a0` and grows downward as `a1`, `a2`, ...
+1. The callable lives separately from the temporary call argument span.
+2. The call argument span is ABI-aligned and must be the topmost live
+   temporary range when the call opcode is emitted.
 3. The interpreter moves `fp` below the argument window padded up to the ABI alignment, so those argument cells become `p0`, `p1`, ...
 4. `fp[0]`, `fp[2]`, and `fp[3]` hold the caller state needed by `Return`.
 5. Locals/temporaries for the callee start at `r0 = fp[-1]`.

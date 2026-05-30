@@ -622,9 +622,6 @@ namespace cl
             AstChildren bases = av.children[bases_idx];
             uint32_t name_constant_idx =
                 CL_TRY(code_obj->allocate_constant(av.constants[node_idx]));
-            CL_TRY(
-                code_obj->emit_lda_constant(source_offset, name_constant_idx));
-            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
 
             TemporaryReg base_regs(*code_obj,
                                    std::max<size_t>(bases.size(), 1));
@@ -655,10 +652,18 @@ namespace cl
             }
             CL_TRY(code_obj->emit_create_tuple(
                 source_offset, base_regs, std::max<size_t>(bases.size(), 1)));
-            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(1)));
+            TemporaryReg bases_tuple(*code_obj);
+            CL_TRY(code_obj->emit_star(source_offset, bases_tuple));
 
+            TemporaryReg call_args(*code_obj, ClassBodyParameterCount,
+                                   RegisterAlignment::CallFrame);
+            CL_TRY(
+                code_obj->emit_lda_constant(source_offset, name_constant_idx));
+            CL_TRY(code_obj->emit_star(source_offset, call_args));
+            CL_TRY(code_obj->emit_ldar(source_offset, bases_tuple));
+            CL_TRY(code_obj->emit_star(source_offset, call_args + 1));
             CL_TRY(code_obj->emit_create_class(source_offset, body_constant_idx,
-                                               OutgoingArgReg(0)));
+                                               call_args));
 
             CL_TRY(emit_variable_store(source_offset, node_idx));
             return Expected<void>::ok();
@@ -871,17 +876,18 @@ namespace cl
             uint8_t missing_exception_message_idx =
                 CL_TRY(code_obj->allocate_constant(missing_exception_message));
 
+            TemporaryReg call_args(*code_obj, args.size() - 3,
+                                   RegisterAlignment::CallFrame);
             CL_TRY(codegen_node(call_argument_value(args[0])));
-            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
+            CL_TRY(code_obj->emit_star(source_offset, call_args));
             for(size_t i = 4; i < args.size(); ++i)
             {
                 CL_TRY(codegen_node(call_argument_value(args[i])));
-                CL_TRY(
-                    code_obj->emit_star(source_offset, OutgoingArgReg(i - 3)));
+                CL_TRY(code_obj->emit_star(source_offset, call_args + i - 3));
             }
 
             CL_TRY(code_obj->emit_call_special_method(
-                source_offset, OutgoingArgReg(0), method_name_idx,
+                source_offset, call_args, method_name_idx,
                 uint8_t(args.size() - 4), missing_exception_type_idx,
                 missing_exception_message_idx));
             return Expected<void>::ok();
@@ -991,24 +997,27 @@ namespace cl
                 AstChildren method_children = av.children[children[0]];
                 uint8_t constant_idx = CL_TRY(
                     code_obj->allocate_constant(av.constants[children[0]]));
-                CL_TRY(codegen_node(method_children[0]));
-                CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
 
                 uint32_t n_kw_args = n_keyword_call_arguments(args);
                 if(n_kw_args > 0)
                 {
-                    uint32_t n_pos_args = 0;
+                    uint32_t n_pos_args = args.size() - n_kw_args;
                     uint32_t kw_arg_idx = 0;
 
                     TemporaryReg keyword_value_regs(
                         *code_obj, std::max<uint32_t>(n_kw_args, 1));
+                    TemporaryReg call_args(*code_obj, n_pos_args + 1,
+                                           RegisterAlignment::CallFrame);
+                    CL_TRY(codegen_node(method_children[0]));
+                    CL_TRY(code_obj->emit_star(source_offset, call_args));
+                    n_pos_args = 0;
                     for(int32_t arg: args)
                     {
                         if(is_positional_call_argument(arg))
                         {
                             CL_TRY(codegen_node(call_argument_value(arg)));
                             CL_TRY(code_obj->emit_star(
-                                source_offset, OutgoingArgReg(1 + n_pos_args)));
+                                source_offset, call_args + 1 + n_pos_args));
                             ++n_pos_args;
                         }
                         else
@@ -1038,21 +1047,24 @@ namespace cl
                     uint8_t keyword_names_idx = CL_TRY(
                         code_obj->allocate_constant(keyword_names.raw_value()));
                     CL_TRY(code_obj->emit_call_method_attr_keyword(
-                        source_offset, OutgoingArgReg(0), constant_idx,
+                        source_offset, call_args, constant_idx,
                         uint8_t(n_pos_args), keyword_value_regs,
                         uint8_t(n_kw_args), keyword_names_idx));
                     return Expected<void>::ok();
                 }
 
+                TemporaryReg call_args(*code_obj, args.size() + 1,
+                                       RegisterAlignment::CallFrame);
+                CL_TRY(codegen_node(method_children[0]));
+                CL_TRY(code_obj->emit_star(source_offset, call_args));
                 for(size_t i = 0; i < args.size(); ++i)
                 {
                     CL_TRY(codegen_node(call_argument_value(args[i])));
-                    CL_TRY(code_obj->emit_star(source_offset,
-                                               OutgoingArgReg(1 + i)));
+                    CL_TRY(
+                        code_obj->emit_star(source_offset, call_args + 1 + i));
                 }
                 CL_TRY(code_obj->emit_call_method_attr_positional(
-                    source_offset, OutgoingArgReg(0), constant_idx,
-                    args.size()));
+                    source_offset, call_args, constant_idx, args.size()));
                 return Expected<void>::ok();
             }
 
@@ -1064,18 +1076,22 @@ namespace cl
             uint32_t n_kw_args = n_keyword_call_arguments(args);
             if(n_kw_args > 0)
             {
-                uint32_t n_pos_args = 0;
+                uint32_t n_pos_args = args.size() - n_kw_args;
                 uint32_t kw_arg_idx = 0;
 
                 TemporaryReg keyword_value_regs(
                     *code_obj, std::max<uint32_t>(n_kw_args, 1));
+                TemporaryReg call_args(*code_obj,
+                                       std::max<uint32_t>(n_pos_args, 1),
+                                       RegisterAlignment::CallFrame);
+                n_pos_args = 0;
                 for(int32_t arg: args)
                 {
                     if(is_positional_call_argument(arg))
                     {
                         CL_TRY(codegen_node(call_argument_value(arg)));
                         CL_TRY(code_obj->emit_star(source_offset,
-                                                   OutgoingArgReg(n_pos_args)));
+                                                   call_args + n_pos_args));
                         ++n_pos_args;
                     }
                     else
@@ -1104,19 +1120,20 @@ namespace cl
                 uint8_t keyword_names_idx = CL_TRY(
                     code_obj->allocate_constant(keyword_names.raw_value()));
                 CL_TRY(code_obj->emit_call_keyword(
-                    source_offset, callable_reg, OutgoingArgReg(0),
-                    uint8_t(n_pos_args), keyword_value_regs, uint8_t(n_kw_args),
-                    keyword_names_idx));
+                    source_offset, callable_reg, call_args, uint8_t(n_pos_args),
+                    keyword_value_regs, uint8_t(n_kw_args), keyword_names_idx));
                 return Expected<void>::ok();
             }
 
+            TemporaryReg call_args(*code_obj, std::max<size_t>(args.size(), 1),
+                                   RegisterAlignment::CallFrame);
             for(size_t i = 0; i < args.size(); ++i)
             {
                 CL_TRY(codegen_node(call_argument_value(args[i])));
-                CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(i)));
+                CL_TRY(code_obj->emit_star(source_offset, call_args + i));
             }
-            CL_TRY(code_obj->emit_call_positional(
-                source_offset, callable_reg, OutgoingArgReg(0), args.size()));
+            CL_TRY(code_obj->emit_call_positional(source_offset, callable_reg,
+                                                  call_args, args.size()));
             return Expected<void>::ok();
         }
 
@@ -1467,13 +1484,13 @@ namespace cl
         }
 
         Expected<void> emit_context_exit_call(uint32_t source_offset,
-                                              RegisterIndex manager_reg)
+                                              RegisterIndex manager_reg,
+                                              uint32_t call_args)
         {
             CL_TRY(code_obj->emit_ldar(source_offset, manager_reg));
-            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
+            CL_TRY(code_obj->emit_star(source_offset, call_args));
             CL_TRY(code_obj->emit_call_special_method(
-                source_offset, OutgoingArgReg(0),
-                CL_TRY(exit_method_name_idx()), 3,
+                source_offset, call_args, CL_TRY(exit_method_name_idx()), 3,
                 CL_TRY(context_manager_protocol_type_error_idx()),
                 CL_TRY(context_manager_protocol_message_idx())));
             return Expected<void>::ok();
@@ -1482,15 +1499,15 @@ namespace cl
         Expected<void> emit_context_exit_none_call(uint32_t source_offset,
                                                    RegisterIndex manager_reg)
         {
-            CL_TRY(code_obj->emit_ldar(source_offset, manager_reg));
-            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
+            TemporaryReg call_args(*code_obj, 4, RegisterAlignment::CallFrame);
             for(uint8_t arg_idx = 0; arg_idx < 3; ++arg_idx)
             {
                 CL_TRY(code_obj->emit_lda_none(source_offset));
                 CL_TRY(code_obj->emit_star(source_offset,
-                                           OutgoingArgReg(1 + arg_idx)));
+                                           call_args + 1 + arg_idx));
             }
-            CL_TRY(emit_context_exit_call(source_offset, manager_reg));
+            CL_TRY(
+                emit_context_exit_call(source_offset, manager_reg, call_args));
             return Expected<void>::ok();
         }
 
@@ -1667,13 +1684,16 @@ namespace cl
             TemporaryReg manager_reg(*code_obj);
             CL_TRY(code_obj->emit_star(source_offset, manager_reg));
 
-            CL_TRY(code_obj->emit_ldar(source_offset, manager_reg));
-            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
-            CL_TRY(code_obj->emit_call_special_method(
-                source_offset, OutgoingArgReg(0),
-                CL_TRY(enter_method_name_idx()), 0,
-                CL_TRY(context_manager_protocol_type_error_idx()),
-                CL_TRY(context_manager_protocol_message_idx())));
+            {
+                TemporaryReg call_args(*code_obj, 1,
+                                       RegisterAlignment::CallFrame);
+                CL_TRY(code_obj->emit_ldar(source_offset, manager_reg));
+                CL_TRY(code_obj->emit_star(source_offset, call_args));
+                CL_TRY(code_obj->emit_call_special_method(
+                    source_offset, call_args, CL_TRY(enter_method_name_idx()),
+                    0, CL_TRY(context_manager_protocol_type_error_idx()),
+                    CL_TRY(context_manager_protocol_message_idx())));
+            }
 
             auto codegen_protected_body = [&]() -> Expected<void> {
                 if(item_children.size() == 2)
@@ -1710,6 +1730,8 @@ namespace cl
             CL_TRY(exceptional_target.resolve());
             {
                 TemporaryReg saved_exception(*code_obj);
+                TemporaryReg call_args(*code_obj, 4,
+                                       RegisterAlignment::CallFrame);
                 uint8_t class_name_idx = CL_TRY(
                     code_obj->allocate_constant(interned_string(L"__class__")));
 
@@ -1717,12 +1739,13 @@ namespace cl
                     source_offset, saved_exception));
                 CL_TRY(code_obj->emit_load_attr(source_offset, saved_exception,
                                                 class_name_idx));
-                CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(1)));
+                CL_TRY(code_obj->emit_star(source_offset, call_args + 1));
                 CL_TRY(code_obj->emit_ldar(source_offset, saved_exception));
-                CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(2)));
+                CL_TRY(code_obj->emit_star(source_offset, call_args + 2));
                 CL_TRY(code_obj->emit_lda_none(source_offset));
-                CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(3)));
-                CL_TRY(emit_context_exit_call(source_offset, manager_reg));
+                CL_TRY(code_obj->emit_star(source_offset, call_args + 3));
+                CL_TRY(emit_context_exit_call(source_offset, manager_reg,
+                                              call_args));
                 CL_TRY(code_obj->emit_jump_if_true(source_offset, done_target));
                 CL_TRY(code_obj->emit_ldar(source_offset, saved_exception));
                 CL_TRY(code_obj->emit_raise_unwind(source_offset));
@@ -1977,13 +2000,15 @@ namespace cl
                         L"StopIteration"))));
 
             CL_TRY(loop_start_target.resolve());
-            CL_TRY(code_obj->emit_ldar(source_offset, iterator_reg));
-            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
             {
+                TemporaryReg call_args(*code_obj, 1,
+                                       RegisterAlignment::CallFrame);
+                CL_TRY(code_obj->emit_ldar(source_offset, iterator_reg));
+                CL_TRY(code_obj->emit_star(source_offset, call_args));
                 ExceptionTableRangeBuilder range(code_obj,
                                                  stop_iteration_handler_target);
                 CL_TRY(code_obj->emit_call_special_method(
-                    source_offset, OutgoingArgReg(0), next_constant_idx, 0,
+                    source_offset, call_args, next_constant_idx, 0,
                     not_iterator_type_constant_idx,
                     not_iterator_message_constant_idx));
                 range.close();
@@ -2071,13 +2096,18 @@ namespace cl
             CL_TRY(code_obj->emit_jump(source_offset, fast_loop_start_target));
 
             CL_TRY(generic_fallback_target.resolve());
-            for(size_t i = 0; i < args.size(); ++i)
             {
-                CL_TRY(code_obj->emit_ldar(source_offset, range_regs + 1 + i));
-                CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(i)));
+                TemporaryReg call_args(*code_obj, n_args,
+                                       RegisterAlignment::CallFrame);
+                for(size_t i = 0; i < args.size(); ++i)
+                {
+                    CL_TRY(
+                        code_obj->emit_ldar(source_offset, range_regs + 1 + i));
+                    CL_TRY(code_obj->emit_star(source_offset, call_args + i));
+                }
+                CL_TRY(code_obj->emit_call_positional(source_offset, range_regs,
+                                                      call_args, n_args));
             }
-            CL_TRY(code_obj->emit_call_positional(source_offset, range_regs,
-                                                  OutgoingArgReg(0), n_args));
             uint8_t iter_constant_idx = CL_TRY(
                 code_obj->allocate_constant(interned_string(L"__iter__")));
             uint8_t not_iterable_type_constant_idx =
@@ -2086,11 +2116,15 @@ namespace cl
             uint8_t not_iterable_message_constant_idx =
                 CL_TRY(code_obj->allocate_constant(
                     interned_string(L"object is not iterable")));
-            CL_TRY(code_obj->emit_star(source_offset, OutgoingArgReg(0)));
-            CL_TRY(code_obj->emit_call_special_method(
-                source_offset, OutgoingArgReg(0), iter_constant_idx, 0,
-                not_iterable_type_constant_idx,
-                not_iterable_message_constant_idx));
+            {
+                TemporaryReg call_args(*code_obj, 1,
+                                       RegisterAlignment::CallFrame);
+                CL_TRY(code_obj->emit_star(source_offset, call_args));
+                CL_TRY(code_obj->emit_call_special_method(
+                    source_offset, call_args, iter_constant_idx, 0,
+                    not_iterable_type_constant_idx,
+                    not_iterable_message_constant_idx));
+            }
             CL_TRY(code_obj->emit_star(source_offset, iterator_reg));
             CL_TRY(codegen_iterator_driven_for_loop(source_offset, target_idx,
                                                     body_idx, iterator_reg,
@@ -2667,12 +2701,16 @@ namespace cl
                         uint8_t not_iterable_message_constant_idx =
                             CL_TRY(code_obj->allocate_constant(
                                 interned_string(L"object is not iterable")));
-                        CL_TRY(code_obj->emit_star(source_offset,
-                                                   OutgoingArgReg(0)));
-                        CL_TRY(code_obj->emit_call_special_method(
-                            source_offset, OutgoingArgReg(0), iter_constant_idx,
-                            0, not_iterable_type_constant_idx,
-                            not_iterable_message_constant_idx));
+                        {
+                            TemporaryReg call_args(
+                                *code_obj, 1, RegisterAlignment::CallFrame);
+                            CL_TRY(
+                                code_obj->emit_star(source_offset, call_args));
+                            CL_TRY(code_obj->emit_call_special_method(
+                                source_offset, call_args, iter_constant_idx, 0,
+                                not_iterable_type_constant_idx,
+                                not_iterable_message_constant_idx));
+                        }
                         CL_TRY(
                             code_obj->emit_star(source_offset, iterator_reg));
                         CL_TRY(codegen_iterator_driven_for_loop(

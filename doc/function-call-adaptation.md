@@ -13,7 +13,8 @@ existing positional `CallPositional` hot path into a broad generic slow path.
 The implemented call path now has separate positional and keyword-aware entry
 paths:
 
-- callers lay out positional values in a contiguous outgoing register window;
+- callers lay out positional values in a contiguous temporary call argument
+  span;
 - `CallPositional`, `CallMethodAttrPositional`, and constructor thunks enter ordinary
   `Function` objects through the same frame convention;
 - `CallKeyword` supports explicit caller keywords for ordinary functions and
@@ -95,12 +96,13 @@ CallKeyword callable, first_pos_arg, n_pos_args, first_kw_value, n_kw_args,
             kw_names_const, call_ic
 ```
 
-The positional range is staged in outgoing argument slots because those values
-are already in the right place for the eventual frame entry:
+The positional range is staged in an ABI-aligned temporary call argument span
+because those values are already in the right place for the eventual frame
+entry:
 
 ```text
-a0 = positional value 0
-a1 = positional value 1
+call_arg[0] = positional value 0
+call_arg[1] = positional value 1
 ```
 
 The keyword range is staged separately in ordinary temporary registers:
@@ -112,7 +114,7 @@ r2 = keyword value 1
 
 `kw_names_const` names the keyword values starting at `first_kw_value`. The
 keyword binder copies those values into the mapped parameter slots. Keeping
-keyword sources outside the outgoing argument window avoids source/destination
+keyword sources outside the positional call argument span avoids source/destination
 overlap when keyword order differs from parameter order. For example:
 
 ```python
@@ -314,7 +316,7 @@ commits it to the live cache after validation succeeds. Bad calls therefore do
 not evict a previously valid cache entry.
 
 The warm path avoids name lookup and semantic rediscovery. Positional values are
-already in the outgoing argument window. The plan fills defaults from
+already in the temporary call argument span. The plan fills defaults from
 `default_fill_start_slot` when the adaptation requires defaults, initializes
 `*args` when the adaptation is `Varargs`, copies keyword values to precomputed
 encoded frame registers, and enters the frame.
@@ -378,8 +380,9 @@ starred-call or generic callable protocol work.
 
   Codegen continues to emit `CallPositional` for calls with no keywords. For calls
   with explicit keywords, it evaluates argument values left to right while
-  staging positional values into outgoing argument slots and keyword values into
-  a separate contiguous temporary-register span. Keyword names are stored as a
+  staging positional values into an aligned temporary call argument span and
+  keyword values into a separate contiguous temporary-register span. Keyword
+  names are stored as a
   constant tuple of interned strings and used as the call-site shape key.
 
   Method-call lowering needs a parallel keyword-aware form or a clearly shared

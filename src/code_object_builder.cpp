@@ -227,18 +227,20 @@ namespace cl
     }
 
     CodeObjectBuilder::TemporaryReg::TemporaryReg(CodeObjectBuilder &_builder,
-                                                  uint32_t _n_regs)
-        : builder(&_builder), n_regs(_n_regs),
-          reg(builder->reserve_registers(n_regs))
+                                                  uint32_t _n_regs,
+                                                  RegisterAlignment _alignment)
+        : builder(&_builder), n_regs(_n_regs)
     {
+        reservation = builder->reserve_registers(n_regs, _alignment);
     }
 
     CodeObjectBuilder::TemporaryReg::TemporaryReg(TemporaryReg &&other) noexcept
-        : builder(other.builder), n_regs(other.n_regs), reg(other.reg)
+        : builder(other.builder), n_regs(other.n_regs),
+          reservation(other.reservation)
     {
         other.builder = nullptr;
         other.n_regs = 0;
-        other.reg = 0;
+        other.reservation = {};
     }
 
     CodeObjectBuilder::TemporaryReg::~TemporaryReg()
@@ -247,7 +249,7 @@ namespace cl
         {
             return;
         }
-        builder->release_registers(reg, n_regs);
+        builder->release_registers(reservation);
     }
 
     CodeObjectBuilder::CodeObjectBuilder(
@@ -276,6 +278,22 @@ namespace cl
             return FrameHeaderSize;
         }
         return get_local_scope_ptr()->size();
+    }
+
+    bool CodeObjectBuilder::is_call_frame_aligned_register(
+        uint32_t first_arg_reg) const
+    {
+        int32_t first_arg_encoded_reg = encode_reg(first_arg_reg);
+        int32_t new_fp_reg = first_arg_encoded_reg + 1 - FrameHeaderSizeAboveFp;
+        return (new_fp_reg & 1) == 0;
+    }
+
+    void CodeObjectBuilder::assert_call_args_are_topmost(
+        uint32_t first_arg_reg, uint32_t n_call_arg_regs) const
+    {
+        assert(n_call_arg_regs > 0);
+        assert(is_call_frame_aligned_register(first_arg_reg));
+        assert(first_arg_reg + n_call_arg_regs == temporary_reg);
     }
 
     Expected<uint32_t>
@@ -307,12 +325,6 @@ namespace cl
 
     Expected<uint32_t> CodeObjectBuilder::emit_star(uint32_t source_offset,
                                                     uint32_t reg)
-    {
-        return emit_opcode_reg(source_offset, Bytecode::Star, reg);
-    }
-
-    Expected<uint32_t> CodeObjectBuilder::emit_star(uint32_t source_offset,
-                                                    OutgoingArgReg reg)
     {
         return emit_opcode_reg(source_offset, Bytecode::Star, reg);
     }
@@ -517,14 +529,6 @@ namespace cl
     }
 
     Expected<uint32_t>
-    CodeObjectBuilder::emit_create_tuple(uint32_t source_offset,
-                                         OutgoingArgReg reg, uint8_t n_regs)
-    {
-        return emit_opcode_reg_range(source_offset, Bytecode::CreateTuple, reg,
-                                     n_regs);
-    }
-
-    Expected<uint32_t>
     CodeObjectBuilder::emit_create_list(uint32_t source_offset,
                                         uint32_t first_reg, uint8_t n_regs)
     {
@@ -543,8 +547,9 @@ namespace cl
     Expected<uint32_t>
     CodeObjectBuilder::emit_create_class(uint32_t source_offset,
                                          uint8_t body_constant_idx,
-                                         OutgoingArgReg first_arg_reg)
+                                         uint32_t first_arg_reg)
     {
+        assert_call_args_are_topmost(first_arg_reg, ClassBodyParameterCount);
         return emit_opcode_constant_idx_reg(source_offset,
                                             Bytecode::CreateClass,
                                             body_constant_idx, first_arg_reg);
@@ -581,9 +586,10 @@ namespace cl
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_call_method_attr_positional(
-        uint32_t source_offset, OutgoingArgReg first_arg_reg, uint8_t name_idx,
+        uint32_t source_offset, uint32_t first_arg_reg, uint8_t name_idx,
         uint8_t argc)
     {
+        assert_call_args_are_topmost(first_arg_reg, uint32_t(argc) + 1);
         uint8_t read_cache_idx = CL_TRY(allocate_attribute_read_cache());
         uint8_t call_cache_idx = CL_TRY(allocate_function_call_cache());
         return emit_opcode_reg_constant_idx_cache_idx_argc(
@@ -592,18 +598,16 @@ namespace cl
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_call_method_attr_keyword(
-        uint32_t source_offset, OutgoingArgReg first_arg_reg, uint8_t name_idx,
+        uint32_t source_offset, uint32_t first_arg_reg, uint8_t name_idx,
         uint8_t n_pos_args, uint32_t first_kw_value_reg, uint8_t n_kw_args,
         uint8_t keyword_names_idx)
     {
+        assert_call_args_are_topmost(first_arg_reg, uint32_t(n_pos_args) + 1);
         uint8_t read_cache_idx = CL_TRY(allocate_attribute_read_cache());
         uint8_t call_cache_idx = CL_TRY(allocate_keyword_call_cache());
         uint32_t result = emplace_back(
             source_offset, uint8_t(Bytecode::CallMethodAttrKeyword));
-        uint32_t first_arg_operand_offset = code_obj->code.size();
-        emplace_back(source_offset, first_arg_reg.slot_offset);
-        add_outgoing_arg_relocation(first_arg_operand_offset,
-                                    first_arg_reg.slot_offset);
+        emplace_back(source_offset, encode_reg(first_arg_reg));
         emplace_back(source_offset, name_idx);
         emplace_back(source_offset, read_cache_idx);
         emplace_back(source_offset, call_cache_idx);
@@ -615,10 +619,11 @@ namespace cl
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_call_special_method(
-        uint32_t source_offset, OutgoingArgReg first_arg_reg, uint8_t name_idx,
+        uint32_t source_offset, uint32_t first_arg_reg, uint8_t name_idx,
         uint8_t argc, uint8_t missing_exception_type_idx,
         uint8_t missing_exception_message_idx)
     {
+        assert_call_args_are_topmost(first_arg_reg, uint32_t(argc) + 1);
         uint8_t read_cache_idx = CL_TRY(allocate_attribute_read_cache());
         uint8_t call_cache_idx = CL_TRY(allocate_function_call_cache());
         uint32_t result = CL_TRY(emit_opcode_reg_constant_idx_cache_idx_argc(
@@ -727,9 +732,11 @@ namespace cl
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_call_code_object(
-        uint32_t source_offset, uint8_t code_object_idx,
-        OutgoingArgReg first_arg_reg, uint8_t argc)
+        uint32_t source_offset, uint8_t code_object_idx, uint32_t first_arg_reg,
+        uint8_t argc)
     {
+        assert_call_args_are_topmost(first_arg_reg,
+                                     std::max<uint32_t>(argc, 1));
         return emit_opcode_constant_idx_reg_argc(
             source_offset, Bytecode::CallCodeObject, code_object_idx,
             first_arg_reg, argc);
@@ -788,36 +795,33 @@ namespace cl
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_call_positional(
-        uint32_t source_offset, uint32_t callable_reg,
-        OutgoingArgReg first_arg_reg, uint8_t argc)
+        uint32_t source_offset, uint32_t callable_reg, uint32_t first_arg_reg,
+        uint8_t argc)
     {
+        assert_call_args_are_topmost(first_arg_reg,
+                                     std::max<uint32_t>(argc, 1));
         uint32_t result =
             emplace_back(source_offset, uint8_t(Bytecode::CallPositional));
         uint8_t cache_idx = CL_TRY(allocate_function_call_cache());
         emplace_back(source_offset, encode_reg(callable_reg));
-        uint32_t first_arg_operand_offset = code_obj->code.size();
-        emplace_back(source_offset, first_arg_reg.slot_offset);
-        add_outgoing_arg_relocation(first_arg_operand_offset,
-                                    first_arg_reg.slot_offset);
+        emplace_back(source_offset, encode_reg(first_arg_reg));
         emplace_back(source_offset, argc);
         emplace_back(source_offset, cache_idx);
         return Expected<uint32_t>::ok(result);
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_call_keyword(
-        uint32_t source_offset, uint32_t callable_reg,
-        OutgoingArgReg first_arg_reg, uint8_t n_pos_args,
-        uint32_t first_kw_value_reg, uint8_t n_kw_args,
+        uint32_t source_offset, uint32_t callable_reg, uint32_t first_arg_reg,
+        uint8_t n_pos_args, uint32_t first_kw_value_reg, uint8_t n_kw_args,
         uint8_t keyword_names_idx)
     {
+        assert_call_args_are_topmost(first_arg_reg,
+                                     std::max<uint32_t>(n_pos_args, 1));
         uint32_t result =
             emplace_back(source_offset, uint8_t(Bytecode::CallKeyword));
         uint8_t cache_idx = CL_TRY(allocate_keyword_call_cache());
         emplace_back(source_offset, encode_reg(callable_reg));
-        uint32_t first_arg_operand_offset = code_obj->code.size();
-        emplace_back(source_offset, first_arg_reg.slot_offset);
-        add_outgoing_arg_relocation(first_arg_operand_offset,
-                                    first_arg_reg.slot_offset);
+        emplace_back(source_offset, encode_reg(first_arg_reg));
         emplace_back(source_offset, n_pos_args);
         emplace_back(source_offset, encode_reg(first_kw_value_reg));
         emplace_back(source_offset, n_kw_args);
@@ -895,7 +899,6 @@ namespace cl
         assert(temporary_reg == local_scope_size);
         assert(max_temporary_reg >= local_scope_size);
         code_obj->n_temporaries = max_temporary_reg - local_scope_size;
-        patch_outgoing_arg_relocations();
         finalized = true;
         return Expected<CodeObject *>::ok(code_obj);
     }
@@ -1010,29 +1013,14 @@ namespace cl
         return Expected<uint32_t>::ok(result);
     }
 
-    Expected<uint32_t> CodeObjectBuilder::emit_opcode_constant_idx_reg(
-        uint32_t source_offset, Bytecode c, uint8_t constant_idx,
-        OutgoingArgReg reg)
-    {
-        assert(c != Bytecode::Invalid);
-        uint32_t result = emplace_back(source_offset, uint8_t(c));
-        emplace_back(source_offset, constant_idx);
-        uint32_t operand_offset = code_obj->code.size();
-        emplace_back(source_offset, reg.slot_offset);
-        add_outgoing_arg_relocation(operand_offset, reg.slot_offset);
-        return Expected<uint32_t>::ok(result);
-    }
-
     Expected<uint32_t> CodeObjectBuilder::emit_opcode_constant_idx_reg_argc(
-        uint32_t source_offset, Bytecode c, uint8_t constant_idx,
-        OutgoingArgReg reg, uint8_t argc)
+        uint32_t source_offset, Bytecode c, uint8_t constant_idx, uint32_t reg,
+        uint8_t argc)
     {
         assert(c != Bytecode::Invalid);
         uint32_t result = emplace_back(source_offset, uint8_t(c));
         emplace_back(source_offset, constant_idx);
-        uint32_t operand_offset = code_obj->code.size();
-        emplace_back(source_offset, reg.slot_offset);
-        add_outgoing_arg_relocation(operand_offset, reg.slot_offset);
+        emplace_back(source_offset, encode_reg(reg));
         emplace_back(source_offset, argc);
         return Expected<uint32_t>::ok(result);
     }
@@ -1063,37 +1051,12 @@ namespace cl
     }
 
     Expected<uint32_t>
-    CodeObjectBuilder::emit_opcode_reg(uint32_t source_offset, Bytecode c,
-                                       OutgoingArgReg reg)
-    {
-        assert(c != Bytecode::Invalid);
-        emplace_back(source_offset, uint8_t(c));
-        uint32_t operand_offset = code_obj->code.size();
-        emplace_back(source_offset, reg.slot_offset);
-        add_outgoing_arg_relocation(operand_offset, reg.slot_offset);
-        return Expected<uint32_t>::ok(operand_offset - 1);
-    }
-
-    Expected<uint32_t>
     CodeObjectBuilder::emit_opcode_reg_range(uint32_t source_offset, Bytecode c,
                                              uint32_t reg, uint8_t n_regs)
     {
         assert(c != Bytecode::Invalid);
         uint32_t result = emplace_back(source_offset, uint8_t(c));
         emplace_back(source_offset, encode_reg(reg));
-        emplace_back(source_offset, n_regs);
-        return Expected<uint32_t>::ok(result);
-    }
-
-    Expected<uint32_t>
-    CodeObjectBuilder::emit_opcode_reg_range(uint32_t source_offset, Bytecode c,
-                                             OutgoingArgReg reg, uint8_t n_regs)
-    {
-        assert(c != Bytecode::Invalid);
-        uint32_t result = emplace_back(source_offset, uint8_t(c));
-        uint32_t operand_offset = code_obj->code.size();
-        emplace_back(source_offset, reg.slot_offset);
-        add_outgoing_arg_relocation(operand_offset, reg.slot_offset);
         emplace_back(source_offset, n_regs);
         return Expected<uint32_t>::ok(result);
     }
@@ -1131,15 +1094,12 @@ namespace cl
 
     Expected<uint32_t>
     CodeObjectBuilder::emit_opcode_reg_constant_idx_cache_idx_argc(
-        uint32_t source_offset, Bytecode c, OutgoingArgReg reg,
-        uint8_t constant_idx, uint8_t read_cache_idx, uint8_t call_cache_idx,
-        uint8_t argc)
+        uint32_t source_offset, Bytecode c, uint32_t reg, uint8_t constant_idx,
+        uint8_t read_cache_idx, uint8_t call_cache_idx, uint8_t argc)
     {
         assert(c != Bytecode::Invalid);
         uint32_t result = emplace_back(source_offset, uint8_t(c));
-        uint32_t operand_offset = code_obj->code.size();
-        emplace_back(source_offset, reg.slot_offset);
-        add_outgoing_arg_relocation(operand_offset, reg.slot_offset);
+        emplace_back(source_offset, encode_reg(reg));
         emplace_back(source_offset, constant_idx);
         emplace_back(source_offset, read_cache_idx);
         emplace_back(source_offset, call_cache_idx);
@@ -1226,26 +1186,6 @@ namespace cl
         assert(!finalized);
     }
 
-    void CodeObjectBuilder::patch_outgoing_arg_relocations()
-    {
-        for(const OutgoingArgRelocation &reloc: outgoing_arg_relocations)
-        {
-            set_encoded_reg(
-                reloc.operand_offset,
-                get_outgoing_arg_reg(code_obj->code[reloc.operand_offset]));
-        }
-    }
-
-    void CodeObjectBuilder::add_outgoing_arg_relocation(
-        uint32_t operand_offset, uint32_t outgoing_slot_offset)
-    {
-        assert(outgoing_slot_offset < 256);
-        outgoing_arg_relocations.push_back({operand_offset});
-        code_obj->n_outgoing_call_slots =
-            std::max(code_obj->n_outgoing_call_slots,
-                     round_up_to_abi_alignment(outgoing_slot_offset + 1));
-    }
-
     void CodeObjectBuilder::sync_temporary_reg_base()
     {
         uint32_t base = first_temporary_reg();
@@ -1256,19 +1196,29 @@ namespace cl
         max_temporary_reg = std::max(max_temporary_reg, temporary_reg);
     }
 
-    uint32_t CodeObjectBuilder::reserve_registers(uint32_t n_regs)
+    CodeObjectBuilder::RegisterReservation
+    CodeObjectBuilder::reserve_registers(uint32_t n_regs,
+                                         RegisterAlignment alignment)
     {
         assert_not_finalized();
+        assert(n_regs > 0);
         sync_temporary_reg_base();
-        uint32_t reg = temporary_reg;
-        temporary_reg += n_regs;
+        uint32_t allocated_reg = temporary_reg;
+        uint32_t semantic_reg = temporary_reg;
+        if(alignment == RegisterAlignment::CallFrame &&
+           !is_call_frame_aligned_register(semantic_reg))
+        {
+            ++semantic_reg;
+        }
+        uint32_t allocated_n_regs = semantic_reg - allocated_reg + n_regs;
+        temporary_reg += allocated_n_regs;
         max_temporary_reg = std::max(max_temporary_reg, temporary_reg);
-        return reg;
+        return {allocated_reg, allocated_n_regs, semantic_reg};
     }
 
-    void CodeObjectBuilder::release_registers(uint32_t reg, uint32_t n_regs)
+    void CodeObjectBuilder::release_registers(RegisterReservation reservation)
     {
-        temporary_reg -= n_regs;
-        assert(reg == temporary_reg);
+        temporary_reg -= reservation.allocated_n_regs;
+        assert(reservation.allocated_reg == temporary_reg);
     }
 }  // namespace cl

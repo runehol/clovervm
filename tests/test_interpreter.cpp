@@ -2948,14 +2948,14 @@ TEST(Interpreter, clover_function_entry_adapter_bytecode_shape)
                            "    0 Ldar p0\n"
                            "    2 Star0\n"
                            "    3 Ldar p1\n"
-                           "    5 Star a0\n"
-                           "    7 Ldar p2\n"
-                           "    9 Star a1\n"
-                           "   11 CallPositional r0, {a0..a1}, call_ic[0]\n"
-                           "   16 ReturnToNative\n"
-                           "   17 ReturnExceptionMarkerToNative\n"
+                           "    5 Star2\n"
+                           "    6 Ldar p2\n"
+                           "    8 Star3\n"
+                           "    9 CallPositional r0, {r2..r3}, call_ic[0]\n"
+                           "   14 ReturnToNative\n"
+                           "   15 ReturnExceptionMarkerToNative\n"
                            "Exception table:\n"
-                           "    11..16 -> 17\n";
+                           "    9..14 -> 15\n";
     EXPECT_EQ(expected, actual);
 }
 
