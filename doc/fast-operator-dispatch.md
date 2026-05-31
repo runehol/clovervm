@@ -625,6 +625,56 @@ and has descriptor/binding behavior tied to the type lookup. A cacheable result
 therefore needs enough information to reproduce the first call exactly through a
 `DunderMethodDispatchPlan`.
 
+## Operator Call Continuations
+
+Any cache entry that replays a Python dunder method needs a way to enter Python
+bytecode and then resume the operator protocol when that call returns. Calling
+through a synchronous C++ native/interpreter bridge would be useful for a
+bootstrap implementation, but it is too expensive to be the intended hot
+`DunderMethodCall` path. The VM needs an interpreter-level continuation shape.
+
+One possible design is a compound enter/continue opcode:
+
+```text
+pc[0] = EnterLoadSubscript
+pc[1] = ContinueLoadSubscript
+pc[2...] = operands
+```
+
+Normal bytecode dispatch enters at `pc[0]`. The enter handler owns the fast
+path. If its guards and trusted handler hit, it produces the result and advances
+by the full logical instruction length, skipping `pc[1]` entirely. If it must
+call a Python dunder method, it stores the protocol continuation state and
+enters the callee with a normal return address of `pc + 1`. The return path then
+lands on `ContinueLoadSubscript`, which consumes the continuation state,
+observes the returned value in the accumulator, updates or installs cache state
+when appropriate, and advances by the remaining instruction length.
+
+For protocols with multiple possible calls, such as binary and in-place
+operators, the same continuation byte can be reused repeatedly. The continue
+handler can inspect a returned `NotImplemented`, update the continuation state
+to the next candidate, and enter another dunder call with the same `pc + 1`
+return address. The variable candidate count lives in the continuation state
+machine, not in extra bytecodes.
+
+This keeps the trusted-handler fast path to one opcode dispatch and avoids
+tagging return PCs or checking continuation bits on every function return. It
+does impose bytecode invariants:
+
+- the enter/continue pair is one logical instruction for bytecode scanning,
+  printing, source offsets, and JIT decoding
+- ordinary control flow must target the enter byte, never the continue byte
+- the enter handler must skip the continue byte on every non-call completion
+- the continue handler should assert that valid continuation state is present
+
+This design is interpreter-friendly but may be awkward for a JIT to reproduce
+directly. A first JIT strategy can compile only the enter fast path and side-exit
+to the interpreter on cache miss or arbitrary dunder call. The interpreter then
+handles lookup, the Python call, the `pc + 1` continuation return, and any cache
+installation. Under that model, the JIT only has to understand the compound
+instruction's full length and treat the continue byte as an internal landing pad,
+not as a normal trace entry.
+
 ## Operator Families
 
 The shared cache structure should not hide operator-family differences behind
