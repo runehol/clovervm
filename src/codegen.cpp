@@ -1412,7 +1412,7 @@ namespace cl
         bool node_has_raise_in_current_exception_context(int32_t node_idx) const
         {
             AstKind kind = av.kinds[node_idx];
-            AstChildren children = av.children[node_idx];
+            const AstChildren &children = av.children[node_idx];
 
             switch(kind.node_kind)
             {

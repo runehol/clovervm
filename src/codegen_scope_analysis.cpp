@@ -442,7 +442,7 @@ namespace cl
                 bool augmented_assignment)
             {
                 AstKind target_kind = av.kinds[target_idx];
-                AstChildren target_children = av.children[target_idx];
+                const AstChildren &target_children = av.children[target_idx];
 
                 if(target_kind.node_kind ==
                    AstNodeKind::EXPRESSION_VARIABLE_REFERENCE)
