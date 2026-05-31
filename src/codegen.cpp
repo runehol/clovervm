@@ -289,29 +289,29 @@ namespace cl
         std::vector<RegisterIndex> caught_exception_regs;
         std::vector<CleanupContext> active_cleanups;
 
-        static bool handler_has_type(AstChildren handler_children)
+        static bool handler_has_type(const AstChildren &handler_children)
         {
             return handler_children.size() >= 2;
         }
 
-        static bool handler_has_name(AstChildren handler_children)
+        static bool handler_has_name(const AstChildren &handler_children)
         {
             return handler_children.size() == 3;
         }
 
-        static int32_t handler_type_idx(AstChildren handler_children)
+        static int32_t handler_type_idx(const AstChildren &handler_children)
         {
             assert(handler_has_type(handler_children));
             return handler_children[0];
         }
 
-        static int32_t handler_name_idx(AstChildren handler_children)
+        static int32_t handler_name_idx(const AstChildren &handler_children)
         {
             assert(handler_has_name(handler_children));
             return handler_children[1];
         }
 
-        static int32_t handler_body_idx(AstChildren handler_children)
+        static int32_t handler_body_idx(const AstChildren &handler_children)
         {
             return handler_children.back();
         }
