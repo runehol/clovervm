@@ -646,8 +646,12 @@ namespace cl
     CodeObjectBuilder::emit_load_subscript(uint32_t source_offset,
                                            uint32_t receiver_reg)
     {
-        return emit_opcode_reg(source_offset, Bytecode::LoadSubscript,
-                               receiver_reg);
+        uint8_t cache_idx = CL_TRY(allocate_get_item_cache());
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::LoadSubscript));
+        emplace_back(source_offset, encode_reg(receiver_reg));
+        emplace_back(source_offset, cache_idx);
+        return Expected<uint32_t>::ok(result);
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_store_subscript(

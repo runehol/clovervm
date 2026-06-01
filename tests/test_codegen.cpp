@@ -1298,8 +1298,13 @@ TEST(Codegen, dict_literal_uses_createdict_with_contiguous_register_pairs)
 
 TEST(Codegen, subscript_load_uses_receiver_register_and_accumulator_key)
 {
+    test::VmTestContext test_context;
     const wchar_t *test_case = L"def get(obj, idx):\n"
                                L"    return obj[idx]\n";
+    CodeObject *module_code = test_context.compile_file(test_case);
+    CodeObject *function_code =
+        module_code->constant_table[0].value().get_ptr<CodeObject>();
+    ASSERT_EQ(1u, function_code->get_item_caches.size());
 
     std::string expected =
         "Code object:\n"
@@ -1308,13 +1313,13 @@ TEST(Codegen, subscript_load_uses_receiver_register_and_accumulator_key)
         "    5 Return\n"
         "Constant 0: Code object:\n"
         "    0 Ldar p1\n"
-        "    2 LoadSubscript p0\n"
-        "    4 Return\n"
-        "    5 LdaNone\n"
-        "    6 Return\n"
+        "    2 LoadSubscript p0, get_item_ic[0]\n"
+        "    5 Return\n"
+        "    6 LdaNone\n"
+        "    7 Return\n"
         "\n"
         "Constant 1: \"get\"\n";
-    std::string actual = bytecode_str_from_file(test_case);
+    std::string actual = fmt::to_string(*module_code);
 
     EXPECT_EQ(expected, actual);
 }
@@ -1374,11 +1379,11 @@ TEST(Codegen, subscript_augmented_assignment_evaluates_receiver_and_key_once)
         "    5 Return\n"
         "Constant 0: Code object:\n"
         "    0 Ldar p1\n"
-        "    2 LoadSubscript p0\n"
-        "    4 AddSmi 1\n"
-        "    6 StoreSubscript p0, p1\n"
-        "    9 LdaNone\n"
-        "   10 Return\n"
+        "    2 LoadSubscript p0, get_item_ic[0]\n"
+        "    5 AddSmi 1\n"
+        "    7 StoreSubscript p0, p1\n"
+        "   10 LdaNone\n"
+        "   11 Return\n"
         "\n"
         "Constant 1: \"bump\"\n";
     std::string actual = bytecode_str_from_file(test_case);

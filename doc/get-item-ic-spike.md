@@ -252,6 +252,12 @@ Checkpoint:
 
 - Existing get-item behavior is unchanged when the cache is empty or disabled.
 
+Status: done in the first Stage 3 implementation. `LoadSubscript` now carries
+one `get_item_ic` operand allocated from `CodeObject::get_item_caches`.
+Disassembly prints the new cache operand, and the interpreter reads but does
+not use the cache index yet. Runtime behavior remains on the existing
+`load_subscript` helper.
+
 ### Stage 4: Implement Miss-Time Lookup Recording
 
 - On miss, perform the same dunder-method lookup the generic get-item path uses.
