@@ -2860,8 +2860,10 @@ namespace cl
 
     static INTERP_CC Value op_load_subscript(PARAMS)
     {
-        START(2);
+        START(3);
         int8_t reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        (void)cache_idx;
         accumulator = load_subscript(fp[reg], accumulator);
         if(unlikely(accumulator.is_exception_marker()))
         {
