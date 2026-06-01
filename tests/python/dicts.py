@@ -1,6 +1,8 @@
 key = "alpha"
 items = {key: 4, "beta": 7}
 assert items[key] == 4
+assert items.__getitem__(key) == items[key]
+assert items.__getitem__("beta") == items["beta"]
 
 items["beta"] = 11
 assert items["beta"] == 11

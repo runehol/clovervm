@@ -171,6 +171,13 @@ namespace cl
         return dict->get_item(key);
     }
 
+    static Value native_dict_getitem(ThreadState *thread, Value self, Value key)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"__getitem__"));
+        CL_PROPAGATE_EXCEPTION(require_string_key(key));
+        return self.get_ptr<Dict>()->get_item(key);
+    }
+
     static Value native_dict_keys(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"keys"));
@@ -297,6 +304,7 @@ namespace cl
         };
         install(L"clear", native_dict_clear);
         install(L"copy", native_dict_copy);
+        install(L"__getitem__", native_dict_getitem);
         install(L"get", native_dict_get,
                 Optional<TValue<Tuple>>::some(
                     make_single_default(vm, Value::None())));

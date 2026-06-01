@@ -4,6 +4,7 @@ assert s[1] == "l"
 assert s[-1] == "r"
 assert len(s[0]) == 1
 assert s.__getitem__(2) == "o"
+assert s.__getitem__(-1) == s[-1]
 
 assert "Clover VM".lower() == "clover vm"
 assert "Clover VM".upper() == "CLOVER VM"
