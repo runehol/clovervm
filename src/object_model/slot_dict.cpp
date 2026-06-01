@@ -78,6 +78,19 @@ namespace cl
             static_cast<int64_t>(self.get_ptr<SlotDict>()->size()));
     }
 
+    static Value native_slotdict_getitem(ThreadState *thread, Value self,
+                                         Value key)
+    {
+        if(!can_convert_to<SlotDict>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError",
+                L"slotdict.__getitem__ expects a slotdict receiver");
+        }
+
+        return self.get_ptr<SlotDict>()->get_item(key);
+    }
+
     void install_slotdict_class_methods(VirtualMachine *vm)
     {
         BuiltinIntrinsicMethod methods[] = {
@@ -87,6 +100,8 @@ namespace cl
                                      L"Return repr(self)."),
             builtin_intrinsic_method(L"__len__", native_slotdict_len,
                                      L"Return len(self)."),
+            builtin_intrinsic_method(L"__getitem__", native_slotdict_getitem,
+                                     L"Return self[key]."),
         };
         unwrap_bootstrap_expected(
             vm,

@@ -178,7 +178,7 @@ Stage 1 findings:
     `get_or_create_mro_shape_and_contents_validity_cell()`.
   - `src/class_object.cpp` invalidates these cells on class contents and MRO
     shape changes, including attached child-MRO dependencies.
-- Builtin container `__getitem__` status:
+- Builtin container `__getitem__` status at Stage 1:
   - `src/str.cpp` already exposes `str.__getitem__` through
     `native_str_getitem`.
   - `src/list.cpp`, `src/tuple.cpp`, and `src/dict.cpp` expose several builtin
@@ -194,8 +194,6 @@ Stage 1 findings:
   `dict` only if the spike needs broader coverage.
 - Expose each selected builtin container's existing native subscription behavior
   through its `__getitem__` special method.
-- Preserve current error behavior for out-of-range indexes, unsupported keys,
-  and pending exceptions.
 - Do not move existing direct opcode fast paths behind the protocol cache yet.
   This spike can call builtin `__getitem__` through tests or cache-miss paths
   without completing the full migration to protocol-selected trusted handlers.
@@ -207,6 +205,11 @@ Checkpoint:
   builtin cases.
 - The builtin method is visible to dunder-method lookup so the get-item IC can
   cache the lookup fact.
+
+Status: done in `6e3a5d90`. The spike selected the full currently supported
+subscription builtin set: `list`, `tuple`, `str`, `dict`, and `slotdict`.
+Existing direct subscript fast paths remain in place, and no trusted-handler
+metadata was added.
 
 ### Stage 2: Define The Cache Payload
 

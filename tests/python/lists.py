@@ -5,6 +5,8 @@ assert xs[2] == 4
 
 xs = [4, 7, 9]
 assert xs[1] == 7
+assert xs.__getitem__(1) == xs[1]
+assert xs.__getitem__(-1) == xs[-1]
 
 xs[1] = 11
 assert xs[1] == 11

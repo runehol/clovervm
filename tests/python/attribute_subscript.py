@@ -20,3 +20,7 @@ assert obj.lst[1] == 11
 
 obj.lst[1] += 5
 assert obj.lst[1] == 16
+
+slotdict = obj.__dict__
+assert slotdict.__getitem__("value") == slotdict["value"]
+assert slotdict.__getitem__("lst") == slotdict["lst"]

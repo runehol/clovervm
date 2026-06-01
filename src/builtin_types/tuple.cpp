@@ -85,6 +85,21 @@ namespace cl
         return Value::None();
     }
 
+    static Value native_tuple_getitem(ThreadState *thread, Value self,
+                                      Value index_value)
+    {
+        if(!can_convert_to<Tuple>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError", L"tuple.__getitem__ expects a tuple receiver");
+        }
+
+        int64_t py_idx = 0;
+        CL_PROPAGATE_EXCEPTION(require_smi_index(
+            index_value, L"tuple indices must be integers", py_idx));
+        return self.get_ptr<Tuple>()->get_item(py_idx);
+    }
+
     static size_t normalize_tuple_search_bound(int64_t py_idx, size_t size)
     {
         int64_t normalized = py_idx;
@@ -174,6 +189,8 @@ namespace cl
                                      L"Return repr(self)."),
             builtin_intrinsic_method(L"__len__", native_tuple_len,
                                      L"Return len(self)."),
+            builtin_intrinsic_method(L"__getitem__", native_tuple_getitem,
+                                     L"Return self[index]."),
             builtin_intrinsic_method(L"__iter__", native_tuple_iter,
                                      L"Implement iter(self)."),
             builtin_intrinsic_method(L"__add__", native_tuple_add,
