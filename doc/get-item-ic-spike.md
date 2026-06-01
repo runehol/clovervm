@@ -104,6 +104,89 @@ Checkpoint:
 - Write down the exact files and helper functions the spike will touch.
 - Do not change bytecode format until the cache payload and call path are clear.
 
+Stage 1 findings:
+
+- Bytecode definition and printing:
+  - `src/bytecode.h` defines `Bytecode::LoadSubscript`,
+    `Bytecode::StoreSubscript`, and `Bytecode::DelSubscript`.
+  - `src/code_object_print.h` prints `LoadSubscript` as a two-byte
+    opcode/register instruction today.
+- Bytecode emission:
+  - `src/code_object_builder.cpp::emit_load_subscript` currently emits
+    `Bytecode::LoadSubscript` through `emit_opcode_reg`.
+  - `src/code_object_builder.h` already has cache allocation patterns for
+    attribute, module-global, function-call, and keyword-call ICs.
+  - New get-item cache allocation should follow the existing
+    `allocate_*_cache()` pattern and keep the cache index as a `uint8_t`
+    operand unless the spike finds a real reason to widen it.
+- Codegen entry points:
+  - `src/codegen.cpp::codegen_subscript_assignment`,
+    `codegen_subscript_target_delete`, and expression lowering around
+    `emit_load_subscript` are the places that will observe any bytecode operand
+    shape change.
+- Interpreter entry point:
+  - `src/interpreter.cpp::op_load_subscript` is a hot opcode handler with
+    `START(2)`. It currently calls `load_subscript(fp[reg], accumulator)`,
+    propagates pending exceptions, reports `not_present` as a subscript error,
+    and completes synchronously.
+  - Store/delete subscription use sibling handlers, but they are out of scope
+    for this spike.
+- Current subscription helpers:
+  - `src/subscript.h::load_subscript_fast` handles exact `list[smi]`,
+    `tuple[smi]`, `dict[key]`, and `slotdict[key]` directly before the slow
+    path.
+  - `src/subscript.cpp::load_subscript_slow` handles list, tuple, string, dict,
+    and slotdict native-layout cases. It does not perform dunder-method lookup
+    for user objects today; unknown receivers return `Value::not_present()`.
+  - This means the first IC spike needs a new get-item protocol path rather
+    than merely caching the existing slow helper.
+- Existing special-method lookup and call machinery:
+  - `src/attr.cpp::resolve_special_method_read_descriptor` performs
+    special-method lookup through `type(obj)`/MRO and uses
+    `ClassObject::get_or_create_mro_shape_and_contents_validity_cell()` when
+    the result is cacheable.
+  - `src/attr.cpp::load_method_from_plan` / `load_special_method` replay
+    cacheable lookup plans and bind function receivers.
+  - `src/interpreter.cpp::op_call_special_method` and
+    `op_call_special_method_slow` are the best existing model for
+    function-shaped special-method calls with both an attribute-read IC and a
+    `FunctionCallInlineCache`.
+  - That opcode enters a callee frame and returns after the full call
+    instruction length. `LoadSubscript` currently has no such call/return
+    shape, so Stage 2 must decide whether the spike uses a synchronous helper,
+    reuses part of this machinery, or temporarily accepts a narrower replay
+    path.
+- Code object cache storage and lifetime:
+  - `src/code_object.h::CodeObject` owns vectors for attribute, module-global,
+    function-call, and keyword-call caches.
+  - `src/code_object.cpp::CodeObject::dealloc` clears attribute and
+    module-global caches and resets function-call caches.
+  - `FunctionCallInlineCache` stores raw `Function *`, `CodeObject *`, and
+    `ValidityCell *` pointers. A get-item cache that stores `Value` payloads
+    must make GC/refcount visibility explicit rather than copying that raw
+    pointer pattern blindly.
+- Operand shape API:
+  - `src/thread_state.h::shape_of_value` returns heap-object shapes or inline
+    value shapes.
+  - `src/thread_state.h::class_of_value` returns
+    `shape_of_value(value)->get_class()`.
+  - `src/virtual_machine.h::shape_for_inline_value` covers SMI, bool, None,
+    NotImplemented, and Ellipsis inline values.
+- Lookup validity API:
+  - `src/class_object.h` exposes
+    `current_mro_shape_and_contents_validity_cell()` and
+    `get_or_create_mro_shape_and_contents_validity_cell()`.
+  - `src/class_object.cpp` invalidates these cells on class contents and MRO
+    shape changes, including attached child-MRO dependencies.
+- Builtin container `__getitem__` status:
+  - `src/str.cpp` already exposes `str.__getitem__` through
+    `native_str_getitem`.
+  - `src/list.cpp`, `src/tuple.cpp`, and `src/dict.cpp` expose several builtin
+    methods, but do not currently expose `__getitem__`.
+  - Existing native list/tuple/dict subscription behavior lives in
+    `src/subscript.h`, `src/subscript.cpp`, and the container methods such as
+    `List::get_item` / `Tuple::get_item` / `Dict::get_item`.
+
 ### Stage 1.5: Add Minimal Builtin `__getitem__` Methods
 
 - Pick the smallest builtin set needed to exercise the cache. Start with one
