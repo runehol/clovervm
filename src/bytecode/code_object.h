@@ -172,6 +172,26 @@ namespace cl
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
     };
 
+    struct GetItemInlineCache
+    {
+        AttributeReadInlineCache method_read_cache;
+        Shape *key_shape = nullptr;
+        FunctionCallInlineCache call_cache;
+
+        bool occupied() const
+        {
+            return method_read_cache.receiver_shape != nullptr &&
+                   key_shape != nullptr;
+        }
+
+        void clear()
+        {
+            method_read_cache.clear();
+            key_shape = nullptr;
+            call_cache = FunctionCallInlineCache{};
+        }
+    };
+
     struct KeywordCallInlineCache
     {
         Value guard_value = Value::not_present();
@@ -263,6 +283,7 @@ namespace cl
         std::vector<ModuleGlobalMutationInlineCache>
             module_global_mutation_caches;
         std::vector<FunctionCallInlineCache> function_call_caches;
+        std::vector<GetItemInlineCache> get_item_caches;
         std::vector<KeywordCallInlineCache> keyword_call_caches;
         std::vector<NativeFunctionTarget> native_function_targets;
         std::vector<ExceptionTableEntry> exception_table;

@@ -956,6 +956,15 @@ namespace cl
         return Expected<uint8_t>::ok(encoded_idx);
     }
 
+    Expected<uint8_t> CodeObjectBuilder::allocate_get_item_cache()
+    {
+        uint32_t idx = code_obj->get_item_caches.size();
+        uint8_t encoded_idx =
+            CL_TRY(check_u8_operand_index(idx, L"get-item cache table"));
+        code_obj->get_item_caches.emplace_back();
+        return Expected<uint8_t>::ok(encoded_idx);
+    }
+
     Expected<uint8_t> CodeObjectBuilder::allocate_keyword_call_cache()
     {
         uint32_t idx = code_obj->keyword_call_caches.size();

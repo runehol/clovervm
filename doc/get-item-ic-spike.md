@@ -230,6 +230,16 @@ Checkpoint:
 - The payload can represent "cacheable function-shaped method" and
   "uncacheable" without inventing descriptor-general behavior.
 
+Status: done in the first Stage 2 implementation. The spike uses one unified
+`GetItemInlineCache` entry on `CodeObject`, with an embedded
+`AttributeReadInlineCache` for the selected `__getitem__` lookup, an explicit
+key-shape guard, and an embedded `FunctionCallInlineCache` for replaying the
+selected function-shaped method call. This keeps get-item caches in their own
+code-object table while reusing the existing attribute-read and function-call
+cache payloads internally. The entry does not store an arbitrary callable
+`Value`, so Stage 2 does not add new code-object GC/refcount tracing
+requirements.
+
 ### Stage 3: Thread A Cache Index Through Bytecode
 
 - Add a cache index operand to get-item bytecode forms that can invoke

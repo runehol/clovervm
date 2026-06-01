@@ -45,6 +45,10 @@ namespace cl
         {
             cache = FunctionCallInlineCache{};
         }
+        for(GetItemInlineCache &cache: code_object->get_item_caches)
+        {
+            cache.clear();
+        }
 
         code_object->~CodeObject();
     }
