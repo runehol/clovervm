@@ -1,11 +1,11 @@
 #include <benchmark/benchmark.h>
 
-#include "code_object.h"
+#include "bytecode/code_object.h"
+#include "compiler/parser.h"
 #include "cpp_benchmarks.h"
-#include "parser.h"
-#include "thread_state.h"
-#include "value.h"
-#include "virtual_machine.h"
+#include "object_model/value.h"
+#include "runtime/thread_state.h"
+#include "runtime/virtual_machine.h"
 #include <chrono>
 #include <cstdint>
 #include <cstdio>

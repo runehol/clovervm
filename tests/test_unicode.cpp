@@ -1,6 +1,6 @@
-#include "str.h"
+#include "builtin_types/str.h"
+#include "builtin_types/unicode.h"
 #include "test_helpers.h"
-#include "unicode.h"
 #include <gtest/gtest.h>
 
 using namespace cl;

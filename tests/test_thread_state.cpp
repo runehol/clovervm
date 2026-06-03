@@ -1,11 +1,11 @@
-#include "code_object_builder.h"
+#include "bytecode/code_object_builder.h"
 #include "test_helpers.h"
 
-#include "exception_object.h"
-#include "module_object.h"
-#include "owned.h"
-#include "refcount.h"
-#include "str.h"
+#include "builtin_types/module_object.h"
+#include "builtin_types/str.h"
+#include "object_model/owned.h"
+#include "object_model/refcount.h"
+#include "runtime/exception_object.h"
 
 #include <gtest/gtest.h>
 

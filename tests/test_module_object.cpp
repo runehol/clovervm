@@ -1,12 +1,12 @@
 #include "build_config.h"
-#include "dict.h"
-#include "list.h"
-#include "module_object.h"
-#include "shape.h"
-#include "str.h"
+#include "builtin_types/dict.h"
+#include "builtin_types/list.h"
+#include "builtin_types/module_object.h"
+#include "builtin_types/str.h"
+#include "object_model/shape.h"
+#include "object_model/validity_cell.h"
+#include "runtime/thread_state.h"
 #include "test_helpers.h"
-#include "thread_state.h"
-#include "validity_cell.h"
 #include <cassert>
 #include <gtest/gtest.h>
 

@@ -1,0 +1,62 @@
+#include "builtin_types/list_iterator.h"
+#include "object_model/class_object.h"
+#include "object_model/native_function.h"
+#include "runtime/thread_state.h"
+#include "runtime/virtual_machine.h"
+
+namespace cl
+{
+    static Value native_list_iterator_iter(ThreadState *thread, Value self)
+    {
+        (void)CL_TRY(TValue<ListIterator>::from_value_or_raise(
+            self, L"TypeError",
+            L"list_iterator.__iter__ expects a list_iterator receiver"));
+        return self;
+    }
+
+    static Value native_list_iterator_next(ThreadState *thread, Value self)
+    {
+        TValue<ListIterator> iterator_value =
+            CL_TRY(TValue<ListIterator>::from_value_or_raise(
+                self, L"TypeError",
+                L"list_iterator.__next__ expects a list_iterator receiver"));
+        ListIterator *iterator = iterator_value.extract();
+        int64_t index_smi = iterator->index.extract();
+        assert(index_smi >= 0);
+        size_t index = static_cast<size_t>(index_smi);
+        List *list = iterator->list.extract();
+        if(index >= list->size())
+        {
+            return active_thread()->set_pending_stop_iteration_no_value();
+        }
+
+        iterator->index =
+            TValue<SMI>::from_smi(static_cast<int64_t>(index + 1));
+        return list->item_unchecked(index);
+    }
+
+    BuiltinClassDefinition make_list_iterator_class(VirtualMachine *vm)
+    {
+        static constexpr NativeLayoutId native_layout_ids[] = {
+            NativeLayoutId::ListIterator};
+        BuiltinClassMethod methods[] = {
+            {vm->get_or_create_interned_string_value(L"__iter__"),
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, native_list_iterator_iter),
+                 "creating intrinsic function")
+                 .raw_value()},
+            {vm->get_or_create_interned_string_value(L"__next__"),
+             unwrap_bootstrap_expected(
+                 vm, make_intrinsic_function(vm, native_list_iterator_next),
+                 "creating intrinsic function")
+                 .raw_value()},
+        };
+        ClassObject *cls = ClassObject::make_builtin_class<ListIterator>(
+            vm->get_or_create_interned_string_value(L"list_iterator"),
+            ListIterator::native_static_release_count(), methods,
+            std::size(methods), vm->object_class());
+        return builtin_class_definition(cls, native_layout_ids,
+                                        BuiltinsVisibility::Internal);
+    }
+
+}  // namespace cl

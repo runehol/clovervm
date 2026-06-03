@@ -1,0 +1,16 @@
+#ifndef CL_INTERPRETER_H
+#define CL_INTERPRETER_H
+
+#include "object_model/value.h"
+#include <cstdint>
+
+namespace cl
+{
+    class CodeObject;
+    class ThreadState;
+
+    Value run_interpreter(Value *stack_frame, CodeObject *code_object,
+                          uint32_t start_pc, ThreadState *thread);
+}  // namespace cl
+
+#endif  // CL_INTERPRETER_H

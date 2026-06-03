@@ -1,8 +1,8 @@
-#include "refcount.h"
+#include "builtin_types/tuple.h"
+#include "memory/thread_local_heap.h"
+#include "object_model/refcount.h"
+#include "object_model/validity_cell.h"
 #include "test_helpers.h"
-#include "thread_local_heap.h"
-#include "tuple.h"
-#include "validity_cell.h"
 
 #include <gtest/gtest.h>
 #include <new>

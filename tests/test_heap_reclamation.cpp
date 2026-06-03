@@ -1,13 +1,13 @@
 #include "test_helpers.h"
 
-#include "global_heap.h"
-#include "heap_reclamation.h"
-#include "module_object.h"
-#include "refcount.h"
-#include "shape.h"
-#include "tuple.h"
-#include "validity_cell.h"
-#include "vm_array_backing.h"
+#include "builtin_types/module_object.h"
+#include "builtin_types/tuple.h"
+#include "memory/global_heap.h"
+#include "memory/heap_reclamation.h"
+#include "object_model/refcount.h"
+#include "object_model/shape.h"
+#include "object_model/validity_cell.h"
+#include "object_model/vm_array_backing.h"
 
 #include <gtest/gtest.h>
 

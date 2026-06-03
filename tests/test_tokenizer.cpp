@@ -1,9 +1,9 @@
-#include "compilation_unit.h"
-#include "exception_object.h"
-#include "str.h"
+#include "builtin_types/str.h"
+#include "compiler/compilation_unit.h"
+#include "compiler/token_print.h"
+#include "compiler/tokenizer.h"
+#include "runtime/exception_object.h"
 #include "test_helpers.h"
-#include "token_print.h"
-#include "tokenizer.h"
 #include <gtest/gtest.h>
 #include <vector>
 

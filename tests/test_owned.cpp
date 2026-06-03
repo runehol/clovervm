@@ -1,9 +1,9 @@
-#include "owned.h"
-#include "scope.h"
-#include "str.h"
+#include "builtin_types/str.h"
+#include "compiler/scope.h"
+#include "object_model/owned.h"
+#include "object_model/typed_value.h"
+#include "runtime/thread_state.h"
 #include "test_helpers.h"
-#include "thread_state.h"
-#include "typed_value.h"
 #include <gtest/gtest.h>
 #include <type_traits>
 #include <utility>

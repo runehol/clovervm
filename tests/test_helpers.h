@@ -1,18 +1,18 @@
 #ifndef CL_TEST_HELPERS_H
 #define CL_TEST_HELPERS_H
 
-#include "code_object.h"
-#include "compilation_unit.h"
-#include "exception_object.h"
-#include "module_object.h"
-#include "parser.h"
-#include "str.h"
-#include "thread_state.h"
-#include "token.h"
-#include "tokenizer.h"
-#include "typed_value.h"
-#include "value.h"
-#include "virtual_machine.h"
+#include "builtin_types/module_object.h"
+#include "builtin_types/str.h"
+#include "bytecode/code_object.h"
+#include "compiler/compilation_unit.h"
+#include "compiler/parser.h"
+#include "compiler/token.h"
+#include "compiler/tokenizer.h"
+#include "object_model/typed_value.h"
+#include "object_model/value.h"
+#include "runtime/exception_object.h"
+#include "runtime/thread_state.h"
+#include "runtime/virtual_machine.h"
 #include <gtest/gtest.h>
 #include <string>
 

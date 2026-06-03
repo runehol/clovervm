@@ -1,7 +1,7 @@
-#include "scope.h"
-#include "str.h"
+#include "builtin_types/str.h"
+#include "compiler/scope.h"
+#include "runtime/thread_state.h"
 #include "test_helpers.h"
-#include "thread_state.h"
 #include <gtest/gtest.h>
 
 using namespace cl;

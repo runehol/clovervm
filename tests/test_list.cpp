@@ -1,10 +1,10 @@
-#include "exception_object.h"
-#include "list.h"
-#include "owned.h"
-#include "str.h"
+#include "builtin_types/list.h"
+#include "builtin_types/str.h"
+#include "object_model/owned.h"
+#include "object_model/typed_value.h"
+#include "runtime/exception_object.h"
+#include "runtime/thread_state.h"
 #include "test_helpers.h"
-#include "thread_state.h"
-#include "typed_value.h"
 #include <gtest/gtest.h>
 #include <stdexcept>
 

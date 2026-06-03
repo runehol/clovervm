@@ -67,7 +67,7 @@ Implemented pieces used by the import design:
 - `CL_STDLIB_DIR` is an absolute build-configured path to `stdlib/`.
 - `CL_BUILD_STDLIB_DIR` is an absolute build-configured path to generated or
   compiled stdlib artifacts under the build tree.
-- Trusted VM bootstrap code stays in `src/builtins.py`; ordinary importable
+- Trusted VM bootstrap code stays in `src/bootstrap/builtins.py`; ordinary importable
   system modules live under `stdlib/`.
 - `__main__` is created as a real module, receives the standard entry-module
   metadata, and is inserted into `sys.modules`.

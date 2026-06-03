@@ -1,0 +1,26 @@
+#ifndef CL_TOKENIZER_H
+#define CL_TOKENIZER_H
+
+#include "compiler/token.h"
+#include "object_model/typed_value.h"
+#include <string_view>
+
+namespace cl
+{
+    struct CompilationUnit;
+    Expected<TokenVector> tokenize(CompilationUnit &cu);
+
+    std::wstring_view string_for_name_token(const CompilationUnit &cu,
+                                            uint32_t offset);
+    std::wstring_view string_for_int_number_token(const CompilationUnit &cu,
+                                                  uint32_t offset);
+    std::wstring_view string_for_float_number_token(const CompilationUnit &cu,
+                                                    uint32_t offset);
+    std::wstring_view string_for_number_token(const CompilationUnit &cu,
+                                              uint32_t offset);
+    std::wstring_view string_for_string_token(const CompilationUnit &cu,
+                                              uint32_t offset);
+
+}  // namespace cl
+
+#endif  // CL_TOKENIZER_H

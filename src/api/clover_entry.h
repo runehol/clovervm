@@ -1,0 +1,20 @@
+#ifndef CL_CLOVER_ENTRY_H
+#define CL_CLOVER_ENTRY_H
+
+#include "object_model/typed_value.h"
+#include <cstdint>
+
+namespace cl
+{
+    class CodeObject;
+    class VirtualMachine;
+
+    constexpr uint32_t MaxCloverFunctionEntryAdapterArgs = 7;
+
+    Expected<CodeObject *>
+    make_clover_function_entry_adapter_code_object(VirtualMachine *vm,
+                                                   uint32_t n_args);
+
+}  // namespace cl
+
+#endif  // CL_CLOVER_ENTRY_H

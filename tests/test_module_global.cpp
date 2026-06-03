@@ -1,13 +1,13 @@
-#include "class_object.h"
-#include "code_object_builder.h"
-#include "exception_object.h"
-#include "module_global.h"
-#include "module_object.h"
-#include "shape.h"
-#include "str.h"
+#include "builtin_types/module_object.h"
+#include "builtin_types/str.h"
+#include "bytecode/code_object_builder.h"
+#include "import_system/module_global.h"
+#include "object_model/class_object.h"
+#include "object_model/shape.h"
+#include "object_model/validity_cell.h"
+#include "runtime/exception_object.h"
+#include "runtime/thread_state.h"
 #include "test_helpers.h"
-#include "thread_state.h"
-#include "validity_cell.h"
 #include <cstdint>
 #include <gtest/gtest.h>
 

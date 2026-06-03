@@ -1,11 +1,11 @@
-#include "class_object.h"
-#include "code_object_builder.h"
-#include "exception_object.h"
-#include "exception_propagation.h"
-#include "module_object.h"
+#include "builtin_types/module_object.h"
+#include "bytecode/code_object_builder.h"
+#include "object_model/class_object.h"
+#include "runtime/exception_object.h"
+#include "runtime/exception_propagation.h"
+#include "runtime/thread_state.h"
+#include "runtime/virtual_machine.h"
 #include "test_helpers.h"
-#include "thread_state.h"
-#include "virtual_machine.h"
 #include <gtest/gtest.h>
 
 using namespace cl;
