@@ -142,3 +142,9 @@ code, but every interpreter-visible value must be materializable as a normal
 - exact native-stack switching ABI for managed-to-native calls;
 - exact native-to-managed wrapper entry ABI;
 - cross-architecture register mapping, especially x86-64.
+
+## References
+
+- LLVM's AArch64 frame lowering implementation is the reference point for
+  native AArch64 stack-frame convention details:
+  [AArch64FrameLowering.cpp](https://github.com/llvm/llvm-project/blob/main/llvm/lib/Target/AArch64/AArch64FrameLowering.cpp).

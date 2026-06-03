@@ -35,6 +35,10 @@ registers, calls the native C++ target on the native stack, and returns through
 [native-managed-boundaries.md](native-managed-boundaries.md) for native thunk
 and native-to-managed call boundary planning.
 
+For native AArch64 stack-frame convention details, use LLVM's frame lowering
+implementation as the reference point:
+[AArch64FrameLowering.cpp](https://github.com/llvm/llvm-project/blob/main/llvm/lib/Target/AArch64/AArch64FrameLowering.cpp).
+
 ## Native Interpreter State
 
 The CloverVM frame layout is only part of the calling convention. The threaded interpreter also passes its live execution state as native function parameters:
