@@ -710,7 +710,7 @@ operator subcase, not a separate top-level operator family.
 | `lhs % rhs` | `lhs.__mod__(rhs)` | `rhs.__rmod__(lhs)` | `lhs.__imod__(rhs)` |
 | `divmod(lhs, rhs)` | `lhs.__divmod__(rhs)` | `rhs.__rdivmod__(lhs)` | none |
 | `lhs ** rhs` | `lhs.__pow__(rhs)` | `rhs.__rpow__(lhs)` | `lhs.__ipow__(rhs)` |
-| `pow(lhs, rhs, mod)` | `lhs.__pow__(rhs, mod)` | none | none |
+| `pow(lhs, rhs, mod)` | `lhs.__pow__(rhs, mod)` | `rhs.__rpow__(lhs, mod)` | none |
 | `lhs << rhs` | `lhs.__lshift__(rhs)` | `rhs.__rlshift__(lhs)` | `lhs.__ilshift__(rhs)` |
 | `lhs >> rhs` | `lhs.__rshift__(rhs)` | `rhs.__rrshift__(lhs)` | `lhs.__irshift__(rhs)` |
 | `lhs & rhs` | `lhs.__and__(rhs)` | `rhs.__rand__(lhs)` | `lhs.__iand__(rhs)` |
@@ -734,13 +734,13 @@ method, even when `R` is a strict subclass of `L`.
 ### Ternary Operators
 
 Ternary `pow(lhs, rhs, mod)` is special: it calls
-`lhs.__pow__(rhs, mod)` with the third argument but does not try `__rpow__` if
-the forward method is missing or returns `NotImplemented`.
+`lhs.__pow__(rhs, mod)` with the third argument, then tries
+`rhs.__rpow__(lhs, mod)` if the forward method is missing or returns
+`NotImplemented`.
 
-The ternary form therefore does not use the ordinary binary reflected-candidate
-order. It has no in-place form in Python syntax; augmented `**=` is a binary
-augmented assignment and calls `lhs.__ipow__(rhs)` before falling back to the
-binary `lhs ** rhs` protocol.
+The ternary form does not have an in-place form in Python syntax; augmented
+`**=` is a binary augmented assignment and calls `lhs.__ipow__(rhs)` before
+falling back to the binary `lhs ** rhs` protocol.
 
 ### Comparison Operators
 
