@@ -2860,23 +2860,43 @@ namespace cl
 
     NOINLINE static INTERP_CC Value op_load_subscript_protocol_slow(PARAMS)
     {
-        static constexpr uint32_t instr_len = 3;
+        static constexpr uint32_t call_instr_len = 3;
         int8_t first_arg_reg = pc[1];
         uint8_t cache_idx = pc[2];
-        (void)cache_idx;
         static constexpr uint32_t n_user_args = 1;
         Value receiver = fp[first_arg_reg];
+        Value key = fp[first_arg_reg - 1];
+        Shape *key_shape = thread->shape_of_value(key);
         TValue<String> method_name =
             thread->get_machine()->get_or_create_interned_string_value(
                 L"__getitem__");
+        GetItemInlineCache &cache = code_object->get_item_caches[cache_idx];
 
-        AttributeReadDescriptor descriptor =
-            resolve_special_method_read_descriptor(receiver, method_name);
         Value callable;
         Value self;
-        MethodCallTargetStatus target_status =
-            prepare_method_call_target_from_descriptor(receiver, descriptor,
-                                                       callable, self);
+        MethodCallTargetStatus target_status;
+        if(cache.method_read_cache.matches(receiver))
+        {
+            target_status = prepare_method_call_target_from_plan(
+                receiver, cache.method_read_cache.plan, callable, self);
+            if(target_status == MethodCallTargetStatus::Ready)
+            {
+                cache.key_shape = key_shape;
+            }
+        }
+        else
+        {
+            AttributeReadDescriptor descriptor =
+                resolve_special_method_read_descriptor(receiver, method_name);
+            target_status = prepare_method_call_target_from_descriptor(
+                receiver, descriptor, callable, self);
+            if(target_status == MethodCallTargetStatus::Ready &&
+               descriptor.is_cacheable())
+            {
+                cache.method_read_cache.populate(receiver, descriptor);
+                cache.key_shape = key_shape;
+            }
+        }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
         {
             MUSTTAIL return subscript_error(ARGS);
@@ -2903,19 +2923,20 @@ namespace cl
 
         TValue<Function> function =
             TValue<Function>::from_value_assumed(callable);
-        if(unlikely(
-               !function.extract()->accepts_positional_only_call_arity(n_args)))
-        {
-            MUSTTAIL return wrong_arity_error(ARGS);
-        }
-
-        FunctionCallInlineCache call_plan;
-        populate_function_call_cache(call_plan, function, n_args);
         first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
                                                            n_user_args, self);
+        if(!function_call_cache_matches(cache.call_cache, callable, n_args))
+        {
+            if(unlikely(!function.extract()->accepts_positional_only_call_arity(
+                   n_args)))
+            {
+                MUSTTAIL return wrong_arity_error(ARGS);
+            }
+            populate_function_call_cache(cache.call_cache, function, n_args);
+        }
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            instr_len, call_plan.adaptation);
+            call_instr_len, cache.call_cache.adaptation);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -2928,7 +2949,59 @@ namespace cl
 
     static INTERP_CC Value op_load_subscript(PARAMS)
     {
-        MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
+        static constexpr uint32_t call_instr_len = 3;
+        int8_t first_arg_reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        static constexpr uint32_t n_user_args = 1;
+        Value receiver = fp[first_arg_reg];
+        Value key = fp[first_arg_reg - 1];
+        GetItemInlineCache &cache = code_object->get_item_caches[cache_idx];
+        if(unlikely(!cache.method_read_cache.matches(receiver)))
+        {
+            MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
+        }
+        if(unlikely(cache.key_shape != thread->shape_of_value(key)))
+        {
+            MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
+        }
+
+        Value callable;
+        Value self;
+        MethodCallFastTargetStatus target_status =
+            prepare_method_call_target_from_plan_fast(
+                receiver, cache.method_read_cache.plan, callable, self);
+        if(unlikely(target_status == MethodCallFastTargetStatus::Slow))
+        {
+            MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
+        }
+
+        bool has_self = !self.is_not_present();
+        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
+        if(unlikely(!function_call_cache_matches(cache.call_cache, callable,
+                                                 n_args)))
+        {
+            MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
+        }
+        if(unlikely(cache.call_cache.adaptation !=
+                    FunctionCallAdaptation::FixedArity))
+        {
+            MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
+        }
+
+        first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
+                                                           n_user_args, self);
+        TValue<Function> function =
+            TValue<Function>::from_oop(cache.call_cache.function);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object, function, first_arg_reg, n_args,
+            call_instr_len, FunctionCallAdaptation::FixedArity);
+        if(unlikely(thread->safepoint_requested()))
+        {
+            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+        }
+
+        START(0);
+        COMPLETE();
     }
 
     static INTERP_CC Value op_store_subscript(PARAMS)

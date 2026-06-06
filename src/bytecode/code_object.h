@@ -178,12 +178,6 @@ namespace cl
         Shape *key_shape = nullptr;
         FunctionCallInlineCache call_cache;
 
-        bool occupied() const
-        {
-            return method_read_cache.receiver_shape != nullptr &&
-                   key_shape != nullptr;
-        }
-
         void clear()
         {
             method_read_cache.clear();

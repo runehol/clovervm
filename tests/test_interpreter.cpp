@@ -1938,6 +1938,35 @@ TEST(Interpreter, subscript_load_observes_replaced_dunder_getitem)
     EXPECT_EQ(Value::from_smi(12), file_runner.return_value);
 }
 
+TEST(Interpreter, subscript_load_caches_inline_key_shape)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"get"));
+    CodeObject *code_obj = test_context.compile_file(L"def get(xs, key):\n"
+                                                     L"    return xs[key]\n"
+                                                     L"xs = [11, 13, 17]\n"
+                                                     L"first = get(xs, 1)\n"
+                                                     L"second = get(xs, 2)\n"
+                                                     L"first * 100 + second\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::from_smi(1317), actual);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->get_item_caches.size());
+    const GetItemInlineCache &cache = function_code->get_item_caches[0];
+    ASSERT_NE(nullptr, cache.method_read_cache.receiver_shape);
+    EXPECT_EQ(test_context.vm().smi_shape(), cache.key_shape);
+    ASSERT_NE(nullptr, cache.call_cache.function);
+}
+
 TEST(Interpreter, dict_literal_returns_dict_object)
 {
     test::VmTestContext test_context;
