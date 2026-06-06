@@ -2913,11 +2913,11 @@ namespace cl
     NOINLINE static INTERP_CC Value op_load_subscript_cache_miss(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 3;
-        int8_t first_arg_reg = pc[1];
+        int8_t receiver_reg = pc[1];
         uint8_t cache_idx = pc[2];
         static constexpr uint32_t n_user_args = 1;
-        Value receiver = fp[first_arg_reg];
-        Value key = fp[first_arg_reg - 1];
+        Value receiver = fp[receiver_reg];
+        Value key = accumulator;
         ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
         ShapeKey key_shape_key = ShapeKey::from_value(key);
         VirtualMachine *vm = thread->get_machine();
@@ -3013,6 +3013,9 @@ namespace cl
             COMPLETE();
         }
 
+        int8_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
+        fp[first_arg_reg] = receiver;
+        fp[first_arg_reg - 1] = key;
         first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
                                                            n_user_args, self);
         enter_function_frame_from_positional_args(
@@ -3027,14 +3030,18 @@ namespace cl
     NOINLINE static INTERP_CC Value op_load_subscript_cached_call_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 3;
-        int8_t first_arg_reg = pc[1];
+        int8_t receiver_reg = pc[1];
         uint8_t cache_idx = pc[2];
         static constexpr uint32_t n_user_args = 1;
-        Value receiver = fp[first_arg_reg];
+        Value receiver = fp[receiver_reg];
+        Value key = accumulator;
         SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
         assert(cache.function != nullptr);
 
         Value self = cache.has_self ? receiver : Value::not_present();
+        int8_t first_arg_reg = code_object->get_first_free_arg_encoded_reg();
+        fp[first_arg_reg] = receiver;
+        fp[first_arg_reg - 1] = key;
         first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
                                                            n_user_args, self);
         TValue<Function> function = TValue<Function>::from_oop(cache.function);
@@ -3050,10 +3057,10 @@ namespace cl
     static INTERP_CC Value op_load_subscript(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 3;
-        int8_t first_arg_reg = pc[1];
+        int8_t receiver_reg = pc[1];
         uint8_t cache_idx = pc[2];
-        Value receiver = fp[first_arg_reg];
-        Value key = fp[first_arg_reg - 1];
+        Value receiver = fp[receiver_reg];
+        Value key = accumulator;
         SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
         if(unlikely(!cache.method_read_cache.matches(receiver)))
         {
@@ -3077,21 +3084,7 @@ namespace cl
         {
             MUSTTAIL return op_load_subscript_cache_miss(ARGS);
         }
-        if(unlikely(cache.adaptation != FunctionCallAdaptation::FixedArity))
-        {
-            MUSTTAIL return op_load_subscript_cached_call_slow(ARGS);
-        }
-        if(unlikely(!cache.has_self))
-        {
-            MUSTTAIL return op_load_subscript_cached_call_slow(ARGS);
-        }
-
-        enter_code_object_frame_from_prepared_args(
-            fp, pc, code_object, cache.code_object, first_arg_reg,
-            call_instr_len);
-
-        START(0);
-        COMPLETE();
+        MUSTTAIL return op_load_subscript_cached_call_slow(ARGS);
     }
 
     NOINLINE static INTERP_CC Value op_store_subscript_cache_miss(PARAMS)

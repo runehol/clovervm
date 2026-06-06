@@ -644,13 +644,12 @@ namespace cl
 
     Expected<uint32_t>
     CodeObjectBuilder::emit_load_subscript(uint32_t source_offset,
-                                           uint32_t first_arg_reg)
+                                           uint32_t receiver_reg)
     {
-        assert_call_args_are_topmost(first_arg_reg, 2);
         uint8_t cache_idx = CL_TRY(allocate_subscript_cache());
         uint32_t result =
             emplace_back(source_offset, uint8_t(Bytecode::LoadSubscript));
-        emplace_back(source_offset, encode_reg(first_arg_reg));
+        emplace_back(source_offset, encode_reg(receiver_reg));
         emplace_back(source_offset, cache_idx);
         return Expected<uint32_t>::ok(result);
     }

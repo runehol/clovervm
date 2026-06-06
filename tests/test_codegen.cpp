@@ -1296,7 +1296,7 @@ TEST(Codegen, dict_literal_uses_createdict_with_contiguous_register_pairs)
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Codegen, subscript_load_uses_prepared_call_argument_span)
+TEST(Codegen, subscript_load_uses_receiver_reg_and_accumulator_key)
 {
     test::VmTestContext test_context;
     const wchar_t *test_case = L"def get(obj, idx):\n"
@@ -1312,12 +1312,11 @@ TEST(Codegen, subscript_load_uses_prepared_call_argument_span)
         "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
         "    5 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Mov r0, p0\n"
-        "    3 Mov r1, p1\n"
-        "    6 LoadSubscript r0, subscript_ic[0]\n"
-        "    9 Return\n"
-        "   10 LdaNone\n"
-        "   11 Return\n"
+        "    0 Ldar p1\n"
+        "    2 LoadSubscript p0, subscript_ic[0]\n"
+        "    5 Return\n"
+        "    6 LdaNone\n"
+        "    7 Return\n"
         "\n"
         "Constant 1: \"get\"\n";
     std::string actual = fmt::to_string(*module_code);
@@ -1384,16 +1383,15 @@ TEST(Codegen, subscript_augmented_assignment_evaluates_receiver_and_key_once)
         "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
         "    5 Return\n"
         "Constant 0: Code object:\n"
-        "    0 Mov r0, p0\n"
-        "    3 Mov r1, p1\n"
-        "    6 LoadSubscript r0, subscript_ic[0]\n"
-        "    9 AddSmi 1\n"
-        "   11 Mov r0, p0\n"
-        "   14 Mov r1, p1\n"
-        "   17 Star2\n"
-        "   18 StoreSubscript r0, subscript_ic[1]\n"
-        "   21 LdaNone\n"
-        "   22 Return\n"
+        "    0 Ldar p1\n"
+        "    2 LoadSubscript p0, subscript_ic[0]\n"
+        "    5 AddSmi 1\n"
+        "    7 Mov r0, p0\n"
+        "   10 Mov r1, p1\n"
+        "   13 Star2\n"
+        "   14 StoreSubscript r0, subscript_ic[1]\n"
+        "   17 LdaNone\n"
+        "   18 Return\n"
         "\n"
         "Constant 1: \"bump\"\n";
     std::string actual = bytecode_str_from_file(test_case);

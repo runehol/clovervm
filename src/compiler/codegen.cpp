@@ -1275,15 +1275,9 @@ namespace cl
             std::optional<int8_t> immediate = check_binary_acc_smi_immediate(
                 kind.operator_kind, entry, children[1]);
 
-            {
-                TemporaryReg call_args(*code_obj, 2,
-                                       RegisterAlignment::CallFrame);
-                CL_TRY(code_obj->emit_mov(source_offset, call_args,
-                                          receiver_reg.reg));
-                CL_TRY(code_obj->emit_mov(source_offset, call_args + 1,
-                                          key_reg.reg));
-                CL_TRY(code_obj->emit_load_subscript(source_offset, call_args));
-            }
+            CL_TRY(code_obj->emit_ldar(source_offset, key_reg.reg));
+            CL_TRY(
+                code_obj->emit_load_subscript(source_offset, receiver_reg.reg));
 
             if(immediate.has_value())
             {
@@ -2567,14 +2561,11 @@ namespace cl
                 case AstNodeKind::EXPRESSION_BINARY:
                     if(kind.operator_kind == AstOperatorKind::SUBSCRIPT)
                     {
-                        TemporaryReg call_args(*code_obj, 2,
-                                               RegisterAlignment::CallFrame);
-                        CL_TRY(codegen_node_into_specific_register(children[0],
-                                                                   call_args));
-                        CL_TRY(codegen_node_into_specific_register(
-                            children[1], call_args + 1));
+                        ScopedRegister receiver_reg =
+                            CL_TRY(codegen_node_into_a_register(children[0]));
+                        CL_TRY(codegen_node(children[1]));
                         CL_TRY(code_obj->emit_load_subscript(source_offset,
-                                                             call_args));
+                                                             receiver_reg.reg));
                         break;
                     }
                     CL_TRY(codegen_binary_expression(node_idx));
