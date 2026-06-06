@@ -178,6 +178,101 @@ namespace cl
         return self.get_ptr<Dict>()->get_item(key);
     }
 
+    static Value native_dict_setitem(ThreadState *thread, Value self, Value key,
+                                     Value value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"__setitem__"));
+        CL_PROPAGATE_EXCEPTION(require_string_key(key));
+        self.get_ptr<Dict>()->set_item(key, value);
+        return Value::None();
+    }
+
+    static Value native_dict_delitem(ThreadState *thread, Value self, Value key)
+    {
+        CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"__delitem__"));
+        CL_PROPAGATE_EXCEPTION(require_string_key(key));
+        CL_PROPAGATE_EXCEPTION(self.get_ptr<Dict>()->del_item(key));
+        return Value::None();
+    }
+
+    static Value trusted_dict_getitem_str_handler(ThreadState *thread,
+                                                  Value self, Value key)
+    {
+        (void)thread;
+        return self.get_ptr<Dict>()->get_item(key);
+    }
+
+    static Value trusted_dict_setitem_str_handler(ThreadState *thread,
+                                                  Value self, Value key,
+                                                  Value value)
+    {
+        (void)thread;
+        self.get_ptr<Dict>()->set_item(key, value);
+        return Value::None();
+    }
+
+    static Value trusted_dict_delitem_str_handler(ThreadState *thread,
+                                                  Value self, Value key)
+    {
+        (void)thread;
+        CL_PROPAGATE_EXCEPTION(self.get_ptr<Dict>()->del_item(key));
+        return Value::None();
+    }
+
+    static bool trusted_dict_str_key_shapes_match(VirtualMachine *vm,
+                                                  ShapeKey container_key,
+                                                  ShapeKey key_key)
+    {
+        return vm->shape_for_key(container_key)->get_class() ==
+                   vm->dict_class() &&
+               vm->shape_for_key(key_key)->get_class() == vm->str_class();
+    }
+
+    static TrustedHandlerResolution
+    resolve_trusted_dict_getitem_handler(VirtualMachine *vm,
+                                         ShapeKey container_key,
+                                         ShapeKey key_key, ShapeKey unused)
+    {
+        (void)unused;
+        TrustedHandlerResolution resolution;
+        if(trusted_dict_str_key_shapes_match(vm, container_key, key_key))
+        {
+            resolution.arity = TrustedHandlerArity::Binary;
+            resolution.binary = trusted_dict_getitem_str_handler;
+        }
+        return resolution;
+    }
+
+    static TrustedHandlerResolution
+    resolve_trusted_dict_setitem_handler(VirtualMachine *vm,
+                                         ShapeKey container_key,
+                                         ShapeKey key_key, ShapeKey unused)
+    {
+        (void)unused;
+        TrustedHandlerResolution resolution;
+        if(trusted_dict_str_key_shapes_match(vm, container_key, key_key))
+        {
+            resolution.arity = TrustedHandlerArity::Ternary;
+            resolution.ternary = trusted_dict_setitem_str_handler;
+        }
+        return resolution;
+    }
+
+    static TrustedHandlerResolution
+    resolve_trusted_dict_delitem_handler(VirtualMachine *vm,
+                                         ShapeKey container_key,
+                                         ShapeKey key_key, ShapeKey unused)
+    {
+        (void)unused;
+        TrustedHandlerResolution resolution;
+        if(trusted_dict_str_key_shapes_match(vm, container_key, key_key))
+        {
+            resolution.arity = TrustedHandlerArity::Binary;
+            resolution.binary = trusted_dict_delitem_str_handler;
+        }
+        return resolution;
+    }
+
     static Value native_dict_keys(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_dict_receiver(self, L"keys"));
@@ -304,7 +399,30 @@ namespace cl
         };
         install(L"clear", native_dict_clear);
         install(L"copy", native_dict_copy);
-        install(L"__getitem__", native_dict_getitem);
+
+        auto install_trusted = [&](const wchar_t *name, auto function,
+                                   TrustedHandlerResolver resolver) {
+            bool stored = cls->define_own_property(
+                vm->get_or_create_interned_string_value(name),
+                unwrap_bootstrap_expected(
+                    vm,
+                    make_intrinsic_function(
+                        vm, with_trusted_handler_resolver(
+                                builtin_intrinsic_method(name, function),
+                                resolver)),
+                    "creating intrinsic function")
+                    .raw_value(),
+                method_flags);
+            assert(stored);
+            (void)stored;
+        };
+        install_trusted(L"__getitem__", native_dict_getitem,
+                        resolve_trusted_dict_getitem_handler);
+        install_trusted(L"__setitem__", native_dict_setitem,
+                        resolve_trusted_dict_setitem_handler);
+        install_trusted(L"__delitem__", native_dict_delitem,
+                        resolve_trusted_dict_delitem_handler);
+
         install(L"get", native_dict_get,
                 Optional<TValue<Tuple>>::some(
                     make_single_default(vm, Value::None())));

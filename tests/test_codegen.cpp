@@ -1325,7 +1325,7 @@ TEST(Codegen, subscript_load_uses_prepared_call_argument_span)
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Codegen, subscript_store_uses_receiver_and_key_registers)
+TEST(Codegen, subscript_store_uses_prepared_call_argument_span)
 {
     const wchar_t *test_case = L"def set(obj, idx, value):\n"
                                L"    obj[idx] = value\n";
@@ -1337,9 +1337,12 @@ TEST(Codegen, subscript_store_uses_receiver_and_key_registers)
         "    5 Return\n"
         "Constant 0: Code object:\n"
         "    0 Ldar p2\n"
-        "    2 StoreSubscript p0, p1\n"
-        "    5 LdaNone\n"
-        "    6 Return\n"
+        "    2 Mov r0, p0\n"
+        "    5 Mov r1, p1\n"
+        "    8 Star2\n"
+        "    9 StoreSubscript r0, subscript_ic[0]\n"
+        "   12 LdaNone\n"
+        "   13 Return\n"
         "\n"
         "Constant 1: \"set\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -1347,7 +1350,7 @@ TEST(Codegen, subscript_store_uses_receiver_and_key_registers)
     EXPECT_EQ(expected, actual);
 }
 
-TEST(Codegen, subscript_delete_uses_receiver_and_key_registers)
+TEST(Codegen, subscript_delete_uses_prepared_call_argument_span)
 {
     const wchar_t *test_case = L"def clear(obj, idx):\n"
                                L"    del obj[idx]\n";
@@ -1358,9 +1361,11 @@ TEST(Codegen, subscript_delete_uses_receiver_and_key_registers)
         "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
         "    5 Return\n"
         "Constant 0: Code object:\n"
-        "    0 DelSubscript p0, p1\n"
-        "    3 LdaNone\n"
-        "    4 Return\n"
+        "    0 Mov r0, p0\n"
+        "    3 Mov r1, p1\n"
+        "    6 DelSubscript r0, subscript_ic[0]\n"
+        "    9 LdaNone\n"
+        "   10 Return\n"
         "\n"
         "Constant 1: \"clear\"\n";
     std::string actual = bytecode_str_from_file(test_case);
@@ -1383,9 +1388,12 @@ TEST(Codegen, subscript_augmented_assignment_evaluates_receiver_and_key_once)
         "    3 Mov r1, p1\n"
         "    6 LoadSubscript r0, subscript_ic[0]\n"
         "    9 AddSmi 1\n"
-        "   11 StoreSubscript p0, p1\n"
-        "   14 LdaNone\n"
-        "   15 Return\n"
+        "   11 Mov r0, p0\n"
+        "   14 Mov r1, p1\n"
+        "   17 Star2\n"
+        "   18 StoreSubscript r0, subscript_ic[1]\n"
+        "   21 LdaNone\n"
+        "   22 Return\n"
         "\n"
         "Constant 1: \"bump\"\n";
     std::string actual = bytecode_str_from_file(test_case);

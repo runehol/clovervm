@@ -91,6 +91,32 @@ namespace cl
         return self.get_ptr<SlotDict>()->get_item(key);
     }
 
+    static Value native_slotdict_setitem(ThreadState *thread, Value self,
+                                         Value key, Value value)
+    {
+        if(!can_convert_to<SlotDict>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError",
+                L"slotdict.__setitem__ expects a slotdict receiver");
+        }
+
+        return self.get_ptr<SlotDict>()->set_item(key, value);
+    }
+
+    static Value native_slotdict_delitem(ThreadState *thread, Value self,
+                                         Value key)
+    {
+        if(!can_convert_to<SlotDict>(self))
+        {
+            return active_thread()->set_pending_builtin_exception_string(
+                L"TypeError",
+                L"slotdict.__delitem__ expects a slotdict receiver");
+        }
+
+        return self.get_ptr<SlotDict>()->del_item(key);
+    }
+
     void install_slotdict_class_methods(VirtualMachine *vm)
     {
         BuiltinIntrinsicMethod methods[] = {
@@ -102,6 +128,10 @@ namespace cl
                                      L"Return len(self)."),
             builtin_intrinsic_method(L"__getitem__", native_slotdict_getitem,
                                      L"Return self[key]."),
+            builtin_intrinsic_method(L"__setitem__", native_slotdict_setitem,
+                                     L"Set self[key] to value."),
+            builtin_intrinsic_method(L"__delitem__", native_slotdict_delitem,
+                                     L"Delete self[key]."),
         };
         unwrap_bootstrap_expected(
             vm,

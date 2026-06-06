@@ -456,6 +456,42 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE INTERP_CC Value subscript_assignment_error(PARAMS)
+    {
+        int8_t first_arg_reg = pc[1];
+        Value receiver = fp[first_arg_reg];
+        const wchar_t *message =
+            receiver.is_ptr() && receiver.get_ptr()->native_layout_id() ==
+                                     NativeLayoutId::Tuple
+                ? L"'tuple' object does not support item assignment"
+                : L"object is not subscriptable";
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError", message);
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
+    NOINLINE INTERP_CC Value subscript_deletion_error(PARAMS)
+    {
+        int8_t first_arg_reg = pc[1];
+        Value receiver = fp[first_arg_reg];
+        const wchar_t *message =
+            receiver.is_ptr() && receiver.get_ptr()->native_layout_id() ==
+                                     NativeLayoutId::Tuple
+                ? L"'tuple' object does not support item deletion"
+                : L"object is not subscriptable";
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"TypeError", message);
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
     NOINLINE INTERP_CC Value propagate_pending_exception(PARAMS)
     {
         assert(thread->has_pending_exception());
@@ -1614,9 +1650,10 @@ namespace cl
 
     static ALWAYSINLINE void populate_subscript_call_cache(
         SubscriptInlineCache &cache, TValue<Function> fun, uint32_t n_args,
-        bool has_self, FunctionCallAdaptation adaptation, BinaryHandler handler)
+        bool has_self, FunctionCallAdaptation adaptation,
+        ItemMethodHandler handler)
     {
-        cache.handler.binary = handler;
+        cache.handler = handler;
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
         cache.n_args = n_args;
@@ -2946,7 +2983,7 @@ namespace cl
         }
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
-        BinaryHandler handler = nullptr;
+        ItemMethodHandler handler = {nullptr};
         if(cache.method_read_cache.matches(receiver))
         {
             CodeObject *target_code_object =
@@ -2958,16 +2995,16 @@ namespace cl
                         vm, receiver_shape_key, key_shape_key, ShapeKey{});
                 if(resolution.arity == TrustedHandlerArity::Binary)
                 {
-                    handler = resolution.binary;
+                    handler.binary = resolution.binary;
                 }
             }
             populate_subscript_call_cache(cache, function, n_args, has_self,
                                           adaptation, handler);
         }
 
-        if(handler != nullptr)
+        if(handler.binary != nullptr)
         {
-            accumulator = handler(thread, receiver, key);
+            accumulator = handler.binary(thread, receiver, key);
             if(unlikely(accumulator.is_exception_marker()))
             {
                 MUSTTAIL return propagate_pending_exception(ARGS);
@@ -3057,40 +3094,373 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_store_subscript_cache_miss(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 3;
+        int8_t first_arg_reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        static constexpr uint32_t n_user_args = 2;
+        Value receiver = fp[first_arg_reg];
+        Value key = fp[first_arg_reg - 1];
+        Value value = fp[first_arg_reg - 2];
+        ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
+        ShapeKey key_shape_key = ShapeKey::from_value(key);
+        VirtualMachine *vm = thread->get_machine();
+        TValue<String> method_name =
+            vm->get_or_create_interned_string_value(L"__setitem__");
+        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+
+        Value callable;
+        Value self;
+        MethodCallTargetStatus target_status;
+        if(cache.method_read_cache.matches(receiver))
+        {
+            target_status = prepare_method_call_target_from_plan(
+                receiver, cache.method_read_cache.plan, callable, self);
+            if(target_status == MethodCallTargetStatus::Ready)
+            {
+                cache.key_shape_key = key_shape_key;
+            }
+        }
+        else
+        {
+            AttributeReadDescriptor descriptor =
+                resolve_special_method_read_descriptor(receiver, method_name);
+            target_status = prepare_method_call_target_from_descriptor(
+                receiver, descriptor, callable, self);
+            if(target_status == MethodCallTargetStatus::Ready &&
+               descriptor.is_cacheable())
+            {
+                cache.method_read_cache.populate(receiver, descriptor);
+                cache.key_shape_key = key_shape_key;
+            }
+        }
+        if(unlikely(target_status == MethodCallTargetStatus::Missing))
+        {
+            MUSTTAIL return subscript_assignment_error(ARGS);
+        }
+        if(unlikely(target_status ==
+                    MethodCallTargetStatus::RequiresDescriptorDispatch))
+        {
+            MUSTTAIL return descriptor_dispatch_error(ARGS);
+        }
+
+        bool has_self = !self.is_not_present();
+        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
+
+        if(unlikely(!callable.is_ptr()))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        Object *fun_object = callable.get_ptr();
+        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        TValue<Function> function =
+            TValue<Function>::from_value_assumed(callable);
+        if(unlikely(
+               !function.extract()->accepts_positional_only_call_arity(n_args)))
+        {
+            MUSTTAIL return wrong_arity_error(ARGS);
+        }
+        FunctionCallAdaptation adaptation =
+            function_call_adaptation_for_positional_call(function, n_args);
+        ItemMethodHandler handler = {nullptr};
+        if(cache.method_read_cache.matches(receiver))
+        {
+            CodeObject *target_code_object =
+                function.extract()->code_object.extract();
+            if(target_code_object->trusted_handler_resolver != nullptr)
+            {
+                TrustedHandlerResolution resolution =
+                    target_code_object->trusted_handler_resolver(
+                        vm, receiver_shape_key, key_shape_key, ShapeKey{});
+                if(resolution.arity == TrustedHandlerArity::Ternary)
+                {
+                    handler.ternary = resolution.ternary;
+                }
+            }
+            populate_subscript_call_cache(cache, function, n_args, has_self,
+                                          adaptation, handler);
+        }
+
+        if(handler.ternary != nullptr)
+        {
+            accumulator = handler.ternary(thread, receiver, key, value);
+            if(unlikely(accumulator.is_exception_marker()))
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            START(call_instr_len);
+            COMPLETE();
+        }
+
+        first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
+                                                           n_user_args, self);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object, function, first_arg_reg, n_args,
+            call_instr_len, adaptation);
+
+        auto *next_dispatch_fun =
+            reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
+        MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
+    NOINLINE static INTERP_CC Value op_store_subscript_cached_call_slow(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 3;
+        int8_t first_arg_reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        static constexpr uint32_t n_user_args = 2;
+        Value receiver = fp[first_arg_reg];
+        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+        assert(cache.function != nullptr);
+
+        Value self = cache.has_self ? receiver : Value::not_present();
+        first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
+                                                           n_user_args, self);
+        TValue<Function> function = TValue<Function>::from_oop(cache.function);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object, function, first_arg_reg, cache.n_args,
+            call_instr_len, cache.adaptation);
+
+        auto *next_dispatch_fun =
+            reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
+        MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
     static INTERP_CC Value op_store_subscript(PARAMS)
     {
-        START(3);
-        int8_t receiver_reg = pc[1];
-        int8_t key_reg = pc[2];
-        Value result =
-            store_subscript(fp[receiver_reg], fp[key_reg], accumulator);
-        if(unlikely(result.is_exception_marker()))
+        static constexpr uint32_t call_instr_len = 3;
+        int8_t first_arg_reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        Value receiver = fp[first_arg_reg];
+        Value key = fp[first_arg_reg - 1];
+        Value value = fp[first_arg_reg - 2];
+        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+        if(unlikely(!cache.method_read_cache.matches(receiver)))
         {
-            accumulator = result;
-            MUSTTAIL return propagate_pending_exception(ARGS);
+            MUSTTAIL return op_store_subscript_cache_miss(ARGS);
         }
-        if(unlikely(result.is_not_present()))
+        if(unlikely(cache.key_shape_key != ShapeKey::from_value(key)))
         {
-            MUSTTAIL return subscript_error(ARGS);
+            MUSTTAIL return op_store_subscript_cache_miss(ARGS);
         }
+        if(cache.handler.ternary != nullptr)
+        {
+            accumulator = cache.handler.ternary(thread, receiver, key, value);
+            if(unlikely(accumulator.is_exception_marker()))
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            START(call_instr_len);
+            COMPLETE();
+        }
+        if(unlikely(cache.function == nullptr))
+        {
+            MUSTTAIL return op_store_subscript_cache_miss(ARGS);
+        }
+        if(unlikely(cache.adaptation != FunctionCallAdaptation::FixedArity))
+        {
+            MUSTTAIL return op_store_subscript_cached_call_slow(ARGS);
+        }
+        if(unlikely(!cache.has_self))
+        {
+            MUSTTAIL return op_store_subscript_cached_call_slow(ARGS);
+        }
+
+        enter_code_object_frame_from_prepared_args(
+            fp, pc, code_object, cache.code_object, first_arg_reg,
+            call_instr_len);
+
+        START(0);
         COMPLETE();
+    }
+
+    NOINLINE static INTERP_CC Value op_del_subscript_cache_miss(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 3;
+        int8_t first_arg_reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        static constexpr uint32_t n_user_args = 1;
+        Value receiver = fp[first_arg_reg];
+        Value key = fp[first_arg_reg - 1];
+        ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
+        ShapeKey key_shape_key = ShapeKey::from_value(key);
+        VirtualMachine *vm = thread->get_machine();
+        TValue<String> method_name =
+            vm->get_or_create_interned_string_value(L"__delitem__");
+        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+
+        Value callable;
+        Value self;
+        MethodCallTargetStatus target_status;
+        if(cache.method_read_cache.matches(receiver))
+        {
+            target_status = prepare_method_call_target_from_plan(
+                receiver, cache.method_read_cache.plan, callable, self);
+            if(target_status == MethodCallTargetStatus::Ready)
+            {
+                cache.key_shape_key = key_shape_key;
+            }
+        }
+        else
+        {
+            AttributeReadDescriptor descriptor =
+                resolve_special_method_read_descriptor(receiver, method_name);
+            target_status = prepare_method_call_target_from_descriptor(
+                receiver, descriptor, callable, self);
+            if(target_status == MethodCallTargetStatus::Ready &&
+               descriptor.is_cacheable())
+            {
+                cache.method_read_cache.populate(receiver, descriptor);
+                cache.key_shape_key = key_shape_key;
+            }
+        }
+        if(unlikely(target_status == MethodCallTargetStatus::Missing))
+        {
+            MUSTTAIL return subscript_deletion_error(ARGS);
+        }
+        if(unlikely(target_status ==
+                    MethodCallTargetStatus::RequiresDescriptorDispatch))
+        {
+            MUSTTAIL return descriptor_dispatch_error(ARGS);
+        }
+
+        bool has_self = !self.is_not_present();
+        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
+
+        if(unlikely(!callable.is_ptr()))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        Object *fun_object = callable.get_ptr();
+        if(unlikely(fun_object->native_layout_id() != NativeLayoutId::Function))
+        {
+            MUSTTAIL return not_callable_error(ARGS);
+        }
+
+        TValue<Function> function =
+            TValue<Function>::from_value_assumed(callable);
+        if(unlikely(
+               !function.extract()->accepts_positional_only_call_arity(n_args)))
+        {
+            MUSTTAIL return wrong_arity_error(ARGS);
+        }
+        FunctionCallAdaptation adaptation =
+            function_call_adaptation_for_positional_call(function, n_args);
+        ItemMethodHandler handler = {nullptr};
+        if(cache.method_read_cache.matches(receiver))
+        {
+            CodeObject *target_code_object =
+                function.extract()->code_object.extract();
+            if(target_code_object->trusted_handler_resolver != nullptr)
+            {
+                TrustedHandlerResolution resolution =
+                    target_code_object->trusted_handler_resolver(
+                        vm, receiver_shape_key, key_shape_key, ShapeKey{});
+                if(resolution.arity == TrustedHandlerArity::Binary)
+                {
+                    handler.binary = resolution.binary;
+                }
+            }
+            populate_subscript_call_cache(cache, function, n_args, has_self,
+                                          adaptation, handler);
+        }
+
+        if(handler.binary != nullptr)
+        {
+            accumulator = handler.binary(thread, receiver, key);
+            if(unlikely(accumulator.is_exception_marker()))
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            START(call_instr_len);
+            COMPLETE();
+        }
+
+        first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
+                                                           n_user_args, self);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object, function, first_arg_reg, n_args,
+            call_instr_len, adaptation);
+
+        auto *next_dispatch_fun =
+            reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
+        MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
+    NOINLINE static INTERP_CC Value op_del_subscript_cached_call_slow(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 3;
+        int8_t first_arg_reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        static constexpr uint32_t n_user_args = 1;
+        Value receiver = fp[first_arg_reg];
+        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+        assert(cache.function != nullptr);
+
+        Value self = cache.has_self ? receiver : Value::not_present();
+        first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
+                                                           n_user_args, self);
+        TValue<Function> function = TValue<Function>::from_oop(cache.function);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object, function, first_arg_reg, cache.n_args,
+            call_instr_len, cache.adaptation);
+
+        auto *next_dispatch_fun =
+            reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
+        MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
     static INTERP_CC Value op_del_subscript(PARAMS)
     {
-        START(3);
-        int8_t receiver_reg = pc[1];
-        int8_t key_reg = pc[2];
-        Value result = del_subscript(fp[receiver_reg], fp[key_reg]);
-        if(unlikely(result.is_exception_marker()))
+        static constexpr uint32_t call_instr_len = 3;
+        int8_t first_arg_reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        Value receiver = fp[first_arg_reg];
+        Value key = fp[first_arg_reg - 1];
+        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+        if(unlikely(!cache.method_read_cache.matches(receiver)))
         {
-            accumulator = result;
-            MUSTTAIL return propagate_pending_exception(ARGS);
+            MUSTTAIL return op_del_subscript_cache_miss(ARGS);
         }
-        if(unlikely(result.is_not_present()))
+        if(unlikely(cache.key_shape_key != ShapeKey::from_value(key)))
         {
-            MUSTTAIL return subscript_error(ARGS);
+            MUSTTAIL return op_del_subscript_cache_miss(ARGS);
         }
+        if(cache.handler.binary != nullptr)
+        {
+            accumulator = cache.handler.binary(thread, receiver, key);
+            if(unlikely(accumulator.is_exception_marker()))
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            START(call_instr_len);
+            COMPLETE();
+        }
+        if(unlikely(cache.function == nullptr))
+        {
+            MUSTTAIL return op_del_subscript_cache_miss(ARGS);
+        }
+        if(unlikely(cache.adaptation != FunctionCallAdaptation::FixedArity))
+        {
+            MUSTTAIL return op_del_subscript_cached_call_slow(ARGS);
+        }
+        if(unlikely(!cache.has_self))
+        {
+            MUSTTAIL return op_del_subscript_cached_call_slow(ARGS);
+        }
+
+        enter_code_object_frame_from_prepared_args(
+            fp, pc, code_object, cache.code_object, first_arg_reg,
+            call_instr_len);
+
+        START(0);
         COMPLETE();
     }
 

@@ -2112,6 +2112,114 @@ TEST(Interpreter, subscript_load_replaces_cache_for_different_key_shape)
     EXPECT_EQ(FunctionCallAdaptation::FixedArity, cache.adaptation);
 }
 
+TEST(Interpreter, subscript_store_calls_user_defined_dunder_setitem)
+{
+    test::FileRunner file_runner(L"class Bag:\n"
+                                 L"    def __init__(self):\n"
+                                 L"        self.total = 0\n"
+                                 L"    def __setitem__(self, key, value):\n"
+                                 L"        self.total = key * 10 + value\n"
+                                 L"bag = Bag()\n"
+                                 L"bag[4] = 7\n"
+                                 L"bag.total\n");
+
+    EXPECT_EQ(Value::from_smi(47), file_runner.return_value);
+}
+
+TEST(Interpreter, subscript_store_observes_replaced_dunder_setitem)
+{
+    test::FileRunner file_runner(L"class Bag:\n"
+                                 L"    def __init__(self):\n"
+                                 L"        self.total = 0\n"
+                                 L"    def __setitem__(self, key, value):\n"
+                                 L"        self.total = 1\n"
+                                 L"def set_item(obj, key, value):\n"
+                                 L"    obj[key] = value\n"
+                                 L"bag = Bag()\n"
+                                 L"set_item(bag, 0, 0)\n"
+                                 L"first = bag.total\n"
+                                 L"def replacement(self, key, value):\n"
+                                 L"    self.total = 2\n"
+                                 L"Bag.__setitem__ = replacement\n"
+                                 L"set_item(bag, 0, 0)\n"
+                                 L"first * 10 + bag.total\n");
+
+    EXPECT_EQ(Value::from_smi(12), file_runner.return_value);
+}
+
+TEST(Interpreter, subscript_store_replaces_cache_for_different_key_shape)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"set_item"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"class Bag:\n"
+                                  L"    def __init__(self):\n"
+                                  L"        self.total = 0\n"
+                                  L"    def __setitem__(self, key, value):\n"
+                                  L"        self.total += value\n"
+                                  L"def set_item(obj, key, value):\n"
+                                  L"    obj[key] = value\n"
+                                  L"bag = Bag()\n"
+                                  L"set_item(bag, 1, 7)\n"
+                                  L"set_item(bag, None, 11)\n"
+                                  L"bag.total\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::from_smi(18), actual);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->subscript_caches.size());
+    const SubscriptInlineCache &cache = function_code->subscript_caches[0];
+    ASSERT_NE(nullptr, cache.method_read_cache.receiver_shape);
+    EXPECT_EQ(ShapeKey::from_value(Value::None()), cache.key_shape_key);
+    ASSERT_NE(nullptr, cache.function);
+    EXPECT_EQ(3u, cache.n_args);
+    EXPECT_TRUE(cache.has_self);
+    EXPECT_EQ(FunctionCallAdaptation::FixedArity, cache.adaptation);
+}
+
+TEST(Interpreter, subscript_delete_calls_user_defined_dunder_delitem)
+{
+    test::FileRunner file_runner(L"class Bag:\n"
+                                 L"    def __init__(self):\n"
+                                 L"        self.total = 0\n"
+                                 L"    def __delitem__(self, key):\n"
+                                 L"        self.total = key + 5\n"
+                                 L"bag = Bag()\n"
+                                 L"del bag[4]\n"
+                                 L"bag.total\n");
+
+    EXPECT_EQ(Value::from_smi(9), file_runner.return_value);
+}
+
+TEST(Interpreter, subscript_delete_observes_replaced_dunder_delitem)
+{
+    test::FileRunner file_runner(L"class Bag:\n"
+                                 L"    def __init__(self):\n"
+                                 L"        self.total = 0\n"
+                                 L"    def __delitem__(self, key):\n"
+                                 L"        self.total = 1\n"
+                                 L"def del_item(obj, key):\n"
+                                 L"    del obj[key]\n"
+                                 L"bag = Bag()\n"
+                                 L"del_item(bag, 0)\n"
+                                 L"first = bag.total\n"
+                                 L"def replacement(self, key):\n"
+                                 L"    self.total = 2\n"
+                                 L"Bag.__delitem__ = replacement\n"
+                                 L"del_item(bag, 0)\n"
+                                 L"first * 10 + bag.total\n");
+
+    EXPECT_EQ(Value::from_smi(12), file_runner.return_value);
+}
+
 TEST(Interpreter, dict_literal_returns_dict_object)
 {
     test::VmTestContext test_context;

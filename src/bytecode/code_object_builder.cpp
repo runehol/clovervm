@@ -655,18 +655,30 @@ namespace cl
         return Expected<uint32_t>::ok(result);
     }
 
-    Expected<uint32_t> CodeObjectBuilder::emit_store_subscript(
-        uint32_t source_offset, uint32_t receiver_reg, uint32_t key_reg)
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_store_subscript(uint32_t source_offset,
+                                            uint32_t first_arg_reg)
     {
-        return emit_opcode_reg_reg(source_offset, Bytecode::StoreSubscript,
-                                   receiver_reg, key_reg);
+        assert_call_args_are_topmost(first_arg_reg, 3);
+        uint8_t cache_idx = CL_TRY(allocate_subscript_cache());
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::StoreSubscript));
+        emplace_back(source_offset, encode_reg(first_arg_reg));
+        emplace_back(source_offset, cache_idx);
+        return Expected<uint32_t>::ok(result);
     }
 
-    Expected<uint32_t> CodeObjectBuilder::emit_del_subscript(
-        uint32_t source_offset, uint32_t receiver_reg, uint32_t key_reg)
+    Expected<uint32_t>
+    CodeObjectBuilder::emit_del_subscript(uint32_t source_offset,
+                                          uint32_t first_arg_reg)
     {
-        return emit_opcode_reg_reg(source_offset, Bytecode::DelSubscript,
-                                   receiver_reg, key_reg);
+        assert_call_args_are_topmost(first_arg_reg, 2);
+        uint8_t cache_idx = CL_TRY(allocate_subscript_cache());
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::DelSubscript));
+        emplace_back(source_offset, encode_reg(first_arg_reg));
+        emplace_back(source_offset, cache_idx);
+        return Expected<uint32_t>::ok(result);
     }
 
     Expected<uint32_t> CodeObjectBuilder::emit_jump(uint32_t source_offset,

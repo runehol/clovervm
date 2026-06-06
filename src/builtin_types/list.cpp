@@ -91,11 +91,49 @@ namespace cl
         return self.get_ptr<List>()->get_item(py_idx);
     }
 
+    static Value native_list_setitem(ThreadState *thread, Value self,
+                                     Value index_value, Value value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"__setitem__"));
+        int64_t py_idx = 0;
+        CL_PROPAGATE_EXCEPTION(require_smi_index(
+            index_value, L"list indices must be integers", py_idx));
+        return self.get_ptr<List>()->set_item(py_idx, value);
+    }
+
+    static Value native_list_delitem(ThreadState *thread, Value self,
+                                     Value index_value)
+    {
+        CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"__delitem__"));
+        int64_t py_idx = 0;
+        CL_PROPAGATE_EXCEPTION(require_smi_index(
+            index_value, L"list indices must be integers", py_idx));
+        CL_PROPAGATE_EXCEPTION(self.get_ptr<List>()->pop_item(py_idx));
+        return Value::None();
+    }
+
     static Value trusted_list_getitem_smi_handler(ThreadState *thread,
                                                   Value self, Value index_value)
     {
         (void)thread;
         return self.get_ptr<List>()->get_item(index_value.get_smi());
+    }
+
+    static Value trusted_list_setitem_smi_handler(ThreadState *thread,
+                                                  Value self, Value index_value,
+                                                  Value value)
+    {
+        (void)thread;
+        return self.get_ptr<List>()->set_item(index_value.get_smi(), value);
+    }
+
+    static Value trusted_list_delitem_smi_handler(ThreadState *thread,
+                                                  Value self, Value index_value)
+    {
+        (void)thread;
+        CL_PROPAGATE_EXCEPTION(
+            self.get_ptr<List>()->pop_item(index_value.get_smi()));
+        return Value::None();
     }
 
     static TrustedHandlerResolution
@@ -110,6 +148,38 @@ namespace cl
         {
             resolution.arity = TrustedHandlerArity::Binary;
             resolution.binary = trusted_list_getitem_smi_handler;
+        }
+        return resolution;
+    }
+
+    static TrustedHandlerResolution
+    resolve_trusted_list_setitem_handler(VirtualMachine *vm,
+                                         ShapeKey container_key,
+                                         ShapeKey key_key, ShapeKey unused)
+    {
+        (void)unused;
+        TrustedHandlerResolution resolution;
+        if(vm->shape_for_key(container_key)->get_class() == vm->list_class() &&
+           key_key == ShapeKey::from_value(Value::from_smi(0)))
+        {
+            resolution.arity = TrustedHandlerArity::Ternary;
+            resolution.ternary = trusted_list_setitem_smi_handler;
+        }
+        return resolution;
+    }
+
+    static TrustedHandlerResolution
+    resolve_trusted_list_delitem_handler(VirtualMachine *vm,
+                                         ShapeKey container_key,
+                                         ShapeKey key_key, ShapeKey unused)
+    {
+        (void)unused;
+        TrustedHandlerResolution resolution;
+        if(vm->shape_for_key(container_key)->get_class() == vm->list_class() &&
+           key_key == ShapeKey::from_value(Value::from_smi(0)))
+        {
+            resolution.arity = TrustedHandlerArity::Binary;
+            resolution.binary = trusted_list_delitem_smi_handler;
         }
         return resolution;
     }
@@ -282,6 +352,14 @@ namespace cl
                 builtin_intrinsic_method(L"__getitem__", native_list_getitem,
                                          L"Return self[index]."),
                 resolve_trusted_list_getitem_handler),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__setitem__", native_list_setitem,
+                                         L"Set self[index] to value."),
+                resolve_trusted_list_setitem_handler),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__delitem__", native_list_delitem,
+                                         L"Delete self[index]."),
+                resolve_trusted_list_delitem_handler),
             builtin_intrinsic_method(L"__iter__", native_list_iter,
                                      L"Implement iter(self)."),
             builtin_intrinsic_method(L"__add__", native_list_add,

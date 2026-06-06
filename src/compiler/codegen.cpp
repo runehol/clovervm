@@ -1257,8 +1257,17 @@ namespace cl
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
                 CL_TRY(codegen_node(children[1]));
-                CL_TRY(code_obj->emit_store_subscript(
-                    source_offset, receiver_reg.reg, key_reg.reg));
+                {
+                    TemporaryReg call_args(*code_obj, 3,
+                                           RegisterAlignment::CallFrame);
+                    CL_TRY(code_obj->emit_mov(source_offset, call_args,
+                                              receiver_reg.reg));
+                    CL_TRY(code_obj->emit_mov(source_offset, call_args + 1,
+                                              key_reg.reg));
+                    CL_TRY(code_obj->emit_star(source_offset, call_args + 2));
+                    CL_TRY(code_obj->emit_store_subscript(source_offset,
+                                                          call_args));
+                }
                 return Expected<void>::ok();
             }
 
@@ -1290,8 +1299,17 @@ namespace cl
                                                 lhs_value_reg));
             }
 
-            CL_TRY(code_obj->emit_store_subscript(
-                source_offset, receiver_reg.reg, key_reg.reg));
+            {
+                TemporaryReg call_args(*code_obj, 3,
+                                       RegisterAlignment::CallFrame);
+                CL_TRY(code_obj->emit_mov(source_offset, call_args,
+                                          receiver_reg.reg));
+                CL_TRY(code_obj->emit_mov(source_offset, call_args + 1,
+                                          key_reg.reg));
+                CL_TRY(code_obj->emit_star(source_offset, call_args + 2));
+                CL_TRY(
+                    code_obj->emit_store_subscript(source_offset, call_args));
+            }
             return Expected<void>::ok();
         }
 
@@ -1303,8 +1321,15 @@ namespace cl
                 CL_TRY(codegen_node_into_a_register(target_children[0]));
             ScopedRegister key_reg =
                 CL_TRY(codegen_node_into_a_register(target_children[1]));
-            CL_TRY(code_obj->emit_del_subscript(source_offset, receiver_reg.reg,
-                                                key_reg.reg));
+            {
+                TemporaryReg call_args(*code_obj, 2,
+                                       RegisterAlignment::CallFrame);
+                CL_TRY(code_obj->emit_mov(source_offset, call_args,
+                                          receiver_reg.reg));
+                CL_TRY(code_obj->emit_mov(source_offset, call_args + 1,
+                                          key_reg.reg));
+                CL_TRY(code_obj->emit_del_subscript(source_offset, call_args));
+            }
             return Expected<void>::ok();
         }
 
@@ -1671,8 +1696,17 @@ namespace cl
                 ScopedRegister key_reg =
                     CL_TRY(codegen_node_into_a_register(target_children[1]));
                 CL_TRY(code_obj->emit_ldar(source_offset, value_reg));
-                CL_TRY(code_obj->emit_store_subscript(
-                    source_offset, receiver_reg.reg, key_reg.reg));
+                {
+                    TemporaryReg call_args(*code_obj, 3,
+                                           RegisterAlignment::CallFrame);
+                    CL_TRY(code_obj->emit_mov(source_offset, call_args,
+                                              receiver_reg.reg));
+                    CL_TRY(code_obj->emit_mov(source_offset, call_args + 1,
+                                              key_reg.reg));
+                    CL_TRY(code_obj->emit_star(source_offset, call_args + 2));
+                    CL_TRY(code_obj->emit_store_subscript(source_offset,
+                                                          call_args));
+                }
                 return Expected<void>::ok();
             }
 
@@ -2407,8 +2441,19 @@ namespace cl
                             ScopedRegister key_reg = CL_TRY(
                                 codegen_node_into_a_register(lhs_children[1]));
                             CL_TRY(codegen_node(children[2]));
-                            CL_TRY(code_obj->emit_store_subscript(
-                                source_offset, receiver_reg.reg, key_reg.reg));
+                            {
+                                TemporaryReg call_args(
+                                    *code_obj, 3, RegisterAlignment::CallFrame);
+                                CL_TRY(code_obj->emit_mov(source_offset,
+                                                          call_args,
+                                                          receiver_reg.reg));
+                                CL_TRY(code_obj->emit_mov(
+                                    source_offset, call_args + 1, key_reg.reg));
+                                CL_TRY(code_obj->emit_star(source_offset,
+                                                           call_args + 2));
+                                CL_TRY(code_obj->emit_store_subscript(
+                                    source_offset, call_args));
+                            }
                             break;
                         }
                         CL_TRY(codegen_node(children[2]));
