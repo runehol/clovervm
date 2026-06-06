@@ -316,6 +316,13 @@ Checkpoint:
   The spike does not require continuation machinery to defer cache publication
   until after the method body returns.
 
+Status: done for uncached execution. `LoadSubscript` resolves
+`type(container).__getitem__`, prepares the selected managed `Function` call
+from the `[container, key]` argument span, and enters that function directly.
+The `get_item_ic` operand is still ignored, so class mutation and method
+replacement are observed by repeating special-method lookup on every
+execution.
+
 ### Stage 5: Cache And Replay The Executable Plan
 
 Once Stage 4 has a coherent executable miss path, make the cache entry hold

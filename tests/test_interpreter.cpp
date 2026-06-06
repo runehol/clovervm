@@ -1887,6 +1887,57 @@ TEST(Interpreter, subscript_load_reads_tuple_item_with_negative_index)
                  string_as_wchar_t(actual.get_ptr<ClassObject>()->get_name()));
 }
 
+TEST(Interpreter, subscript_load_calls_user_defined_dunder_getitem)
+{
+    test::FileRunner file_runner(L"class Bag:\n"
+                                 L"    def __getitem__(self, key):\n"
+                                 L"        return key + 3\n"
+                                 L"Bag()[4]\n");
+
+    EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
+}
+
+TEST(Interpreter, subscript_load_calls_dunder_getitem_every_time)
+{
+    test::FileRunner file_runner(L"class Bag:\n"
+                                 L"    def __init__(self):\n"
+                                 L"        self.count = 0\n"
+                                 L"    def __getitem__(self, key):\n"
+                                 L"        self.count += 1\n"
+                                 L"        return key + self.count\n"
+                                 L"bag = Bag()\n"
+                                 L"first = bag[10]\n"
+                                 L"second = bag[10]\n"
+                                 L"first * 100 + second\n");
+
+    EXPECT_EQ(Value::from_smi(1112), file_runner.return_value);
+}
+
+TEST(Interpreter, subscript_load_returns_notimplemented_from_dunder_getitem)
+{
+    test::FileRunner file_runner(L"class Bag:\n"
+                                 L"    def __getitem__(self, key):\n"
+                                 L"        return NotImplemented\n"
+                                 L"Bag()[0]\n");
+
+    EXPECT_EQ(Value::NotImplemented(), file_runner.return_value);
+}
+
+TEST(Interpreter, subscript_load_observes_replaced_dunder_getitem)
+{
+    test::FileRunner file_runner(L"class Bag:\n"
+                                 L"    def __getitem__(self, key):\n"
+                                 L"        return 1\n"
+                                 L"bag = Bag()\n"
+                                 L"first = bag[0]\n"
+                                 L"def replacement(self, key):\n"
+                                 L"    return 2\n"
+                                 L"Bag.__getitem__ = replacement\n"
+                                 L"first * 10 + bag[0]\n");
+
+    EXPECT_EQ(Value::from_smi(12), file_runner.return_value);
+}
+
 TEST(Interpreter, dict_literal_returns_dict_object)
 {
     test::VmTestContext test_context;
