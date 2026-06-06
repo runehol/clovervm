@@ -27,14 +27,16 @@ Implement only:
 
 Do not implement in this spike:
 
-- trusted native handlers
-- trusted-publication state in `ThreadState`
 - compound enter/continue opcodes
 - binary, in-place, comparison, store-item, or delete-item caches
 - descriptor-general replay
 - class subscription through `__class_getitem__`
 - polymorphic inline caches or megamorphic state
 - exception-path caching
+
+Trusted native get-item handlers are allowed only as the Stage 8 extension:
+guarded by the selected `__getitem__` lookup, resolved from the selected
+`CodeObject`, and limited to narrow exact shape-key cases.
 
 The spike is allowed to be slower than the eventual design. It should answer
 the semantic and integration questions first.
@@ -84,8 +86,10 @@ design the eventual continuation system.
 
 Trusted handlers also do not require continuation state. A future trusted
 handler hit validates guards, calls a native handler, and returns the handler's
-result. Trusted-publication state is only a possible miss-path mechanism for
-deciding whether to install such a handler, and is out of scope here.
+result. For get-item, a trusted handler can be selected as soon as dunder-method
+lookup has selected a trusted builtin `__getitem__` code object and the cache has
+the container/key `ShapeKey`s. No return-continuation opcode or `ThreadState`
+publication slot is needed.
 
 ## Staging
 
@@ -407,6 +411,74 @@ changes, and focused release opcode-frame checks and getitem benchmarks were
 run during the hot-path cleanup. This document-only update does not require a
 new build.
 
+### Stage 8: Add Minimal Trusted Handler Resolution
+
+This stage adds the smallest direct-handler path for get-item without changing
+the broader operator architecture.
+
+The key design choices are:
+
+- handlers are arity-typed native function pointers;
+- the resolver is universal and attached to the selected `CodeObject`;
+- a non-null resolver is the trust marker for that code object;
+- the resolver takes `VirtualMachine *`, an operator family, and operand
+  `ShapeKey`s;
+- resolver result `None` means "trusted method, but no direct handler for this
+  shape combination";
+- get-item does not need a continuation opcode because it has only one selected
+  dunder call and no `NotImplemented` protocol continuation.
+
+Implementation checklist:
+
+- [ ] Add shared trusted-handler types near the existing native function target
+  types:
+  - `UnaryHandler`;
+  - `BinaryHandler`;
+  - `TernaryHandler`;
+  - `TrustedHandlerArity`;
+  - `TrustedHandlerResolution`;
+  - `OperatorFamily`, initially with `GetItem`;
+  - `TrustedHandlerResolver`.
+- [ ] Add one nullable resolver field to `CodeObject`:
+  `TrustedHandlerResolver trusted_handler_resolver = nullptr`.
+- [ ] Extend builtin intrinsic method construction so selected builtin
+  `__getitem__` methods can attach a resolver to their code object, while all
+  existing callers default to no resolver.
+- [ ] Add `BinaryHandler handler = nullptr` to `GetItemInlineCache` and clear it
+  with the rest of the cache entry.
+- [ ] On a get-item cache hit, after method-read and key-shape guards validate,
+  call `cache.handler(thread, container, key)` when the handler is non-null.
+  Propagate `Value::exception_marker()` through the normal interpreter
+  exception path.
+- [ ] On a get-item cache miss, once lookup has selected a function-shaped
+  `__getitem__` and call arity/adaptation are valid, consult the selected code
+  object's resolver:
+
+  ```text
+  resolution = resolver(vm, OperatorFamily::GetItem,
+                        container_shape_key, key_shape_key, ShapeKey{})
+  ```
+
+- [ ] If the resolver returns `TrustedHandlerArity::Binary`, install the typed
+  `BinaryHandler` in the get-item IC. Still install the dunder-call replay
+  payload so resolver `None` keeps the lookup-skipping call cache useful.
+- [ ] Start with exact builtin cases whose handler does not skip arbitrary
+  Python key behavior, such as `list[smi]`, `tuple[smi]`, and `str[smi]`.
+  Leave dict and slice handlers for a follow-up unless they stay obviously
+  narrow.
+- [ ] Keep the handler path behind the validated dunder-method lookup. The
+  shape-key pair alone is not authority to run a native shortcut.
+
+Checkpoint:
+
+- [ ] `LoadSubscript` cache hits for recognized builtin getitem cases skip both
+  dunder lookup and the Python-shaped builtin method call.
+- [ ] User-defined and unrecognized builtin/key combinations still use the
+  existing cached dunder-call replay.
+- [ ] Class mutation invalidates the trusted handler through the same
+  method-read validity guard.
+- [ ] No `ThreadState` publication slot or continuation opcode is introduced.
+
 ## Blurry Areas The Spike Should Resolve
 
 - [x] What exact shape API should operator dispatch use for inline values,
@@ -450,16 +522,29 @@ new build.
   protocol-selected path?
 
   The current supported builtin subscription set is exposed.
+- [x] Does get-item need continuation machinery before trusted native handlers?
+
+  No. Once lookup selects a trusted builtin `__getitem__` code object, the miss
+  path can ask that code object's resolver for a handler using the observed
+  container/key `ShapeKey`s. Get-item has no reflected candidate and no
+  `NotImplemented` continuation, so handler installation does not need a
+  post-call continuation opcode.
+- [x] Does trusted get-item need a `ThreadState` publication slot?
+
+  No. Resolver presence on the selected `CodeObject` is the trust marker, and
+  the resolver result says whether this operand-shape combination has a direct
+  handler. A side channel would be unnecessary state.
 
 ## Remaining Work
 
 - [x] Add explicit interpreter tests for inherited-base invalidation.
 - [x] Add explicit interpreter tests that negative lookups remain uncached.
 - [x] Add explicit interpreter tests for raising `__getitem__` after cache
-  publication.
+  installation.
 - [x] Add explicit interpreter tests for key-shape miss and monomorphic
   replacement at the same bytecode site.
-- [ ] Design trusted native getitem handler publication and cache payloads.
+- [ ] Implement minimal trusted getitem handler resolution through a
+  `CodeObject` resolver and typed `BinaryHandler` cache arm.
 - [ ] Decide how much getitem register traffic to remove in codegen now that
   `LoadSubscript` no longer uses the accumulator as the key.
 
