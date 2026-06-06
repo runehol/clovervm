@@ -2861,10 +2861,12 @@ namespace cl
     static INTERP_CC Value op_load_subscript(PARAMS)
     {
         START(3);
-        int8_t reg = pc[1];
+        int8_t first_arg_reg = pc[1];
         uint8_t cache_idx = pc[2];
         (void)cache_idx;
-        accumulator = load_subscript(fp[reg], accumulator);
+        Value receiver = fp[first_arg_reg];
+        Value key = fp[first_arg_reg - 1];
+        accumulator = load_subscript(receiver, key);
         if(unlikely(accumulator.is_exception_marker()))
         {
             MUSTTAIL return propagate_pending_exception(ARGS);

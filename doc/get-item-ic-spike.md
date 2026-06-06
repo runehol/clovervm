@@ -255,11 +255,14 @@ Checkpoint:
 
 - Existing get-item behavior is unchanged when the cache is empty or disabled.
 
-Status: done in the first Stage 3 implementation. `LoadSubscript` now carries
-one `get_item_ic` operand allocated from `CodeObject::get_item_caches`.
-Disassembly prints the new cache operand, and the interpreter reads but does
-not use the cache index yet. Runtime behavior remains on the existing
-`load_subscript` helper.
+Status: done in the first Stage 3 implementation, then adjusted for the Stage
+4 call-entry shape. `LoadSubscript` now carries one `get_item_ic` operand
+allocated from `CodeObject::get_item_caches`, and codegen lowers `obj[key]`
+with a prepared call-frame-aligned argument span containing `[container, key]`.
+Disassembly prints the cache operand next to the first argument register. The
+interpreter reads but does not use the cache index yet, and runtime behavior
+still delegates to the existing `load_subscript` helper using the prepared
+container/key registers rather than the accumulator as the key.
 
 ### Stage 4: Resolve And Execute An Uncached Get-Item Plan
 
