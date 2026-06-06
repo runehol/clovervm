@@ -2872,7 +2872,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_load_subscript_protocol_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_load_subscript_cache_miss(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 3;
         int8_t first_arg_reg = pc[1];
@@ -2994,15 +2994,15 @@ namespace cl
         GetItemInlineCache &cache = code_object->get_item_caches[cache_idx];
         if(unlikely(!cache.method_read_cache.matches(receiver)))
         {
-            MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
+            MUSTTAIL return op_load_subscript_cache_miss(ARGS);
         }
         if(unlikely(cache.key_shape_key != ShapeKey::from_value(key)))
         {
-            MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
+            MUSTTAIL return op_load_subscript_cache_miss(ARGS);
         }
         if(unlikely(cache.function == nullptr))
         {
-            MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
+            MUSTTAIL return op_load_subscript_cache_miss(ARGS);
         }
         if(unlikely(cache.adaptation != FunctionCallAdaptation::FixedArity))
         {
