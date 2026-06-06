@@ -330,6 +330,19 @@ TEST(Value, InlineTypePredicatesDistinguishSmiBoolNoneAndSingletons)
     EXPECT_TRUE(Value::Ellipsis().is_truthy());
 }
 
+TEST(Value, InlineSingletonsHaveDistinctLowTags)
+{
+    EXPECT_EQ(0u, Value::from_smi(0).as.integer & value_tag_mask);
+    EXPECT_EQ(value_boolean_tag, Value::False().as.integer & value_tag_mask);
+    EXPECT_EQ(value_boolean_tag, Value::True().as.integer & value_tag_mask);
+    EXPECT_NE(Value::None().as.integer & value_tag_mask,
+              Value::NotImplemented().as.integer & value_tag_mask);
+    EXPECT_NE(Value::None().as.integer & value_tag_mask,
+              Value::Ellipsis().as.integer & value_tag_mask);
+    EXPECT_NE(Value::NotImplemented().as.integer & value_tag_mask,
+              Value::Ellipsis().as.integer & value_tag_mask);
+}
+
 TEST(TValue, CustomCheckedConstructionReturnsExpectedSuccess)
 {
     Expected<TValue<SMI>> smi = TValue<SMI>::from_value_or_raise(

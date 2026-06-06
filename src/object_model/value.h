@@ -11,28 +11,38 @@ namespace cl
 {
     void add_to_active_zero_count_table_if_needed(HeapObject *obj);
 
-/*
-  A cl_value is a 64-bit generic cell to hold any value. It holds some of them
-  inline, and some of them indirect.
+    /*
+      A cl_value is a 64-bit generic cell to hold any value. It holds some
+      values inline, and some indirectly.
 
-  The structure is as follows, with a 5 bit tag in the lowest bits
-  XXXXXXXXX....XXXXTTTTT
+      The structure uses a 5-bit tag in the lowest bits:
 
-  The tag is divided as follows:
-  Bit 4 (16): Refcounted pointer
-  Bit 3 (8): Interned pointer
-  Bit 2 (4): Boolean. Also sets bit 5 for truthiness, for easy conversion and
-  comparison to int Bit 1-0: Other special values
+          XXXXXXXXX....XXXXTTTTT
 
-  The tags then are as follows:
-  00000: small integer, with the value is stored as signed two complement in the
-  upper 59 bits. 00011: special truthy value. Only one known: 0x23: True 00010:
-  special falsy value. Two known: 0x22: False, 0x42: None 01000: interned
-  pointer 10000: refcounted pointer
+      The tag bits are divided as follows:
 
+          bit 4 (0x10): refcounted pointer
+          bit 3 (0x08): interned pointer
+          bit 2 (0x04): boolean tag
+          bits 1-0:    other special values
 
+      Boolean values also use bit 5 for truthiness and cheap integer
+      conversion. Other truthy inline singletons can use bit 5 the same way.
 
-*/
+      The inline/pointer tags are:
+
+          0x00: small integer, stored as signed two's complement in the upper
+                59 bits
+          0x01: None
+          0x02: not-present VM sentinel
+          0x03: exception VM sentinel
+          0x04: False
+          0x24: True
+          0x25: NotImplemented
+          0x26: Ellipsis
+          0x08: interned pointer
+          0x10: refcounted pointer
+    */
 #ifndef likely
 #define likely(x) __builtin_expect((x), 1)
 #endif
@@ -62,8 +72,8 @@ namespace cl
     static constexpr uint64_t value_none = 0x01;
     static constexpr uint64_t value_not_present = 0x02;
     static constexpr uint64_t value_exception = 0x03;
-    static constexpr uint64_t value_not_implemented = 0x21;
-    static constexpr uint64_t value_ellipsis = 0x41;
+    static constexpr uint64_t value_not_implemented = 0x25;
+    static constexpr uint64_t value_ellipsis = 0x26;
     static constexpr uint64_t value_truthy_mask = 0xffffffffffffffe0ull;
     static constexpr uint64_t value_ptr_mask =
         value_refcounted_ptr_tag | value_interned_ptr_tag;
@@ -83,6 +93,12 @@ namespace cl
     static_assert((value_ellipsis & value_truthy_mask) != 0);
     static_assert((value_not_implemented >> value_tag_bits) != 0);
     static_assert((value_ellipsis >> value_tag_bits) != 0);
+    static_assert((value_none & value_tag_mask) !=
+                  (value_not_implemented & value_tag_mask));
+    static_assert((value_none & value_tag_mask) !=
+                  (value_ellipsis & value_tag_mask));
+    static_assert((value_not_implemented & value_tag_mask) !=
+                  (value_ellipsis & value_tag_mask));
 
     enum class ValueStorageClass
     {
