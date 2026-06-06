@@ -85,9 +85,9 @@ JIT, language, and runtime work.
    `__call__`, and native-to-managed keyword-call APIs.
 
    Keep this as an extension of the existing positional and keyword call-plan
-   model. Do not collapse `CallPositional`, `CallKeyword`, and direct method
-   calls into one broad generic slow path unless measurements show the current
-   specialization is the wrong shape.
+   model. Do not collapse `CallPositional`, `CallKeyword`, direct positional
+   method calls, and direct keyword method calls into one broad generic slow
+   path unless measurements show the current specialization is the wrong shape.
 
    Call adaptation must remain call-site-shaped, not just callee-shaped. A
    function with defaults can still use the fixed-arity frame-entry path when a
