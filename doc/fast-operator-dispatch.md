@@ -963,31 +963,32 @@ if function == nullptr:
 enter cached function/code object with prepared [container, key] args
 ```
 
-The handler is not independent dispatch authority. It is a post-call refinement
-of the same validated dunder lookup:
+The handler is not independent dispatch authority. It is a refinement of the
+same validated dunder lookup:
 
 ```text
 miss:
     dunder_lookup(type(container), "__getitem__")
     -> AttributeReadDescriptor / method-call target
 
-    prepare [container, key] call argument span
-    call selected function-shaped method
-    -> real Python-visible semantics happen
+    validate callable, call arity, and call adaptation
 
-    recognize trusted native handler when the trace proves one
-    -> this exact call can be replaced by handler H
+    if selected code object has a trusted handler resolver:
+        ask resolver(container_shape_key, key_shape_key)
+
+    if resolver returns handler H:
+        install handler H
+        execute handler H for the current operation
+    else:
+        prepare [container, key] call argument span
+        enter selected function-shaped method
+        -> real Python-visible method behavior happens
 
 install:
     method_read_cache
     key_shape_key
     function/code/adaptation/has_self
-    handler = H, if the completed trace recognized one
-
-    if handler was resolved on the miss:
-        execute handler(container, key) immediately
-    else:
-        enter the selected __getitem__ function
+    handler = H, if a trusted resolver returned one
 
 hit:
     method_read_cache still valid?
@@ -1004,9 +1005,10 @@ dunder lookup still selects the same trusted method and the trusted-handler
 recognizer has mapped that selected method plus the observed shape keys to an
 equivalent native shortcut.
 
-For the first get-item implementation, the selected builtin `__getitem__` code
-object can carry a `TrustedHandlerResolver`. The miss path calls that resolver
-after the real dunder call succeeds:
+The selected builtin `__getitem__` code object may carry a
+`TrustedHandlerResolver`. The miss path calls that resolver after dunder lookup
+has selected the function-shaped method and ordinary call validation has
+succeeded:
 
 ```text
 resolution = code_object->trusted_handler_resolver(
@@ -1017,9 +1019,20 @@ if resolution.arity == TrustedHandlerArity::Binary:
     run resolution.binary for the current operation
 ```
 
-The arity check belongs on the miss path. The hit path stores and calls only the
-typed `BinaryHandler`, so it does not need a resolver, arity switch, or union
-access.
+The resolver must prove the direct handler's preconditions. For the current
+trusted get-item handlers, that means exact builtin receiver class and exact SMI
+key shape before returning a no-type-check handler. The arity check belongs on
+the miss path. The hit path stores and calls only the typed `BinaryHandler`, so
+it does not need a resolver, arity switch, or union access.
+
+Current get-item status:
+
+- `list[smi]`, `tuple[smi]`, and `str[smi]` use trusted handlers after guarded
+  `__getitem__` lookup selects the corresponding builtin method.
+- user-defined `__getitem__` and unsupported builtin/key combinations use the
+  cached dunder-method-call replay path.
+- dict, slice, store-subscript, and delete-subscript trusted handlers remain
+  later extensions.
 
 The monomorphic get-item cache should treat the container and key `ShapeKey`s as
 an all-or-nothing guard. A key-shape mismatch should miss and retrace even
@@ -1124,9 +1137,10 @@ binding discipline when optimized.
 
 ## Installation Rule
 
-The generic dispatcher records a dispatch trace. Trusted-handler recognition
-uses the selected method's resolver, operand shape keys, and completed trace.
-The opcode miss path owns cache installation.
+The generic dispatcher records the dispatch facts for a miss. Trusted-handler
+recognition uses the selected method's resolver and operand shape keys. For
+multi-candidate protocols, it may also need the completed trace. The opcode miss
+path owns cache installation.
 
 Dunder-method-call cache state may be installed once lookup, binding, callable
 validation, call-argument layout, and call adaptation have produced an
@@ -1134,20 +1148,26 @@ executable call plan. The cache stores how to replay the selected call, not the
 method result. If the method body later raises, the cache may still be valid:
 the next hit must execute the method again and propagate whatever happens then.
 
-Trusted-handler installation is stricter. A handler that skips the dunder method
+Trusted-handler installation is stricter. For single-candidate protocols such
+as get-item subscription, a resolver may return a handler before calling the
+dunder method, but only if the resolver fully proves the handler's preconditions
+from the selected method identity and operand shape keys. The miss path then
+installs and executes that handler immediately. For continuation protocols such
+as binary or in-place operators, a handler that skips later candidate behavior
 should be installed only after the operation has completed successfully and the
 completed dispatch trace is recognized as equivalent to the handler. Exception
 paths must not accidentally install a direct handler.
 
-The first successful installation choice for a completed recognized operation
-is:
+The first successful installation choice for a recognized get-item operation is:
 
 ```text
 if resolver != nullptr &&
    resolution.arity != TrustedHandlerArity::None:
     install TrustedHandler
+    execute TrustedHandler for the current miss
 else if lookup descriptor has a cacheable DunderMethodDispatchPlan:
     install DunderMethodCall
+    enter selected dunder method for the current miss
 else:
     leave empty or install an explicit miss/unhandled entry
 ```
