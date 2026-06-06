@@ -1938,6 +1938,73 @@ TEST(Interpreter, subscript_load_observes_replaced_dunder_getitem)
     EXPECT_EQ(Value::from_smi(12), file_runner.return_value);
 }
 
+TEST(Interpreter, subscript_load_observes_replaced_inherited_dunder_getitem)
+{
+    test::FileRunner file_runner(L"class Base:\n"
+                                 L"    def __getitem__(self, key):\n"
+                                 L"        return 1\n"
+                                 L"class Bag(Base):\n"
+                                 L"    pass\n"
+                                 L"def get(obj, key):\n"
+                                 L"    return obj[key]\n"
+                                 L"bag = Bag()\n"
+                                 L"first = get(bag, 0)\n"
+                                 L"def replacement(self, key):\n"
+                                 L"    return 2\n"
+                                 L"Base.__getitem__ = replacement\n"
+                                 L"first * 10 + get(bag, 0)\n");
+
+    EXPECT_EQ(Value::from_smi(12), file_runner.return_value);
+}
+
+TEST(Interpreter, subscript_load_does_not_cache_negative_lookup)
+{
+    test::FileRunner file_runner(L"class Bag:\n"
+                                 L"    pass\n"
+                                 L"def get(obj, key):\n"
+                                 L"    return obj[key]\n"
+                                 L"bag = Bag()\n"
+                                 L"saw_type_error = False\n"
+                                 L"try:\n"
+                                 L"    get(bag, 0)\n"
+                                 L"except TypeError:\n"
+                                 L"    saw_type_error = True\n"
+                                 L"def replacement(self, key):\n"
+                                 L"    return key + 9\n"
+                                 L"Bag.__getitem__ = replacement\n"
+                                 L"if saw_type_error:\n"
+                                 L"    get(bag, 3)\n"
+                                 L"else:\n"
+                                 L"    0\n");
+
+    EXPECT_EQ(Value::from_smi(12), file_runner.return_value);
+}
+
+TEST(Interpreter, subscript_load_does_not_cache_raised_exception)
+{
+    test::FileRunner file_runner(L"class Bag:\n"
+                                 L"    def __init__(self):\n"
+                                 L"        self.count = 0\n"
+                                 L"    def __getitem__(self, key):\n"
+                                 L"        self.count += 1\n"
+                                 L"        if key == 1:\n"
+                                 L"            raise ValueError\n"
+                                 L"        return key + self.count * 10\n"
+                                 L"def get(obj, key):\n"
+                                 L"    return obj[key]\n"
+                                 L"bag = Bag()\n"
+                                 L"first = get(bag, 0)\n"
+                                 L"caught = 0\n"
+                                 L"try:\n"
+                                 L"    get(bag, 1)\n"
+                                 L"except ValueError:\n"
+                                 L"    caught = 1\n"
+                                 L"third = get(bag, 2)\n"
+                                 L"first * 100 + caught * 10 + third\n");
+
+    EXPECT_EQ(Value::from_smi(1042), file_runner.return_value);
+}
+
 TEST(Interpreter, subscript_load_caches_inline_key_shape)
 {
     test::VmTestContext test_context;
@@ -2004,6 +2071,45 @@ TEST(Interpreter, subscript_load_caches_getitem_with_default_arguments)
     EXPECT_EQ(2u, cache.n_args);
     EXPECT_TRUE(cache.has_self);
     EXPECT_EQ(FunctionCallAdaptation::Defaults, cache.adaptation);
+}
+
+TEST(Interpreter, subscript_load_replaces_cache_for_different_key_shape)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"get"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"class Bag:\n"
+                                  L"    def __getitem__(self, key):\n"
+                                  L"        return 7\n"
+                                  L"def get(obj, key):\n"
+                                  L"    return obj[key]\n"
+                                  L"bag = Bag()\n"
+                                  L"first = get(bag, 1)\n"
+                                  L"second = get(bag, None)\n"
+                                  L"first * 10 + second\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::from_smi(77), actual);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->get_item_caches.size());
+    const GetItemInlineCache &cache = function_code->get_item_caches[0];
+    ASSERT_NE(nullptr, cache.method_read_cache.receiver_shape);
+
+    EXPECT_EQ(ShapeKey::from_value(Value::None()), cache.key_shape_key);
+    EXPECT_EQ(test_context.thread()->shape_of_value(Value::None()),
+              test_context.vm().shape_for_key(cache.key_shape_key));
+    ASSERT_NE(nullptr, cache.function);
+    EXPECT_EQ(2u, cache.n_args);
+    EXPECT_TRUE(cache.has_self);
+    EXPECT_EQ(FunctionCallAdaptation::FixedArity, cache.adaptation);
 }
 
 TEST(Interpreter, dict_literal_returns_dict_object)

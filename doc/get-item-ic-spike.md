@@ -372,23 +372,22 @@ Add interpreter-level tests for:
   real builtin `__getitem__` method rather than a parallel opcode-only path
 - [x] replacing `C.__getitem__` after cache installation invalidates or misses and
   calls the new method
-- [ ] adding `__getitem__` after a negative lookup does not keep using the old
+- [x] adding `__getitem__` after a negative lookup does not keep using the old
   missing result if negative lookup caching is enabled
-- [ ] inherited `__getitem__` invalidates when the defining base class changes
+- [x] inherited `__getitem__` invalidates when the defining base class changes
 - [x] side effects inside `__getitem__` still run on every cached execution
 - [x] `__getitem__` returning `NotImplemented` returns that singleton
-- [ ] raising `__getitem__` propagates normally and does not cache the exception or
+- [x] raising `__getitem__` propagates normally and does not cache the exception or
   result value
-- [ ] different key shapes at the same bytecode site miss and replace the
+- [x] different key shapes at the same bytecode site miss and replace the
   monomorphic entry
 
 If negative lookup caching is not implemented in the spike, test that negative
 lookups are simply left uncacheable.
 
-Status: partial. Core hit/replacement/side-effect/NotImplemented/defaults and
-initial key-shape storage are covered. Explicit inherited-base invalidation,
-negative-lookup uncached behavior, raising-method behavior, and key-shape
-replacement coverage are still open.
+Status: done. Core hit/replacement/side-effect/NotImplemented/defaults,
+inherited-base invalidation, negative-lookup uncached behavior,
+raising-method behavior, and key-shape replacement coverage are all covered.
 
 ### Stage 7: Structural And Regression Tests
 
@@ -454,11 +453,11 @@ new build.
 
 ## Remaining Work
 
-- [ ] Add explicit interpreter tests for inherited-base invalidation.
-- [ ] Add explicit interpreter tests that negative lookups remain uncached.
-- [ ] Add explicit interpreter tests for raising `__getitem__` after cache
+- [x] Add explicit interpreter tests for inherited-base invalidation.
+- [x] Add explicit interpreter tests that negative lookups remain uncached.
+- [x] Add explicit interpreter tests for raising `__getitem__` after cache
   publication.
-- [ ] Add explicit interpreter tests for key-shape miss and monomorphic
+- [x] Add explicit interpreter tests for key-shape miss and monomorphic
   replacement at the same bytecode site.
 - [ ] Design trusted native getitem handler publication and cache payloads.
 - [ ] Decide how much getitem register traffic to remove in codegen now that
@@ -474,7 +473,7 @@ The spike is successful if:
   method that agrees with existing subscription behavior
 - [x] cached executions still call `__getitem__` every time
 - [x] direct class mutation invalidates the cached lookup dependency
-- [ ] base-class mutation invalidation has explicit test coverage
+- [x] base-class mutation invalidation has explicit test coverage
 - [x] unsupported descriptor and class-subscription cases fail conservatively
 - [x] the implementation identifies whether the executable-plan boundary is enough,
   or whether continuation machinery is actually needed before trusted handlers
