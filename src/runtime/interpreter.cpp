@@ -2910,7 +2910,7 @@ namespace cl
         COMPLETE();
     }
 
-    NOINLINE static INTERP_CC Value op_load_subscript_cache_miss(PARAMS)
+    NOINLINE static INTERP_CC Value op_get_item_cache_miss(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 3;
         int8_t receiver_reg = pc[1];
@@ -3027,7 +3027,7 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value op_load_subscript_cached_call_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_get_item_cached_call_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 3;
         int8_t receiver_reg = pc[1];
@@ -3054,7 +3054,7 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    static INTERP_CC Value op_load_subscript(PARAMS)
+    static INTERP_CC Value op_get_item(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 3;
         int8_t receiver_reg = pc[1];
@@ -3064,11 +3064,11 @@ namespace cl
         SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
         if(unlikely(!cache.method_read_cache.matches(receiver)))
         {
-            MUSTTAIL return op_load_subscript_cache_miss(ARGS);
+            MUSTTAIL return op_get_item_cache_miss(ARGS);
         }
         if(unlikely(cache.key_shape_key != ShapeKey::from_value(key)))
         {
-            MUSTTAIL return op_load_subscript_cache_miss(ARGS);
+            MUSTTAIL return op_get_item_cache_miss(ARGS);
         }
         if(cache.handler.binary != nullptr)
         {
@@ -3082,12 +3082,12 @@ namespace cl
         }
         if(unlikely(cache.function == nullptr))
         {
-            MUSTTAIL return op_load_subscript_cache_miss(ARGS);
+            MUSTTAIL return op_get_item_cache_miss(ARGS);
         }
-        MUSTTAIL return op_load_subscript_cached_call_slow(ARGS);
+        MUSTTAIL return op_get_item_cached_call_slow(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value op_store_subscript_cache_miss(PARAMS)
+    NOINLINE static INTERP_CC Value op_set_item_cache_miss(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 4;
         int8_t receiver_reg = pc[1];
@@ -3207,7 +3207,7 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value op_store_subscript_cached_call_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_set_item_cached_call_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 4;
         int8_t receiver_reg = pc[1];
@@ -3237,7 +3237,7 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    static INTERP_CC Value op_store_subscript(PARAMS)
+    static INTERP_CC Value op_set_item(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 4;
         int8_t receiver_reg = pc[1];
@@ -3249,11 +3249,11 @@ namespace cl
         SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
         if(unlikely(!cache.method_read_cache.matches(receiver)))
         {
-            MUSTTAIL return op_store_subscript_cache_miss(ARGS);
+            MUSTTAIL return op_set_item_cache_miss(ARGS);
         }
         if(unlikely(cache.key_shape_key != ShapeKey::from_value(key)))
         {
-            MUSTTAIL return op_store_subscript_cache_miss(ARGS);
+            MUSTTAIL return op_set_item_cache_miss(ARGS);
         }
         if(cache.handler.ternary != nullptr)
         {
@@ -3267,12 +3267,12 @@ namespace cl
         }
         if(unlikely(cache.function == nullptr))
         {
-            MUSTTAIL return op_store_subscript_cache_miss(ARGS);
+            MUSTTAIL return op_set_item_cache_miss(ARGS);
         }
-        MUSTTAIL return op_store_subscript_cached_call_slow(ARGS);
+        MUSTTAIL return op_set_item_cached_call_slow(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value op_del_subscript_cache_miss(PARAMS)
+    NOINLINE static INTERP_CC Value op_del_item_cache_miss(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 4;
         int8_t receiver_reg = pc[1];
@@ -3390,7 +3390,7 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    NOINLINE static INTERP_CC Value op_del_subscript_cached_call_slow(PARAMS)
+    NOINLINE static INTERP_CC Value op_del_item_cached_call_slow(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 4;
         int8_t receiver_reg = pc[1];
@@ -3418,7 +3418,7 @@ namespace cl
         MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
-    static INTERP_CC Value op_del_subscript(PARAMS)
+    static INTERP_CC Value op_del_item(PARAMS)
     {
         static constexpr uint32_t call_instr_len = 4;
         int8_t receiver_reg = pc[1];
@@ -3429,11 +3429,11 @@ namespace cl
         SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
         if(unlikely(!cache.method_read_cache.matches(receiver)))
         {
-            MUSTTAIL return op_del_subscript_cache_miss(ARGS);
+            MUSTTAIL return op_del_item_cache_miss(ARGS);
         }
         if(unlikely(cache.key_shape_key != ShapeKey::from_value(key)))
         {
-            MUSTTAIL return op_del_subscript_cache_miss(ARGS);
+            MUSTTAIL return op_del_item_cache_miss(ARGS);
         }
         if(cache.handler.binary != nullptr)
         {
@@ -3447,9 +3447,9 @@ namespace cl
         }
         if(unlikely(cache.function == nullptr))
         {
-            MUSTTAIL return op_del_subscript_cache_miss(ARGS);
+            MUSTTAIL return op_del_item_cache_miss(ARGS);
         }
-        MUSTTAIL return op_del_subscript_cached_call_slow(ARGS);
+        MUSTTAIL return op_del_item_cached_call_slow(ARGS);
     }
 
     static INTERP_CC Value op_add_smi(PARAMS)
@@ -5317,9 +5317,9 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::LoadAttr, op_load_attr);
         SET_TABLE_ENTRY(Bytecode::StoreAttr, op_store_attr);
         SET_TABLE_ENTRY(Bytecode::DelAttr, op_del_attr);
-        SET_TABLE_ENTRY(Bytecode::LoadSubscript, op_load_subscript);
-        SET_TABLE_ENTRY(Bytecode::StoreSubscript, op_store_subscript);
-        SET_TABLE_ENTRY(Bytecode::DelSubscript, op_del_subscript);
+        SET_TABLE_ENTRY(Bytecode::GetItem, op_get_item);
+        SET_TABLE_ENTRY(Bytecode::SetItem, op_set_item);
+        SET_TABLE_ENTRY(Bytecode::DelItem, op_del_item);
         SET_TABLE_ENTRY(Bytecode::CallMethodAttrPositional,
                         op_call_method_attr_positional);
         SET_TABLE_ENTRY(Bytecode::CallMethodAttrKeyword,

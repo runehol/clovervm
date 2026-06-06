@@ -227,12 +227,12 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "StoreAttr");
             case cl::Bytecode::DelAttr:
                 return format_to(out, "DelAttr");
-            case cl::Bytecode::LoadSubscript:
-                return format_to(out, "LoadSubscript");
-            case cl::Bytecode::StoreSubscript:
-                return format_to(out, "StoreSubscript");
-            case cl::Bytecode::DelSubscript:
-                return format_to(out, "DelSubscript");
+            case cl::Bytecode::GetItem:
+                return format_to(out, "GetItem");
+            case cl::Bytecode::SetItem:
+                return format_to(out, "SetItem");
+            case cl::Bytecode::DelItem:
+                return format_to(out, "DelItem");
             case cl::Bytecode::CallMethodAttrPositional:
                 return format_to(out, "CallMethodAttrPositional");
             case cl::Bytecode::CallMethodAttrKeyword:
@@ -687,15 +687,15 @@ template <> struct fmt::formatter<cl::CodeObject>
                 disassemble_mutation_cache(code_obj, out, pc++);
                 break;
 
-            case cl::Bytecode::LoadSubscript:
+            case cl::Bytecode::GetItem:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");
                 disassemble_subscript_cache(code_obj, out, pc++);
                 break;
 
-            case cl::Bytecode::StoreSubscript:
-            case cl::Bytecode::DelSubscript:
+            case cl::Bytecode::SetItem:
+            case cl::Bytecode::DelItem:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");

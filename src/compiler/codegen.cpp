@@ -1257,8 +1257,8 @@ namespace cl
             if(kind.operator_kind == AstOperatorKind::NOP)
             {
                 CL_TRY(codegen_node(children[1]));
-                CL_TRY(code_obj->emit_store_subscript(
-                    source_offset, receiver_reg.reg, key_reg.reg));
+                CL_TRY(code_obj->emit_set_item(source_offset, receiver_reg.reg,
+                                               key_reg.reg));
                 return Expected<void>::ok();
             }
 
@@ -1267,8 +1267,7 @@ namespace cl
                 kind.operator_kind, entry, children[1]);
 
             CL_TRY(code_obj->emit_ldar(source_offset, key_reg.reg));
-            CL_TRY(
-                code_obj->emit_load_subscript(source_offset, receiver_reg.reg));
+            CL_TRY(code_obj->emit_get_item(source_offset, receiver_reg.reg));
 
             if(immediate.has_value())
             {
@@ -1284,8 +1283,8 @@ namespace cl
                                                 lhs_value_reg));
             }
 
-            CL_TRY(code_obj->emit_store_subscript(
-                source_offset, receiver_reg.reg, key_reg.reg));
+            CL_TRY(code_obj->emit_set_item(source_offset, receiver_reg.reg,
+                                           key_reg.reg));
             return Expected<void>::ok();
         }
 
@@ -1297,8 +1296,8 @@ namespace cl
                 CL_TRY(codegen_node_into_a_register(target_children[0]));
             ScopedRegister key_reg =
                 CL_TRY(codegen_node_into_a_register(target_children[1]));
-            CL_TRY(code_obj->emit_del_subscript(source_offset, receiver_reg.reg,
-                                                key_reg.reg));
+            CL_TRY(code_obj->emit_del_item(source_offset, receiver_reg.reg,
+                                           key_reg.reg));
             return Expected<void>::ok();
         }
 
@@ -1665,8 +1664,8 @@ namespace cl
                 ScopedRegister key_reg =
                     CL_TRY(codegen_node_into_a_register(target_children[1]));
                 CL_TRY(code_obj->emit_ldar(source_offset, value_reg));
-                CL_TRY(code_obj->emit_store_subscript(
-                    source_offset, receiver_reg.reg, key_reg.reg));
+                CL_TRY(code_obj->emit_set_item(source_offset, receiver_reg.reg,
+                                               key_reg.reg));
                 return Expected<void>::ok();
             }
 
@@ -2401,7 +2400,7 @@ namespace cl
                             ScopedRegister key_reg = CL_TRY(
                                 codegen_node_into_a_register(lhs_children[1]));
                             CL_TRY(codegen_node(children[2]));
-                            CL_TRY(code_obj->emit_store_subscript(
+                            CL_TRY(code_obj->emit_set_item(
                                 source_offset, receiver_reg.reg, key_reg.reg));
                             break;
                         }
@@ -2519,8 +2518,8 @@ namespace cl
                         ScopedRegister receiver_reg =
                             CL_TRY(codegen_node_into_a_register(children[0]));
                         CL_TRY(codegen_node(children[1]));
-                        CL_TRY(code_obj->emit_load_subscript(source_offset,
-                                                             receiver_reg.reg));
+                        CL_TRY(code_obj->emit_get_item(source_offset,
+                                                       receiver_reg.reg));
                         break;
                     }
                     CL_TRY(codegen_binary_expression(node_idx));
