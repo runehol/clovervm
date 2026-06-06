@@ -2027,8 +2027,8 @@ TEST(Interpreter, subscript_load_caches_inline_key_shape)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->get_item_caches.size());
-    const GetItemInlineCache &cache = function_code->get_item_caches[0];
+    ASSERT_EQ(1u, function_code->subscript_caches.size());
+    const SubscriptInlineCache &cache = function_code->subscript_caches[0];
     ASSERT_NE(nullptr, cache.method_read_cache.receiver_shape);
     EXPECT_EQ(ShapeKey::from_value(Value::from_smi(1)), cache.key_shape_key);
     EXPECT_EQ(test_context.vm().smi_shape(),
@@ -2065,8 +2065,8 @@ TEST(Interpreter, subscript_load_caches_getitem_with_default_arguments)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->get_item_caches.size());
-    const GetItemInlineCache &cache = function_code->get_item_caches[0];
+    ASSERT_EQ(1u, function_code->subscript_caches.size());
+    const SubscriptInlineCache &cache = function_code->subscript_caches[0];
     ASSERT_NE(nullptr, cache.function);
     EXPECT_EQ(2u, cache.n_args);
     EXPECT_TRUE(cache.has_self);
@@ -2099,8 +2099,8 @@ TEST(Interpreter, subscript_load_replaces_cache_for_different_key_shape)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->get_item_caches.size());
-    const GetItemInlineCache &cache = function_code->get_item_caches[0];
+    ASSERT_EQ(1u, function_code->subscript_caches.size());
+    const SubscriptInlineCache &cache = function_code->subscript_caches[0];
     ASSERT_NE(nullptr, cache.method_read_cache.receiver_shape);
 
     EXPECT_EQ(ShapeKey::from_value(Value::None()), cache.key_shape_key);

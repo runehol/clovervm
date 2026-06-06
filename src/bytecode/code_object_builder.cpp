@@ -647,7 +647,7 @@ namespace cl
                                            uint32_t first_arg_reg)
     {
         assert_call_args_are_topmost(first_arg_reg, 2);
-        uint8_t cache_idx = CL_TRY(allocate_get_item_cache());
+        uint8_t cache_idx = CL_TRY(allocate_subscript_cache());
         uint32_t result =
             emplace_back(source_offset, uint8_t(Bytecode::LoadSubscript));
         emplace_back(source_offset, encode_reg(first_arg_reg));
@@ -961,12 +961,12 @@ namespace cl
         return Expected<uint8_t>::ok(encoded_idx);
     }
 
-    Expected<uint8_t> CodeObjectBuilder::allocate_get_item_cache()
+    Expected<uint8_t> CodeObjectBuilder::allocate_subscript_cache()
     {
-        uint32_t idx = code_obj->get_item_caches.size();
+        uint32_t idx = code_obj->subscript_caches.size();
         uint8_t encoded_idx =
-            CL_TRY(check_u8_operand_index(idx, L"get-item cache table"));
-        code_obj->get_item_caches.emplace_back();
+            CL_TRY(check_u8_operand_index(idx, L"subscript cache table"));
+        code_obj->subscript_caches.emplace_back();
         return Expected<uint8_t>::ok(encoded_idx);
     }
 

@@ -1304,7 +1304,7 @@ TEST(Codegen, subscript_load_uses_prepared_call_argument_span)
     CodeObject *module_code = test_context.compile_file(test_case);
     CodeObject *function_code =
         module_code->constant_table[0].value().get_ptr<CodeObject>();
-    ASSERT_EQ(1u, function_code->get_item_caches.size());
+    ASSERT_EQ(1u, function_code->subscript_caches.size());
 
     std::string expected =
         "Code object:\n"
@@ -1314,7 +1314,7 @@ TEST(Codegen, subscript_load_uses_prepared_call_argument_span)
         "Constant 0: Code object:\n"
         "    0 Mov r0, p0\n"
         "    3 Mov r1, p1\n"
-        "    6 LoadSubscript r0, get_item_ic[0]\n"
+        "    6 LoadSubscript r0, subscript_ic[0]\n"
         "    9 Return\n"
         "   10 LdaNone\n"
         "   11 Return\n"
@@ -1381,7 +1381,7 @@ TEST(Codegen, subscript_augmented_assignment_evaluates_receiver_and_key_once)
         "Constant 0: Code object:\n"
         "    0 Mov r0, p0\n"
         "    3 Mov r1, p1\n"
-        "    6 LoadSubscript r0, get_item_ic[0]\n"
+        "    6 LoadSubscript r0, subscript_ic[0]\n"
         "    9 AddSmi 1\n"
         "   11 StoreSubscript p0, p1\n"
         "   14 LdaNone\n"

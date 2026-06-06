@@ -1612,11 +1612,11 @@ namespace cl
             function_call_adaptation_for_positional_call(fun, n_args);
     }
 
-    static ALWAYSINLINE void populate_get_item_call_cache(
-        GetItemInlineCache &cache, TValue<Function> fun, uint32_t n_args,
+    static ALWAYSINLINE void populate_subscript_call_cache(
+        SubscriptInlineCache &cache, TValue<Function> fun, uint32_t n_args,
         bool has_self, FunctionCallAdaptation adaptation, BinaryHandler handler)
     {
-        cache.handler = handler;
+        cache.handler.binary = handler;
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
         cache.n_args = n_args;
@@ -2886,7 +2886,7 @@ namespace cl
         VirtualMachine *vm = thread->get_machine();
         TValue<String> method_name =
             vm->get_or_create_interned_string_value(L"__getitem__");
-        GetItemInlineCache &cache = code_object->get_item_caches[cache_idx];
+        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
 
         Value callable;
         Value self;
@@ -2961,8 +2961,8 @@ namespace cl
                     handler = resolution.binary;
                 }
             }
-            populate_get_item_call_cache(cache, function, n_args, has_self,
-                                         adaptation, handler);
+            populate_subscript_call_cache(cache, function, n_args, has_self,
+                                          adaptation, handler);
         }
 
         if(handler != nullptr)
@@ -2994,7 +2994,7 @@ namespace cl
         uint8_t cache_idx = pc[2];
         static constexpr uint32_t n_user_args = 1;
         Value receiver = fp[first_arg_reg];
-        GetItemInlineCache &cache = code_object->get_item_caches[cache_idx];
+        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
         assert(cache.function != nullptr);
 
         Value self = cache.has_self ? receiver : Value::not_present();
@@ -3017,7 +3017,7 @@ namespace cl
         uint8_t cache_idx = pc[2];
         Value receiver = fp[first_arg_reg];
         Value key = fp[first_arg_reg - 1];
-        GetItemInlineCache &cache = code_object->get_item_caches[cache_idx];
+        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
         if(unlikely(!cache.method_read_cache.matches(receiver)))
         {
             MUSTTAIL return op_load_subscript_cache_miss(ARGS);
@@ -3026,9 +3026,9 @@ namespace cl
         {
             MUSTTAIL return op_load_subscript_cache_miss(ARGS);
         }
-        if(cache.handler != nullptr)
+        if(cache.handler.binary != nullptr)
         {
-            accumulator = cache.handler(thread, receiver, key);
+            accumulator = cache.handler.binary(thread, receiver, key);
             if(unlikely(accumulator.is_exception_marker()))
             {
                 MUSTTAIL return propagate_pending_exception(ARGS);

@@ -442,7 +442,7 @@ namespace cl
         Expected<uint8_t> allocate_module_global_read_cache();
         Expected<uint8_t> allocate_module_global_mutation_cache();
         Expected<uint8_t> allocate_function_call_cache();
-        Expected<uint8_t> allocate_get_item_cache();
+        Expected<uint8_t> allocate_subscript_cache();
         Expected<uint8_t> allocate_keyword_call_cache();
         uint32_t emplace_back(uint32_t source_offset, uint8_t c);
         Expected<uint32_t> emit_opcode(uint32_t source_offset, Bytecode c);
