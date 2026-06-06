@@ -53,6 +53,21 @@ namespace
              {benchmark_cpp::while_loop_run, benchmark_cpp::while_loop_items}},
             {"benchmark/for_loop.py",
              {benchmark_cpp::for_loop_run, benchmark_cpp::for_loop_items}},
+            {"benchmark/getitem_list.py",
+             {benchmark_cpp::getitem_list_run,
+              benchmark_cpp::getitem_list_items}},
+            {"benchmark/getitem_tuple.py",
+             {benchmark_cpp::getitem_tuple_run,
+              benchmark_cpp::getitem_tuple_items}},
+            {"benchmark/getitem_dict.py",
+             {benchmark_cpp::getitem_dict_run,
+              benchmark_cpp::getitem_dict_items}},
+            {"benchmark/getitem_str.py",
+             {benchmark_cpp::getitem_str_run,
+              benchmark_cpp::getitem_str_items}},
+            {"benchmark/getitem_user.py",
+             {benchmark_cpp::getitem_user_run,
+              benchmark_cpp::getitem_user_items}},
             {"benchmark/for_loop_slow_path.py",
              {benchmark_cpp::for_loop_slow_path_run,
               benchmark_cpp::for_loop_slow_path_items}},
@@ -556,6 +571,51 @@ template <typename Program> static void BM_ForLoop(benchmark::State &state)
     run_benchmark_case<Program>(state, "benchmark/for_loop.py", state.range(0));
 }
 BENCHMARK_TEMPLATE(BM_ForLoop, CloverProgram)->Name("BM_ForLoop")->Arg(100000);
+
+template <typename Program> static void BM_GetItemList(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/getitem_list.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GetItemList, CloverProgram)
+    ->Name("BM_GetItemList")
+    ->Arg(100000);
+
+template <typename Program> static void BM_GetItemTuple(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/getitem_tuple.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GetItemTuple, CloverProgram)
+    ->Name("BM_GetItemTuple")
+    ->Arg(100000);
+
+template <typename Program> static void BM_GetItemDict(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/getitem_dict.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GetItemDict, CloverProgram)
+    ->Name("BM_GetItemDict")
+    ->Arg(100000);
+
+template <typename Program> static void BM_GetItemStr(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/getitem_str.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GetItemStr, CloverProgram)
+    ->Name("BM_GetItemStr")
+    ->Arg(100000);
+
+template <typename Program> static void BM_GetItemUser(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/getitem_user.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GetItemUser, CloverProgram)
+    ->Name("BM_GetItemUser")
+    ->Arg(100000);
 
 template <typename Program>
 static void BM_ForLoopSlowPath(benchmark::State &state)
