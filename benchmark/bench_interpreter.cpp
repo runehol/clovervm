@@ -68,6 +68,12 @@ namespace
             {"benchmark/getitem_user.py",
              {benchmark_cpp::getitem_user_run,
               benchmark_cpp::getitem_user_items}},
+            {"benchmark/storeitem_list.py",
+             {benchmark_cpp::storeitem_list_run,
+              benchmark_cpp::storeitem_list_items}},
+            {"benchmark/storeitem_dict.py",
+             {benchmark_cpp::storeitem_dict_run,
+              benchmark_cpp::storeitem_dict_items}},
             {"benchmark/for_loop_slow_path.py",
              {benchmark_cpp::for_loop_slow_path_run,
               benchmark_cpp::for_loop_slow_path_items}},
@@ -615,6 +621,26 @@ template <typename Program> static void BM_GetItemUser(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_GetItemUser, CloverProgram)
     ->Name("BM_GetItemUser")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_StoreItemList(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/storeitem_list.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_StoreItemList, CloverProgram)
+    ->Name("BM_StoreItemList")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_StoreItemDict(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/storeitem_dict.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_StoreItemDict, CloverProgram)
+    ->Name("BM_StoreItemDict")
     ->Arg(100000);
 
 template <typename Program>

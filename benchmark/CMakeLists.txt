@@ -25,6 +25,8 @@ add_executable(bench_clovervm
     getitem_str.cpp
     getitem_tuple.cpp
     getitem_user.cpp
+    storeitem_dict.cpp
+    storeitem_list.cpp
     global_add_delete.cpp
     global_read.cpp
     global_refcounted_write.cpp
