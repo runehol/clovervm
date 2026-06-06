@@ -2955,10 +2955,29 @@ namespace cl
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
             call_instr_len, adaptation);
-        if(unlikely(thread->safepoint_requested()))
-        {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
-        }
+
+        auto *next_dispatch_fun =
+            reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
+        MUSTTAIL return next_dispatch_fun(ARGS);
+    }
+
+    NOINLINE static INTERP_CC Value op_load_subscript_cached_call_slow(PARAMS)
+    {
+        static constexpr uint32_t call_instr_len = 3;
+        int8_t first_arg_reg = pc[1];
+        uint8_t cache_idx = pc[2];
+        static constexpr uint32_t n_user_args = 1;
+        Value receiver = fp[first_arg_reg];
+        GetItemInlineCache &cache = code_object->get_item_caches[cache_idx];
+        assert(cache.function != nullptr);
+
+        Value self = cache.has_self ? receiver : Value::not_present();
+        first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
+                                                           n_user_args, self);
+        TValue<Function> function = TValue<Function>::from_oop(cache.function);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object, function, first_arg_reg, cache.n_args,
+            call_instr_len, cache.adaptation);
 
         auto *next_dispatch_fun =
             reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
@@ -2970,7 +2989,6 @@ namespace cl
         static constexpr uint32_t call_instr_len = 3;
         int8_t first_arg_reg = pc[1];
         uint8_t cache_idx = pc[2];
-        static constexpr uint32_t n_user_args = 1;
         Value receiver = fp[first_arg_reg];
         Value key = fp[first_arg_reg - 1];
         GetItemInlineCache &cache = code_object->get_item_caches[cache_idx];
@@ -2986,20 +3004,18 @@ namespace cl
         {
             MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
         }
-
-        Value self = cache.has_self ? receiver : Value::not_present();
-        uint32_t n_args = cache.n_args;
-
-        first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
-                                                           n_user_args, self);
-        TValue<Function> function = TValue<Function>::from_oop(cache.function);
-        enter_function_frame_from_positional_args(
-            thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, cache.adaptation);
-        if(unlikely(thread->safepoint_requested()))
+        if(unlikely(cache.adaptation != FunctionCallAdaptation::FixedArity))
         {
-            MUSTTAIL return op_committed_safepoint_slow(ARGS);
+            MUSTTAIL return op_load_subscript_cached_call_slow(ARGS);
         }
+        if(unlikely(!cache.has_self))
+        {
+            MUSTTAIL return op_load_subscript_cached_call_slow(ARGS);
+        }
+
+        enter_code_object_frame_from_prepared_args(
+            fp, pc, code_object, cache.code_object, first_arg_reg,
+            call_instr_len);
 
         START(0);
         COMPLETE();
