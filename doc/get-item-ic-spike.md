@@ -91,21 +91,21 @@ deciding whether to install such a handler, and is out of scope here.
 
 ### Stage 1: Locate Existing Boundaries
 
-- Find the current `LoadSubscript` bytecode definition, encoder/decoder, and
+- [x] Find the current `LoadSubscript` bytecode definition, encoder/decoder, and
   interpreter handler.
-- Find the current generic get-item or subscription helper.
-- Find the current special-method call path used for function-shaped dunder
+- [x] Find the current generic get-item or subscription helper.
+- [x] Find the current special-method call path used for function-shaped dunder
   methods.
-- Find the existing inline-cache storage pattern on code objects.
-- Find the existing validity-cell API for class MRO shape and contents.
-- Identify how code objects expose cache payloads to GC tracing.
-- Identify which builtin containers already have native subscription helpers
+- [x] Find the existing inline-cache storage pattern on code objects.
+- [x] Find the existing validity-cell API for class MRO shape and contents.
+- [x] Identify how code objects expose cache payloads to GC tracing.
+- [x] Identify which builtin containers already have native subscription helpers
   but do not expose `__getitem__` as a normal special method.
 
 Checkpoint:
 
-- Write down the exact files and helper functions the spike will touch.
-- Do not change bytecode format until the cache payload and call path are clear.
+- [x] Write down the exact files and helper functions the spike will touch.
+- [x] Do not change bytecode format until the cache payload and call path are clear.
 
 Stage 1 findings:
 
@@ -192,77 +192,77 @@ Stage 1 findings:
 
 ### Stage 1.5: Add Minimal Builtin `__getitem__` Methods
 
-- Pick the smallest builtin set needed to exercise the cache. Start with one
+- [x] Pick the smallest builtin set needed to exercise the cache. Start with one
   exact container/key pair, preferably `list[smi]`, and add `tuple`, `str`, or
   `dict` only if the spike needs broader coverage.
-- Expose each selected builtin container's existing native subscription behavior
+- [x] Expose each selected builtin container's existing native subscription behavior
   through its `__getitem__` special method.
-- Do not move existing direct opcode fast paths behind the protocol cache yet.
+- [x] Do not move existing direct opcode fast paths behind the protocol cache yet.
   This spike can call builtin `__getitem__` through tests or cache-miss paths
   without completing the full migration to protocol-selected trusted handlers.
-- Do not add trusted-handler metadata for these methods in this stage.
+- [x] Do not add trusted-handler metadata for these methods in this stage.
 
 Checkpoint:
 
-- `container.__getitem__(key)` and `container[key]` agree for the selected
+- [x] `container.__getitem__(key)` and `container[key]` agree for the selected
   builtin cases.
-- The builtin method is visible to dunder-method lookup so the get-item IC can
+- [x] The builtin method is visible to dunder-method lookup so the get-item IC can
   cache the lookup fact.
 
-Status: done in `6e3a5d90`. The spike selected the full currently supported
-subscription builtin set: `list`, `tuple`, `str`, `dict`, and `slotdict`.
-Existing direct subscript fast paths remain in place, and no trusted-handler
-metadata was added.
+Status: done. The spike selected the full currently supported subscription
+builtin set: `list`, `tuple`, `str`, `dict`, and `slotdict`. No
+trusted-handler metadata was added. Later stages moved `LoadSubscript` onto the
+protocol-selected path, so these methods are now the builtin subscription path
+rather than only test affordances.
 
 ### Stage 2: Define The Cache Payload
 
-- Add a `GetItemIC`-style payload with:
-  - occupied/empty state
-  - cached container shape
-  - cached key shape
-  - lookup validity cell
-  - cached callable or replay plan for the selected `__getitem__`
-  - any existing function-call cache payload needed for the replay call
-- Use the repository's ownership model for stored values:
-  - borrowed handles are fine for transient locals only
-  - code-object-owned cached values must be represented so GC can observe them
-- Keep the payload monomorphic and replacement-only.
+- [x] Add a `GetItemIC`-style payload with:
+  - method-read cache state for the selected `__getitem__` lookup;
+  - cached container shape through the method-read cache;
+  - cached key `ShapeKey`;
+  - lookup validity cell through the method-read cache;
+  - cached function/code/adaptation payload for replaying the selected
+    `__getitem__`;
+  - no arbitrary cached result value.
+- [x] Use the repository's ownership model for stored values:
+  - borrowed handles are fine for transient locals only;
+  - code-object-owned cache state stores raw `Function *` / `CodeObject *`
+    pointers in the same style as existing call caches, rather than storing
+    heterogeneous `Value` payloads.
+- [x] Keep the payload monomorphic and replacement-only.
 
 Checkpoint:
 
-- The payload can represent "cacheable function-shaped method" and
+- [x] The payload can represent "cacheable function-shaped method" and
   "uncacheable" without inventing descriptor-general behavior.
 
-Status: done in the first Stage 2 implementation. The spike uses one unified
-`GetItemInlineCache` entry on `CodeObject`, with an embedded
-`AttributeReadInlineCache` for the selected `__getitem__` lookup, an explicit
-key-shape guard, and an embedded `FunctionCallInlineCache` for replaying the
-selected function-shaped method call. This keeps get-item caches in their own
-code-object table while reusing the existing attribute-read and function-call
-cache payloads internally. The entry does not store an arbitrary callable
-`Value`, so Stage 2 does not add new code-object GC/refcount tracing
-requirements.
+Status: done. `GetItemInlineCache` now uses an `AttributeReadInlineCache` for
+the selected `__getitem__` lookup, a `ShapeKey` for the key guard, and a
+getitem-specific call payload: `Function *`, `CodeObject *`, final argument
+count, `FunctionCallAdaptation`, and whether the call has bound `self`. It
+intentionally no longer embeds `FunctionCallInlineCache`: the special-method
+read cache uses contents-sensitive validity, so the cached function payload is
+guarded by the same lookup dependency.
 
 ### Stage 3: Thread A Cache Index Through Bytecode
 
-- Add a cache index operand to get-item bytecode forms that can invoke
+- [x] Add a cache index operand to get-item bytecode forms that can invoke
   `__getitem__`.
-- Allocate the corresponding cache entry on the code object.
-- Update bytecode printing/scanning/source-offset logic as needed.
-- Keep ordinary control flow unchanged.
+- [x] Allocate the corresponding cache entry on the code object.
+- [x] Update bytecode printing/scanning/source-offset logic as needed.
+- [x] Keep ordinary control flow unchanged.
 
 Checkpoint:
 
-- Existing get-item behavior is unchanged when the cache is empty or disabled.
+- [x] Existing get-item behavior is unchanged when the cache is empty or disabled.
 
 Status: done in the first Stage 3 implementation, then adjusted for the Stage
 4 call-entry shape. `LoadSubscript` now carries one `get_item_ic` operand
 allocated from `CodeObject::get_item_caches`, and codegen lowers `obj[key]`
 with a prepared call-frame-aligned argument span containing `[container, key]`.
 Disassembly prints the cache operand next to the first argument register. The
-interpreter reads but does not use the cache index yet, and runtime behavior
-still delegates to the existing `load_subscript` helper using the prepared
-container/key registers rather than the accumulator as the key.
+interpreter uses that cache index for miss population and hit replay.
 
 ### Stage 4: Resolve And Execute An Uncached Get-Item Plan
 
@@ -281,148 +281,202 @@ bytecode shape should be revisited so operands and protocol state live in frame
 registers or explicit continuation state rather than relying on the
 accumulator.
 
-- Move `LoadSubscript` away from the existing exact native-layout subscription
+- [x] Move `LoadSubscript` away from the existing exact native-layout subscription
   fast path and toward protocol-selected `__getitem__` execution. The native
   helpers may still be reused behind builtin `__getitem__` method bodies, but
   the opcode should not bypass special-method lookup for the builtin container
   cases that now expose visible `__getitem__` methods.
-- Resolve `type(container).__getitem__` with
+- [x] Resolve `type(container).__getitem__` with
   `resolve_special_method_read_descriptor`.
-- Convert the descriptor into an executable method-call target:
+- [x] Convert the descriptor into an executable method-call target:
   - selected callable;
   - optional bound `self`;
   - argument count including bound `self` when present;
   - function-call adaptation needed to enter the target frame.
-- Treat missing `__getitem__`, unsupported descriptors, unusual binding, class
+- [x] Treat missing `__getitem__`, unsupported descriptors, unusual binding, class
   subscription, non-function callables, wrong arity, and lookup errors as
   conservative uncached failures for this spike.
-- Enter the selected function-shaped `__getitem__` through the existing
+- [x] Enter the selected function-shaped `__getitem__` through the existing
   positional call machinery, using the `LoadSubscript` instruction length as
   the return point.
-- Do not commit cache state merely because lookup produced interesting facts.
+- [x] Do not commit cache state merely because lookup produced interesting facts.
   Cache state should only be populated once lookup, binding, callable
   validation, and call adaptation have produced an executable plan.
 
 Checkpoint:
 
-- Builtin and user-defined `obj[key]` calls flow through the protocol-selected
+- [x] Builtin and user-defined `obj[key]` calls flow through the protocol-selected
   `__getitem__` path for the cases supported by the spike.
-- Side effects in argument evaluation, lookup, binding, and the
+- [x] Side effects in argument evaluation, lookup, binding, and the
   `__getitem__` body remain Python-visible and happen in the same order as the
   uncached path.
-- Missing or unsupported `__getitem__` preserves the current subscription error
+- [x] Missing or unsupported `__getitem__` preserves the current subscription error
   behavior.
-- If the selected `__getitem__` body raises, the exception propagates normally.
+- [x] If the selected `__getitem__` body raises, the exception propagates normally.
   The spike does not require continuation machinery to defer cache publication
   until after the method body returns.
 
-Status: done for uncached execution. `LoadSubscript` resolves
-`type(container).__getitem__`, prepares the selected managed `Function` call
-from the `[container, key]` argument span, and enters that function directly.
-The `get_item_ic` operand is still ignored, so class mutation and method
-replacement are observed by repeating special-method lookup on every
-execution.
+Status: done. `LoadSubscript` no longer bypasses `__getitem__` for supported
+builtin containers. The miss path is `op_load_subscript_cache_miss`, which
+resolves `type(container).__getitem__`, prepares the selected managed
+`Function` call from the `[container, key]` argument span, and installs cache
+state only after lookup, binding, callable validation, and call adaptation have
+produced an executable plan.
 
 ### Stage 5: Cache And Replay The Executable Plan
 
 Once Stage 4 has a coherent executable miss path, make the cache entry hold
 exactly the guards and call-adaptation state needed to replay that same plan.
 
-- Populate the monomorphic cache only after Stage 4 has produced a complete
+- [x] Populate the monomorphic cache only after Stage 4 has produced a complete
   executable plan:
   - receiver-shape and validity guarded special-method read plan;
   - key-shape guard;
-  - function-call cache for the selected function-shaped callable and final
-    positional argument count.
-- On hit, validate receiver shape, lookup validity, key shape, and function-call
-  cache state.
-- Rebuild the callable and optional bound `self` from the cached read plan, then
-  enter the cached positional call path. The hit path skips repeated
-  `__getitem__` lookup only; it must still execute the Python-visible method
-  body every time.
-- If any guard fails, fall back to the Stage 4 resolver and replace the
+  - getitem-specific call payload for the selected function-shaped callable,
+    final positional argument count, adaptation, and bound-self shape.
+- [x] On hit, validate receiver shape, lookup validity, key shape, cached
+  function payload, fixed-arity shape, and bound-self shape.
+- [x] Replay the cached positional call from the cached
+  `Function *` / `CodeObject *` / argument-count / adaptation payload. The hit
+  path skips repeated `__getitem__` lookup only; it must still execute the
+  Python-visible method body every time.
+- [x] If any guard fails, fall back to the Stage 4 resolver and replace the
   monomorphic entry if the new operation is cacheable.
-- Do not cache negative lookup results in this spike unless that falls out of
+- [x] Do not cache negative lookup results in this spike unless that falls out of
   the same executable-plan representation without extra policy.
 
 Checkpoint:
 
-- Cache hits skip repeated special-method lookup while still calling
+- [x] Cache hits skip repeated special-method lookup while still calling
   `__getitem__` on every execution.
-- Cache misses and guard failures use the same executable resolver as the
+- [x] Cache misses and guard failures use the same executable resolver as the
   uncached Stage 4 path.
-- A `__getitem__` body that raises may leave behind a valid lookup/call cache if
+- [x] A `__getitem__` body that raises may leave behind a valid lookup/call cache if
   lookup and call adaptation already succeeded; the cache still does not cache
   the exception or the result value.
+
+Status: done for monomorphic function-shaped replay. The fixed-arity
+`self == receiver` hit path is hot and protected by the opcode-frame checker.
+Cached calls that need defaults, varargs packing, or non-self bound receiver
+handling tail to `op_load_subscript_cached_call_slow`; cache misses and guard
+failures use `op_load_subscript_cache_miss`. Trusted native handlers remain out
+of scope.
 
 ### Stage 6: Invalidation And Mutation Tests
 
 Add interpreter-level tests for:
 
-- repeated `obj[key]` calls on a user class hit the cached selected method
+- [x] repeated `obj[key]` calls on a user class hit the cached selected method
   without changing results
-- repeated `container[key]` calls for the selected builtin container exercise a
+- [x] repeated `container[key]` calls for the selected builtin container exercise a
   real builtin `__getitem__` method rather than a parallel opcode-only path
-- replacing `C.__getitem__` after cache installation invalidates or misses and
+- [x] replacing `C.__getitem__` after cache installation invalidates or misses and
   calls the new method
-- adding `__getitem__` after a negative lookup does not keep using the old
+- [ ] adding `__getitem__` after a negative lookup does not keep using the old
   missing result if negative lookup caching is enabled
-- inherited `__getitem__` invalidates when the defining base class changes
-- side effects inside `__getitem__` still run on every cached execution
-- `__getitem__` returning `NotImplemented` returns that singleton
-- raising `__getitem__` propagates normally and does not cache the exception or
+- [ ] inherited `__getitem__` invalidates when the defining base class changes
+- [x] side effects inside `__getitem__` still run on every cached execution
+- [x] `__getitem__` returning `NotImplemented` returns that singleton
+- [ ] raising `__getitem__` propagates normally and does not cache the exception or
   result value
-- different key shapes at the same bytecode site miss and replace the
+- [ ] different key shapes at the same bytecode site miss and replace the
   monomorphic entry
 
 If negative lookup caching is not implemented in the spike, test that negative
 lookups are simply left uncacheable.
 
+Status: partial. Core hit/replacement/side-effect/NotImplemented/defaults and
+initial key-shape storage are covered. Explicit inherited-base invalidation,
+negative-lookup uncached behavior, raising-method behavior, and key-shape
+replacement coverage are still open.
+
 ### Stage 7: Structural And Regression Tests
 
-- Add focused codegen or bytecode tests only for the new cache-index operand and
+- [x] Add focused codegen or bytecode tests only for the new cache-index operand and
   cache allocation.
-- Prefer interpreter tests for Python-visible behavior.
-- Run `clang-format -i` on every touched C++ source or header.
-- Run `ninja -C build-debug all check`.
+- [x] Prefer interpreter tests for Python-visible behavior.
+- [x] Run `clang-format -i` on every touched C++ source or header.
+- [x] Run `ninja -C build-debug all check`.
 
 Checkpoint:
 
-- The spike can be evaluated without trusted handlers, continuation opcodes, or
+- [x] The spike can be evaluated without trusted handlers, continuation opcodes, or
   performance claims.
+
+Status: mostly done. `ninja -C build-debug all check` was green after the code
+changes, and focused release opcode-frame checks and getitem benchmarks were
+run during the hot-path cleanup. This document-only update does not require a
+new build.
 
 ## Blurry Areas The Spike Should Resolve
 
-- What exact shape API should operator dispatch use for inline values, builtin
-  heap values, user instances, and class objects?
-- Can the current special-method/function-call path replay a cached
+- [x] What exact shape API should operator dispatch use for inline values,
+  builtin heap values, user instances, and class objects?
+
+  Use `ShapeKey` as the opaque comparable cache key. Convert back to a real
+  shape only when lookup/class information is needed.
+- [x] Can the current special-method/function-call path replay a cached
   function-shaped `__getitem__` cleanly?
-- Is the transient miss-time executable plan the right boundary, or does
+
+  Yes for managed function-shaped calls. The hot path handles fixed arity and
+  bound `self == receiver`; defaults, varargs, and non-self bound receiver
+  cases go through a dedicated cached-call slow path.
+- [x] Is the transient miss-time executable plan the right boundary, or does
   `LoadSubscript` need a separate call-continuation opcode before trusted
   handlers or more complex descriptors?
-- What ownership wrapper is required for cached callable values inside code
+
+  The executable-plan boundary is enough for getitem. Getitem has no reflected
+  or continuation protocol after the selected call returns. The accumulator-free
+  `[container, key]` call-argument layout should still be revisited before
+  broader operator caches.
+- [x] What ownership wrapper is required for cached callable values inside code
   objects?
-- Does the existing MRO shape-and-contents validity cell cover all lookup
+
+  No arbitrary cached `Value` is stored. The cache stores raw
+  `Function *` / `CodeObject *` pointers like existing call caches.
+- [x] Does the existing MRO shape-and-contents validity cell cover all lookup
   dependencies needed by this first cache?
-- Which descriptor or binding cases are common enough that treating them as
+
+  Yes. Special-method lookup uses the contents-sensitive MRO validity cell, so
+  class-content writes invalidate the getitem cache dependency.
+- [x] Which descriptor or binding cases are common enough that treating them as
   uncacheable would make the first cache ineffective?
-- Does the bytecode cache-index plumbing fit the current code object and
+
+  Managed function-shaped methods are enough for the spike. Descriptor-general
+  replay remains out of scope.
+- [x] Does the bytecode cache-index plumbing fit the current code object and
   disassembly model cleanly?
-- How much builtin subscription behavior must be exposed as real `__getitem__`
-  methods before the cache can test the intended protocol-selected path?
+- [x] How much builtin subscription behavior must be exposed as real
+  `__getitem__` methods before the cache can test the intended
+  protocol-selected path?
+
+  The current supported builtin subscription set is exposed.
+
+## Remaining Work
+
+- [ ] Add explicit interpreter tests for inherited-base invalidation.
+- [ ] Add explicit interpreter tests that negative lookups remain uncached.
+- [ ] Add explicit interpreter tests for raising `__getitem__` after cache
+  publication.
+- [ ] Add explicit interpreter tests for key-shape miss and monomorphic
+  replacement at the same bytecode site.
+- [ ] Design trusted native getitem handler publication and cache payloads.
+- [ ] Decide how much getitem register traffic to remove in codegen now that
+  `LoadSubscript` no longer uses the accumulator as the key.
 
 ## Completion Criteria
 
 The spike is successful if:
 
-- cache hits skip repeated `__getitem__` lookup for cacheable user-defined
+- [x] cache hits skip repeated `__getitem__` lookup for cacheable user-defined
   function-shaped methods
-- at least one builtin container used by tests exposes a real `__getitem__`
+- [x] at least one builtin container used by tests exposes a real `__getitem__`
   method that agrees with existing subscription behavior
-- cached executions still call `__getitem__` every time
-- class or base-class mutation invalidates the cached lookup dependency
-- unsupported descriptor and class-subscription cases fail conservatively
-- the implementation identifies whether the executable-plan boundary is enough,
+- [x] cached executions still call `__getitem__` every time
+- [x] direct class mutation invalidates the cached lookup dependency
+- [ ] base-class mutation invalidation has explicit test coverage
+- [x] unsupported descriptor and class-subscription cases fail conservatively
+- [x] the implementation identifies whether the executable-plan boundary is enough,
   or whether continuation machinery is actually needed before trusted handlers
   or binary operator caches
 
