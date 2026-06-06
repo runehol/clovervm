@@ -68,12 +68,12 @@ namespace
             {"benchmark/getitem_user.py",
              {benchmark_cpp::getitem_user_run,
               benchmark_cpp::getitem_user_items}},
-            {"benchmark/storeitem_list.py",
-             {benchmark_cpp::storeitem_list_run,
-              benchmark_cpp::storeitem_list_items}},
-            {"benchmark/storeitem_dict.py",
-             {benchmark_cpp::storeitem_dict_run,
-              benchmark_cpp::storeitem_dict_items}},
+            {"benchmark/setitem_list.py",
+             {benchmark_cpp::setitem_list_run,
+              benchmark_cpp::setitem_list_items}},
+            {"benchmark/setitem_dict.py",
+             {benchmark_cpp::setitem_dict_run,
+              benchmark_cpp::setitem_dict_items}},
             {"benchmark/for_loop_slow_path.py",
              {benchmark_cpp::for_loop_slow_path_run,
               benchmark_cpp::for_loop_slow_path_items}},
@@ -623,24 +623,22 @@ BENCHMARK_TEMPLATE(BM_GetItemUser, CloverProgram)
     ->Name("BM_GetItemUser")
     ->Arg(100000);
 
-template <typename Program>
-static void BM_StoreItemList(benchmark::State &state)
+template <typename Program> static void BM_SetItemList(benchmark::State &state)
 {
-    run_benchmark_case<Program>(state, "benchmark/storeitem_list.py",
+    run_benchmark_case<Program>(state, "benchmark/setitem_list.py",
                                 state.range(0));
 }
-BENCHMARK_TEMPLATE(BM_StoreItemList, CloverProgram)
-    ->Name("BM_StoreItemList")
+BENCHMARK_TEMPLATE(BM_SetItemList, CloverProgram)
+    ->Name("BM_SetItemList")
     ->Arg(100000);
 
-template <typename Program>
-static void BM_StoreItemDict(benchmark::State &state)
+template <typename Program> static void BM_SetItemDict(benchmark::State &state)
 {
-    run_benchmark_case<Program>(state, "benchmark/storeitem_dict.py",
+    run_benchmark_case<Program>(state, "benchmark/setitem_dict.py",
                                 state.range(0));
 }
-BENCHMARK_TEMPLATE(BM_StoreItemDict, CloverProgram)
-    ->Name("BM_StoreItemDict")
+BENCHMARK_TEMPLATE(BM_SetItemDict, CloverProgram)
+    ->Name("BM_SetItemDict")
     ->Arg(100000);
 
 template <typename Program>

@@ -2,7 +2,7 @@
 
 namespace benchmark_cpp
 {
-    int64_t storeitem_list_run(int64_t n)
+    int64_t setitem_list_run(int64_t n)
     {
         int64_t values[] = {0, 0, 0, 0};
         int64_t idx = 0;
@@ -18,5 +18,5 @@ namespace benchmark_cpp
         return values[0] + values[1] + values[2] + values[3];
     }
 
-    int64_t storeitem_list_items(int64_t n) { return n; }
+    int64_t setitem_list_items(int64_t n) { return n; }
 }  // namespace benchmark_cpp
