@@ -924,6 +924,12 @@ namespace cl
         assert(temporary_reg == local_scope_size);
         assert(max_temporary_reg >= local_scope_size);
         code_obj->n_temporaries = max_temporary_reg - local_scope_size;
+        uint32_t first_free_arg_reg = max_temporary_reg;
+        if(!is_call_frame_aligned_register(first_free_arg_reg))
+        {
+            ++first_free_arg_reg;
+        }
+        code_obj->first_free_arg_encoded_reg = encode_reg(first_free_arg_reg);
         finalized = true;
         return Expected<CodeObject *>::ok(code_obj);
     }

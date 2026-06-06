@@ -301,6 +301,7 @@ namespace cl
         FunctionKeywordRemap function_keyword_remap;
         uint32_t n_locals = 0;
         uint32_t n_temporaries = 0;
+        int8_t first_free_arg_encoded_reg = 0;
 
         Scope *get_local_scope_ptr() const { return local_scope.extract(); }
         TValue<ModuleObject> get_defining_module() const
@@ -341,6 +342,11 @@ namespace cl
         uint32_t get_padded_n_ordinary_below_frame_slots() const
         {
             return round_up_to_abi_alignment(n_locals + n_temporaries);
+        }
+
+        int8_t get_first_free_arg_encoded_reg() const
+        {
+            return first_free_arg_encoded_reg;
         }
 
         int8_t encode_reg(uint32_t reg) const
