@@ -8,6 +8,7 @@
 #include "object_model/attribute_cache.h"
 #include "object_model/builtin_class_registry.h"
 #include "object_model/owned.h"
+#include "object_model/shape_key.h"
 #include "object_model/typed_value.h"
 #include "object_model/value.h"
 #include "object_model/vm_array.h"
@@ -175,13 +176,13 @@ namespace cl
     struct GetItemInlineCache
     {
         AttributeReadInlineCache method_read_cache;
-        Shape *key_shape = nullptr;
+        ShapeKey key_shape_key;
         FunctionCallInlineCache call_cache;
 
         void clear()
         {
             method_read_cache.clear();
-            key_shape = nullptr;
+            key_shape_key = ShapeKey{};
             call_cache = FunctionCallInlineCache{};
         }
     };

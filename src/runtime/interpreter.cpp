@@ -2866,7 +2866,7 @@ namespace cl
         static constexpr uint32_t n_user_args = 1;
         Value receiver = fp[first_arg_reg];
         Value key = fp[first_arg_reg - 1];
-        Shape *key_shape = thread->shape_of_value(key);
+        ShapeKey key_shape_key = ShapeKey::from_value(key);
         TValue<String> method_name =
             thread->get_machine()->get_or_create_interned_string_value(
                 L"__getitem__");
@@ -2881,7 +2881,7 @@ namespace cl
                 receiver, cache.method_read_cache.plan, callable, self);
             if(target_status == MethodCallTargetStatus::Ready)
             {
-                cache.key_shape = key_shape;
+                cache.key_shape_key = key_shape_key;
             }
         }
         else
@@ -2894,7 +2894,7 @@ namespace cl
                descriptor.is_cacheable())
             {
                 cache.method_read_cache.populate(receiver, descriptor);
-                cache.key_shape = key_shape;
+                cache.key_shape_key = key_shape_key;
             }
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
@@ -2960,7 +2960,7 @@ namespace cl
         {
             MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
         }
-        if(unlikely(cache.key_shape != thread->shape_of_value(key)))
+        if(unlikely(cache.key_shape_key != ShapeKey::from_value(key)))
         {
             MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
         }

@@ -5,6 +5,7 @@
 #include "builtin_types/str.h"
 #include "object_model/owned.h"
 #include "object_model/refcount.h"
+#include "object_model/shape_key.h"
 #include "runtime/exception_object.h"
 
 #include <gtest/gtest.h>
@@ -360,6 +361,42 @@ namespace cl
             TValue<ClassObject>::from_oop(stop_iteration));
 
         EXPECT_TRUE(exception.extract()->value.value().is_not_present());
+    }
+
+    TEST(ThreadState, ShapeKeyMapsPointerAndInlineValues)
+    {
+        test::VmTestContext context;
+        TValue<String> string =
+            context.vm().get_or_create_interned_string_value(L"value");
+
+        EXPECT_EQ(string.extract()->get_shape(),
+                  context.vm().shape_for_key(
+                      ShapeKey::from_value(string.raw_value())));
+        EXPECT_EQ(context.vm().smi_shape(),
+                  context.vm().shape_for_key(
+                      ShapeKey::from_value(Value::from_smi(42))));
+        EXPECT_EQ(
+            context.vm().bool_shape(),
+            context.vm().shape_for_key(ShapeKey::from_value(Value::True())));
+        EXPECT_EQ(
+            context.vm().bool_shape(),
+            context.vm().shape_for_key(ShapeKey::from_value(Value::False())));
+        EXPECT_EQ(
+            context.vm().none_shape(),
+            context.vm().shape_for_key(ShapeKey::from_value(Value::None())));
+        EXPECT_EQ(context.vm().not_implemented_shape(),
+                  context.vm().shape_for_key(
+                      ShapeKey::from_value(Value::NotImplemented())));
+        EXPECT_EQ(context.vm().ellipsis_shape(),
+                  context.vm().shape_for_key(
+                      ShapeKey::from_value(Value::Ellipsis())));
+
+        EXPECT_EQ(ShapeKey::from_value(Value::True()),
+                  ShapeKey::from_value(Value::False()));
+        EXPECT_NE(ShapeKey::from_value(Value::None()),
+                  ShapeKey::from_value(Value::NotImplemented()));
+        EXPECT_NE(ShapeKey::from_value(Value::NotImplemented()),
+                  ShapeKey::from_value(Value::Ellipsis()));
     }
 
     TEST(ThreadState, ClassOfValueMapsPointerAndInlineValues)

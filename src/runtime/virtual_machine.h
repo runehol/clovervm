@@ -17,6 +17,7 @@
 #include "memory/global_heap.h"
 #include "object_model/class_object.h"
 #include "object_model/owned.h"
+#include "object_model/shape_key.h"
 #include "object_model/typed_value.h"
 #include "object_model/value.h"
 
@@ -225,6 +226,30 @@ namespace cl
                 return ellipsis_shape_;
             }
             __builtin_unreachable();
+        }
+        ALWAYSINLINE Shape *shape_for_key(ShapeKey key) const
+        {
+            assert(key.is_valid());
+            if(!key.is_inline())
+            {
+                return key.shape();
+            }
+
+            switch(key.inline_tag())
+            {
+                case 0:
+                    return smi_shape_;
+                case value_none:
+                    return none_shape_;
+                case value_boolean_tag:
+                    return bool_shape_;
+                case(value_not_implemented & value_tag_mask):
+                    return not_implemented_shape_;
+                case(value_ellipsis & value_tag_mask):
+                    return ellipsis_shape_;
+                default:
+                    __builtin_unreachable();
+            }
         }
         TValue<String> dunder_class_name() const
         {

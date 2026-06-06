@@ -1963,7 +1963,9 @@ TEST(Interpreter, subscript_load_caches_inline_key_shape)
     ASSERT_EQ(1u, function_code->get_item_caches.size());
     const GetItemInlineCache &cache = function_code->get_item_caches[0];
     ASSERT_NE(nullptr, cache.method_read_cache.receiver_shape);
-    EXPECT_EQ(test_context.vm().smi_shape(), cache.key_shape);
+    EXPECT_EQ(ShapeKey::from_value(Value::from_smi(1)), cache.key_shape_key);
+    EXPECT_EQ(test_context.vm().smi_shape(),
+              test_context.vm().shape_for_key(cache.key_shape_key));
     ASSERT_NE(nullptr, cache.call_cache.function);
 }
 
