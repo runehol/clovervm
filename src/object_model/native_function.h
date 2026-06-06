@@ -18,6 +18,7 @@ namespace cl
         uint32_t n_parameters;
         const wchar_t *doc;
         Optional<TValue<Tuple>> default_parameters;
+        TrustedHandlerResolver trusted_handler_resolver = nullptr;
     };
 
     BuiltinIntrinsicMethod
@@ -46,6 +47,9 @@ namespace cl
                              const wchar_t *doc = nullptr);
     BuiltinIntrinsicMethod with_defaults(BuiltinIntrinsicMethod method,
                                          TValue<Tuple> defaults);
+    BuiltinIntrinsicMethod
+    with_trusted_handler_resolver(BuiltinIntrinsicMethod method,
+                                  TrustedHandlerResolver resolver);
 
     Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction0 function,

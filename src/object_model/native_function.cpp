@@ -16,7 +16,8 @@ namespace cl
         Bytecode call_opcode, uint32_t n_parameters,
         Optional<TValue<String>> docstring, bool is_extension,
         Optional<TValue<Tuple>> default_parameters =
-            Optional<TValue<Tuple>>::none())
+            Optional<TValue<Tuple>>::none(),
+        TrustedHandlerResolver trusted_handler_resolver = nullptr)
     {
         CodeObjectBuilder builder(vm, nullptr, vm->global_builtins_module(),
                                   nullptr, name);
@@ -48,6 +49,7 @@ namespace cl
         CL_TRY(builder.emit_return_or_raise_exception(0));
         TValue<CodeObject> code =
             TValue<CodeObject>::from_oop(CL_TRY(builder.finalize()));
+        code.extract()->trusted_handler_resolver = trusted_handler_resolver;
         if(default_parameters.has_value())
         {
             return Expected<TValue<Function>>::ok(
@@ -62,12 +64,13 @@ namespace cl
         VirtualMachine *vm, NativeFunctionTarget target, Bytecode call_opcode,
         uint32_t n_parameters,
         Optional<TValue<Tuple>> default_parameters =
-            Optional<TValue<Tuple>>::none())
+            Optional<TValue<Tuple>>::none(),
+        TrustedHandlerResolver trusted_handler_resolver = nullptr)
     {
         return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(L"<native>"), target,
             call_opcode, n_parameters, Optional<TValue<String>>::none(), false,
-            default_parameters);
+            default_parameters, trusted_handler_resolver);
     }
 
     static Bytecode call_intrinsic_opcode_for_arity(uint32_t n_parameters)
@@ -183,6 +186,14 @@ namespace cl
         return method;
     }
 
+    BuiltinIntrinsicMethod
+    with_trusted_handler_resolver(BuiltinIntrinsicMethod method,
+                                  TrustedHandlerResolver resolver)
+    {
+        method.trusted_handler_resolver = resolver;
+        return method;
+    }
+
     Expected<TValue<Function>>
     make_intrinsic_function(VirtualMachine *vm, IntrinsicFunction0 function,
                             Optional<TValue<Tuple>> default_parameters)
@@ -275,7 +286,8 @@ namespace cl
         return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(method.name),
             method.target, call_intrinsic_opcode_for_arity(method.n_parameters),
-            method.n_parameters, docstring, false, method.default_parameters);
+            method.n_parameters, docstring, false, method.default_parameters,
+            method.trusted_handler_resolver);
     }
 
     Expected<TValue<Function>>

@@ -100,6 +100,30 @@ namespace cl
         return self.get_ptr<Tuple>()->get_item(py_idx);
     }
 
+    static Value trusted_tuple_getitem_smi_handler(ThreadState *thread,
+                                                   Value self,
+                                                   Value index_value)
+    {
+        (void)thread;
+        return self.get_ptr<Tuple>()->get_item(index_value.get_smi());
+    }
+
+    static TrustedHandlerResolution
+    resolve_trusted_tuple_getitem_handler(VirtualMachine *vm,
+                                          ShapeKey container_key,
+                                          ShapeKey key_key, ShapeKey unused)
+    {
+        (void)unused;
+        TrustedHandlerResolution resolution;
+        if(vm->shape_for_key(container_key)->get_class() == vm->tuple_class() &&
+           key_key == ShapeKey::from_value(Value::from_smi(0)))
+        {
+            resolution.arity = TrustedHandlerArity::Binary;
+            resolution.binary = trusted_tuple_getitem_smi_handler;
+        }
+        return resolution;
+    }
+
     static size_t normalize_tuple_search_bound(int64_t py_idx, size_t size)
     {
         int64_t normalized = py_idx;
@@ -189,8 +213,10 @@ namespace cl
                                      L"Return repr(self)."),
             builtin_intrinsic_method(L"__len__", native_tuple_len,
                                      L"Return len(self)."),
-            builtin_intrinsic_method(L"__getitem__", native_tuple_getitem,
-                                     L"Return self[index]."),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__getitem__", native_tuple_getitem,
+                                         L"Return self[index]."),
+                resolve_trusted_tuple_getitem_handler),
             builtin_intrinsic_method(L"__iter__", native_tuple_iter,
                                      L"Implement iter(self)."),
             builtin_intrinsic_method(L"__add__", native_tuple_add,

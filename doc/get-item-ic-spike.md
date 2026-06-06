@@ -421,8 +421,9 @@ The key design choices are:
 - handlers are arity-typed native function pointers;
 - the resolver is universal and attached to the selected `CodeObject`;
 - a non-null resolver is the trust marker for that code object;
-- the resolver takes `VirtualMachine *`, an operator family, and operand
-  `ShapeKey`s;
+- the resolver takes `VirtualMachine *` and operand `ShapeKey`s;
+- different operator-shaped methods provide different resolver functions rather
+  than sharing an operator-family tag;
 - resolver result `None` means "trusted method, but no direct handler for this
   shape combination";
 - get-item does not need a continuation opcode because it has only one selected
@@ -430,54 +431,62 @@ The key design choices are:
 
 Implementation checklist:
 
-- [ ] Add shared trusted-handler types near the existing native function target
+- [x] Add shared trusted-handler types near the existing native function target
   types:
   - `UnaryHandler`;
   - `BinaryHandler`;
   - `TernaryHandler`;
   - `TrustedHandlerArity`;
   - `TrustedHandlerResolution`;
-  - `OperatorFamily`, initially with `GetItem`;
   - `TrustedHandlerResolver`.
-- [ ] Add one nullable resolver field to `CodeObject`:
+- [x] Add one nullable resolver field to `CodeObject`:
   `TrustedHandlerResolver trusted_handler_resolver = nullptr`.
-- [ ] Extend builtin intrinsic method construction so selected builtin
+- [x] Extend builtin intrinsic method construction so selected builtin
   `__getitem__` methods can attach a resolver to their code object, while all
   existing callers default to no resolver.
-- [ ] Add `BinaryHandler handler = nullptr` to `GetItemInlineCache` and clear it
+- [x] Add `BinaryHandler handler = nullptr` to `GetItemInlineCache` and clear it
   with the rest of the cache entry.
-- [ ] On a get-item cache hit, after method-read and key-shape guards validate,
+- [x] On a get-item cache hit, after method-read and key-shape guards validate,
   call `cache.handler(thread, container, key)` when the handler is non-null.
   Propagate `Value::exception_marker()` through the normal interpreter
   exception path.
-- [ ] On a get-item cache miss, once lookup has selected a function-shaped
+- [x] On a get-item cache miss, once lookup has selected a function-shaped
   `__getitem__` and call arity/adaptation are valid, consult the selected code
   object's resolver:
 
   ```text
-  resolution = resolver(vm, OperatorFamily::GetItem,
-                        container_shape_key, key_shape_key, ShapeKey{})
+  resolution = resolver(vm, container_shape_key, key_shape_key, ShapeKey{})
   ```
 
-- [ ] If the resolver returns `TrustedHandlerArity::Binary`, install the typed
-  `BinaryHandler` in the get-item IC. Still install the dunder-call replay
-  payload so resolver `None` keeps the lookup-skipping call cache useful.
-- [ ] Start with exact builtin cases whose handler does not skip arbitrary
+- [x] If the resolver returns `TrustedHandlerArity::Binary`, install the typed
+  `BinaryHandler` in the get-item IC and execute that handler for the current
+  miss. Still install the dunder-call replay payload so resolver `None` keeps
+  the lookup-skipping call cache useful.
+- [x] Start with exact builtin cases whose handler does not skip arbitrary
   Python key behavior, such as `list[smi]`, `tuple[smi]`, and `str[smi]`.
   Leave dict and slice handlers for a follow-up unless they stay obviously
   narrow.
-- [ ] Keep the handler path behind the validated dunder-method lookup. The
+- [x] Keep the handler path behind the validated dunder-method lookup. The
   shape-key pair alone is not authority to run a native shortcut.
 
 Checkpoint:
 
-- [ ] `LoadSubscript` cache hits for recognized builtin getitem cases skip both
+- [x] `LoadSubscript` cache hits for recognized builtin getitem cases skip both
   dunder lookup and the Python-shaped builtin method call.
-- [ ] User-defined and unrecognized builtin/key combinations still use the
+- [x] User-defined and unrecognized builtin/key combinations still use the
   existing cached dunder-call replay.
-- [ ] Class mutation invalidates the trusted handler through the same
+- [x] Class mutation invalidates the trusted handler through the same
   method-read validity guard.
-- [ ] No `ThreadState` publication slot or continuation opcode is introduced.
+- [x] No `ThreadState` publication slot or continuation opcode is introduced.
+
+Status: done for exact `list[smi]`, `tuple[smi]`, and `str[smi]`. The trusted
+handlers are separate from the Python-shaped builtin method bodies and assume
+the IC's receiver/key guards have already validated the operation shape. They
+still preserve bounds and pending-exception behavior through the underlying
+container operations. They may allocate or raise, but they must not run Python
+bytecode or stop at a safepoint before returning to the opcode handler. The miss
+path executes the trusted handler immediately when one resolves; it enters the
+selected Python-shaped `__getitem__` only when no direct handler is available.
 
 ## Blurry Areas The Spike Should Resolve
 
@@ -543,7 +552,7 @@ Checkpoint:
   installation.
 - [x] Add explicit interpreter tests for key-shape miss and monomorphic
   replacement at the same bytecode site.
-- [ ] Implement minimal trusted getitem handler resolution through a
+- [x] Implement minimal trusted getitem handler resolution through a
   `CodeObject` resolver and typed `BinaryHandler` cache arm.
 - [ ] Decide how much getitem register traffic to remove in codegen now that
   `LoadSubscript` no longer uses the accumulator as the key.

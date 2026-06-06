@@ -360,13 +360,8 @@ struct TrustedHandlerResolution
     };
 };
 
-enum class OperatorFamily : uint8_t
-{
-    GetItem,
-};
-
 using TrustedHandlerResolver = TrustedHandlerResolution (*)(
-    VirtualMachine *, OperatorFamily, ShapeKey, ShapeKey, ShapeKey);
+    VirtualMachine *, ShapeKey, ShapeKey, ShapeKey);
 ```
 
 The cached handler is not the Python method object. It is a VM-selected native
@@ -390,8 +385,10 @@ signature it cached. Resolvers are universal because they run on the miss and
 installation path, where one code-object field is less error-prone than a union
 of resolver pointers. The resolver takes `VirtualMachine *`, not
 `ThreadState *`: handler selection should depend on VM-owned metadata, the
-operator family, and operand `ShapeKey`s, not on frame state, pending
-exceptions, or the current thread-local execution context.
+selected code object, and operand `ShapeKey`s, not on frame state, pending
+exceptions, or the current thread-local execution context. Different
+operator-shaped methods provide different resolver functions rather than sharing
+an operator-family tag.
 
 A resolver may return `TrustedHandlerArity::None` when the selected method is
 trusted but has no direct handler for the observed operand shape keys. The miss
@@ -517,13 +514,12 @@ resolver != nullptr && resolution.arity != TrustedHandlerArity::None:
     a direct handler may be installed after the operation completes
 ```
 
-The resolver is called by the miss path with the operator family and operand
-shape keys observed by the generic dispatcher. It must not execute Python
-behavior or depend on `ThreadState`; it only maps trusted method identity plus
-shape keys to a typed native handler. If it returns `None`, the miss path may
-still install a `DunderMethodCall` entry when the lookup and call plan are
-cacheable. That entry skips future lookup but still executes the selected dunder
-method.
+The resolver is called by the miss path with the operand shape keys observed by
+the generic dispatcher. It must not execute Python behavior or depend on
+`ThreadState`; it only maps trusted method identity plus shape keys to a typed
+native handler. If it returns `None`, the miss path may still install a
+`DunderMethodCall` entry when the lookup and call plan are cacheable. That entry
+skips future lookup but still executes the selected dunder method.
 
 A trusted handler must satisfy a strict contract:
 
@@ -538,6 +534,8 @@ A trusted handler must satisfy a strict contract:
   dispatch plan
 - every dispatch-affecting candidate whose execution is skipped by the handler
   is trusted
+- it may allocate or raise, but it must not run Python bytecode or stop at a
+  safepoint before returning to the opcode handler
 - it may run internal operator dispatch if that dispatch is part of the trusted
   operation's normal semantics; those inner dispatches keep their own cache
   behavior
@@ -978,13 +976,18 @@ miss:
     -> real Python-visible semantics happen
 
     recognize trusted native handler when the trace proves one
-    -> this exact call can later be replaced by handler H
+    -> this exact call can be replaced by handler H
 
 install:
     method_read_cache
     key_shape_key
     function/code/adaptation/has_self
     handler = H, if the completed trace recognized one
+
+    if handler was resolved on the miss:
+        execute handler(container, key) immediately
+    else:
+        enter the selected __getitem__ function
 
 hit:
     method_read_cache still valid?
@@ -1007,11 +1010,11 @@ after the real dunder call succeeds:
 
 ```text
 resolution = code_object->trusted_handler_resolver(
-    vm, OperatorFamily::GetItem,
-    container_shape_key, key_shape_key, ShapeKey{})
+    vm, container_shape_key, key_shape_key, ShapeKey{})
 
 if resolution.arity == TrustedHandlerArity::Binary:
     install resolution.binary as GetItemIC::handler
+    run resolution.binary for the current operation
 ```
 
 The arity check belongs on the miss path. The hit path stores and calls only the

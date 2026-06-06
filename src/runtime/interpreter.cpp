@@ -1614,8 +1614,9 @@ namespace cl
 
     static ALWAYSINLINE void populate_get_item_call_cache(
         GetItemInlineCache &cache, TValue<Function> fun, uint32_t n_args,
-        bool has_self, FunctionCallAdaptation adaptation)
+        bool has_self, FunctionCallAdaptation adaptation, BinaryHandler handler)
     {
+        cache.handler = handler;
         cache.function = fun.extract();
         cache.code_object = fun.extract()->code_object.extract();
         cache.n_args = n_args;
@@ -2880,10 +2881,11 @@ namespace cl
         static constexpr uint32_t n_user_args = 1;
         Value receiver = fp[first_arg_reg];
         Value key = fp[first_arg_reg - 1];
+        ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
         ShapeKey key_shape_key = ShapeKey::from_value(key);
+        VirtualMachine *vm = thread->get_machine();
         TValue<String> method_name =
-            thread->get_machine()->get_or_create_interned_string_value(
-                L"__getitem__");
+            vm->get_or_create_interned_string_value(L"__getitem__");
         GetItemInlineCache &cache = code_object->get_item_caches[cache_idx];
 
         Value callable;
@@ -2944,10 +2946,34 @@ namespace cl
         }
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
+        BinaryHandler handler = nullptr;
         if(cache.method_read_cache.matches(receiver))
         {
+            CodeObject *target_code_object =
+                function.extract()->code_object.extract();
+            if(target_code_object->trusted_handler_resolver != nullptr)
+            {
+                TrustedHandlerResolution resolution =
+                    target_code_object->trusted_handler_resolver(
+                        vm, receiver_shape_key, key_shape_key, ShapeKey{});
+                if(resolution.arity == TrustedHandlerArity::Binary)
+                {
+                    handler = resolution.binary;
+                }
+            }
             populate_get_item_call_cache(cache, function, n_args, has_self,
-                                         adaptation);
+                                         adaptation, handler);
+        }
+
+        if(handler != nullptr)
+        {
+            accumulator = handler(thread, receiver, key);
+            if(unlikely(accumulator.is_exception_marker()))
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            START(call_instr_len);
+            COMPLETE();
         }
 
         first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
@@ -2999,6 +3025,16 @@ namespace cl
         if(unlikely(cache.key_shape_key != ShapeKey::from_value(key)))
         {
             MUSTTAIL return op_load_subscript_cache_miss(ARGS);
+        }
+        if(cache.handler != nullptr)
+        {
+            accumulator = cache.handler(thread, receiver, key);
+            if(unlikely(accumulator.is_exception_marker()))
+            {
+                MUSTTAIL return propagate_pending_exception(ARGS);
+            }
+            START(call_instr_len);
+            COMPLETE();
         }
         if(unlikely(cache.function == nullptr))
         {

@@ -20,6 +20,7 @@
 namespace cl
 {
     class ThreadState;
+    class VirtualMachine;
 
     enum class FunctionParameterFlags : uint32_t
     {
@@ -129,6 +130,33 @@ namespace cl
     using IntrinsicFunction7 = Value (*)(ThreadState *, Value, Value, Value,
                                          Value, Value, Value, Value);
 
+    using UnaryHandler = Value (*)(ThreadState *, Value);
+    using BinaryHandler = Value (*)(ThreadState *, Value, Value);
+    using TernaryHandler = Value (*)(ThreadState *, Value, Value, Value);
+
+    enum class TrustedHandlerArity : uint8_t
+    {
+        None,
+        Unary,
+        Binary,
+        Ternary,
+    };
+
+    struct TrustedHandlerResolution
+    {
+        TrustedHandlerArity arity = TrustedHandlerArity::None;
+
+        union
+        {
+            UnaryHandler unary;
+            BinaryHandler binary;
+            TernaryHandler ternary;
+        };
+    };
+
+    using TrustedHandlerResolver = TrustedHandlerResolution (*)(
+        VirtualMachine *, ShapeKey, ShapeKey, ShapeKey);
+
     union NativeFunctionTarget
     {
         IntrinsicFunction0 fixed0;
@@ -154,7 +182,6 @@ namespace cl
     class Function;
     class ClassObject;
     class ValidityCell;
-    class VirtualMachine;
 
     enum class FunctionCallAdaptation : uint8_t
     {
@@ -177,6 +204,7 @@ namespace cl
     {
         AttributeReadInlineCache method_read_cache;
         ShapeKey key_shape_key;
+        BinaryHandler handler = nullptr;
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
         uint32_t n_args = UINT32_MAX;
@@ -187,6 +215,7 @@ namespace cl
         {
             method_read_cache.clear();
             key_shape_key = ShapeKey{};
+            handler = nullptr;
             function = nullptr;
             code_object = nullptr;
             n_args = UINT32_MAX;
@@ -290,6 +319,7 @@ namespace cl
         std::vector<KeywordCallInlineCache> keyword_call_caches;
         std::vector<NativeFunctionTarget> native_function_targets;
         std::vector<ExceptionTableEntry> exception_table;
+        TrustedHandlerResolver trusted_handler_resolver = nullptr;
 
         uint32_t get_n_registers() const
         {

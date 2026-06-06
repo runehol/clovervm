@@ -214,6 +214,29 @@ namespace cl
         return self.get_ptr<String>()->char_at(py_idx);
     }
 
+    static Value trusted_str_getitem_smi_handler(ThreadState *thread,
+                                                 Value self, Value index_value)
+    {
+        (void)thread;
+        return self.get_ptr<String>()->char_at(index_value.get_smi());
+    }
+
+    static TrustedHandlerResolution
+    resolve_trusted_str_getitem_handler(VirtualMachine *vm,
+                                        ShapeKey container_key,
+                                        ShapeKey key_key, ShapeKey unused)
+    {
+        (void)unused;
+        TrustedHandlerResolution resolution;
+        if(vm->shape_for_key(container_key)->get_class() == vm->str_class() &&
+           key_key == ShapeKey::from_value(Value::from_smi(0)))
+        {
+            resolution.arity = TrustedHandlerArity::Binary;
+            resolution.binary = trusted_str_getitem_smi_handler;
+        }
+        return resolution;
+    }
+
     static Value native_str_lower(ThreadState *thread, Value self)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"lower"));
@@ -663,8 +686,10 @@ namespace cl
                                      L"Return len(self)."),
             builtin_intrinsic_method(L"__add__", native_str_add,
                                      L"Return self + value."),
-            builtin_intrinsic_method(L"__getitem__", native_str_getitem,
-                                     L"Return self[index]."),
+            with_trusted_handler_resolver(
+                builtin_intrinsic_method(L"__getitem__", native_str_getitem,
+                                         L"Return self[index]."),
+                resolve_trusted_str_getitem_handler),
             builtin_intrinsic_method(L"lower", native_str_lower,
                                      L"Return a lowercase copy."),
             builtin_intrinsic_method(L"upper", native_str_upper,
