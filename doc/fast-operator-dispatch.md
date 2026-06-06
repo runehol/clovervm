@@ -336,14 +336,44 @@ automatically untrusted. The relevant question is whether the VM may rely on
 that method's dispatch-visible behavior being stable under the installed guards.
 
 ```cpp
-using GetItemHandler = Value (*)(ThreadState *, Value container, Value key);
+using UnaryHandler = Value (*)(ThreadState *, Value);
+using BinaryHandler = Value (*)(ThreadState *, Value, Value);
+using TernaryHandler = Value (*)(ThreadState *, Value, Value, Value);
+
+enum class TrustedHandlerArity : uint8_t
+{
+    None,
+    Unary,
+    Binary,
+    Ternary,
+};
+
+struct TrustedHandlerResolution
+{
+    TrustedHandlerArity arity = TrustedHandlerArity::None;
+
+    union
+    {
+        UnaryHandler unary;
+        BinaryHandler binary;
+        TernaryHandler ternary;
+    };
+};
+
+enum class OperatorFamily : uint8_t
+{
+    GetItem,
+};
+
+using TrustedHandlerResolver = TrustedHandlerResolution (*)(
+    VirtualMachine *, OperatorFamily, ShapeKey, ShapeKey, ShapeKey);
 ```
 
 The cached handler is not the Python method object. It is a VM-selected native
 implementation for a fully proven protocol case:
 
 ```text
-(op, container shape key, key shape key, selected method) -> GetItemHandler
+(op, operand shape keys, selected method/code object) -> typed handler
 ```
 
 Examples:
@@ -355,12 +385,23 @@ str[slice]      -> str_getitem_slice_fast
 dict[str]       -> dict_getitem_str_fast
 ```
 
+Handlers are arity-typed because the hit path should call the exact native
+signature it cached. Resolvers are universal because they run on the miss and
+installation path, where one code-object field is less error-prone than a union
+of resolver pointers. The resolver takes `VirtualMachine *`, not
+`ThreadState *`: handler selection should depend on VM-owned metadata, the
+operator family, and operand `ShapeKey`s, not on frame state, pending
+exceptions, or the current thread-local execution context.
+
+A resolver may return `TrustedHandlerArity::None` when the selected method is
+trusted but has no direct handler for the observed operand shape keys. The miss
+path can still install a dunder-method-call entry when the lookup and call plan
+are cacheable.
+
 A later binary-operator candidate can use the same trusted-handler idea with
 extra candidate-role state:
 
 ```cpp
-using BinaryHandler = Value (*)(ThreadState *, Value lhs, Value rhs);
-
 enum class BinaryOperatorCacheKind : uint8_t
 {
     Empty,
@@ -455,115 +496,34 @@ slots, especially read-only stable slots installed by the runtime. It should not
 be the only authority for trust unless the slot's contents are immutable by
 construction.
 
-## Trusted Handler Publication
+## Trusted Handler Resolver
 
-Some trusted method implementations may only know the best direct handler after
-they have executed their normal operation. They still have to return a single
-`Value`, so the trusted publication can be communicated through a
-`ThreadState` side channel if the side channel is treated as a one-call return
-slot, not as ambient dispatch state.
+Trust is represented by a resolver attached to the selected method's code
+object. If the selected method has no `TrustedHandlerResolver`, the dispatcher
+may still cache the dunder-method call, but it has no permission to replace that
+method with a direct native handler.
 
-The publication record should represent trust and the optional direct handler
-found by the call:
-
-```cpp
-struct TrustedOperatorPublication
-{
-    bool trusted;
-    BinaryHandler handler;
-};
-```
-
-The `ThreadState` API should make the one-shot nature explicit. Candidate names:
-
-```cpp
-void publish_operator_trustedness(TrustedOperatorPublication publication);
-TrustedOperatorPublication consume_operator_trustedness();
-void clear_operator_trustedness();
-```
-
-`consume_operator_trustedness()` is a destructive read: it returns the current
-publication and clears the thread-local slot. There should be no ordinary `get`
-or `peek` API for this state; callers must consume it into the current dispatch
-trace step or discard it. `clear_operator_trustedness()` exists for paths that
-intentionally discard the publication, such as exception paths where no cache
-candidate can be installed.
-
-For get-item subscription, the method's return value is simply the subscription
-result. If `__getitem__` returns the `NotImplemented` singleton, the operation
-returns that object; subscription has no binary-operator-style `NotImplemented`
-continuation. Later operator families may use the same publication record for
-methods that return `NotImplemented` as a protocol continue signal, but that
-result policy belongs to those family-specific dispatchers, not to the shared
-cache payload.
-
-Trust and handler availability are separate facts:
+Resolver presence and handler availability are separate facts:
 
 ```text
-trusted == false:
+resolver == nullptr:
     no permission to replace the method behavior
 
-trusted == true && handler == nullptr:
-    this method execution is trusted, but no direct handler should be installed
+resolver != nullptr && resolution.arity == TrustedHandlerArity::None:
+    the method is trusted, but this operand-shape combination has no direct
+    handler
 
-trusted == true && handler != nullptr:
-    a direct handler may be installed if the whole operation completes
+resolver != nullptr && resolution.arity != TrustedHandlerArity::None:
+    a direct handler may be installed after the operation completes
 ```
 
-If a trusted method does not publish a direct handler, the miss path may still
-install a `DunderMethodCall` entry when the dunder-method dispatch plan is
+The resolver is called by the miss path with the operator family and operand
+shape keys observed by the generic dispatcher. It must not execute Python
+behavior or depend on `ThreadState`; it only maps trusted method identity plus
+shape keys to a typed native handler. If it returns `None`, the miss path may
+still install a `DunderMethodCall` entry when the lookup and call plan are
 cacheable. That entry skips future lookup but still executes the selected dunder
 method.
-
-The publication does not need to identify which dunder method was called. The
-operator dispatcher already knows whether the current candidate is the lhs
-forward method, rhs reflected method, or lhs in-place method, and it records the
-lookup result and validity cell in the trace. The publication only describes
-the call that just returned.
-
-The publication slot has no outer state to restore. The required protocol is:
-
-- assert that the thread-local trusted publication is empty before invoking an
-  operator method that may publish one
-- clear the slot in release builds before the call if that is cheaper than
-  carrying a defensive error path
-- the method may publish trustedness and an optional handler only after it has
-  established the current call's dispatch-visible behavior
-- publication asserts that the slot is empty before setting it
-- immediately after the call returns, the operator dispatcher reads and clears
-  the publication
-- no operator dispatch may run between the method return and that read/clear
-- the dispatcher installs the candidate only if the overall operator dispatch
-  completed successfully and the completed trace is trusted-handler-cacheable
-- no code may leave a publication in `ThreadState` for a later, unrelated
-  dispatch to discover
-
-This consume-and-clear step is required after every attempted internal operator
-dunder call, not only after calls expected to be trusted and not only after
-calls that produce the final result. A partially trusted chain may publish a
-record before returning `NotImplemented`, raising, or letting the protocol
-continue. The dispatcher must consume that record into the current trace step or
-discard it before any later candidate is considered.
-
-Trusted implementations may perform nested operator dispatch internally. The
-rule is that they must do that work before publishing the outer trusted record.
-If a trusted method publishes and then starts nested operator dispatch, nested
-dispatch entry will see a non-empty publication slot and fail the invariant.
-Trusted publication should therefore be the final dispatch-visible action before
-returning to the dispatcher that invoked the method.
-
-If an implementation represents `NotImplemented` propagation with an internal
-exception-like path, the trusted publication still has to be installed before
-that path leaves the method and consumed by the dispatcher that catches it. For
-normal Python binary-operator semantics, `NotImplemented` is a return value, not
-`NotImplementedError`.
-
-This handles reentrancy because nested operator dispatches use the same
-empty-on-entry, publish-once, consume-and-clear protocol. A nested dispatch may
-publish, consume, and clear its own publication while the outer method is
-running. When control returns to the outer dispatcher, the only publication it
-may consume is one published by the outer method call after any nested dispatch
-completed.
 
 A trusted handler must satisfy a strict contract:
 
@@ -579,8 +539,8 @@ A trusted handler must satisfy a strict contract:
 - every dispatch-affecting candidate whose execution is skipped by the handler
   is trusted
 - it may run internal operator dispatch if that dispatch is part of the trusted
-  operation's normal semantics; those inner dispatches keep their own cache and
-  publication behavior
+  operation's normal semantics; those inner dispatches keep their own cache
+  behavior
 
 ## Dunder Method Call Cache
 
@@ -969,8 +929,6 @@ The lookup arm and key guard are shared by both dunder-call replay and trusted
 native handler replay:
 
 ```cpp
-using GetItemHandler = Value (*)(ThreadState *, Value container, Value key);
-
 struct GetItemIC
 {
     AttributeReadInlineCache method_read_cache;
@@ -978,7 +936,7 @@ struct GetItemIC
 
     // Trusted-handler arm. Non-null means the entry may skip the dunder method
     // after method_read_cache and key_shape_key validate.
-    GetItemHandler handler = nullptr;
+    BinaryHandler handler = nullptr;
 
     // Dunder-call replay arm. This is intentionally not a full
     // FunctionCallInlineCache: method_read_cache carries the contents-sensitive
@@ -1042,6 +1000,23 @@ run `list_getitem_smi`. The cache may run that handler only because the guarded
 dunder lookup still selects the same trusted method and the trusted-handler
 recognizer has mapped that selected method plus the observed shape keys to an
 equivalent native shortcut.
+
+For the first get-item implementation, the selected builtin `__getitem__` code
+object can carry a `TrustedHandlerResolver`. The miss path calls that resolver
+after the real dunder call succeeds:
+
+```text
+resolution = code_object->trusted_handler_resolver(
+    vm, OperatorFamily::GetItem,
+    container_shape_key, key_shape_key, ShapeKey{})
+
+if resolution.arity == TrustedHandlerArity::Binary:
+    install resolution.binary as GetItemIC::handler
+```
+
+The arity check belongs on the miss path. The hit path stores and calls only the
+typed `BinaryHandler`, so it does not need a resolver, arity switch, or union
+access.
 
 The monomorphic get-item cache should treat the container and key `ShapeKey`s as
 an all-or-nothing guard. A key-shape mismatch should miss and retrace even
@@ -1146,11 +1121,9 @@ binding discipline when optimized.
 
 ## Installation Rule
 
-The generic dispatcher records a dispatch trace. Some trusted-handler families
-may also use a per-call `ThreadState` publication slot when the method body is
-the only place that can prove the direct handler. Other families can recognize a
-trusted handler directly from the selected method identity, operand shape keys,
-and completed trace. The opcode miss path owns cache installation.
+The generic dispatcher records a dispatch trace. Trusted-handler recognition
+uses the selected method's resolver, operand shape keys, and completed trace.
+The opcode miss path owns cache installation.
 
 Dunder-method-call cache state may be installed once lookup, binding, callable
 validation, call-argument layout, and call adaptation have produced an
@@ -1161,13 +1134,14 @@ the next hit must execute the method again and propagate whatever happens then.
 Trusted-handler installation is stricter. A handler that skips the dunder method
 should be installed only after the operation has completed successfully and the
 completed dispatch trace is recognized as equivalent to the handler. Exception
-paths must not accidentally publish a direct handler.
+paths must not accidentally install a direct handler.
 
 The first successful installation choice for a completed recognized operation
 is:
 
 ```text
-if publication.trusted && publication.handler != nullptr:
+if resolver != nullptr &&
+   resolution.arity != TrustedHandlerArity::None:
     install TrustedHandler
 else if lookup descriptor has a cacheable DunderMethodDispatchPlan:
     install DunderMethodCall
@@ -1175,11 +1149,11 @@ else:
     leave empty or install an explicit miss/unhandled entry
 ```
 
-`publication.trusted == true` without a handler is not a failed dispatch. It
-means the VM understood the method execution but did not get, or did not want, a
-direct replacement for this operand shape key. In that case the `DunderMethodCall`
-entry is still useful because it skips dunder-method lookup while preserving
-the method call.
+`resolver != nullptr` with `TrustedHandlerArity::None` is not a failed
+dispatch. It means the selected method is trusted, but the VM did not get, or
+did not want, a direct replacement for this operand shape key. In that case the
+`DunderMethodCall` entry is still useful because it skips dunder-method lookup
+while preserving the method call.
 
 On every miss, the opcode miss path may install a replacement entry in the code
 object IC for that bytecode's cache index. Replacement can be simple in the
@@ -1208,6 +1182,7 @@ Equivalently:
 
 - Should trusted handlers require exact builtin type guards, or can
   some use shape guards that imply the same dunder-method lookup semantics?
-- What exact shape should the trace recognizer and trusted-handler table use?
+- What exact shape should the trace recognizer use for multi-candidate binary
+  and in-place dispatch?
 - How much of the binary cache validation path can be shared with in-place
   operator caches without obscuring the interpreter hot path?
