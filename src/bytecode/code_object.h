@@ -177,13 +177,21 @@ namespace cl
     {
         AttributeReadInlineCache method_read_cache;
         ShapeKey key_shape_key;
-        FunctionCallInlineCache call_cache;
+        Function *function = nullptr;
+        CodeObject *code_object = nullptr;
+        uint32_t n_args = UINT32_MAX;
+        FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
+        bool has_self = false;
 
         void clear()
         {
             method_read_cache.clear();
             key_shape_key = ShapeKey{};
-            call_cache = FunctionCallInlineCache{};
+            function = nullptr;
+            code_object = nullptr;
+            n_args = UINT32_MAX;
+            adaptation = FunctionCallAdaptation::FixedArity;
+            has_self = false;
         }
     };
 

@@ -1581,6 +1581,24 @@ namespace cl
                    fun.extract()->call_signature.max_positional_arity;
     }
 
+    static ALWAYSINLINE FunctionCallAdaptation
+    function_call_adaptation_for_positional_call(TValue<Function> fun,
+                                                 uint32_t n_args)
+    {
+        if(fun.extract()->has_varargs())
+        {
+            return FunctionCallAdaptation::Varargs;
+        }
+        if(fun.extract()->default_parameters.value().has_value())
+        {
+            return n_args == fun.extract()->call_signature.function.n_parameters
+                       ? FunctionCallAdaptation::FixedArity
+                       : FunctionCallAdaptation::Defaults;
+        }
+        return is_fixed_arity_function(fun) ? FunctionCallAdaptation::FixedArity
+                                            : FunctionCallAdaptation::Defaults;
+    }
+
     static ALWAYSINLINE void populate_function_call_cache_with_guard(
         FunctionCallInlineCache &cache, Value guard_value, TValue<Function> fun,
         ValidityCell *validity_cell, uint32_t n_args)
@@ -1590,23 +1608,19 @@ namespace cl
         cache.code_object = fun.extract()->code_object.extract();
         cache.validity_cell = validity_cell;
         cache.n_args = n_args;
-        if(fun.extract()->has_varargs())
-        {
-            cache.adaptation = FunctionCallAdaptation::Varargs;
-        }
-        else if(fun.extract()->default_parameters.value().has_value())
-        {
-            cache.adaptation =
-                n_args == fun.extract()->call_signature.function.n_parameters
-                    ? FunctionCallAdaptation::FixedArity
-                    : FunctionCallAdaptation::Defaults;
-        }
-        else
-        {
-            cache.adaptation = is_fixed_arity_function(fun)
-                                   ? FunctionCallAdaptation::FixedArity
-                                   : FunctionCallAdaptation::Defaults;
-        }
+        cache.adaptation =
+            function_call_adaptation_for_positional_call(fun, n_args);
+    }
+
+    static ALWAYSINLINE void populate_get_item_call_cache(
+        GetItemInlineCache &cache, TValue<Function> fun, uint32_t n_args,
+        bool has_self, FunctionCallAdaptation adaptation)
+    {
+        cache.function = fun.extract();
+        cache.code_object = fun.extract()->code_object.extract();
+        cache.n_args = n_args;
+        cache.adaptation = adaptation;
+        cache.has_self = has_self;
     }
 
     static ALWAYSINLINE void
@@ -2923,20 +2937,24 @@ namespace cl
 
         TValue<Function> function =
             TValue<Function>::from_value_assumed(callable);
+        if(unlikely(
+               !function.extract()->accepts_positional_only_call_arity(n_args)))
+        {
+            MUSTTAIL return wrong_arity_error(ARGS);
+        }
+        FunctionCallAdaptation adaptation =
+            function_call_adaptation_for_positional_call(function, n_args);
+        if(cache.method_read_cache.matches(receiver))
+        {
+            populate_get_item_call_cache(cache, function, n_args, has_self,
+                                         adaptation);
+        }
+
         first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
                                                            n_user_args, self);
-        if(!function_call_cache_matches(cache.call_cache, callable, n_args))
-        {
-            if(unlikely(!function.extract()->accepts_positional_only_call_arity(
-                   n_args)))
-            {
-                MUSTTAIL return wrong_arity_error(ARGS);
-            }
-            populate_function_call_cache(cache.call_cache, function, n_args);
-        }
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, cache.call_cache.adaptation);
+            call_instr_len, adaptation);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);
@@ -2964,37 +2982,20 @@ namespace cl
         {
             MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
         }
-
-        Value callable;
-        Value self;
-        MethodCallFastTargetStatus target_status =
-            prepare_method_call_target_from_plan_fast(
-                receiver, cache.method_read_cache.plan, callable, self);
-        if(unlikely(target_status == MethodCallFastTargetStatus::Slow))
+        if(unlikely(cache.function == nullptr))
         {
             MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
         }
 
-        bool has_self = !self.is_not_present();
-        uint32_t n_args = n_user_args + (has_self ? 1 : 0);
-        if(unlikely(!function_call_cache_matches(cache.call_cache, callable,
-                                                 n_args)))
-        {
-            MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
-        }
-        if(unlikely(cache.call_cache.adaptation !=
-                    FunctionCallAdaptation::FixedArity))
-        {
-            MUSTTAIL return op_load_subscript_protocol_slow(ARGS);
-        }
+        Value self = cache.has_self ? receiver : Value::not_present();
+        uint32_t n_args = cache.n_args;
 
         first_arg_reg = prepare_method_call_argument_slots(fp, first_arg_reg,
                                                            n_user_args, self);
-        TValue<Function> function =
-            TValue<Function>::from_oop(cache.call_cache.function);
+        TValue<Function> function = TValue<Function>::from_oop(cache.function);
         enter_function_frame_from_positional_args(
             thread, fp, pc, code_object, function, first_arg_reg, n_args,
-            call_instr_len, FunctionCallAdaptation::FixedArity);
+            call_instr_len, cache.adaptation);
         if(unlikely(thread->safepoint_requested()))
         {
             MUSTTAIL return op_committed_safepoint_slow(ARGS);

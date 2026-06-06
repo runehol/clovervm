@@ -1966,7 +1966,44 @@ TEST(Interpreter, subscript_load_caches_inline_key_shape)
     EXPECT_EQ(ShapeKey::from_value(Value::from_smi(1)), cache.key_shape_key);
     EXPECT_EQ(test_context.vm().smi_shape(),
               test_context.vm().shape_for_key(cache.key_shape_key));
-    ASSERT_NE(nullptr, cache.call_cache.function);
+    ASSERT_NE(nullptr, cache.function);
+    EXPECT_EQ(2u, cache.n_args);
+    EXPECT_TRUE(cache.has_self);
+    EXPECT_EQ(FunctionCallAdaptation::FixedArity, cache.adaptation);
+}
+
+TEST(Interpreter, subscript_load_caches_getitem_with_default_arguments)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"get"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"class Bag:\n"
+                                  L"    def __getitem__(self, key, extra=5):\n"
+                                  L"        return key + extra\n"
+                                  L"def get(xs, key):\n"
+                                  L"    return xs[key]\n"
+                                  L"bag = Bag()\n"
+                                  L"first = get(bag, 10)\n"
+                                  L"second = get(bag, 20)\n"
+                                  L"first * 100 + second\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::from_smi(1525), actual);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->get_item_caches.size());
+    const GetItemInlineCache &cache = function_code->get_item_caches[0];
+    ASSERT_NE(nullptr, cache.function);
+    EXPECT_EQ(2u, cache.n_args);
+    EXPECT_TRUE(cache.has_self);
+    EXPECT_EQ(FunctionCallAdaptation::Defaults, cache.adaptation);
 }
 
 TEST(Interpreter, dict_literal_returns_dict_object)
