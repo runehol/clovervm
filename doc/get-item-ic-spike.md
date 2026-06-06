@@ -57,9 +57,12 @@ action:
     call the cached selected __getitem__ method
 ```
 
-On a cache miss, the opcode should run the normal get-item behavior, record the
-lookup facts if they are cacheable, and install or replace the monomorphic
-entry only after the operation completes successfully.
+On a cache miss, the opcode should run the normal get-item behavior by
+resolving an executable `__getitem__` call plan. If that plan is cacheable, the
+opcode may install or replace the monomorphic entry after lookup, binding,
+callable validation, and call adaptation have succeeded. The cache stores the
+ability to replay the selected method call; it must not cache the result value
+or any exception raised by the method body.
 
 On a cache hit, the opcode may skip dunder-method lookup. It must still execute
 the selected `__getitem__` method and return that method's result.
@@ -258,38 +261,89 @@ Disassembly prints the new cache operand, and the interpreter reads but does
 not use the cache index yet. Runtime behavior remains on the existing
 `load_subscript` helper.
 
-### Stage 4: Implement Miss-Time Lookup Recording
+### Stage 4: Resolve And Execute An Uncached Get-Item Plan
 
-- On miss, perform the same dunder-method lookup the generic get-item path uses.
-- Record:
-  - receiver class searched
-  - found/missing/uncacheable/error status
-  - selected function-shaped method, if found
-  - lookup validity cell
-  - binding behavior needed to call the selected method
-- Treat unsupported descriptors, unusual binding, class subscription, and lookup
-  errors as uncacheable for this spike.
-- Install a cache entry only after the subscription operation returns normally.
+The next slice should not merely record lookup facts. It should create the same
+executable get-item call plan that a later cache hit can reuse, then execute
+that plan immediately on the miss path.
+
+This spike may let `LoadSubscript` itself enter the selected `__getitem__`
+callee and treat the callee's accumulator return value as the final
+subscription result. That shape is acceptable for get-item because
+`NotImplemented` is just an ordinary return value and there is no reflected or
+in-place protocol continuation to resume after the call. It should not be
+treated as the final operator-dispatch architecture. Before trusted fast paths,
+binary/reflected operators, or protocols that need post-call continuation, the
+bytecode shape should be revisited so operands and protocol state live in frame
+registers or explicit continuation state rather than relying on the
+accumulator.
+
+- Move `LoadSubscript` away from the existing exact native-layout subscription
+  fast path and toward protocol-selected `__getitem__` execution. The native
+  helpers may still be reused behind builtin `__getitem__` method bodies, but
+  the opcode should not bypass special-method lookup for the builtin container
+  cases that now expose visible `__getitem__` methods.
+- Resolve `type(container).__getitem__` with
+  `resolve_special_method_read_descriptor`.
+- Convert the descriptor into an executable method-call target:
+  - selected callable;
+  - optional bound `self`;
+  - argument count including bound `self` when present;
+  - function-call adaptation needed to enter the target frame.
+- Treat missing `__getitem__`, unsupported descriptors, unusual binding, class
+  subscription, non-function callables, wrong arity, and lookup errors as
+  conservative uncached failures for this spike.
+- Enter the selected function-shaped `__getitem__` through the existing
+  positional call machinery, using the `LoadSubscript` instruction length as
+  the return point.
+- Do not commit cache state merely because lookup produced interesting facts.
+  Cache state should only be populated once lookup, binding, callable
+  validation, and call adaptation have produced an executable plan.
 
 Checkpoint:
 
-- A failed or raising `__getitem__` call does not install an entry.
-- A missing or unsupported `__getitem__` path preserves the current error
+- Builtin and user-defined `obj[key]` calls flow through the protocol-selected
+  `__getitem__` path for the cases supported by the spike.
+- Side effects in argument evaluation, lookup, binding, and the
+  `__getitem__` body remain Python-visible and happen in the same order as the
+  uncached path.
+- Missing or unsupported `__getitem__` preserves the current subscription error
   behavior.
+- If the selected `__getitem__` body raises, the exception propagates normally.
+  The spike does not require continuation machinery to defer cache publication
+  until after the method body returns.
 
-### Stage 5: Implement Hit-Time Validation And Replay
+### Stage 5: Cache And Replay The Executable Plan
 
-- On hit, validate container shape, key shape, and lookup validity.
-- If any guard fails, run the miss path.
-- If all guards pass, call the cached selected `__getitem__` method using the
-  existing call machinery.
-- Propagate pending exceptions exactly like the uncached path.
-- Return any non-exception result directly, including `NotImplemented`.
+Once Stage 4 has a coherent executable miss path, make the cache entry hold
+exactly the guards and call-adaptation state needed to replay that same plan.
+
+- Populate the monomorphic cache only after Stage 4 has produced a complete
+  executable plan:
+  - receiver-shape and validity guarded special-method read plan;
+  - key-shape guard;
+  - function-call cache for the selected function-shaped callable and final
+    positional argument count.
+- On hit, validate receiver shape, lookup validity, key shape, and function-call
+  cache state.
+- Rebuild the callable and optional bound `self` from the cached read plan, then
+  enter the cached positional call path. The hit path skips repeated
+  `__getitem__` lookup only; it must still execute the Python-visible method
+  body every time.
+- If any guard fails, fall back to the Stage 4 resolver and replace the
+  monomorphic entry if the new operation is cacheable.
+- Do not cache negative lookup results in this spike unless that falls out of
+  the same executable-plan representation without extra policy.
 
 Checkpoint:
 
-- The hit path skips lookup only. It does not skip the Python-visible method
-  call.
+- Cache hits skip repeated special-method lookup while still calling
+  `__getitem__` on every execution.
+- Cache misses and guard failures use the same executable resolver as the
+  uncached Stage 4 path.
+- A `__getitem__` body that raises may leave behind a valid lookup/call cache if
+  lookup and call adaptation already succeeded; the cache still does not cache
+  the exception or the result value.
 
 ### Stage 6: Invalidation And Mutation Tests
 
@@ -306,7 +360,8 @@ Add interpreter-level tests for:
 - inherited `__getitem__` invalidates when the defining base class changes
 - side effects inside `__getitem__` still run on every cached execution
 - `__getitem__` returning `NotImplemented` returns that singleton
-- raising `__getitem__` propagates and does not install an entry
+- raising `__getitem__` propagates normally and does not cache the exception or
+  result value
 - different key shapes at the same bytecode site miss and replace the
   monomorphic entry
 
@@ -332,6 +387,9 @@ Checkpoint:
   heap values, user instances, and class objects?
 - Can the current special-method/function-call path replay a cached
   function-shaped `__getitem__` cleanly?
+- Is the transient miss-time executable plan the right boundary, or does
+  `LoadSubscript` need a separate call-continuation opcode before trusted
+  handlers or more complex descriptors?
 - What ownership wrapper is required for cached callable values inside code
   objects?
 - Does the existing MRO shape-and-contents validity cell cover all lookup
@@ -354,8 +412,9 @@ The spike is successful if:
 - cached executions still call `__getitem__` every time
 - class or base-class mutation invalidates the cached lookup dependency
 - unsupported descriptor and class-subscription cases fail conservatively
-- the implementation identifies whether continuation machinery is actually
-  needed before trusted handlers or binary operator caches
+- the implementation identifies whether the executable-plan boundary is enough,
+  or whether continuation machinery is actually needed before trusted handlers
+  or binary operator caches
 
 The spike is not required to show a speedup. A clean semantic cache with clear
 miss behavior is enough.
