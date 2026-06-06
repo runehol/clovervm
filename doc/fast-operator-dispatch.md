@@ -1,8 +1,8 @@
 # Fast Operator Dispatch
 
 This note sketches inline caching for Python operator and implicit protocol
-dispatch. The first implementation slice is get-item subscription dispatch:
-`obj[key]`. Get-item subscription exercises the same dunder-method lookup and
+dispatch. The initial target is get-item subscription dispatch: `obj[key]`.
+Get-item subscription exercises the same dunder-method lookup and
 validity-cell machinery as overloaded operators, but it has one protocol owner
 and no reflected or in-place candidate ordering. The same cache model should
 later extend to store/delete subscription, binary and in-place operators,
@@ -39,7 +39,7 @@ trusted for that shortcut.
   `NotImplemented` on an earlier execution.
 - Do not add deoptimization machinery as part of the first design.
 - Do not store per-object operator metadata when the operation can be selected
-  from the opcode, operand shapes/types, and dispatch result.
+  from the opcode, operand shape keys/types, and dispatch result.
 - Do not replace the existing direct inline-value arithmetic fast paths. SMI
   and SMI-or-bool cases that are already handled by the opcode stay ahead of
   this dispatch layer.
@@ -50,31 +50,27 @@ trusted for that shortcut.
   `__new__`, `__init__`, metaclass `__call__`, `__init_subclass__`,
   `__mro_entries__`, `__class_getitem__`, `__instancecheck__`, and
   `__subclasscheck__` have their own protocol and cache-shape concerns.
-- Do not implement class subscription through `__class_getitem__` in the first
-  get-item slice. Class-object receivers should stay on the existing slow/error
-  behavior or an explicitly separate class-subscription path until that protocol
-  is designed.
-- Do not implement arbitrary descriptor dispatch as part of the first get-item
-  slice. Clovervm's current special-method support is function-shaped; once
-  descriptors are supported, descriptor cacheability and replay need an explicit
-  extension to this plan.
-- Do not treat context managers as solved by this design. Clovervm may currently
-  lower `with` by calling `__enter__` and `__exit__` as ordinary methods, but
-  that is not the same as a designed dunder-method dispatch cache for context
-  manager syntax.
+- Do not implement class subscription through `__class_getitem__` in the
+  ordinary get-item cache. Class-object receivers should stay on the
+  existing slow/error behavior or an explicitly separate class-subscription path
+  until that protocol is designed.
+- Do not implement arbitrary descriptor dispatch as part of the get-item cache
+  shape. The cacheable dunder-call path is function-shaped; descriptor
+  cacheability and replay need an explicit extension to this plan.
+- Do not treat context managers as solved by this design. Lowering `with` by
+  calling `__enter__` and `__exit__` as ordinary methods is not the same as a
+  designed dunder-method dispatch cache for context manager syntax.
 
 ## Hot-Path Boundary
 
 Fast operator dispatch starts after an opcode's direct inline-value path has
-failed or decided that a Python protocol dispatch is required. Existing direct
-native-layout subscription ladders for builtin containers should be migrated
-incrementally into protocol-selected trusted handlers. Until a builtin container
-exposes the relevant dunder method, its existing direct path may remain in
-place. Once `list.__getitem__`, `tuple.__getitem__`, `str.__getitem__`, or
-`dict.__getitem__` exists, the corresponding exact-container special case
-should move behind special-method lookup: the first execution at a bytecode site
-runs the generic get-item dispatcher, proves which dunder method was selected,
-and then installs a `GetItemIC` entry or trusted native handler for later hits.
+failed or decided that a Python protocol dispatch is required. Exact
+native-layout subscription shortcuts for builtin containers belong behind
+protocol-selected lookup once the builtin exposes the corresponding visible
+dunder method. A bytecode site's first cacheable execution runs the generic
+miss path, proves which dunder method Python dispatch selected, and installs an
+inline-cache entry for later hits. Trusted native handlers are refinements of
+that guarded lookup result, not a parallel pre-lookup builtin ladder.
 
 This migration avoids a fixed global opcode ladder such as "try list, then
 tuple, then string, then dict, then generic." It also keeps the trusted-handler
@@ -98,12 +94,15 @@ the operator-cache continuation earlier, but only after preserving any existing
 operator-specific numeric shortcuts that are intentionally faster than generic
 dunder-method dispatch.
 
-## Operand Shapes
+## Operand Shape Keys
 
-The cache guard vocabulary is the VM's shape model, including shapes for inline
-values. Inline-value shapes may be more expensive to compute than heap-object
-shape pointers, but they let operator dispatch use one profiling vocabulary
-across:
+The cache guard vocabulary is the VM's shape model, but hot cache entries should
+store opaque comparable shape keys rather than forcing every guard to carry a
+materialized `Shape *`. `ShapeKey` is the representation for this: pointer
+values use their object shape pointer as the key, and inline values use their
+value tag bits as the key.
+
+Shape keys let operator dispatch use one profiling vocabulary across:
 
 - SMI
 - bool
@@ -113,11 +112,13 @@ across:
 - class object shapes
 - heap ints
 
-The cache should store the operand shapes that the generic operator dispatcher
-used for dispatch. It should not store an ad hoc mixture of raw tag checks,
-native-layout tests, and class checks unless those tests are wrapped as stable
-shape identities. Exact builtin-type guards can still be represented by builtin
-shape identities when that is the semantic dependency.
+The cache should store the operand shape keys that the generic operator
+dispatcher used for dispatch. It should not store an ad hoc mixture of raw tag
+checks, native-layout tests, and class checks unless those tests are wrapped as
+stable shape-key identities. When later lookup or class information is needed,
+the VM can convert a shape key back to the corresponding real shape. Exact
+builtin-type guards can still be represented by builtin shape keys when that is
+the semantic dependency.
 
 ## Dispatch Trace
 
@@ -125,7 +126,7 @@ On a cache miss, the opcode runs the normal generic operator dispatcher. While
 doing so, the dispatcher records the dispatch facts it discovered:
 
 - the operation being performed
-- the operand shapes used by the dispatch decision
+- the operand shape keys used by the dispatch decision
 - the primary dunder-method lookup result
 - any secondary, reflected, or in-place dunder-method lookup results
 - the actual candidate order chosen by the protocol
@@ -171,20 +172,21 @@ including negative lookups. They must be invalidated by mutations anywhere along
 the relevant MRO path, base/MRO changes, and descriptor-relevant class-entry
 changes.
 
-The existing `ClassObject::current_mro_shape_and_contents_validity_cell()` /
-`get_or_create_mro_shape_and_contents_validity_cell()` machinery is the expected
-primitive for this. It protects lookups rooted in a class's materialized MRO and
-is invalidated when the root class or any class on the MRO path changes shape or
-class-member contents. That is broader than a per-name lookup cell, but it covers
-positive and negative dunder-method lookup results for operator dispatch.
-Unrelated class-member writes may invalidate operator caches; that is an
-acceptable tradeoff for the first design because code that mutates classes on a
-hot operator path can pay the cache-miss cost.
+The contents-sensitive MRO validity machinery is the expected primitive for
+this. The lookup dependency must protect lookups rooted in a class's
+materialized MRO and must be invalidated when the root class or any class on the
+MRO path changes shape or class-member contents. That is broader than a
+per-name lookup cell, but it covers positive and negative dunder-method lookup
+results for operator dispatch. A weaker method-call cache validity cell that
+survives class contents writes is not enough to guard callable identity for
+special-method operator caches. Unrelated class-member writes may invalidate
+operator caches; that is an acceptable tradeoff for the first design because
+code that mutates classes on a hot operator path can pay the cache-miss cost.
 
 ## Cache Kinds
 
-The first get-item design should use two cache actions with a shared
-validation shape:
+Subscription caches should use two cache actions with a shared validation
+shape:
 
 ```cpp
 enum class SubscriptionCacheKind : uint8_t
@@ -197,35 +199,35 @@ enum class SubscriptionCacheKind : uint8_t
 
 Both non-empty subscription cache kinds should guard:
 
-- container operand shape
-- key operand shape
+- container operand shape key
+- key operand shape key
 - container protocol lookup validity
 
 This intentionally over-guards some cases. The useful property is that a cache
 hit proves the generic dispatcher would select the same first dispatch action
 under the current operand relationship and lookup result.
 
-The key-shape guard is required even for a dunder-method-call cache in the first
-slice. The dunder lookup itself depends only on the container type, but the
-observed key shape is part of the site's profile and keeps trusted handlers from
-quietly skipping key-side behavior they have not proved.
+The key `ShapeKey` guard is required even for a dunder-method-call cache. The
+dunder lookup itself depends only on the container type, but
+the observed key `ShapeKey` is part of the site's profile and keeps trusted
+handlers from quietly skipping key-side behavior they have not proved.
 
 Operator inline caches live on the code object, like the existing attribute,
 module-global, and function-call caches. `LoadSubscript` forms that can invoke
 `__getitem__` should carry a get-item cache index operand. Store/delete
-subscription should get their own cache shapes after get-item has proven the
-lookup, call replay, and trusted-handler structure.
+subscription should have their own cache shapes; they should not be folded into
+the get-item entry just because the lookup pattern is similar.
 
 On a miss, the generic dispatcher runs and the opcode miss path installs a new
 entry for that cache index. The entry may represent a successful trusted handler,
 a successful dunder-method-call plan, or a miss/unhandled plan when that is
-useful for profiling and replacement. The first implementation may replace the
-single entry on every miss. A bounded polymorphic cache and megamorphic state
-are later extensions, not part of this design slice.
+useful for profiling and replacement. A monomorphic cache may replace the single
+entry on every miss. Bounded polymorphic caches and megamorphic state are later
+policy extensions.
 
-Binary, in-place, and comparison caches should use the same two action kinds
-once subscription has proven the structure, but they need wider guards and
-resume state for reflected candidates, `NotImplemented`, and in-place fallback.
+Binary, in-place, and comparison caches should use the same two action kinds,
+but they need wider guards and resume state for reflected candidates,
+`NotImplemented`, and in-place fallback.
 
 ## Dunder Method Lookup Descriptor And Plan
 
@@ -273,11 +275,9 @@ struct DunderMethodDispatchPlan
 {
     ValidityCell *lookup_validity_cell = nullptr;
 
-    // Dunder-method-call replay payload. In trusted-handler entries these
-    // fields may be empty even though the validity cell is still live.
-    Value callable = Value::not_present();
+    // Dunder-method-call replay payload is family-specific. Cache entries
+    // should store a replayable call plan, not an arbitrary callable Value.
     DunderMethodBindingKind binding = DunderMethodBindingKind::NoBinding;
-    ClassObject *defining_class = nullptr;
 };
 
 struct DunderMethodLookupDescriptor
@@ -293,9 +293,11 @@ Putting the lookup validity cell in `DunderMethodDispatchPlan` is slightly
 impure for trusted-handler entries: the trusted handler does not replay the
 dunder method. It is still useful because both trusted-handler and
 dunder-method-call cache entries depend on the same dunder-method lookup fact.
-The shared plan collapses the validity field instead of making every cache entry
-carry one validity cell for trusted handlers and another validity cell hidden
-inside the dunder-method-call payload.
+The shared lookup dependency also guards cached callable identity for
+function-shaped replay: if class contents change and a different method would
+now be selected, the contents-sensitive lookup cell invalidates the entry. That
+lets operator caches avoid embedding a separate function-call validity cell for
+the selected callable.
 
 The invariant is:
 
@@ -306,9 +308,20 @@ non-empty cache entry:
     method_plan is valid for either trusted handler or dunder-method-call replay
 ```
 
-The exact C++ type is an implementation detail, but cache hits must be able to
+The exact C++ type is an implementation detail. Cache hits must be able to
 recreate the same first dunder-method call the generic dispatcher selected
-without falling back to ordinary attribute lookup.
+without falling back to ordinary attribute lookup, and they should store only
+the replay facts needed for the supported cacheable call shape. For
+function-shaped dunder methods this means storing function identity, code object,
+argument count, binding shape, and any fixed/default/varargs adaptation state;
+it does not mean storing a heterogeneous callable `Value`.
+
+Before entering a cached Python function, the opcode must already have the call
+arguments laid out in frame registers in the normal function-call shape. Cached
+dunder-call replay cannot depend on "receiver in a register, key or rhs in the
+accumulator" layouts, because function entry consumes a contiguous prepared
+argument span. Get-item uses `[container, key]`, with the container at the
+bytecode's first argument register and the key in the preceding register.
 
 ## Trusted Handler Cache
 
@@ -330,7 +343,7 @@ The cached handler is not the Python method object. It is a VM-selected native
 implementation for a fully proven protocol case:
 
 ```text
-(op, container shape, key shape, selected method) -> GetItemHandler
+(op, container shape key, key shape key, selected method) -> GetItemHandler
 ```
 
 Examples:
@@ -384,7 +397,7 @@ second path that has to stay semantically aligned with generic dispatch.
 Instead, the generic dispatcher should run the normal protocol and record the
 trace. After a successful operation, a separate recognizer can inspect the trace:
 
-- operand shapes/types
+- operand shape keys/types
 - lookup results and validity cells
 - candidate order chosen by the generic dispatcher
 - which candidates were called
@@ -420,7 +433,7 @@ and a complete trusted handler decision may also depend on skipped or
 trust and provide stable slot identity. A separate trace recognizer should map:
 
 ```text
-(op, operand shapes/types, candidate order, trusted slot identities, winner)
+(op, operand shape keys/types, candidate order, trusted slot identities, winner)
     -> TrustedHandler
 ```
 
@@ -476,13 +489,13 @@ trace step or discard it. `clear_operator_trustedness()` exists for paths that
 intentionally discard the publication, such as exception paths where no cache
 candidate can be installed.
 
-For the first get-item slice, the method's return value is simply the
-subscription result. If `__getitem__` returns the `NotImplemented` singleton,
-the operation returns that object; subscription has no binary-operator-style
-`NotImplemented` continuation. Later operator families may use the same
-publication record for methods that return `NotImplemented` as a protocol
-continue signal, but that result policy belongs to those family-specific
-dispatchers, not to the shared cache payload.
+For get-item subscription, the method's return value is simply the subscription
+result. If `__getitem__` returns the `NotImplemented` singleton, the operation
+returns that object; subscription has no binary-operator-style `NotImplemented`
+continuation. Later operator families may use the same publication record for
+methods that return `NotImplemented` as a protocol continue signal, but that
+result policy belongs to those family-specific dispatchers, not to the shared
+cache payload.
 
 Trust and handler availability are separate facts:
 
@@ -577,7 +590,7 @@ the guarded dispatch facts. The method may be implemented in Python or C++; the
 cache kind is about preserving the dunder method call, not the implementation
 language.
 
-For the first get-item slice, the action is:
+For get-item subscription, the action is:
 
 ```text
 call cached selected __getitem__ method
@@ -625,30 +638,39 @@ and has descriptor/binding behavior tied to the type lookup. A cacheable result
 therefore needs enough information to reproduce the first call exactly through a
 `DunderMethodDispatchPlan`.
 
-## Operator Call Continuations
+## Operator Call Entry And Continuations
 
 Any cache entry that replays a Python dunder method needs a way to enter Python
-bytecode and then resume the operator protocol when that call returns. Calling
-through a synchronous C++ native/interpreter bridge would be useful for a
-bootstrap implementation, but it is too expensive to be the intended hot
-`DunderMethodCall` path. The VM needs an interpreter-level continuation shape.
+bytecode with normal function-call argument layout. Protocols with no post-call
+continuation can enter the selected callee directly from the opcode after
+arranging the dunder-call arguments in frame registers. The callee's accumulator
+return value is the operation result, and a raised exception propagates
+normally. No separate continuation opcode is needed for get-item subscription
+because returning `NotImplemented` is not a protocol continuation.
 
-One possible design is a compound enter/continue opcode:
+That direct-entry shape is not enough for protocols that may need to resume
+after the first dunder call returns. Binary, in-place, and comparison caches may
+call a cached first candidate, inspect `NotImplemented`, and then continue with
+later protocol candidates without calling the first candidate again. Those
+families need an interpreter-level continuation shape.
+
+One possible continuation design is a compound enter/continue opcode:
 
 ```text
-pc[0] = EnterLoadSubscript
-pc[1] = ContinueLoadSubscript
+pc[0] = EnterBinaryAdd
+pc[1] = ContinueBinaryAdd
 pc[2...] = operands
 ```
 
 Normal bytecode dispatch enters at `pc[0]`. The enter handler owns the fast
 path. If its guards and trusted handler hit, it produces the result and advances
 by the full logical instruction length, skipping `pc[1]` entirely. If it must
-call a Python dunder method, it stores the protocol continuation state and
-enters the callee with a normal return address of `pc + 1`. The return path then
-lands on `ContinueLoadSubscript`, which consumes the continuation state,
-observes the returned value in the accumulator, updates or installs cache state
-when appropriate, and advances by the remaining instruction length.
+call a Python dunder method that may be followed by later candidates, it stores
+the protocol continuation state and enters the callee with a normal return
+address of `pc + 1`. The return path then lands on the continue opcode, which
+consumes the continuation state, observes the returned value in the accumulator,
+updates or installs cache state when appropriate, and advances by the remaining
+instruction length.
 
 For protocols with multiple possible calls, such as binary and in-place
 operators, the same continuation byte can be reused repeatedly. The continue
@@ -905,23 +927,23 @@ The useful cache shape is still binary:
 
 ```text
 guard:
-    container shape == cached container shape
-    key shape == cached key shape
+    container shape key == cached container shape key
+    key shape key == cached key shape key
 
 validity:
-    method_plan.lookup_validity_cell proves
+    method_read_cache validity proves
     dunder_lookup(type(container), "__getitem__") is still valid
 
 action:
     trusted handler(container, key)
-    or cached first dunder-method call
+    or cached selected __getitem__ function call
 ```
 
 For store and delete subscription, the lookup validity changes to
 `dunder_lookup(type(container), "__setitem__")` or
 `dunder_lookup(type(container), "__delitem__")`.
 
-The key shape is a specialization guard, not a second dunder-method lookup
+The key `ShapeKey` is a specialization guard, not a second dunder-method lookup
 dependency. It lets a hot bytecode site learn whether this is `list[smi]`,
 `list[slice]`, `tuple[smi]`, `str[slice]`, `dict[str]`, `dict[smi]`, or some
 other local pattern. The lookup validity cell protects the container protocol
@@ -937,58 +959,52 @@ A cache that skips the dunder method must still preserve any key-side behavior
 that the trusted handler assumes away. For example, list indexing may need
 `__index__`, dict lookup may need hashing and equality, and slicing requires
 correct slice-object behavior. Those are trusted-handler dependencies, not
-reflected subscription dispatch dependencies. The first get-item cache should
-therefore start with exact key shapes where the handler does not skip arbitrary
-Python key behavior, such as SMI index keys and exact `slice` keys whose
-components have already been constructed.
+reflected subscription dispatch dependencies. Trusted get-item handlers should
+therefore start with exact key shape keys where the handler does not skip
+arbitrary Python key behavior, such as SMI index keys and exact `slice` keys
+whose components have already been constructed.
 
-A concrete get-item cache entry can therefore stay simple and scan-friendly:
+A monomorphic get-item cache entry can therefore stay simple and scan-friendly.
+The lookup arm and key guard are shared by both dunder-call replay and trusted
+native handler replay:
 
 ```cpp
 using GetItemHandler = Value (*)(ThreadState *, Value container, Value key);
 
 struct GetItemIC
 {
-    bool occupied = false;
-    Shape *container_shape = nullptr;
-    Shape *key_shape = nullptr;
+    AttributeReadInlineCache method_read_cache;
+    ShapeKey key_shape_key;
 
-    // Always live for occupied entries. Both trusted-handler and
-    // dunder-method-call entries depend on the same lookup fact.
-    DunderMethodDispatchPlan method_plan;
-
-    // Non-null means the entry may skip the dunder method and run a trusted
-    // handler after method_plan validates. Null means replay the selected
-    // dunder method through method_plan and call_cache.
+    // Trusted-handler arm. Non-null means the entry may skip the dunder method
+    // after method_read_cache and key_shape_key validate.
     GetItemHandler handler = nullptr;
 
-    // Used when handler == nullptr. It is colocated with the lookup plan so a
-    // later polymorphic cache keeps each dunder lookup arm paired with its
-    // corresponding function-call entry plan. The first slice assumes cacheable
-    // __getitem__ methods use the same Function-shaped call machinery as
-    // CallSpecialMethod.
-    FunctionCallInlineCache call_cache;
+    // Dunder-call replay arm. This is intentionally not a full
+    // FunctionCallInlineCache: method_read_cache carries the contents-sensitive
+    // validity dependency that guards callable identity.
+    Function *function = nullptr;
+    CodeObject *code_object = nullptr;
+    uint32_t n_args = 0;
+    FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
+    bool has_self = false;
 };
 ```
 
-The hit path always validates `method_plan` before deciding whether to call the
-trusted handler or the cached dunder method:
+The hit path always validates the method-read cache before deciding whether to
+call the trusted handler or the cached dunder method:
 
 ```text
-if !occupied:
+if !method_read_cache.matches(container):
     miss
-if shape(container) != container_shape:
+if ShapeKey::from_value(key) != key_shape_key:
     miss
-if shape(key) != key_shape:
-    miss
-if method_plan.lookup_validity_cell is null or invalid:
-    miss
-
 if handler != nullptr:
     return handler(thread, container, key)
-else:
-    return call_dunder_method_with_cache(
-        thread, method_plan, call_cache, container, key)
+if function == nullptr:
+    miss
+
+enter cached function/code object with prepared [container, key] args
 ```
 
 The handler is not independent dispatch authority. It is a post-call refinement
@@ -997,69 +1013,70 @@ of the same validated dunder lookup:
 ```text
 miss:
     dunder_lookup(type(container), "__getitem__")
-    -> DunderMethodDispatchPlan
+    -> AttributeReadDescriptor / method-call target
 
-    call method_plan through call_cache
+    prepare [container, key] call argument span
+    call selected function-shaped method
     -> real Python-visible semantics happen
 
-    consume trusted publication
-    -> this exact call can be replaced by handler H
+    recognize trusted native handler when the trace proves one
+    -> this exact call can later be replaced by handler H
 
 install:
-    container/key shapes
-    method_plan
-    call_cache
-    handler = H, if one was published
+    method_read_cache
+    key_shape_key
+    function/code/adaptation/has_self
+    handler = H, if the completed trace recognized one
 
 hit:
-    method_plan still valid?
+    method_read_cache still valid?
         yes, the same dunder method would still be selected
 
     handler present?
         yes, skip the dunder call and run H
-        no, replay the selected dunder method through call_cache
+        no, replay the selected dunder method with prepared call args
 ```
 
-This avoids treating a shape pair such as `list[smi]` as enough authority to
+This avoids treating a shape-key pair such as `list[smi]` as enough authority to
 run `list_getitem_smi`. The cache may run that handler only because the guarded
-dunder lookup still selects the same method and a previous execution of that
-method published the handler as an equivalent shortcut for the observed shape
-pair.
+dunder lookup still selects the same trusted method and the trusted-handler
+recognizer has mapped that selected method plus the observed shape keys to an
+equivalent native shortcut.
 
-The first implementation should treat the container and key shapes as an
-all-or-nothing guard. A key-shape mismatch should miss and retrace even though
-the dunder lookup itself depends only on the container shape. That is deliberate:
-it keeps the first cache contract simple and makes replacement policy obvious.
+The monomorphic get-item cache should treat the container and key `ShapeKey`s as
+an all-or-nothing guard. A key-shape mismatch should miss and retrace even
+though the dunder lookup itself depends only on the container shape. That is
+deliberate: it keeps the cache contract simple and makes replacement policy
+obvious.
 
 A later polymorphic refinement can split the two tiers:
 
 ```text
-container shape + method_plan validity:
+container shape key + method_plan validity:
     lookup-plan hit; the selected dunder method is still reusable
 
-container shape + key shape + method_plan validity + handler:
+container shape key + key shape key + method_plan validity + handler:
     trusted-handler hit; the dunder call can be skipped
 ```
 
-In that later design, a key-shape miss could fall back to
+In that later design, a key `ShapeKey` miss could fall back to
 `DunderMethodCall` through the still-valid `method_plan`, then update or add a
-handler specialization for the newly observed key shape. That refinement should
-wait until the monomorphic get-item cache is correct and measured.
+handler specialization for the newly observed key `ShapeKey`. That refinement
+should wait until the monomorphic get-item cache is correct and measured.
 
 Store and delete subscription are later extensions. `SetItemIC` and `DelItemIC`
 should use the same shape and plan pattern but with their own handler typedefs
-and cache arrays once get-item is proven. `__setitem__` is a ternary call
-boundary (`container`, `key`, `value`), but its initial dispatch profile can
-still be binary-shaped when the trusted handler proves it does not depend on
-value shape for dispatch. If a trusted set-item handler assumes value-side
-behavior away, it needs either an additional value guard or a narrower
-recognized case.
+and cache arrays. `__setitem__` is a ternary call boundary (`container`, `key`,
+`value`), but its initial dispatch profile can still be binary-shaped when the
+trusted handler proves it does not depend on value shape key for dispatch. If a
+trusted set-item handler assumes value-side behavior away, it needs either an
+additional value guard or a narrower recognized case.
 
 Multi-method protocols such as binary arithmetic, in-place arithmetic, and rich
 comparison are more complicated because they may have multiple candidate methods,
 `NotImplemented` continuation, reflected-method ordering, and resume state after
-a cached first call. They should be handled after the get-item subscription
-cache has proven the `TrustedHandler` / `DunderMethodCall` structure.
+a cached first call. They should be handled after the subscription cache model
+has a stable `TrustedHandler` / `DunderMethodCall` structure.
 
 ### Numeric Conversion Protocols
 
@@ -1129,15 +1146,25 @@ binding discipline when optimized.
 
 ## Installation Rule
 
-The generic dispatcher records a dispatch trace and may receive per-call trusted
-publications through `ThreadState`. The opcode miss path owns cache
-installation.
+The generic dispatcher records a dispatch trace. Some trusted-handler families
+may also use a per-call `ThreadState` publication slot when the method body is
+the only place that can prove the direct handler. Other families can recognize a
+trusted handler directly from the selected method identity, operand shape keys,
+and completed trace. The opcode miss path owns cache installation.
 
-Cache installation should occur only after successful semantic completion of
-the operation. Exception-path caching is a separate design and should not happen
-as an accidental side effect of a partial dispatch trace.
+Dunder-method-call cache state may be installed once lookup, binding, callable
+validation, call-argument layout, and call adaptation have produced an
+executable call plan. The cache stores how to replay the selected call, not the
+method result. If the method body later raises, the cache may still be valid:
+the next hit must execute the method again and propagate whatever happens then.
 
-The first successful installation choice is:
+Trusted-handler installation is stricter. A handler that skips the dunder method
+should be installed only after the operation has completed successfully and the
+completed dispatch trace is recognized as equivalent to the handler. Exception
+paths must not accidentally publish a direct handler.
+
+The first successful installation choice for a completed recognized operation
+is:
 
 ```text
 if publication.trusted && publication.handler != nullptr:
@@ -1150,13 +1177,13 @@ else:
 
 `publication.trusted == true` without a handler is not a failed dispatch. It
 means the VM understood the method execution but did not get, or did not want, a
-direct replacement for this operand shape. In that case the `DunderMethodCall`
+direct replacement for this operand shape key. In that case the `DunderMethodCall`
 entry is still useful because it skips dunder-method lookup while preserving
 the method call.
 
 On every miss, the opcode miss path may install a replacement entry in the code
 object IC for that bytecode's cache index. Replacement can be simple in the
-first implementation: one entry per cache index, overwritten by the latest
+monomorphic design: one entry per cache index, overwritten by the latest
 cacheable miss result. A miss or uncacheable entry is allowed when useful to
 record that the site has been observed and to keep future profiling behavior
 explicit. Entry limits, polymorphic chains, and megamorphic fallback are later
