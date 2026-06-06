@@ -157,8 +157,6 @@ add_library(libclovervm_objects OBJECT
     api/clover_entry.h
     builtin_types/str.cpp
     builtin_types/str.h
-    builtin_types/subscript.cpp
-    builtin_types/subscript.h
     memory/thread_local_heap.cpp
     memory/thread_local_heap.h
     runtime/thread_state.cpp

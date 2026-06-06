@@ -5,7 +5,6 @@
 #include "builtin_types/list.h"
 #include "builtin_types/range_iterator.h"
 #include "builtin_types/str.h"
-#include "builtin_types/subscript.h"
 #include "builtin_types/tuple.h"
 #include "bytecode/code_object.h"
 #include "bytecode/code_object_print.h"
