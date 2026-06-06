@@ -699,6 +699,8 @@ template <> struct fmt::formatter<cl::CodeObject>
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
                 disassemble_subscript_cache(code_obj, out, pc++);
                 break;
 

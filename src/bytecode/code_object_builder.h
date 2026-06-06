@@ -368,9 +368,11 @@ namespace cl
         Expected<uint32_t> emit_load_subscript(uint32_t source_offset,
                                                uint32_t receiver_reg);
         Expected<uint32_t> emit_store_subscript(uint32_t source_offset,
-                                                uint32_t first_arg_reg);
+                                                uint32_t receiver_reg,
+                                                uint32_t key_reg);
         Expected<uint32_t> emit_del_subscript(uint32_t source_offset,
-                                              uint32_t first_arg_reg);
+                                              uint32_t receiver_reg,
+                                              uint32_t key_reg);
         Expected<uint32_t> emit_jump(uint32_t source_offset,
                                      JumpTarget &target);
         Expected<uint32_t> emit_jump_if_false(uint32_t source_offset,
