@@ -58,7 +58,7 @@ receiver/key/accumulator operation into a call-frame-shaped opcode, matching
 Mov r0, receiver
 Mov r1, key
 Star2              # value
-StoreSubscript r0, subscript_ic[...]
+StoreSubscript r0, operator_ic[...]
 ```
 
 This made it easy to reuse the existing getitem special-method call machinery.
@@ -248,4 +248,3 @@ machine operations and not function calls exclusively.
 The IC should decide how an operation executes. The opcode's operand layout
 should match the operation's natural inputs and outputs. Function-call layout
 should be paid only when the selected plan is actually a Python call.
-
