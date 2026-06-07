@@ -68,6 +68,24 @@ namespace
             {"benchmark/getitem_user.py",
              {benchmark_cpp::getitem_user_run,
               benchmark_cpp::getitem_user_items}},
+            {"benchmark/getslice_list_nonstrided.py",
+             {benchmark_cpp::getslice_list_nonstrided_run,
+              benchmark_cpp::getslice_list_nonstrided_items}},
+            {"benchmark/getslice_list_general.py",
+             {benchmark_cpp::getslice_list_general_run,
+              benchmark_cpp::getslice_list_general_items}},
+            {"benchmark/getslice_tuple_nonstrided.py",
+             {benchmark_cpp::getslice_tuple_nonstrided_run,
+              benchmark_cpp::getslice_tuple_nonstrided_items}},
+            {"benchmark/getslice_tuple_general.py",
+             {benchmark_cpp::getslice_tuple_general_run,
+              benchmark_cpp::getslice_tuple_general_items}},
+            {"benchmark/getslice_str_nonstrided.py",
+             {benchmark_cpp::getslice_str_nonstrided_run,
+              benchmark_cpp::getslice_str_nonstrided_items}},
+            {"benchmark/getslice_str_general.py",
+             {benchmark_cpp::getslice_str_general_run,
+              benchmark_cpp::getslice_str_general_items}},
             {"benchmark/setitem_list.py",
              {benchmark_cpp::setitem_list_run,
               benchmark_cpp::setitem_list_items}},
@@ -624,6 +642,66 @@ template <typename Program> static void BM_GetItemUser(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_GetItemUser, CloverProgram)
     ->Name("BM_GetItemUser")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_GetSliceListNonstrided(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/getslice_list_nonstrided.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GetSliceListNonstrided, CloverProgram)
+    ->Name("BM_GetSliceListNonstrided")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_GetSliceListGeneral(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/getslice_list_general.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GetSliceListGeneral, CloverProgram)
+    ->Name("BM_GetSliceListGeneral")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_GetSliceTupleNonstrided(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/getslice_tuple_nonstrided.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GetSliceTupleNonstrided, CloverProgram)
+    ->Name("BM_GetSliceTupleNonstrided")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_GetSliceTupleGeneral(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/getslice_tuple_general.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GetSliceTupleGeneral, CloverProgram)
+    ->Name("BM_GetSliceTupleGeneral")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_GetSliceStrNonstrided(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/getslice_str_nonstrided.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GetSliceStrNonstrided, CloverProgram)
+    ->Name("BM_GetSliceStrNonstrided")
+    ->Arg(100000);
+
+template <typename Program>
+static void BM_GetSliceStrGeneral(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/getslice_str_general.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_GetSliceStrGeneral, CloverProgram)
+    ->Name("BM_GetSliceStrGeneral")
     ->Arg(100000);
 
 template <typename Program> static void BM_SetItemList(benchmark::State &state)

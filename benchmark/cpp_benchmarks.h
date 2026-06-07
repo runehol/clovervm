@@ -41,6 +41,24 @@ namespace benchmark_cpp
     int64_t getitem_user_run(int64_t n);
     int64_t getitem_user_items(int64_t n);
 
+    int64_t getslice_list_nonstrided_run(int64_t n);
+    int64_t getslice_list_nonstrided_items(int64_t n);
+
+    int64_t getslice_list_general_run(int64_t n);
+    int64_t getslice_list_general_items(int64_t n);
+
+    int64_t getslice_tuple_nonstrided_run(int64_t n);
+    int64_t getslice_tuple_nonstrided_items(int64_t n);
+
+    int64_t getslice_tuple_general_run(int64_t n);
+    int64_t getslice_tuple_general_items(int64_t n);
+
+    int64_t getslice_str_nonstrided_run(int64_t n);
+    int64_t getslice_str_nonstrided_items(int64_t n);
+
+    int64_t getslice_str_general_run(int64_t n);
+    int64_t getslice_str_general_items(int64_t n);
+
     int64_t setitem_list_run(int64_t n);
     int64_t setitem_list_items(int64_t n);
 

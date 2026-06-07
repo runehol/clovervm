@@ -20,6 +20,7 @@ add_executable(bench_clovervm
     function_keyword_mixed.cpp
     function_varargs.cpp
     function_varargs_with_positional.cpp
+    getslice.cpp
     getitem_dict.cpp
     getitem_list.cpp
     getitem_str.cpp
