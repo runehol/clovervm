@@ -1327,7 +1327,7 @@ TEST(Codegen, subscript_load_uses_receiver_reg_and_accumulator_key)
     CodeObject *module_code = test_context.compile_file(test_case);
     CodeObject *function_code =
         module_code->constant_table[0].value().get_ptr<CodeObject>();
-    ASSERT_EQ(1u, function_code->subscript_caches.size());
+    ASSERT_EQ(1u, function_code->operator_caches.size());
 
     std::string expected =
         "Code object:\n"
@@ -1336,7 +1336,7 @@ TEST(Codegen, subscript_load_uses_receiver_reg_and_accumulator_key)
         "    5 Return\n"
         "Constant 0: Code object:\n"
         "    0 Ldar p1\n"
-        "    2 GetItem p0, subscript_ic[0]\n"
+        "    2 GetItem p0, operator_ic[0]\n"
         "    5 Return\n"
         "    6 LdaNone\n"
         "    7 Return\n"
@@ -1362,7 +1362,7 @@ TEST(Codegen, subscript_load_builds_binary_slice_key)
         "    1 Star0\n"
         "    2 Ldar p1\n"
         "    4 CreateBinarySlice r0\n"
-        "    6 GetItem p0, subscript_ic[0]\n"
+        "    6 GetItem p0, operator_ic[0]\n"
         "    9 Return\n"
         "   10 LdaNone\n"
         "   11 Return\n"
@@ -1388,7 +1388,7 @@ TEST(Codegen, subscript_load_builds_ternary_slice_key)
         "    3 Mov r1, p2\n"
         "    6 Ldar p3\n"
         "    8 CreateTernarySlice r0, r1\n"
-        "   11 GetItem p0, subscript_ic[0]\n"
+        "   11 GetItem p0, operator_ic[0]\n"
         "   14 Return\n"
         "   15 LdaNone\n"
         "   16 Return\n"
@@ -1411,7 +1411,7 @@ TEST(Codegen, subscript_store_uses_receiver_value_regs_and_accumulator_key)
         "    5 Return\n"
         "Constant 0: Code object:\n"
         "    0 Ldar p1\n"
-        "    2 SetItem p0, p2, subscript_ic[0]\n"
+        "    2 SetItem p0, p2, operator_ic[0]\n"
         "    6 LdaNone\n"
         "    7 Return\n"
         "\n"
@@ -1456,7 +1456,7 @@ TEST(Codegen, subscript_delete_uses_receiver_reg_and_accumulator_key)
         "    5 Return\n"
         "Constant 0: Code object:\n"
         "    0 Ldar p1\n"
-        "    2 DelItem p0, subscript_ic[0]\n"
+        "    2 DelItem p0, operator_ic[0]\n"
         "    5 LdaNone\n"
         "    6 Return\n"
         "\n"
@@ -1478,11 +1478,11 @@ TEST(Codegen, subscript_augmented_assignment_evaluates_receiver_and_key_once)
         "    5 Return\n"
         "Constant 0: Code object:\n"
         "    0 Ldar p1\n"
-        "    2 GetItem p0, subscript_ic[0]\n"
+        "    2 GetItem p0, operator_ic[0]\n"
         "    5 AddSmi 1\n"
         "    7 Star0\n"
         "    8 Ldar p1\n"
-        "   10 SetItem p0, r0, subscript_ic[1]\n"
+        "   10 SetItem p0, r0, operator_ic[1]\n"
         "   14 LdaNone\n"
         "   15 Return\n"
         "\n"

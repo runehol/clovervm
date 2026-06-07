@@ -2206,12 +2206,12 @@ TEST(Interpreter, subscript_load_caches_inline_key_shape)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->subscript_caches.size());
-    const SubscriptInlineCache &cache = function_code->subscript_caches[0];
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
     ASSERT_NE(nullptr, cache.method_read_cache.receiver_shape);
-    EXPECT_EQ(ShapeKey::from_value(Value::from_smi(1)), cache.key_shape_key);
+    EXPECT_EQ(ShapeKey::from_value(Value::from_smi(1)), cache.arg_shape_key);
     EXPECT_EQ(test_context.vm().smi_shape(),
-              test_context.vm().shape_for_key(cache.key_shape_key));
+              test_context.vm().shape_for_key(cache.arg_shape_key));
     ASSERT_NE(nullptr, cache.function);
     EXPECT_EQ(2u, cache.n_args);
     EXPECT_TRUE(cache.has_self);
@@ -2244,8 +2244,8 @@ TEST(Interpreter, subscript_load_caches_getitem_with_default_arguments)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->subscript_caches.size());
-    const SubscriptInlineCache &cache = function_code->subscript_caches[0];
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
     ASSERT_NE(nullptr, cache.function);
     EXPECT_EQ(2u, cache.n_args);
     EXPECT_TRUE(cache.has_self);
@@ -2278,13 +2278,13 @@ TEST(Interpreter, subscript_load_replaces_cache_for_different_key_shape)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->subscript_caches.size());
-    const SubscriptInlineCache &cache = function_code->subscript_caches[0];
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
     ASSERT_NE(nullptr, cache.method_read_cache.receiver_shape);
 
-    EXPECT_EQ(ShapeKey::from_value(Value::None()), cache.key_shape_key);
+    EXPECT_EQ(ShapeKey::from_value(Value::None()), cache.arg_shape_key);
     EXPECT_EQ(test_context.thread()->shape_of_value(Value::None()),
-              test_context.vm().shape_for_key(cache.key_shape_key));
+              test_context.vm().shape_for_key(cache.arg_shape_key));
     ASSERT_NE(nullptr, cache.function);
     EXPECT_EQ(2u, cache.n_args);
     EXPECT_TRUE(cache.has_self);
@@ -2317,12 +2317,12 @@ TEST(Interpreter, subscript_load_caches_slice_key_shape)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->subscript_caches.size());
-    const SubscriptInlineCache &cache = function_code->subscript_caches[0];
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
     EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_step_none_shape()),
-              cache.key_shape_key);
+              cache.arg_shape_key);
     EXPECT_EQ(test_context.vm().slice_step_none_shape(),
-              test_context.vm().shape_for_key(cache.key_shape_key));
+              test_context.vm().shape_for_key(cache.arg_shape_key));
 }
 
 TEST(Interpreter, subscript_load_replaces_cache_for_different_slice_shapes)
@@ -2353,14 +2353,14 @@ TEST(Interpreter, subscript_load_replaces_cache_for_different_slice_shapes)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(2u, function_code->subscript_caches.size());
-    const SubscriptInlineCache &general_cache =
-        function_code->subscript_caches[0];
-    const SubscriptInlineCache &none_cache = function_code->subscript_caches[1];
+    ASSERT_EQ(2u, function_code->operator_caches.size());
+    const OperatorInlineCache &general_cache =
+        function_code->operator_caches[0];
+    const OperatorInlineCache &none_cache = function_code->operator_caches[1];
     EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_general_shape()),
-              general_cache.key_shape_key);
+              general_cache.arg_shape_key);
     EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_step_none_shape()),
-              none_cache.key_shape_key);
+              none_cache.arg_shape_key);
 }
 
 TEST(Interpreter, subscript_load_caches_trusted_builtin_slice_handlers)
@@ -2424,12 +2424,12 @@ TEST(Interpreter, subscript_load_caches_trusted_builtin_slice_handlers)
         ASSERT_TRUE(can_convert_to<Function>(function_value));
         CodeObject *function_code =
             assume_convert_to<Function>(function_value)->code_object.extract();
-        ASSERT_EQ(1u, function_code->subscript_caches.size());
-        const SubscriptInlineCache &cache = function_code->subscript_caches[0];
+        ASSERT_EQ(1u, function_code->operator_caches.size());
+        const OperatorInlineCache &cache = function_code->operator_caches[0];
         EXPECT_EQ(ShapeKey::from_shape(expected_key_shape),
-                  cache.key_shape_key);
+                  cache.arg_shape_key);
         EXPECT_EQ(expected_key_shape,
-                  test_context.vm().shape_for_key(cache.key_shape_key));
+                  test_context.vm().shape_for_key(cache.arg_shape_key));
         EXPECT_NE(nullptr, cache.handler.binary);
         handler_out = cache.handler.binary;
     };
@@ -2588,10 +2588,10 @@ TEST(Interpreter, subscript_store_replaces_cache_for_different_key_shape)
     ASSERT_TRUE(can_convert_to<Function>(function_value));
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
-    ASSERT_EQ(1u, function_code->subscript_caches.size());
-    const SubscriptInlineCache &cache = function_code->subscript_caches[0];
+    ASSERT_EQ(1u, function_code->operator_caches.size());
+    const OperatorInlineCache &cache = function_code->operator_caches[0];
     ASSERT_NE(nullptr, cache.method_read_cache.receiver_shape);
-    EXPECT_EQ(ShapeKey::from_value(Value::None()), cache.key_shape_key);
+    EXPECT_EQ(ShapeKey::from_value(Value::None()), cache.arg_shape_key);
     ASSERT_NE(nullptr, cache.function);
     EXPECT_EQ(3u, cache.n_args);
     EXPECT_TRUE(cache.has_self);

@@ -200,18 +200,18 @@ namespace cl
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
     };
 
-    union ItemMethodHandler
+    union OperatorMethodHandler
     {
         UnaryHandler unary;
         BinaryHandler binary;
         TernaryHandler ternary;
     };
 
-    struct SubscriptInlineCache
+    struct OperatorInlineCache
     {
         AttributeReadInlineCache method_read_cache;
-        ShapeKey key_shape_key;
-        ItemMethodHandler handler = {nullptr};
+        ShapeKey arg_shape_key;
+        OperatorMethodHandler handler = {nullptr};
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
         uint32_t n_args = UINT32_MAX;
@@ -221,7 +221,7 @@ namespace cl
         void clear()
         {
             method_read_cache.clear();
-            key_shape_key = ShapeKey{};
+            arg_shape_key = ShapeKey{};
             handler.unary = nullptr;
             function = nullptr;
             code_object = nullptr;
@@ -323,7 +323,7 @@ namespace cl
         std::vector<ModuleGlobalMutationInlineCache>
             module_global_mutation_caches;
         std::vector<FunctionCallInlineCache> function_call_caches;
-        std::vector<SubscriptInlineCache> subscript_caches;
+        std::vector<OperatorInlineCache> operator_caches;
         std::vector<KeywordCallInlineCache> keyword_call_caches;
         std::vector<NativeFunctionTarget> native_function_targets;
         std::vector<ExceptionTableEntry> exception_table;

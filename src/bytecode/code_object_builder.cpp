@@ -663,7 +663,7 @@ namespace cl
     Expected<uint32_t> CodeObjectBuilder::emit_get_item(uint32_t source_offset,
                                                         uint32_t receiver_reg)
     {
-        uint8_t cache_idx = CL_TRY(allocate_subscript_cache());
+        uint8_t cache_idx = CL_TRY(allocate_operator_cache());
         uint32_t result =
             emplace_back(source_offset, uint8_t(Bytecode::GetItem));
         emplace_back(source_offset, encode_reg(receiver_reg));
@@ -675,7 +675,7 @@ namespace cl
                                                         uint32_t receiver_reg,
                                                         uint32_t value_reg)
     {
-        uint8_t cache_idx = CL_TRY(allocate_subscript_cache());
+        uint8_t cache_idx = CL_TRY(allocate_operator_cache());
         uint32_t result =
             emplace_back(source_offset, uint8_t(Bytecode::SetItem));
         emplace_back(source_offset, encode_reg(receiver_reg));
@@ -687,7 +687,7 @@ namespace cl
     Expected<uint32_t> CodeObjectBuilder::emit_del_item(uint32_t source_offset,
                                                         uint32_t receiver_reg)
     {
-        uint8_t cache_idx = CL_TRY(allocate_subscript_cache());
+        uint8_t cache_idx = CL_TRY(allocate_operator_cache());
         uint32_t result =
             emplace_back(source_offset, uint8_t(Bytecode::DelItem));
         emplace_back(source_offset, encode_reg(receiver_reg));
@@ -993,12 +993,12 @@ namespace cl
         return Expected<uint8_t>::ok(encoded_idx);
     }
 
-    Expected<uint8_t> CodeObjectBuilder::allocate_subscript_cache()
+    Expected<uint8_t> CodeObjectBuilder::allocate_operator_cache()
     {
-        uint32_t idx = code_obj->subscript_caches.size();
+        uint32_t idx = code_obj->operator_caches.size();
         uint8_t encoded_idx =
-            CL_TRY(check_u8_operand_index(idx, L"subscript cache table"));
-        code_obj->subscript_caches.emplace_back();
+            CL_TRY(check_u8_operand_index(idx, L"operator cache table"));
+        code_obj->operator_caches.emplace_back();
         return Expected<uint8_t>::ok(encoded_idx);
     }
 

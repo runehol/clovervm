@@ -1648,10 +1648,10 @@ namespace cl
             function_call_adaptation_for_positional_call(fun, n_args);
     }
 
-    static ALWAYSINLINE void populate_subscript_call_cache(
-        SubscriptInlineCache &cache, TValue<Function> fun, uint32_t n_args,
+    static ALWAYSINLINE void populate_operator_call_cache(
+        OperatorInlineCache &cache, TValue<Function> fun, uint32_t n_args,
         bool has_self, FunctionCallAdaptation adaptation,
-        ItemMethodHandler handler)
+        OperatorMethodHandler handler)
     {
         cache.handler = handler;
         cache.function = fun.extract();
@@ -2919,11 +2919,11 @@ namespace cl
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
         ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
-        ShapeKey key_shape_key = ShapeKey::from_value(key);
+        ShapeKey arg_shape_key = ShapeKey::from_value(key);
         VirtualMachine *vm = thread->get_machine();
         TValue<String> method_name =
             vm->get_or_create_interned_string_value(L"__getitem__");
-        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
 
         Value callable;
         Value self;
@@ -2934,7 +2934,7 @@ namespace cl
                 receiver, cache.method_read_cache.plan, callable, self);
             if(target_status == MethodCallTargetStatus::Ready)
             {
-                cache.key_shape_key = key_shape_key;
+                cache.arg_shape_key = arg_shape_key;
             }
         }
         else
@@ -2947,7 +2947,7 @@ namespace cl
                descriptor.is_cacheable())
             {
                 cache.method_read_cache.populate(receiver, descriptor);
-                cache.key_shape_key = key_shape_key;
+                cache.arg_shape_key = arg_shape_key;
             }
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
@@ -2983,7 +2983,7 @@ namespace cl
         }
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
-        ItemMethodHandler handler = {nullptr};
+        OperatorMethodHandler handler = {nullptr};
         if(cache.method_read_cache.matches(receiver))
         {
             CodeObject *target_code_object =
@@ -2992,14 +2992,14 @@ namespace cl
             {
                 TrustedHandlerResolution resolution =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, key_shape_key, ShapeKey{});
+                        vm, receiver_shape_key, arg_shape_key, ShapeKey{});
                 if(resolution.arity == TrustedHandlerArity::Binary)
                 {
                     handler.binary = resolution.binary;
                 }
             }
-            populate_subscript_call_cache(cache, function, n_args, has_self,
-                                          adaptation, handler);
+            populate_operator_call_cache(cache, function, n_args, has_self,
+                                         adaptation, handler);
         }
 
         if(handler.binary != nullptr)
@@ -3035,7 +3035,7 @@ namespace cl
         static constexpr uint32_t n_user_args = 1;
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
-        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
         assert(cache.function != nullptr);
 
         Value self = cache.has_self ? receiver : Value::not_present();
@@ -3061,12 +3061,12 @@ namespace cl
         uint8_t cache_idx = pc[2];
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
-        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
         if(unlikely(!cache.method_read_cache.matches(receiver)))
         {
             MUSTTAIL return op_get_item_cache_miss(ARGS);
         }
-        if(unlikely(cache.key_shape_key != ShapeKey::from_value(key)))
+        if(unlikely(cache.arg_shape_key != ShapeKey::from_value(key)))
         {
             MUSTTAIL return op_get_item_cache_miss(ARGS);
         }
@@ -3098,11 +3098,11 @@ namespace cl
         Value key = accumulator;
         Value value = fp[value_reg];
         ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
-        ShapeKey key_shape_key = ShapeKey::from_value(key);
+        ShapeKey arg_shape_key = ShapeKey::from_value(key);
         VirtualMachine *vm = thread->get_machine();
         TValue<String> method_name =
             vm->get_or_create_interned_string_value(L"__setitem__");
-        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
 
         Value callable;
         Value self;
@@ -3113,7 +3113,7 @@ namespace cl
                 receiver, cache.method_read_cache.plan, callable, self);
             if(target_status == MethodCallTargetStatus::Ready)
             {
-                cache.key_shape_key = key_shape_key;
+                cache.arg_shape_key = arg_shape_key;
             }
         }
         else
@@ -3126,7 +3126,7 @@ namespace cl
                descriptor.is_cacheable())
             {
                 cache.method_read_cache.populate(receiver, descriptor);
-                cache.key_shape_key = key_shape_key;
+                cache.arg_shape_key = arg_shape_key;
             }
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
@@ -3162,7 +3162,7 @@ namespace cl
         }
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
-        ItemMethodHandler handler = {nullptr};
+        OperatorMethodHandler handler = {nullptr};
         if(cache.method_read_cache.matches(receiver))
         {
             CodeObject *target_code_object =
@@ -3171,14 +3171,14 @@ namespace cl
             {
                 TrustedHandlerResolution resolution =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, key_shape_key, ShapeKey{});
+                        vm, receiver_shape_key, arg_shape_key, ShapeKey{});
                 if(resolution.arity == TrustedHandlerArity::Ternary)
                 {
                     handler.ternary = resolution.ternary;
                 }
             }
-            populate_subscript_call_cache(cache, function, n_args, has_self,
-                                          adaptation, handler);
+            populate_operator_call_cache(cache, function, n_args, has_self,
+                                         adaptation, handler);
         }
 
         if(handler.ternary != nullptr)
@@ -3217,7 +3217,7 @@ namespace cl
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
         Value value = fp[value_reg];
-        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
         assert(cache.function != nullptr);
 
         Value self = cache.has_self ? receiver : Value::not_present();
@@ -3246,12 +3246,12 @@ namespace cl
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
         Value value = fp[value_reg];
-        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
         if(unlikely(!cache.method_read_cache.matches(receiver)))
         {
             MUSTTAIL return op_set_item_cache_miss(ARGS);
         }
-        if(unlikely(cache.key_shape_key != ShapeKey::from_value(key)))
+        if(unlikely(cache.arg_shape_key != ShapeKey::from_value(key)))
         {
             MUSTTAIL return op_set_item_cache_miss(ARGS);
         }
@@ -3281,11 +3281,11 @@ namespace cl
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
         ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
-        ShapeKey key_shape_key = ShapeKey::from_value(key);
+        ShapeKey arg_shape_key = ShapeKey::from_value(key);
         VirtualMachine *vm = thread->get_machine();
         TValue<String> method_name =
             vm->get_or_create_interned_string_value(L"__delitem__");
-        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
 
         Value callable;
         Value self;
@@ -3296,7 +3296,7 @@ namespace cl
                 receiver, cache.method_read_cache.plan, callable, self);
             if(target_status == MethodCallTargetStatus::Ready)
             {
-                cache.key_shape_key = key_shape_key;
+                cache.arg_shape_key = arg_shape_key;
             }
         }
         else
@@ -3309,7 +3309,7 @@ namespace cl
                descriptor.is_cacheable())
             {
                 cache.method_read_cache.populate(receiver, descriptor);
-                cache.key_shape_key = key_shape_key;
+                cache.arg_shape_key = arg_shape_key;
             }
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
@@ -3345,7 +3345,7 @@ namespace cl
         }
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
-        ItemMethodHandler handler = {nullptr};
+        OperatorMethodHandler handler = {nullptr};
         if(cache.method_read_cache.matches(receiver))
         {
             CodeObject *target_code_object =
@@ -3354,14 +3354,14 @@ namespace cl
             {
                 TrustedHandlerResolution resolution =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, key_shape_key, ShapeKey{});
+                        vm, receiver_shape_key, arg_shape_key, ShapeKey{});
                 if(resolution.arity == TrustedHandlerArity::Binary)
                 {
                     handler.binary = resolution.binary;
                 }
             }
-            populate_subscript_call_cache(cache, function, n_args, has_self,
-                                          adaptation, handler);
+            populate_operator_call_cache(cache, function, n_args, has_self,
+                                         adaptation, handler);
         }
 
         if(handler.binary != nullptr)
@@ -3397,7 +3397,7 @@ namespace cl
         static constexpr uint32_t n_user_args = 1;
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
-        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
         assert(cache.function != nullptr);
 
         Value self = cache.has_self ? receiver : Value::not_present();
@@ -3423,12 +3423,12 @@ namespace cl
         uint8_t cache_idx = pc[2];
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
-        SubscriptInlineCache &cache = code_object->subscript_caches[cache_idx];
+        OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
         if(unlikely(!cache.method_read_cache.matches(receiver)))
         {
             MUSTTAIL return op_del_item_cache_miss(ARGS);
         }
-        if(unlikely(cache.key_shape_key != ShapeKey::from_value(key)))
+        if(unlikely(cache.arg_shape_key != ShapeKey::from_value(key)))
         {
             MUSTTAIL return op_del_item_cache_miss(ARGS);
         }

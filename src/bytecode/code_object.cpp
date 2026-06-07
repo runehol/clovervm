@@ -45,7 +45,7 @@ namespace cl
         {
             cache = FunctionCallInlineCache{};
         }
-        for(SubscriptInlineCache &cache: code_object->subscript_caches)
+        for(OperatorInlineCache &cache: code_object->operator_caches)
         {
             cache.clear();
         }

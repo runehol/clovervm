@@ -548,10 +548,10 @@ template <> struct fmt::formatter<cl::CodeObject>
     }
 
     template <typename Out>
-    void disassemble_subscript_cache(const cl::CodeObject &code_obj, Out &out,
-                                     uint32_t pc) const
+    void disassemble_operator_cache(const cl::CodeObject &code_obj, Out &out,
+                                    uint32_t pc) const
     {
-        format_to(out, "subscript_ic[{}]", code_obj.code[pc]);
+        format_to(out, "operator_ic[{}]", code_obj.code[pc]);
     }
 
     template <typename Out>
@@ -695,7 +695,7 @@ template <> struct fmt::formatter<cl::CodeObject>
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");
-                disassemble_subscript_cache(code_obj, out, pc++);
+                disassemble_operator_cache(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::SetItem:
@@ -704,14 +704,14 @@ template <> struct fmt::formatter<cl::CodeObject>
                 format_to(out, ", ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");
-                disassemble_subscript_cache(code_obj, out, pc++);
+                disassemble_operator_cache(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::DelItem:
                 format_to(out, " ");
                 disassemble_reg(code_obj, out, pc++);
                 format_to(out, ", ");
-                disassemble_subscript_cache(code_obj, out, pc++);
+                disassemble_operator_cache(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::CallMethodAttrPositional:
