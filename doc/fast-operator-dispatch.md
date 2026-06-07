@@ -212,8 +212,8 @@ path until explicitly designed.
 
 Before entering a cached Python function, the opcode lays out a normal
 contiguous argument span. Cached dunder-call replay cannot depend on transient
-opcode register conventions such as "receiver in a register and rhs in the
-accumulator."
+opcode register conventions such as "receiver in a register and operand1 in
+the accumulator."
 
 ## Trusted Handlers
 
@@ -320,9 +320,9 @@ continuation prefix in the caller frame before the callee-visible arguments:
 hidden prefix:
     operator dispatch table pointer or SMI table id
     SMI next_candidate_index
-    lhs Value
-    rhs Value
-    optional third Value for ternary tables
+    operand0 Value
+    operand1 Value
+    optional operand2 Value for ternary tables
     padding/alignment if needed
 
 actual Python call arguments:
@@ -383,13 +383,13 @@ layout, they should use the same action.
 Useful initial actions:
 
 ```text
-CallUnary              lookup type(lhs).dunder_name; call args: lhs
-CallBinary             lookup type(lhs).dunder_name; call args: lhs, rhs
-CallBinaryReflected    lookup type(rhs).dunder_name; call args: rhs, lhs
-CallTernary            lookup type(lhs).dunder_name; call args: lhs, rhs, third
-CallTernaryReflected   lookup type(rhs).dunder_name; call args: rhs, lhs, third
-IdentityEq             fallback: lhs is rhs
-IdentityNe             fallback: lhs is not rhs
+CallUnary              lookup type(operand0).dunder_name; call args: operand0
+CallBinary             lookup type(operand0).dunder_name; call args: operand0, operand1
+CallBinaryReflected    lookup type(operand1).dunder_name; call args: operand1, operand0
+CallTernary            lookup type(operand0).dunder_name; call args: operand0, operand1, operand2
+CallTernaryReflected   lookup type(operand1).dunder_name; call args: operand1, operand0, operand2
+IdentityEq             fallback: operand0 is operand1
+IdentityNe             fallback: operand0 is not operand1
 ContainsFallback       fallback: membership via iteration or sequence indexing
 RaiseUnsupported       fallback: operator-specific unsupported TypeError
 RaiseOrdering          fallback: ordering TypeError
@@ -427,9 +427,11 @@ dunder call.
 ### Binary Arithmetic And Bitwise Operators
 
 Each ordinary binary operator has two table orderings. The normal-first table
-tries the left/normal dunder before the reflected dunder. The reflected-first
-table is selected when right-subclass priority says the reflected candidate
-must be attempted first.
+tries the operand0/normal dunder before the reflected dunder. The
+reflected-first table is selected when right-subclass priority says the
+reflected candidate must be attempted first. That priority is determined before
+walking the table from operand types and operation metadata, not by remembering
+or deduplicating resolved Python method objects.
 
 Template:
 
@@ -464,9 +466,11 @@ Rows:
 | `Xor` | `__xor__` | `__rxor__` |
 | `Or` | `__or__` | `__ror__` |
 
-The reflected second candidate must still check distinct implementation at
-execution time. The first Python call may have mutated classes or MROs before
-returning `NotImplemented`.
+The reflected second candidate checks current operand0/operand1 type inequality
+and current reflected-method lookup when it executes. The first Python call may
+have mutated classes or MROs before returning `NotImplemented`; the continuation
+recomputes lookup state but does not remember or deduplicate previously called
+method objects.
 
 ### In-Place Operators
 
@@ -513,8 +517,9 @@ run with the normal/reflected order selected for the current operand types.
 
 ### Ternary Pow
 
-Ternary `pow(lhs, rhs, mod)` uses ternary call actions for the same dunder
-names:
+Ternary `pow(base, exponent, modulus)` uses operand0 as the base, operand1 as
+the exponent, and operand2 as the modulus. It uses ternary call actions for the
+same dunder names:
 
 ```text
 TernaryPowNormalFirst
@@ -529,12 +534,19 @@ TernaryPowReflectedFirst
 ```
 
 There is no in-place ternary table. `**=` is a binary augmented assignment and
-uses `__ipow__(rhs)` before falling back to binary `__pow__`/`__rpow__`.
+uses `__ipow__(operand1)` before falling back to binary `__pow__`/`__rpow__`.
 
 ### Rich Comparisons
 
 Rich comparisons use binary call actions but comparison-specific reflected
 names and fallbacks.
+
+Rich comparisons also have two table orderings. The reflected-first table is
+selected when operand0 and operand1 have different types and `type(operand1)`
+is a strict subclass of `type(operand0)`. Otherwise the normal-first table is
+used. Unlike ordinary binary arithmetic, rich comparison reverse rows are not
+guarded by operand type inequality: same-type comparisons may still call the
+swapped comparison operation.
 
 Template:
 
@@ -608,14 +620,19 @@ For an ordinary binary operator `lhs op rhs`, let:
 
 Candidate order:
 
-1. If `L != R`, `R` is a strict subclass of `L`, and `G` exists with a
-   different implementation than `F`, call `G(rhs, lhs)` first.
-2. Call `F(lhs, rhs)` if it exists and was not already skipped as the same
-   implementation as the reflected candidate already tried.
-3. If the reflected candidate was not tried first, and `L != R`, and `G`
-   exists with a different implementation than `F`, call `G(rhs, lhs)`.
+1. If the reflected-first ordering was selected and `G` exists, call
+   `G(rhs, lhs)` first.
+2. Call `F(lhs, rhs)` if it exists.
+3. If the reflected-first ordering was not selected, and `L != R`, and `G`
+   exists, call `G(rhs, lhs)`.
 4. If every called candidate returns `NotImplemented`, raise the
    operator-specific unsupported-operand `TypeError`.
+
+The right-subclass priority decision is a protocol/table-selection decision
+made from operand types and operation metadata. It is not a runtime
+deduplication pass over resolved Python method objects. In particular, the
+normal and reflected candidates may both be called even if their current lookup
+results are represented by the same Python function object.
 
 Returning the singleton `NotImplemented` is the only protocol-level signal to
 continue to the next candidate. Any other returned value is the result. Raising
@@ -751,12 +768,16 @@ For multi-candidate and table-driven fallback protocols:
 2. Recompute applicability and lookup results at each step.
 3. Prefer a complete trusted native handler when the current table state can be
    collapsed under the operand shape guards.
-4. Otherwise install at most one cacheable Python candidate, together with its
-   table reference and candidate index. When the cached candidate is entered,
-   the opcode writes the per-call continuation prefix into the caller frame.
-5. For `NotImplemented`-continued tables, do not leave a Python-candidate entry
-   installed for a candidate that returned `NotImplemented` on the miss. That
-   would make the common hit immediately enter the cold continuation path.
+4. Otherwise install at most one cacheable Python candidate only while still
+   executing the primary opcode from the beginning of the protocol, before any
+   Python candidate has been entered. The installed entry carries its table
+   reference and candidate index. When the cached candidate is entered, the
+   opcode writes the per-call continuation prefix into the caller frame.
+5. Once any Python candidate has been called, the operation is committed to the
+   continuation path for the rest of that dynamic execution. A later candidate
+   reached after an earlier Python candidate returned `NotImplemented` must not
+   install or update an inline-cache entry; the continuation has no cache object
+   to update and must run to completion from saved operands and current lookups.
 
 Exception paths must not install direct handlers. If lookup, binding, call
 validation, or execution raises, propagate the pending exception and leave cache
