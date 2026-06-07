@@ -316,25 +316,30 @@ object construction, source-offset accounting, static bytecode walking, and
 ordinary disassembly.
 
 If an operator opcode enters a cached Python candidate, it stores a hidden
-continuation prefix in the caller frame before the callee-visible arguments:
+continuation prefix in the caller frame before the callee-visible arguments.
+The opcode asks for `get_first_free_arg_encoded_reg()` and lays out logical
+continuation registers followed by call arguments:
 
 ```text
-hidden prefix:
-    SMI operator dispatch table id
-    SMI next_candidate_index
-    operand0 Value
-    operand1 Value
-    optional operand2 Value for ternary tables
-    padding/alignment if needed
+logical continuation registers:
+    reg(0): SMI operator dispatch table id
+    reg(1): SMI next_candidate_index
+    reg(2): operand0 Value
+    reg(3): operand1 Value
+    reg(4): optional operand2 Value for ternary tables
 
-actual Python call arguments:
-    candidate-specific argument layout
+callee-visible Python call arguments:
+    start after the continuation registers
+    use the candidate-specific argument layout
 ```
 
-The hidden prefix is not visible to the callee. The operand slots are
-root-scanned. The table id is a small SMI that indexes immutable VM metadata,
-not an ordinary heap object. Call argument slots must not be reused as
-continuation operands because call setup or the callee may mutate them.
+The register names above are logical increasing offsets from the first free
+argument register. Because the frame grows downward, increasing logical
+register numbers are physically lower in memory. The hidden prefix is not
+visible to the callee. The operand slots are root-scanned. The table id is a
+small SMI that indexes immutable VM metadata, not an ordinary heap object. Call
+argument slots must not be reused as continuation operands because call setup
+or the callee may mutate them.
 
 `CheckOperatorNotImplemented` has no immediates. It is only a valid return
 target after an operator-candidate call that populated the hidden prefix:
@@ -349,6 +354,15 @@ else:
 
 Debug builds should assert the frame contract hard: valid table metadata, SMI
 candidate index, in-range candidate index, and root-scannable saved operands.
+
+There is no native loop that runs a multi-candidate Python protocol to
+completion. The primary opcode or continuation opcode walks table rows only
+until it reaches a Python function candidate or a native fallback/raise/result
+row. This walk may evaluate multiple entries, following fallthrough or
+`else_goto` targets as applicability predicates pass or fail. Before entering a
+Python candidate, it writes the hidden prefix and uses the current logical
+operator PC, which points at the paired `CheckOperatorNotImplemented` byte, as
+the callee return PC.
 
 The repeated `NotImplemented` continuation path is cold. It may rebuild call
 arguments and re-enter later Python candidates with the same return address.
@@ -621,10 +635,12 @@ Rows:
 | `Gt` | `__gt__` | `__lt__` | `RaiseOrdering` |
 | `Ge` | `__ge__` | `__le__` | `RaiseOrdering` |
 
-Rich comparison methods may return any value. Boolean contexts apply normal
-truthiness later. If both candidates return `NotImplemented`, equality falls
-back to identity, inequality falls back to non-identity, and ordering
-comparisons raise `TypeError`.
+Rich-comparison opcodes are expression operators, not boolean-test opcodes.
+When a selected rich comparison method returns anything other than the
+singleton `NotImplemented`, the opcode returns that value unchanged. Boolean
+contexts apply normal truthiness later. If both candidates return
+`NotImplemented`, equality falls back to identity, inequality falls back to
+non-identity, and ordering comparisons raise `TypeError`.
 
 ### Membership
 
@@ -815,12 +831,16 @@ For multi-candidate and table-driven fallback protocols:
 2. Recompute applicability and lookup results at each step.
 3. Prefer a complete trusted native handler when the current table state can be
    collapsed under the operand shape guards.
-4. Otherwise install at most one cacheable Python candidate only while still
+4. Otherwise stop at the first cacheable Python candidate. While still
    executing the primary opcode from the beginning of the protocol, before any
-   Python candidate has been entered. The installed entry carries its table
-   reference and candidate index. When the cached candidate is entered, the
-   opcode writes the per-call continuation prefix into the caller frame.
-5. Once any Python candidate has been called, the operation is committed to the
+   Python candidate has been entered, the opcode may install that candidate in
+   the inline cache. The installed entry carries its table reference and
+   candidate index.
+5. Whether the Python candidate was reached by a cache hit or by miss-path table
+   walking, the opcode writes the per-call continuation prefix into the caller
+   frame and enters the function with the paired `CheckOperatorNotImplemented`
+   byte as the return PC.
+6. Once any Python candidate has been called, the operation is committed to the
    continuation path for the rest of that dynamic execution. A later candidate
    reached after an earlier Python candidate returned `NotImplemented` must not
    install or update an inline-cache entry; the continuation has no cache object
