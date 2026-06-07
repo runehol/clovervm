@@ -45,14 +45,14 @@ namespace cl
             .add_slot(descriptors[1].name, Slice::kStopSlot, slice_slot_flags())
             .add_slot(descriptors[2].name, Slice::kStepSlot, slice_slot_flags())
             .install(fixed_attribute_shape_flags());
-        Shape *step_value_shape = cls->get_instance_root_shape();
+        Shape *general_shape = cls->get_instance_root_shape();
         Shape *step_none_shape = Shape::make_root_with_descriptors(
             TValue<ClassObject>::from_oop(cls), descriptors,
-            std::size(descriptors), step_value_shape->get_next_slot_index(),
-            step_value_shape->present_count(),
-            step_value_shape->get_inline_slot_count(),
+            std::size(descriptors), general_shape->get_next_slot_index(),
+            general_shape->present_count(),
+            general_shape->get_inline_slot_count(),
             fixed_attribute_shape_flags());
-        vm->install_slice_shapes(cls, step_none_shape, step_value_shape);
+        vm->install_slice_shapes(cls, step_none_shape, general_shape);
     }
 
     TValue<Slice> make_slice(ThreadState *thread, Value start, Value stop,
@@ -62,7 +62,7 @@ namespace cl
         TValue<Slice> slice =
             thread->make_object_value<Slice>(start, stop, step);
         Shape *shape = step.is_none() ? vm->slice_step_none_shape()
-                                      : vm->slice_step_value_shape();
+                                      : vm->slice_general_shape();
         slice.extract()->set_shape(shape);
         return slice;
     }

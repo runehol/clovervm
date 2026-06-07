@@ -155,10 +155,7 @@ namespace cl
             return class_for_native_layout(NativeLayoutId::Slice);
         }
         Shape *slice_step_none_shape() const { return slice_step_none_shape_; }
-        Shape *slice_step_value_shape() const
-        {
-            return slice_step_value_shape_;
-        }
+        Shape *slice_general_shape() const { return slice_general_shape_; }
         ClassObject *float_class() const
         {
             return class_for_native_layout(NativeLayoutId::Float);
@@ -269,15 +266,15 @@ namespace cl
 
         void install_slice_shapes(ClassObject *cls,
                                   Shape *slice_step_none_shape,
-                                  Shape *slice_step_value_shape)
+                                  Shape *slice_general_shape)
         {
             assert(cls != nullptr);
             assert(slice_step_none_shape != nullptr);
-            assert(slice_step_value_shape != nullptr);
+            assert(slice_general_shape != nullptr);
             assert(slice_step_none_shape->get_class() == cls);
-            assert(slice_step_value_shape->get_class() == cls);
+            assert(slice_general_shape->get_class() == cls);
             slice_step_none_shape_ = slice_step_none_shape;
-            slice_step_value_shape_ = slice_step_value_shape;
+            slice_general_shape_ = slice_general_shape;
         }
 
         template <typename T, typename... Args>
@@ -364,7 +361,7 @@ namespace cl
         Shape *ellipsis_shape_ = nullptr;
         Shape *str_instance_root_shape_ = nullptr;
         Shape *slice_step_none_shape_ = nullptr;
-        Shape *slice_step_value_shape_ = nullptr;
+        Shape *slice_general_shape_ = nullptr;
         std::array<ClassObject *, NativeLayoutCount> class_for_native_layouts =
             {};
         std::array<CodeObject *, MaxCloverFunctionEntryAdapterArgs + 1>

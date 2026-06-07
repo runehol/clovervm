@@ -80,24 +80,25 @@ The initial slice categories are:
 
 ```text
 slice_step_none_shape
-slice_step_value_shape
+slice_general_shape
 ```
 
 The invariants are:
 
 ```text
 slice_step_none_shape   => slice.step is exactly None
-slice_step_value_shape  => slice.step is any Python value other than None
+slice_general_shape     => no field-value invariant beyond being a slice
 ```
 
 These are not different Python types and not different native layouts. They are
 two Shapes for objects of the same `slice` class.
 
-The term `value` is intentional. It avoids the word `present`, which collides
-with the VM's internal `Value::not_present()` sentinel. A
-`slice_step_value_shape` object may still contain a step value that is invalid
-for sequence slicing, such as `0` or a non-indexable object. The shape only
-proves that `.step` is not `None`.
+The term `general` is intentional: only `slice_step_none_shape` carries a useful
+field-value invariant. A `slice_general_shape` object may contain any Python
+value in `.step`, including `None` in future construction paths. It may also
+contain a step value that is invalid for sequence slicing, such as `0` or a
+non-indexable object. Consumers of this shape must use full slice
+normalization.
 
 ## Slice Object Layout
 
@@ -168,7 +169,7 @@ The VM should own canonical slice Shapes:
 ```cpp
 ClassObject *slice_class_;
 Shape *slice_step_none_shape_;
-Shape *slice_step_value_shape_;
+Shape *slice_general_shape_;
 ```
 
 with corresponding accessors:
@@ -176,7 +177,7 @@ with corresponding accessors:
 ```cpp
 ClassObject *slice_class() const;
 Shape *slice_step_none_shape() const;
-Shape *slice_step_value_shape() const;
+Shape *slice_general_shape() const;
 ```
 
 Both Shapes must report the same class:
@@ -189,7 +190,7 @@ Both Shapes must describe the same Python-visible attributes. The only reason
 they are separate Shapes is dispatch specialization.
 
 Use the builtin class's installed instance root Shape as
-`slice_step_value_shape_`. Create `slice_step_none_shape_` as a second root
+`slice_general_shape_`. Create `slice_step_none_shape_` as a second root
 Shape with the same descriptor table, same class, same slot counts, same native
 layout assumptions, and same fixed-attribute flags. Both Shapes must map
 `start`, `stop`, and `step` to the same stable read-only inline slot indexes.
@@ -201,7 +202,7 @@ structured however the implementation prefers, but the descriptor source should
 be shared at construction time.
 
 ```cpp
-slice_step_value_shape_ = slice_class_->get_instance_root_shape();
+slice_general_shape_ = slice_class_->get_instance_root_shape();
 slice_step_none_shape_ = Shape::make_root_with_descriptors(
     TValue<ClassObject>::from_oop(slice_class_), descriptors, descriptor_count,
     next_slot_index, present_count, inline_slot_capacity,
@@ -222,7 +223,7 @@ the stored `step` value:
 ```cpp
 Shape *shape = step.is_none()
     ? vm->slice_step_none_shape()
-    : vm->slice_step_value_shape();
+    : vm->slice_general_shape();
 ```
 
 Both slice syntax lowering and the builtin `slice(...)` constructor should use
@@ -263,17 +264,18 @@ Builtin sequence resolvers should use the key shape to split handlers:
 ```text
 SMI key                 -> integer element access
 slice_step_none_shape   -> no-step slice handler
-slice_step_value_shape  -> explicit-step slice handler
+slice_general_shape     -> full slice handler
 ```
 
 For list, tuple, and str, the `slice_step_none_shape` handler can skip the
 `step is None` branch and normalize only start/stop for a contiguous copy. It
 may still need to handle missing bounds and out-of-range clipping.
 
-The `slice_step_value_shape` handler may skip only the `step is None` branch.
-It must still coerce `step` through Python's integer-index protocol, reject a
-zero step, coerce start/stop as needed, normalize bounds, and produce the
-extended slice result.
+The `slice_general_shape` handler must run full slice normalization. It must not
+assume that `.step` is non-`None`, integer, nonzero, or otherwise valid. It must
+handle `None` as an implicit step of `1`, coerce non-`None` step values through
+Python's integer-index protocol, reject a zero step, coerce start/stop as
+needed, normalize bounds, and produce the extended slice result.
 
 The shape split must not bypass Python-visible special-method dispatch. A
 trusted native handler should run only after the IC has proven that normal
@@ -507,8 +509,8 @@ Phase 1, slice object and syntax:
 - [x] Map `NativeLayoutId::Slice` to `slice_class_` through the builtin class
   registry/native-layout mapping path.
 - [x] Add `slice_class_`, `slice_step_none_shape_`, and
-  `slice_step_value_shape_` to `VirtualMachine`.
-- [x] Install `slice_step_value_shape_` as the class instance root and create
+  `slice_general_shape_` to `VirtualMachine`.
+- [x] Install `slice_general_shape_` as the class instance root and create
   `slice_step_none_shape_` with the same Python-visible descriptors.
 - [x] Implement the single `make_slice(start, stop, step)` factory.
 - [x] Implement `slice.__new__`/constructor arity behavior.
@@ -543,7 +545,7 @@ Phase 3, sequence operations and trusted handlers:
 - [x] Update builtin sequence type-error messages to allow slice keys, for example
   "list indices must be integers or slices" rather than only "integers".
 - [ ] Add resolver branches for `slice_step_none_shape` and
-  `slice_step_value_shape`.
+  `slice_general_shape`.
 - [x] Add interpreter-level tests for user-defined `__getitem__` receiving slices.
 - [x] Add interpreter-level tests for builtin sequence slicing behavior.
 
@@ -552,8 +554,8 @@ Phase 3, sequence operations and trusted handlers:
 - Do not create separate Python classes for no-step and with-step slices.
 - Do not use different native layouts for the two slice categories.
 - Do not encode a shape per exact start/stop/step value.
-- Do not treat `slice_step_value_shape` as proof that the step is an integer,
-  nonzero, or otherwise valid for slicing.
+- Do not treat `slice_general_shape` as proof that the step is non-`None`,
+  integer, nonzero, or otherwise valid for slicing.
 - Do not add a separate `[:]` Shape initially. The `slice_step_none_shape`
   handler can detect the full-copy case cheaply after the shape guard.
 - Do not use `CreateBinarySlice` as a special subscript operation. It only
@@ -583,7 +585,7 @@ Interpreter-level Python tests should cover:
 - assignment evaluation order for `a[b:c] = value`.
 - C++ tests for the shape invariant:
   `slice(1, 2)` and `slice(1, 2, None)` use `slice_step_none_shape`, while
-  `slice(1, 2, 3)` uses `slice_step_value_shape`.
+  `slice(1, 2, 3)` uses `slice_general_shape`.
 - `slice.indices(length)` with SMI field values and SMI length, including
   negative stop normalization such as `slice(0, -1).indices(5) == (0, 4, 1)`.
 - list, tuple, and str contiguous slicing.

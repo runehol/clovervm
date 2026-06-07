@@ -1987,7 +1987,7 @@ TEST(Interpreter, subscript_load_passes_ternary_slice_object)
     EXPECT_EQ(Value::from_smi(1), slice->start);
     EXPECT_EQ(Value::from_smi(2), slice->stop);
     EXPECT_EQ(Value::from_smi(3), slice->step);
-    EXPECT_EQ(file_runner.test_context().vm().slice_step_value_shape(),
+    EXPECT_EQ(file_runner.test_context().vm().slice_general_shape(),
               slice->get_shape());
 }
 
@@ -2027,7 +2027,7 @@ TEST(Interpreter, slice_constructor_uses_python_argument_convention)
     EXPECT_EQ(Value::from_smi(1), ternary_slice->start);
     EXPECT_EQ(Value::from_smi(2), ternary_slice->stop);
     EXPECT_EQ(Value::from_smi(3), ternary_slice->step);
-    EXPECT_EQ(ternary_runner.test_context().vm().slice_step_value_shape(),
+    EXPECT_EQ(ternary_runner.test_context().vm().slice_general_shape(),
               ternary_slice->get_shape());
 }
 
@@ -2353,10 +2353,11 @@ TEST(Interpreter, subscript_load_replaces_cache_for_different_slice_shapes)
     CodeObject *function_code =
         assume_convert_to<Function>(function_value)->code_object.extract();
     ASSERT_EQ(2u, function_code->subscript_caches.size());
-    const SubscriptInlineCache &step_cache = function_code->subscript_caches[0];
+    const SubscriptInlineCache &general_cache =
+        function_code->subscript_caches[0];
     const SubscriptInlineCache &none_cache = function_code->subscript_caches[1];
-    EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_step_value_shape()),
-              step_cache.key_shape_key);
+    EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_general_shape()),
+              general_cache.key_shape_key);
     EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_step_none_shape()),
               none_cache.key_shape_key);
 }
