@@ -1106,11 +1106,32 @@ TEST(Codegen, attribute_store_uses_register_receiver_and_accumulator_value)
         "    5 Return\n"
         "Constant 0: Code object:\n"
         "    0 Ldar p1\n"
-        "    2 Star0\n"
-        "    3 Ldar0\n"
-        "    4 StoreAttr p0, c[0], mutation_ic[0]\n"
-        "    8 LdaNone\n"
-        "    9 Return\n"
+        "    2 StoreAttr p0, c[0], mutation_ic[0]\n"
+        "    6 LdaNone\n"
+        "    7 Return\n"
+        "Constant 0: \"value\"\n"
+        "\n"
+        "Constant 1: \"set\"\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, annotated_attribute_store_uses_register_receiver)
+{
+    const wchar_t *test_case = L"def set(obj, value):\n"
+                               "    obj.value: int = value\n";
+
+    std::string expected =
+        "Code object:\n"
+        "    0 CreateFunction c[0]\n"
+        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    5 Return\n"
+        "Constant 0: Code object:\n"
+        "    0 Ldar p1\n"
+        "    2 StoreAttr p0, c[0], mutation_ic[0]\n"
+        "    6 LdaNone\n"
+        "    7 Return\n"
         "Constant 0: \"value\"\n"
         "\n"
         "Constant 1: \"set\"\n";
