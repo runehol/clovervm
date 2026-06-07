@@ -120,19 +120,7 @@ the VM can convert a shape key back to the corresponding real shape. Exact
 builtin-type guards can still be represented by builtin shape keys when that is
 the semantic dependency.
 
-## Dispatch Trace
-
-On a cache miss, the opcode runs the normal generic operator dispatcher. While
-doing so, the dispatcher records the dispatch facts it discovered:
-
-- the operation being performed
-- the operand shape keys used by the dispatch decision
-- the primary dunder-method lookup result
-- any secondary, reflected, or in-place dunder-method lookup results
-- the actual candidate order chosen by the protocol
-- which candidate was first called
-- whether skipped candidates are trusted for a direct handler shortcut
-- the lookup validity cells that guard each dunder-method lookup result
+## Dunder Lookup Dependencies
 
 Operator dunder methods use Python's dunder-method lookup path. This is more
 conservative than ordinary attribute lookup: it looks through the operand's type
@@ -225,9 +213,25 @@ useful for profiling and replacement. A monomorphic cache may replace the single
 entry on every miss. Bounded polymorphic caches and megamorphic state are later
 policy extensions.
 
-Binary, in-place, and comparison caches should use the same two action kinds,
-but they need wider guards and resume state for reflected candidates,
-`NotImplemented`, and in-place fallback.
+Binary, in-place, and comparison caches should use the same broad action
+categories, but they need wider guards and a small continuation shape for
+reflected candidates, `NotImplemented`, and in-place fallback. The first
+implementation should split these protocols into three tiers:
+
+```text
+direct inline primitive path
+trusted native handler cache
+cached single Python dunder candidate with NotImplemented continuation
+generic slow dispatch
+```
+
+The cached Python-candidate tier is important for ordinary overloaded Python
+classes. A design that only caches trusted native handlers would leave common
+custom cases such as dataclass equality or simple `Vector.__add__` permanently
+on the slow helper path. The middle tier may cache a single selected Python
+dunder call, then check whether that call returned `NotImplemented`. If it did
+not, the returned value is the operator result. If it did, the interpreter
+continues the operator protocol after the candidate that was already called.
 
 ## Dunder Method Lookup Descriptor And Plan
 
@@ -395,8 +399,8 @@ trusted but has no direct handler for the observed operand shape keys. The miss
 path can still install a dunder-method-call entry when the lookup and call plan
 are cacheable.
 
-A later binary-operator candidate can use the same trusted-handler idea with
-extra candidate-role state:
+A later binary-operator cache can use the same trusted-handler and
+dunder-method-call ideas with table state:
 
 ```cpp
 enum class BinaryOperatorCacheKind : uint8_t
@@ -406,46 +410,37 @@ enum class BinaryOperatorCacheKind : uint8_t
     DunderMethodCall,
 };
 
-enum class OperatorCandidateRole : uint8_t
-{
-    None,
-    LhsForward,
-    RhsReflected,
-    LhsInPlace,
-};
-
 struct BinaryDispatchCacheCandidate
 {
     BinaryOperatorCacheKind kind;
-    OperatorCandidateRole first_candidate;
     BinaryHandler handler;
-    DunderMethodLookupDescriptor first_lookup;
+    OperatorDispatchTable *dispatch_table;
+    uint8_t candidate_index;
+    DunderMethodLookupDescriptor lookup;
     LookupValidity left_validity;
     LookupValidity right_validity;
 };
 ```
 
-The opcode miss path installs a candidate only if the operation completed
-successfully and the completed trace is recognized as cacheable.
+For a trusted handler entry, the handler is a complete replacement for the
+operator protocol under the cache guards. For a dunder-method-call entry,
+`dispatch_table` and `candidate_index` identify the single Python candidate to
+call and the continuation state to store before entering it.
 
 Trusted-handler selection should not be a parallel `__trusted_add__`-style
 protocol. That would duplicate Python's operator precedence rules and create a
 second path that has to stay semantically aligned with generic dispatch.
 
-Instead, the generic dispatcher should run the normal protocol and record the
-trace. After a successful operation, a separate recognizer can inspect the trace:
-
-- operand shape keys/types
-- lookup results and validity cells
-- candidate order chosen by the generic dispatcher
-- which candidates were called
-- whether called candidates returned `NotImplemented` or produced the result
-- callable or slot identities for each dispatch-affecting candidate
-
-Only then should the recognizer map the completed trace to a `TrustedHandler`.
-This keeps precedence in one place: the generic dispatcher. The trusted-handler
-table merely says which already-observed traces may be replaced by a direct
-handler on later executions under the same guards.
+Instead, the miss path should walk the same operator dispatch table that the
+continuation path uses. At each table step it performs the actual lookup,
+applicability check, trusted-handler check, Python-call setup, or fallback. If a
+step can be collapsed to a complete trusted native handler for the current
+operand shapes, the miss path installs that handler and executes it. If the next
+step is an ordinary cacheable Python candidate, the miss path installs a
+dunder-method-call entry for that candidate and enters it with the hidden
+continuation prefix prepared. There is no separate recognizer that reviews a
+completed Python-handler execution and then decides whether to install a trusted
+handler.
 
 ## Slot Metadata
 
@@ -467,17 +462,18 @@ float.__add__ with smi   -> float_add_smi_fast
 ```
 
 and a complete trusted handler decision may also depend on skipped or
-`NotImplemented` candidates earlier in the trace. The slot table should declare
-trust and provide stable slot identity. A separate trace recognizer should map:
+`NotImplemented` candidates earlier in the table. The slot table should declare
+trust and provide stable slot identity. The table walker should combine:
 
 ```text
-(op, operand shape keys/types, candidate order, trusted slot identities, winner)
-    -> TrustedHandler
+(operator table step, operand shape keys/types, trusted slot identities,
+ skipped trusted candidates)
+    -> TrustedHandler or no handler
 ```
 
 This avoids turning slot lookup into a second operator protocol while still
-giving the recognizer a compact, VM-owned representation of the methods that
-generic dispatch actually found.
+giving the table walker a compact, VM-owned representation of the methods that
+operator dispatch actually found.
 
 In clovervm, trust should probably attach to the resolved method value or to
 metadata reached from that value, not purely to the shape descriptor slot. Shape
@@ -596,7 +592,7 @@ and has descriptor/binding behavior tied to the type lookup. A cacheable result
 therefore needs enough information to reproduce the first call exactly through a
 `DunderMethodDispatchPlan`.
 
-## Operator Call Entry And Continuations
+## Operator Call Entry And NotImplemented Continuations
 
 Any cache entry that replays a Python dunder method needs a way to enter Python
 bytecode with normal function-call argument layout. Protocols with no post-call
@@ -612,40 +608,108 @@ call a cached first candidate, inspect `NotImplemented`, and then continue with
 later protocol candidates without calling the first candidate again. Those
 families need an interpreter-level continuation shape.
 
-One possible continuation design is a compound enter/continue opcode:
+The preferred continuation shape is a paired operator opcode and a single-byte
+check opcode:
 
 ```text
-pc[0] = EnterBinaryAdd
-pc[1] = ContinueBinaryAdd
-pc[2...] = operands
+BinaryAdd cache_idx ...
+CheckOperatorNotImplemented
 ```
 
-Normal bytecode dispatch enters at `pc[0]`. The enter handler owns the fast
-path. If its guards and trusted handler hit, it produces the result and advances
-by the full logical instruction length, skipping `pc[1]` entirely. If it must
-call a Python dunder method that may be followed by later candidates, it stores
-the protocol continuation state and enters the callee with a normal return
-address of `pc + 1`. The return path then lands on the continue opcode, which
-consumes the continuation state, observes the returned value in the accumulator,
-updates or installs cache state when appropriate, and advances by the remaining
-instruction length.
+The operator opcode owns the direct inline fast path, trusted-handler cache hit,
+cache miss, and cached Python-candidate call. If a direct inline path or trusted
+native handler succeeds, the opcode produces the result in the accumulator and
+advances past both itself and the following `CheckOperatorNotImplemented` byte.
+Those common paths do not allocate continuation state, do not spill accumulator
+operands, and do not dispatch the check opcode.
+
+If the operator opcode enters a cached Python dunder candidate, it first stores
+a hidden continuation prefix in the caller frame, then builds the actual Python
+call arguments after that prefix:
+
+```text
+hidden continuation prefix:
+    operator dispatch table pointer or id
+    SMI next_candidate_index
+    lhs Value
+    rhs Value
+    optional third Value for ternary operator tables
+    padding/alignment if needed
+
+actual Python call arguments:
+    candidate-specific argument layout
+```
+
+The hidden prefix is not part of the callee-visible argument span. It is
+ordinary frame storage for root scanning: the operator dispatch table field is
+non-heap VM metadata, the next index is an SMI, and the remaining slots are the
+semantic operands required by that table's arity. Binary tables save `lhs` and
+`rhs`; ternary tables additionally save the third operand. The table field may
+be a direct pointer if the frame scanner can identify it as non-scanned
+metadata, or a small id if that is easier for the frame representation. The call
+argument slots are disposable and must not be reused as continuation operands,
+because the callee or call setup may mutate them. This separation also handles
+reflected candidates:
+
+```text
+lhs.__add__(rhs):
+    saved lhs/rhs = semantic lhs/rhs
+    call args = lhs, rhs
+
+rhs.__radd__(lhs):
+    saved lhs/rhs = semantic lhs/rhs
+    call args = rhs, lhs
+```
+
+The first cached Python-candidate implementation should require a normal
+function-shaped call plan: fixed positional arity, predictable `self` binding,
+and no descriptor or call adaptation that changes the argument layout in a
+candidate-specific way. Odd cases such as staticmethod-shaped operator methods,
+varargs/default adaptation, missing self, or descriptor dispatch should execute
+through the generic slow dispatcher without installing this cache kind. That
+keeps the continuation frame layout independent of pathological dunder method
+shapes while still accelerating ordinary Python operator overloads.
+
+The Python candidate returns to `CheckOperatorNotImplemented`. That opcode has
+no immediates. It has an implicit frame-shape contract: it is only a valid
+return target after an operator-candidate call that populated the hidden prefix.
+The opcode checks the accumulator:
+
+```text
+if accumulator is not NotImplemented:
+    finish the logical operator instruction
+else:
+    table = prefix.dispatch_table
+    next = prefix.next_candidate_index
+    lhs = prefix.lhs
+    rhs = prefix.rhs
+    continue table-driven operator dispatch from next
+```
+
+Debug builds should assert the frame contract hard: the table field identifies
+valid immutable VM metadata, the candidate index slot is an SMI, the candidate
+index is valid for that table, and the saved operand slots are available to the
+root scanner.
 
 For protocols with multiple possible calls, such as binary and in-place
-operators, the same continuation byte can be reused repeatedly. The continue
-handler can inspect a returned `NotImplemented`, update the continuation state
-to the next candidate, and enter another dunder call with the same `pc + 1`
-return address. The variable candidate count lives in the continuation state
-machine, not in extra bytecodes.
+operators, the same check opcode can be re-entered repeatedly. The cold
+continuation dispatcher can update the same hidden prefix with the next
+candidate index, rebuild call arguments for the next candidate, and enter that
+candidate with the same return address. This repeated `NotImplemented` path is
+not expected to be fast; it exists to preserve Python semantics without
+building a general VM continuation system.
 
-This keeps the trusted-handler fast path to one opcode dispatch and avoids
-tagging return PCs or checking continuation bits on every function return. It
-does impose bytecode invariants:
+This keeps the direct and trusted-handler fast paths to one opcode dispatch and
+avoids tagging return PCs or checking continuation bits on every function
+return. It does impose bytecode invariants:
 
-- the enter/continue pair is one logical instruction for bytecode scanning,
-  printing, source offsets, and JIT decoding
-- ordinary control flow must target the enter byte, never the continue byte
-- the enter handler must skip the continue byte on every non-call completion
-- the continue handler should assert that valid continuation state is present
+- the operator/check pair is one logical instruction for bytecode scanning,
+  printing, source offsets, and JIT decoding;
+- ordinary control flow must target the operator byte, never the check byte;
+- the operator handler must skip the check byte on every direct, trusted, or
+  non-continued completion;
+- the check handler should assert that valid hidden continuation state is
+  present.
 
 This design is interpreter-friendly but may be awkward for a JIT to reproduce
 directly. A first JIT strategy can compile only the enter fast path and side-exit
@@ -654,6 +718,531 @@ handles lookup, the Python call, the `pc + 1` continuation return, and any cache
 installation. Under that model, the JIT only has to understand the compound
 instruction's full length and treat the continue byte as an internal landing pad,
 not as a normal trace entry.
+
+## Table-Driven Operator Continuation
+
+The continuation prefix should store a semantic dispatch table, not an opcode.
+The table itself is immutable VM metadata. It may be referenced by pointer if
+the continuation prefix has a non-scanned metadata slot, or by SMI id if keeping
+every prefix field `Value`-shaped is simpler:
+
+```text
+prefix[0] = operator_dispatch_table pointer or Value::from_smi(table_id)
+prefix[1] = Value::from_smi(next_candidate_index)
+prefix[2] = lhs
+prefix[3] = rhs
+prefix[4] = optional third operand for ternary tables
+```
+
+The tables are not ordinary heap objects and should not be exposed through
+ordinary object inspection. They may contain immortal interned strings for
+dunder names: those strings are deliberately not GC-scanned or collected, so
+storing them in immutable VM metadata is safe. Do not store ordinary heap
+strings or other collectable values in these tables.
+
+A table is a compact protocol program. Each step describes the operation the
+dispatcher should perform directly: how to find the method, how to lay out the
+call arguments, or which fallback to apply. It should not require a separate
+large switch over an `OperatorKind` to recover the dunder name or argument
+orientation.
+
+```cpp
+struct OperatorDispatchTable
+{
+    OperatorStep steps[MaxSteps];
+};
+
+struct OperatorStep
+{
+    OperatorStepAction action;
+    OperatorStepApplicability applicability;
+    ImmortalInternedString *dunder_name;  // null for fallback steps
+};
+```
+
+`OperatorStepAction` should be call-layout oriented, not operator-family
+oriented. If ordinary binary, in-place binary, and comparison candidates use the
+same lookup root and argument layout, they should use the same action. The
+dunder name stored in the step differentiates `__add__`, `__iadd__`, and
+`__lt__`. Different arities need different actions because they build different
+call frames.
+
+`OperatorStepApplicability` owns the separate question of whether the step is
+currently eligible. This keeps method elision and subtype-priority checks out of
+the frame-setup action. Useful applicability cases are:
+
+```text
+Always                  fallback step; no method lookup
+IfMethodFound           call only if the named method resolves
+IfMethodFoundDistinct   call only if the named method resolves and is not a
+                        duplicate of the candidate that the protocol would
+                        otherwise already have tried
+```
+
+The exact representation of the distinctness check can be table-local metadata
+or a small protocol-specific helper, but it should not create separate call
+actions for arithmetic, comparison, and in-place candidates when their call
+frames are identical.
+
+Useful initial actions are:
+
+```text
+CallUnary              lookup type(lhs).dunder_name; call args: lhs
+CallBinary             lookup type(lhs).dunder_name; call args: lhs, rhs
+CallBinaryReflected    lookup type(rhs).dunder_name; call args: rhs, lhs
+CallTernary            lookup type(lhs).dunder_name; call args: lhs, rhs, third
+CallTernaryReflected   lookup type(rhs).dunder_name; call args: rhs, lhs, third
+IdentityEq             fallback: lhs is rhs
+IdentityNe             fallback: lhs is not rhs
+ContainsFallback       fallback: membership via iteration or sequence indexing
+RaiseUnsupported       fallback: operator-specific unsupported TypeError
+RaiseOrdering          fallback: ordering TypeError
+```
+
+For an operation whose candidate order can differ by operand relationship, use
+separate tables rather than making one table dynamically reorder itself. Table
+operands are semantic protocol operands, not necessarily source-expression
+operands. For example, `a in b` should compile to a `Contains` operation with
+`lhs = b` and `rhs = a`, because the primary dunder name is `__contains__` and
+the protocol receiver is the container.
+
+The complete initial multi-candidate and resumable-fallback table inventory is
+below. Single-call protocols such as unary operators, subscription, length,
+representation, and ordinary conversions do not need these continuation tables
+until they grow fallback behavior that must resume after a Python call.
+
+Ordinary binary arithmetic and bitwise operators each need two table orderings:
+in the examples below, call rows use `IfMethodFound` unless marked as a
+distinctness-checked candidate by the table builder, and fallback rows use
+`Always`. A `*ReflectedFirst` table is selected only when the reflected
+candidate has already passed the right-subclass and distinct-implementation
+applicability checks. A reflected second candidate still needs the
+distinct-implementation check at execution time, because the first Python call
+may have mutated the relevant classes before returning `NotImplemented`.
+
+```text
+BinaryAddNormalFirst
+    0: CallBinary("__add__")
+    1: CallBinaryReflected("__radd__")
+    2: RaiseUnsupported
+
+BinaryAddReflectedFirst
+    0: CallBinaryReflected("__radd__")
+    1: CallBinary("__add__")
+    2: RaiseUnsupported
+
+BinarySubNormalFirst
+    0: CallBinary("__sub__")
+    1: CallBinaryReflected("__rsub__")
+    2: RaiseUnsupported
+
+BinarySubReflectedFirst
+    0: CallBinaryReflected("__rsub__")
+    1: CallBinary("__sub__")
+    2: RaiseUnsupported
+
+BinaryMulNormalFirst
+    0: CallBinary("__mul__")
+    1: CallBinaryReflected("__rmul__")
+    2: RaiseUnsupported
+
+BinaryMulReflectedFirst
+    0: CallBinaryReflected("__rmul__")
+    1: CallBinary("__mul__")
+    2: RaiseUnsupported
+
+BinaryMatmulNormalFirst
+    0: CallBinary("__matmul__")
+    1: CallBinaryReflected("__rmatmul__")
+    2: RaiseUnsupported
+
+BinaryMatmulReflectedFirst
+    0: CallBinaryReflected("__rmatmul__")
+    1: CallBinary("__matmul__")
+    2: RaiseUnsupported
+
+BinaryTrueDivNormalFirst
+    0: CallBinary("__truediv__")
+    1: CallBinaryReflected("__rtruediv__")
+    2: RaiseUnsupported
+
+BinaryTrueDivReflectedFirst
+    0: CallBinaryReflected("__rtruediv__")
+    1: CallBinary("__truediv__")
+    2: RaiseUnsupported
+
+BinaryFloorDivNormalFirst
+    0: CallBinary("__floordiv__")
+    1: CallBinaryReflected("__rfloordiv__")
+    2: RaiseUnsupported
+
+BinaryFloorDivReflectedFirst
+    0: CallBinaryReflected("__rfloordiv__")
+    1: CallBinary("__floordiv__")
+    2: RaiseUnsupported
+
+BinaryModNormalFirst
+    0: CallBinary("__mod__")
+    1: CallBinaryReflected("__rmod__")
+    2: RaiseUnsupported
+
+BinaryModReflectedFirst
+    0: CallBinaryReflected("__rmod__")
+    1: CallBinary("__mod__")
+    2: RaiseUnsupported
+
+BinaryDivmodNormalFirst
+    0: CallBinary("__divmod__")
+    1: CallBinaryReflected("__rdivmod__")
+    2: RaiseUnsupported
+
+BinaryDivmodReflectedFirst
+    0: CallBinaryReflected("__rdivmod__")
+    1: CallBinary("__divmod__")
+    2: RaiseUnsupported
+
+BinaryPowNormalFirst
+    0: CallBinary("__pow__")
+    1: CallBinaryReflected("__rpow__")
+    2: RaiseUnsupported
+
+BinaryPowReflectedFirst
+    0: CallBinaryReflected("__rpow__")
+    1: CallBinary("__pow__")
+    2: RaiseUnsupported
+
+BinaryLShiftNormalFirst
+    0: CallBinary("__lshift__")
+    1: CallBinaryReflected("__rlshift__")
+    2: RaiseUnsupported
+
+BinaryLShiftReflectedFirst
+    0: CallBinaryReflected("__rlshift__")
+    1: CallBinary("__lshift__")
+    2: RaiseUnsupported
+
+BinaryRShiftNormalFirst
+    0: CallBinary("__rshift__")
+    1: CallBinaryReflected("__rrshift__")
+    2: RaiseUnsupported
+
+BinaryRShiftReflectedFirst
+    0: CallBinaryReflected("__rrshift__")
+    1: CallBinary("__rshift__")
+    2: RaiseUnsupported
+
+BinaryAndNormalFirst
+    0: CallBinary("__and__")
+    1: CallBinaryReflected("__rand__")
+    2: RaiseUnsupported
+
+BinaryAndReflectedFirst
+    0: CallBinaryReflected("__rand__")
+    1: CallBinary("__and__")
+    2: RaiseUnsupported
+
+BinaryXorNormalFirst
+    0: CallBinary("__xor__")
+    1: CallBinaryReflected("__rxor__")
+    2: RaiseUnsupported
+
+BinaryXorReflectedFirst
+    0: CallBinaryReflected("__rxor__")
+    1: CallBinary("__xor__")
+    2: RaiseUnsupported
+
+BinaryOrNormalFirst
+    0: CallBinary("__or__")
+    1: CallBinaryReflected("__ror__")
+    2: RaiseUnsupported
+
+BinaryOrReflectedFirst
+    0: CallBinaryReflected("__ror__")
+    1: CallBinary("__or__")
+    2: RaiseUnsupported
+```
+
+In-place arithmetic and bitwise operators prepend the in-place candidate, then
+fall back to the same ordinary binary ordering:
+
+```text
+InPlaceAddNormalFirstFallback
+    0: CallBinary("__iadd__")
+    1: CallBinary("__add__")
+    2: CallBinaryReflected("__radd__")
+    3: RaiseUnsupported
+
+InPlaceAddReflectedFirstFallback
+    0: CallBinary("__iadd__")
+    1: CallBinaryReflected("__radd__")
+    2: CallBinary("__add__")
+    3: RaiseUnsupported
+
+InPlaceSubNormalFirstFallback
+    0: CallBinary("__isub__")
+    1: CallBinary("__sub__")
+    2: CallBinaryReflected("__rsub__")
+    3: RaiseUnsupported
+
+InPlaceSubReflectedFirstFallback
+    0: CallBinary("__isub__")
+    1: CallBinaryReflected("__rsub__")
+    2: CallBinary("__sub__")
+    3: RaiseUnsupported
+
+InPlaceMulNormalFirstFallback
+    0: CallBinary("__imul__")
+    1: CallBinary("__mul__")
+    2: CallBinaryReflected("__rmul__")
+    3: RaiseUnsupported
+
+InPlaceMulReflectedFirstFallback
+    0: CallBinary("__imul__")
+    1: CallBinaryReflected("__rmul__")
+    2: CallBinary("__mul__")
+    3: RaiseUnsupported
+
+InPlaceMatmulNormalFirstFallback
+    0: CallBinary("__imatmul__")
+    1: CallBinary("__matmul__")
+    2: CallBinaryReflected("__rmatmul__")
+    3: RaiseUnsupported
+
+InPlaceMatmulReflectedFirstFallback
+    0: CallBinary("__imatmul__")
+    1: CallBinaryReflected("__rmatmul__")
+    2: CallBinary("__matmul__")
+    3: RaiseUnsupported
+
+InPlaceTrueDivNormalFirstFallback
+    0: CallBinary("__itruediv__")
+    1: CallBinary("__truediv__")
+    2: CallBinaryReflected("__rtruediv__")
+    3: RaiseUnsupported
+
+InPlaceTrueDivReflectedFirstFallback
+    0: CallBinary("__itruediv__")
+    1: CallBinaryReflected("__rtruediv__")
+    2: CallBinary("__truediv__")
+    3: RaiseUnsupported
+
+InPlaceFloorDivNormalFirstFallback
+    0: CallBinary("__ifloordiv__")
+    1: CallBinary("__floordiv__")
+    2: CallBinaryReflected("__rfloordiv__")
+    3: RaiseUnsupported
+
+InPlaceFloorDivReflectedFirstFallback
+    0: CallBinary("__ifloordiv__")
+    1: CallBinaryReflected("__rfloordiv__")
+    2: CallBinary("__floordiv__")
+    3: RaiseUnsupported
+
+InPlaceModNormalFirstFallback
+    0: CallBinary("__imod__")
+    1: CallBinary("__mod__")
+    2: CallBinaryReflected("__rmod__")
+    3: RaiseUnsupported
+
+InPlaceModReflectedFirstFallback
+    0: CallBinary("__imod__")
+    1: CallBinaryReflected("__rmod__")
+    2: CallBinary("__mod__")
+    3: RaiseUnsupported
+
+InPlacePowNormalFirstFallback
+    0: CallBinary("__ipow__")
+    1: CallBinary("__pow__")
+    2: CallBinaryReflected("__rpow__")
+    3: RaiseUnsupported
+
+InPlacePowReflectedFirstFallback
+    0: CallBinary("__ipow__")
+    1: CallBinaryReflected("__rpow__")
+    2: CallBinary("__pow__")
+    3: RaiseUnsupported
+
+InPlaceLShiftNormalFirstFallback
+    0: CallBinary("__ilshift__")
+    1: CallBinary("__lshift__")
+    2: CallBinaryReflected("__rlshift__")
+    3: RaiseUnsupported
+
+InPlaceLShiftReflectedFirstFallback
+    0: CallBinary("__ilshift__")
+    1: CallBinaryReflected("__rlshift__")
+    2: CallBinary("__lshift__")
+    3: RaiseUnsupported
+
+InPlaceRShiftNormalFirstFallback
+    0: CallBinary("__irshift__")
+    1: CallBinary("__rshift__")
+    2: CallBinaryReflected("__rrshift__")
+    3: RaiseUnsupported
+
+InPlaceRShiftReflectedFirstFallback
+    0: CallBinary("__irshift__")
+    1: CallBinaryReflected("__rrshift__")
+    2: CallBinary("__rshift__")
+    3: RaiseUnsupported
+
+InPlaceAndNormalFirstFallback
+    0: CallBinary("__iand__")
+    1: CallBinary("__and__")
+    2: CallBinaryReflected("__rand__")
+    3: RaiseUnsupported
+
+InPlaceAndReflectedFirstFallback
+    0: CallBinary("__iand__")
+    1: CallBinaryReflected("__rand__")
+    2: CallBinary("__and__")
+    3: RaiseUnsupported
+
+InPlaceXorNormalFirstFallback
+    0: CallBinary("__ixor__")
+    1: CallBinary("__xor__")
+    2: CallBinaryReflected("__rxor__")
+    3: RaiseUnsupported
+
+InPlaceXorReflectedFirstFallback
+    0: CallBinary("__ixor__")
+    1: CallBinaryReflected("__rxor__")
+    2: CallBinary("__xor__")
+    3: RaiseUnsupported
+
+InPlaceOrNormalFirstFallback
+    0: CallBinary("__ior__")
+    1: CallBinary("__or__")
+    2: CallBinaryReflected("__ror__")
+    3: RaiseUnsupported
+
+InPlaceOrReflectedFirstFallback
+    0: CallBinary("__ior__")
+    1: CallBinaryReflected("__ror__")
+    2: CallBinary("__or__")
+    3: RaiseUnsupported
+```
+
+Ternary `pow(lhs, rhs, mod)` uses ternary call actions for the same dunder
+names. It does not have an in-place table:
+
+```text
+TernaryPowNormalFirst
+    0: CallTernary("__pow__")
+    1: CallTernaryReflected("__rpow__")
+    2: RaiseUnsupported
+
+TernaryPowReflectedFirst
+    0: CallTernaryReflected("__rpow__")
+    1: CallTernary("__pow__")
+    2: RaiseUnsupported
+```
+
+Rich comparisons use binary call actions, but with comparison-specific
+reflected names and fallbacks:
+
+```text
+CompareLtNormalFirst
+    0: CallBinary("__lt__")
+    1: CallBinaryReflected("__gt__")
+    2: RaiseOrdering
+
+CompareLtReflectedFirst
+    0: CallBinaryReflected("__gt__")
+    1: CallBinary("__lt__")
+    2: RaiseOrdering
+
+CompareLeNormalFirst
+    0: CallBinary("__le__")
+    1: CallBinaryReflected("__ge__")
+    2: RaiseOrdering
+
+CompareLeReflectedFirst
+    0: CallBinaryReflected("__ge__")
+    1: CallBinary("__le__")
+    2: RaiseOrdering
+
+CompareEqNormalFirst
+    0: CallBinary("__eq__")
+    1: CallBinaryReflected("__eq__")
+    2: IdentityEq
+
+CompareEqReflectedFirst
+    0: CallBinaryReflected("__eq__")
+    1: CallBinary("__eq__")
+    2: IdentityEq
+
+CompareNeNormalFirst
+    0: CallBinary("__ne__")
+    1: CallBinaryReflected("__ne__")
+    2: IdentityNe
+
+CompareNeReflectedFirst
+    0: CallBinaryReflected("__ne__")
+    1: CallBinary("__ne__")
+    2: IdentityNe
+
+CompareGtNormalFirst
+    0: CallBinary("__gt__")
+    1: CallBinaryReflected("__lt__")
+    2: RaiseOrdering
+
+CompareGtReflectedFirst
+    0: CallBinaryReflected("__lt__")
+    1: CallBinary("__gt__")
+    2: RaiseOrdering
+
+CompareGeNormalFirst
+    0: CallBinary("__ge__")
+    1: CallBinaryReflected("__le__")
+    2: RaiseOrdering
+
+CompareGeReflectedFirst
+    0: CallBinaryReflected("__le__")
+    1: CallBinary("__ge__")
+    2: RaiseOrdering
+```
+
+Membership uses a table because missing `__contains__` has fallback behavior
+that cannot be represented as another dunder-call candidate. The bytecode should
+be named for the primary dunder, such as `Contains`, rather than for the surface
+syntax spelling `in`; `not in` runs the same operation and negates the final
+truth value.
+
+```text
+Contains
+    0: CallBinary("__contains__")
+    1: ContainsFallback
+```
+
+For this table, `lhs` is the container and `rhs` is the searched item.
+`ContainsFallback` runs the rest of the membership protocol for those saved
+operands: first iteration and equality checks, then sequence indexing fallback
+where implemented. This fallback is a native continuation/thunk boundary rather
+than an ordinary Python dunder-call row, because it may need to create an
+iterator, repeatedly call `next`, run equality comparisons, handle sentinel
+exceptions, and possibly fall back to indexed subscription.
+
+The table records dunder names, call argument orientation, and fallback
+behavior. It does not encode broad operator-family semantics beyond the steps
+the dispatcher must execute. The continuation dispatcher should still recompute
+current applicability and lookup results before calling later candidates,
+because an arbitrary Python dunder method may have mutated classes, bases,
+descriptors, or MROs before returning `NotImplemented`.
+
+The `next_candidate_index` means "continue at this table candidate." When a
+cached Python candidate at index `i` is entered, the hidden prefix stores
+`i + 1`. If that candidate returns a real result, the check opcode finishes the
+operation. If it returns `NotImplemented`, the cold continuation dispatcher
+resumes from `i + 1`, updates the same prefix before any later Python candidate,
+and returns to `CheckOperatorNotImplemented` again.
+
+Once a Python dunder candidate has run, the continuation path is untrusted and
+cold. It does not need to install cache entries or aggressively recognize
+trusted native handlers while continuing. The pre-Python dispatch/cache path is
+where trusted native shortcuts matter. The post-`NotImplemented` path should
+prioritize correctness, current-state recomputation, and not calling an
+already-executed candidate again.
 
 ## Operator Families
 
@@ -691,15 +1280,15 @@ pending-exception propagation.
 
 The "different implementation" check is important. It prevents the dispatcher
 from calling the same inherited method twice when the right operand type inherits
-the reflected method from the left operand's hierarchy. The dispatch trace and
-cache resume state must record which candidate role was actually attempted so a
-cached dunder-method-call fallback resumes at the correct next candidate.
+the reflected method from the left operand's hierarchy. The selected dispatch
+table and next candidate index must ensure that a cached dunder-method-call
+fallback resumes after the candidate that was actually attempted.
 
 Ordinary binary arithmetic and bitwise operators use this table. The in-place
 column applies only to augmented assignment forms such as `+=`; it is a binary
 operator subcase, not a separate top-level operator family.
 
-| Operator | Forward call | Reflected call | In-place first call |
+| Operator | Normal call | Reflected call | In-place first call |
 | --- | --- | --- | --- |
 | `lhs + rhs` | `lhs.__add__(rhs)` | `rhs.__radd__(lhs)` | `lhs.__iadd__(rhs)` |
 | `lhs - rhs` | `lhs.__sub__(rhs)` | `rhs.__rsub__(lhs)` | `lhs.__isub__(rhs)` |
@@ -783,9 +1372,11 @@ Unary operators have no reflected candidate:
 ### Container Operators
 
 Membership is a container protocol, not a reflected binary operator. It should
-not share the binary/reflected operator cache directly, because after
-`__contains__` misses it can run iteration or sequence-index fallback rather
-than another binary dunder method. For `item in container`:
+not share arithmetic reflected-method semantics, because after `__contains__`
+misses it can run iteration or sequence-index fallback rather than another
+binary dunder method. It can still use the table-driven continuation machinery
+with protocol operands ordered as `Contains(container, item)`. For
+`item in container`:
 
 1. If `container.__contains__` exists, call
    `container.__contains__(item)` and truth-test its result.
@@ -797,7 +1388,7 @@ than another binary dunder method. For `item in container`:
    value using equality semantics.
 
 `item not in container` is the boolean negation of `item in container`; it does
-not have a separate dunder method.
+not have a separate dunder method or a separate dispatch table.
 
 ## Non-Arithmetic Protocol Families
 
@@ -1066,8 +1657,9 @@ additional value guard or a narrower recognized case.
 Multi-method protocols such as binary arithmetic, in-place arithmetic, and rich
 comparison are more complicated because they may have multiple candidate methods,
 `NotImplemented` continuation, reflected-method ordering, and resume state after
-a cached first call. They should be handled after the subscription cache model
-has a stable `TrustedHandler` / `DunderMethodCall` structure.
+a cached first call. They should use the table-driven continuation shape
+described above rather than trying to replay a completed multi-candidate
+execution on the hot path.
 
 ### Numeric Conversion Protocols
 
@@ -1137,10 +1729,11 @@ binding discipline when optimized.
 
 ## Installation Rule
 
-The generic dispatcher records the dispatch facts for a miss. Trusted-handler
-recognition uses the selected method's resolver and operand shape keys. For
-multi-candidate protocols, it may also need the completed trace. The opcode miss
-path owns cache installation.
+The opcode miss path owns cache installation. For single-candidate protocols it
+uses the selected method's resolver and operand shape keys. For
+multi-candidate protocols it walks the relevant operator dispatch table and may
+install either a complete trusted handler for the current table state or a
+single cacheable Python-candidate call with continuation metadata.
 
 Dunder-method-call cache state may be installed once lookup, binding, callable
 validation, call-argument layout, and call adaptation have produced an
@@ -1148,15 +1741,35 @@ executable call plan. The cache stores how to replay the selected call, not the
 method result. If the method body later raises, the cache may still be valid:
 the next hit must execute the method again and propagate whatever happens then.
 
+For multi-candidate operators, the replayable Python-call entry should be
+limited to a single candidate. The table walker may enter a cacheable Python
+candidate with enough pending cache state to replay that same call later. The
+entry should remain installed only if the candidate returns a
+non-`NotImplemented` result. The entry records the semantic dispatch table
+reference and the next candidate index to store in the hidden continuation
+prefix before entering the Python function. If a later cache hit calls the same
+candidate and it returns `NotImplemented`, the check opcode uses that table
+reference and next index to continue the protocol without calling the candidate
+again.
+
 Trusted-handler installation is stricter. For single-candidate protocols such
 as get-item subscription, a resolver may return a handler before calling the
 dunder method, but only if the resolver fully proves the handler's preconditions
 from the selected method identity and operand shape keys. The miss path then
 installs and executes that handler immediately. For continuation protocols such
 as binary or in-place operators, a handler that skips later candidate behavior
-should be installed only after the operation has completed successfully and the
-completed dispatch trace is recognized as equivalent to the handler. Exception
-paths must not accidentally install a direct handler.
+may be installed only when the table walker proves that all skipped or consumed
+steps are trusted for the current operand shape keys. Exception paths must not
+accidentally install a direct handler.
+
+The installation order for multi-candidate operators should prefer complete
+trusted native handlers when the current table position can be collapsed to a
+trusted and stable result for the operand shape keys.
+If no trusted handler is valid, the miss path may install the single Python
+candidate that produced the result, together with its table reference and next
+candidate index. It should not leave a Python-candidate entry installed for a
+candidate that returned `NotImplemented` on the miss, because that would make
+the common hit immediately enter the cold continuation path.
 
 The first successful installation choice for a recognized get-item operation is:
 
@@ -1205,7 +1818,5 @@ Equivalently:
 
 - Should trusted handlers require exact builtin type guards, or can
   some use shape guards that imply the same dunder-method lookup semantics?
-- What exact shape should the trace recognizer use for multi-candidate binary
-  and in-place dispatch?
 - How much of the binary cache validation path can be shared with in-place
   operator caches without obscuring the interpreter hot path?
