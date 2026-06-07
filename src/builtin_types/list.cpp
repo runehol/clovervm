@@ -1,5 +1,6 @@
 #include "builtin_types/list.h"
 #include "builtin_types/list_iterator.h"
+#include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
 #include "builtin_types/tuple.h"
 #include "object_model/class_object.h"
@@ -85,9 +86,16 @@ namespace cl
                                      Value index_value)
     {
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"__getitem__"));
+        if(can_convert_to<Slice>(index_value))
+        {
+            NormalizedSlice slice = CL_TRY(normalize_slice_for_length(
+                thread, TValue<Slice>::from_value_assumed(index_value),
+                static_cast<int64_t>(self.get_ptr<List>()->size())));
+            return self.get_ptr<List>()->get_slice(slice).raw_value();
+        }
         int64_t py_idx = 0;
         CL_PROPAGATE_EXCEPTION(require_smi_index(
-            index_value, L"list indices must be integers", py_idx));
+            index_value, L"list indices must be integers or slices", py_idx));
         return self.get_ptr<List>()->get_item(py_idx);
     }
 
@@ -550,6 +558,21 @@ namespace cl
         size_t idx = wrap_index(py_idx);
         CL_PROPAGATE_EXCEPTION(check_index(idx));
         return item_unchecked(idx);
+    }
+
+    TValue<List> List::get_slice(const NormalizedSlice &slice) const
+    {
+        TValue<List> result =
+            make_object_value<List>(slice.selected_sequence_length);
+        int64_t read_idx = slice.start;
+        for(size_t write_idx = 0; write_idx < slice.selected_sequence_length;
+            ++write_idx)
+        {
+            result.extract()->set_item_unchecked(
+                write_idx, item_unchecked(static_cast<size_t>(read_idx)));
+            read_idx += slice.step;
+        }
+        return result;
     }
 
     Value List::set_item(int64_t py_idx, Value value)

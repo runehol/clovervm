@@ -1,5 +1,6 @@
 #include "builtin_types/str.h"
 #include "builtin_types/list.h"
+#include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/unicode.h"
@@ -203,9 +204,16 @@ namespace cl
                                     Value index_value)
     {
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"__getitem__"));
+        if(can_convert_to<Slice>(index_value))
+        {
+            NormalizedSlice slice = CL_TRY(normalize_slice_for_length(
+                thread, TValue<Slice>::from_value_assumed(index_value),
+                self.get_ptr<String>()->count.extract()));
+            return self.get_ptr<String>()->get_slice(thread, slice).raw_value();
+        }
         int64_t py_idx = 0;
         CL_PROPAGATE_EXCEPTION(require_smi_index(
-            index_value, L"string indices must be integers", py_idx));
+            index_value, L"string indices must be integers or slices", py_idx));
         return self.get_ptr<String>()->char_at(thread, py_idx);
     }
 
@@ -406,6 +414,24 @@ namespace cl
         }
         std::wstring_view result(&data[static_cast<size_t>(normalized)], 1);
         return thread->make_object_value<String>(result).raw_value();
+    }
+
+    TValue<String> String::get_slice(ThreadState *thread,
+                                     const NormalizedSlice &slice) const
+    {
+        TValue<String> result =
+            thread->make_object_value<String>(TValue<SMI>::from_smi(
+                static_cast<int64_t>(slice.selected_sequence_length)));
+        int64_t read_idx = slice.start;
+        for(size_t write_idx = 0; write_idx < slice.selected_sequence_length;
+            ++write_idx)
+        {
+            result.extract()->data[write_idx] =
+                data[static_cast<size_t>(read_idx)];
+            read_idx += slice.step;
+        }
+        result.extract()->data[slice.selected_sequence_length] = 0;
+        return result;
     }
 
     TValue<String> String::concat(const String *other) const

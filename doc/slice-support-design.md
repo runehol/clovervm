@@ -537,15 +537,15 @@ Phase 2, Python-facing normalization:
 
 Phase 3, sequence operations and trusted handlers:
 
-- [ ] Add list, tuple, and str slice `__getitem__`.
+- [x] Add list, tuple, and str slice `__getitem__`.
 - [ ] Add list slice `__setitem__` and `__delitem__` if assignment/deletion syntax
   is in scope for the same implementation pass.
-- [ ] Update builtin sequence type-error messages to allow slice keys, for example
+- [x] Update builtin sequence type-error messages to allow slice keys, for example
   "list indices must be integers or slices" rather than only "integers".
 - [ ] Add resolver branches for `slice_step_none_shape` and
   `slice_step_value_shape`.
 - [x] Add interpreter-level tests for user-defined `__getitem__` receiving slices.
-- [ ] Add interpreter-level tests for builtin sequence slicing behavior.
+- [x] Add interpreter-level tests for builtin sequence slicing behavior.
 
 ## Non-Goals
 

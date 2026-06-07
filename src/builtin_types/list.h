@@ -13,6 +13,7 @@
 namespace cl
 {
     class Tuple;
+    struct NormalizedSlice;
 
     class List : public Object
     {
@@ -54,6 +55,8 @@ namespace cl
         [[nodiscard]] TValue<List> concat(const List *other) const;
 
         [[nodiscard]] Value get_item(int64_t py_idx) const;
+        [[nodiscard]] TValue<List>
+        get_slice(const NormalizedSlice &slice) const;
         [[nodiscard]] Value set_item(int64_t py_idx, Value value);
         void insert_item(int64_t py_idx, Value value);
         // Returns a borrowed Value. Interpreter callers immediately place the

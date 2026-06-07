@@ -1,4 +1,5 @@
 #include "builtin_types/tuple.h"
+#include "builtin_types/slice.h"
 #include "builtin_types/string_builder.h"
 #include "builtin_types/tuple_iterator.h"
 #include "object_model/class_object.h"
@@ -94,9 +95,16 @@ namespace cl
                 L"TypeError", L"tuple.__getitem__ expects a tuple receiver");
         }
 
+        if(can_convert_to<Slice>(index_value))
+        {
+            NormalizedSlice slice = CL_TRY(normalize_slice_for_length(
+                thread, TValue<Slice>::from_value_assumed(index_value),
+                static_cast<int64_t>(self.get_ptr<Tuple>()->size())));
+            return self.get_ptr<Tuple>()->get_slice(slice).raw_value();
+        }
         int64_t py_idx = 0;
         CL_PROPAGATE_EXCEPTION(require_smi_index(
-            index_value, L"tuple indices must be integers", py_idx));
+            index_value, L"tuple indices must be integers or slices", py_idx));
         return self.get_ptr<Tuple>()->get_item(py_idx);
     }
 
@@ -259,6 +267,21 @@ namespace cl
         size_t idx = wrap_index(py_idx);
         CL_PROPAGATE_EXCEPTION(check_index(idx));
         return item_unchecked(idx);
+    }
+
+    TValue<Tuple> Tuple::get_slice(const NormalizedSlice &slice) const
+    {
+        TValue<Tuple> result =
+            make_object_value<Tuple>(slice.selected_sequence_length);
+        int64_t read_idx = slice.start;
+        for(size_t write_idx = 0; write_idx < slice.selected_sequence_length;
+            ++write_idx)
+        {
+            result.extract()->initialize_item_unchecked(
+                write_idx, item_unchecked(static_cast<size_t>(read_idx)));
+            read_idx += slice.step;
+        }
+        return result;
     }
 
     TValue<Tuple> Tuple::concat(const Tuple *other) const

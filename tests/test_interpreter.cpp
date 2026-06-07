@@ -178,6 +178,19 @@ static void expect_slice_indices(const wchar_t *source, int64_t expected_start,
                                expected_stop, expected_step);
 }
 
+static void expect_string_value(Value actual, const wchar_t *expected)
+{
+    ASSERT_TRUE(can_convert_to<String>(actual));
+    EXPECT_STREQ(expected,
+                 string_as_wchar_t(TValue<String>::from_value_assumed(actual)));
+}
+
+static void expect_string_result(const wchar_t *source, const wchar_t *expected)
+{
+    test::FileRunner file_runner(source);
+    expect_string_value(file_runner.return_value, expected);
+}
+
 static int64_t g_next_counter = 0;
 static Value *g_native_frame_frontier_seen = nullptr;
 static Value *g_expected_clover_frame_sentinel = nullptr;
@@ -2645,7 +2658,8 @@ TEST(Interpreter, subscript_load_rejects_non_integer_list_index)
 {
     expect_python_error(L"xs = [1, 2, 3]\n"
                         L"xs[False]\n",
-                        L"TypeError", L"list indices must be integers");
+                        L"TypeError",
+                        L"list indices must be integers or slices");
 }
 
 TEST(Interpreter, subscript_load_non_integer_list_index_unwinds_nested_frames)
@@ -2654,7 +2668,8 @@ TEST(Interpreter, subscript_load_non_integer_list_index_unwinds_nested_frames)
                         L"    xs = [1, 2, 3]\n"
                         L"    return xs[False]\n"
                         L"fail()\n",
-                        L"TypeError", L"list indices must be integers");
+                        L"TypeError",
+                        L"list indices must be integers or slices");
 }
 
 TEST(Interpreter, subscript_load_rejects_non_integer_tuple_index)
@@ -2662,7 +2677,53 @@ TEST(Interpreter, subscript_load_rejects_non_integer_tuple_index)
     expect_python_error(L"class Cls:\n"
                         L"    pass\n"
                         L"Cls.__mro__[False]\n",
-                        L"TypeError", L"tuple indices must be integers");
+                        L"TypeError",
+                        L"tuple indices must be integers or slices");
+}
+
+TEST(Interpreter, subscript_load_slices_list)
+{
+    expect_string_result(L"repr([1, 2, 3, 4][1:3])\n", L"[2, 3]");
+    expect_string_result(L"repr([1, 2, 3, 4][0:-1])\n", L"[1, 2, 3]");
+    expect_string_result(L"repr([1, 2, 3, 4][::2])\n", L"[1, 3]");
+    expect_string_result(L"repr([1, 2, 3, 4][::-1])\n", L"[4, 3, 2, 1]");
+    expect_string_result(L"repr([1, 2, 3, 4][3:0:-1])\n", L"[4, 3, 2]");
+}
+
+TEST(Interpreter, subscript_load_slices_tuple)
+{
+    expect_string_result(L"repr((1, 2, 3, 4)[1:3])\n", L"(2, 3)");
+    expect_string_result(L"repr((1, 2, 3, 4)[0:-1])\n", L"(1, 2, 3)");
+    expect_string_result(L"repr((1, 2, 3, 4)[::2])\n", L"(1, 3)");
+    expect_string_result(L"repr((1, 2, 3, 4)[::-1])\n", L"(4, 3, 2, 1)");
+    expect_string_result(L"repr((1, 2, 3, 4)[3:0:-1])\n", L"(4, 3, 2)");
+}
+
+TEST(Interpreter, subscript_load_slices_string)
+{
+    expect_string_result(L"'abcd'[1:3]\n", L"bc");
+    expect_string_result(L"'abcd'[0:-1]\n", L"abc");
+    expect_string_result(L"'abcd'[::2]\n", L"ac");
+    expect_string_result(L"'abcd'[::-1]\n", L"dcba");
+    expect_string_result(L"'abcd'[3:0:-1]\n", L"dcb");
+}
+
+TEST(Interpreter, subscript_load_slice_reports_invalid_consumed_values)
+{
+    expect_python_error(L"[1, 2, 3][slice(None, None, 0)]\n", L"ValueError",
+                        L"slice step cannot be zero");
+    expect_python_error(
+        L"(1, 2, 3)[slice('a', None)]\n", L"TypeError",
+        L"slice indices must be integers or None or have an __index__ method");
+    expect_python_error(
+        L"'abc'[slice(None, None, 'x')]\n", L"TypeError",
+        L"slice indices must be integers or None or have an __index__ method");
+}
+
+TEST(Interpreter, subscript_load_rejects_non_integer_string_index)
+{
+    expect_python_error(L"'abc'[False]\n", L"TypeError",
+                        L"string indices must be integers or slices");
 }
 
 TEST(Interpreter, subscript_load_rejects_out_of_range_list_index)
