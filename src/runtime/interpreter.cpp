@@ -23,6 +23,7 @@
 #include "runtime/exception_handling.h"
 #include "runtime/exception_object.h"
 #include "runtime/method_call.h"
+#include "runtime/operator_frame.h"
 #include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"

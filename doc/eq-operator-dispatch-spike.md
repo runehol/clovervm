@@ -161,22 +161,24 @@ normal_first:
 
 ## Stage 5: Continuation Frame Layout
 
-- [ ] Allocate continuation registers from `get_first_free_arg_encoded_reg()`.
-- [ ] Store the hidden prefix:
+- [x] Allocate continuation registers from `get_first_free_arg_encoded_reg()`.
+- [x] Store the hidden prefix:
       `reg(0) = table id`, `reg(1) = next row`, `reg(2) = operand0`,
       `reg(3) = operand1`.
-- [ ] Build callee-visible call arguments after the continuation prefix.
-- [ ] Add continuation frame setup helpers per opcode/operator-handler arity.
+- [x] Build callee-visible call arguments after the continuation prefix.
+- [x] Add continuation frame setup helpers per opcode/operator-handler arity.
       The handler owns arity; the hidden continuation prefix stores canonical
       operands and is independent of whether the selected call is normal or
       reflected.
-- [ ] Add callee argument setup helpers that use the selected walk action, so
+- [x] Insert one padding slot after odd-arity continuation prefixes so the
+      callee-visible argument stack remains 16-byte aligned.
+- [x] Add callee argument setup helpers that use the selected walk action, so
       `CallBinary` and `CallBinaryReflected` build the correct callee-visible
       argument order.
-- [ ] Account for the downward-growing physical frame layout while keeping the
+- [x] Account for the downward-growing physical frame layout while keeping the
       logical register numbering clear.
-- [ ] Ensure continuation operand slots are root-scanned.
-- [ ] Ensure callee-visible argument slots are not reused as saved operands.
+- [x] Ensure continuation operand slots are root-scanned.
+- [x] Ensure callee-visible argument slots are not reused as saved operands.
 
 ## Stage 6: Python Candidate Entry
 
