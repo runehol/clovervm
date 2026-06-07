@@ -150,6 +150,7 @@ add_library(libclovervm_objects OBJECT
     object_model/owned.h
     object_model/refcount.cpp
     object_model/refcount.h
+    runtime/operator_dispatch.h
     compiler/scope.cpp
     compiler/scope.h
     object_model/shape_descriptor.h

@@ -20,6 +20,7 @@
 #include "object_model/shape_key.h"
 #include "object_model/typed_value.h"
 #include "object_model/value.h"
+#include "runtime/operator_dispatch.h"
 
 namespace cl
 {
@@ -262,6 +263,26 @@ namespace cl
             assert(dunder_class_name_ != nullptr);
             return TValue<String>::from_oop(dunder_class_name_);
         }
+        const OperatorDispatchTable &
+        operator_dispatch_table(OperatorDispatchTableId table_id) const
+        {
+            return operator_dispatch_tables_[static_cast<size_t>(table_id)];
+        }
+        const OperatorDispatchTable &
+        operator_dispatch_table_by_id(uint32_t table_id) const
+        {
+            assert(table_id <
+                   static_cast<uint32_t>(OperatorDispatchTableId::Count));
+            return operator_dispatch_table(
+                static_cast<OperatorDispatchTableId>(table_id));
+        }
+        const OperatorStep &operator_dispatch_step_by_id(uint32_t table_id,
+                                                         uint8_t row) const
+        {
+            const OperatorDispatchTable &table =
+                operator_dispatch_table_by_id(table_id);
+            return table.step(row);
+        }
         Expected<CodeObject *> clover_function_entry_adapter(uint32_t n_args);
 
         void install_slice_shapes(ClassObject *cls,
@@ -335,6 +356,7 @@ namespace cl
 
         void install_native_layout_mappings(
             const BuiltinClassDefinition &definition);
+        void initialize_operator_dispatch_tables();
         void install_bootstrap_string_class();
         void install_bootstrap_tuple_class(
             const std::vector<BuiltinClassDefinition> &builtin_classes);
@@ -354,6 +376,10 @@ namespace cl
         ClassObject *not_implemented_type_class_ = nullptr;
         ClassObject *ellipsis_type_class_ = nullptr;
         String *dunder_class_name_ = nullptr;
+        std::array<OperatorStep, 6> compare_eq_operator_steps_ = {};
+        std::array<OperatorDispatchTable,
+                   static_cast<size_t>(OperatorDispatchTableId::Count)>
+            operator_dispatch_tables_ = {};
         Shape *smi_shape_ = nullptr;
         Shape *bool_shape_ = nullptr;
         Shape *none_shape_ = nullptr;

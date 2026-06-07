@@ -555,6 +555,33 @@ namespace cl
         });
     }
 
+    void VirtualMachine::initialize_operator_dispatch_tables()
+    {
+        assert(str_class_ != nullptr);
+        assert(str_instance_root_shape_ != nullptr);
+
+        String *dunder_eq = get_or_create_interned_string_raw(L"__eq__");
+        compare_eq_operator_steps_ = {{
+            OperatorStep::call_binary_reflected(
+                dunder_eq,
+                OperatorStepApplicability::IfRichComparisonReflectedPriority,
+                2),
+            OperatorStep::call_binary(dunder_eq,
+                                      OperatorStepApplicability::IfMethodFound),
+            OperatorStep::identity_eq(),
+            OperatorStep::call_binary(dunder_eq,
+                                      OperatorStepApplicability::IfMethodFound),
+            OperatorStep::call_binary_reflected(
+                dunder_eq, OperatorStepApplicability::IfMethodFound),
+            OperatorStep::identity_eq(),
+        }};
+
+        operator_dispatch_tables_[static_cast<size_t>(
+            OperatorDispatchTableId::CompareEq)] = OperatorDispatchTable{
+            compare_eq_operator_steps_.data(),
+            static_cast<uint8_t>(compare_eq_operator_steps_.size())};
+    }
+
     static void install_bootstrap_tuple_class_on_value(Value value,
                                                        ClassObject *tuple_class)
     {
@@ -608,6 +635,7 @@ namespace cl
         register_builtin_class(make_object_class(this));
         register_builtin_class(make_str_class(this));
         install_bootstrap_string_class();
+        initialize_operator_dispatch_tables();
         register_builtin_class(make_tuple_class(this));
 
         ClassObject *type = type_class();

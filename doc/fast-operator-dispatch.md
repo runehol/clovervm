@@ -375,7 +375,7 @@ There is no native loop that runs a multi-candidate Python protocol to
 completion. The primary opcode or continuation opcode walks table rows only
 until it reaches a Python function candidate or a native fallback/raise/result
 row. This walk may evaluate multiple entries, following fallthrough or
-`else_goto` targets as applicability predicates pass or fail. Before entering a
+`else_skip` offsets as applicability predicates pass or fail. Before entering a
 Python candidate, it writes the hidden prefix and uses the current logical
 operator PC, which points at the paired `CheckOperatorNotImplemented` byte, as
 the callee return PC.
@@ -390,7 +390,7 @@ frame prefix and current lookups only.
 ## Dispatch Tables
 
 The continuation prefix stores a semantic dispatch table, not an opcode. Tables
-are immutable VM metadata. They may contain immortal interned strings for dunder
+are immutable VM metadata. They may contain VM-local interned strings for dunder
 names; do not store ordinary collectable heap values in them.
 
 ```cpp
@@ -411,19 +411,21 @@ struct OperatorDispatchTable
 
 struct OperatorStep
 {
-    ImmortalInternedString *dunder_name;  // null for fallback steps
+    String *dunder_name;  // VM-local interned string; null for fallback steps
     OperatorStepAction action;
     OperatorStepApplicability applicability;
-    uint8_t else_goto;
+    uint8_t else_skip = 0;
 };
 ```
 
 On 64-bit targets this keeps each step as one 16-byte entry while leaving the
-dunder name directly visible in the row. `else_goto` is the target row when
-applicability fails. If applicability passes and the action enters a Python
-candidate that returns `NotImplemented`, continuation resumes at the following
-row. The table PC therefore carries protocol branch state such as "reflected
-priority was already tried."
+dunder name directly visible in the row. When applicability fails, the next row
+is `current_row + 1 + else_skip`; therefore `else_skip = 0` means ordinary
+fallthrough and does not need to be written in table initializers. If
+applicability passes and the action enters a Python candidate that returns
+`NotImplemented`, continuation resumes at the following row. The table PC
+therefore carries protocol branch state such as "reflected priority was already
+tried."
 
 `OperatorStepAction` describes what frame setup or fallback operation to run.
 It should be call-layout oriented, not operator-family oriented. If arithmetic,
@@ -478,8 +480,8 @@ from the following table row just like a fast function-shaped call.
 
 Table sketches below write applicability and non-fallthrough
 failed-applicability control flow inside each row action for compactness, for
-example `CallBinary("<name>", IfMethodFound, else goto fallback)`. If a row
-omits `else goto`, failed applicability falls through to the next row.
+example `CallBinary("<name>", IfMethodFound, else +2 to fallback)`. If a row
+omits `else`, failed applicability falls through to the next row.
 
 Table operands are semantic protocol operands, not necessarily source operands.
 For example, `a in b` should compile to `Contains` with `operand0 = b` and
@@ -499,7 +501,7 @@ dunder call.
 Each ordinary binary operator uses one branched table. The first row checks
 whether arithmetic reflected priority currently applies. If it does, the table
 tries the reflected candidate first and continuation proceeds through the
-"reflected already tried" branch. If it does not, `else goto normal_first`
+"reflected already tried" branch. If it does not, `else +2 to normal_first`
 enters the ordinary normal-first branch. The table PC, not a side flag or a set
 of tried method objects, records which branch is active.
 
@@ -509,7 +511,7 @@ Template:
 Binary<Verb>
     0: CallBinaryReflected("<reflected>",
                            IfArithmeticReflectedPriority,
-                           else goto normal_first)
+                           else +2 to normal_first)
     1: CallBinary("<normal>", IfMethodFound)
     2: RaiseUnsupported(Always)
 
@@ -558,12 +560,12 @@ Template:
 
 ```text
 InPlace<Verb>
-    0: CallBinary("<inplace>", IfMethodFound, else goto binary_dispatch)
+    0: CallBinary("<inplace>", IfMethodFound)
 
 binary_dispatch:
     1: CallBinaryReflected("<reflected>",
                            IfArithmeticReflectedPriority,
-                           else goto normal_first)
+                           else +2 to normal_first)
     2: CallBinary("<normal>", IfMethodFound)
     3: RaiseUnsupported(Always)
 
@@ -607,7 +609,7 @@ same dunder names:
 TernaryPow
     0: CallTernaryReflected("__rpow__",
                             IfArithmeticReflectedPriority,
-                            else goto normal_first)
+                            else +2 to normal_first)
     1: CallTernary("__pow__", IfMethodFound)
     2: RaiseUnsupported(Always)
 
@@ -638,7 +640,7 @@ Template:
 Compare<Verb>
     0: CallBinaryReflected("<reflected>",
                            IfRichComparisonReflectedPriority,
-                           else goto normal_first)
+                           else +2 to normal_first)
     1: CallBinary("<normal>", IfMethodFound)
     2: <fallback>(Always)
 

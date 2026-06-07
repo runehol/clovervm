@@ -79,20 +79,21 @@ Checklist:
 
 ## Stage 3: Dispatch Table Metadata
 
-- [ ] Add `OperatorStepAction : uint8_t`.
-- [ ] Add `OperatorStepApplicability : uint8_t`.
-- [ ] Add `OperatorStep` with:
-      `ImmortalInternedString *dunder_name`, action, applicability, and
-      `uint8_t else_goto`.
-- [ ] Add immutable operator dispatch table storage indexed by small SMI table
-      ids.
-- [ ] Add the `CompareEq` table:
+- [x] Add `OperatorStepAction : uint8_t`.
+- [x] Add `OperatorStepApplicability : uint8_t`.
+- [x] Add `OperatorStep` with:
+      VM-local interned `String *dunder_name`, action, applicability, and
+      `uint8_t else_skip`.
+- [x] Add immutable operator dispatch table storage indexed by table ids. The
+      continuation prefix stores the table id as an SMI, but the C++ metadata
+      API works on the decoded integer payload.
+- [x] Add the `CompareEq` table:
 
 ```text
 CompareEq
     0: CallBinaryReflected("__eq__",
                            IfRichComparisonReflectedPriority,
-                           else goto normal_first)
+                           else +2 to normal_first)
     1: CallBinary("__eq__", IfMethodFound)
     2: IdentityEq(Always)
 
@@ -102,14 +103,14 @@ normal_first:
     5: IdentityEq(Always)
 ```
 
-- [ ] Add table metadata helpers to fetch a table by SMI id and validate row
-      indices in debug builds.
+- [x] Add table metadata helpers to fetch a table by decoded table id and
+      validate row indices in debug builds.
 
 ## Stage 4: Table Control Helpers
 
 - [ ] Implement cold helpers that inspect table rows from a starting row.
-- [ ] Apply `else_goto` when applicability fails; otherwise fall through to the
-      next row.
+- [ ] Apply `else_skip` when applicability fails: the next row is
+      `row + 1 + else_skip`, so `else_skip = 0` is ordinary fallthrough.
 - [ ] Implement `IfMethodFound` using current special-method lookup.
 - [ ] Treat a found non-callable or non-fast-callable value as a selected
       candidate, not as a missing method.
