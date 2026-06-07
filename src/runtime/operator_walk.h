@@ -40,17 +40,18 @@ namespace cl
 
         static OperatorWalkDescriptor native_result(Value result);
         static OperatorWalkDescriptor propagate_pending_exception();
-        static OperatorWalkDescriptor
-        call_python_function(OperatorStepAction action, uint32_t resume_index,
-                             OperatorOperandOrder operand_order, Value receiver,
-                             const AttributeReadDescriptor &method_descriptor,
-                             ShapeKey arg_shape_key, TValue<Function> function,
-                             uint32_t n_args, FunctionCallAdaptation adaptation,
-                             bool has_self);
-        static OperatorWalkDescriptor
-        call_trusted_handler(OperatorStepAction action, Value receiver,
-                             const AttributeReadDescriptor &method_descriptor,
-                             ShapeKey arg_shape_key, TrustedHandler handler);
+        static OperatorWalkDescriptor call_python_function(
+            OperatorStepAction action, uint32_t resume_index,
+            OperatorOperandOrder operand_order, Value receiver,
+            const AttributeReadDescriptor &method_descriptor,
+            ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
+            ShapeKey operand2_shape_key, TValue<Function> function,
+            uint32_t n_args, FunctionCallAdaptation adaptation, bool has_self);
+        static OperatorWalkDescriptor call_trusted_handler(
+            OperatorStepAction action, Value receiver,
+            const AttributeReadDescriptor &method_descriptor,
+            ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
+            ShapeKey operand2_shape_key, TrustedHandler handler);
     };
 
     OperatorWalkDescriptor walk_operator_table(ThreadState *thread,

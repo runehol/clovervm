@@ -2943,7 +2943,7 @@ namespace cl
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
         ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
-        ShapeKey arg_shape_key = ShapeKey::from_value(key);
+        ShapeKey key_shape_key = ShapeKey::from_value(key);
         VirtualMachine *vm = thread->get_machine();
         TValue<String> method_name =
             vm->get_or_create_interned_string_value(L"__getitem__");
@@ -2952,13 +2952,13 @@ namespace cl
         Value callable;
         Value self;
         MethodCallTargetStatus target_status;
-        if(cache.method_read_cache.matches(receiver))
+        if(cache.method_read_matches_operand0(receiver))
         {
             target_status = prepare_method_call_target_from_plan(
-                receiver, cache.method_read_cache.plan, callable, self);
+                receiver, cache.method_read_plan, callable, self);
             if(target_status == MethodCallTargetStatus::Ready)
             {
-                cache.arg_shape_key = arg_shape_key;
+                cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
             }
         }
         else
@@ -2970,8 +2970,8 @@ namespace cl
             if(target_status == MethodCallTargetStatus::Ready &&
                descriptor.is_cacheable())
             {
-                cache.method_read_cache.populate(receiver, descriptor);
-                cache.arg_shape_key = arg_shape_key;
+                cache.populate_method_read(receiver, descriptor);
+                cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
             }
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
@@ -3008,7 +3008,7 @@ namespace cl
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
         TrustedHandler handler;
-        if(cache.method_read_cache.matches(receiver))
+        if(cache.method_read_matches_operand0(receiver))
         {
             CodeObject *target_code_object =
                 function.extract()->code_object.extract();
@@ -3016,7 +3016,7 @@ namespace cl
             {
                 TrustedHandler resolved_handler =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, arg_shape_key, ShapeKey{},
+                        vm, receiver_shape_key, key_shape_key, ShapeKey{},
                         TrustedHandlerOperandOrder::Normal);
                 if(resolved_handler.arity == TrustedHandlerArity::Binary)
                 {
@@ -3087,11 +3087,7 @@ namespace cl
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
         OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-        if(unlikely(!cache.method_read_cache.matches(receiver)))
-        {
-            MUSTTAIL return op_get_item_cache_miss(ARGS);
-        }
-        if(unlikely(cache.arg_shape_key != ShapeKey::from_value(key)))
+        if(unlikely(!cache.matches_binary(receiver, key)))
         {
             MUSTTAIL return op_get_item_cache_miss(ARGS);
         }
@@ -3123,7 +3119,8 @@ namespace cl
         Value key = accumulator;
         Value value = fp[value_reg];
         ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
-        ShapeKey arg_shape_key = ShapeKey::from_value(key);
+        ShapeKey key_shape_key = ShapeKey::from_value(key);
+        ShapeKey value_shape_key = ShapeKey::from_value(value);
         VirtualMachine *vm = thread->get_machine();
         TValue<String> method_name =
             vm->get_or_create_interned_string_value(L"__setitem__");
@@ -3132,13 +3129,14 @@ namespace cl
         Value callable;
         Value self;
         MethodCallTargetStatus target_status;
-        if(cache.method_read_cache.matches(receiver))
+        if(cache.method_read_matches_operand0(receiver))
         {
             target_status = prepare_method_call_target_from_plan(
-                receiver, cache.method_read_cache.plan, callable, self);
+                receiver, cache.method_read_plan, callable, self);
             if(target_status == MethodCallTargetStatus::Ready)
             {
-                cache.arg_shape_key = arg_shape_key;
+                cache.populate_ternary_shapes(receiver_shape_key, key_shape_key,
+                                              value_shape_key);
             }
         }
         else
@@ -3150,8 +3148,9 @@ namespace cl
             if(target_status == MethodCallTargetStatus::Ready &&
                descriptor.is_cacheable())
             {
-                cache.method_read_cache.populate(receiver, descriptor);
-                cache.arg_shape_key = arg_shape_key;
+                cache.populate_method_read(receiver, descriptor);
+                cache.populate_ternary_shapes(receiver_shape_key, key_shape_key,
+                                              value_shape_key);
             }
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
@@ -3188,7 +3187,7 @@ namespace cl
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
         TrustedHandler handler;
-        if(cache.method_read_cache.matches(receiver))
+        if(cache.method_read_matches_operand0(receiver))
         {
             CodeObject *target_code_object =
                 function.extract()->code_object.extract();
@@ -3196,7 +3195,7 @@ namespace cl
             {
                 TrustedHandler resolved_handler =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, arg_shape_key, ShapeKey{},
+                        vm, receiver_shape_key, key_shape_key, value_shape_key,
                         TrustedHandlerOperandOrder::Normal);
                 if(resolved_handler.arity == TrustedHandlerArity::Ternary)
                 {
@@ -3273,11 +3272,7 @@ namespace cl
         Value key = accumulator;
         Value value = fp[value_reg];
         OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-        if(unlikely(!cache.method_read_cache.matches(receiver)))
-        {
-            MUSTTAIL return op_set_item_cache_miss(ARGS);
-        }
-        if(unlikely(cache.arg_shape_key != ShapeKey::from_value(key)))
+        if(unlikely(!cache.matches_ternary(receiver, key, value)))
         {
             MUSTTAIL return op_set_item_cache_miss(ARGS);
         }
@@ -3307,7 +3302,7 @@ namespace cl
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
         ShapeKey receiver_shape_key = ShapeKey::from_value(receiver);
-        ShapeKey arg_shape_key = ShapeKey::from_value(key);
+        ShapeKey key_shape_key = ShapeKey::from_value(key);
         VirtualMachine *vm = thread->get_machine();
         TValue<String> method_name =
             vm->get_or_create_interned_string_value(L"__delitem__");
@@ -3316,13 +3311,13 @@ namespace cl
         Value callable;
         Value self;
         MethodCallTargetStatus target_status;
-        if(cache.method_read_cache.matches(receiver))
+        if(cache.method_read_matches_operand0(receiver))
         {
             target_status = prepare_method_call_target_from_plan(
-                receiver, cache.method_read_cache.plan, callable, self);
+                receiver, cache.method_read_plan, callable, self);
             if(target_status == MethodCallTargetStatus::Ready)
             {
-                cache.arg_shape_key = arg_shape_key;
+                cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
             }
         }
         else
@@ -3334,8 +3329,8 @@ namespace cl
             if(target_status == MethodCallTargetStatus::Ready &&
                descriptor.is_cacheable())
             {
-                cache.method_read_cache.populate(receiver, descriptor);
-                cache.arg_shape_key = arg_shape_key;
+                cache.populate_method_read(receiver, descriptor);
+                cache.populate_binary_shapes(receiver_shape_key, key_shape_key);
             }
         }
         if(unlikely(target_status == MethodCallTargetStatus::Missing))
@@ -3372,7 +3367,7 @@ namespace cl
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
         TrustedHandler handler;
-        if(cache.method_read_cache.matches(receiver))
+        if(cache.method_read_matches_operand0(receiver))
         {
             CodeObject *target_code_object =
                 function.extract()->code_object.extract();
@@ -3380,7 +3375,7 @@ namespace cl
             {
                 TrustedHandler resolved_handler =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, arg_shape_key, ShapeKey{},
+                        vm, receiver_shape_key, key_shape_key, ShapeKey{},
                         TrustedHandlerOperandOrder::Normal);
                 if(resolved_handler.arity == TrustedHandlerArity::Binary)
                 {
@@ -3451,11 +3446,7 @@ namespace cl
         Value receiver = fp[receiver_reg];
         Value key = accumulator;
         OperatorInlineCache &cache = code_object->operator_caches[cache_idx];
-        if(unlikely(!cache.method_read_cache.matches(receiver)))
-        {
-            MUSTTAIL return op_del_item_cache_miss(ARGS);
-        }
-        if(unlikely(cache.arg_shape_key != ShapeKey::from_value(key)))
+        if(unlikely(!cache.matches_binary(receiver, key)))
         {
             MUSTTAIL return op_del_item_cache_miss(ARGS);
         }

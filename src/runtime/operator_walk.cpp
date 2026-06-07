@@ -30,7 +30,8 @@ namespace cl
         OperatorStepAction action, uint32_t resume_index,
         OperatorOperandOrder operand_order, Value receiver,
         const AttributeReadDescriptor &method_descriptor,
-        ShapeKey arg_shape_key, TValue<Function> function, uint32_t n_args,
+        ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
+        ShapeKey operand2_shape_key, TValue<Function> function, uint32_t n_args,
         FunctionCallAdaptation adaptation, bool has_self)
     {
         OperatorWalkDescriptor descriptor;
@@ -39,7 +40,8 @@ namespace cl
         descriptor.resume_index = resume_index;
         descriptor.operand_order = operand_order;
         descriptor.cache_entry = OperatorInlineCache::python_function_call(
-            receiver, method_descriptor, arg_shape_key, function.extract(),
+            receiver, method_descriptor, operand0_shape_key, operand1_shape_key,
+            operand2_shape_key, function.extract(),
             function.extract()->code_object.extract(), n_args, has_self,
             adaptation);
         return descriptor;
@@ -48,13 +50,15 @@ namespace cl
     OperatorWalkDescriptor OperatorWalkDescriptor::call_trusted_handler(
         OperatorStepAction action, Value receiver,
         const AttributeReadDescriptor &method_descriptor,
-        ShapeKey arg_shape_key, TrustedHandler handler)
+        ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
+        ShapeKey operand2_shape_key, TrustedHandler handler)
     {
         OperatorWalkDescriptor descriptor;
         descriptor.status = OperatorWalkStatus::CallTrustedHandler;
         descriptor.action = action;
         descriptor.cache_entry = OperatorInlineCache::trusted_handler_call(
-            receiver, method_descriptor, arg_shape_key, handler);
+            receiver, method_descriptor, operand0_shape_key, operand1_shape_key,
+            operand2_shape_key, handler);
         return descriptor;
     }
 
@@ -157,8 +161,6 @@ namespace cl
                 reflected ? OperatorOperandOrder::Reflected
                           : OperatorOperandOrder::Normal;
             Value receiver = reflected ? operand1 : operand0;
-            ShapeKey arg_shape_key =
-                reflected ? operand0_shape_key : operand1_shape_key;
 
             AttributeReadDescriptor method_descriptor =
                 AttributeReadDescriptor::not_found();
@@ -233,13 +235,14 @@ namespace cl
             if(handler.arity == TrustedHandlerArity::Binary)
             {
                 return OperatorWalkDescriptor::call_trusted_handler(
-                    step.action, receiver, method_descriptor, arg_shape_key,
+                    step.action, receiver, method_descriptor,
+                    operand0_shape_key, operand1_shape_key, ShapeKey{},
                     handler);
             }
             return OperatorWalkDescriptor::call_python_function(
                 step.action, index + 1, operand_order, receiver,
-                method_descriptor, arg_shape_key, function, n_args, adaptation,
-                has_self);
+                method_descriptor, operand0_shape_key, operand1_shape_key,
+                ShapeKey{}, function, n_args, adaptation, has_self);
         }
 
         debug_operator_table_exhausted();

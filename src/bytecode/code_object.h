@@ -13,6 +13,7 @@
 #include "object_model/value.h"
 #include "object_model/vm_array.h"
 #include <algorithm>
+#include <cassert>
 #include <clovervm/native_module.h>
 #include <cstdint>
 #include <vector>
@@ -239,8 +240,10 @@ namespace cl
 
     struct OperatorInlineCache
     {
-        AttributeReadInlineCache method_read_cache;
-        ShapeKey arg_shape_key;
+        ShapeKey operand_shape_keys[3];
+        ValidityCell *method_lookup_validity_cell = nullptr;
+        AttributeReadPlan method_read_plan =
+            AttributeReadDescriptor::not_found().plan;
         TrustedHandler handler;
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
@@ -248,13 +251,74 @@ namespace cl
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
         bool has_self = false;
 
+        ALWAYSINLINE bool method_read_matches_operand0(Value receiver) const
+        {
+            return operand_shape_keys[0] == ShapeKey::from_value(receiver) &&
+                   method_lookup_validity_cell != nullptr &&
+                   method_lookup_validity_cell->is_valid();
+        }
+
+        ALWAYSINLINE bool matches_unary(Value operand0) const
+        {
+            return operand_shape_keys[0] == ShapeKey::from_value(operand0) &&
+                   method_lookup_validity_cell != nullptr &&
+                   method_lookup_validity_cell->is_valid();
+        }
+
+        ALWAYSINLINE bool matches_binary(Value operand0, Value operand1) const
+        {
+            return operand_shape_keys[0] == ShapeKey::from_value(operand0) &&
+                   operand_shape_keys[1] == ShapeKey::from_value(operand1) &&
+                   method_lookup_validity_cell != nullptr &&
+                   method_lookup_validity_cell->is_valid();
+        }
+
+        ALWAYSINLINE bool matches_ternary(Value operand0, Value operand1,
+                                          Value operand2) const
+        {
+            return operand_shape_keys[0] == ShapeKey::from_value(operand0) &&
+                   operand_shape_keys[1] == ShapeKey::from_value(operand1) &&
+                   operand_shape_keys[2] == ShapeKey::from_value(operand2) &&
+                   method_lookup_validity_cell != nullptr &&
+                   method_lookup_validity_cell->is_valid();
+        }
+
+        void populate_method_read(Value receiver,
+                                  const AttributeReadDescriptor &descriptor)
+        {
+            assert(receiver.is_ptr());
+            assert(descriptor.is_cacheable());
+            method_lookup_validity_cell = descriptor.lookup_validity_cell;
+            method_read_plan = descriptor.plan;
+        }
+
+        void populate_binary_shapes(ShapeKey operand0_shape_key,
+                                    ShapeKey operand1_shape_key)
+        {
+            operand_shape_keys[0] = operand0_shape_key;
+            operand_shape_keys[1] = operand1_shape_key;
+            operand_shape_keys[2] = ShapeKey{};
+        }
+
+        void populate_ternary_shapes(ShapeKey operand0_shape_key,
+                                     ShapeKey operand1_shape_key,
+                                     ShapeKey operand2_shape_key)
+        {
+            operand_shape_keys[0] = operand0_shape_key;
+            operand_shape_keys[1] = operand1_shape_key;
+            operand_shape_keys[2] = operand2_shape_key;
+        }
+
         static OperatorInlineCache python_function_call(
             Value receiver, const AttributeReadDescriptor &method_descriptor,
-            ShapeKey arg_shape_key, Function *function, CodeObject *code_object,
-            uint32_t n_args, bool has_self, FunctionCallAdaptation adaptation)
+            ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
+            ShapeKey operand2_shape_key, Function *function,
+            CodeObject *code_object, uint32_t n_args, bool has_self,
+            FunctionCallAdaptation adaptation)
         {
             OperatorInlineCache cache;
-            cache.arg_shape_key = arg_shape_key;
+            cache.populate_ternary_shapes(
+                operand0_shape_key, operand1_shape_key, operand2_shape_key);
             cache.function = function;
             cache.code_object = code_object;
             cache.n_args = n_args;
@@ -262,30 +326,34 @@ namespace cl
             cache.has_self = has_self;
             if(method_descriptor.is_cacheable() && receiver.is_ptr())
             {
-                cache.method_read_cache.populate(receiver, method_descriptor);
+                cache.populate_method_read(receiver, method_descriptor);
             }
             return cache;
         }
 
-        static OperatorInlineCache
-        trusted_handler_call(Value receiver,
-                             const AttributeReadDescriptor &method_descriptor,
-                             ShapeKey arg_shape_key, TrustedHandler handler)
+        static OperatorInlineCache trusted_handler_call(
+            Value receiver, const AttributeReadDescriptor &method_descriptor,
+            ShapeKey operand0_shape_key, ShapeKey operand1_shape_key,
+            ShapeKey operand2_shape_key, TrustedHandler handler)
         {
             OperatorInlineCache cache;
-            cache.arg_shape_key = arg_shape_key;
+            cache.populate_ternary_shapes(
+                operand0_shape_key, operand1_shape_key, operand2_shape_key);
             cache.handler = handler;
             if(method_descriptor.is_cacheable() && receiver.is_ptr())
             {
-                cache.method_read_cache.populate(receiver, method_descriptor);
+                cache.populate_method_read(receiver, method_descriptor);
             }
             return cache;
         }
 
         void clear()
         {
-            method_read_cache.clear();
-            arg_shape_key = ShapeKey{};
+            operand_shape_keys[0] = ShapeKey{};
+            operand_shape_keys[1] = ShapeKey{};
+            operand_shape_keys[2] = ShapeKey{};
+            method_lookup_validity_cell = nullptr;
+            method_read_plan = AttributeReadDescriptor::not_found().plan;
             handler = TrustedHandler::none();
             function = nullptr;
             code_object = nullptr;
