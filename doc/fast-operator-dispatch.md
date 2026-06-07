@@ -315,8 +315,9 @@ codegen. The paired byte is part of the logical `AddSmi` instruction for code
 object construction, source-offset accounting, static bytecode walking, and
 ordinary disassembly.
 
-If an operator opcode enters a cached Python candidate, it stores a hidden
-continuation prefix in the caller frame before the callee-visible arguments.
+If an operator opcode enters a Python candidate for a table-driven protocol, it
+stores a hidden continuation prefix in the caller frame before the
+callee-visible arguments.
 The opcode asks for `get_first_free_arg_encoded_reg()` and lays out logical
 continuation registers followed by call arguments:
 
@@ -812,7 +813,7 @@ miss means the opcode's direct guards failed and it is about to run the generic
 or table-driven protocol from the beginning. That path may replace the IC entry
 for the opcode's cache index.
 
-Continuation opcodes do not install or update IC entries. After a cached Python
+Continuation opcodes do not install or update IC entries. After a Python
 candidate has returned to `CheckOperatorNotImplemented`, the continuation path
 executes the remaining protocol to completion. It may recompute lookups, call
 later candidates, raise, or return a result, but it must leave the cache state
@@ -831,20 +832,21 @@ For multi-candidate and table-driven fallback protocols:
 2. Recompute applicability and lookup results at each step.
 3. Prefer a complete trusted native handler when the current table state can be
    collapsed under the operand shape guards.
-4. Otherwise stop at the first cacheable Python candidate. While still
-   executing the primary opcode from the beginning of the protocol, before any
-   Python candidate has been entered, the opcode may install that candidate in
-   the inline cache. The installed entry carries its table reference and
-   candidate index.
-5. Whether the Python candidate was reached by a cache hit or by miss-path table
-   walking, the opcode writes the per-call continuation prefix into the caller
-   frame and enters the function with the paired `CheckOperatorNotImplemented`
-   byte as the return PC.
-6. Once any Python candidate has been called, the operation is committed to the
+4. The first multi-candidate implementation is cacheless for Python candidates.
+   It still stops table walking at the first callable Python candidate, writes
+   the per-call continuation prefix into the caller frame, and enters the
+   function with the paired `CheckOperatorNotImplemented` byte as the return
+   PC, but it does not install a dunder-call replay plan for that table row.
+5. Once any Python candidate has been called, the operation is committed to the
    continuation path for the rest of that dynamic execution. A later candidate
    reached after an earlier Python candidate returned `NotImplemented` must not
    install or update an inline-cache entry; the continuation has no cache object
    to update and must run to completion from saved operands and current lookups.
+
+Python-candidate inline caching for multi-candidate tables can be added later
+once skipped-row validation is represented in the cache payload. A cached table
+row must prove that every earlier row that could change the selected action is
+still inapplicable or otherwise safely skipped.
 
 Exception paths must not install direct handlers. If lookup, binding, call
 validation, or execution raises, propagate the pending exception and leave cache
@@ -854,6 +856,11 @@ state unchanged unless the operation has an explicit negative-cache design.
 
 - Should trusted handlers require exact builtin type guards, or can some use
   shape guards that imply the same dunder-method lookup semantics?
+- How should cache hit validation represent skipped rows in branched tables? If
+  a future cache entry starts at row 3 or row 4, it must prove that earlier
+  branch rows still would not run. The core invariant requires this generally,
+  but the cache payload fields for skipped applicability dependencies are not
+  yet specified.
 - How much of binary, in-place, and comparison cache validation can share one
   table walker without obscuring hot opcode paths?
 - Which odd callable shapes, if any, should be supported by cached Python
