@@ -285,6 +285,8 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "TestIn");
             case cl::Bytecode::TestNotIn:
                 return format_to(out, "TestNotIn");
+            case cl::Bytecode::CheckOperatorNotImplemented:
+                return format_to(out, "CheckOperatorNotImplemented");
 
             case cl::Bytecode::AddSmi:
                 return format_to(out, "AddSmi");
@@ -831,6 +833,7 @@ template <> struct fmt::formatter<cl::CodeObject>
             case cl::Bytecode::Plus:
             case cl::Bytecode::Sqrt:
             case cl::Bytecode::BitwiseNot:
+            case cl::Bytecode::CheckOperatorNotImplemented:
                 break;
 
             case cl::Bytecode::CallPositional:

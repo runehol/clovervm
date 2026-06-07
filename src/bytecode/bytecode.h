@@ -112,6 +112,7 @@ namespace cl
         TestIsNot,
         TestIn,
         TestNotIn,
+        CheckOperatorNotImplemented,
 
         // binary on smi. acc op smi
         AddSmi,

@@ -66,18 +66,14 @@ Checklist:
 
 ## Stage 2: Bytecode Shape
 
-- [ ] Add `CheckOperatorNotImplemented` to the bytecode enum.
-- [ ] Add interpreter dispatch table entry for `CheckOperatorNotImplemented`.
-- [ ] Implement only a skeleton `CheckOperatorNotImplemented` handler at this
+- [x] Add `CheckOperatorNotImplemented` to the bytecode enum.
+- [x] Add interpreter dispatch table entry for `CheckOperatorNotImplemented`.
+- [x] Implement only a skeleton `CheckOperatorNotImplemented` handler at this
       stage; it should not yet be reachable from emitted `==` bytecode.
-- [ ] Update bytecode printing so paired operator instructions hide the check
-      byte in ordinary disassembly.
-- [ ] Add runtime tracing support that can still show
+- [x] Add runtime tracing support that can still show
       `CheckOperatorNotImplemented` when it is actually reached as a return
       target.
-- [ ] Add shared code object walking/instruction-length support for paired
-      operator opcodes.
-- [ ] Keep existing `==` emission on the old path until the table walker,
+- [x] Keep existing `==` emission on the old path until the table walker,
       continuation prefix, Python candidate entry, and check-opcode resume path
       are wired together.
 
@@ -176,6 +172,10 @@ normal_first:
       `CompareEq` table dispatch.
 - [ ] Add or update a codegen emit helper for real `==` emission that emits
       both `TestEqual` and `CheckOperatorNotImplemented`.
+- [ ] Update bytecode printing so paired operator instructions hide the check
+      byte in ordinary disassembly.
+- [ ] Add shared code object walking/instruction-length support for paired
+      operator opcodes.
 - [ ] Enable `TestEqual`'s paired-instruction length so it owns the following
       check byte as one logical instruction once real `==` emission produces
       the pair.

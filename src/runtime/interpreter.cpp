@@ -3730,6 +3730,19 @@ namespace cl
         COMPLETE();
     }
 
+    NOINLINE static INTERP_CC Value op_check_operator_not_implemented(PARAMS)
+    {
+        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
+            thread, fp, pc, code_object, L"SystemError",
+            L"CheckOperatorNotImplemented reached before operator continuation "
+            L"support is enabled");
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+        START(0);
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_negate(PARAMS)
     {
         START_UNARY_ACC();
@@ -5331,6 +5344,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::TestLessEqual, op_test_less_equal);
         SET_TABLE_ENTRY(Bytecode::TestGreaterEqual, op_test_greater_equal);
         SET_TABLE_ENTRY(Bytecode::TestGreater, op_test_greater);
+        SET_TABLE_ENTRY(Bytecode::CheckOperatorNotImplemented,
+                        op_check_operator_not_implemented);
 
         SET_TABLE_ENTRY(Bytecode::LdaGlobal, op_lda_global);
         SET_TABLE_ENTRY(Bytecode::StaGlobal, op_sta_global);
