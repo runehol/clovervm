@@ -206,10 +206,24 @@ namespace cl
         CL_PROPAGATE_EXCEPTION(require_str_receiver(self, L"__getitem__"));
         if(can_convert_to<Slice>(index_value))
         {
-            NormalizedSlice slice = CL_TRY(normalize_slice_for_length(
-                thread, TValue<Slice>::from_value_assumed(index_value),
-                self.get_ptr<String>()->count.extract()));
-            return self.get_ptr<String>()->get_slice(thread, slice).raw_value();
+            TValue<Slice> slice =
+                TValue<Slice>::from_value_assumed(index_value);
+            if(slice.extract()->step.raw_value().is_none())
+            {
+                NormalizedBinarySlice normalized =
+                    CL_TRY(normalize_binary_slice_for_length(
+                        thread, slice,
+                        self.get_ptr<String>()->count.extract()));
+                return self.get_ptr<String>()
+                    ->get_slice(thread, normalized)
+                    .raw_value();
+            }
+            NormalizedTernarySlice normalized =
+                CL_TRY(normalize_ternary_slice_for_length(
+                    thread, slice, self.get_ptr<String>()->count.extract()));
+            return self.get_ptr<String>()
+                ->get_slice(thread, normalized)
+                .raw_value();
         }
         int64_t py_idx = 0;
         CL_PROPAGATE_EXCEPTION(require_smi_index(
@@ -417,7 +431,15 @@ namespace cl
     }
 
     TValue<String> String::get_slice(ThreadState *thread,
-                                     const NormalizedSlice &slice) const
+                                     const NormalizedBinarySlice &slice) const
+    {
+        return thread->make_object_value<String>(
+            std::wstring_view(&data[static_cast<size_t>(slice.start)],
+                              slice.selected_sequence_length));
+    }
+
+    TValue<String> String::get_slice(ThreadState *thread,
+                                     const NormalizedTernarySlice &slice) const
     {
         TValue<String> result =
             thread->make_object_value<String>(TValue<SMI>::from_smi(

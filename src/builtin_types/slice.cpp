@@ -67,104 +67,6 @@ namespace cl
         return slice;
     }
 
-    static Expected<int64_t> slice_field_to_smi(Value value)
-    {
-        if(!value.is_smi())
-        {
-            return Expected<int64_t>::raise_exception(
-                L"TypeError",
-                L"slice indices must be integers or None or have an "
-                L"__index__ method");
-        }
-        return Expected<int64_t>::ok(value.get_smi());
-    }
-
-    Expected<NormalizedSlice>
-    normalize_slice_for_length(ThreadState *thread, TValue<Slice> slice,
-                               int64_t sequence_length)
-    {
-        (void)thread;
-        if(sequence_length < 0)
-        {
-            return Expected<NormalizedSlice>::raise_exception(
-                L"ValueError", L"length should not be negative");
-        }
-
-        Slice *raw_slice = slice.extract();
-        int64_t step = 1;
-        if(!raw_slice->step.raw_value().is_none())
-        {
-            step = CL_TRY(slice_field_to_smi(raw_slice->step));
-            if(step == 0)
-            {
-                return Expected<NormalizedSlice>::raise_exception(
-                    L"ValueError", L"slice step cannot be zero");
-            }
-        }
-
-        int64_t start = 0;
-        if(raw_slice->start.raw_value().is_none())
-        {
-            start = step < 0 ? sequence_length - 1 : 0;
-        }
-        else
-        {
-            start = CL_TRY(slice_field_to_smi(raw_slice->start));
-            if(start < 0)
-            {
-                start += sequence_length;
-            }
-            if(start < 0)
-            {
-                start = step < 0 ? -1 : 0;
-            }
-            else if(start >= sequence_length)
-            {
-                start = step < 0 ? sequence_length - 1 : sequence_length;
-            }
-        }
-
-        int64_t stop = 0;
-        if(raw_slice->stop.raw_value().is_none())
-        {
-            stop = step < 0 ? -1 : sequence_length;
-        }
-        else
-        {
-            stop = CL_TRY(slice_field_to_smi(raw_slice->stop));
-            if(stop < 0)
-            {
-                stop += sequence_length;
-            }
-            if(stop < 0)
-            {
-                stop = step < 0 ? -1 : 0;
-            }
-            else if(stop >= sequence_length)
-            {
-                stop = step < 0 ? sequence_length - 1 : sequence_length;
-            }
-        }
-
-        size_t selected_sequence_length = 0;
-        if(step < 0)
-        {
-            if(stop < start)
-            {
-                selected_sequence_length =
-                    static_cast<size_t>((start - stop - 1) / (-step) + 1);
-            }
-        }
-        else if(start < stop)
-        {
-            selected_sequence_length =
-                static_cast<size_t>((stop - start - 1) / step + 1);
-        }
-
-        return Expected<NormalizedSlice>::ok(
-            NormalizedSlice{start, stop, step, selected_sequence_length});
-    }
-
     static Value native_slice_new(ThreadState *thread, Value cls_value,
                                   Value args_value)
     {
@@ -224,8 +126,13 @@ namespace cl
         TValue<Slice> slice = CL_TRY(TValue<Slice>::from_value_or_raise(
             self, L"TypeError", L"slice.indices expects a slice receiver"));
         int64_t sequence_length = CL_TRY(slice_field_to_smi(length_value));
-        NormalizedSlice normalized =
-            CL_TRY(normalize_slice_for_length(thread, slice, sequence_length));
+        if(sequence_length < 0)
+        {
+            return thread->set_pending_builtin_exception_string(
+                L"ValueError", L"length should not be negative");
+        }
+        NormalizedTernarySlice normalized = CL_TRY(
+            normalize_ternary_slice_for_length(thread, slice, sequence_length));
 
         TValue<Tuple> result = thread->make_object_value<Tuple>(3);
         result.extract()->initialize_item_unchecked(

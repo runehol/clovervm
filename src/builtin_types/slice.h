@@ -46,7 +46,13 @@ namespace cl
                   sizeof(SlotObject) + Slice::kStepSlot * sizeof(Value));
     static_assert(std::is_trivially_destructible_v<Slice>);
 
-    struct NormalizedSlice
+    struct NormalizedBinarySlice
+    {
+        int64_t start;
+        size_t selected_sequence_length;
+    };
+
+    struct NormalizedTernarySlice
     {
         int64_t start;
         int64_t stop;
@@ -54,11 +60,108 @@ namespace cl
         size_t selected_sequence_length;
     };
 
+    ALWAYSINLINE Expected<int64_t> slice_field_to_smi(Value value)
+    {
+        if(!value.is_smi())
+        {
+            return Expected<int64_t>::raise_exception(
+                L"TypeError",
+                L"slice indices must be integers or None or have an "
+                L"__index__ method");
+        }
+        return Expected<int64_t>::ok(value.get_smi());
+    }
+
+    ALWAYSINLINE int64_t normalize_slice_field(int64_t index,
+                                               int64_t sequence_length,
+                                               int64_t lower, int64_t upper)
+    {
+        if(index < 0)
+        {
+            index += sequence_length;
+        }
+        if(index < lower)
+        {
+            return lower;
+        }
+        if(index > upper)
+        {
+            return upper;
+        }
+        return index;
+    }
+
+    ALWAYSINLINE size_t selected_sequence_length_for_ternary_slice(
+        int64_t start, int64_t stop, int64_t step)
+    {
+        if(step < 0)
+        {
+            return stop < start
+                       ? static_cast<size_t>((start - stop - 1) / (-step) + 1)
+                       : 0;
+        }
+        return start < stop ? static_cast<size_t>((stop - start - 1) / step + 1)
+                            : 0;
+    }
+
     [[nodiscard]] TValue<Slice> make_slice(ThreadState *thread, Value start,
                                            Value stop, Value step);
-    [[nodiscard]] Expected<NormalizedSlice>
-    normalize_slice_for_length(ThreadState *thread, TValue<Slice> slice,
-                               int64_t sequence_length);
+    [[nodiscard]] ALWAYSINLINE Expected<NormalizedBinarySlice>
+    normalize_binary_slice_for_length(ThreadState *thread, TValue<Slice> slice,
+                                      int64_t sequence_length)
+    {
+        (void)thread;
+        Slice *raw_slice = slice.extract();
+        int64_t start = raw_slice->start.raw_value().is_none()
+                            ? 0
+                            : normalize_slice_field(
+                                  CL_TRY(slice_field_to_smi(raw_slice->start)),
+                                  sequence_length, 0, sequence_length);
+        int64_t stop = raw_slice->stop.raw_value().is_none()
+                           ? sequence_length
+                           : normalize_slice_field(
+                                 CL_TRY(slice_field_to_smi(raw_slice->stop)),
+                                 sequence_length, 0, sequence_length);
+        size_t selected_sequence_length =
+            start < stop ? static_cast<size_t>(stop - start) : 0;
+        return Expected<NormalizedBinarySlice>::ok(
+            NormalizedBinarySlice{start, selected_sequence_length});
+    }
+
+    [[nodiscard]] ALWAYSINLINE Expected<NormalizedTernarySlice>
+    normalize_ternary_slice_for_length(ThreadState *thread, TValue<Slice> slice,
+                                       int64_t sequence_length)
+    {
+        (void)thread;
+        Slice *raw_slice = slice.extract();
+        int64_t step = 1;
+        if(!raw_slice->step.raw_value().is_none())
+        {
+            step = CL_TRY(slice_field_to_smi(raw_slice->step));
+            if(step == 0)
+            {
+                return Expected<NormalizedTernarySlice>::raise_exception(
+                    L"ValueError", L"slice step cannot be zero");
+            }
+        }
+
+        int64_t lower = step < 0 ? -1 : 0;
+        int64_t upper = step < 0 ? sequence_length - 1 : sequence_length;
+        int64_t start = raw_slice->start.raw_value().is_none()
+                            ? (step < 0 ? sequence_length - 1 : 0)
+                            : normalize_slice_field(
+                                  CL_TRY(slice_field_to_smi(raw_slice->start)),
+                                  sequence_length, lower, upper);
+        int64_t stop = raw_slice->stop.raw_value().is_none()
+                           ? (step < 0 ? -1 : sequence_length)
+                           : normalize_slice_field(
+                                 CL_TRY(slice_field_to_smi(raw_slice->stop)),
+                                 sequence_length, lower, upper);
+        size_t selected_sequence_length =
+            selected_sequence_length_for_ternary_slice(start, stop, step);
+        return Expected<NormalizedTernarySlice>::ok(NormalizedTernarySlice{
+            start, stop, step, selected_sequence_length});
+    }
 
     BuiltinClassDefinition make_slice_class(VirtualMachine *vm);
     void install_slice_class_methods(VirtualMachine *vm);

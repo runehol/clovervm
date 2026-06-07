@@ -88,10 +88,21 @@ namespace cl
         CL_PROPAGATE_EXCEPTION(require_list_receiver(self, L"__getitem__"));
         if(can_convert_to<Slice>(index_value))
         {
-            NormalizedSlice slice = CL_TRY(normalize_slice_for_length(
-                thread, TValue<Slice>::from_value_assumed(index_value),
-                static_cast<int64_t>(self.get_ptr<List>()->size())));
-            return self.get_ptr<List>()->get_slice(slice).raw_value();
+            TValue<Slice> slice =
+                TValue<Slice>::from_value_assumed(index_value);
+            if(slice.extract()->step.raw_value().is_none())
+            {
+                NormalizedBinarySlice normalized =
+                    CL_TRY(normalize_binary_slice_for_length(
+                        thread, slice,
+                        static_cast<int64_t>(self.get_ptr<List>()->size())));
+                return self.get_ptr<List>()->get_slice(normalized).raw_value();
+            }
+            NormalizedTernarySlice normalized =
+                CL_TRY(normalize_ternary_slice_for_length(
+                    thread, slice,
+                    static_cast<int64_t>(self.get_ptr<List>()->size())));
+            return self.get_ptr<List>()->get_slice(normalized).raw_value();
         }
         int64_t py_idx = 0;
         CL_PROPAGATE_EXCEPTION(require_smi_index(
@@ -560,7 +571,21 @@ namespace cl
         return item_unchecked(idx);
     }
 
-    TValue<List> List::get_slice(const NormalizedSlice &slice) const
+    TValue<List> List::get_slice(const NormalizedBinarySlice &slice) const
+    {
+        TValue<List> result =
+            make_object_value<List>(slice.selected_sequence_length);
+        for(size_t write_idx = 0; write_idx < slice.selected_sequence_length;
+            ++write_idx)
+        {
+            result.extract()->set_item_unchecked(
+                write_idx, item_unchecked(static_cast<size_t>(
+                               slice.start + static_cast<int64_t>(write_idx))));
+        }
+        return result;
+    }
+
+    TValue<List> List::get_slice(const NormalizedTernarySlice &slice) const
     {
         TValue<List> result =
             make_object_value<List>(slice.selected_sequence_length);

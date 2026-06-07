@@ -2074,29 +2074,27 @@ TEST(Interpreter, slice_indices_rejects_invalid_consumed_values)
         L"slice indices must be integers or None or have an __index__ method");
 }
 
-TEST(Interpreter, normalize_slice_for_length_computes_selected_length)
+TEST(Interpreter, normalize_slice_helpers_compute_selected_length)
 {
     test::VmTestContext test_context;
     ThreadState::ActivationScope activation_scope(test_context.thread());
 
     TValue<Slice> forward =
         make_slice(test_context.thread(), Value::from_smi(1),
-                   Value::from_smi(8), Value::from_smi(2));
-    Expected<NormalizedSlice> forward_result =
-        normalize_slice_for_length(test_context.thread(), forward, 10);
+                   Value::from_smi(8), Value::None());
+    Expected<NormalizedBinarySlice> forward_result =
+        normalize_binary_slice_for_length(test_context.thread(), forward, 10);
     ASSERT_TRUE(forward_result.has_value());
-    NormalizedSlice forward_normalized = forward_result.value();
+    NormalizedBinarySlice forward_normalized = forward_result.value();
     EXPECT_EQ(1, forward_normalized.start);
-    EXPECT_EQ(8, forward_normalized.stop);
-    EXPECT_EQ(2, forward_normalized.step);
-    EXPECT_EQ(4u, forward_normalized.selected_sequence_length);
+    EXPECT_EQ(7u, forward_normalized.selected_sequence_length);
 
     TValue<Slice> reverse = make_slice(test_context.thread(), Value::None(),
                                        Value::None(), Value::from_smi(-1));
-    Expected<NormalizedSlice> reverse_result =
-        normalize_slice_for_length(test_context.thread(), reverse, 5);
+    Expected<NormalizedTernarySlice> reverse_result =
+        normalize_ternary_slice_for_length(test_context.thread(), reverse, 5);
     ASSERT_TRUE(reverse_result.has_value());
-    NormalizedSlice reverse_normalized = reverse_result.value();
+    NormalizedTernarySlice reverse_normalized = reverse_result.value();
     EXPECT_EQ(4, reverse_normalized.start);
     EXPECT_EQ(-1, reverse_normalized.stop);
     EXPECT_EQ(-1, reverse_normalized.step);
