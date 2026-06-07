@@ -82,6 +82,24 @@ namespace cl
             this->data[n_chars] = 0;  // zero terminate for good measure
         }
 
+        String(ClassObject *cls, std::wstring_view str)
+            : Object(cls, native_layout),
+              count(TValue<SMI>::from_smi(str.size()))
+        {
+            size_t n_chars = count.extract();
+            memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
+            this->data[n_chars] = 0;  // zero terminate for good measure
+        }
+
+        String(std::wstring_view str)
+            : Object(BootstrapObjectTag{}, native_layout),
+              count(TValue<SMI>::from_smi(str.size()))
+        {
+            size_t n_chars = count.extract();
+            memcpy(&this->data[0], str.data(), n_chars * sizeof(cl_wchar));
+            this->data[n_chars] = 0;  // zero terminate for good measure
+        }
+
         String(ClassObject *cls, TValue<SMI> _count)
             : Object(cls, native_layout), count(_count)
         {
@@ -117,6 +135,10 @@ namespace cl
         {
             return sizeof(String) + str.size() * sizeof(cl_wchar);
         }
+        static size_t size_for(std::wstring_view str)
+        {
+            return sizeof(String) + str.size() * sizeof(cl_wchar);
+        }
         static size_t size_for(const cl_wchar *str)
         {
             return sizeof(String) + wcslen(str) * sizeof(cl_wchar);
@@ -138,6 +160,10 @@ namespace cl
             return size_for(str);
         }
         static size_t size_for(ClassObject *, const std::wstring &str)
+        {
+            return size_for(str);
+        }
+        static size_t size_for(ClassObject *, std::wstring_view str)
         {
             return size_for(str);
         }

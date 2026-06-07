@@ -410,7 +410,7 @@ namespace cl
             return active_thread()->set_pending_builtin_exception_string(
                 L"IndexError", L"string index out of range");
         }
-        std::wstring result(1, data[static_cast<size_t>(normalized)]);
+        std::wstring_view result(&data[static_cast<size_t>(normalized)], 1);
         return active_thread()->make_object_value<String>(result).raw_value();
     }
 
