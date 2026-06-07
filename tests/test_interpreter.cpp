@@ -1600,6 +1600,139 @@ TEST(Interpreter, arithmetic_reports_unsupported_operands)
                         L"unsupported operand type(s) for comparison");
 }
 
+TEST(Interpreter, DISABLED_operator_eq_spike_returns_non_bool_result_unchanged)
+{
+    expect_string_result(L"class EqResult:\n"
+                         L"    def __eq__(self, other):\n"
+                         L"        return 'sentinel'\n"
+                         L"EqResult() == EqResult()\n",
+                         L"sentinel");
+}
+
+TEST(Interpreter,
+     DISABLED_operator_eq_spike_identity_fallback_after_notimplemented)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(
+        Value::from_smi(10),
+        test_context.run_file(L"class EqResult:\n"
+                              L"    def __eq__(self, other):\n"
+                              L"        return NotImplemented\n"
+                              L"same = EqResult()\n"
+                              L"different = EqResult()\n"
+                              L"(same == same) * 10 + (same == different)\n"));
+}
+
+TEST(Interpreter, DISABLED_operator_eq_spike_same_exact_type_double_dispatch)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(2),
+              test_context.run_file(L"class EqResult:\n"
+                                    L"    count = 0\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        EqResult.count += 1\n"
+                                    L"        return NotImplemented\n"
+                                    L"EqResult() == EqResult()\n"
+                                    L"EqResult.count\n"));
+}
+
+TEST(Interpreter, DISABLED_operator_eq_spike_right_subclass_reflected_priority)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(7),
+              test_context.run_file(L"class Base:\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        return 3\n"
+                                    L"class Derived(Base):\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        return 7\n"
+                                    L"Base() == Derived()\n"));
+}
+
+TEST(Interpreter, DISABLED_operator_eq_spike_reloads_after_notimplemented)
+{
+    test::VmTestContext test_context;
+
+    EXPECT_EQ(Value::from_smi(101),
+              test_context.run_file(L"class EqResult:\n"
+                                    L"    count = 0\n"
+                                    L"    def __eq__(self, other):\n"
+                                    L"        EqResult.count += 1\n"
+                                    L"        def replacement(self, other):\n"
+                                    L"            EqResult.count += 100\n"
+                                    L"            return 42\n"
+                                    L"        EqResult.__eq__ = replacement\n"
+                                    L"        return NotImplemented\n"
+                                    L"EqResult() == EqResult()\n"
+                                    L"EqResult.count\n"));
+}
+
+TEST(Interpreter,
+     DISABLED_operator_eq_spike_found_non_callable_raises_call_error)
+{
+    expect_python_error(L"class EqResult:\n"
+                        L"    __eq__ = 123\n"
+                        L"EqResult() == EqResult()\n",
+                        L"TypeError", L"object is not callable");
+}
+
+TEST(Interpreter,
+     DISABLED_operator_eq_spike_lookup_and_call_exceptions_propagate)
+{
+    expect_python_error(L"class RaisesFromLookup:\n"
+                        L"    class Descriptor:\n"
+                        L"        def __get__(self, obj, cls):\n"
+                        L"            raise ValueError\n"
+                        L"    __eq__ = Descriptor()\n"
+                        L"RaisesFromLookup() == RaisesFromLookup()\n",
+                        L"ValueError", L"");
+    expect_python_error(L"class RaisesFromCall:\n"
+                        L"    def __eq__(self, other):\n"
+                        L"        raise ValueError\n"
+                        L"RaisesFromCall() == RaisesFromCall()\n",
+                        L"ValueError", L"");
+}
+
+TEST(Interpreter, DISABLED_operator_eq_spike_exceptions_do_not_install_cache)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"eq"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"class EqResult:\n"
+                                  L"    fail = True\n"
+                                  L"    def __eq__(self, other):\n"
+                                  L"        if EqResult.fail:\n"
+                                  L"            raise ValueError\n"
+                                  L"        return 9\n"
+                                  L"def eq(left, right):\n"
+                                  L"    return left == right\n"
+                                  L"left = EqResult()\n"
+                                  L"right = EqResult()\n"
+                                  L"caught = 0\n"
+                                  L"try:\n"
+                                  L"    eq(left, right)\n"
+                                  L"except ValueError:\n"
+                                  L"    caught = 1\n"
+                                  L"EqResult.fail = False\n"
+                                  L"caught * 10 + eq(left, right)\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::from_smi(19), actual);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    EXPECT_TRUE(function_code->operator_caches.empty());
+}
+
 TEST(Interpreter, shortcutting_boolean_operators_return_operand_values)
 {
     test::VmTestContext test_context;

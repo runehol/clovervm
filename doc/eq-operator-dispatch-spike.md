@@ -55,13 +55,13 @@ Semantic facts to preserve:
 
 Checklist:
 
-- [ ] Add focused interpreter tests for non-bool rich-comparison results.
-- [ ] Add interpreter tests for equality identity fallback.
-- [ ] Add interpreter tests for same-exact-type double `__eq__` dispatch.
-- [ ] Add interpreter tests for right-subclass reflected-priority ordering.
-- [ ] Add adversarial tests for class mutation before returning
+- [x] Add focused interpreter tests for non-bool rich-comparison results.
+- [x] Add interpreter tests for equality identity fallback.
+- [x] Add interpreter tests for same-exact-type double `__eq__` dispatch.
+- [x] Add interpreter tests for right-subclass reflected-priority ordering.
+- [x] Add adversarial tests for class mutation before returning
       `NotImplemented`.
-- [ ] Add tests that exceptions raised during lookup, binding, or method
+- [x] Add tests that exceptions raised during lookup, binding, or method
       execution propagate and do not update operator caches.
 
 ## Stage 2: Bytecode Shape
