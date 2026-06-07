@@ -14,6 +14,7 @@ namespace cl
         Tuple,
         Dict,
         SlotDict,
+        Slice,
         Float,
         Function,
         RangeIterator,

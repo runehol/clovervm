@@ -16,6 +16,7 @@
 #include "builtin_types/none_type.h"
 #include "builtin_types/not_implemented_type.h"
 #include "builtin_types/range_iterator.h"
+#include "builtin_types/slice.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
 #include "builtin_types/unicode.h"
@@ -692,6 +693,7 @@ namespace cl
         register_builtin_class(make_list_class(this));
         register_builtin_class(make_dict_class(this));
         register_builtin_class(make_slotdict_class(this));
+        register_builtin_class(make_slice_class(this));
         register_builtin_class(make_float_class(this));
         register_builtin_class(make_module_class(this));
         register_builtin_class(make_module_loader_class(this));
@@ -770,6 +772,7 @@ namespace cl
         install_tuple_class_methods(this);
         install_dict_class_methods(this);
         install_slotdict_class_methods(this);
+        install_slice_class_methods(this);
         install_float_class_methods(this);
         install_module_class_methods(this);
 

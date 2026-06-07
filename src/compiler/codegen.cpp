@@ -1257,6 +1257,56 @@ namespace cl
             return Expected<void>::ok();
         }
 
+        Expected<void> codegen_slice_part_into_register(uint32_t source_offset,
+                                                        int32_t part_idx,
+                                                        uint32_t reg)
+        {
+            if(part_idx >= 0)
+            {
+                CL_TRY(codegen_node_into_specific_register(part_idx, reg));
+            }
+            else
+            {
+                CL_TRY(code_obj->emit_lda_none(source_offset));
+                CL_TRY(code_obj->emit_star(source_offset, reg));
+            }
+            return Expected<void>::ok();
+        }
+
+        Expected<void> codegen_slice_literal(int32_t node_idx)
+        {
+            AstChildren children = av.children[node_idx];
+            assert(children.size() == 3);
+            uint32_t source_offset = av.source_offsets[node_idx];
+
+            TemporaryReg start_reg(*code_obj);
+            CL_TRY(codegen_slice_part_into_register(source_offset, children[0],
+                                                    start_reg));
+
+            if(children[2] < 0)
+            {
+                if(children[1] >= 0)
+                {
+                    CL_TRY(codegen_node(children[1]));
+                }
+                else
+                {
+                    CL_TRY(code_obj->emit_lda_none(source_offset));
+                }
+                CL_TRY(code_obj->emit_create_binary_slice(source_offset,
+                                                          start_reg));
+                return Expected<void>::ok();
+            }
+
+            TemporaryReg stop_reg(*code_obj);
+            CL_TRY(codegen_slice_part_into_register(source_offset, children[1],
+                                                    stop_reg));
+            CL_TRY(codegen_node(children[2]));
+            CL_TRY(code_obj->emit_create_ternary_slice(source_offset, start_reg,
+                                                       stop_reg));
+            return Expected<void>::ok();
+        }
+
         Expected<void> codegen_subscript_assignment(int32_t node_idx)
         {
             AstKind kind = av.kinds[node_idx];
@@ -2692,6 +2742,10 @@ namespace cl
                             source_offset, receiver_reg.reg, constant_idx));
                         break;
                     }
+
+                case AstNodeKind::EXPRESSION_SLICE:
+                    CL_TRY(codegen_slice_literal(node_idx));
+                    break;
 
                 case AstNodeKind::STATEMENT_SEQUENCE:
                 case AstNodeKind::STATEMENT_EXPRESSION:

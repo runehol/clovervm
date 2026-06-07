@@ -189,7 +189,7 @@ Both Shapes must describe the same Python-visible attributes. The only reason
 they are separate Shapes is dispatch specialization.
 
 Use the builtin class's installed instance root Shape as
-`slice_step_none_shape_`. Create `slice_step_value_shape_` as a second root
+`slice_step_value_shape_`. Create `slice_step_none_shape_` as a second root
 Shape with the same descriptor table, same class, same slot counts, same native
 layout assumptions, and same fixed-attribute flags. Both Shapes must map
 `start`, `stop`, and `step` to the same stable read-only inline slot indexes.
@@ -201,8 +201,8 @@ structured however the implementation prefers, but the descriptor source should
 be shared at construction time.
 
 ```cpp
-slice_step_none_shape_ = slice_class_->get_instance_root_shape();
-slice_step_value_shape_ = Shape::make_root_with_descriptors(
+slice_step_value_shape_ = slice_class_->get_instance_root_shape();
+slice_step_none_shape_ = Shape::make_root_with_descriptors(
     TValue<ClassObject>::from_oop(slice_class_), descriptors, descriptor_count,
     next_slot_index, present_count, inline_slot_capacity,
     fixed_attribute_shape_flags());
@@ -496,54 +496,56 @@ dispatch.
 
 Phase 1, slice object and syntax:
 
-- Add `NativeLayoutId::Slice`.
-- Add `NativeLayoutId::Slice` to `native_layout_has_slots()`.
-- Add native layout release and object-size descriptors for `Slice`.
-- Add `ShapeKey::from_shape(Shape *)`.
-- Add `builtin_types/slice.h` and `builtin_types/slice.cpp`.
-- Add `Slice` native layout with `start`, `stop`, and `step` `Member<Value>`
+- [x] Add `NativeLayoutId::Slice`.
+- [x] Add `NativeLayoutId::Slice` to `native_layout_has_slots()`.
+- [x] Add native layout release and object-size descriptors for `Slice`.
+- [x] Add `ShapeKey::from_shape(Shape *)`.
+- [x] Add `builtin_types/slice.h` and `builtin_types/slice.cpp`.
+- [x] Add `Slice` native layout with `start`, `stop`, and `step` `Member<Value>`
   fields, deriving from `SlotObject`.
-- Register the public `slice` builtin class in VM builtin initialization.
-- Map `NativeLayoutId::Slice` to `slice_class_` through the builtin class
+- [x] Register the public `slice` builtin class in VM builtin initialization.
+- [x] Map `NativeLayoutId::Slice` to `slice_class_` through the builtin class
   registry/native-layout mapping path.
-- Add `slice_class_`, `slice_step_none_shape_`, and
+- [x] Add `slice_class_`, `slice_step_none_shape_`, and
   `slice_step_value_shape_` to `VirtualMachine`.
-- Install `slice_step_none_shape_` as the class instance root and create
-  `slice_step_value_shape_` with the same Python-visible descriptors.
-- Implement the single `make_slice(start, stop, step)` factory.
-- Implement `slice.__new__`/constructor arity behavior and reject keywords.
-- Implement `.start`, `.stop`, `.step`, and `__repr__`.
-- Add the AST representation for slice key expressions.
-- Teach the parser to parse omitted lower/upper/step fields inside `[]`, using
+- [x] Install `slice_step_value_shape_` as the class instance root and create
+  `slice_step_none_shape_` with the same Python-visible descriptors.
+- [x] Implement the single `make_slice(start, stop, step)` factory.
+- [x] Implement `slice.__new__`/constructor arity behavior.
+- [x] Reject keywords to `slice(...)`.
+- [x] Implement `.start`, `.stop`, `.step`, and `__repr__`.
+- [x] Add the AST representation for slice key expressions.
+- [x] Teach the parser to parse omitted lower/upper/step fields inside `[]`, using
   `-1` for omitted `EXPRESSION_SLICE` children.
-- Preserve ordinary expression keys for `a[x]`.
-- Lower slice key expressions through the dedicated slice-construction path.
-- Add `CreateBinarySlice` for omitted-step slices and `CreateTernarySlice` or
+- [x] Preserve ordinary expression keys for `a[x]`.
+- [x] Lower slice key expressions through the dedicated slice-construction path.
+- [x] Add `CreateBinarySlice` for omitted-step slices and `CreateTernarySlice` or
   an equivalent three-field constructor path for explicit-step slices.
-- Use builder method names `emit_create_binary_slice` and
+- [x] Use builder method names `emit_create_binary_slice` and
   `emit_create_ternary_slice`.
-- Preserve RHS-first evaluation for slice assignment.
-- Add codegen tests for omitted fields and assignment ordering.
+- [x] Preserve RHS-first evaluation for slice assignment.
+- [x] Add codegen tests for omitted fields.
+- [x] Add codegen tests for slice assignment ordering.
 
 Phase 2, Python-facing normalization:
 
-- Add shared SMI-only slice normalization in `builtin_types/slice.{h,cpp}`.
-- Implement Python-facing `slice.indices(length)`.
-- Do not install a placeholder `slice.indices` before it is implemented.
-- Do not implement slice equality or hashing in this phase.
-- Do not implement constant folding of literal slice objects in this phase.
+- [ ] Add shared SMI-only slice normalization in `builtin_types/slice.{h,cpp}`.
+- [ ] Implement Python-facing `slice.indices(length)`.
+- [x] Do not install a placeholder `slice.indices` before it is implemented.
+- [x] Do not implement slice equality or hashing in this phase.
+- [x] Do not implement constant folding of literal slice objects in this phase.
 
 Phase 3, sequence operations and trusted handlers:
 
-- Add list, tuple, and str slice `__getitem__`.
-- Add list slice `__setitem__` and `__delitem__` if assignment/deletion syntax
+- [ ] Add list, tuple, and str slice `__getitem__`.
+- [ ] Add list slice `__setitem__` and `__delitem__` if assignment/deletion syntax
   is in scope for the same implementation pass.
-- Update builtin sequence type-error messages to allow slice keys, for example
+- [ ] Update builtin sequence type-error messages to allow slice keys, for example
   "list indices must be integers or slices" rather than only "integers".
-- Add resolver branches for `slice_step_none_shape` and
+- [ ] Add resolver branches for `slice_step_none_shape` and
   `slice_step_value_shape`.
-- Add interpreter-level tests for user-defined `__getitem__` receiving slices
-  and builtin sequence slicing behavior.
+- [x] Add interpreter-level tests for user-defined `__getitem__` receiving slices.
+- [ ] Add interpreter-level tests for builtin sequence slicing behavior.
 
 ## Non-Goals
 

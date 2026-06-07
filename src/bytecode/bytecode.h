@@ -170,6 +170,8 @@ namespace cl
         CreateDict,
         CreateList,
         CreateTuple,
+        CreateBinarySlice,
+        CreateTernarySlice,
         CreateFunction,
         CreateFunctionWithDefaults,
         CreateClass,

@@ -4,6 +4,7 @@
 #include "builtin_types/float.h"
 #include "builtin_types/list.h"
 #include "builtin_types/range_iterator.h"
+#include "builtin_types/slice.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "bytecode/code_object.h"
@@ -3916,6 +3917,31 @@ namespace cl
         COMPLETE();
     }
 
+    static INTERP_CC Value op_create_binary_slice(PARAMS)
+    {
+        START(2);
+        int8_t start_reg = pc[1];
+
+        accumulator =
+            make_slice(thread, fp[start_reg], accumulator, Value::None())
+                .raw_value();
+
+        COMPLETE();
+    }
+
+    static INTERP_CC Value op_create_ternary_slice(PARAMS)
+    {
+        START(3);
+        int8_t start_reg = pc[1];
+        int8_t stop_reg = pc[2];
+
+        accumulator =
+            make_slice(thread, fp[start_reg], fp[stop_reg], accumulator)
+                .raw_value();
+
+        COMPLETE();
+    }
+
     static INTERP_CC Value op_create_dict(PARAMS)
     {
         START(3);
@@ -5330,6 +5356,8 @@ namespace cl
         SET_TABLE_ENTRY(Bytecode::CreateDict, op_create_dict);
         SET_TABLE_ENTRY(Bytecode::CreateList, op_create_list);
         SET_TABLE_ENTRY(Bytecode::CreateTuple, op_create_tuple);
+        SET_TABLE_ENTRY(Bytecode::CreateBinarySlice, op_create_binary_slice);
+        SET_TABLE_ENTRY(Bytecode::CreateTernarySlice, op_create_ternary_slice);
         SET_TABLE_ENTRY(Bytecode::CreateFunction, op_create_function);
         SET_TABLE_ENTRY(Bytecode::CreateFunctionWithDefaults,
                         op_create_function_with_defaults);

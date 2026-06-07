@@ -69,6 +69,7 @@ namespace cl
         EXPRESSION_SHORTCUTTING_BINARY,
         EXPRESSION_CALL,
         EXPRESSION_ATTRIBUTE,
+        EXPRESSION_SLICE,
 
     };
 
@@ -125,6 +126,7 @@ namespace cl
             case AstNodeKind::EXPRESSION_SHORTCUTTING_BINARY:
             case AstNodeKind::EXPRESSION_CALL:
             case AstNodeKind::EXPRESSION_ATTRIBUTE:
+            case AstNodeKind::EXPRESSION_SLICE:
                 return true;
         }
         return false;
@@ -253,6 +255,10 @@ namespace cl
         else if(k.node_kind == AstNodeKind::EXPRESSION_ATTRIBUTE)
         {
             return ExpressionPrecedence::Primary;
+        }
+        else if(k.node_kind == AstNodeKind::EXPRESSION_SLICE)
+        {
+            return ExpressionPrecedence::Lowest;
         }
         switch(k.operator_kind)
         {

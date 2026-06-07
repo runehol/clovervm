@@ -4,6 +4,7 @@
 #include "builtin_types/list_iterator.h"
 #include "builtin_types/module_object.h"
 #include "builtin_types/range_iterator.h"
+#include "builtin_types/slice.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
@@ -1923,6 +1924,96 @@ TEST(Interpreter, subscript_load_returns_notimplemented_from_dunder_getitem)
     EXPECT_EQ(Value::NotImplemented(), file_runner.return_value);
 }
 
+TEST(Interpreter, subscript_load_passes_binary_slice_object)
+{
+    test::FileRunner file_runner(L"class Bag:\n"
+                                 L"    def __getitem__(self, key):\n"
+                                 L"        return key\n"
+                                 L"Bag()[1:2]\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(can_convert_to<Slice>(actual));
+    Slice *slice = assume_convert_to<Slice>(actual);
+    EXPECT_EQ(Value::from_smi(1), slice->start);
+    EXPECT_EQ(Value::from_smi(2), slice->stop);
+    EXPECT_EQ(Value::None(), slice->step);
+    EXPECT_EQ(file_runner.test_context().vm().slice_step_none_shape(),
+              slice->get_shape());
+}
+
+TEST(Interpreter, subscript_load_passes_ternary_slice_object)
+{
+    test::FileRunner file_runner(L"class Bag:\n"
+                                 L"    def __getitem__(self, key):\n"
+                                 L"        return key\n"
+                                 L"Bag()[1:2:3]\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(can_convert_to<Slice>(actual));
+    Slice *slice = assume_convert_to<Slice>(actual);
+    EXPECT_EQ(Value::from_smi(1), slice->start);
+    EXPECT_EQ(Value::from_smi(2), slice->stop);
+    EXPECT_EQ(Value::from_smi(3), slice->step);
+    EXPECT_EQ(file_runner.test_context().vm().slice_step_value_shape(),
+              slice->get_shape());
+}
+
+TEST(Interpreter, subscript_load_passes_none_for_omitted_slice_bounds)
+{
+    test::FileRunner file_runner(L"class Bag:\n"
+                                 L"    def __getitem__(self, key):\n"
+                                 L"        return key\n"
+                                 L"Bag()[:]\n");
+    Value actual = file_runner.return_value;
+
+    ASSERT_TRUE(can_convert_to<Slice>(actual));
+    Slice *slice = assume_convert_to<Slice>(actual);
+    EXPECT_EQ(Value::None(), slice->start);
+    EXPECT_EQ(Value::None(), slice->stop);
+    EXPECT_EQ(Value::None(), slice->step);
+    EXPECT_EQ(file_runner.test_context().vm().slice_step_none_shape(),
+              slice->get_shape());
+}
+
+TEST(Interpreter, slice_constructor_uses_python_argument_convention)
+{
+    test::FileRunner unary_runner(L"slice(5)\n");
+    Value unary = unary_runner.return_value;
+    ASSERT_TRUE(can_convert_to<Slice>(unary));
+    Slice *unary_slice = assume_convert_to<Slice>(unary);
+    EXPECT_EQ(Value::None(), unary_slice->start);
+    EXPECT_EQ(Value::from_smi(5), unary_slice->stop);
+    EXPECT_EQ(Value::None(), unary_slice->step);
+    EXPECT_EQ(unary_runner.test_context().vm().slice_step_none_shape(),
+              unary_slice->get_shape());
+
+    test::FileRunner ternary_runner(L"slice(1, 2, 3)\n");
+    Value ternary = ternary_runner.return_value;
+    ASSERT_TRUE(can_convert_to<Slice>(ternary));
+    Slice *ternary_slice = assume_convert_to<Slice>(ternary);
+    EXPECT_EQ(Value::from_smi(1), ternary_slice->start);
+    EXPECT_EQ(Value::from_smi(2), ternary_slice->stop);
+    EXPECT_EQ(Value::from_smi(3), ternary_slice->step);
+    EXPECT_EQ(ternary_runner.test_context().vm().slice_step_value_shape(),
+              ternary_slice->get_shape());
+}
+
+TEST(Interpreter, slice_constructor_rejects_keywords)
+{
+    expect_python_error(L"slice(stop=5)\n", L"TypeError",
+                        L"invalid keyword argument");
+}
+
+TEST(Interpreter, slice_repr_shows_all_three_fields)
+{
+    test::FileRunner file_runner(L"repr(slice(1, 2, None))\n");
+
+    ASSERT_TRUE(can_convert_to<String>(file_runner.return_value));
+    EXPECT_STREQ(L"slice(1, 2, None)",
+                 string_as_wchar_t(TValue<String>::from_value_assumed(
+                     file_runner.return_value)));
+}
+
 TEST(Interpreter, subscript_load_observes_replaced_dunder_getitem)
 {
     test::FileRunner file_runner(L"class Bag:\n"
@@ -2112,6 +2203,77 @@ TEST(Interpreter, subscript_load_replaces_cache_for_different_key_shape)
     EXPECT_EQ(FunctionCallAdaptation::FixedArity, cache.adaptation);
 }
 
+TEST(Interpreter, subscript_load_caches_slice_key_shape)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"get"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"class Bag:\n"
+                                  L"    def __getitem__(self, key):\n"
+                                  L"        return 7\n"
+                                  L"def get(obj, stop):\n"
+                                  L"    return obj[:stop]\n"
+                                  L"bag = Bag()\n"
+                                  L"first = get(bag, 1)\n"
+                                  L"second = get(bag, 2)\n"
+                                  L"first * 10 + second\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::from_smi(77), actual);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(1u, function_code->subscript_caches.size());
+    const SubscriptInlineCache &cache = function_code->subscript_caches[0];
+    EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_step_none_shape()),
+              cache.key_shape_key);
+    EXPECT_EQ(test_context.vm().slice_step_none_shape(),
+              test_context.vm().shape_for_key(cache.key_shape_key));
+}
+
+TEST(Interpreter, subscript_load_replaces_cache_for_different_slice_shapes)
+{
+    test::VmTestContext test_context;
+    ThreadState::ActivationScope activation_scope(test_context.thread());
+
+    TValue<String> function_name(
+        test_context.vm().get_or_create_interned_string_value(L"get"));
+    CodeObject *code_obj =
+        test_context.compile_file(L"class Bag:\n"
+                                  L"    def __getitem__(self, key):\n"
+                                  L"        return 7\n"
+                                  L"def get(obj, use_step):\n"
+                                  L"    if use_step:\n"
+                                  L"        return obj[1:2:3]\n"
+                                  L"    return obj[1:2]\n"
+                                  L"bag = Bag()\n"
+                                  L"first = get(bag, False)\n"
+                                  L"second = get(bag, True)\n"
+                                  L"first * 10 + second\n");
+
+    Value actual = test_context.thread()->run_clovervm_code_object(code_obj);
+    EXPECT_EQ(Value::from_smi(77), actual);
+
+    Value function_value =
+        load_global_from_module_for_test(code_obj, function_name);
+    ASSERT_TRUE(can_convert_to<Function>(function_value));
+    CodeObject *function_code =
+        assume_convert_to<Function>(function_value)->code_object.extract();
+    ASSERT_EQ(2u, function_code->subscript_caches.size());
+    const SubscriptInlineCache &step_cache = function_code->subscript_caches[0];
+    const SubscriptInlineCache &none_cache = function_code->subscript_caches[1];
+    EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_step_value_shape()),
+              step_cache.key_shape_key);
+    EXPECT_EQ(ShapeKey::from_shape(test_context.vm().slice_step_none_shape()),
+              none_cache.key_shape_key);
+}
+
 TEST(Interpreter, subscript_store_calls_user_defined_dunder_setitem)
 {
     test::FileRunner file_runner(L"class Bag:\n"
@@ -2173,6 +2335,38 @@ TEST(Interpreter, annotated_subscript_assignment_evaluates_rhs_before_target)
                                  L"xs[0] * 10 + xs[1]\n");
 
     EXPECT_EQ(Value::from_smi(7), file_runner.return_value);
+}
+
+TEST(Interpreter,
+     slice_subscript_assignment_evaluates_rhs_then_target_then_slice)
+{
+    test::FileRunner file_runner(
+        L"order = 0\n"
+        L"def mark(expected):\n"
+        L"    global order\n"
+        L"    if order == expected:\n"
+        L"        order += 1\n"
+        L"        return 1\n"
+        L"    return 100\n"
+        L"def rhs():\n"
+        L"    return mark(0)\n"
+        L"def make_obj():\n"
+        L"    mark(1)\n"
+        L"    return Bag()\n"
+        L"def start():\n"
+        L"    return mark(2)\n"
+        L"def stop():\n"
+        L"    return mark(3)\n"
+        L"class Bag:\n"
+        L"    def __setitem__(self, key, value):\n"
+        L"        global order\n"
+        L"        if value == 1 and key.start == 1 and key.stop == 1 and "
+        L"key.step is None and order == 4:\n"
+        L"            order = 9\n"
+        L"make_obj()[start():stop()] = rhs()\n"
+        L"order\n");
+
+    EXPECT_EQ(Value::from_smi(9), file_runner.return_value);
 }
 
 TEST(Interpreter, subscript_store_replaces_cache_for_different_key_shape)

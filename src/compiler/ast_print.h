@@ -226,6 +226,26 @@ template <> struct fmt::formatter<cl::AstVector>
                               ast_print_string_constant(av, node_idx))));
                 break;
 
+            case cl::AstNodeKind::EXPRESSION_SLICE:
+                if(children[0] >= 0)
+                {
+                    render_node(av, out, children[0], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                }
+                format_to(out, ":");
+                if(children[1] >= 0)
+                {
+                    render_node(av, out, children[1], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                }
+                if(children[2] >= 0)
+                {
+                    format_to(out, ":");
+                    render_node(av, out, children[2], indent,
+                                cl::ExpressionPrecedence::Lowest);
+                }
+                break;
+
             case cl::AstNodeKind::EXPRESSION_COMPARISON_FRAGMENT:
                 cl::fatal("AST comparison fragment should be handled by "
                           "EXPRESSION_COMPARISON");

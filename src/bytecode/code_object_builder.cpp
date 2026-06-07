@@ -553,6 +553,24 @@ namespace cl
     }
 
     Expected<uint32_t>
+    CodeObjectBuilder::emit_create_binary_slice(uint32_t source_offset,
+                                                uint32_t start_reg)
+    {
+        return emit_opcode_reg(source_offset, Bytecode::CreateBinarySlice,
+                               start_reg);
+    }
+
+    Expected<uint32_t> CodeObjectBuilder::emit_create_ternary_slice(
+        uint32_t source_offset, uint32_t start_reg, uint32_t stop_reg)
+    {
+        uint32_t result =
+            emplace_back(source_offset, uint8_t(Bytecode::CreateTernarySlice));
+        emplace_back(source_offset, encode_reg(start_reg));
+        emplace_back(source_offset, encode_reg(stop_reg));
+        return Expected<uint32_t>::ok(result);
+    }
+
+    Expected<uint32_t>
     CodeObjectBuilder::emit_create_class(uint32_t source_offset,
                                          uint8_t body_constant_idx,
                                          uint32_t first_arg_reg)

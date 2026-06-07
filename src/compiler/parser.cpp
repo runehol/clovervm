@@ -1067,7 +1067,7 @@ namespace cl
                     case Token::LSQB:
                         {
                             uint32_t source_pos = source_pos_and_advance();
-                            int32_t index = CL_TRY(expression());
+                            int32_t index = CL_TRY(subscript_key(source_pos));
                             CL_TRY(consume(Token::RSQB));
                             result = ast.emplace_back(
                                 AstKind(AstNodeKind::EXPRESSION_BINARY,
@@ -1080,6 +1080,53 @@ namespace cl
                         return Expected<int32_t>::ok(result);
                 }
             }
+        }
+
+        Expected<int32_t> subscript_key(uint32_t source_pos)
+        {
+            int32_t lower = -1;
+            int32_t upper = -1;
+            int32_t step = -1;
+
+            if(peek() != Token::COLON)
+            {
+                lower = CL_TRY(expression());
+                if(peek() != Token::COLON)
+                {
+                    if(peek() == Token::COMMA)
+                    {
+                        return Expected<int32_t>::raise_exception(
+                            L"SyntaxError",
+                            L"multidimensional subscripts are not "
+                            L"implemented yet");
+                    }
+                    return Expected<int32_t>::ok(lower);
+                }
+            }
+
+            CL_TRY(consume(Token::COLON));
+            if(peek() != Token::COLON && peek() != Token::RSQB &&
+               peek() != Token::COMMA)
+            {
+                upper = CL_TRY(expression());
+            }
+            if(match(Token::COLON))
+            {
+                if(peek() != Token::RSQB && peek() != Token::COMMA)
+                {
+                    step = CL_TRY(expression());
+                }
+            }
+            if(peek() == Token::COMMA)
+            {
+                return Expected<int32_t>::raise_exception(
+                    L"SyntaxError",
+                    L"multidimensional subscripts are not implemented yet");
+            }
+
+            return Expected<int32_t>::ok(
+                ast.emplace_back(AstNodeKind::EXPRESSION_SLICE, source_pos,
+                                 AstChildren{lower, upper, step}));
         }
 
         Expected<int32_t> arguments() { return args(); }

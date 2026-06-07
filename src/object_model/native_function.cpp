@@ -11,10 +11,22 @@
 
 namespace cl
 {
+    enum class NativeFunctionKind
+    {
+        Intrinsic,
+        Extension,
+    };
+
+    static bool has_varargs(NativeFunctionParameterMode parameter_mode)
+    {
+        return parameter_mode == NativeFunctionParameterMode::VarArgs;
+    }
+
     static Expected<TValue<Function>> make_native_function_with_target(
         VirtualMachine *vm, TValue<String> name, NativeFunctionTarget target,
         Bytecode call_opcode, uint32_t n_parameters,
-        Optional<TValue<String>> docstring, bool is_extension,
+        Optional<TValue<String>> docstring, NativeFunctionKind function_kind,
+        NativeFunctionParameterMode parameter_mode,
         Optional<TValue<Tuple>> default_parameters =
             Optional<TValue<Tuple>>::none(),
         TrustedHandlerResolver trusted_handler_resolver = nullptr)
@@ -22,8 +34,14 @@ namespace cl
         CodeObjectBuilder builder(vm, nullptr, vm->global_builtins_module(),
                                   nullptr, name);
         builder.n_parameters() = n_parameters;
-        builder.n_positional_parameters() = n_parameters;
-        builder.function_signature().n_pos_or_kw_parameters = n_parameters;
+        builder.n_positional_parameters() =
+            has_varargs(parameter_mode) ? n_parameters - 1 : n_parameters;
+        builder.function_signature().n_pos_or_kw_parameters =
+            builder.n_positional_parameters();
+        if(has_varargs(parameter_mode))
+        {
+            builder.parameter_flags() |= FunctionParameterFlags::HasVarArgs;
+        }
         if(default_parameters.has_value())
         {
             uint32_t n_defaults =
@@ -36,7 +54,7 @@ namespace cl
         }
         uint32_t target_idx =
             CL_TRY(builder.add_native_function_target(target));
-        if(is_extension)
+        if(function_kind == NativeFunctionKind::Extension)
         {
             CL_TRY(builder.emit_call_extension(0, call_opcode,
                                                uint8_t(target_idx)));
@@ -69,8 +87,10 @@ namespace cl
     {
         return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(L"<native>"), target,
-            call_opcode, n_parameters, Optional<TValue<String>>::none(), false,
-            default_parameters, trusted_handler_resolver);
+            call_opcode, n_parameters, Optional<TValue<String>>::none(),
+            NativeFunctionKind::Intrinsic,
+            NativeFunctionParameterMode::FixedArity, default_parameters,
+            trusted_handler_resolver);
     }
 
     static Bytecode call_intrinsic_opcode_for_arity(uint32_t n_parameters)
@@ -186,6 +206,12 @@ namespace cl
         return method;
     }
 
+    BuiltinIntrinsicMethod with_varargs(BuiltinIntrinsicMethod method)
+    {
+        method.parameter_mode = NativeFunctionParameterMode::VarArgs;
+        return method;
+    }
+
     BuiltinIntrinsicMethod
     with_trusted_handler_resolver(BuiltinIntrinsicMethod method,
                                   TrustedHandlerResolver resolver)
@@ -286,7 +312,8 @@ namespace cl
         return make_native_function_with_target(
             vm, vm->get_or_create_interned_string_value(method.name),
             method.target, call_intrinsic_opcode_for_arity(method.n_parameters),
-            method.n_parameters, docstring, false, method.default_parameters,
+            method.n_parameters, docstring, NativeFunctionKind::Intrinsic,
+            method.parameter_mode, method.default_parameters,
             method.trusted_handler_resolver);
     }
 
@@ -298,7 +325,9 @@ namespace cl
         NativeFunctionTarget target;
         target.extension0 = function;
         return make_native_function_with_target(
-            vm, name, target, Bytecode::CallExtension0, 0, docstring, true);
+            vm, name, target, Bytecode::CallExtension0, 0, docstring,
+            NativeFunctionKind::Extension,
+            NativeFunctionParameterMode::FixedArity);
     }
 
     Expected<TValue<Function>>
@@ -309,7 +338,9 @@ namespace cl
         NativeFunctionTarget target;
         target.extension1 = function;
         return make_native_function_with_target(
-            vm, name, target, Bytecode::CallExtension1, 1, docstring, true);
+            vm, name, target, Bytecode::CallExtension1, 1, docstring,
+            NativeFunctionKind::Extension,
+            NativeFunctionParameterMode::FixedArity);
     }
 
     Expected<TValue<Function>>
@@ -320,7 +351,9 @@ namespace cl
         NativeFunctionTarget target;
         target.extension2 = function;
         return make_native_function_with_target(
-            vm, name, target, Bytecode::CallExtension2, 2, docstring, true);
+            vm, name, target, Bytecode::CallExtension2, 2, docstring,
+            NativeFunctionKind::Extension,
+            NativeFunctionParameterMode::FixedArity);
     }
 
     Expected<TValue<Function>>
@@ -331,7 +364,9 @@ namespace cl
         NativeFunctionTarget target;
         target.extension3 = function;
         return make_native_function_with_target(
-            vm, name, target, Bytecode::CallExtension3, 3, docstring, true);
+            vm, name, target, Bytecode::CallExtension3, 3, docstring,
+            NativeFunctionKind::Extension,
+            NativeFunctionParameterMode::FixedArity);
     }
 
     Expected<TValue<Function>>
@@ -342,7 +377,9 @@ namespace cl
         NativeFunctionTarget target;
         target.extension4 = function;
         return make_native_function_with_target(
-            vm, name, target, Bytecode::CallExtension4, 4, docstring, true);
+            vm, name, target, Bytecode::CallExtension4, 4, docstring,
+            NativeFunctionKind::Extension,
+            NativeFunctionParameterMode::FixedArity);
     }
 
     Expected<TValue<Function>>
@@ -353,7 +390,9 @@ namespace cl
         NativeFunctionTarget target;
         target.extension5 = function;
         return make_native_function_with_target(
-            vm, name, target, Bytecode::CallExtension5, 5, docstring, true);
+            vm, name, target, Bytecode::CallExtension5, 5, docstring,
+            NativeFunctionKind::Extension,
+            NativeFunctionParameterMode::FixedArity);
     }
 
     Expected<TValue<Function>>
@@ -364,7 +403,9 @@ namespace cl
         NativeFunctionTarget target;
         target.extension6 = function;
         return make_native_function_with_target(
-            vm, name, target, Bytecode::CallExtension6, 6, docstring, true);
+            vm, name, target, Bytecode::CallExtension6, 6, docstring,
+            NativeFunctionKind::Extension,
+            NativeFunctionParameterMode::FixedArity);
     }
 
     Expected<TValue<Function>>
@@ -375,7 +416,9 @@ namespace cl
         NativeFunctionTarget target;
         target.extension7 = function;
         return make_native_function_with_target(
-            vm, name, target, Bytecode::CallExtension7, 7, docstring, true);
+            vm, name, target, Bytecode::CallExtension7, 7, docstring,
+            NativeFunctionKind::Extension,
+            NativeFunctionParameterMode::FixedArity);
     }
 
     Expected<void>

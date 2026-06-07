@@ -11,6 +11,12 @@ namespace cl
     class Tuple;
     class VirtualMachine;
 
+    enum class NativeFunctionParameterMode
+    {
+        FixedArity,
+        VarArgs,
+    };
+
     struct BuiltinIntrinsicMethod
     {
         const wchar_t *name;
@@ -18,6 +24,8 @@ namespace cl
         uint32_t n_parameters;
         const wchar_t *doc;
         Optional<TValue<Tuple>> default_parameters;
+        NativeFunctionParameterMode parameter_mode =
+            NativeFunctionParameterMode::FixedArity;
         TrustedHandlerResolver trusted_handler_resolver = nullptr;
     };
 
@@ -47,6 +55,7 @@ namespace cl
                              const wchar_t *doc = nullptr);
     BuiltinIntrinsicMethod with_defaults(BuiltinIntrinsicMethod method,
                                          TValue<Tuple> defaults);
+    BuiltinIntrinsicMethod with_varargs(BuiltinIntrinsicMethod method);
     BuiltinIntrinsicMethod
     with_trusted_handler_resolver(BuiltinIntrinsicMethod method,
                                   TrustedHandlerResolver resolver);

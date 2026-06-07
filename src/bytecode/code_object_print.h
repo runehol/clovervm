@@ -394,6 +394,10 @@ template <> struct fmt::formatter<cl::Bytecode>
                 return format_to(out, "IsInstanceOfKnownClass");
             case cl::Bytecode::CreateList:
                 return format_to(out, "CreateList");
+            case cl::Bytecode::CreateBinarySlice:
+                return format_to(out, "CreateBinarySlice");
+            case cl::Bytecode::CreateTernarySlice:
+                return format_to(out, "CreateTernarySlice");
             case cl::Bytecode::CreateTuple:
                 return format_to(out, "CreateTuple");
             case cl::Bytecode::BuildClass:
@@ -951,6 +955,18 @@ template <> struct fmt::formatter<cl::CodeObject>
                     print_reg_span(out, code_obj, first_reg,
                                    static_cast<uint8_t>(n_entries * 2));
                 }
+                break;
+
+            case cl::Bytecode::CreateBinarySlice:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                break;
+
+            case cl::Bytecode::CreateTernarySlice:
+                format_to(out, " ");
+                disassemble_reg(code_obj, out, pc++);
+                format_to(out, ", ");
+                disassemble_reg(code_obj, out, pc++);
                 break;
 
             case cl::Bytecode::CreateFunction:

@@ -427,6 +427,17 @@ namespace cl
                         return validate_global_declaration_expression(
                             state, children[0]);
 
+                    case AstNodeKind::EXPRESSION_SLICE:
+                        for(int32_t child_idx: children)
+                        {
+                            if(child_idx >= 0)
+                            {
+                                CL_TRY(validate_global_declaration_expression(
+                                    state, child_idx));
+                            }
+                        }
+                        return Expected<void>::ok();
+
                     default:
                         for(int32_t child_idx: children)
                         {
@@ -716,7 +727,10 @@ namespace cl
 
                 for(int32_t child_idx: children)
                 {
-                    collect_global_declarations(analysis, child_idx);
+                    if(child_idx >= 0)
+                    {
+                        collect_global_declarations(analysis, child_idx);
+                    }
                 }
             }
 
@@ -849,7 +863,10 @@ namespace cl
 
                 for(int32_t child_idx: children)
                 {
-                    collect_code_object_bindings(analysis, child_idx);
+                    if(child_idx >= 0)
+                    {
+                        collect_code_object_bindings(analysis, child_idx);
+                    }
                 }
             }
 
@@ -1032,7 +1049,11 @@ namespace cl
 
                 for(int32_t child_idx: children)
                 {
-                    collect_local_touches_into(analysis, child_idx, touches);
+                    if(child_idx >= 0)
+                    {
+                        collect_local_touches_into(analysis, child_idx,
+                                                   touches);
+                    }
                 }
             }
 
@@ -1799,6 +1820,17 @@ namespace cl
                     case AstNodeKind::STATEMENT_PASS:
                     case AstNodeKind::STATEMENT_GLOBAL:
                     case AstNodeKind::STATEMENT_NONLOCAL:
+                        return fallthrough_summary(state);
+
+                    case AstNodeKind::EXPRESSION_SLICE:
+                        for(int32_t child_idx: children)
+                        {
+                            if(child_idx >= 0)
+                            {
+                                analyze_child_as_expression(analysis, child_idx,
+                                                            state);
+                            }
+                        }
                         return fallthrough_summary(state);
 
                     default:

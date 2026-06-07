@@ -340,6 +340,11 @@ namespace cl
         Expected<uint32_t> emit_create_dict(uint32_t source_offset,
                                             uint32_t first_reg,
                                             uint8_t n_entries);
+        Expected<uint32_t> emit_create_binary_slice(uint32_t source_offset,
+                                                    uint32_t start_reg);
+        Expected<uint32_t> emit_create_ternary_slice(uint32_t source_offset,
+                                                     uint32_t start_reg,
+                                                     uint32_t stop_reg);
         Expected<uint32_t> emit_create_class(uint32_t source_offset,
                                              uint8_t body_constant_idx,
                                              uint32_t first_arg_reg);

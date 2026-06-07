@@ -1347,6 +1347,58 @@ TEST(Codegen, subscript_load_uses_receiver_reg_and_accumulator_key)
     EXPECT_EQ(expected, actual);
 }
 
+TEST(Codegen, subscript_load_builds_binary_slice_key)
+{
+    const wchar_t *test_case = L"def get(obj, stop):\n"
+                               L"    return obj[:stop]\n";
+
+    std::string expected =
+        "Code object:\n"
+        "    0 CreateFunction c[0]\n"
+        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    5 Return\n"
+        "Constant 0: Code object:\n"
+        "    0 LdaNone\n"
+        "    1 Star0\n"
+        "    2 Ldar p1\n"
+        "    4 CreateBinarySlice r0\n"
+        "    6 GetItem p0, subscript_ic[0]\n"
+        "    9 Return\n"
+        "   10 LdaNone\n"
+        "   11 Return\n"
+        "\n"
+        "Constant 1: \"get\"\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, subscript_load_builds_ternary_slice_key)
+{
+    const wchar_t *test_case = L"def get(obj, start, stop, step):\n"
+                               L"    return obj[start:stop:step]\n";
+
+    std::string expected =
+        "Code object:\n"
+        "    0 CreateFunction c[0]\n"
+        "    2 StaGlobal c[1], module_global_mutation_ic[0]\n"
+        "    5 Return\n"
+        "Constant 0: Code object:\n"
+        "    0 Mov r0, p1\n"
+        "    3 Mov r1, p2\n"
+        "    6 Ldar p3\n"
+        "    8 CreateTernarySlice r0, r1\n"
+        "   11 GetItem p0, subscript_ic[0]\n"
+        "   14 Return\n"
+        "   15 LdaNone\n"
+        "   16 Return\n"
+        "\n"
+        "Constant 1: \"get\"\n";
+    std::string actual = bytecode_str_from_file(test_case);
+
+    EXPECT_EQ(expected, actual);
+}
+
 TEST(Codegen, subscript_store_uses_receiver_value_regs_and_accumulator_key)
 {
     const wchar_t *test_case = L"def set(obj, idx, value):\n"
@@ -1367,6 +1419,29 @@ TEST(Codegen, subscript_store_uses_receiver_value_regs_and_accumulator_key)
     std::string actual = bytecode_str_from_file(test_case);
 
     EXPECT_EQ(expected, actual);
+}
+
+TEST(Codegen, slice_subscript_store_evaluates_rhs_before_slice_fields)
+{
+    const wchar_t *test_case = L"def assign(obj, start, stop, value):\n"
+                               L"    obj[start():stop()] = value()\n";
+
+    std::string actual = bytecode_str_from_file(test_case);
+    size_t value_call = actual.find("CallPositional r0, {r2:0}");
+    size_t start_call = actual.find("CallPositional r2, {r4:0}, call_ic[1]");
+    size_t stop_call = actual.find("CallPositional r2, {r4:0}, call_ic[2]");
+    size_t slice_create = actual.find("CreateBinarySlice");
+    size_t set_item = actual.find("SetItem p0");
+
+    ASSERT_NE(std::string::npos, value_call);
+    ASSERT_NE(std::string::npos, start_call);
+    ASSERT_NE(std::string::npos, stop_call);
+    ASSERT_NE(std::string::npos, slice_create);
+    ASSERT_NE(std::string::npos, set_item);
+    EXPECT_LT(value_call, start_call);
+    EXPECT_LT(start_call, stop_call);
+    EXPECT_LT(stop_call, slice_create);
+    EXPECT_LT(slice_create, set_item);
 }
 
 TEST(Codegen, subscript_delete_uses_receiver_reg_and_accumulator_key)

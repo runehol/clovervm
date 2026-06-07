@@ -10,6 +10,7 @@
 #include "builtin_types/module_object.h"
 #include "builtin_types/module_spec_object.h"
 #include "builtin_types/range_iterator.h"
+#include "builtin_types/slice.h"
 #include "builtin_types/str.h"
 #include "builtin_types/tuple.h"
 #include "builtin_types/tuple_iterator.h"
@@ -46,6 +47,7 @@
     V(Function);                                                               \
     V(Dict);                                                                   \
     V(SlotDict);                                                               \
+    V(Slice);                                                                  \
     V(String);                                                                 \
     V(Instance);                                                               \
     V(CodeObject);                                                             \

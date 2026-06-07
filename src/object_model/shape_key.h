@@ -26,6 +26,12 @@ namespace cl
             return ShapeKey(uintptr_t(value.as.integer) & value_tag_mask);
         }
 
+        static ALWAYSINLINE ShapeKey from_shape(Shape *shape)
+        {
+            assert(shape != nullptr);
+            return ShapeKey(reinterpret_cast<uintptr_t>(shape));
+        }
+
         bool is_valid() const { return bits != invalid_bits; }
 
         bool operator==(ShapeKey other) const { return bits == other.bits; }

@@ -94,6 +94,8 @@ add_library(libclovervm_objects OBJECT
     object_model/shape.h
     object_model/slot_dict.cpp
     object_model/slot_dict.h
+    builtin_types/slice.cpp
+    builtin_types/slice.h
     compiler/source_text.cpp
     compiler/source_text.h
     compiler/token.cpp
