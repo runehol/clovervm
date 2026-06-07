@@ -403,14 +403,18 @@ Useful initial applicability cases:
 ```text
 Always                  fallback step; no method lookup
 IfMethodFound           call only if the named method resolves
-IfMethodFoundDistinct   call only if the named method resolves and is not a
-                        duplicate of a candidate the protocol has already tried
+IfMethodFoundAndOperands01TypesDiffer
+                        call only if the named method resolves and operand0
+                        and operand1 have different types
 ```
 
+Table sketches below write the applicability as the final item in each row
+action for compactness, for example `CallBinary("<name>", IfMethodFound)`.
+
 Table operands are semantic protocol operands, not necessarily source operands.
-For example, `a in b` should compile to `Contains` with `lhs = b` and
-`rhs = a`, because the primary dunder name is `__contains__` and the protocol
-receiver is the container.
+For example, `a in b` should compile to `Contains` with `operand0 = b` and
+`operand1 = a`, because the primary dunder name is `__contains__` and the
+protocol receiver is the container.
 
 ## Table Inventory
 
@@ -431,14 +435,14 @@ Template:
 
 ```text
 Binary<Verb>NormalFirst
-    0: CallBinary("<normal>")
-    1: CallBinaryReflected("<reflected>")
-    2: RaiseUnsupported
+    0: CallBinary("<normal>", IfMethodFound)
+    1: CallBinaryReflected("<reflected>", IfMethodFoundAndOperands01TypesDiffer)
+    2: RaiseUnsupported(Always)
 
 Binary<Verb>ReflectedFirst
-    0: CallBinaryReflected("<reflected>")
-    1: CallBinary("<normal>")
-    2: RaiseUnsupported
+    0: CallBinaryReflected("<reflected>", IfMethodFound)
+    1: CallBinary("<normal>", IfMethodFound)
+    2: RaiseUnsupported(Always)
 ```
 
 Rows:
@@ -473,16 +477,16 @@ Template:
 
 ```text
 InPlace<Verb>NormalFirstFallback
-    0: CallBinary("<inplace>")
-    1: CallBinary("<normal>")
-    2: CallBinaryReflected("<reflected>")
-    3: RaiseUnsupported
+    0: CallBinary("<inplace>", IfMethodFound)
+    1: CallBinary("<normal>", IfMethodFound)
+    2: CallBinaryReflected("<reflected>", IfMethodFoundAndOperands01TypesDiffer)
+    3: RaiseUnsupported(Always)
 
 InPlace<Verb>ReflectedFirstFallback
-    0: CallBinary("<inplace>")
-    1: CallBinaryReflected("<reflected>")
-    2: CallBinary("<normal>")
-    3: RaiseUnsupported
+    0: CallBinary("<inplace>", IfMethodFound)
+    1: CallBinaryReflected("<reflected>", IfMethodFound)
+    2: CallBinary("<normal>", IfMethodFound)
+    3: RaiseUnsupported(Always)
 ```
 
 Rows:
@@ -514,14 +518,14 @@ names:
 
 ```text
 TernaryPowNormalFirst
-    0: CallTernary("__pow__")
-    1: CallTernaryReflected("__rpow__")
-    2: RaiseUnsupported
+    0: CallTernary("__pow__", IfMethodFound)
+    1: CallTernaryReflected("__rpow__", IfMethodFoundAndOperands01TypesDiffer)
+    2: RaiseUnsupported(Always)
 
 TernaryPowReflectedFirst
-    0: CallTernaryReflected("__rpow__")
-    1: CallTernary("__pow__")
-    2: RaiseUnsupported
+    0: CallTernaryReflected("__rpow__", IfMethodFound)
+    1: CallTernary("__pow__", IfMethodFound)
+    2: RaiseUnsupported(Always)
 ```
 
 There is no in-place ternary table. `**=` is a binary augmented assignment and
@@ -536,14 +540,14 @@ Template:
 
 ```text
 Compare<Verb>NormalFirst
-    0: CallBinary("<normal>")
-    1: CallBinaryReflected("<reflected>")
-    2: <fallback>
+    0: CallBinary("<normal>", IfMethodFound)
+    1: CallBinaryReflected("<reflected>", IfMethodFound)
+    2: <fallback>(Always)
 
 Compare<Verb>ReflectedFirst
-    0: CallBinaryReflected("<reflected>")
-    1: CallBinary("<normal>")
-    2: <fallback>
+    0: CallBinaryReflected("<reflected>", IfMethodFound)
+    1: CallBinary("<normal>", IfMethodFound)
+    2: <fallback>(Always)
 ```
 
 Rows:
@@ -573,11 +577,11 @@ uses the same operation and negates the final truth value.
 
 ```text
 Contains
-    0: CallBinary("__contains__")
-    1: ContainsFallback
+    0: CallBinary("__contains__", IfMethodFound)
+    1: ContainsFallback(Always)
 ```
 
-For this table, `lhs` is the container and `rhs` is the searched item.
+For this table, `operand0` is the container and `operand1` is the searched item.
 `ContainsFallback` runs the rest of the membership protocol for those saved
 operands:
 
