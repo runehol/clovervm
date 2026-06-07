@@ -861,6 +861,11 @@ state unchanged unless the operation has an explicit negative-cache design.
   branch rows still would not run. The core invariant requires this generally,
   but the cache payload fields for skipped applicability dependencies are not
   yet specified.
+- What should the future table-row Python-candidate cache payload look like?
+  The current `arg_shape_key` and `reflected_call` style is too single-call and
+  binary-oriented for branched tables. A table-row cache likely needs a
+  `table_id`, row index, operand shape keys, the selected lookup cache, call
+  layout metadata, and any skipped-row applicability dependencies.
 - How much of binary, in-place, and comparison cache validation can share one
   table walker without obscuring hot opcode paths?
 - Which odd callable shapes, if any, should be supported by cached Python
