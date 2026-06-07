@@ -10,34 +10,41 @@ namespace cl
     class ModuleGlobalReadInlineCache
     {
     public:
+        ValidityCell *lookup_validity_cell = nullptr;
         ModuleGlobalSlotPlan slot = ModuleGlobalSlotPlan::not_found();
 
         ALWAYSINLINE bool matches() const
         {
-            return slot.lookup_validity_cell != nullptr &&
-                   slot.lookup_validity_cell->is_valid();
+            return lookup_validity_cell != nullptr &&
+                   lookup_validity_cell->is_valid();
         }
 
         void populate(const ModuleGlobalReadDescriptor &descriptor)
         {
             assert(descriptor.is_cacheable());
             assert(descriptor.plan.kind == ModuleGlobalReadPlanKind::Slot);
+            lookup_validity_cell = descriptor.lookup_validity_cell;
             slot = descriptor.plan.slot_plan;
         }
 
-        void clear() { slot = ModuleGlobalSlotPlan::not_found(); }
+        void clear()
+        {
+            lookup_validity_cell = nullptr;
+            slot = ModuleGlobalSlotPlan::not_found();
+        }
     };
 
     class ModuleGlobalMutationInlineCache
     {
     public:
+        ValidityCell *lookup_validity_cell = nullptr;
         ModuleGlobalStoreExistingPlan store_existing =
             ModuleGlobalStoreExistingPlan::not_found();
 
         ALWAYSINLINE bool matches() const
         {
-            return store_existing.lookup_validity_cell != nullptr &&
-                   store_existing.lookup_validity_cell->is_valid();
+            return lookup_validity_cell != nullptr &&
+                   lookup_validity_cell->is_valid();
         }
 
         void populate(const ModuleGlobalWriteDescriptor &descriptor)
@@ -45,11 +52,13 @@ namespace cl
             assert(descriptor.is_cacheable());
             assert(descriptor.plan.kind ==
                    ModuleGlobalMutationPlanKind::StoreExisting);
+            lookup_validity_cell = descriptor.lookup_validity_cell;
             store_existing = descriptor.plan.store_existing_plan;
         }
 
         void clear()
         {
+            lookup_validity_cell = nullptr;
             store_existing = ModuleGlobalStoreExistingPlan::not_found();
         }
     };

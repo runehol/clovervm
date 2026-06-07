@@ -18,8 +18,8 @@ namespace cl
             ValidityCell *cell =
                 module->get_or_create_module_globals_validity_cell();
             return ModuleGlobalReadDescriptor::found(
-                ModuleGlobalReadPlan::slot(module, module_location, cell),
-                module->read_storage_location(module_location));
+                ModuleGlobalReadPlan::slot(module, module_location),
+                module->read_storage_location(module_location), cell);
         }
 
         ModuleBuiltinsLookup builtins_lookup =
@@ -41,9 +41,8 @@ namespace cl
         }
 
         return ModuleGlobalReadDescriptor::found(
-            ModuleGlobalReadPlan::slot(builtins_module, builtins_location,
-                                       cell),
-            builtins_module->read_storage_location(builtins_location));
+            ModuleGlobalReadPlan::slot(builtins_module, builtins_location),
+            builtins_module->read_storage_location(builtins_location), cell);
     }
 
     ModuleGlobalWriteDescriptor
@@ -70,8 +69,7 @@ namespace cl
                             ->invalidate_module_builtins_binding_validity_cell();
                         return ModuleGlobalWriteDescriptor::found(
                             ModuleGlobalMutationPlan::store_existing(
-                                module, descriptor.info.storage_location(),
-                                nullptr));
+                                module, descriptor.info.storage_location()));
                     case DescriptorSpecialKind::ShapeClass:
                     case DescriptorSpecialKind::SlotDict:
                         return ModuleGlobalWriteDescriptor::read_only();
@@ -87,8 +85,8 @@ namespace cl
 
             return ModuleGlobalWriteDescriptor::found(
                 ModuleGlobalMutationPlan::store_existing(
-                    module, descriptor.info.storage_location(),
-                    module->get_or_create_module_globals_validity_cell()));
+                    module, descriptor.info.storage_location()),
+                module->get_or_create_module_globals_validity_cell());
         }
         if(descriptor.is_latent())
         {

@@ -89,7 +89,7 @@ TEST(ModuleGlobal, ReadModuleSlotHitIsCacheable)
     EXPECT_EQ(Value::from_smi(42),
               load_module_global_from_plan(descriptor.plan));
     EXPECT_EQ(module->current_module_globals_validity_cell(),
-              descriptor.plan.slot_plan.lookup_validity_cell);
+              descriptor.lookup_validity_cell);
 }
 
 TEST(ModuleGlobal, ReadBuiltinsModuleSlotHitIsCacheableAndAttached)
@@ -121,15 +121,15 @@ TEST(ModuleGlobal, ReadBuiltinsModuleSlotHitIsCacheableAndAttached)
     EXPECT_EQ(Value::from_smi(7),
               load_module_global_from_plan(descriptor.plan));
     EXPECT_EQ(module->current_module_builtins_validity_cell(),
-              descriptor.plan.slot_plan.lookup_validity_cell);
+              descriptor.lookup_validity_cell);
     EXPECT_EQ(1u, builtins->attached_dependent_lookup_validity_cell_count());
 
     ModuleGlobalReadDescriptor second_descriptor =
         resolve_module_global_read_descriptor(module, global_name);
 
     EXPECT_TRUE(second_descriptor.is_found());
-    EXPECT_EQ(descriptor.plan.slot_plan.lookup_validity_cell,
-              second_descriptor.plan.slot_plan.lookup_validity_cell);
+    EXPECT_EQ(descriptor.lookup_validity_cell,
+              second_descriptor.lookup_validity_cell);
     EXPECT_EQ(1u, builtins->attached_dependent_lookup_validity_cell_count());
 }
 
@@ -182,7 +182,7 @@ TEST(ModuleGlobal, MissingNameInModuleBuiltinsIsUncacheableMiss)
     EXPECT_EQ(ModuleGlobalReadStatus::NotFound, descriptor.status);
     EXPECT_FALSE(descriptor.is_cacheable());
     EXPECT_EQ(ModuleGlobalReadPlanKind::Missing, descriptor.plan.kind);
-    EXPECT_EQ(nullptr, descriptor.plan.slot_plan.lookup_validity_cell);
+    EXPECT_EQ(nullptr, descriptor.lookup_validity_cell);
     EXPECT_TRUE(load_module_global_from_plan(descriptor.plan).is_not_present());
 }
 
@@ -203,8 +203,7 @@ TEST(ModuleGlobal, StoreExistingModuleSlotIsCacheableAndDoesNotInvalidate)
         resolve_module_global_write_descriptor(module, global_name);
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_TRUE(descriptor.is_cacheable());
-    ValidityCell *cell =
-        descriptor.plan.store_existing_plan.lookup_validity_cell;
+    ValidityCell *cell = descriptor.lookup_validity_cell;
     ASSERT_TRUE(cell->is_valid());
 
     EXPECT_TRUE(store_module_global_from_plan(module, descriptor.plan,
@@ -237,8 +236,7 @@ TEST(ModuleGlobal, StoreBuiltinsBindingIsUncacheableAndInvalidatesBindingCell)
     EXPECT_FALSE(descriptor.is_cacheable());
     EXPECT_EQ(ModuleGlobalMutationPlanKind::StoreExisting,
               descriptor.plan.kind);
-    EXPECT_EQ(nullptr,
-              descriptor.plan.store_existing_plan.lookup_validity_cell);
+    EXPECT_EQ(nullptr, descriptor.lookup_validity_cell);
 
     EXPECT_TRUE(store_module_global_from_plan(module, descriptor.plan,
                                               Value::from_smi(4)));
@@ -588,7 +586,7 @@ TEST(ModuleGlobalBytecode, CachedModuleLoadInvalidatesAndRevealsBuiltin)
     EXPECT_EQ(Value::from_smi(1),
               context.thread()->run_clovervm_code_object(code));
     ValidityCell *module_cell =
-        code->module_global_read_caches[0].slot.lookup_validity_cell;
+        code->module_global_read_caches[0].lookup_validity_cell;
     ASSERT_TRUE(delete_module_global(module, global_name));
     EXPECT_FALSE(module_cell->is_valid());
 
@@ -672,7 +670,7 @@ TEST(ModuleGlobalBytecode, CachedBuiltinsLoadInvalidatesOnBuiltinsReassignment)
     EXPECT_EQ(Value::from_smi(1),
               context.thread()->run_clovervm_code_object(code));
     ValidityCell *builtins_cell =
-        code->module_global_read_caches[0].slot.lookup_validity_cell;
+        code->module_global_read_caches[0].lookup_validity_cell;
 
     module->set_builtins_binding(Value::from_oop(second_builtins));
     EXPECT_FALSE(builtins_cell->is_valid());

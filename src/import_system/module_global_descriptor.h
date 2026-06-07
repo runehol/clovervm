@@ -76,14 +76,12 @@ namespace cl
     class ModuleGlobalSlotPlan
     {
     public:
-        ValidityCell *lookup_validity_cell;
         ModuleObject *storage_owner;
         StorageLocation storage_location;
 
         static ModuleGlobalSlotPlan not_found()
         {
-            return ModuleGlobalSlotPlan{nullptr, nullptr,
-                                        StorageLocation::not_found()};
+            return ModuleGlobalSlotPlan{nullptr, StorageLocation::not_found()};
         }
     };
 
@@ -95,13 +93,11 @@ namespace cl
         ModuleGlobalReadPlanKind kind;
 
         static ModuleGlobalReadPlan slot(ModuleObject *storage_owner,
-                                         StorageLocation location,
-                                         ValidityCell *lookup_validity_cell)
+                                         StorageLocation location)
         {
             return ModuleGlobalReadPlan{
-                ModuleGlobalSlotPlan{lookup_validity_cell, storage_owner,
-                                     location},
-                Value::None(), ModuleGlobalReadPlanKind::Slot};
+                ModuleGlobalSlotPlan{storage_owner, location}, Value::None(),
+                ModuleGlobalReadPlanKind::Slot};
         }
 
         static ModuleGlobalReadPlan missing()
@@ -125,13 +121,14 @@ namespace cl
         ModuleGlobalReadStatus status;
         ModuleGlobalReadPlan plan;
         Value lookup_value;
+        ValidityCell *lookup_validity_cell;
         ModuleGlobalCacheBlockers cache_blockers;
 
         static ModuleGlobalReadDescriptor not_found()
         {
             return ModuleGlobalReadDescriptor{
                 ModuleGlobalReadStatus::NotFound,
-                ModuleGlobalReadPlan::missing(), Value::not_present(),
+                ModuleGlobalReadPlan::missing(), Value::not_present(), nullptr,
                 module_global_cache_blocker(
                     ModuleGlobalCacheBlocker::MissingLookupCell)};
         }
@@ -142,16 +139,18 @@ namespace cl
             return ModuleGlobalReadDescriptor{
                 ModuleGlobalReadStatus::UncacheableBuiltinsObject,
                 ModuleGlobalReadPlan::uncacheable_builtins_object(object),
-                Value::not_present(),
+                Value::not_present(), nullptr,
                 module_global_cache_blocker(
                     ModuleGlobalCacheBlocker::UncacheableBuiltinsObject)};
         }
 
-        static ModuleGlobalReadDescriptor found(ModuleGlobalReadPlan plan,
-                                                Value lookup_value)
+        static ModuleGlobalReadDescriptor
+        found(ModuleGlobalReadPlan plan, Value lookup_value,
+              ValidityCell *lookup_validity_cell = nullptr)
         {
             return ModuleGlobalReadDescriptor{
                 ModuleGlobalReadStatus::Found, plan, lookup_value,
+                lookup_validity_cell,
                 module_global_cache_blocker(ModuleGlobalCacheBlocker::None)};
         }
 
@@ -160,16 +159,12 @@ namespace cl
             return status == ModuleGlobalReadStatus::Found;
         }
 
-        bool is_cacheable() const
-        {
-            return plan.slot_plan.lookup_validity_cell != nullptr;
-        }
+        bool is_cacheable() const { return lookup_validity_cell != nullptr; }
     };
 
     class ModuleGlobalStoreExistingPlan
     {
     public:
-        ValidityCell *lookup_validity_cell;
         ModuleObject *storage_owner;
         int32_t physical_idx;
         StorageKind storage_kind;
@@ -177,17 +172,15 @@ namespace cl
         static ModuleGlobalStoreExistingPlan not_found()
         {
             return ModuleGlobalStoreExistingPlan{
-                nullptr, nullptr, StorageLocation::not_found().physical_idx,
+                nullptr, StorageLocation::not_found().physical_idx,
                 StorageLocation::not_found().kind};
         }
 
-        static ModuleGlobalStoreExistingPlan
-        make(ModuleObject *storage_owner, StorageLocation location,
-             ValidityCell *lookup_validity_cell)
+        static ModuleGlobalStoreExistingPlan make(ModuleObject *storage_owner,
+                                                  StorageLocation location)
         {
             return ModuleGlobalStoreExistingPlan{
-                lookup_validity_cell, storage_owner, location.physical_idx,
-                location.kind};
+                storage_owner, location.physical_idx, location.kind};
         }
 
         StorageLocation storage_location() const
@@ -205,12 +198,10 @@ namespace cl
         ModuleGlobalMutationPlanKind kind;
 
         static ModuleGlobalMutationPlan
-        store_existing(ModuleObject *storage_owner, StorageLocation location,
-                       ValidityCell *lookup_validity_cell)
+        store_existing(ModuleObject *storage_owner, StorageLocation location)
         {
             return ModuleGlobalMutationPlan{
-                ModuleGlobalStoreExistingPlan::make(storage_owner, location,
-                                                    lookup_validity_cell),
+                ModuleGlobalStoreExistingPlan::make(storage_owner, location),
                 nullptr, StorageLocation::not_found(),
                 ModuleGlobalMutationPlanKind::StoreExisting};
         }
@@ -238,13 +229,15 @@ namespace cl
     public:
         ModuleGlobalWriteStatus status;
         ModuleGlobalMutationPlan plan;
+        ValidityCell *lookup_validity_cell;
 
         static ModuleGlobalWriteDescriptor not_found()
         {
             return ModuleGlobalWriteDescriptor{
                 ModuleGlobalWriteStatus::NotFound,
                 ModuleGlobalMutationPlan::store_existing(
-                    nullptr, StorageLocation::not_found(), nullptr)};
+                    nullptr, StorageLocation::not_found()),
+                nullptr};
         }
 
         static ModuleGlobalWriteDescriptor read_only()
@@ -261,20 +254,19 @@ namespace cl
             return descriptor;
         }
 
-        static ModuleGlobalWriteDescriptor found(ModuleGlobalMutationPlan plan)
+        static ModuleGlobalWriteDescriptor
+        found(ModuleGlobalMutationPlan plan,
+              ValidityCell *lookup_validity_cell = nullptr)
         {
             return ModuleGlobalWriteDescriptor{ModuleGlobalWriteStatus::Found,
-                                               plan};
+                                               plan, lookup_validity_cell};
         }
 
         bool is_found() const
         {
             return status == ModuleGlobalWriteStatus::Found;
         }
-        bool is_cacheable() const
-        {
-            return plan.store_existing_plan.lookup_validity_cell != nullptr;
-        }
+        bool is_cacheable() const { return lookup_validity_cell != nullptr; }
     };
 
     class ModuleGlobalDeleteDescriptor
@@ -282,13 +274,15 @@ namespace cl
     public:
         ModuleGlobalDeleteStatus status;
         ModuleGlobalMutationPlan plan;
+        ValidityCell *lookup_validity_cell;
 
         static ModuleGlobalDeleteDescriptor not_found()
         {
             return ModuleGlobalDeleteDescriptor{
                 ModuleGlobalDeleteStatus::NotFound,
                 ModuleGlobalMutationPlan::store_existing(
-                    nullptr, StorageLocation::not_found(), nullptr)};
+                    nullptr, StorageLocation::not_found()),
+                nullptr};
         }
 
         static ModuleGlobalDeleteDescriptor read_only()
@@ -305,20 +299,19 @@ namespace cl
             return descriptor;
         }
 
-        static ModuleGlobalDeleteDescriptor found(ModuleGlobalMutationPlan plan)
+        static ModuleGlobalDeleteDescriptor
+        found(ModuleGlobalMutationPlan plan,
+              ValidityCell *lookup_validity_cell = nullptr)
         {
             return ModuleGlobalDeleteDescriptor{ModuleGlobalDeleteStatus::Found,
-                                                plan};
+                                                plan, lookup_validity_cell};
         }
 
         bool is_found() const
         {
             return status == ModuleGlobalDeleteStatus::Found;
         }
-        bool is_cacheable() const
-        {
-            return plan.store_existing_plan.lookup_validity_cell != nullptr;
-        }
+        bool is_cacheable() const { return lookup_validity_cell != nullptr; }
     };
 
 }  // namespace cl
