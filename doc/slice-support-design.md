@@ -5,6 +5,15 @@ semantic goal is to support Python slice objects and slice syntax. The main VM
 design goal is to make slice keys useful to the existing trusted subscript
 handler resolver by giving bounded slice categories distinct Shapes.
 
+The implementation should be built in three phases:
+
+1. Add the `slice` builtin object, constructor, field accessors, and the two
+   VM-owned slice Shapes.
+2. Add parser/codegen support so slice syntax creates slice keys and reaches
+   the existing get/set/del item opcodes.
+3. Teach builtin sequences to consume slice keys, then add trusted handlers for
+   the two slice key Shapes.
+
 ## Python Semantics
 
 `slice` is a Python-visible builtin type. A slice object has three read-only
@@ -92,19 +101,61 @@ proves that `.step` is not `None`.
 
 ## Slice Object Layout
 
-All slice objects use the same native C++ layout:
+All slice objects use the same native C++ layout. Because `.start`, `.stop`,
+and `.step` are Shape-visible inline slots, `Slice` should derive from
+`SlotObject`, not directly from `Object`:
 
 ```cpp
-class Slice : public Object {
+class Slice : public SlotObject {
+public:
+    static constexpr NativeLayoutId native_layout = NativeLayoutId::Slice;
+    static constexpr uint32_t kStartSlot = 0;
+    static constexpr uint32_t kStopSlot = 1;
+    static constexpr uint32_t kStepSlot = 2;
+    static constexpr uint32_t kInlineSlotCount = 3;
+
+    Slice(ClassObject *cls, Value start, Value stop, Value step)
+        : SlotObject(cls, native_layout), start(start), stop(stop), step(step)
+    {
+    }
+
     Member<Value> start;
     Member<Value> stop;
     Member<Value> step;
+
+    CL_DECLARE_STATIC_VALUE_SPAN_EXTENDS(Slice, SlotObject, 3);
+    CL_DECLARE_STATIC_OBJECT_SIZE(Slice);
 };
+
+static_assert(CL_OFFSETOF(Slice, start) ==
+              sizeof(SlotObject) + Slice::kStartSlot * sizeof(Value));
+static_assert(CL_OFFSETOF(Slice, stop) ==
+              sizeof(SlotObject) + Slice::kStopSlot * sizeof(Value));
+static_assert(CL_OFFSETOF(Slice, step) ==
+              sizeof(SlotObject) + Slice::kStepSlot * sizeof(Value));
 ```
 
-The three fields are always present. Attribute reads for `.start`, `.stop`, and
-`.step` should use the ordinary Shape-backed builtin attribute mechanism.
-Writes and deletes should fail as read-only attribute operations.
+The three fields are always present in the native layout and are the slice
+object's fixed inline slot storage. The slice Shapes should expose them with
+stable read-only inline-slot descriptors:
+
+```text
+start -> inline slot 0
+stop  -> inline slot 1
+step  -> inline slot 2
+```
+
+The descriptors should use `DescriptorFlag::StableSlot` and
+`DescriptorFlag::ReadOnly`. `NativeLayoutId::Slice` must also be included in
+`native_layout_has_slots()` so generic inline-slot access treats `Slice` as a
+slot-backed object.
+
+This keeps `.start`, `.stop`, and `.step` on the ordinary Shape-backed
+attribute path while still storing the values directly in the fixed native
+`Slice` layout.
+
+Writes and deletes for `.start`, `.stop`, and `.step` must fail as read-only
+attribute operations.
 
 The object is immutable after construction: the field references do not change,
 and the Shape chosen by the factory remains stable for the object's lifetime.
@@ -115,6 +166,7 @@ The referenced field values can themselves be mutable Python objects.
 The VM should own canonical slice Shapes:
 
 ```cpp
+ClassObject *slice_class_;
 Shape *slice_step_none_shape_;
 Shape *slice_step_value_shape_;
 ```
@@ -122,6 +174,7 @@ Shape *slice_step_value_shape_;
 with corresponding accessors:
 
 ```cpp
+ClassObject *slice_class() const;
 Shape *slice_step_none_shape() const;
 Shape *slice_step_value_shape() const;
 ```
@@ -132,9 +185,36 @@ Both Shapes must report the same class:
 shape->get_class() == vm->slice_class()
 ```
 
-Both Shapes must describe the same native fields and same Python-visible
-attributes. The only reason they are separate Shapes is dispatch
-specialization.
+Both Shapes must describe the same Python-visible attributes. The only reason
+they are separate Shapes is dispatch specialization.
+
+Use the builtin class's installed instance root Shape as
+`slice_step_none_shape_`. Create `slice_step_value_shape_` as a second root
+Shape with the same descriptor table, same class, same slot counts, same native
+layout assumptions, and same fixed-attribute flags. Both Shapes must map
+`start`, `stop`, and `step` to the same stable read-only inline slot indexes.
+
+The slice class installer should build the `ShapeRootDescriptor` array once and
+use it for both root Shapes. Do not rely on recovering the descriptor table from
+`slice_class_->get_instance_root_shape()` later. The builder/helper can be
+structured however the implementation prefers, but the descriptor source should
+be shared at construction time.
+
+```cpp
+slice_step_none_shape_ = slice_class_->get_instance_root_shape();
+slice_step_value_shape_ = Shape::make_root_with_descriptors(
+    TValue<ClassObject>::from_oop(slice_class_), descriptors, descriptor_count,
+    next_slot_index, present_count, inline_slot_capacity,
+    fixed_attribute_shape_flags());
+```
+
+The exact helper can differ, but the invariant is not optional: the two Shapes
+must differ only by identity. They must not expose different attributes,
+different class identity, or different storage requirements.
+
+Slice instances should be born with one of the two specialized Shapes. It is
+acceptable for the C++ constructor to initialize through the class root first,
+but the factory must set the final Shape before returning the object.
 
 Slice allocation should go through a single factory that chooses the Shape from
 the stored `step` value:
@@ -149,6 +229,26 @@ Both slice syntax lowering and the builtin `slice(...)` constructor should use
 this factory. In particular, `slice(1, 2)` and `slice(1, 2, None)` must produce
 objects with the same `slice_step_none_shape`.
 
+The factory contract should be explicit:
+
+```cpp
+[[nodiscard]] TValue<Slice> make_slice(Value start, Value stop, Value step);
+```
+
+The factory stores the three values unchanged, chooses the Shape solely from
+`step.is_none()`, and returns an owned/retained handle appropriate for the
+existing allocation helpers.
+
+The builtin constructor uses the factory with these argument rewrites:
+
+```text
+slice(stop)              -> make_slice(None, stop, None)
+slice(start, stop)       -> make_slice(start, stop, None)
+slice(start, stop, step) -> make_slice(start, stop, step)
+```
+
+It does not coerce or validate any of the three field values.
+
 ## Subscript Dispatch
 
 The trusted method resolver already receives the receiver and key shape keys:
@@ -158,7 +258,7 @@ TrustedHandlerResolution (*resolver)(
     VirtualMachine *, ShapeKey receiver_key, ShapeKey key_key, ShapeKey unused);
 ```
 
-Builtin sequence resolvers can use the key shape to split handlers:
+Builtin sequence resolvers should use the key shape to split handlers:
 
 ```text
 SMI key                 -> integer element access
@@ -181,9 +281,33 @@ dunder lookup selected the trusted builtin `__getitem__`, `__setitem__`, or
 `__delitem__` implementation, matching the existing fast operator dispatch
 model.
 
+Resolver checks should compare `key_key` directly against the two VM-owned
+slice shape keys. The resolver may also ask `vm->shape_for_key(key_key)` for
+the class when it needs a conservative class check, but the optimized branch
+should be shape-specific:
+
+```cpp
+if(key_key == ShapeKey::from_shape(vm->slice_step_none_shape())) {
+    ...
+}
+```
+
+If `ShapeKey` does not yet have a helper for VM-owned Shapes, add one rather
+than reconstructing a fake `Value`.
+
+That helper should be a small explicit API on `ShapeKey`:
+
+```cpp
+static ALWAYSINLINE ShapeKey from_shape(Shape *shape);
+```
+
+It should encode the same bits as a heap object's shape key. This keeps
+resolver code from depending on `ShapeKey`'s private representation.
+
 ## Parser And Codegen
 
-The parser needs a subscript-key representation that can express:
+The AST should distinguish ordinary subscription keys from slice keys. The
+parser needs a subscript-key representation that can express:
 
 ```text
 ordinary expression key
@@ -192,9 +316,34 @@ slice lower:upper:step
 tuple of subscript keys for multidimensional syntax
 ```
 
-Missing slice fields should be represented as `None` at runtime. The parser or
-codegen may encode omission structurally, but the constructed `Slice` object
-must store explicit `None` values in omitted slots.
+The recommended AST shape is a dedicated expression node:
+
+```text
+EXPRESSION_SLICE(lower?, upper?, step?)
+```
+
+Represent the three positions with exactly three children. Use `-1` for an
+omitted position:
+
+```text
+a[:c]    -> EXPRESSION_SLICE(-1, c, -1)
+a[b:]    -> EXPRESSION_SLICE(b, -1, -1)
+a[b:c]   -> EXPRESSION_SLICE(b, c, -1)
+a[::s]   -> EXPRESSION_SLICE(-1, -1, s)
+a[:]     -> EXPRESSION_SLICE(-1, -1, -1)
+```
+
+Codegen is responsible for loading `None` for omitted fields. This keeps the
+parser from inventing source locations for missing syntax while still
+guaranteeing the runtime `Slice` stores explicit `None` values.
+
+Subscript remains:
+
+```text
+EXPRESSION_BINARY/SUBSCRIPT(receiver, key_expression)
+```
+
+where `key_expression` may now be an `EXPRESSION_SLICE`.
 
 The initial lowering can be simple:
 
@@ -207,9 +356,47 @@ construct Slice
 emit existing get/set/del item opcode
 ```
 
-clovervm does not need a CPython-style `BINARY_SLICE` opcode for the first
-implementation. That opcode is an optimization for common two-bound slices, not
-a semantic requirement.
+Slice construction must have explicit bytecodes or native helper calls. Lowering
+slice syntax as a normal Python call to the builtin `slice` would preserve many
+semantics, but it would also make syntax sensitive to a rebinding of the builtin
+name `slice`, which would be wrong.
+
+Add a dedicated opcode for the common no-step slice form:
+
+```text
+CreateBinarySlice start_reg, stop_reg
+```
+
+`CreateBinarySlice` constructs `slice(start, stop, None)` through the shared
+slice factory. Missing lower or upper bounds are lowered by loading `None` into
+the corresponding operand register before the opcode:
+
+```text
+a[:c]  -> CreateBinarySlice none_reg, c_reg
+a[b:]  -> CreateBinarySlice b_reg, none_reg
+a[b:c] -> CreateBinarySlice b_reg, c_reg
+a[:]   -> CreateBinarySlice none_reg, none_reg
+```
+
+The name "binary" describes the bytecode operand shape: two explicit slice
+bounds plus implicit `step=None`. It must not mean a distinct Python type or a
+syntax-proven category. Explicit `a[b:c:None]` still constructs a
+`slice_step_none_shape` object, but it goes through the three-operand slice
+construction path because the syntax has an explicit step expression.
+
+Full three-field slice syntax uses a separate opcode or helper:
+
+```text
+CreateSlice start_reg, stop_reg, step_reg
+```
+
+`CreateSlice` constructs `slice(start, stop, step)` through the same factory.
+If `step` evaluates to `None`, the resulting object still receives
+`slice_step_none_shape`.
+
+`CreateBinarySlice` is only a fast slice-object constructor. Subscript dispatch
+still goes through the normal get/set/del item opcodes with the constructed
+slice key.
 
 Assignment lowering must preserve Python's evaluation order:
 
@@ -247,6 +434,86 @@ VM. If that protocol is not implemented yet, slice consumption should fail
 honestly for unsupported non-SMI field values rather than pretending construction
 validated them.
 
+Use a shared internal helper for normalization so list, tuple, str, and
+`slice.indices` do not diverge. The helper should return a normalized record,
+not allocate a Python tuple:
+
+```cpp
+struct NormalizedSlice {
+    int64_t start;
+    int64_t stop;
+    int64_t step;
+    size_t length;
+};
+
+[[nodiscard]] Expected<NormalizedSlice>
+normalize_slice_for_length(TValue<Slice> slice, int64_t sequence_length);
+```
+
+`length` is the number of selected elements. Computing it once avoids each
+sequence implementation re-deriving the extended-slice result size.
+
+For the first implementation, if only SMI field values are supported by the VM,
+the helper's accepted field values are:
+
+```text
+None
+SMI
+```
+
+Any other field value should raise a `TypeError` at consumption time with a
+message consistent enough for tests to identify the failure class. The design
+should leave a clear internal boundary where full `__index__` support can be
+added later.
+
+`slice.indices(length)` should use the same helper and then allocate the Python
+result tuple `(start, stop, step)`. It must reject negative `length`.
+
+## Implementation Checklist
+
+Phase 1, slice object and builtin:
+
+- Add `NativeLayoutId::Slice`.
+- Add `NativeLayoutId::Slice` to `native_layout_has_slots()`.
+- Add native layout release and object-size descriptors for `Slice`.
+- Add `ShapeKey::from_shape(Shape *)`.
+- Add `builtin_types/slice.h` and `builtin_types/slice.cpp`.
+- Add `Slice` native layout with `start`, `stop`, and `step` `Member<Value>`
+  fields, deriving from `SlotObject`.
+- Register the `slice` builtin class in VM builtin initialization.
+- Map `NativeLayoutId::Slice` to `slice_class_` through the builtin class
+  registry/native-layout mapping path.
+- Add `slice_class_`, `slice_step_none_shape_`, and
+  `slice_step_value_shape_` to `VirtualMachine`.
+- Install `slice_step_none_shape_` as the class instance root and create
+  `slice_step_value_shape_` with the same Python-visible descriptors.
+- Implement the single `make_slice(start, stop, step)` factory.
+- Implement `slice.__new__`/constructor arity behavior and reject keywords.
+- Implement `.start`, `.stop`, `.step`, `__repr__`, and `indices`.
+
+Phase 2, syntax:
+
+- Add the AST representation for slice key expressions.
+- Teach the parser to parse omitted lower/upper/step fields inside `[]`, using
+  `-1` for omitted `EXPRESSION_SLICE` children.
+- Preserve ordinary expression keys for `a[x]`.
+- Lower slice key expressions through the dedicated slice-construction path.
+- Add `CreateBinarySlice` for omitted-step slices and `CreateSlice` or an
+  equivalent three-field constructor path for explicit-step slices.
+- Preserve RHS-first evaluation for slice assignment.
+- Add codegen tests for omitted fields and assignment ordering.
+
+Phase 3, sequence operations and trusted handlers:
+
+- Add shared slice normalization.
+- Add list, tuple, and str slice `__getitem__`.
+- Add list slice `__setitem__` and `__delitem__` if assignment/deletion syntax
+  is in scope for the same implementation pass.
+- Add resolver branches for `slice_step_none_shape` and
+  `slice_step_value_shape`.
+- Add interpreter-level tests for user-defined `__getitem__` receiving slices
+  and builtin sequence slicing behavior.
+
 ## Non-Goals
 
 - Do not create separate Python classes for no-step and with-step slices.
@@ -256,8 +523,15 @@ validated them.
   nonzero, or otherwise valid for slicing.
 - Do not add a separate `[:]` Shape initially. The `slice_step_none_shape`
   handler can detect the full-copy case cheaply after the shape guard.
-- Do not add a CPython-style `BINARY_SLICE` opcode until there is measured
-  pressure for that optimization.
+- Do not use `CreateBinarySlice` as a special subscript operation. It only
+  constructs a `slice(start, stop, None)` object.
+- Do not lower slice syntax through a lookup of the Python builtin name
+  `slice`.
+- Do not support subclassing `slice`; CPython rejects it, and the shape split
+  assumes exact immutable slice instances.
+- Do not implement multidimensional tuple keys in the first pass unless the AST
+  work makes it trivial. It is valid to leave `a[1, 2:3]` unsupported while
+  ordinary single slice keys are implemented.
 
 ## Test Plan
 
