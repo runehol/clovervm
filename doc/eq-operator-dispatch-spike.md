@@ -106,22 +106,59 @@ normal_first:
 - [x] Add table metadata helpers to fetch a table by decoded table id and
       validate row indices in debug builds.
 
+## Stage 3.5: Trusted Handler Resolver Shape
+
+- [x] Define the trusted-handler resolver contract for table-selected
+      candidates before implementing the walker.
+- [x] The walker may call the trusted-handler resolver for a selected function,
+      but it must not call the trusted handler itself. The opcode handler owns
+      the actual trusted-handler call, accumulator update, pending-exception
+      propagation, and cache installation policy.
+- [x] Trusted-handler resolver results must be normalized for the opcode's
+      physical operand order. Cached replay should be able to call
+      `handler.binary(thread, operand0, operand1)` directly, with no operand
+      order branch and no trampoline.
+- [x] If the selected row is reflected, the resolver must either return a
+      direct handler with the opcode operand-order calling convention or decline
+      by returning no trusted handler. Do not introduce reflected-order
+      trampolines; this is a hot-path replay contract.
+
 ## Stage 4: Table Control Helpers
 
 - [ ] Implement cold helpers that inspect table rows from a starting row.
 - [ ] Apply `else_skip` when applicability fails: the next row is
       `row + 1 + else_skip`, so `else_skip = 0` is ordinary fallthrough.
 - [ ] Implement `IfMethodFound` using current special-method lookup.
-- [ ] Treat a found non-callable or non-fast-callable value as a selected
-      candidate, not as a missing method.
+- [ ] Treat a found non-callable or non-fast-callable value as a terminal row,
+      not as a missing method. It should raise the ordinary call error or enter
+      the generic-call path when that path exists; it must not continue to later
+      rows as though the method were absent.
 - [ ] Implement `IfRichComparisonReflectedPriority`: the reflected method must
       resolve and `type(operand1)` must be a strict subclass of
       `type(operand0)`.
 - [ ] Implement candidate selection for `CallBinary` and
       `CallBinaryReflected` without entering Python yet.
 - [ ] Implement `IdentityEq` fallback as `operand0 is operand1`.
-- [ ] Return one of: selected Python candidate, native fallback result, raised
-      error, or exhausted table.
+- [ ] Return an `OperatorWalkDescriptor`-style result. The status enum should
+      use the default underlying type, not `uint8_t`; the descriptor is
+      transient interpreter control data, and packing it can make register
+      passing and use-site code generation worse.
+- [ ] The table walker should walk multiple rows until it reaches one terminal
+      boundary:
+      `CallPythonFunction`, `CallTrustedHandler`, `NativeResult`, or
+      `RaiseException`.
+- [ ] Use the Stage 3.5 trusted-handler resolver contract: resolve trusted
+      handlers as terminal walk results, but leave handler execution to the
+      opcode handler.
+- [ ] Return an inert `OperatorInlineCache` candidate in the walk descriptor so
+      the result shape already matches future replay. For this spike, fill it
+      opportunistically when the data is available, but always leave it marked
+      not applicable and do not install it. Skipped-row guard representation and
+      validation are follow-up work.
+- [ ] Do not return an exhausted-table state. Dispatch tables must end in an
+      unconditional terminal action. Falling off a table is a VM metadata bug:
+      use a debug-only assertion followed by `__builtin_unreachable()` rather
+      than a Python-visible dynamic result.
 
 ## Stage 5: Continuation Frame Layout
 

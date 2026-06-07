@@ -150,12 +150,12 @@ namespace cl
         return self.get_ptr<Tuple>()->get_slice(normalized).raw_value();
     }
 
-    static TrustedHandlerResolution
-    resolve_trusted_tuple_getitem_handler(VirtualMachine *vm,
-                                          ShapeKey container_key,
-                                          ShapeKey key_key, ShapeKey unused)
+    static TrustedHandlerResolution resolve_trusted_tuple_getitem_handler(
+        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
+        ShapeKey unused, TrustedHandlerOperandOrder order)
     {
         (void)unused;
+        assert(order == TrustedHandlerOperandOrder::Normal);
         TrustedHandlerResolution resolution;
         if(vm->shape_for_key(container_key)->get_class() != vm->tuple_class())
         {

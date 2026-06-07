@@ -2992,7 +2992,8 @@ namespace cl
             {
                 TrustedHandlerResolution resolution =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, arg_shape_key, ShapeKey{});
+                        vm, receiver_shape_key, arg_shape_key, ShapeKey{},
+                        TrustedHandlerOperandOrder::Normal);
                 if(resolution.arity == TrustedHandlerArity::Binary)
                 {
                     handler.binary = resolution.binary;
@@ -3171,7 +3172,8 @@ namespace cl
             {
                 TrustedHandlerResolution resolution =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, arg_shape_key, ShapeKey{});
+                        vm, receiver_shape_key, arg_shape_key, ShapeKey{},
+                        TrustedHandlerOperandOrder::Normal);
                 if(resolution.arity == TrustedHandlerArity::Ternary)
                 {
                     handler.ternary = resolution.ternary;
@@ -3354,7 +3356,8 @@ namespace cl
             {
                 TrustedHandlerResolution resolution =
                     target_code_object->trusted_handler_resolver(
-                        vm, receiver_shape_key, arg_shape_key, ShapeKey{});
+                        vm, receiver_shape_key, arg_shape_key, ShapeKey{},
+                        TrustedHandlerOperandOrder::Normal);
                 if(resolution.arity == TrustedHandlerArity::Binary)
                 {
                     handler.binary = resolution.binary;

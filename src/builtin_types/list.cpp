@@ -179,12 +179,12 @@ namespace cl
         return Value::None();
     }
 
-    static TrustedHandlerResolution
-    resolve_trusted_list_getitem_handler(VirtualMachine *vm,
-                                         ShapeKey container_key,
-                                         ShapeKey key_key, ShapeKey unused)
+    static TrustedHandlerResolution resolve_trusted_list_getitem_handler(
+        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
+        ShapeKey unused, TrustedHandlerOperandOrder order)
     {
         (void)unused;
+        assert(order == TrustedHandlerOperandOrder::Normal);
         TrustedHandlerResolution resolution;
         if(vm->shape_for_key(container_key)->get_class() != vm->list_class())
         {
@@ -210,12 +210,12 @@ namespace cl
         return resolution;
     }
 
-    static TrustedHandlerResolution
-    resolve_trusted_list_setitem_handler(VirtualMachine *vm,
-                                         ShapeKey container_key,
-                                         ShapeKey key_key, ShapeKey unused)
+    static TrustedHandlerResolution resolve_trusted_list_setitem_handler(
+        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
+        ShapeKey unused, TrustedHandlerOperandOrder order)
     {
         (void)unused;
+        assert(order == TrustedHandlerOperandOrder::Normal);
         TrustedHandlerResolution resolution;
         if(vm->shape_for_key(container_key)->get_class() == vm->list_class() &&
            key_key == ShapeKey::from_value(Value::from_smi(0)))
@@ -226,12 +226,12 @@ namespace cl
         return resolution;
     }
 
-    static TrustedHandlerResolution
-    resolve_trusted_list_delitem_handler(VirtualMachine *vm,
-                                         ShapeKey container_key,
-                                         ShapeKey key_key, ShapeKey unused)
+    static TrustedHandlerResolution resolve_trusted_list_delitem_handler(
+        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
+        ShapeKey unused, TrustedHandlerOperandOrder order)
     {
         (void)unused;
+        assert(order == TrustedHandlerOperandOrder::Normal);
         TrustedHandlerResolution resolution;
         if(vm->shape_for_key(container_key)->get_class() == vm->list_class() &&
            key_key == ShapeKey::from_value(Value::from_smi(0)))

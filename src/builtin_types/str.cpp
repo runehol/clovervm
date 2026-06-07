@@ -265,12 +265,12 @@ namespace cl
             .raw_value();
     }
 
-    static TrustedHandlerResolution
-    resolve_trusted_str_getitem_handler(VirtualMachine *vm,
-                                        ShapeKey container_key,
-                                        ShapeKey key_key, ShapeKey unused)
+    static TrustedHandlerResolution resolve_trusted_str_getitem_handler(
+        VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
+        ShapeKey unused, TrustedHandlerOperandOrder order)
     {
         (void)unused;
+        assert(order == TrustedHandlerOperandOrder::Normal);
         TrustedHandlerResolution resolution;
         if(vm->shape_for_key(container_key)->get_class() != vm->str_class())
         {

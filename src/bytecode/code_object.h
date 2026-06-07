@@ -154,8 +154,15 @@ namespace cl
         };
     };
 
-    using TrustedHandlerResolver = TrustedHandlerResolution (*)(
-        VirtualMachine *, ShapeKey, ShapeKey, ShapeKey);
+    enum class TrustedHandlerOperandOrder
+    {
+        Normal,
+        Reflected,
+    };
+
+    using TrustedHandlerResolver =
+        TrustedHandlerResolution (*)(VirtualMachine *, ShapeKey, ShapeKey,
+                                     ShapeKey, TrustedHandlerOperandOrder);
 
     union NativeFunctionTarget
     {
