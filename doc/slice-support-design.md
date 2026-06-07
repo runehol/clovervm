@@ -7,10 +7,10 @@ handler resolver by giving bounded slice categories distinct Shapes.
 
 The implementation should be built in three phases:
 
-1. Add the `slice` builtin object, constructor, field accessors, and the two
-   VM-owned slice Shapes.
-2. Add parser/codegen support so slice syntax creates slice keys and reaches
-   the existing get/set/del item opcodes.
+1. Add the `slice` builtin object and syntax support so `a[:c]` creates a
+   slice key and user-defined `__getitem__` can observe it.
+2. Add Python-facing `slice.indices(length)` using the internal Slice
+   normalizer.
 3. Teach builtin sequences to consume slice keys, then add trusted handlers for
    the two slice key Shapes.
 
@@ -262,8 +262,8 @@ Builtin sequence resolvers should use the key shape to split handlers:
 
 ```text
 SMI key                 -> integer element access
-slice_step_none_shape   -> contiguous slice path
-slice_step_value_shape  -> extended slice path
+slice_step_none_shape   -> no-step slice handler
+slice_step_value_shape  -> explicit-step slice handler
 ```
 
 For list, tuple, and str, the `slice_step_none_shape` handler can skip the
@@ -361,21 +361,23 @@ slice syntax as a normal Python call to the builtin `slice` would preserve many
 semantics, but it would also make syntax sensitive to a rebinding of the builtin
 name `slice`, which would be wrong.
 
-Add a dedicated opcode for the common no-step slice form:
+Add a dedicated opcode for the common no-step slice form. As with other
+accumulator-shaped bytecodes, the last evaluated operand lives in the
+accumulator:
 
 ```text
-CreateBinarySlice start_reg, stop_reg
+CreateBinarySlice start_reg
 ```
 
-`CreateBinarySlice` constructs `slice(start, stop, None)` through the shared
-slice factory. Missing lower or upper bounds are lowered by loading `None` into
-the corresponding operand register before the opcode:
+`CreateBinarySlice` constructs `slice(start, accumulator, None)` through the
+shared slice factory. Missing lower or upper bounds are lowered by loading
+`None` before the opcode:
 
 ```text
-a[:c]  -> CreateBinarySlice none_reg, c_reg
-a[b:]  -> CreateBinarySlice b_reg, none_reg
-a[b:c] -> CreateBinarySlice b_reg, c_reg
-a[:]   -> CreateBinarySlice none_reg, none_reg
+a[:c]  -> start_reg = None; accumulator = c;    CreateBinarySlice start_reg
+a[b:]  -> start_reg = b;    accumulator = None; CreateBinarySlice start_reg
+a[b:c] -> start_reg = b;    accumulator = c;    CreateBinarySlice start_reg
+a[:]   -> start_reg = None; accumulator = None; CreateBinarySlice start_reg
 ```
 
 The name "binary" describes the bytecode operand shape: two explicit slice
@@ -387,16 +389,30 @@ construction path because the syntax has an explicit step expression.
 Full three-field slice syntax uses a separate opcode or helper:
 
 ```text
-CreateSlice start_reg, stop_reg, step_reg
+CreateTernarySlice start_reg, stop_reg
 ```
 
-`CreateSlice` constructs `slice(start, stop, step)` through the same factory.
-If `step` evaluates to `None`, the resulting object still receives
-`slice_step_none_shape`.
+`CreateTernarySlice` constructs `slice(start_reg, stop_reg, accumulator)`
+through the same factory. If `step` evaluates to `None`, the resulting object
+still receives `slice_step_none_shape`.
 
 `CreateBinarySlice` is only a fast slice-object constructor. Subscript dispatch
 still goes through the normal get/set/del item opcodes with the constructed
 slice key.
+
+Use normal bytecode naming conventions:
+
+```cpp
+Bytecode::CreateBinarySlice
+Bytecode::CreateTernarySlice
+CodeObjectBuilder::emit_create_binary_slice(...)
+CodeObjectBuilder::emit_create_ternary_slice(...)
+```
+
+Do not constant-fold slice syntax in the first implementation. Even fully
+literal forms such as `a[1:2]` and `a[:]` should lower through
+`CreateBinarySlice` or `CreateTernarySlice`. Constant slice objects can be added
+later as a compiler optimization.
 
 Assignment lowering must preserve Python's evaluation order:
 
@@ -424,19 +440,20 @@ The normalizer used by builtin sequences should follow Python's visible rules:
 
 - `step == None` defaults to `1`.
 - `step == 0` raises `ValueError`.
-- non-`None` start, stop, and step use the integer-index protocol.
+- non-`None` start, stop, and step eventually use the integer-index protocol.
 - negative bounds are adjusted by sequence length.
 - bounds are clipped to the valid range.
 - negative steps use the reverse-slice default and clipping rules.
 
-Full `__index__` support may depend on a broader integer-index protocol in the
-VM. If that protocol is not implemented yet, slice consumption should fail
-honestly for unsupported non-SMI field values rather than pretending construction
-validated them.
+Full `__index__` support is out of scope for the first implementation, so the
+initial normalizer implements the Python rules only for `None` and SMI field
+values. Slice construction remains permissive. Unsupported field values fail at
+consumption/`indices()` time.
 
-Use a shared internal helper for normalization so list, tuple, str, and
-`slice.indices` do not diverge. The helper should return a normalized record,
-not allocate a Python tuple:
+The shared internal helper for normalization belongs with `Slice`, in
+`builtin_types/slice.{h,cpp}`, so Python-facing `slice.indices` and later
+builtin sequence slicing do not diverge. The helper should return a normalized
+record, not allocate a Python tuple:
 
 ```cpp
 struct NormalizedSlice {
@@ -453,8 +470,7 @@ normalize_slice_for_length(TValue<Slice> slice, int64_t sequence_length);
 `length` is the number of selected elements. Computing it once avoids each
 sequence implementation re-deriving the extended-slice result size.
 
-For the first implementation, if only SMI field values are supported by the VM,
-the helper's accepted field values are:
+For the first implementation, the helper's accepted field values are:
 
 ```text
 None
@@ -466,12 +482,19 @@ message consistent enough for tests to identify the failure class. The design
 should leave a clear internal boundary where full `__index__` support can be
 added later.
 
-`slice.indices(length)` should use the same helper and then allocate the Python
-result tuple `(start, stop, step)`. It must reject negative `length`.
+`slice.indices(length)` is useful Python-facing API and should be implemented
+with this helper. It should allocate and return the Python tuple
+`(start, stop, step)`, and it must reject negative `length`. `length` is also
+SMI-only until general `__index__` support exists.
+
+Builtin sequence fast paths should not call the Python-visible
+`slice.indices` method. They should call the shared internal helper directly
+when slice consumption is implemented, avoiding tuple allocation and method
+dispatch.
 
 ## Implementation Checklist
 
-Phase 1, slice object and builtin:
+Phase 1, slice object and syntax:
 
 - Add `NativeLayoutId::Slice`.
 - Add `NativeLayoutId::Slice` to `native_layout_has_slots()`.
@@ -480,7 +503,7 @@ Phase 1, slice object and builtin:
 - Add `builtin_types/slice.h` and `builtin_types/slice.cpp`.
 - Add `Slice` native layout with `start`, `stop`, and `step` `Member<Value>`
   fields, deriving from `SlotObject`.
-- Register the `slice` builtin class in VM builtin initialization.
+- Register the public `slice` builtin class in VM builtin initialization.
 - Map `NativeLayoutId::Slice` to `slice_class_` through the builtin class
   registry/native-layout mapping path.
 - Add `slice_class_`, `slice_step_none_shape_`, and
@@ -489,26 +512,34 @@ Phase 1, slice object and builtin:
   `slice_step_value_shape_` with the same Python-visible descriptors.
 - Implement the single `make_slice(start, stop, step)` factory.
 - Implement `slice.__new__`/constructor arity behavior and reject keywords.
-- Implement `.start`, `.stop`, `.step`, `__repr__`, and `indices`.
-
-Phase 2, syntax:
-
+- Implement `.start`, `.stop`, `.step`, and `__repr__`.
 - Add the AST representation for slice key expressions.
 - Teach the parser to parse omitted lower/upper/step fields inside `[]`, using
   `-1` for omitted `EXPRESSION_SLICE` children.
 - Preserve ordinary expression keys for `a[x]`.
 - Lower slice key expressions through the dedicated slice-construction path.
-- Add `CreateBinarySlice` for omitted-step slices and `CreateSlice` or an
-  equivalent three-field constructor path for explicit-step slices.
+- Add `CreateBinarySlice` for omitted-step slices and `CreateTernarySlice` or
+  an equivalent three-field constructor path for explicit-step slices.
+- Use builder method names `emit_create_binary_slice` and
+  `emit_create_ternary_slice`.
 - Preserve RHS-first evaluation for slice assignment.
 - Add codegen tests for omitted fields and assignment ordering.
 
+Phase 2, Python-facing normalization:
+
+- Add shared SMI-only slice normalization in `builtin_types/slice.{h,cpp}`.
+- Implement Python-facing `slice.indices(length)`.
+- Do not install a placeholder `slice.indices` before it is implemented.
+- Do not implement slice equality or hashing in this phase.
+- Do not implement constant folding of literal slice objects in this phase.
+
 Phase 3, sequence operations and trusted handlers:
 
-- Add shared slice normalization.
 - Add list, tuple, and str slice `__getitem__`.
 - Add list slice `__setitem__` and `__delitem__` if assignment/deletion syntax
   is in scope for the same implementation pass.
+- Update builtin sequence type-error messages to allow slice keys, for example
+  "list indices must be integers or slices" rather than only "integers".
 - Add resolver branches for `slice_step_none_shape` and
   `slice_step_value_shape`.
 - Add interpreter-level tests for user-defined `__getitem__` receiving slices
@@ -529,9 +560,10 @@ Phase 3, sequence operations and trusted handlers:
   `slice`.
 - Do not support subclassing `slice`; CPython rejects it, and the shape split
   assumes exact immutable slice instances.
-- Do not implement multidimensional tuple keys in the first pass unless the AST
-  work makes it trivial. It is valid to leave `a[1, 2:3]` unsupported while
-  ordinary single slice keys are implemented.
+- Do not implement slice equality or hashing in the initial milestones.
+- Do not constant-fold literal slice objects initially.
+- Do not implement multidimensional tuple keys in the first pass. Leave
+  `a[1, 2:3]` unsupported while ordinary single slice keys are implemented.
 
 ## Test Plan
 
@@ -547,6 +579,11 @@ Interpreter-level Python tests should cover:
   slice objects.
 - omitted-bound syntax: `a[:c]`, `a[b:]`, `a[:]`, `a[::s]`.
 - assignment evaluation order for `a[b:c] = value`.
+- C++ tests for the shape invariant:
+  `slice(1, 2)` and `slice(1, 2, None)` use `slice_step_none_shape`, while
+  `slice(1, 2, 3)` uses `slice_step_value_shape`.
+- `slice.indices(length)` with SMI field values and SMI length, including
+  negative stop normalization such as `slice(0, -1).indices(5) == (0, 4, 1)`.
 - list, tuple, and str contiguous slicing.
 - extended slicing, including negative step and zero-step error.
 - invalid slice field values failing when consumed, not when constructed.
