@@ -24,6 +24,7 @@
 #include "runtime/exception_object.h"
 #include "runtime/method_call.h"
 #include "runtime/operator_frame.h"
+#include "runtime/operator_walk.h"
 #include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
@@ -53,6 +54,19 @@ namespace cl
 #endif
 
     using DispatchTableEntry = Value(INTERP_CC *)(PARAMS);
+
+    [[maybe_unused]] static ALWAYSINLINE DispatchTableEntry
+    dispatch_binary_operator_from_main(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator,
+        OperatorDispatchTableId table_id, Value operand0, Value operand1,
+        const uint8_t *continuation_pc, const uint8_t *next_pc);
+
+    static ALWAYSINLINE DispatchTableEntry
+    dispatch_binary_operator_from_continuation(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator,
+        const uint8_t *continuation_pc, const uint8_t *next_pc);
 
     [[maybe_unused]] static ALWAYSINLINE bool is_stack_frame_aligned(Value *fp)
     {
@@ -2179,6 +2193,146 @@ namespace cl
         return receiver_reg;
     }
 
+    static ALWAYSINLINE DispatchTableEntry
+    dispatch_entry_for_pc(void *dispatch, const uint8_t *pc)
+    {
+        return reinterpret_cast<DispatchTable *>(dispatch)->table[pc[0]];
+    }
+
+    static ALWAYSINLINE Value binary_operator_receiver_for_action(
+        OperatorStepAction action, Value operand0, Value operand1)
+    {
+        if(unlikely(action == OperatorStepAction::CallBinaryReflected))
+        {
+            return operand1;
+        }
+        assert(action == OperatorStepAction::CallBinary);
+        return operand0;
+    }
+
+    static ALWAYSINLINE void
+    resolve_operator_pending_exception(ThreadState *thread, Value *&fp,
+                                       const uint8_t *&pc,
+                                       CodeObject *&code_object)
+    {
+        ExceptionalTarget target =
+            resolve_exceptional_frame_exit(thread, fp, pc, code_object);
+        fp = target.fp;
+        code_object = target.code_object;
+        pc = target.interpreted_pc;
+    }
+
+    static ALWAYSINLINE void enter_binary_operator_python_function(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc,
+        CodeObject *&code_object, const OperatorWalkDescriptor &descriptor,
+        OperatorDispatchTableId table_id, Value operand0, Value operand1,
+        const uint8_t *continuation_pc)
+    {
+        const OperatorInlineCache &entry = descriptor.cache_entry;
+        assert(entry.function != nullptr);
+        assert(entry.n_args == 1 || entry.n_args == 2);
+
+        int32_t prefix_reg = code_object->get_first_free_arg_encoded_reg();
+        setup_binary_operator_continuation_prefix(fp, prefix_reg, table_id,
+                                                  descriptor.resume_index,
+                                                  operand0, operand1);
+        int32_t first_arg_reg = setup_binary_operator_call_args(
+            fp, prefix_reg, descriptor.action, operand0, operand1);
+
+        Value self = entry.has_self ? binary_operator_receiver_for_action(
+                                          descriptor.action, operand0, operand1)
+                                    : Value::not_present();
+        first_arg_reg =
+            prepare_method_call_argument_slots(fp, first_arg_reg, 1, self);
+
+        assert(continuation_pc >= pc);
+        uint32_t continuation_instr_len = uint32_t(continuation_pc - pc);
+        enter_function_frame_from_positional_args(
+            thread, fp, pc, code_object,
+            TValue<Function>::from_oop(entry.function), first_arg_reg,
+            entry.n_args, continuation_instr_len, entry.adaptation);
+    }
+
+    static ALWAYSINLINE DispatchTableEntry dispatch_binary_operator_walk_result(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator,
+        OperatorDispatchTableId table_id, Value operand0, Value operand1,
+        const OperatorWalkDescriptor &descriptor,
+        const uint8_t *continuation_pc, const uint8_t *next_pc)
+    {
+        switch(descriptor.status)
+        {
+            case OperatorWalkStatus::CallPythonFunction:
+                enter_binary_operator_python_function(
+                    thread, fp, pc, code_object, descriptor, table_id, operand0,
+                    operand1, continuation_pc);
+                return dispatch_entry_for_pc(dispatch, pc);
+
+            case OperatorWalkStatus::CallTrustedHandler:
+                assert(descriptor.cache_entry.handler.arity ==
+                       TrustedHandlerArity::Binary);
+                accumulator = descriptor.cache_entry.handler.binary(
+                    thread, operand0, operand1);
+                assert(!accumulator.is_not_implemented_singleton());
+                if(unlikely(accumulator.is_exception_marker()))
+                {
+                    resolve_operator_pending_exception(thread, fp, pc,
+                                                       code_object);
+                    return dispatch_entry_for_pc(dispatch, pc);
+                }
+                pc = next_pc;
+                return dispatch_entry_for_pc(dispatch, pc);
+
+            case OperatorWalkStatus::NativeResult:
+                accumulator = descriptor.result;
+                pc = next_pc;
+                return dispatch_entry_for_pc(dispatch, pc);
+
+            case OperatorWalkStatus::PropagatePendingException:
+                resolve_operator_pending_exception(thread, fp, pc, code_object);
+                return dispatch_entry_for_pc(dispatch, pc);
+        }
+
+        __builtin_unreachable();
+    }
+
+    [[maybe_unused]] static ALWAYSINLINE DispatchTableEntry
+    dispatch_binary_operator_from_main(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator,
+        OperatorDispatchTableId table_id, Value operand0, Value operand1,
+        const uint8_t *continuation_pc, const uint8_t *next_pc)
+    {
+        OperatorWalkDescriptor descriptor =
+            walk_operator_table(thread, table_id, 0, operand0, operand1);
+        return dispatch_binary_operator_walk_result(
+            thread, fp, pc, dispatch, code_object, accumulator, table_id,
+            operand0, operand1, descriptor, continuation_pc, next_pc);
+    }
+
+    static ALWAYSINLINE DispatchTableEntry
+    dispatch_binary_operator_from_continuation(
+        ThreadState *thread, Value *&fp, const uint8_t *&pc, void *dispatch,
+        CodeObject *&code_object, Value &accumulator,
+        const uint8_t *continuation_pc, const uint8_t *next_pc)
+    {
+        int32_t prefix_reg = code_object->get_first_free_arg_encoded_reg();
+        OperatorDispatchTableId table_id;
+        uint32_t resume_index;
+        read_operator_continuation_header(fp, prefix_reg, table_id,
+                                          resume_index);
+        Value operand0;
+        Value operand1;
+        read_binary_operator_continuation_operands(fp, prefix_reg, operand0,
+                                                   operand1);
+
+        OperatorWalkDescriptor descriptor = walk_operator_table(
+            thread, table_id, resume_index, operand0, operand1);
+        return dispatch_binary_operator_walk_result(
+            thread, fp, pc, dispatch, code_object, accumulator, table_id,
+            operand0, operand1, descriptor, continuation_pc, next_pc);
+    }
+
     enum class AttributeLoadPlanStatus : uint8_t
     {
         Ready,
@@ -3603,15 +3757,16 @@ namespace cl
 
     NOINLINE static INTERP_CC Value op_check_operator_not_implemented(PARAMS)
     {
-        ExceptionalTarget target = set_builtin_exception_and_resolve_frame_exit(
-            thread, fp, pc, code_object, L"SystemError",
-            L"CheckOperatorNotImplemented reached before operator continuation "
-            L"support is enabled");
-        fp = target.fp;
-        code_object = target.code_object;
-        pc = target.interpreted_pc;
-        START(0);
-        COMPLETE();
+        if(!accumulator.is_not_implemented_singleton())
+        {
+            START(1);
+            COMPLETE();
+        }
+
+        DispatchTableEntry next_dispatch_fun =
+            dispatch_binary_operator_from_continuation(
+                thread, fp, pc, dispatch, code_object, accumulator, pc, pc + 1);
+        MUSTTAIL return next_dispatch_fun(ARGS);
     }
 
     static INTERP_CC Value op_negate(PARAMS)

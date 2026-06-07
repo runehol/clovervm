@@ -13,9 +13,21 @@ namespace cl
                                       OperatorDispatchTableId &table_id,
                                       uint32_t &resume_index)
     {
-        table_id = static_cast<OperatorDispatchTableId>(
-            uint32_t(fp[prefix_reg].get_smi()));
-        resume_index = uint32_t(fp[prefix_reg - 1].get_smi());
+        Value table_id_value = fp[prefix_reg];
+        Value resume_index_value = fp[prefix_reg - 1];
+        assert(table_id_value.is_smi());
+        assert(resume_index_value.is_smi());
+
+        int64_t table_id_raw = table_id_value.get_smi();
+        int64_t resume_index_raw = resume_index_value.get_smi();
+        assert(table_id_raw >= 0);
+        assert(table_id_raw <
+               int64_t(static_cast<uint32_t>(OperatorDispatchTableId::Count)));
+        assert(resume_index_raw >= 0);
+        assert(resume_index_raw <= int64_t(UINT32_MAX));
+
+        table_id = static_cast<OperatorDispatchTableId>(uint32_t(table_id_raw));
+        resume_index = uint32_t(resume_index_raw);
     }
 
     [[maybe_unused]] static ALWAYSINLINE void
@@ -23,6 +35,14 @@ namespace cl
                                              uint32_t resume_index)
     {
         fp[prefix_reg - 1] = Value::from_smi(int64_t(resume_index));
+    }
+
+    [[maybe_unused]] static ALWAYSINLINE void
+    read_binary_operator_continuation_operands(Value *fp, int32_t prefix_reg,
+                                               Value &operand0, Value &operand1)
+    {
+        operand0 = fp[prefix_reg - 2];
+        operand1 = fp[prefix_reg - 3];
     }
 
     [[maybe_unused]] static ALWAYSINLINE void

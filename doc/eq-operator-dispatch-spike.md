@@ -182,15 +182,15 @@ normal_first:
 
 ## Stage 6: Python Candidate Entry
 
-- [ ] Implement `CallBinary` and `CallBinaryReflected` call layout using the
+- [x] Implement `CallBinary` and `CallBinaryReflected` call layout using the
       Stage 5 continuation prefix.
-- [ ] Stop table walking as soon as a Python function candidate is selected.
+- [x] Stop table walking as soon as a Python function candidate is selected.
       There is no native loop through subsequent Python candidates.
-- [ ] Write table id, next row, and canonical operands before entering the
+- [x] Write table id, next row, and canonical operands before entering the
       candidate.
-- [ ] Enter the Python function with the paired `CheckOperatorNotImplemented`
+- [x] Enter the Python function with the paired `CheckOperatorNotImplemented`
       byte as the return PC.
-- [ ] Keep the helper cacheless for Python candidates.
+- [x] Keep the helper cacheless for Python candidates.
 - [ ] Route selected candidates that are unsupported by the fast function-shaped
       entry path through a generic call path, or raise the ordinary call error
       for non-callable candidates, without treating them as missing methods.
@@ -199,16 +199,16 @@ normal_first:
 
 ## Stage 7: `CheckOperatorNotImplemented` Resume
 
-- [ ] Replace the Stage 2 skeleton with the real resume handler once the table
+- [x] Replace the Stage 2 skeleton with the real resume handler once the table
       walker and Python candidate entry exist.
-- [ ] If the accumulator is not the singleton `NotImplemented`, finish the
+- [x] If the accumulator is not the singleton `NotImplemented`, finish the
       logical `TestEqual` instruction with the accumulator unchanged.
-- [ ] If the accumulator is `NotImplemented`, read table id, next row,
+- [x] If the accumulator is `NotImplemented`, read table id, next row,
       operand0, and operand1 from the hidden prefix.
-- [ ] Resume table walking from the saved row using current lookup state.
-- [ ] Assert table id, row index, and prefix layout in debug builds.
+- [x] Resume table walking from the saved row using current lookup state.
+- [x] Assert table id, row index, and prefix layout in debug builds.
 - [ ] Do not install or update inline caches from the continuation path.
-- [ ] Propagate pending exceptions through the interpreter exception path.
+- [x] Propagate pending exceptions through the interpreter exception path.
 
 ## Stage 8: Integrate `TestEqual`
 
