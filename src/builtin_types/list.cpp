@@ -179,67 +179,60 @@ namespace cl
         return Value::None();
     }
 
-    static TrustedHandlerResolution resolve_trusted_list_getitem_handler(
+    static TrustedHandler resolve_trusted_list_getitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
         ShapeKey unused, TrustedHandlerOperandOrder order)
     {
         (void)unused;
         assert(order == TrustedHandlerOperandOrder::Normal);
-        TrustedHandlerResolution resolution;
         if(vm->shape_for_key(container_key)->get_class() != vm->list_class())
         {
-            return resolution;
+            return TrustedHandler::none();
         }
         if(key_key == ShapeKey::from_value(Value::from_smi(0)))
         {
-            resolution.arity = TrustedHandlerArity::Binary;
-            resolution.binary = trusted_list_getitem_smi_handler;
-            return resolution;
+            return TrustedHandler::for_binary(trusted_list_getitem_smi_handler);
         }
         if(key_key == ShapeKey::from_shape(vm->slice_step_none_shape()))
         {
-            resolution.arity = TrustedHandlerArity::Binary;
-            resolution.binary = trusted_list_getitem_nonstrided_slice_handler;
-            return resolution;
+            return TrustedHandler::for_binary(
+                trusted_list_getitem_nonstrided_slice_handler);
         }
         if(key_key == ShapeKey::from_shape(vm->slice_general_shape()))
         {
-            resolution.arity = TrustedHandlerArity::Binary;
-            resolution.binary = trusted_list_getitem_general_slice_handler;
+            return TrustedHandler::for_binary(
+                trusted_list_getitem_general_slice_handler);
         }
-        return resolution;
+        return TrustedHandler::none();
     }
 
-    static TrustedHandlerResolution resolve_trusted_list_setitem_handler(
+    static TrustedHandler resolve_trusted_list_setitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
         ShapeKey unused, TrustedHandlerOperandOrder order)
     {
         (void)unused;
         assert(order == TrustedHandlerOperandOrder::Normal);
-        TrustedHandlerResolution resolution;
         if(vm->shape_for_key(container_key)->get_class() == vm->list_class() &&
            key_key == ShapeKey::from_value(Value::from_smi(0)))
         {
-            resolution.arity = TrustedHandlerArity::Ternary;
-            resolution.ternary = trusted_list_setitem_smi_handler;
+            return TrustedHandler::for_ternary(
+                trusted_list_setitem_smi_handler);
         }
-        return resolution;
+        return TrustedHandler::none();
     }
 
-    static TrustedHandlerResolution resolve_trusted_list_delitem_handler(
+    static TrustedHandler resolve_trusted_list_delitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
         ShapeKey unused, TrustedHandlerOperandOrder order)
     {
         (void)unused;
         assert(order == TrustedHandlerOperandOrder::Normal);
-        TrustedHandlerResolution resolution;
         if(vm->shape_for_key(container_key)->get_class() == vm->list_class() &&
            key_key == ShapeKey::from_value(Value::from_smi(0)))
         {
-            resolution.arity = TrustedHandlerArity::Binary;
-            resolution.binary = trusted_list_delitem_smi_handler;
+            return TrustedHandler::for_binary(trusted_list_delitem_smi_handler);
         }
-        return resolution;
+        return TrustedHandler::none();
     }
 
     static size_t normalize_list_search_bound(int64_t py_idx, size_t size)

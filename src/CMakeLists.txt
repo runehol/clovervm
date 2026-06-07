@@ -87,6 +87,7 @@ add_library(libclovervm_objects OBJECT
     builtin_types/range_iterator.h
     cli/repl.cpp
     cli/repl.h
+    runtime/method_call.h
     runtime/runtime_helpers.h
     memory/heap_reclamation.cpp
     memory/heap_reclamation.h
@@ -151,6 +152,8 @@ add_library(libclovervm_objects OBJECT
     object_model/refcount.cpp
     object_model/refcount.h
     runtime/operator_dispatch.h
+    runtime/operator_walk.cpp
+    runtime/operator_walk.h
     compiler/scope.cpp
     compiler/scope.h
     object_model/shape_descriptor.h

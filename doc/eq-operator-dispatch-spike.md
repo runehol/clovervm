@@ -125,37 +125,36 @@ normal_first:
 
 ## Stage 4: Table Control Helpers
 
-- [ ] Implement cold helpers that inspect table rows from a starting row.
-- [ ] Apply `else_skip` when applicability fails: the next row is
+- [x] Implement cold helpers that inspect table rows from a starting row.
+- [x] Apply `else_skip` when applicability fails: the next row is
       `row + 1 + else_skip`, so `else_skip = 0` is ordinary fallthrough.
-- [ ] Implement `IfMethodFound` using current special-method lookup.
-- [ ] Treat a found non-callable or non-fast-callable value as a terminal row,
+- [x] Implement `IfMethodFound` using current special-method lookup.
+- [x] Treat a found non-callable or non-fast-callable value as a terminal row,
       not as a missing method. It should raise the ordinary call error or enter
       the generic-call path when that path exists; it must not continue to later
       rows as though the method were absent.
-- [ ] Implement `IfRichComparisonReflectedPriority`: the reflected method must
+- [x] Implement `IfRichComparisonReflectedPriority`: the reflected method must
       resolve and `type(operand1)` must be a strict subclass of
       `type(operand0)`.
-- [ ] Implement candidate selection for `CallBinary` and
+- [x] Implement candidate selection for `CallBinary` and
       `CallBinaryReflected` without entering Python yet.
-- [ ] Implement `IdentityEq` fallback as `operand0 is operand1`.
-- [ ] Return an `OperatorWalkDescriptor`-style result. The status enum should
+- [x] Implement `IdentityEq` fallback as `operand0 is operand1`.
+- [x] Return an `OperatorWalkDescriptor`-style result. The status enum should
       use the default underlying type, not `uint8_t`; the descriptor is
       transient interpreter control data, and packing it can make register
       passing and use-site code generation worse.
-- [ ] The table walker should walk multiple rows until it reaches one terminal
+- [x] The table walker should walk multiple rows until it reaches one terminal
       boundary:
       `CallPythonFunction`, `CallTrustedHandler`, `NativeResult`, or
-      `RaiseException`.
-- [ ] Use the Stage 3.5 trusted-handler resolver contract: resolve trusted
+      `PropagatePendingException`.
+- [x] Use the Stage 3.5 trusted-handler resolver contract: resolve trusted
       handlers as terminal walk results, but leave handler execution to the
       opcode handler.
-- [ ] Return an inert `OperatorInlineCache` candidate in the walk descriptor so
+- [x] Return an inert `OperatorInlineCache` candidate in the walk descriptor so
       the result shape already matches future replay. For this spike, fill it
-      opportunistically when the data is available, but always leave it marked
-      not applicable and do not install it. Skipped-row guard representation and
-      validation are follow-up work.
-- [ ] Do not return an exhausted-table state. Dispatch tables must end in an
+      opportunistically when the data is available, but do not install it.
+      Skipped-row guard representation and validation are follow-up work.
+- [x] Do not return an exhausted-table state. Dispatch tables must end in an
       unconditional terminal action. Falling off a table is a VM metadata bug:
       use a debug-only assertion followed by `__builtin_unreachable()` rather
       than a Python-visible dynamic result.

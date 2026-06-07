@@ -265,35 +265,31 @@ namespace cl
             .raw_value();
     }
 
-    static TrustedHandlerResolution resolve_trusted_str_getitem_handler(
+    static TrustedHandler resolve_trusted_str_getitem_handler(
         VirtualMachine *vm, ShapeKey container_key, ShapeKey key_key,
         ShapeKey unused, TrustedHandlerOperandOrder order)
     {
         (void)unused;
         assert(order == TrustedHandlerOperandOrder::Normal);
-        TrustedHandlerResolution resolution;
         if(vm->shape_for_key(container_key)->get_class() != vm->str_class())
         {
-            return resolution;
+            return TrustedHandler::none();
         }
         if(key_key == ShapeKey::from_value(Value::from_smi(0)))
         {
-            resolution.arity = TrustedHandlerArity::Binary;
-            resolution.binary = trusted_str_getitem_smi_handler;
-            return resolution;
+            return TrustedHandler::for_binary(trusted_str_getitem_smi_handler);
         }
         if(key_key == ShapeKey::from_shape(vm->slice_step_none_shape()))
         {
-            resolution.arity = TrustedHandlerArity::Binary;
-            resolution.binary = trusted_str_getitem_nonstrided_slice_handler;
-            return resolution;
+            return TrustedHandler::for_binary(
+                trusted_str_getitem_nonstrided_slice_handler);
         }
         if(key_key == ShapeKey::from_shape(vm->slice_general_shape()))
         {
-            resolution.arity = TrustedHandlerArity::Binary;
-            resolution.binary = trusted_str_getitem_general_slice_handler;
+            return TrustedHandler::for_binary(
+                trusted_str_getitem_general_slice_handler);
         }
-        return resolution;
+        return TrustedHandler::none();
     }
 
     static Value native_str_lower(ThreadState *thread, Value self)

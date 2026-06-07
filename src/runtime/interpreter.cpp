@@ -22,6 +22,7 @@
 #include "object_model/value.h"
 #include "runtime/exception_handling.h"
 #include "runtime/exception_object.h"
+#include "runtime/method_call.h"
 #include "runtime/runtime_helpers.h"
 #include "runtime/thread_state.h"
 #include "runtime/virtual_machine.h"
@@ -1610,31 +1611,6 @@ namespace cl
         pc = code_object->code.data();
     }
 
-    static ALWAYSINLINE bool is_fixed_arity_function(TValue<Function> fun)
-    {
-        return !fun.extract()->has_varargs() &&
-               fun.extract()->call_signature.min_positional_arity ==
-                   fun.extract()->call_signature.max_positional_arity;
-    }
-
-    static ALWAYSINLINE FunctionCallAdaptation
-    function_call_adaptation_for_positional_call(TValue<Function> fun,
-                                                 uint32_t n_args)
-    {
-        if(fun.extract()->has_varargs())
-        {
-            return FunctionCallAdaptation::Varargs;
-        }
-        if(fun.extract()->default_parameters.value().has_value())
-        {
-            return n_args == fun.extract()->call_signature.function.n_parameters
-                       ? FunctionCallAdaptation::FixedArity
-                       : FunctionCallAdaptation::Defaults;
-        }
-        return is_fixed_arity_function(fun) ? FunctionCallAdaptation::FixedArity
-                                            : FunctionCallAdaptation::Defaults;
-    }
-
     static ALWAYSINLINE void populate_function_call_cache_with_guard(
         FunctionCallInlineCache &cache, Value guard_value, TValue<Function> fun,
         ValidityCell *validity_cell, uint32_t n_args)
@@ -1651,7 +1627,7 @@ namespace cl
     static ALWAYSINLINE void populate_operator_call_cache(
         OperatorInlineCache &cache, TValue<Function> fun, uint32_t n_args,
         bool has_self, FunctionCallAdaptation adaptation,
-        OperatorMethodHandler handler)
+        TrustedHandler handler)
     {
         cache.handler = handler;
         cache.function = fun.extract();
@@ -2202,37 +2178,12 @@ namespace cl
         return receiver_reg;
     }
 
-    enum class MethodCallTargetStatus : uint8_t
-    {
-        Ready,
-        Missing,
-        RequiresDescriptorDispatch,
-    };
-
-    enum class MethodCallFastTargetStatus : uint8_t
-    {
-        Ready,
-        Slow,
-    };
-
     enum class AttributeLoadPlanStatus : uint8_t
     {
         Ready,
         Slow,
         RequiresDescriptorDispatch,
     };
-
-    static ALWAYSINLINE const Object *
-    read_plan_storage_owner(Value receiver, const AttributeReadPlan &plan)
-    {
-        const Object *storage_owner = plan.storage_owner;
-        if(storage_owner == nullptr)
-        {
-            assert(receiver.is_ptr());
-            storage_owner = receiver.get_ptr<Object>();
-        }
-        return storage_owner;
-    }
 
     static ALWAYSINLINE Object *
     mutation_plan_storage_owner(Value receiver,
@@ -2343,90 +2294,6 @@ namespace cl
         object->write_storage_location(plan.storage_location(),
                                        Value::not_present());
         return true;
-    }
-
-    static ALWAYSINLINE MethodCallTargetStatus
-    prepare_method_call_target_from_plan(Value receiver,
-                                         const AttributeReadPlan &plan,
-                                         Value &callable_out, Value &self_out)
-    {
-        self_out = Value::not_present();
-        switch(plan.kind)
-        {
-            case AttributeReadPlanKind::ConstantValue:
-                callable_out = plan.binding.self;
-                return MethodCallTargetStatus::Ready;
-
-            case AttributeReadPlanKind::ReceiverSlot:
-                callable_out =
-                    read_plan_storage_owner(receiver, plan)
-                        ->read_storage_location(plan.storage_location);
-                return MethodCallTargetStatus::Ready;
-
-            case AttributeReadPlanKind::BindFunctionReceiver:
-                callable_out =
-                    read_plan_storage_owner(receiver, plan)
-                        ->read_storage_location(plan.storage_location);
-                // The plan records that a function won when it was created,
-                // but the slot may have changed without invalidating this
-                // shape-only cache. Bind only if the reloaded value is still a
-                // function.
-                if(callable_out.is_ptr() &&
-                   callable_out.get_ptr()->native_layout_id() ==
-                       NativeLayoutId::Function)
-                {
-                    self_out = receiver;
-                }
-                return MethodCallTargetStatus::Ready;
-
-            case AttributeReadPlanKind::DataDescriptorGet:
-            case AttributeReadPlanKind::NonDataDescriptorGet:
-                callable_out = Value::not_present();
-                return MethodCallTargetStatus::RequiresDescriptorDispatch;
-        }
-
-        __builtin_unreachable();
-    }
-
-    static ALWAYSINLINE MethodCallFastTargetStatus
-    prepare_method_call_target_from_plan_fast(Value receiver,
-                                              const AttributeReadPlan &plan,
-                                              Value &callable_out,
-                                              Value &self_out)
-    {
-        if(likely(plan.kind == AttributeReadPlanKind::BindFunctionReceiver))
-        {
-            callable_out = read_plan_storage_owner(receiver, plan)
-                               ->read_storage_location(plan.storage_location);
-            // The plan survives ordinary class contents writes, so the current
-            // slot value decides whether this is still a bound method call
-            // target.
-            if(likely(callable_out.is_ptr() &&
-                      callable_out.get_ptr()->native_layout_id() ==
-                          NativeLayoutId::Function))
-            {
-                self_out = receiver;
-                return MethodCallFastTargetStatus::Ready;
-            }
-        }
-
-        return MethodCallFastTargetStatus::Slow;
-    }
-
-    static ALWAYSINLINE MethodCallTargetStatus
-    prepare_method_call_target_from_descriptor(
-        Value receiver, const AttributeReadDescriptor &descriptor,
-        Value &callable_out, Value &self_out)
-    {
-        if(!descriptor.is_found())
-        {
-            callable_out = Value::not_present();
-            self_out = Value::not_present();
-            return MethodCallTargetStatus::Missing;
-        }
-
-        return prepare_method_call_target_from_plan(receiver, descriptor.plan,
-                                                    callable_out, self_out);
     }
 
     NOINLINE static INTERP_CC Value op_load_attr_cache_miss(PARAMS)
@@ -2983,27 +2850,27 @@ namespace cl
         }
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
-        OperatorMethodHandler handler = {nullptr};
+        TrustedHandler handler;
         if(cache.method_read_cache.matches(receiver))
         {
             CodeObject *target_code_object =
                 function.extract()->code_object.extract();
             if(target_code_object->trusted_handler_resolver != nullptr)
             {
-                TrustedHandlerResolution resolution =
+                TrustedHandler resolved_handler =
                     target_code_object->trusted_handler_resolver(
                         vm, receiver_shape_key, arg_shape_key, ShapeKey{},
                         TrustedHandlerOperandOrder::Normal);
-                if(resolution.arity == TrustedHandlerArity::Binary)
+                if(resolved_handler.arity == TrustedHandlerArity::Binary)
                 {
-                    handler.binary = resolution.binary;
+                    handler = resolved_handler;
                 }
             }
             populate_operator_call_cache(cache, function, n_args, has_self,
                                          adaptation, handler);
         }
 
-        if(handler.binary != nullptr)
+        if(handler.arity == TrustedHandlerArity::Binary)
         {
             accumulator = handler.binary(thread, receiver, key);
             if(unlikely(accumulator.is_exception_marker()))
@@ -3071,7 +2938,7 @@ namespace cl
         {
             MUSTTAIL return op_get_item_cache_miss(ARGS);
         }
-        if(cache.handler.binary != nullptr)
+        if(cache.handler.arity == TrustedHandlerArity::Binary)
         {
             accumulator = cache.handler.binary(thread, receiver, key);
             if(unlikely(accumulator.is_exception_marker()))
@@ -3163,27 +3030,27 @@ namespace cl
         }
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
-        OperatorMethodHandler handler = {nullptr};
+        TrustedHandler handler;
         if(cache.method_read_cache.matches(receiver))
         {
             CodeObject *target_code_object =
                 function.extract()->code_object.extract();
             if(target_code_object->trusted_handler_resolver != nullptr)
             {
-                TrustedHandlerResolution resolution =
+                TrustedHandler resolved_handler =
                     target_code_object->trusted_handler_resolver(
                         vm, receiver_shape_key, arg_shape_key, ShapeKey{},
                         TrustedHandlerOperandOrder::Normal);
-                if(resolution.arity == TrustedHandlerArity::Ternary)
+                if(resolved_handler.arity == TrustedHandlerArity::Ternary)
                 {
-                    handler.ternary = resolution.ternary;
+                    handler = resolved_handler;
                 }
             }
             populate_operator_call_cache(cache, function, n_args, has_self,
                                          adaptation, handler);
         }
 
-        if(handler.ternary != nullptr)
+        if(handler.arity == TrustedHandlerArity::Ternary)
         {
             accumulator = handler.ternary(thread, receiver, key, value);
             if(unlikely(accumulator.is_exception_marker()))
@@ -3257,7 +3124,7 @@ namespace cl
         {
             MUSTTAIL return op_set_item_cache_miss(ARGS);
         }
-        if(cache.handler.ternary != nullptr)
+        if(cache.handler.arity == TrustedHandlerArity::Ternary)
         {
             accumulator = cache.handler.ternary(thread, receiver, key, value);
             if(unlikely(accumulator.is_exception_marker()))
@@ -3347,27 +3214,27 @@ namespace cl
         }
         FunctionCallAdaptation adaptation =
             function_call_adaptation_for_positional_call(function, n_args);
-        OperatorMethodHandler handler = {nullptr};
+        TrustedHandler handler;
         if(cache.method_read_cache.matches(receiver))
         {
             CodeObject *target_code_object =
                 function.extract()->code_object.extract();
             if(target_code_object->trusted_handler_resolver != nullptr)
             {
-                TrustedHandlerResolution resolution =
+                TrustedHandler resolved_handler =
                     target_code_object->trusted_handler_resolver(
                         vm, receiver_shape_key, arg_shape_key, ShapeKey{},
                         TrustedHandlerOperandOrder::Normal);
-                if(resolution.arity == TrustedHandlerArity::Binary)
+                if(resolved_handler.arity == TrustedHandlerArity::Binary)
                 {
-                    handler.binary = resolution.binary;
+                    handler = resolved_handler;
                 }
             }
             populate_operator_call_cache(cache, function, n_args, has_self,
                                          adaptation, handler);
         }
 
-        if(handler.binary != nullptr)
+        if(handler.arity == TrustedHandlerArity::Binary)
         {
             accumulator = handler.binary(thread, receiver, key);
             if(unlikely(accumulator.is_exception_marker()))
@@ -3435,7 +3302,7 @@ namespace cl
         {
             MUSTTAIL return op_del_item_cache_miss(ARGS);
         }
-        if(cache.handler.binary != nullptr)
+        if(cache.handler.arity == TrustedHandlerArity::Binary)
         {
             accumulator = cache.handler.binary(thread, receiver, key);
             if(unlikely(accumulator.is_exception_marker()))

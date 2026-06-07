@@ -142,7 +142,7 @@ namespace cl
         Ternary,
     };
 
-    struct TrustedHandlerResolution
+    struct TrustedHandler
     {
         TrustedHandlerArity arity = TrustedHandlerArity::None;
 
@@ -152,6 +152,36 @@ namespace cl
             BinaryHandler binary;
             TernaryHandler ternary;
         };
+
+        TrustedHandler() : arity(TrustedHandlerArity::None), unary(nullptr) {}
+
+        static TrustedHandler none() { return TrustedHandler(); }
+
+        static TrustedHandler for_unary(UnaryHandler handler)
+        {
+            TrustedHandler trusted_handler;
+            trusted_handler.arity = TrustedHandlerArity::Unary;
+            trusted_handler.unary = handler;
+            return trusted_handler;
+        }
+
+        static TrustedHandler for_binary(BinaryHandler handler)
+        {
+            TrustedHandler trusted_handler;
+            trusted_handler.arity = TrustedHandlerArity::Binary;
+            trusted_handler.binary = handler;
+            return trusted_handler;
+        }
+
+        static TrustedHandler for_ternary(TernaryHandler handler)
+        {
+            TrustedHandler trusted_handler;
+            trusted_handler.arity = TrustedHandlerArity::Ternary;
+            trusted_handler.ternary = handler;
+            return trusted_handler;
+        }
+
+        bool is_none() const { return arity == TrustedHandlerArity::None; }
     };
 
     enum class TrustedHandlerOperandOrder
@@ -161,8 +191,8 @@ namespace cl
     };
 
     using TrustedHandlerResolver =
-        TrustedHandlerResolution (*)(VirtualMachine *, ShapeKey, ShapeKey,
-                                     ShapeKey, TrustedHandlerOperandOrder);
+        TrustedHandler (*)(VirtualMachine *, ShapeKey, ShapeKey, ShapeKey,
+                           TrustedHandlerOperandOrder);
 
     union NativeFunctionTarget
     {
@@ -207,29 +237,56 @@ namespace cl
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
     };
 
-    union OperatorMethodHandler
-    {
-        UnaryHandler unary;
-        BinaryHandler binary;
-        TernaryHandler ternary;
-    };
-
     struct OperatorInlineCache
     {
         AttributeReadInlineCache method_read_cache;
         ShapeKey arg_shape_key;
-        OperatorMethodHandler handler = {nullptr};
+        TrustedHandler handler;
         Function *function = nullptr;
         CodeObject *code_object = nullptr;
         uint32_t n_args = UINT32_MAX;
         FunctionCallAdaptation adaptation = FunctionCallAdaptation::FixedArity;
         bool has_self = false;
 
+        static OperatorInlineCache python_function_call(
+            Value receiver, const AttributeReadDescriptor &method_descriptor,
+            ShapeKey arg_shape_key, Function *function, CodeObject *code_object,
+            uint32_t n_args, bool has_self, FunctionCallAdaptation adaptation)
+        {
+            OperatorInlineCache cache;
+            cache.arg_shape_key = arg_shape_key;
+            cache.function = function;
+            cache.code_object = code_object;
+            cache.n_args = n_args;
+            cache.adaptation = adaptation;
+            cache.has_self = has_self;
+            if(method_descriptor.is_cacheable() && receiver.is_ptr())
+            {
+                cache.method_read_cache.populate(receiver, method_descriptor);
+            }
+            return cache;
+        }
+
+        static OperatorInlineCache
+        trusted_handler_call(Value receiver,
+                             const AttributeReadDescriptor &method_descriptor,
+                             ShapeKey arg_shape_key, TrustedHandler handler)
+        {
+            OperatorInlineCache cache;
+            cache.arg_shape_key = arg_shape_key;
+            cache.handler = handler;
+            if(method_descriptor.is_cacheable() && receiver.is_ptr())
+            {
+                cache.method_read_cache.populate(receiver, method_descriptor);
+            }
+            return cache;
+        }
+
         void clear()
         {
             method_read_cache.clear();
             arg_shape_key = ShapeKey{};
-            handler.unary = nullptr;
+            handler = TrustedHandler::none();
             function = nullptr;
             code_object = nullptr;
             n_args = UINT32_MAX;
