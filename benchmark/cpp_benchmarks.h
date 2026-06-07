@@ -47,6 +47,9 @@ namespace benchmark_cpp
     int64_t setitem_dict_run(int64_t n);
     int64_t setitem_dict_items(int64_t n);
 
+    int64_t setitem_user_run(int64_t n);
+    int64_t setitem_user_items(int64_t n);
+
     int64_t for_loop_slow_path_run(int64_t n);
     int64_t for_loop_slow_path_items(int64_t n);
 

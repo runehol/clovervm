@@ -27,6 +27,7 @@ add_executable(bench_clovervm
     getitem_user.cpp
     setitem_dict.cpp
     setitem_list.cpp
+    setitem_user.cpp
     global_add_delete.cpp
     global_read.cpp
     global_refcounted_write.cpp

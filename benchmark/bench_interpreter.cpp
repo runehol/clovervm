@@ -74,6 +74,9 @@ namespace
             {"benchmark/setitem_dict.py",
              {benchmark_cpp::setitem_dict_run,
               benchmark_cpp::setitem_dict_items}},
+            {"benchmark/setitem_user.py",
+             {benchmark_cpp::setitem_user_run,
+              benchmark_cpp::setitem_user_items}},
             {"benchmark/for_loop_slow_path.py",
              {benchmark_cpp::for_loop_slow_path_run,
               benchmark_cpp::for_loop_slow_path_items}},
@@ -639,6 +642,15 @@ template <typename Program> static void BM_SetItemDict(benchmark::State &state)
 }
 BENCHMARK_TEMPLATE(BM_SetItemDict, CloverProgram)
     ->Name("BM_SetItemDict")
+    ->Arg(100000);
+
+template <typename Program> static void BM_SetItemUser(benchmark::State &state)
+{
+    run_benchmark_case<Program>(state, "benchmark/setitem_user.py",
+                                state.range(0));
+}
+BENCHMARK_TEMPLATE(BM_SetItemUser, CloverProgram)
+    ->Name("BM_SetItemUser")
     ->Arg(100000);
 
 template <typename Program>
