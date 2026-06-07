@@ -100,7 +100,7 @@ namespace cl
     static AttributeReadDescriptor
     uncacheable_inline_receiver_descriptor(AttributeReadDescriptor descriptor)
     {
-        descriptor.plan.lookup_validity_cell = nullptr;
+        descriptor.lookup_validity_cell = nullptr;
         descriptor.cache_blockers = attribute_cache_blockers(
             descriptor.cache_blockers, AttributeCacheBlocker::InlineReceiver);
         return descriptor;
@@ -228,13 +228,13 @@ namespace cl
     with_mro_shape_and_contents_validity_cell_if_unblocked(
         AttributeReadDescriptor descriptor, ClassObject *cls)
     {
-        descriptor.plan.lookup_validity_cell = nullptr;
+        descriptor.lookup_validity_cell = nullptr;
         if(descriptor.is_found() &&
            attribute_cache_blockers_are_none(descriptor.cache_blockers) &&
            descriptor.plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
            descriptor.plan.kind != AttributeReadPlanKind::NonDataDescriptorGet)
         {
-            descriptor.plan.lookup_validity_cell =
+            descriptor.lookup_validity_cell =
                 cls->get_or_create_mro_shape_and_contents_validity_cell();
         }
         return descriptor;
@@ -244,13 +244,13 @@ namespace cl
     with_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell_if_unblocked(
         AttributeReadDescriptor descriptor, ClassObject *cls)
     {
-        descriptor.plan.lookup_validity_cell = nullptr;
+        descriptor.lookup_validity_cell = nullptr;
         if(descriptor.is_found() &&
            attribute_cache_blockers_are_none(descriptor.cache_blockers) &&
            descriptor.plan.kind != AttributeReadPlanKind::DataDescriptorGet &&
            descriptor.plan.kind != AttributeReadPlanKind::NonDataDescriptorGet)
         {
-            descriptor.plan.lookup_validity_cell =
+            descriptor.lookup_validity_cell =
                 cls->get_or_create_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell();
         }
         return descriptor;

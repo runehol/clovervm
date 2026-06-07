@@ -158,7 +158,7 @@ TEST(Attr, InstanceOwnReadDescriptorKeepsClassCacheBlockers)
     EXPECT_EQ(
         attribute_cache_blocker(AttributeCacheBlocker::MutableDescriptorType),
         read_descriptor.cache_blockers);
-    EXPECT_EQ(nullptr, read_descriptor.plan.lookup_validity_cell);
+    EXPECT_EQ(nullptr, read_descriptor.lookup_validity_cell);
     EXPECT_FALSE(read_descriptor.is_cacheable());
     EXPECT_EQ(nullptr,
               owner_cls->current_mro_shape_and_contents_validity_cell());
@@ -201,7 +201,7 @@ TEST(Attr, InstanceClassReadDescriptorDoesNotBlockOnWinningMutableValue)
     EXPECT_EQ(
         owner_cls
             ->current_mro_shape_and_metaclass_mro_shape_and_contents_validity_cell(),
-        read_descriptor.plan.lookup_validity_cell);
+        read_descriptor.lookup_validity_cell);
 }
 
 TEST(Attr, InstanceClassReadDescriptorSurvivesClassContentsWriteAndReloadsSlot)
@@ -224,7 +224,7 @@ TEST(Attr, InstanceClassReadDescriptorSurvivesClassContentsWriteAndReloadsSlot)
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, descriptor.plan.kind);
     EXPECT_TRUE(descriptor.is_cacheable());
-    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ValidityCell *cell = descriptor.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_EQ(
         cell,
@@ -265,7 +265,7 @@ TEST(Attr,
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, descriptor.plan.kind);
     EXPECT_TRUE(descriptor.is_cacheable());
-    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ValidityCell *cell = descriptor.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_EQ(
         cell,
@@ -328,7 +328,7 @@ TEST(Attr, ClassReadDescriptorSurvivesClassContentsWriteAndReloadsSlot)
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, descriptor.plan.kind);
     EXPECT_TRUE(descriptor.is_cacheable());
-    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ValidityCell *cell = descriptor.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     ASSERT_EQ(Value::from_smi(7),
               load_attr_from_plan(Value::from_oop(cls), descriptor.plan));
@@ -366,7 +366,7 @@ TEST(Attr, ClassReadDescriptorSurvivesBaseContentsWriteAndReloadsSlot)
     ASSERT_TRUE(descriptor.is_found());
     EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, descriptor.plan.kind);
     EXPECT_TRUE(descriptor.is_cacheable());
-    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ValidityCell *cell = descriptor.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_EQ(1u, base->attached_mro_shape_validity_cell_count());
     EXPECT_EQ(0u, base->attached_mro_shape_and_contents_validity_cell_count());
@@ -405,7 +405,7 @@ TEST(Attr, ClassReadDescriptorInvalidatesOnBaseShapeChange)
 
     ASSERT_TRUE(descriptor.is_found());
     ASSERT_TRUE(descriptor.is_cacheable());
-    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ValidityCell *cell = descriptor.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_EQ(1u, base->attached_mro_shape_validity_cell_count());
 
@@ -442,7 +442,7 @@ TEST(Attr, ClassReadDescriptorInvalidatesOnMetaclassContentsWrite)
 
     ASSERT_TRUE(descriptor.is_found());
     ASSERT_TRUE(descriptor.is_cacheable());
-    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ValidityCell *cell = descriptor.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_EQ(1u, meta->attached_mro_shape_and_contents_validity_cell_count());
 
@@ -1169,7 +1169,7 @@ TEST(Attr, InstanceOwnReadDescriptorCarriesLookupValidityCell)
     EXPECT_EQ(AttributeReadPlanKind::ReceiverSlot, descriptor.plan.kind);
     EXPECT_EQ(nullptr, descriptor.plan.storage_owner);
     EXPECT_TRUE(descriptor.is_cacheable());
-    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ValidityCell *cell = descriptor.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
     EXPECT_TRUE(cell->is_valid());
     EXPECT_EQ(cell, child->current_mro_shape_and_contents_validity_cell());
@@ -1339,7 +1339,7 @@ TEST(Attr, ClassFunctionMethodPlanSurvivesClassContentsWriteAndReloadsSlot)
     EXPECT_EQ(AttributeReadPlanKind::BindFunctionReceiver,
               descriptor.plan.kind);
     EXPECT_TRUE(descriptor.is_cacheable());
-    ValidityCell *cell = descriptor.plan.lookup_validity_cell;
+    ValidityCell *cell = descriptor.lookup_validity_cell;
     ASSERT_NE(nullptr, cell);
 
     Value callable = Value::not_present();

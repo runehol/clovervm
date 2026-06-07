@@ -253,7 +253,7 @@ namespace cl
             AttributeReadPlan::from_storage(
                 AttributeReadPlanPath::ReceiverOwnProperty,
                 AttributeReadPlanKind::ReceiverSlot, nullptr, location,
-                AttributeBindingContext::none(), nullptr),
+                AttributeBindingContext::none()),
             read_storage_location(location));
     }
 

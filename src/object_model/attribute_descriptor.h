@@ -123,26 +123,23 @@ namespace cl
         const Object *storage_owner;
         StorageLocation storage_location;
         AttributeBindingContext binding;
-        ValidityCell *lookup_validity_cell;
 
-        static AttributeReadPlan
-        from_storage(AttributeReadPlanPath path, AttributeReadPlanKind kind,
-                     const Object *storage_owner, StorageLocation location,
-                     AttributeBindingContext binding,
-                     ValidityCell *lookup_validity_cell = nullptr)
+        static AttributeReadPlan from_storage(AttributeReadPlanPath path,
+                                              AttributeReadPlanKind kind,
+                                              const Object *storage_owner,
+                                              StorageLocation location,
+                                              AttributeBindingContext binding)
         {
-            return AttributeReadPlan{path,     kind,    storage_owner,
-                                     location, binding, lookup_validity_cell};
+            return AttributeReadPlan{path, kind, storage_owner, location,
+                                     binding};
         }
 
         static AttributeReadPlan constant(Value value)
         {
             return AttributeReadPlan{AttributeReadPlanPath::ReceiverOwnProperty,
                                      AttributeReadPlanKind::ConstantValue,
-                                     nullptr,
-                                     StorageLocation::not_found(),
-                                     AttributeBindingContext{value, nullptr},
-                                     nullptr};
+                                     nullptr, StorageLocation::not_found(),
+                                     AttributeBindingContext{value, nullptr}};
         }
     };
 
@@ -152,6 +149,7 @@ namespace cl
         AttributeReadStatus status;
         AttributeReadPlan plan;
         Value lookup_value;
+        ValidityCell *lookup_validity_cell;
         AttributeCacheBlockers cache_blockers;
 
         static AttributeReadDescriptor not_found()
@@ -163,7 +161,7 @@ namespace cl
                     AttributeReadPlanKind::ReceiverSlot, nullptr,
                     StorageLocation::not_found(),
                     AttributeBindingContext::none()),
-                Value::not_present(),
+                Value::not_present(), nullptr,
                 attribute_cache_blocker(AttributeCacheBlocker::None)};
         }
 
@@ -177,18 +175,17 @@ namespace cl
         static AttributeReadDescriptor
         found(AttributeReadPlan plan, Value lookup_value,
               AttributeCacheBlockers cache_blockers =
-                  attribute_cache_blocker(AttributeCacheBlocker::None))
+                  attribute_cache_blocker(AttributeCacheBlocker::None),
+              ValidityCell *lookup_validity_cell = nullptr)
         {
             return AttributeReadDescriptor{AttributeReadStatus::Found, plan,
-                                           lookup_value, cache_blockers};
+                                           lookup_value, lookup_validity_cell,
+                                           cache_blockers};
         }
 
         bool is_found() const { return status == AttributeReadStatus::Found; }
 
-        bool is_cacheable() const
-        {
-            return plan.lookup_validity_cell != nullptr;
-        }
+        bool is_cacheable() const { return lookup_validity_cell != nullptr; }
     };
 
     class AttributeMutationPlan
