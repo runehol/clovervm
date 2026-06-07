@@ -107,7 +107,7 @@ namespace cl
         }
 
         void install_bootstrap_class(ClassObject *new_cls);
-        [[nodiscard]] Value char_at(int64_t py_idx) const;
+        [[nodiscard]] Value char_at(ThreadState *thread, int64_t py_idx) const;
         [[nodiscard]] TValue<String> concat(const String *other) const;
         [[nodiscard]] TValue<String> lower() const;
         [[nodiscard]] TValue<String> upper() const;
@@ -188,8 +188,6 @@ namespace cl
 
     uint64_t string_hash(TValue<String> s);
     bool string_eq_slow_path(TValue<String> a, TValue<String> b);
-    Value string_get_item(TValue<String> string, int64_t py_idx);
-
     const cl_wchar *string_as_wchar_t(TValue<String> s);
     std::wstring_view string_view(TValue<String> s);
     std::optional<TValue<String>>

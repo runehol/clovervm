@@ -199,11 +199,6 @@ namespace cl
         return Value::None();
     }
 
-    Value string_get_item(TValue<String> string, int64_t py_idx)
-    {
-        return string.extract()->char_at(py_idx);
-    }
-
     static Value native_str_getitem(ThreadState *thread, Value self,
                                     Value index_value)
     {
@@ -211,14 +206,13 @@ namespace cl
         int64_t py_idx = 0;
         CL_PROPAGATE_EXCEPTION(require_smi_index(
             index_value, L"string indices must be integers", py_idx));
-        return self.get_ptr<String>()->char_at(py_idx);
+        return self.get_ptr<String>()->char_at(thread, py_idx);
     }
 
     static Value trusted_str_getitem_smi_handler(ThreadState *thread,
                                                  Value self, Value index_value)
     {
-        (void)thread;
-        return self.get_ptr<String>()->char_at(index_value.get_smi());
+        return self.get_ptr<String>()->char_at(thread, index_value.get_smi());
     }
 
     static TrustedHandlerResolution
@@ -397,7 +391,7 @@ namespace cl
                                                  : Value::False();
     }
 
-    Value String::char_at(int64_t py_idx) const
+    Value String::char_at(ThreadState *thread, int64_t py_idx) const
     {
         int64_t length = count.extract();
         int64_t normalized = py_idx;
@@ -407,11 +401,11 @@ namespace cl
         }
         if(normalized < 0 || normalized >= length)
         {
-            return active_thread()->set_pending_builtin_exception_string(
+            return thread->set_pending_builtin_exception_string(
                 L"IndexError", L"string index out of range");
         }
         std::wstring_view result(&data[static_cast<size_t>(normalized)], 1);
-        return active_thread()->make_object_value<String>(result).raw_value();
+        return thread->make_object_value<String>(result).raw_value();
     }
 
     TValue<String> String::concat(const String *other) const
